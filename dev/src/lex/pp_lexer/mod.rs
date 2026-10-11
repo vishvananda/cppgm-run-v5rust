@@ -3,6 +3,7 @@ pub(crate) mod classes;
 mod literals;
 mod punctuators;
 pub use punctuators::Punctuator;
+pub(super) use punctuators::identifier_operator;
 
 use crate::support::source::{
     END_OF_SOURCE, SourceBuffer, SourceChar, SourceError, SourceOffset, TranslationReader,
@@ -147,15 +148,14 @@ impl<'a> PpLexer<'a> {
         Ok(self.token(kind))
     }
 
-    /// Shared post-token consumers discard whitespace without retaining tokens.
-    pub(crate) fn next_non_whitespace(&mut self) -> Result<PpToken<'_>, SourceError> {
-        let kind = loop {
+    /// Scan without borrowing the current spelling, permitting bounded lookahead.
+    pub(super) fn next_non_whitespace_kind(&mut self) -> Result<PpTokenKind, SourceError> {
+        loop {
             let kind = self.scan_next()?;
             if !matches!(kind, PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine) {
-                break kind;
+                return Ok(kind);
             }
-        };
-        Ok(self.token(kind))
+        }
     }
 
     fn scan_next(&mut self) -> Result<PpTokenKind, SourceError> {
@@ -169,7 +169,7 @@ impl<'a> PpLexer<'a> {
         Ok(kind)
     }
 
-    fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
+    pub(super) fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
         let spelling = if matches!(
             kind,
             PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine | PpTokenKind::EndOfFile

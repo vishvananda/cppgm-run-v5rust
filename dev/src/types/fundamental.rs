@@ -1,7 +1,11 @@
-//! Distinct numeric types and the frozen x86-64 literal representation.
+//! Distinct numeric and text types and the frozen x86-64 literal representation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FundamentalType {
+    Char,
+    Char16T,
+    Char32T,
+    WcharT,
     Int,
     UnsignedInt,
     LongInt,
@@ -17,6 +21,10 @@ impl FundamentalType {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
+            Self::Char => "char",
+            Self::Char16T => "char16_t",
+            Self::Char32T => "char32_t",
+            Self::WcharT => "wchar_t",
             Self::Int => "int",
             Self::UnsignedInt => "unsigned int",
             Self::LongInt => "long int",
@@ -32,7 +40,9 @@ impl FundamentalType {
     #[must_use]
     pub fn size(self) -> usize {
         match self {
-            Self::Int | Self::UnsignedInt | Self::Float => 4,
+            Self::Char => 1,
+            Self::Char16T => 2,
+            Self::Char32T | Self::WcharT | Self::Int | Self::UnsignedInt | Self::Float => 4,
             Self::LongInt
             | Self::UnsignedLongInt
             | Self::LongLongInt

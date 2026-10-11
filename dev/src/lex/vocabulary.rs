@@ -251,6 +251,12 @@ enum SimpleIdentity {
 }
 
 impl SimpleToken {
+    pub(super) fn identifier(text: &[u8]) -> Option<Self> {
+        Keyword::find(text)
+            .map(Self::keyword)
+            .or_else(|| super::pp_lexer::identifier_operator(text).and_then(Self::punctuator))
+    }
+
     pub(super) fn keyword(word: Keyword) -> Self {
         Self(SimpleIdentity::Keyword(word))
     }

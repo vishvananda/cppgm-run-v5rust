@@ -2,6 +2,9 @@
 pub mod floating;
 pub mod number;
 pub mod pp_lexer;
+mod strings;
+pub use strings::TextError;
+pub mod text;
 pub mod vocabulary;
 
 use crate::support::source::{SourceBuffer, SourceError, SourceOffset};
@@ -16,6 +19,8 @@ use vocabulary::{Keyword, SimpleToken};
 pub enum LiteralForm {
     Integer,
     Floating,
+    Character,
+    String,
 }
 
 impl LiteralForm {
@@ -24,6 +29,8 @@ impl LiteralForm {
         match self {
             Self::Integer => "integer",
             Self::Floating => "floating",
+            Self::Character => "character",
+            Self::String => "string",
         }
     }
 }
@@ -42,30 +49,50 @@ pub enum PostTokenKind {
         form: LiteralForm,
         suffix_begin: usize,
     },
+    Character {
+        ty: FundamentalType,
+        data: ScalarBytes,
+        multicharacter: bool,
+        suffix_begin: Option<usize>,
+    },
+    String {
+        ty: FundamentalType,
+        elements: u32,
+        suffix: Option<(usize, usize)>,
+    },
     EndOfFile,
 }
 
-/// Spelling borrows the lexer image or its reusable translation buffer.
+/// Spelling borrows the lexer image, translation buffer or current string sequence.
 pub struct PostToken<'a> {
     pub kind: PostTokenKind,
     pub begin: SourceOffset,
     pub end: SourceOffset,
     pub source: &'a [u8],
+    /// Sequence-owned little-endian array units, including the terminator.
+    pub data: &'a [u8],
+    /// Text suffix borrows its owner independently of the exposed source length.
+    pub suffix: &'a [u8],
 }
 
 #[derive(Debug)]
 pub enum PostTokenError {
     Source(SourceError),
     Numeric(FloatError),
-    NotImplemented(&'static str),
+    Text(TextError),
 }
 
 /// Bare-lexer input preserves null identifier identity, as the C++ tool does.
-/// Interned preprocessor input and text sequences belong to later groups.
+/// One lexer lookahead and one maximal string sequence bound token retention.
 pub struct PostTokenizer<'a> {
     input: PpLexer<'a>,
     dialect: NumberDialect,
     floating: FloatingScanner,
+    strings: strings::StringSequence,
+    lookahead: Option<PpTokenKind>,
+    split_suffix: Vec<u8>,
+    split_span: Option<(SourceOffset, SourceOffset)>,
+    after_operator: bool,
 }
 
 impl<'a> PostTokenizer<'a> {
@@ -78,23 +105,51 @@ impl<'a> PostTokenizer<'a> {
             input: PpLexer::new(source)?,
             dialect,
             floating: FloatingScanner::default(),
+            strings: strings::StringSequence::default(),
+            lookahead: None,
+            split_suffix: Vec::new(),
+            split_span: None,
+            after_operator: false,
         })
     }
 
     /// Convert exactly one token on demand, retaining typed literal facts.
     ///
     /// # Errors
-    /// Returns lexical/numeric limits or the explicit unported text boundary.
+    /// Returns lexical errors or numeric/text storage limits.
     pub fn next_token(&mut self) -> Result<PostToken<'_>, PostTokenError> {
-        let pp = self
-            .input
-            .next_non_whitespace()
-            .map_err(PostTokenError::Source)?;
+        if let Some((begin, end)) = self.split_span.take() {
+            self.strings.clear();
+            let kind = identifier_kind(&self.split_suffix);
+            self.after_operator = is_operator(kind);
+            return Ok(PostToken {
+                kind,
+                begin,
+                end,
+                source: &self.split_suffix,
+                data: &[],
+                suffix: &[],
+            });
+        }
+        // Release the preceding sequence contents after its last consumer.
+        self.strings.clear();
+        self.split_suffix.clear();
+        let pp_kind = if let Some(kind) = self.lookahead.take() {
+            kind
+        } else {
+            self.input
+                .next_non_whitespace_kind()
+                .map_err(PostTokenError::Source)?
+        };
+        if matches!(
+            pp_kind,
+            PpTokenKind::StringLiteral | PpTokenKind::UserDefinedStringLiteral
+        ) {
+            return self.next_string(pp_kind);
+        }
+        let pp = self.input.token(pp_kind);
         let kind = match pp.kind {
-            PpTokenKind::Identifier => Keyword::find(pp.spelling)
-                .map_or(PostTokenKind::Identifier, |word| {
-                    PostTokenKind::Simple(SimpleToken::keyword(word))
-                }),
+            PpTokenKind::Identifier => identifier_kind(pp.spelling),
             PpTokenKind::PreprocessingOpOrPunc => pp
                 .punctuator
                 .and_then(SimpleToken::punctuator)
@@ -127,13 +182,19 @@ impl<'a> PostTokenizer<'a> {
                     suffix_begin,
                 },
             },
-            PpTokenKind::CharacterLiteral
-            | PpTokenKind::UserDefinedCharacterLiteral
-            | PpTokenKind::StringLiteral
-            | PpTokenKind::UserDefinedStringLiteral => {
-                return Err(PostTokenError::NotImplemented(
-                    "text literal decoding and concatenation",
-                ));
+            PpTokenKind::CharacterLiteral | PpTokenKind::UserDefinedCharacterLiteral => {
+                text::evaluate_character(pp.spelling).map_or(PostTokenKind::Invalid, |value| {
+                    PostTokenKind::Character {
+                        ty: value.ty,
+                        data: ScalarBytes::integer(value.ty, u64::from(value.code_point)),
+                        multicharacter: value.multicharacter,
+                        suffix_begin: (value.suffix_begin != pp.spelling.len())
+                            .then_some(value.suffix_begin),
+                    }
+                })
+            }
+            PpTokenKind::StringLiteral | PpTokenKind::UserDefinedStringLiteral => {
+                PostTokenKind::Invalid
             }
             PpTokenKind::EndOfFile => PostTokenKind::EndOfFile,
             PpTokenKind::HeaderName
@@ -141,13 +202,89 @@ impl<'a> PostTokenizer<'a> {
             | PpTokenKind::WhitespaceSequence
             | PpTokenKind::NewLine => PostTokenKind::Invalid,
         };
+        self.after_operator = is_operator(kind);
         Ok(PostToken {
             kind,
             begin: pp.begin,
             end: pp.end,
             source: pp.spelling,
+            data: &[],
+            suffix: &[],
         })
     }
+
+    fn next_string(&mut self, first_kind: PpTokenKind) -> Result<PostToken<'_>, PostTokenError> {
+        let first = self.input.token(first_kind);
+        let begin = first.begin;
+        let mut end = first.end;
+        let split = self.after_operator
+            && first_kind == PpTokenKind::UserDefinedStringLiteral
+            && first.spelling.len() >= 3
+            && first.spelling.starts_with(b"\"\"");
+        if split {
+            self.strings
+                .add(&first.spelling[..2])
+                .map_err(PostTokenError::Text)?;
+            self.split_suffix.extend_from_slice(&first.spelling[2..]);
+            end = SourceOffset(begin.0.wrapping_add(2));
+            self.split_span = Some((end, first.end));
+        } else {
+            self.strings
+                .add(first.spelling)
+                .map_err(PostTokenError::Text)?;
+            loop {
+                let kind = self
+                    .input
+                    .next_non_whitespace_kind()
+                    .map_err(PostTokenError::Source)?;
+                if !matches!(
+                    kind,
+                    PpTokenKind::StringLiteral | PpTokenKind::UserDefinedStringLiteral
+                ) {
+                    self.lookahead = Some(kind);
+                    break;
+                }
+                let pp = self.input.token(kind);
+                self.strings
+                    .add(pp.spelling)
+                    .map_err(PostTokenError::Text)?;
+                end = pp.end;
+            }
+        }
+        let kind = self
+            .strings
+            .concatenate()
+            .map_err(PostTokenError::Text)?
+            .map_or(PostTokenKind::Invalid, |value| PostTokenKind::String {
+                ty: value.ty,
+                elements: value.elements,
+                suffix: value.suffix.map(|range| (range.start, range.end)),
+            });
+        let suffix = match kind {
+            PostTokenKind::String {
+                suffix: Some((begin, end)),
+                ..
+            } => self.strings.suffix(begin..end),
+            _ => &[],
+        };
+        self.after_operator = false;
+        Ok(PostToken {
+            kind,
+            begin,
+            end,
+            source: self.strings.source(),
+            data: self.strings.data(),
+            suffix,
+        })
+    }
+}
+
+fn identifier_kind(text: &[u8]) -> PostTokenKind {
+    SimpleToken::identifier(text).map_or(PostTokenKind::Identifier, PostTokenKind::Simple)
+}
+
+fn is_operator(kind: PostTokenKind) -> bool {
+    kind == PostTokenKind::Simple(SimpleToken::keyword(Keyword::Operator))
 }
 
 #[cfg(test)]
@@ -181,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn lexical_failure_precedes_an_unported_literal_conversion() {
+    fn lexical_failure_precedes_literal_conversion() {
         let source = SourceBuffer::new(b"1.0 \"\\q\"".to_vec()).unwrap();
         let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
         assert!(matches!(
@@ -195,5 +332,109 @@ mod tests {
             panic!("expected lexical failure");
         };
         assert_eq!(source.format_error(&error), "1:6: invalid escape sequence");
+    }
+
+    #[test]
+    fn string_lookahead_keeps_translated_spelling_and_physical_spans() {
+        let source =
+            SourceBuffer::new(b"u\"\\xD800\" \"\\U00010000\"_x _\\u03c0 7".to_vec()).unwrap();
+        let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+        let token = tokens.next_token().unwrap();
+        assert!(matches!(
+            token.kind,
+            PostTokenKind::String {
+                ty: FundamentalType::Char16T,
+                elements: 4,
+                suffix: Some(_),
+            }
+        ));
+        assert_eq!(token.source, "u\"\\xD800\" \"𐀀\"_x".as_bytes());
+        assert_eq!(token.data, [0, 0xd8, 0, 0xd8, 0, 0xdc, 0, 0]);
+        assert_eq!(
+            (token.begin, token.end),
+            (SourceOffset(0), SourceOffset(24))
+        );
+        let token = tokens.next_token().unwrap();
+        assert_eq!(token.source, "_π".as_bytes());
+        assert_eq!(token.kind, PostTokenKind::Identifier);
+        assert_eq!(
+            (token.begin, token.end),
+            (SourceOffset(25), SourceOffset(32))
+        );
+        assert!(matches!(
+            tokens.next_token().unwrap().kind,
+            PostTokenKind::Literal { .. }
+        ));
+    }
+
+    #[test]
+    fn literal_operator_split_preserves_earliest_suffix_span_and_keyword_identity() {
+        let source = SourceBuffer::new(b"operator \"\"\\\noperator \"next\"".to_vec()).unwrap();
+        let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+        assert!(is_operator(tokens.next_token().unwrap().kind));
+        let token = tokens.next_token().unwrap();
+        assert_eq!(token.source, b"\"\"");
+        assert_eq!(token.data, [0]);
+        assert_eq!(
+            (token.begin, token.end),
+            (SourceOffset(9), SourceOffset(11))
+        );
+        let token = tokens.next_token().unwrap();
+        assert!(is_operator(token.kind));
+        assert_eq!(token.source, b"operator");
+        assert_eq!(
+            (token.begin, token.end),
+            (SourceOffset(11), SourceOffset(21))
+        );
+        assert_eq!(tokens.next_token().unwrap().data, b"next\0");
+        assert_eq!(tokens.next_token().unwrap().kind, PostTokenKind::EndOfFile);
+    }
+
+    #[test]
+    fn string_run_errors_precede_conversion_but_split_operators_do_not_pull_ahead() {
+        for input in [b"1 \"ok\" /*".as_slice(), b"1 \"ok\" \"\\q\""] {
+            let source = SourceBuffer::new(input.to_vec()).unwrap();
+            let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+            assert!(matches!(
+                tokens.next_token().unwrap().kind,
+                PostTokenKind::Literal { .. }
+            ));
+            assert!(matches!(
+                tokens.next_token(),
+                Err(PostTokenError::Source(_))
+            ));
+        }
+        let source = SourceBuffer::new(b"operator \"\"suffix /*".to_vec()).unwrap();
+        let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+        assert!(is_operator(tokens.next_token().unwrap().kind));
+        assert!(matches!(
+            tokens.next_token().unwrap().kind,
+            PostTokenKind::String { .. }
+        ));
+        assert_eq!(tokens.next_token().unwrap().source, b"suffix");
+        assert!(matches!(
+            tokens.next_token(),
+            Err(PostTokenError::Source(_))
+        ));
+    }
+
+    #[test]
+    fn split_literal_operator_suffix_uses_all_simple_identifier_spellings() {
+        for word in [
+            "and", "or", "not", "bitand", "bitor", "xor", "compl", "and_eq", "or_eq", "xor_eq",
+            "not_eq", "new", "delete",
+        ] {
+            let source = SourceBuffer::new(format!("operator \"\"{word}").into_bytes()).unwrap();
+            let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+            assert!(is_operator(tokens.next_token().unwrap().kind));
+            assert!(matches!(
+                tokens.next_token().unwrap().kind,
+                PostTokenKind::String { .. }
+            ));
+            assert!(matches!(
+                tokens.next_token().unwrap().kind,
+                PostTokenKind::Simple(_)
+            ));
+        }
     }
 }

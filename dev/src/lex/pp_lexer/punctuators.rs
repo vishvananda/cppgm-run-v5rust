@@ -143,7 +143,7 @@ fn candidates(first: u32) -> &'static [(&'static [u8], Punctuator)] {
     }
 }
 
-pub(super) fn identifier_operator(text: &[u8]) -> Option<Punctuator> {
+pub(in crate::lex) fn identifier_operator(text: &[u8]) -> Option<Punctuator> {
     Some(match text {
         b"new" => Punctuator::New,
         b"delete" => Punctuator::Delete,

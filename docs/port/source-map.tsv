@@ -9,8 +9,8 @@ dev/lowir2native-scaffold.cpp		pending
 dev/lowir2native.cpp		pending
 dev/lowiropt-scaffold.cpp		pending
 dev/lowiropt.cpp		pending
-dev/posttoken-scaffold.cpp	dev/src/lex/vocabulary.rs,dev/src/driver/posttoken.rs	partial: numeric/simple vocabulary and writer; text forms deferred
-dev/posttoken.cpp	dev/bin/posttoken.rs,dev/bin/source_tool/mod.rs	partial: CLI and numeric/simple stream; text-literal conversion deferred
+dev/posttoken-scaffold.cpp	dev/src/lex/vocabulary.rs,dev/src/driver/posttoken.rs	complete: PA2 vocabulary and all text/numeric output forms
+dev/posttoken.cpp	dev/bin/posttoken.rs,dev/bin/source_tool/mod.rs	complete: bare-lexer PA2 CLI, source/error ordering and stream behavior
 dev/ppexpr-scaffold.cpp		pending
 dev/ppexpr.cpp		pending
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
@@ -41,18 +41,18 @@ dev/src/lex/interchange_float.cpp	dev/src/lex/floating.rs	partial: decimal limb 
 dev/src/lex/interchange_float.h	dev/src/lex/floating.rs	partial: limb rounding reused for binary32/binary64/x87; interchange formats and round-value API deferred
 dev/src/lex/number_literal.cpp	dev/src/lex/number.rs,dev/src/lex/floating.rs	partial: all Cxx11 grammar/type/range/scanning behavior; GNU forms deferred
 dev/src/lex/number_literal.h	dev/src/lex/number.rs,dev/src/lex/floating.rs	partial: Cxx11 typed classification and standard floating scanning; extended dialects and ud-value demand deferred
-dev/src/lex/post_token.h	dev/src/lex/mod.rs	partial: borrowed spelling/spans and typed simple/numeric payloads; text and interned IDs deferred
-dev/src/lex/post_token_writer.cpp	dev/src/driver/posttoken.rs	partial: all simple/numeric dump forms; text forms deferred
-dev/src/lex/post_token_writer.h	dev/src/driver/posttoken.rs	partial: all simple/numeric dump forms; text forms deferred
-dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs	partial: demand-driven bare-lexer simple/numeric conversion; text sequence lookahead and literal-operator split deferred
-dev/src/lex/post_tokenizer.h	dev/src/lex/mod.rs	partial: demand-driven bare-lexer simple/numeric conversion; text sequence lookahead and interned input deferred
-dev/src/lex/string_concatenation.cpp		pending
-dev/src/lex/string_concatenation.h		pending
-dev/src/lex/text_literal.cpp		pending
-dev/src/lex/text_literal.h		pending
-dev/src/lex/token_kind.cpp	dev/src/lex/vocabulary.rs	partial: complete simple lookup/term names; spelling and assignment-query APIs deferred
+dev/src/lex/post_token.h	dev/src/lex/mod.rs	partial: borrowed spans/spellings, scalar and sequence facts, multicharacter flag and suffix boundaries; interned identifiers deferred
+dev/src/lex/post_token_writer.cpp	dev/src/driver/posttoken.rs	complete: all PA2 forms, multicharacter invalid view and exact code-unit dumps
+dev/src/lex/post_token_writer.h	dev/src/driver/posttoken.rs	complete: typed scalar/array text view
+dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs	partial: complete Cxx11 bare-lexer conversion, one-token lookahead and literal-operator split; preprocessor/interned input and GNU dialect deferred
+dev/src/lex/post_tokenizer.h	dev/src/lex/mod.rs	partial: borrowed typed post-token pull API, reusable buffers and bounded lookahead; preprocessor/interned input deferred
+dev/src/lex/string_concatenation.cpp	dev/src/lex/strings.rs	partial: strict Cxx11 maximal sequences, prefix/suffix unification, scalar/numeric code-unit encoding and buffer reuse; GNU reserved suffix option deferred
+dev/src/lex/string_concatenation.h	dev/src/lex/strings.rs	partial: private sequence store with compact piece spans and parse-once boundaries; GNU reserved suffix option deferred
+dev/src/lex/text_literal.cpp	dev/src/lex/text.rs	partial: single-piece splitting, typed escape decoding, scalar character evaluation and target multicharacter packing; joined-spelling piece-end helper deferred to its consumer
+dev/src/lex/text_literal.h	dev/src/lex/text.rs	partial: encoding prefixes, compact body/suffix boundaries and typed character facts; joined-spelling traversal helper deferred
+dev/src/lex/token_kind.cpp	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: simple identifier lookup including split alternative operators and all term names; spelling/assignment-query APIs deferred
 dev/src/lex/token_kind.h	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: all PA2 simple identities; primary/alternative spelling and assignment-query APIs deferred
-dev/src/lex/token_spelling.h	dev/src/lex/mod.rs,dev/src/lex/pp_lexer/mod.rs	partial: borrowed source/scratch slices; concatenated spelling store deferred
+dev/src/lex/token_spelling.h	dev/src/lex/mod.rs,dev/src/lex/pp_lexer/mod.rs,dev/src/lex/strings.rs	partial: borrowed source/scratch/current-sequence slices; retained preprocessor spellings deferred
 dev/src/lex/ud_suffix.cpp	dev/src/lex/number.rs	partial: strict underscore and Annex E UTF-8 suffixes; GNU reserved suffix option deferred
 dev/src/lex/ud_suffix.h	dev/src/lex/number.rs	partial: strict underscore and Annex E UTF-8 suffixes; GNU reserved suffix option deferred
 dev/src/lower/aggregate_lowering.cpp		pending
@@ -403,5 +403,5 @@ dev/src/syntax/parser_statements.cpp		pending
 dev/src/syntax/scratch_list.h		pending
 dev/src/syntax/syntax_unit.cpp		pending
 dev/src/syntax/syntax_unit.h		pending
-dev/src/types/fundamental_type.cpp	dev/src/types/fundamental.rs	partial: numeric type names/sizes and literal integer bounds; other type properties deferred
-dev/src/types/fundamental_type.h	dev/src/types/fundamental.rs	partial: nine PA2 numeric identities; text/semantic/extended types deferred
+dev/src/types/fundamental_type.cpp	dev/src/types/fundamental.rs	partial: all PA2 numeric/text type names/sizes and literal integer bounds; remaining type properties deferred
+dev/src/types/fundamental_type.h	dev/src/types/fundamental.rs	partial: thirteen distinct PA2 numeric/text identities; semantic/extended types deferred
