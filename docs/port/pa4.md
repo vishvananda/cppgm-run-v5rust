@@ -8,12 +8,15 @@ Implementation checkpoints:
 - `52ff1e8344d359aaa501d740291fb105f6300df6`: macro group (2026-10-11).
 - `5c06195f4c6f7960bcc768092a844871f1eaa2df`: conditional inclusion and controlling-expression rescanning (2026-10-11); entry HEAD `fd2481a` (documentation handoff after the macro implementation).
 - `16f0a9779f89f5b82544b1f1085b53593df1f749`: presumed locations, file/line builtin replacement and macro-expanded line control (2026-10-11); entry HEAD `af7984f93d7ba4aedca00014cd7590441667d207`.
+- `1fc98f61a249287476c98af449b1ca371e321285`: pragma directives/operators, packing and once registration (2026-10-11); entry HEAD `fbc24e1f77a920deb5b6889c2a62cc11a0216438`; independent review pending.
 
 The three accepted implementation checkpoints are independently audited below,
 through the audit fixes in `4359650`, `637b946` and `a56a656`. Ralph retains stage advancement. The
 location-control checkpoint reduced fixed failures from 14 to 8; this audit
 preserves all 98 accepted passing identities and the same eight failing IDs.
 Full PA4 remains incomplete; this certifies only the completed groups.
+The subsequent unaudited pragma implementation reaches 100/106 and is documented
+at the end of this ledger; it leaves the last-audited marker unchanged.
 
 ## Contract and ownership
 
@@ -582,6 +585,7 @@ of complete PA4 behavior or stage advancement is made.
 
 ## Pragma implementation checkpoint (2026-10-11)
 
+Validated implementation: `1fc98f61a249287476c98af449b1ca371e321285`.
 Entry HEAD: `fbc24e1f77a920deb5b6889c2a62cc11a0216438`.
 The stage base and last-audited commit at the top remain unchanged. This is an
 implementation handoff for independent review, not a new audit or stage
