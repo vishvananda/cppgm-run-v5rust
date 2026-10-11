@@ -1,0 +1,5 @@
+preproc 2
+sof tests/directives/173-source-path-bytes-bad.t
+identifier before
+eof
+sof tests/directives/173-source-path-bytes-bad.t2-ÿ

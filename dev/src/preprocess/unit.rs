@@ -110,7 +110,7 @@ impl<'a> Preprocessor<'a> {
                     &mut self.expander,
                 )?;
             }
-            b"include" | b"include_next" => {
+            b"include" => {
                 return Err(PreprocessError::NotImplemented("file inclusion"));
             }
             b"line" => super::line_control::run_line(

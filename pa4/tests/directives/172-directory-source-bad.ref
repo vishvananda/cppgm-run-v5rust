@@ -1,0 +1,5 @@
+preproc 2
+sof tests/directives/172-directory-source-bad.t
+identifier before
+eof
+sof tests/directives/172-directory-source-bad.t2

@@ -5,8 +5,10 @@ use cppgm_rust::{
     support::source::SourceBuffer,
 };
 use std::{
+    ffi::OsString,
     fs::File,
     io::{self, BufRead, Read, Write},
+    os::unix::ffi::OsStrExt,
     process::ExitCode,
 };
 
@@ -39,7 +41,16 @@ enum CliError {
     Internal(&'static str),
 }
 fn run() -> Result<(), CliError> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    run_with_args(&args)
+}
+fn path_diagnostic(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
+    let mut diagnostic = path.as_bytes().to_vec();
+    diagnostic.extend_from_slice(b": ");
+    diagnostic.extend_from_slice(message);
+    CliError::Diagnostic(diagnostic)
+}
+fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
         let mut output = io::stdout().lock();
         for line in io::stdin().lock().lines() {
@@ -63,10 +74,19 @@ fn run() -> Result<(), CliError> {
     writeln!(output, "preproc {}", args.len() - 2)
         .map_err(|error| CliError::Message(error.to_string()))?;
     for path in &args[2..] {
-        writeln!(output, "sof {path}").map_err(|error| CliError::Message(error.to_string()))?;
+        output
+            .write_all(b"sof ")
+            .and_then(|()| output.write_all(path.as_bytes()))
+            .and_then(|()| output.write_all(b"\n"))
+            .map_err(|error| CliError::Message(error.to_string()))?;
         let mut bytes = Vec::new();
-        let mut file = File::open(path)
-            .map_err(|_| CliError::Message(format!("{path}: cannot open the source file")))?;
+        // Match SourceFiles' stat-before-open boundary, including nonregular
+        // inputs that could block if opened (such as a FIFO).
+        if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+            return Err(path_diagnostic(path, b"cannot open the source file"));
+        }
+        let mut file =
+            File::open(path).map_err(|_| path_diagnostic(path, b"cannot open the source file"))?;
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
@@ -77,16 +97,19 @@ fn run() -> Result<(), CliError> {
             PreprocToolError::Initialization(error) => match error {
                 PreprocessError::NotImplemented(group) => CliError::Missing(group),
                 PreprocessError::Invariant(message) => CliError::Internal(message),
-                _ => CliError::Message(format!("{path}:{}", describe(&source, &error))),
+                _ => {
+                    let mut diagnostic = path.as_bytes().to_vec();
+                    diagnostic.push(b':');
+                    diagnostic.extend_from_slice(describe(&source, &error).as_bytes());
+                    CliError::Diagnostic(diagnostic)
+                }
             },
             PreprocToolError::Preprocess { error, diagnostic } => match error {
                 PreprocessError::NotImplemented(group) => CliError::Missing(group),
                 PreprocessError::Invariant(message) => CliError::Internal(message),
                 _ => CliError::Diagnostic(diagnostic),
             },
-            PreprocToolError::InvalidToken => {
-                CliError::Message(format!("{path}: invalid phase-7 token"))
-            }
+            PreprocToolError::InvalidToken => path_diagnostic(path, b"invalid phase-7 token"),
             PreprocToolError::Output(error) => CliError::Message(error.to_string()),
         })?;
     }
@@ -116,5 +139,45 @@ fn main() -> ExitCode {
             let _status = stderr.write_all(b"\n");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::ffi::OsStringExt;
+
+    #[test]
+    fn file_boundary_preserves_path_bytes_and_rejects_directories() {
+        let root = std::env::temp_dir().join(format!("pa4-cli-audit-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let input = root.join(OsString::from_vec(b"source-\xff.cpp".to_vec()));
+        let output = root.join("tokens");
+        let mut args = vec![
+            OsString::from("-o"),
+            output.into_os_string(),
+            input.clone().into_os_string(),
+        ];
+        std::fs::write(&input, b"17\n").unwrap();
+        assert!(run_with_args(&args).is_ok());
+        let mut expected = b"preproc 1\nsof ".to_vec();
+        expected.extend_from_slice(input.as_os_str().as_bytes());
+        expected.extend_from_slice(b"\nliteral 17 int 11000000\neof\n");
+        assert_eq!(std::fs::read(&args[1]).unwrap(), expected);
+        std::fs::write(&input, b"#error\n").unwrap();
+        let Err(CliError::Diagnostic(diagnostic)) = run_with_args(&args) else {
+            panic!("expected a located preprocessing rejection");
+        };
+        let mut expected = input.as_os_str().as_bytes().to_vec();
+        expected.extend_from_slice(b":1:2: #error");
+        assert_eq!(diagnostic, expected);
+        args[2] = root.clone().into_os_string();
+        let Err(CliError::Diagnostic(diagnostic)) = run_with_args(&args) else {
+            panic!("expected a source-open rejection for a directory");
+        };
+        let mut expected = root.as_os_str().as_bytes().to_vec();
+        expected.extend_from_slice(b": cannot open the source file");
+        assert_eq!(diagnostic, expected);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
