@@ -15,12 +15,11 @@ Implementation checkpoints:
 
 The historical checkpoint sections below preserve their validation boundaries.
 The current fixed gate passes 106/106, the full course suite passes 112/112,
-and earlier PA1–PA3 stages and full course suites pass. Full acceptance is
-still open: the protected adapter rejects an empty-source `--stats` invocation
-solely for allocator storage, which the conversion plan treats as an
-implementation-specific measurement. The full-stage audit section records the
-exact reproduction, all reviewed owners, resource costs and required external
-baseline disposition. Ralph retains the existing goal and stage advancement.
+and earlier PA1–PA3 stages and full course suites pass. The maintainer has now
+corrected the allocator-only statistics mismatch described below; the original
+empty-source probe passes the protected adapter. See the final maintainer
+disposition section for the revision and evidence. Full acceptance awaits the
+restarted PA4 audit; Ralph owns its phase goal and stage advancement.
 
 ## Contract and ownership
 
@@ -1100,3 +1099,36 @@ disposition, because changing the frozen checker or fabricating allocator
 measurements would violate the contract. The existing phase goal will be
 marked blocked at this handoff; no goal is created/replaced and no Ralph state
 file is edited. The reviewed implementation remains `209cc51`.
+
+## Maintainer disposition: telemetry harness correction (2026-10-11)
+
+The user authorized correcting the protected harness and restarting the worker.
+`cppgm-ralph` commit `3bdb6f006cd0335beacae7a37996589cc843bbeb` implements the
+existing contract's measurement exception for standalone `preproc stats`,
+`lowir stats:` and `abimangle stats:` lines. Numeric bare `arena_bytes` and
+`name_arena_bytes` are now treated as storage observations alongside the
+existing driver arena fields. Work counters, field names, ordinary diagnostics,
+exit status, stdout and compiler-generated artifacts still compare exactly.
+Receipts preserve both tools' raw statistics, including their differing storage.
+
+The corrected adapter, regression tests and clarified contract were installed
+in the protected control bundle and checkout. Only the protected hashes for
+`scripts/clone/clone_adapter.py`, `scripts/clone/test_clone_harness.py` and
+`CLONE_CONTRACT.md` were refreshed. Oracle sources/tools, fixed case identities,
+fixtures, workspace lint policy and all other protected hashes are unchanged.
+Compiler implementation files were not changed by this repair.
+
+Evidence is under
+`/home/vishvananda/work/private/v5rust/artifacts/harness-telemetry-fix/`:
+`installation.json` records old/new hashes and source revision; `before/`
+retains the previous files and manifest; `probe/summary.json` and `trace.jsonl`
+record the original empty-source reproducer passing with identical token-file
+hashes and zero differences. Raw C++ `arena_bytes=16384` and Rust
+`arena_bytes=0` remain recorded. All 20 harness tests pass, including new
+storage-normalization, strict-counter/diagnostic and raw-receipt regressions.
+The protected PA4 preflight also passes.
+
+This disposition resolves the statistics-policy dependency in the historical
+blocked audit above. Resume the PA4 acceptance audit against the corrected
+harness and current implementation; rerun required gates and record its result.
+This maintenance handoff does not certify PA4 or manually advance Ralph state.
