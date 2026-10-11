@@ -34,6 +34,7 @@ impl Write for OutputStream {
 }
 enum CliError {
     Message(String),
+    Diagnostic(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
 }
@@ -69,17 +70,20 @@ fn run() -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_preprocessed(&source, &mut output).map_err(|error| match error {
+        emit_preprocessed(&source, path.as_bytes(), &mut output).map_err(|error| match error {
             PreprocToolError::Initialization(PreprocessError::Source(error)) => {
                 CliError::Message(error.to_string())
             }
-            PreprocToolError::Initialization(error) | PreprocToolError::Preprocess(error) => {
-                match error {
-                    PreprocessError::NotImplemented(group) => CliError::Missing(group),
-                    PreprocessError::Invariant(message) => CliError::Internal(message),
-                    _ => CliError::Message(format!("{path}:{}", describe(&source, &error))),
-                }
-            }
+            PreprocToolError::Initialization(error) => match error {
+                PreprocessError::NotImplemented(group) => CliError::Missing(group),
+                PreprocessError::Invariant(message) => CliError::Internal(message),
+                _ => CliError::Message(format!("{path}:{}", describe(&source, &error))),
+            },
+            PreprocToolError::Preprocess { error, diagnostic } => match error {
+                PreprocessError::NotImplemented(group) => CliError::Missing(group),
+                PreprocessError::Invariant(message) => CliError::Internal(message),
+                _ => CliError::Diagnostic(diagnostic),
+            },
             PreprocToolError::InvalidToken => {
                 CliError::Message(format!("{path}: invalid phase-7 token"))
             }
@@ -103,6 +107,13 @@ fn main() -> ExitCode {
         }
         Err(CliError::Message(message)) => {
             eprintln!("ERROR: {message}");
+            ExitCode::FAILURE
+        }
+        Err(CliError::Diagnostic(diagnostic)) => {
+            let mut stderr = io::stderr().lock();
+            let _status = stderr.write_all(b"ERROR: ");
+            let _status = stderr.write_all(&diagnostic);
+            let _status = stderr.write_all(b"\n");
             ExitCode::FAILURE
         }
     }

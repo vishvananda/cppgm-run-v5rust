@@ -29,9 +29,13 @@ pub(crate) struct SourceInput<'a> {
     mode: InputMode,
     peeked: Option<Token<'a>>,
     pub(crate) allow_va_args: bool,
+    locations: super::locations::Locations<'a>,
 }
 impl<'a> SourceInput<'a> {
-    pub(crate) fn new(source: &'a SourceBuffer) -> Result<Self, PreprocessError> {
+    pub(crate) fn with_name(
+        source: &'a SourceBuffer,
+        name: &[u8],
+    ) -> Result<Self, PreprocessError> {
         Ok(Self {
             source,
             lexer: PpLexer::with_options(
@@ -47,6 +51,7 @@ impl<'a> SourceInput<'a> {
             mode: InputMode::Text,
             peeked: None,
             allow_va_args: false,
+            locations: super::locations::Locations::new(source, name),
         })
     }
     fn stabilize(
@@ -228,5 +233,24 @@ impl<'a> SourceInput<'a> {
     pub(crate) fn end_directive(&mut self) {
         self.boundary = Boundary::Text;
         self.peeked = None;
+    }
+    pub(crate) fn presumed_line(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
+        self.locations.presumed_line(location)
+    }
+    pub(crate) fn file_literal(&mut self) -> std::rc::Rc<[u8]> {
+        self.locations.file_literal()
+    }
+    pub(crate) fn set_line(
+        &mut self,
+        number: u32,
+        name: Option<Vec<u8>>,
+    ) -> Result<(), PreprocessError> {
+        self.locations.set_line(self.location, number, name)
+    }
+    pub(crate) fn describe(
+        &self,
+        error: &crate::support::source::SourceError,
+    ) -> Result<Vec<u8>, PreprocessError> {
+        self.locations.describe(error)
     }
 }

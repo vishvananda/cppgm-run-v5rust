@@ -22,20 +22,28 @@ pub struct Preprocessor<'a> {
     expander: Expander<'a>,
     current: Token<'a>,
     conditionals: Conditionals,
+    line_tokens: Vec<Token<'a>>,
 }
 impl<'a> Preprocessor<'a> {
     /// # Errors
     /// Returns lexical construction errors before token delivery begins.
     pub fn new(source: &'a SourceBuffer) -> Result<Self, PreprocessError> {
+        Self::with_name(source, b"")
+    }
+    /// Construct a translation unit with its command-line presumed filename.
+    /// # Errors
+    /// Returns lexical construction errors before token delivery begins.
+    pub fn with_name(source: &'a SourceBuffer, name: &[u8]) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let definitions = Definitions::new(&mut names)?;
         Ok(Self {
-            source: SourceInput::new(source)?,
+            source: SourceInput::with_name(source, name)?,
             names,
             definitions,
             expander: Expander::default(),
             current: Token::end(source.begin()),
             conditionals: Conditionals::default(),
+            line_tokens: Vec::new(),
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -105,7 +113,14 @@ impl<'a> Preprocessor<'a> {
             b"include" | b"include_next" => {
                 return Err(PreprocessError::NotImplemented("file inclusion"));
             }
-            b"line" => return Err(PreprocessError::NotImplemented("line control")),
+            b"line" => super::line_control::run_line(
+                &directive,
+                &mut self.source,
+                &mut self.names,
+                &self.definitions,
+                &mut self.expander,
+                &mut self.line_tokens,
+            )?,
             b"pragma" => return Err(PreprocessError::NotImplemented("pragma directives")),
             _ => {
                 return Err(PreprocessError::at(
@@ -116,6 +131,20 @@ impl<'a> Preprocessor<'a> {
         }
         self.source.end_directive();
         Ok(())
+    }
+    pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
+        match error {
+            PreprocessError::Source(error) => self.source.describe(error),
+            PreprocessError::Directive { location, message } => {
+                self.source
+                    .describe(&crate::support::source::SourceError::new(
+                        *location, message,
+                    ))
+            }
+            PreprocessError::Limit(message)
+            | PreprocessError::Invariant(message)
+            | PreprocessError::NotImplemented(message) => Ok(message.as_bytes().to_vec()),
+        }
     }
 }
 impl PostTokenInput for Preprocessor<'_> {
@@ -155,6 +184,22 @@ impl PostTokenInput for Preprocessor<'_> {
 mod tests {
     use super::*;
     use crate::lex::pp_lexer::Punctuator;
+
+    #[test]
+    fn line_operand_prescan_uses_current_location_and_releases_transient_tokens() {
+        let source = SourceBuffer::new(b"#define ID(x) x\n#define LINE __LINE__\n#line 80 \"virtual\"\nID(\nLINE\n)\n#line __LINE__\n__LINE__\n".to_vec()).unwrap();
+        let mut input = Preprocessor::with_name(&source, b"physical").unwrap();
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"81");
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"83");
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert!(input.line_tokens.is_empty());
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
 
     #[test]
     fn conditional_lines_leave_no_expansion_storage_and_only_active_definitions() {
@@ -290,7 +335,7 @@ chosen
     }
 
     #[test]
-    fn argument_demand_controls_unported_builtins_and_prescan_happens_once() {
+    fn argument_demand_controls_builtins_and_prescan_happens_once() {
         let source = SourceBuffer::new(
             b"#define DROP(x) 1\n#define STRING(x) #x\nDROP(__LINE__) STRING(__LINE__)".to_vec(),
         )
@@ -307,10 +352,8 @@ chosen
         )
         .unwrap();
         let mut input = Preprocessor::new(&source).unwrap();
-        assert!(matches!(
-            input.next_non_whitespace_kind(),
-            Err(PreprocessError::NotImplemented(_))
-        ));
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"\"3\"");
         let source =
             SourceBuffer::new(b"#define TWICE(x) x x\nTWICE(__COUNTER__) __COUNTER__".to_vec())
                 .unwrap();

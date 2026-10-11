@@ -33,6 +33,8 @@ pub(crate) struct Definition<'a> {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Builtin {
+    File,
+    Line,
     DeferredValue,
     HasCppAttribute,
     HasAttribute,
@@ -76,8 +78,8 @@ impl<'a> Definitions<'a> {
             definitions.define(definition, crate::support::source::SourceOffset(0))?;
         }
         for (spelling, builtin) in [
-            (b"__FILE__".as_slice(), Builtin::DeferredValue),
-            (b"__LINE__", Builtin::DeferredValue),
+            (b"__FILE__".as_slice(), Builtin::File),
+            (b"__LINE__", Builtin::Line),
             (b"__DATE__", Builtin::DeferredValue),
             (b"__TIME__", Builtin::DeferredValue),
             (b"__COUNTER__", Builtin::Counter),

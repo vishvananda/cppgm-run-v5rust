@@ -3,7 +3,7 @@ pub mod floating;
 pub mod identifiers;
 pub mod number;
 pub mod pp_lexer;
-mod strings;
+pub(crate) mod strings;
 pub use strings::TextError;
 pub mod text;
 pub mod vocabulary;
@@ -137,6 +137,9 @@ impl<'a> PostTokenizer<PpLexer<'a>> {
 }
 
 impl<I: PostTokenInput> PostTokenizer<I> {
+    pub(crate) fn input(&self) -> &I {
+        &self.input
+    }
     #[must_use]
     pub fn from_input(input: I, dialect: NumberDialect) -> Self {
         Self {

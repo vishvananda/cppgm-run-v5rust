@@ -258,9 +258,29 @@ impl<'a> Expander<'a> {
         }
         if let Some(builtin) = definition.builtin {
             match builtin {
+                Builtin::File => {
+                    token.kind = PpTokenKind::StringLiteral;
+                    token.name = None;
+                    token.spelling = Spelling::Shared(source.file_literal());
+                    token.hide_set = HideSetId::default();
+                    return Ok(false);
+                }
+                Builtin::Line => {
+                    Self::set_number(
+                        token,
+                        Spelling::Shared(
+                            source
+                                .presumed_line(token.begin)?
+                                .to_string()
+                                .into_bytes()
+                                .into(),
+                        ),
+                    );
+                    return Ok(false);
+                }
                 Builtin::DeferredValue => {
                     return Err(PreprocessError::NotImplemented(
-                        "location and build-time predefined macros",
+                        "build-time predefined macros",
                     ));
                 }
                 Builtin::HasCppAttribute | Builtin::HasAttribute => {

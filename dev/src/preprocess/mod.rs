@@ -7,5 +7,7 @@ mod conditionals;
 pub mod error;
 pub mod expression;
 mod input;
+mod line_control;
+mod locations;
 mod macros;
 pub mod unit;
