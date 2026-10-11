@@ -13,8 +13,8 @@ dev/posttoken-scaffold.cpp		pending
 dev/posttoken.cpp		pending
 dev/ppexpr-scaffold.cpp		pending
 dev/ppexpr.cpp		pending
-dev/pptoken-scaffold.cpp		pending
-dev/pptoken.cpp		pending
+dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs	complete
+dev/pptoken.cpp	dev/bin/pptoken.rs	complete
 dev/preproc-scaffold.cpp		pending
 dev/preproc.cpp		pending
 dev/src/abi/facts/abi_fact_case.h		pending
@@ -235,13 +235,13 @@ dev/src/preprocess/expr/controlling_expression.cpp		pending
 dev/src/preprocess/expr/controlling_expression.h		pending
 dev/src/preprocess/expr/pp_arithmetic.cpp		pending
 dev/src/preprocess/expr/pp_arithmetic.h		pending
-dev/src/preprocess/lexer/char_classes.cpp		pending
-dev/src/preprocess/lexer/char_classes.h		pending
-dev/src/preprocess/lexer/pp_lexer.cpp		pending
-dev/src/preprocess/lexer/pp_lexer.h		pending
-dev/src/preprocess/lexer/pp_lexer_literals.cpp		pending
-dev/src/preprocess/lexer/pp_lexer_punctuators.cpp		pending
-dev/src/preprocess/lexer/pp_token.h		pending
+dev/src/preprocess/lexer/char_classes.cpp	dev/src/preprocess/lexer/classes.rs	complete
+dev/src/preprocess/lexer/char_classes.h	dev/src/preprocess/lexer/classes.rs,dev/src/preprocess/lexer/literals.rs	complete
+dev/src/preprocess/lexer/pp_lexer.cpp	dev/src/preprocess/lexer/mod.rs	complete
+dev/src/preprocess/lexer/pp_lexer.h	dev/src/preprocess/lexer/mod.rs	complete
+dev/src/preprocess/lexer/pp_lexer_literals.cpp	dev/src/preprocess/lexer/literals.rs	complete
+dev/src/preprocess/lexer/pp_lexer_punctuators.cpp	dev/src/preprocess/lexer/punctuators.rs	complete
+dev/src/preprocess/lexer/pp_token.h	dev/src/preprocess/lexer/mod.rs,dev/src/preprocess/lexer/punctuators.rs	partial: PA1 vocabulary and spans; macro flags/IDs deferred to PA4
 dev/src/preprocess/macro/feature_probes.cpp		pending
 dev/src/preprocess/macro/feature_probes.h		pending
 dev/src/preprocess/macro/hide_sets.cpp		pending
@@ -256,19 +256,19 @@ dev/src/preprocess/preprocessor.h		pending
 dev/src/preprocess/preprocessor_directives.cpp		pending
 dev/src/preprocess/preprocessor_names.cpp		pending
 dev/src/preprocess/preprocessor_names.h		pending
-dev/src/preprocess/source/source_buffer.cpp		pending
-dev/src/preprocess/source/source_buffer.h		pending
+dev/src/preprocess/source/source_buffer.cpp	dev/src/preprocess/source/mod.rs	complete
+dev/src/preprocess/source/source_buffer.h	dev/src/preprocess/source/mod.rs	complete
 dev/src/preprocess/source/source_files.cpp		pending
 dev/src/preprocess/source/source_files.h		pending
 dev/src/preprocess/source/source_stack.cpp		pending
 dev/src/preprocess/source/source_stack.h		pending
-dev/src/preprocess/source/translation_reader.cpp		pending
-dev/src/preprocess/source/translation_reader.h		pending
-dev/src/preprocess/tokens/DebugPPTokenStream.h		pending
-dev/src/preprocess/tokens/IPPTokenStream.h		pending
-dev/src/preprocess/tokens/pp_token_cursor.h		pending
-dev/src/preprocess/tokens/pp_token_emitter.cpp		pending
-dev/src/preprocess/tokens/pp_token_emitter.h		pending
+dev/src/preprocess/source/translation_reader.cpp	dev/src/preprocess/source/translation.rs	complete
+dev/src/preprocess/source/translation_reader.h	dev/src/preprocess/source/translation.rs	complete
+dev/src/preprocess/tokens/DebugPPTokenStream.h	dev/src/driver/pptoken.rs	complete
+dev/src/preprocess/tokens/IPPTokenStream.h	dev/src/preprocess/lexer/mod.rs,dev/src/driver/pptoken.rs	partial: PA1 typed pull/output boundary; later consumers pending
+dev/src/preprocess/tokens/pp_token_cursor.h	dev/src/preprocess/lexer/mod.rs	complete
+dev/src/preprocess/tokens/pp_token_emitter.cpp	dev/src/driver/pptoken.rs	complete
+dev/src/preprocess/tokens/pp_token_emitter.h	dev/src/driver/pptoken.rs	complete
 dev/src/sema/aggregates.h		pending
 dev/src/sema/analysis_records.h		pending
 dev/src/sema/analyzer.cpp		pending
@@ -369,8 +369,8 @@ dev/src/support/telemetry.h		pending
 dev/src/support/testing/test_runner.cpp		pending
 dev/src/support/tool_errors.h		pending
 dev/src/support/tool_help_text.h		pending
-dev/src/support/unicode/utf8.cpp		pending
-dev/src/support/unicode/utf8.h		pending
+dev/src/support/unicode/utf8.cpp	dev/src/support/unicode.rs	complete
+dev/src/support/unicode/utf8.h	dev/src/support/unicode.rs	complete
 dev/src/syntax/ast.h		pending
 dev/src/syntax/ast_clone.cpp		pending
 dev/src/syntax/ast_clone.h		pending

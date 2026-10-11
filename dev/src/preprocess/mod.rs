@@ -1,1 +1,3 @@
-//! Preprocess phase; see `CLONE_CONTRACT.md` and the C++ ownership ledger.
+//! Source translation and preprocessing, shared by tools and later compiler phases.
+pub mod lexer;
+pub mod source;
