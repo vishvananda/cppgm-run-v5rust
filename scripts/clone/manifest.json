@@ -1,5 +1,5 @@
 {
-  "revision": "72181d97e2a8b90af16229a328fc8e72bfe71f4b",
+  "revision": "905bd7e4412a2d77d88694fe6abc7f3e1c27bce1",
   "protected": {
     "benchmarks/self_compile/README.md": "a974795b1cfb85bddc28a8a1bb1218ea27793a2cadb92c1451bed1528dc102b2",
     "benchmarks/self_compile/frozen_lowir/semantic_overload.o0.lowir": "dffe750bae31a170995cb86b8975c699666a6e6d752135cfac3633a0b2df765b",
@@ -26794,7 +26794,7 @@
     "pa33/README.md": "b51cc8f3d33bb9aea4712aa535fc2649cc92e7350ad114f00b7771e8bc4f0516",
     "pa33/design-notes.md": "145b8db8be3aa369c838cbc206eddb391a35c25251ab6c2e18db8043a5741b1d",
     "pa33/lowir2native-ref": "d1a9b12f90721629de1e28f0648eddc0f521b318ac548af424e5a2d64818fb01",
-    "pa33/maintainer/Makefile": "41dc6251a788fc8989e3ed4944f3dc087f04c1b0bb0faf7a94ac84ad03b19440",
+    "pa33/maintainer/Makefile": "332e31dcf6623a5d13a7aeea1cd14e417fd39633b3c75e449fd7172b33f6ef89",
     "pa33/maintainer/design-notes.md": "59b5c551265367456181fa74126f5d8f69cfce7067fa8074e3c483c5a6e5ba09",
     "pa33/scripts/compare_results.pl": "b8faae7c67fb5ce1bf4e40a7c6e4d11eaa363771e413c79d49d9592cd4a5b5e4",
     "pa33/scripts/run_all_tests.pl": "25fb9c907878797116d936691f5c1e9b723677022a07f89a77be7c55dec96e1f",
@@ -31897,7 +31897,7 @@
     "scripts/check_lowir_inline_limit.pl": "e14afb84683d5eed205af99ee0d8d9e681bb4a06d327a5917e80854c3a2a53cb",
     "scripts/check_lowir_inlined_addressed_store.pl": "54d80446db0d54f9dcaa16441b903446cfe46356a1d8d77844b39493388e9f8a",
     "scripts/check_lowir_late_load_reuse.pl": "aec59779f65d0212886512cd82b2947487a07a482ed71368700a525035f7d484",
-    "scripts/check_lowir_native_parameter_addresses.pl": "5f7bdac086efee3c7666e0624be5377e9e7e474c446f282d0a113975923e2de1",
+    "scripts/check_lowir_native_parameter_addresses.pl": "468be4df75c0f7d809e5fbeb065b64462ac3b94ee1f7c16979851a545f6882db",
     "scripts/check_lowir_native_scalar_query.pl": "388937483ca959898b4a9f1680d1d182071b96250f8175fced65d452e75bf14d",
     "scripts/check_lowir_native_structural_controls.pl": "a1901afd370622fae396c15f093be22b46bd0d8ebca753a38225dc4e30b14a1c",
     "scripts/check_lowir_native_survivor_properties.pl": "984d7a4fcb26b646471b5923a0b94677fb822b9f96164cd404bf100daac64e39",
@@ -31972,7 +31972,7 @@
     "scripts/tests/test_lowir_program_harness.py": "d252ccbf4ccdca8e0c3552a85e77dfbec8ae72fdc0283239a454d828c20b1265",
     "scripts/tests/test_machine_object_host_eh_roundtrip.py": "57eb4db5f6a1d22b8d9e69eb9318448ec756041070f61b6cdb4d1ed79a7ea5dd",
     "scripts/tests/test_pa24_mir_modes.py": "a99261206b1741eac62794f3072fb7887c0cd71a4a8ab87f49412cb6bce4777f",
-    "scripts/tests/test_pa33_course.py": "7eb6e4f3d478b7febb2b0ed594a55fbe5783a0ac823eebf1f58ae593809797f7",
+    "scripts/tests/test_pa33_course.py": "5c12fc7f2c632a260b8758c7f62c5b5a5aed1936c26eec8842a75182c3c8feb9",
     "scripts/tests/test_pa35_harness.py": "340b489a192c8aebfa49352b6a2ed0c699862124d34aab995ace0a7843388e70",
     "scripts/tests/test_pending_audit_regressions.py": "121bd607b568b34e3d7050cf66235f37c888753b64879edfbffb3a6df1b84178",
     "scripts/tests/test_report_elf_code_shape.py": "777da4de9b1b583fe15c4c54987b815f012138af390b0b7521a0dd35e2941b08",
@@ -31989,15 +31989,15 @@
     "shared/source.gram": "5bba09774e3b4e2a6ee9eb042a07b519b2092a23ee9e142044bf3c554940e4c9",
     "Makefile": "249b7cd27d167b3f2c2f392e26ef3b1f2692afbbdf88f8eae46fc25444ee55f3",
     "AGENTS.md": "e62f9184289cdd206d2fc627a103ba560bd4a2cadd90c61724e595101e919584",
-    "CLONE_CONTRACT.md": "c6fb473b19cda513d9e1716f5da2c186cba85d1807cb5289ff4e3e0ae7049392",
+    "CLONE_CONTRACT.md": "8fcfcff2568acbb10d1ad7f686b4c1078cc69428f0aaab57caefbea9efc750cc",
     "rust-toolchain.toml": "495c69d1db93f25f53e3d0d2d40d812313366cc368de317871c2ace6c6ffafa4",
     "dev/frontend_source_sets.mk": "5bd02ff6b685d82f9cf389519b0e9f152e48b62cf3a3b9a3708c5c7be0da656b",
     "dev/clippy.toml": "1876ffe4dc1bd441c40c21b89324238a49e6cb576fc5dbdf5eb843b50f993e71",
     "scripts/clone/clone_adapter.py": "0139923aba43b9498f795f3009d58560b039c046775e1c49d86fc34c9f77a533",
     "scripts/clone/clone_common.py": "50594ebfe24deaa9d32447fd3c62f2807631a817deee0c9b5b35be3de4a25b1c",
-    "scripts/clone/test_clone_harness.py": "28eebb6c9840b30c970fc66f57c0cf60a0a23d6580423ea793f4ce5a17967c98",
+    "scripts/clone/test_clone_harness.py": "757f6a9908e93bd78527cb42ff0909b125ffd6ece25ec44f22eddaffa25c1eb0",
     "scripts/clone/rust_audit.py": "69f3aa804ee449697326aed3561e49fa312e0dcf4b426d2988c105ef6a1118df",
-    "scripts/clone/clone_check.py": "32c15895f36d226d4c6c27947d40e16b9307315c80f7c81395464f36ecdb1904",
+    "scripts/clone/clone_check.py": "eb4e6e47c7464efad3413096587d2c25d5c60fb2e61b68508b06309a87bd98ce",
     "scripts/clone/clone_bootstrap.py": "ad3a1d06415563fde0519b80e89b46e135d424b812d6984aff95fc140de2821c",
     "scripts/clone/clone_quality.py": "96d66af75b9e25eb3f846938edcbecdfdb5d4cc513a1aad2c3091bb4aa6fb8ea",
     "scripts/clone_check.py": "0e2e63c854ee195a80392f2132f0ebd4117442e5286008fb577f31292eb2fff8"
@@ -39623,13 +39623,5 @@
     "dev/src/syntax/syntax_unit.h": "e4132695a7086e70357465fbb37f78f17cb9ffec414205e4c7e0bce7ade58728",
     "dev/src/types/fundamental_type.cpp": "3ce01b7594efe31fd6f0488eda94b75401da0726a04aa9c1b48c1cf4c19bac13",
     "dev/src/types/fundamental_type.h": "5bef2981f5115ab719a20517780fc2fd7a2792572d1499decc460c8e50cf405f"
-  },
-  "known_course_failures": {
-    "pa33/tests/regression/controls/459-parameter-address-folding.t": {
-      "exit": 2,
-      "message": "native O2 lost a post-call direct field load",
-      "invocations": 4,
-      "reason": "The unchanged pinned C++ compiler fails this focused structural assertion. Every invocation and emitted byte still must match the oracle; changing code generation is forbidden."
-    }
   }
 }

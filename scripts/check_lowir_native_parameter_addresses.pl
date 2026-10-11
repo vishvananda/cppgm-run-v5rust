@@ -163,7 +163,7 @@ for my $test (@tests)
 	# them, before the call (it has no address rematerialization pass). The
 	# backend folds each base+constant field address into its consumer's
 	# memory operand, at every level, so only the parameter base crosses the
-	# call and each address is rebuilt from it at its load after the call;
+	# call and each address is rebuilt from it at its memory read after the call;
 	# O3 must not add to O2's call-preserved pressure or frame.
 	my (%level_mir, %level_preserved);
 	for my $level (qw(O2 O3)) {
@@ -184,7 +184,9 @@ for my $test (@tests)
 		die "$test: native $level recreated derived addresses before the call\n"
 			if $before_call =~ /^\s+lea\s+/m;
 		my %native_offsets;
-		while($after_call =~ /^\s+load\.i64\s+\w+,\s+
+		# The sum can fold each i64 load into the add's memory source.
+		# A store, lea or memory destination does not establish that read.
+		while($after_call =~ /^\s+(?:load\.i64|add)\s+\w+,\s+
 		                      \[\w+\+([1-9][0-9]*)\]/mgx) {
 			$native_offsets{0 + $1} = 1;
 		}

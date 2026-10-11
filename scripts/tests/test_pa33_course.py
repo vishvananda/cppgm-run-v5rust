@@ -156,5 +156,101 @@ out.chmod(0o755)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class Pa33StructuralControlTests(unittest.TestCase):
+    def check_parameter_reads(self, instructions, *, before_call='', preserved='rbx'):
+        with tempfile.TemporaryDirectory(prefix='pa33-parameter-reads.') as temporary:
+            directory = Path(temporary)
+            mir = ('machine_ir x86_64 linux\nfunction @sum_fields_after_call\n'
+                   f'  frame\n    stack_size 16\n    preserve {preserved}\n'
+                   '  block ^entry\n    mov rbx, rdi\n' + before_call +
+                   '    call @observe_head [args=(rdi), unwind=no]\n' +
+                   instructions + '    ret rax\n')
+            tool_source = '''#!/usr/bin/env python3
+import os, pathlib, sys
+args = sys.argv[1:]
+tool = pathlib.Path(sys.argv[0]).name
+with open(os.environ['PA33_CALL_LOG'], 'a') as log:
+    log.write(tool + '\\n')
+out = pathlib.Path(args[args.index('-o') + 1])
+if tool == 'optimizer':
+    out.write_text(pathlib.Path(args[-1]).read_text())
+else:
+    out.write_text('#!/bin/sh\\nexit 0\\n')
+    out.chmod(0o755)
+    if '--dump-machine-ir' in args:
+        pathlib.Path(args[args.index('--dump-machine-ir') + 1]).write_text(
+            os.environ['PA33_MIR'])
+'''
+            tools = [directory / name for name in ('optimizer', 'native', 'driver')]
+            for tool in tools:
+                tool.write_text(tool_source)
+                tool.chmod(0o755)
+            log = directory / 'calls'
+            result = subprocess.run(
+                ['perl', str(ROOT / 'scripts/check_lowir_native_parameter_addresses.pl'),
+                 *map(str, tools), str(ROOT / 'pa33/tests/regression/controls/'
+                                      '459-parameter-address-folding.t')],
+                env=dict(os.environ, PA33_CALL_LOG=str(log), PA33_MIR=mir),
+                capture_output=True, text=True, timeout=30)
+            return result, log.read_text().splitlines()
+
+    def test_parameter_reads_allow_standalone_folded_and_mixed_loads(self):
+        for opcodes in [('load.i64',) * 4, ('add',) * 4,
+                        ('load.i64', 'add', 'load.i64', 'add')]:
+            with self.subTest(opcodes=opcodes):
+                body = ''.join(f'    {opcode} rax, [rbx+{offset}]\n'
+                               for opcode, offset in zip(opcodes, (8, 16, 24, 32)))
+                result, calls = self.check_parameter_reads(body)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(calls, ['optimizer', 'native', 'optimizer', 'native', 'driver'])
+
+    def test_parameter_read_contract_rejects_missing_or_non_reading_operands(self):
+        tail = ''.join(f'    add rax, [rbx+{offset}]\n' for offset in (16, 24, 32))
+        for first in ('', '    add rax, [rbx+40]\n', '    lea rax, [rbx+8]\n',
+                      '    store.i64 [rbx+8], rax\n', '    add [rbx+8], rax\n',
+                      '    load.i32 rax, [rbx+8]\n'):
+            with self.subTest(first=first):
+                result, calls = self.check_parameter_reads(first + tail)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('lost a post-call direct field load', result.stderr)
+                self.assertNotIn('driver', calls)
+
+    def test_parameter_reads_must_remain_after_call_without_derived_homes(self):
+        reads = ''.join(f'    add rax, [rbx+{offset}]\n' for offset in (8, 16, 24, 32))
+        for body, before, preserved, diagnostic in [
+            ('', reads, 'rbx', 'lost a post-call direct field load'),
+            (reads, '    lea r12, [rbx+8]\n', 'rbx', 'recreated derived addresses'),
+            (reads, '', 'rbx r12', 'keeps a derived address in a call-preserved home'),
+        ]:
+            with self.subTest(diagnostic=diagnostic):
+                result, _ = self.check_parameter_reads(
+                    body, before_call=before, preserved=preserved)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(diagnostic, result.stderr)
+
+    def test_structural_bucket_propagates_each_failure_and_runs_remaining_checks(self):
+        checkers = ('structural_controls', 'parameter_addresses', 'tail_jump', 'scalar_query')
+        for failure in (None, *checkers):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / 'scripts').mkdir()
+                (root / 'pa33/controls').mkdir(parents=True)
+                (root / 'pa33/controls/case.t').write_text('input\n')
+                for checker in checkers:
+                    (root / f'scripts/check_lowir_native_{checker}.pl').write_text(
+                        f'print "{checker}\\n"; exit {1 if checker == failure else 0};\n')
+                (root / 'pa33/Makefile').write_text(
+                    f'include {ROOT}/pa33/maintainer/Makefile\n'
+                    'check-bucket:\n\t$(call run_structural_control_bucket,controls)\n')
+                env = {key: value for key, value in os.environ.items()
+                       if key not in ('MAKEFLAGS', 'MFLAGS', 'MAKELEVEL', 'MAKEOVERRIDES')}
+                result = subprocess.run(['make', '--no-print-directory', 'check-bucket'],
+                                        cwd=root / 'pa33', env=env,
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode == 0, failure is None,
+                                 result.stdout + result.stderr)
+                self.assertEqual(result.stdout.splitlines(), list(checkers))
+
+
 if __name__ == '__main__':
     unittest.main()

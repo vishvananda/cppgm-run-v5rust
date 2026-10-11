@@ -24,14 +24,16 @@ endef
 
 define run_structural_control_bucket
 	@if [ -d "$(1)" ] && find "$(1)" -type f -name '*.t' | grep -q .; then \
+		status=0; \
 		perl ../scripts/check_lowir_native_structural_controls.pl \
-			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)"; \
+			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)" || status=1; \
 		perl ../scripts/check_lowir_native_parameter_addresses.pl \
-			$(LOWIROPT_APP) $(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)"; \
+			$(LOWIROPT_APP) $(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)" || status=1; \
 		perl ../scripts/check_lowir_native_tail_jump.pl \
-			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)"; \
+			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)" || status=1; \
 		perl ../scripts/check_lowir_native_scalar_query.pl \
-			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)"; \
+			$(LOWIR2NATIVE_APP) $(CPPGM_DRIVER_APP) "$(1)" || status=1; \
+		test $$status -eq 0; \
 	else \
 		if [ "$(REPORT_EMPTY_OPTIONAL_TEST_ROOTS)" = "1" ]; then echo "$(TARGET) $(1): no tests"; fi; \
 	fi

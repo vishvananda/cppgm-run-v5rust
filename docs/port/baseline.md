@@ -1,7 +1,9 @@
 # Frozen preparation baseline
 
-Prepared 2026-10-11 from cppgm-extended commit
-`72181d97e2a8b90af16229a328fc8e72bfe71f4b`.
+Prepared 2026-10-11; refreshed to cppgm-extended commit
+`905bd7e4412a2d77d88694fe6abc7f3e1c27bce1` after correcting the PA33 test harness.
+Compiler sources and all nine oracle binaries retain their original hashes
+from `72181d97e2a8b90af16229a328fc8e72bfe71f4b`; the C1/C2 receipts remain applicable.
 
 - Fresh C++ build: all nine tools, g++, original default host flags.
 - Strict C++ report: 6,634/6,634 passing.
@@ -18,15 +20,20 @@ Prepared 2026-10-11 from cppgm-extended commit
 - Bubblewrap read-only reference/control checks and the 64 GiB systemd scope
   have been exercised on the dedicated 100 GiB run volume.
 
-The copied handout harness has one known focused assertion inconsistent with
-its own pinned C++ implementation:
-`pa33/tests/regression/controls/459-parameter-address-folding.t` fails with
-`native O2 lost a post-call direct field load`, exit 2. Reproduced directly
-in the unmodified reference checkout and through the differential adapter.
-The manifest records that exact message, exit and four invocations. This case
-still requires exact Rust/C++ bytes for every invocation. Its input and
-checker are retained unchanged; the port must not alter code generation to
-satisfy a stale structural expectation. The ordinary full strict report passes.
+PA33 `459-parameter-address-folding.t` originally rejected loads folded into
+`add` memory operands even though the generated program was correct. The
+checker now accepts those reads while retaining offset, call placement,
+callee-saved register and frame checks. The maintainer Makefile propagates
+failure from every structural checker while still running the later checks.
+The original fixture is unchanged. Both staged O2/O3 paths and the ordinary
+O3 driver path must pass and match the oracle (five compiler invocations).
+There are no expected-failure exceptions in the frozen manifest or checker.
+Regression tests cover missing/non-reading operands, call placement and
+failure propagation from each checker. After the correction, the full strict
+report passed 6,634/6,634 and all 306 harness tests passed. PA33's complete
+differential self-check passed again with zero course-check failures; the
+previously failing control now completes all five exact invocations.
+The refreshed isolation/setup checks and all 14 clone harness tests also pass.
 
 Companion `.t.1` files are inputs of their `.t` case, not separate tests.
 Focused PA32/PA33 regression roots are routed to their owning Makefile lanes;
