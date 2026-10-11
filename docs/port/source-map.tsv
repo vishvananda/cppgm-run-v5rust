@@ -15,8 +15,8 @@ dev/ppexpr-scaffold.cpp	dev/bin/ppexpr.rs,dev/src/driver/ppexpr.rs	complete: aud
 dev/ppexpr.cpp	dev/bin/ppexpr.rs,dev/bin/source_tool/mod.rs,dev/src/driver/ppexpr.rs	complete: audited PA3 bare CLI, 64-KiB result buffering, error flush, handler scopes and sticky stream failures
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/pptoken.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
-dev/preproc-scaffold.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: PA4 macro file interface and typed post-token view; directive/environment groups pending
-dev/preproc.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: file CLI, unit reset, exact macro diagnostics and phase-7 failure; stats and location/directive groups pending
+dev/preproc-scaffold.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: PA4 macro/conditional file interface and typed post-token view; include/location/pragma/environment groups pending
+dev/preproc.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: file CLI, unit reset, exact macro/conditional diagnostics and phase-7 failure; stats and include/location/pragma groups pending
 dev/src/abi/facts/abi_fact_case.h		pending
 dev/src/abi/facts/abi_fact_definitions.cpp		pending
 dev/src/abi/facts/abi_fact_reader.cpp		pending
@@ -231,8 +231,8 @@ dev/src/opt/slot_promotion.cpp		pending
 dev/src/opt/switch_formation.cpp		pending
 dev/src/opt/value_simplify.cpp		pending
 dev/src/opt/wide_integers.cpp		pending
-dev/src/preprocess/expr/controlling_expression.cpp	dev/src/preprocess/expression.rs	partial: audited complete PA3 conversion, explicit stacks, precedence, defined query/demand order, recovery and skipped-operand typing; PA4 noncanonical macro-token lookup and later GNU literals deferred
-dev/src/preprocess/expr/controlling_expression.h	dev/src/preprocess/expression.rs,dev/src/lex/pp_lexer/mod.rs	partial: audited PA3 typed result/status, borrowed cursor/macro query, reusable stacks and repeated EOF; later GNU literal dialects deferred
+dev/src/preprocess/expr/controlling_expression.cpp	dev/src/preprocess/expression.rs,dev/src/preprocess/conditionals.rs	partial: audited PA3 stacks/conversions/demand/recovery, PA4 typed macro-expanded line cursor and structured input failures; later GNU literals deferred
+dev/src/preprocess/expr/controlling_expression.h	dev/src/preprocess/expression.rs,dev/src/lex/pp_lexer/mod.rs	partial: PA3/PA4 typed result/status, borrowed cursor with associated error, reusable stacks and repeated EOF; later GNU literal dialects deferred
 dev/src/preprocess/expr/pp_arithmetic.cpp	dev/src/preprocess/arithmetic.rs	complete: audited target 64-bit conversions, signed overflow, wrap, comparisons, shifts and invalid intermediate values
 dev/src/preprocess/expr/pp_arithmetic.h	dev/src/preprocess/arithmetic.rs	complete: audited bit-pattern/signedness value, private 23-operator vocabulary and typed arithmetic outcome
 dev/src/preprocess/lexer/char_classes.cpp	dev/src/lex/pp_lexer/classes.rs	complete
@@ -247,21 +247,21 @@ dev/src/preprocess/macro/feature_probes.h		pending
 dev/src/preprocess/macro/hide_sets.cpp	dev/src/preprocess/macros/hide_sets.rs	complete: ordered interned additions, summary/chain membership, lazy persistent trie, skew-jump ancestor union and last-add removal
 dev/src/preprocess/macro/hide_sets.h	dev/src/preprocess/macros/hide_sets.rs	complete: private store and compact HideSetId; translation-unit cache ownership
 dev/src/preprocess/macro/macro_definition.cpp	dev/src/preprocess/macros/definition.rs	partial: complete course definition/parameter grammar, roles and redefinition; hosted named variadics deferred
-dev/src/preprocess/macro/macro_definition.h	dev/src/preprocess/macros/definition.rs	partial: immutable shared definitions, typed parameter roles and explicit expanded-use demand; deferred builtin locations/probes
-dev/src/preprocess/macro/macro_expander.cpp	dev/src/preprocess/macros/expander.rs	partial: complete macro rescan/argument/paste/stringize/paint semantics, counter; builtin environments, expression operators and counters pending
-dev/src/preprocess/macro/macro_expander.h	dev/src/preprocess/macros/expander.rs,dev/src/preprocess/macros/token.rs	partial: explicit context/invocation stacks, linked argument ranges and released transient buffers; builtin environment and telemetry pending
+dev/src/preprocess/macro/macro_definition.h	dev/src/preprocess/macros/definition.rs	partial: immutable definitions, typed parameter/builtin roles, compact defined operator identity and expanded-use demand; deferred builtin locations and hosted probes
+dev/src/preprocess/macro/macro_expander.cpp	dev/src/preprocess/macros/expander.rs	partial: course macro semantics, counter, raw defined and standard/GNU attribute probes in controlling expressions; location/build-time environments, hosted probes and counters pending
+dev/src/preprocess/macro/macro_expander.h	dev/src/preprocess/macros/expander.rs,dev/src/preprocess/macros/token.rs	partial: context/invocation stacks, linked argument ranges, controlling-expression mode and released transient buffers; builtin environment and telemetry pending
 dev/src/preprocess/preprocess_error.h	dev/src/preprocess/error.rs,dev/src/driver/preproc.rs	partial: structured source/directive/limit/invariant/missing errors; inclusion-stack rendering pending
-dev/src/preprocess/preprocessor.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: macro pull composition, fixed predefines and unit reset; file/line/build-time/pragma/environment pending
-dev/src/preprocess/preprocessor.h	dev/src/preprocess/unit.rs,dev/src/preprocess/error.rs	partial: reusable typed single-file unit, private macro stores; conditional/source-stack/environment state pending
-dev/src/preprocess/preprocessor_directives.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: define/undef/error/null/non-directive handling; conditional/include/line/pragma groups pending
-dev/src/preprocess/preprocessor_names.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: reserved macro names and fixed/builtin initial definitions; interned directive roles and hosted probes pending
-dev/src/preprocess/preprocessor_names.h	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: direct NameId-indexed macro slots; directive/probe role vocabulary pending
+dev/src/preprocess/preprocessor.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/conditionals.rs,dev/src/preprocess/macros/definition.rs	partial: macro/conditional pull composition, unterminated sections, fixed predefines and unit reset; file/line/build-time/pragma/environment pending
+dev/src/preprocess/preprocessor.h	dev/src/preprocess/unit.rs,dev/src/preprocess/conditionals.rs	partial: unit-owned names/definitions/expander/conditional stacks and reusable evaluator; source frames/environment/telemetry pending
+dev/src/preprocess/preprocessor_directives.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/conditionals.rs,dev/src/preprocess/macros/definition.rs	partial: define/undef/error/null/non-directives, complete single-file conditional execution and skipped nesting/order; include/line/pragma/guard groups pending
+dev/src/preprocess/preprocessor_names.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/conditionals.rs,dev/src/preprocess/macros/definition.rs	partial: reserved names, fixed/builtin definitions, compact defined identity and conditional role vocabulary; other directive metadata and hosted probes pending
+dev/src/preprocess/preprocessor_names.h	dev/src/preprocess/unit.rs,dev/src/preprocess/conditionals.rs,dev/src/preprocess/macros/definition.rs	partial: NameId-indexed macro slots and typed conditional/builtin roles; other directive/probe vocabulary pending
 dev/src/preprocess/source/source_buffer.cpp	dev/src/support/source/mod.rs,dev/bin/source_tool/mod.rs	complete
 dev/src/preprocess/source/source_buffer.h	dev/src/support/source/mod.rs	complete
 dev/src/preprocess/source/source_files.cpp		pending
 dev/src/preprocess/source/source_files.h		pending
-dev/src/preprocess/source/source_stack.cpp	dev/src/preprocess/input.rs	partial: single-file text/directive pull boundary, compact whitespace flags and stable spelling ownership; inclusion/skipped-line/line-mode pending
-dev/src/preprocess/source/source_stack.h	dev/src/preprocess/input.rs	partial: explicit text/directive/end state and bounded lookahead; file frames and directive-line expansion mode pending
+dev/src/preprocess/source/source_stack.cpp	dev/src/preprocess/input.rs	partial: single-file text/directive/line pull boundaries, stable spellings and inactive lexing without interning; inclusion frames/locations/guards pending
+dev/src/preprocess/source/source_stack.h	dev/src/preprocess/input.rs	partial: typed boundary/input mode, bounded lookahead and line termination; file frames, per-file conditional depth and guard state pending
 dev/src/preprocess/source/translation_reader.cpp	dev/src/support/source/translation.rs	complete
 dev/src/preprocess/source/translation_reader.h	dev/src/support/source/translation.rs	complete
 dev/src/preprocess/tokens/DebugPPTokenStream.h	dev/src/driver/pptoken.rs	complete
