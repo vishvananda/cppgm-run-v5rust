@@ -60,6 +60,21 @@ pub struct PpToken<'a> {
     pub spelling: &'a [u8],
 }
 
+/// Borrowed pull boundary for bare and, later, macro-expanded preprocessing input.
+pub trait PpTokenCursor {
+    /// Demand one token; its spelling lasts until the next demand.
+    ///
+    /// # Errors
+    /// Propagates source decoding and tokenization failures.
+    fn next_token(&mut self) -> Result<PpToken<'_>, SourceError>;
+}
+
+impl PpTokenCursor for PpLexer<'_> {
+    fn next_token(&mut self) -> Result<PpToken<'_>, SourceError> {
+        PpLexer::next_token(self)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DirectiveContext {
     LineStart,

@@ -103,6 +103,7 @@ fn run(
         Err(TokenToolError::Output(error)) => Err(CliError::Message(error.to_string())),
         Err(TokenToolError::Limit(message)) => Err(CliError::Message(message.to_owned())),
         Err(TokenToolError::NotImplemented(group)) => Err(CliError::NotImplemented(group)),
+        Err(TokenToolError::Internal(message)) => Err(CliError::Internal(message)),
     }
 }
 
@@ -111,6 +112,10 @@ pub(super) fn main(
 ) -> ExitCode {
     match run(emit) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(CliError::Internal(message)) => {
+            let _status = writeln!(io::stderr().lock(), "internal compiler error: {message}");
+            ExitCode::from(70)
+        }
         Err(CliError::NotImplemented(group)) => {
             let _status = writeln!(
                 io::stderr().lock(),
@@ -127,6 +132,7 @@ pub(super) fn main(
 }
 
 enum CliError {
+    Internal(&'static str),
     Message(String),
     NotImplemented(&'static str),
 }

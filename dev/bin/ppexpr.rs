@@ -1,3 +1,5 @@
+mod source_tool;
+
 fn main() -> std::process::ExitCode {
-    cppgm_rust::driver::run_tool("ppexpr")
+    source_tool::main(|source, output| cppgm_rust::driver::ppexpr::emit_expressions(source, output))
 }
