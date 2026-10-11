@@ -51,7 +51,7 @@ dev/src/lex/string_concatenation.h		pending
 dev/src/lex/text_literal.cpp		pending
 dev/src/lex/text_literal.h		pending
 dev/src/lex/token_kind.cpp		pending
-dev/src/lex/token_kind.h		pending
+dev/src/lex/token_kind.h	dev/src/preprocess/lexer/punctuators.rs	partial: PA1 punctuator identity; PA2 token vocabulary pending
 dev/src/lex/token_spelling.h		pending
 dev/src/lex/ud_suffix.cpp		pending
 dev/src/lex/ud_suffix.h		pending
@@ -256,7 +256,7 @@ dev/src/preprocess/preprocessor.h		pending
 dev/src/preprocess/preprocessor_directives.cpp		pending
 dev/src/preprocess/preprocessor_names.cpp		pending
 dev/src/preprocess/preprocessor_names.h		pending
-dev/src/preprocess/source/source_buffer.cpp	dev/src/preprocess/source/mod.rs	complete
+dev/src/preprocess/source/source_buffer.cpp	dev/src/preprocess/source/mod.rs,dev/bin/pptoken.rs	complete
 dev/src/preprocess/source/source_buffer.h	dev/src/preprocess/source/mod.rs	complete
 dev/src/preprocess/source/source_files.cpp		pending
 dev/src/preprocess/source/source_files.h		pending

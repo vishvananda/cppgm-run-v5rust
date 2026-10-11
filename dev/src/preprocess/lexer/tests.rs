@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn expanded_spelling_length_wraps_in_the_targets_32_bit_space() {
+    let maximum = u32::MAX as usize;
+    assert_eq!(token_spelling_length(maximum), maximum);
+    assert_eq!(token_spelling_length(maximum + 1), 0);
+    assert_eq!(token_spelling_length(maximum + 7), 6);
+    assert_eq!(token_spelling_length(maximum * 3), maximum - 2);
+}
+
+#[test]
 fn source_views_and_translated_spans_keep_physical_identity() {
     let source = SourceBuffer::new(b"plain a\\\nb \\u00AA".to_vec()).unwrap();
     let mut lexer = PpLexer::new(&source).unwrap();

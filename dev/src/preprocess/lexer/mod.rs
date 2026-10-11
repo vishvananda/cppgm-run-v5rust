@@ -217,7 +217,10 @@ impl<'a> PpLexer<'a> {
 
     fn spelling(&self) -> &[u8] {
         if self.dirty {
-            &self.scratch
+            // Windows-1252 mapping can expand a source image past 4 GiB.
+            // The frozen token producer exposes its length as uint32_t,
+            // including when prefix classification reads the current text.
+            &self.scratch[..token_spelling_length(self.scratch.len())]
         } else {
             &self.source.bytes()[self.begin.index()..self.clean_end.index()]
         }
@@ -448,6 +451,11 @@ impl<'a> PpLexer<'a> {
             }
         }
     }
+}
+
+fn token_spelling_length(length: usize) -> usize {
+    // Deliberate target truncation; source offsets themselves remain checked.
+    length & u32::MAX as usize
 }
 
 #[cfg(test)]
