@@ -2,7 +2,8 @@
 
 Stage base commit: `4250b77d11dbb3aaddf7a8a7a7bae806b4058a3d`
 Last audited commit: INITIAL (unchanged; Ralph owns the independent audit)
-Candidate implementation commit: pending commit of this implementation group.
+Candidate implementation commit: `9459c35d3f6a20f570645b3117c006e0debcb923`.
+This ledger update is a documentation-only descendant; the audited marker remains INITIAL.
 
 ## Contract and ownership
 
@@ -89,8 +90,11 @@ Candidate release `pptoken` SHA-256:
 Toolchain: `rustc 1.98.0 (88d9e12ae 2026-08-18)`, Linux x86-64.
 
 The evidence root below is
-`/home/vishvananda/work/private/v5rust/checkout/artifacts/pa1-port/`.
+`/home/vishvananda/work/private/v5rust/artifacts/pa1-port/`.
 Generated evidence, scratch inputs and build targets remain uncommitted.
+They were moved from `checkout/artifacts/pa1-port/` after validation; raw
+invocation records retain their original absolute paths. The supplementary
+scripts now write to the external evidence root when run from the checkout.
 
 | Validation command | Result and evidence under the evidence root |
 | --- | --- |
@@ -102,8 +106,8 @@ Generated evidence, scratch inputs and build targets remain uncommitted.
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa1` | PASS: frozen inputs, policy and oracle integrity; `preflight.log` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa1` | PASS: no earlier assignments due; `prior.log` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa1` | PASS, 0/0 historic passing identities; `preserve.log` |
-| `python3 artifacts/pa1-port/differential.py` | PASS, 639/639 additional exact exit/stdout/stderr comparisons; `differential.log`, `differential.json` |
-| `python3 artifacts/pa1-port/measure.py` | PASS, paired output hash equality at every scale; `perf.log`, `perf/measurements.json` |
+| `python3 /home/vishvananda/work/private/v5rust/artifacts/pa1-port/differential.py` | PASS, 639/639 additional exact exit/stdout/stderr comparisons; `differential.log`, `differential.json` |
+| `python3 /home/vishvananda/work/private/v5rust/artifacts/pa1-port/measure.py` | PASS, paired output hash equality at every scale; `perf.log`, `perf/measurements.json` |
 | `git diff --check` | PASS |
 
 Protected primary result and raw invocation artifacts:
