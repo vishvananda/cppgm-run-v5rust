@@ -15,8 +15,8 @@ dev/ppexpr-scaffold.cpp	dev/bin/ppexpr.rs,dev/src/driver/ppexpr.rs	complete: aud
 dev/ppexpr.cpp	dev/bin/ppexpr.rs,dev/bin/source_tool/mod.rs,dev/src/driver/ppexpr.rs	complete: audited PA3 bare CLI, 64-KiB result buffering, error flush, handler scopes and sticky stream failures
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/pptoken.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
-dev/preproc-scaffold.cpp		pending
-dev/preproc.cpp		pending
+dev/preproc-scaffold.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: PA4 macro file interface and typed post-token view; directive/environment groups pending
+dev/preproc.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	partial: file CLI, unit reset, exact macro diagnostics and phase-7 failure; stats and location/directive groups pending
 dev/src/abi/facts/abi_fact_case.h		pending
 dev/src/abi/facts/abi_fact_definitions.cpp		pending
 dev/src/abi/facts/abi_fact_reader.cpp		pending
@@ -35,8 +35,8 @@ dev/src/driver/toolchain.h		pending
 dev/src/ir_symbol_model.h		pending
 dev/src/lex/gnu_builtins.cpp		pending
 dev/src/lex/gnu_builtins.h		pending
-dev/src/lex/identifier_table.cpp		pending
-dev/src/lex/identifier_table.h		pending
+dev/src/lex/identifier_table.cpp	dev/src/lex/identifiers.rs,dev/src/lex/vocabulary.rs	partial: private name store and compact published NameId; keyword conversion shared; later GNU/role metadata pending
+dev/src/lex/identifier_table.h	dev/src/lex/identifiers.rs,dev/src/lex/mod.rs	partial: interned spelling ownership and name facts in PP/post tokens; later role metadata pending
 dev/src/lex/interchange_float.cpp	dev/src/lex/floating.rs	partial: decimal limb scan and rounding; hexadecimal, binary16/binary128/bfloat16 and numeric round-value API deferred
 dev/src/lex/interchange_float.h	dev/src/lex/floating.rs	partial: limb rounding reused for binary32/binary64/x87; interchange formats and round-value API deferred
 dev/src/lex/number_literal.cpp	dev/src/lex/number.rs,dev/src/lex/floating.rs	partial: all Cxx11 grammar/type/range/scanning behavior; GNU forms deferred
@@ -44,8 +44,8 @@ dev/src/lex/number_literal.h	dev/src/lex/number.rs,dev/src/lex/floating.rs	parti
 dev/src/lex/post_token.h	dev/src/lex/mod.rs	partial: borrowed spans/spellings, scalar and sequence facts, multicharacter flag and suffix boundaries; interned identifiers deferred
 dev/src/lex/post_token_writer.cpp	dev/src/driver/posttoken.rs	complete: all PA2 forms, multicharacter invalid view and exact code-unit dumps
 dev/src/lex/post_token_writer.h	dev/src/driver/posttoken.rs	complete: typed scalar/array text view
-dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs	partial: complete Cxx11 bare-lexer conversion, frozen lookahead-overwritten string start spans and literal-operator split; preprocessor/interned input and GNU dialect deferred
-dev/src/lex/post_tokenizer.h	dev/src/lex/mod.rs	partial: borrowed typed post-token pull API, reusable buffers and bounded lookahead; preprocessor/interned input deferred
+dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs,dev/src/lex/strings.rs	partial: complete Cxx11 bare and macro-expanded typed input conversion, split suffix identity; GNU dialect deferred
+dev/src/lex/post_tokenizer.h	dev/src/lex/mod.rs	partial: generic typed PostTokenInput and structured upstream errors, compact identifier facts; later GNU dialect deferred
 dev/src/lex/string_concatenation.cpp	dev/src/lex/strings.rs	partial: strict Cxx11 maximal sequences, prefix/suffix unification, scalar/numeric code-unit encoding and buffer reuse; GNU reserved suffix option deferred
 dev/src/lex/string_concatenation.h	dev/src/lex/strings.rs	partial: private sequence store with compact piece spans and parse-once boundaries; GNU reserved suffix option deferred
 dev/src/lex/text_literal.cpp	dev/src/lex/text.rs	partial: single-piece splitting, typed escape decoding, scalar character evaluation and target multicharacter packing; joined-spelling piece-end helper deferred to its consumer
@@ -241,32 +241,32 @@ dev/src/preprocess/lexer/pp_lexer.cpp	dev/src/lex/pp_lexer/mod.rs	complete
 dev/src/preprocess/lexer/pp_lexer.h	dev/src/lex/pp_lexer/mod.rs	complete
 dev/src/preprocess/lexer/pp_lexer_literals.cpp	dev/src/lex/pp_lexer/literals.rs	complete
 dev/src/preprocess/lexer/pp_lexer_punctuators.cpp	dev/src/lex/pp_lexer/punctuators.rs	complete
-dev/src/preprocess/lexer/pp_token.h	dev/src/lex/pp_lexer/mod.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: PA1 vocabulary and spans; macro flags/IDs deferred to PA4
+dev/src/preprocess/lexer/pp_token.h	dev/src/lex/pp_lexer/mod.rs,dev/src/lex/pp_lexer/punctuators.rs,dev/src/preprocess/macros/token.rs	partial: PA1 vocabulary/spans and PA4 name, hide-set, origin and recursion flags; multi-file locations pending
 dev/src/preprocess/macro/feature_probes.cpp		pending
 dev/src/preprocess/macro/feature_probes.h		pending
-dev/src/preprocess/macro/hide_sets.cpp		pending
-dev/src/preprocess/macro/hide_sets.h		pending
-dev/src/preprocess/macro/macro_definition.cpp		pending
-dev/src/preprocess/macro/macro_definition.h		pending
-dev/src/preprocess/macro/macro_expander.cpp		pending
-dev/src/preprocess/macro/macro_expander.h		pending
-dev/src/preprocess/preprocess_error.h		pending
-dev/src/preprocess/preprocessor.cpp		pending
-dev/src/preprocess/preprocessor.h		pending
-dev/src/preprocess/preprocessor_directives.cpp		pending
-dev/src/preprocess/preprocessor_names.cpp		pending
-dev/src/preprocess/preprocessor_names.h		pending
+dev/src/preprocess/macro/hide_sets.cpp	dev/src/preprocess/macros/hide_sets.rs	complete: ordered interned additions, summary/chain membership, lazy persistent trie, skew-jump ancestor union and last-add removal
+dev/src/preprocess/macro/hide_sets.h	dev/src/preprocess/macros/hide_sets.rs	complete: private store and compact HideSetId; translation-unit cache ownership
+dev/src/preprocess/macro/macro_definition.cpp	dev/src/preprocess/macros/definition.rs	partial: complete course definition/parameter grammar, roles and redefinition; hosted named variadics deferred
+dev/src/preprocess/macro/macro_definition.h	dev/src/preprocess/macros/definition.rs	partial: immutable shared definitions, typed parameter roles and explicit expanded-use demand; deferred builtin locations/probes
+dev/src/preprocess/macro/macro_expander.cpp	dev/src/preprocess/macros/expander.rs	partial: complete macro rescan/argument/paste/stringize/paint semantics, counter; builtin environments, expression operators and counters pending
+dev/src/preprocess/macro/macro_expander.h	dev/src/preprocess/macros/expander.rs,dev/src/preprocess/macros/token.rs	partial: explicit context/invocation stacks, linked argument ranges and released transient buffers; builtin environment and telemetry pending
+dev/src/preprocess/preprocess_error.h	dev/src/preprocess/error.rs,dev/src/driver/preproc.rs	partial: structured source/directive/limit/invariant/missing errors; inclusion-stack rendering pending
+dev/src/preprocess/preprocessor.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: macro pull composition, fixed predefines and unit reset; file/line/build-time/pragma/environment pending
+dev/src/preprocess/preprocessor.h	dev/src/preprocess/unit.rs,dev/src/preprocess/error.rs	partial: reusable typed single-file unit, private macro stores; conditional/source-stack/environment state pending
+dev/src/preprocess/preprocessor_directives.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: define/undef/error/null/non-directive handling; conditional/include/line/pragma groups pending
+dev/src/preprocess/preprocessor_names.cpp	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: reserved macro names and fixed/builtin initial definitions; interned directive roles and hosted probes pending
+dev/src/preprocess/preprocessor_names.h	dev/src/preprocess/unit.rs,dev/src/preprocess/macros/definition.rs	partial: direct NameId-indexed macro slots; directive/probe role vocabulary pending
 dev/src/preprocess/source/source_buffer.cpp	dev/src/support/source/mod.rs,dev/bin/source_tool/mod.rs	complete
 dev/src/preprocess/source/source_buffer.h	dev/src/support/source/mod.rs	complete
 dev/src/preprocess/source/source_files.cpp		pending
 dev/src/preprocess/source/source_files.h		pending
-dev/src/preprocess/source/source_stack.cpp		pending
-dev/src/preprocess/source/source_stack.h		pending
+dev/src/preprocess/source/source_stack.cpp	dev/src/preprocess/input.rs	partial: single-file text/directive pull boundary, compact whitespace flags and stable spelling ownership; inclusion/skipped-line/line-mode pending
+dev/src/preprocess/source/source_stack.h	dev/src/preprocess/input.rs	partial: explicit text/directive/end state and bounded lookahead; file frames and directive-line expansion mode pending
 dev/src/preprocess/source/translation_reader.cpp	dev/src/support/source/translation.rs	complete
 dev/src/preprocess/source/translation_reader.h	dev/src/support/source/translation.rs	complete
 dev/src/preprocess/tokens/DebugPPTokenStream.h	dev/src/driver/pptoken.rs	complete
 dev/src/preprocess/tokens/IPPTokenStream.h	dev/src/lex/pp_lexer/mod.rs,dev/src/driver/pptoken.rs	partial: PA1 typed pull/output boundary; later consumers pending
-dev/src/preprocess/tokens/pp_token_cursor.h	dev/src/lex/pp_lexer/mod.rs	complete: borrowed typed pull cursor and bare lexer implementation
+dev/src/preprocess/tokens/pp_token_cursor.h	dev/src/lex/pp_lexer/mod.rs,dev/src/lex/mod.rs	partial: borrowed typed bare cursor and generic post-token input including upstream errors; expanded expression cursor pending
 dev/src/preprocess/tokens/pp_token_emitter.cpp	dev/src/driver/pptoken.rs	complete
 dev/src/preprocess/tokens/pp_token_emitter.h	dev/src/driver/pptoken.rs	complete
 dev/src/sema/aggregates.h		pending

@@ -54,6 +54,7 @@ impl PpTokenKind {
 /// Token text is valid until the next lexer demand; source identities remain compact.
 pub struct PpToken<'a> {
     pub kind: PpTokenKind,
+    pub name: Option<super::identifiers::NameId>,
     pub begin: SourceOffset,
     pub end: SourceOffset,
     pub punctuator: Option<Punctuator>,
@@ -184,7 +185,7 @@ impl<'a> PpLexer<'a> {
         Ok(kind)
     }
 
-    pub(super) fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
+    pub(crate) fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
         let spelling = if matches!(
             kind,
             PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine | PpTokenKind::EndOfFile
@@ -195,6 +196,7 @@ impl<'a> PpLexer<'a> {
         };
         PpToken {
             kind,
+            name: None,
             // The frozen producer adds the base in target uint32 arithmetic.
             begin: SourceOffset(self.options.location_base.wrapping_add(self.begin.0)),
             end: SourceOffset(self.options.location_base.wrapping_add(self.end.0)),

@@ -1,5 +1,6 @@
 //! Demand-driven phase-7 conversion of typed preprocessing tokens.
 pub mod floating;
+pub mod identifiers;
 pub mod number;
 pub mod pp_lexer;
 mod strings;
@@ -66,6 +67,7 @@ pub enum PostTokenKind {
 /// Spelling borrows the lexer image, translation buffer or current string sequence.
 pub struct PostToken<'a> {
     pub kind: PostTokenKind,
+    pub name: Option<identifiers::NameId>,
     pub begin: SourceOffset,
     pub end: SourceOffset,
     pub source: &'a [u8],
@@ -76,16 +78,16 @@ pub struct PostToken<'a> {
 }
 
 #[derive(Debug)]
-pub enum PostTokenError {
-    Source(SourceError),
+pub enum PostTokenError<E = SourceError> {
+    Source(E),
     Numeric(FloatError),
     Text(TextError),
 }
 
 /// Bare-lexer input preserves null identifier identity, as the C++ tool does.
 /// One lexer lookahead and one maximal string sequence bound token retention.
-pub struct PostTokenizer<'a> {
-    input: PpLexer<'a>,
+pub struct PostTokenizer<I> {
+    input: I,
     dialect: NumberDialect,
     floating: FloatingScanner,
     strings: strings::StringSequence,
@@ -95,14 +97,50 @@ pub struct PostTokenizer<'a> {
     after_operator: bool,
 }
 
-impl<'a> PostTokenizer<'a> {
+/// A typed pull source retaining its current spelling until the next demand.
+pub trait PostTokenInput {
+    type Error;
+    /// # Errors
+    /// Propagates the input phase's structured failure.
+    fn next_non_whitespace_kind(&mut self) -> Result<PpTokenKind, Self::Error>;
+    fn token(&self, kind: PpTokenKind) -> pp_lexer::PpToken<'_>;
+    /// Intern a literal-operator suffix in input sources that own name identity.
+    ///
+    /// # Errors
+    /// Returns the input owner's identifier storage limit.
+    fn intern_identifier(
+        &mut self,
+        _text: &[u8],
+    ) -> Result<Option<identifiers::NameId>, Self::Error> {
+        Ok(None)
+    }
+}
+
+impl PostTokenInput for PpLexer<'_> {
+    type Error = SourceError;
+    fn next_non_whitespace_kind(&mut self) -> Result<PpTokenKind, SourceError> {
+        self.next_non_whitespace_kind()
+    }
+    fn token(&self, kind: PpTokenKind) -> pp_lexer::PpToken<'_> {
+        self.token(kind)
+    }
+}
+
+impl<'a> PostTokenizer<PpLexer<'a>> {
     /// Construct a source-backed pull tokenizer with explicit literal dialect.
     ///
     /// # Errors
     /// Returns the first source decoding error.
     pub fn new(source: &'a SourceBuffer, dialect: NumberDialect) -> Result<Self, SourceError> {
-        Ok(Self {
-            input: PpLexer::new(source)?,
+        Ok(Self::from_input(PpLexer::new(source)?, dialect))
+    }
+}
+
+impl<I: PostTokenInput> PostTokenizer<I> {
+    #[must_use]
+    pub fn from_input(input: I, dialect: NumberDialect) -> Self {
+        Self {
+            input,
             dialect,
             floating: FloatingScanner::default(),
             strings: strings::StringSequence::default(),
@@ -110,20 +148,29 @@ impl<'a> PostTokenizer<'a> {
             split_suffix: Vec::new(),
             split_span: None,
             after_operator: false,
-        })
+        }
     }
 
     /// Convert exactly one token on demand, retaining typed literal facts.
     ///
     /// # Errors
     /// Returns lexical errors or numeric/text storage limits.
-    pub fn next_token(&mut self) -> Result<PostToken<'_>, PostTokenError> {
+    pub fn next_token(&mut self) -> Result<PostToken<'_>, PostTokenError<I::Error>> {
         if let Some((begin, end)) = self.split_span.take() {
             self.strings.clear();
             let kind = identifier_kind(&self.split_suffix);
+            let name = self
+                .input
+                .intern_identifier(&self.split_suffix)
+                .map_err(PostTokenError::Source)?;
             self.after_operator = is_operator(kind);
             return Ok(PostToken {
                 kind,
+                name: if kind == PostTokenKind::Identifier {
+                    name
+                } else {
+                    None
+                },
                 begin,
                 end,
                 source: &self.split_suffix,
@@ -205,6 +252,11 @@ impl<'a> PostTokenizer<'a> {
         self.after_operator = is_operator(kind);
         Ok(PostToken {
             kind,
+            name: if kind == PostTokenKind::Identifier {
+                pp.name
+            } else {
+                None
+            },
             begin: pp.begin,
             end: pp.end,
             source: pp.spelling,
@@ -213,7 +265,10 @@ impl<'a> PostTokenizer<'a> {
         })
     }
 
-    fn next_string(&mut self, first_kind: PpTokenKind) -> Result<PostToken<'_>, PostTokenError> {
+    fn next_string(
+        &mut self,
+        first_kind: PpTokenKind,
+    ) -> Result<PostToken<'_>, PostTokenError<I::Error>> {
         let first = self.input.token(first_kind);
         let begin;
         let mut end = first.end;
@@ -276,6 +331,7 @@ impl<'a> PostTokenizer<'a> {
         self.after_operator = false;
         Ok(PostToken {
             kind,
+            name: None,
             begin,
             end,
             source: self.strings.source(),

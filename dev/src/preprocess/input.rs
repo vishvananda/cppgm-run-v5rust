@@ -1,0 +1,154 @@
+// Translated from preprocess/source/source_stack.cpp (single-file input). See NOTICE.
+//! Demand-driven text/directive boundary, with stable source views and interned names.
+use super::error::PreprocessError;
+use super::macros::token::{LEADING_SPACE, START_OF_LINE, Spelling, Token};
+use crate::lex::identifiers::Identifiers;
+use crate::lex::pp_lexer::{PpLexer, PpLexerOptions, PpTokenKind, Punctuator};
+use crate::support::source::{SourceBuffer, SourceOffset};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Boundary {
+    Text,
+    Directive,
+    End,
+}
+
+pub(crate) struct SourceInput<'a> {
+    source: &'a SourceBuffer,
+    lexer: PpLexer<'a>,
+    at_line_start: bool,
+    boundary: Boundary,
+    location: SourceOffset,
+    peeked: Option<Token<'a>>,
+    pub(crate) allow_va_args: bool,
+}
+impl<'a> SourceInput<'a> {
+    pub(crate) fn new(source: &'a SourceBuffer) -> Result<Self, PreprocessError> {
+        Ok(Self {
+            source,
+            lexer: PpLexer::with_options(
+                source,
+                PpLexerOptions {
+                    header_names_on_request: true,
+                    ..PpLexerOptions::default()
+                },
+            )?,
+            at_line_start: true,
+            boundary: Boundary::Text,
+            location: source.begin(),
+            peeked: None,
+            allow_va_args: false,
+        })
+    }
+    fn stabilize(
+        &self,
+        kind: PpTokenKind,
+        flags: u8,
+        names: &mut Identifiers,
+    ) -> Result<Token<'a>, PreprocessError> {
+        let pp = self.lexer.token(kind);
+        let mut token = Token::end(pp.begin);
+        token.kind = kind;
+        token.end = pp.end;
+        token.punctuator = pp.punctuator;
+        token.flags = flags;
+        if kind == PpTokenKind::Identifier {
+            if pp.spelling == b"__VA_ARGS__" && !self.allow_va_args {
+                return Err(PreprocessError::at(
+                    pp.begin,
+                    "__VA_ARGS__ outside a variadic macro's replacement list",
+                ));
+            }
+            let name = names.intern(pp.spelling).map_err(PreprocessError::Limit)?;
+            token.name = Some(name);
+            token.spelling = Spelling::Shared(names.spelling(name));
+        } else if let Some(text) = self
+            .source
+            .bytes()
+            .get(pp.begin.index()..pp.end.index())
+            .filter(|text| *text == pp.spelling)
+        {
+            token.spelling = Spelling::Source(text);
+        } else {
+            token.spelling = Spelling::Shared(pp.spelling.into());
+        }
+        Ok(token)
+    }
+    pub(crate) fn next(&mut self, names: &mut Identifiers) -> Result<Token<'a>, PreprocessError> {
+        if let Some(token) = self.peeked.take() {
+            return Ok(token);
+        }
+        if self.boundary != Boundary::Text {
+            return Ok(Token::end(self.location));
+        }
+        let mut flags = if self.at_line_start {
+            LEADING_SPACE | START_OF_LINE
+        } else {
+            0
+        };
+        loop {
+            let kind = self.lexer.next_token()?.kind;
+            match kind {
+                PpTokenKind::WhitespaceSequence => {
+                    flags |= LEADING_SPACE;
+                    continue;
+                }
+                PpTokenKind::NewLine => {
+                    flags |= LEADING_SPACE | START_OF_LINE;
+                    self.at_line_start = true;
+                    continue;
+                }
+                PpTokenKind::EndOfFile => {
+                    self.boundary = Boundary::End;
+                    self.location = self.lexer.token(kind).begin;
+                    return Ok(Token::end(self.location));
+                }
+                _ => {}
+            }
+            self.at_line_start = false;
+            if flags & START_OF_LINE != 0
+                && self.lexer.token(kind).punctuator == Some(Punctuator::Hash)
+            {
+                self.boundary = Boundary::Directive;
+                self.location = self.lexer.token(kind).begin;
+                return Ok(Token::end(self.location));
+            }
+            return self.stabilize(kind, flags, names);
+        }
+    }
+    pub(crate) fn peek(&mut self, names: &mut Identifiers) -> Result<&Token<'a>, PreprocessError> {
+        if self.peeked.is_none() {
+            self.peeked = Some(self.next(names)?);
+        }
+        self.peeked
+            .as_ref()
+            .ok_or(PreprocessError::Invariant("missing source lookahead"))
+    }
+    pub(crate) fn next_in_line(
+        &mut self,
+        names: &mut Identifiers,
+    ) -> Result<Token<'a>, PreprocessError> {
+        let mut flags = 0;
+        loop {
+            let kind = self.lexer.next_token()?.kind;
+            if kind == PpTokenKind::WhitespaceSequence {
+                flags |= LEADING_SPACE;
+                continue;
+            }
+            if matches!(kind, PpTokenKind::NewLine | PpTokenKind::EndOfFile) {
+                self.at_line_start = true;
+                let mut token = Token::end(self.lexer.token(kind).begin);
+                token.kind = PpTokenKind::NewLine;
+                return Ok(token);
+            }
+            return self.stabilize(kind, flags, names);
+        }
+    }
+    pub(crate) fn at_directive(&self) -> bool {
+        self.boundary == Boundary::Directive
+    }
+    pub(crate) fn end_directive(&mut self) {
+        self.boundary = Boundary::Text;
+        self.peeked = None;
+    }
+}

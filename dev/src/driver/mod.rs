@@ -11,6 +11,7 @@ pub mod pptoken;
 
 pub mod posttoken;
 pub mod ppexpr;
+pub mod preproc;
 
 /// Errors retained until a source tool renders its diagnostics.
 #[derive(Debug)]

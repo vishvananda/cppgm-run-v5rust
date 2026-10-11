@@ -26,61 +26,66 @@ pub fn emit_posttokens(
             }
             PostTokenError::Text(_) => TokenToolError::Limit("text literal implementation limit"),
         })?;
-        let result = match token.kind {
-            PostTokenKind::Invalid => write_source(output, b"invalid ", token.source),
-            PostTokenKind::Identifier => write_source(output, b"identifier ", token.source),
-            PostTokenKind::Simple(kind) => write_source(output, b"simple ", token.source)
-                .and_then(|()| write!(output, " {}", kind.name())),
-            PostTokenKind::Literal { ty, data, .. } => {
-                write_source(output, b"literal ", token.source)
-                    .and_then(|()| write!(output, " {} ", ty.name()))
-                    .and_then(|()| write_hex(output, data.as_slice()))
-            }
-            PostTokenKind::UserDefinedNumber { form, suffix_begin } => {
-                write_source(output, b"user-defined-literal ", token.source)
-                    .and_then(|()| write_source(output, b" ", &token.source[suffix_begin..]))
-                    .and_then(|()| write!(output, " {} ", form.name()))
-                    .and_then(|()| output.write_all(&token.source[..suffix_begin]))
-            }
-            PostTokenKind::Character {
-                ty,
-                data,
-                multicharacter,
-                suffix_begin,
-            } => {
-                if multicharacter {
-                    write_source(output, b"invalid ", token.source)
-                } else {
-                    write_text_prefix(
-                        output,
-                        token.source,
-                        suffix_begin.map(|begin| &token.source[begin..]),
-                        LiteralForm::Character,
-                    )
-                    .and_then(|()| write!(output, " {} ", ty.name()))
-                    .and_then(|()| write_hex(output, data.as_slice()))
-                }
-            }
-            PostTokenKind::String {
-                ty,
-                elements,
-                suffix,
-            } => write_text_prefix(
-                output,
-                token.source,
-                suffix.map(|_| token.suffix),
-                LiteralForm::String,
-            )
-            .and_then(|()| write!(output, " array of {} {} ", elements, ty.name()))
-            .and_then(|()| write_hex(output, token.data)),
-            PostTokenKind::EndOfFile => output.write_all(b"eof"),
-        };
-        result.map_err(TokenToolError::Output)?;
-        writeln!(output).map_err(TokenToolError::Output)?;
+        write_posttoken(&token, output).map_err(TokenToolError::Output)?;
         if token.kind == PostTokenKind::EndOfFile {
             return Ok(());
         }
     }
+}
+
+pub(crate) fn write_posttoken(
+    token: &crate::lex::PostToken<'_>,
+    output: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    let result = match token.kind {
+        PostTokenKind::Invalid => write_source(output, b"invalid ", token.source),
+        PostTokenKind::Identifier => write_source(output, b"identifier ", token.source),
+        PostTokenKind::Simple(kind) => write_source(output, b"simple ", token.source)
+            .and_then(|()| write!(output, " {}", kind.name())),
+        PostTokenKind::Literal { ty, data, .. } => write_source(output, b"literal ", token.source)
+            .and_then(|()| write!(output, " {} ", ty.name()))
+            .and_then(|()| write_hex(output, data.as_slice())),
+        PostTokenKind::UserDefinedNumber { form, suffix_begin } => {
+            write_source(output, b"user-defined-literal ", token.source)
+                .and_then(|()| write_source(output, b" ", &token.source[suffix_begin..]))
+                .and_then(|()| write!(output, " {} ", form.name()))
+                .and_then(|()| output.write_all(&token.source[..suffix_begin]))
+        }
+        PostTokenKind::Character {
+            ty,
+            data,
+            multicharacter,
+            suffix_begin,
+        } => {
+            if multicharacter {
+                write_source(output, b"invalid ", token.source)
+            } else {
+                write_text_prefix(
+                    output,
+                    token.source,
+                    suffix_begin.map(|begin| &token.source[begin..]),
+                    LiteralForm::Character,
+                )
+                .and_then(|()| write!(output, " {} ", ty.name()))
+                .and_then(|()| write_hex(output, data.as_slice()))
+            }
+        }
+        PostTokenKind::String {
+            ty,
+            elements,
+            suffix,
+        } => write_text_prefix(
+            output,
+            token.source,
+            suffix.map(|_| token.suffix),
+            LiteralForm::String,
+        )
+        .and_then(|()| write!(output, " array of {} {} ", elements, ty.name()))
+        .and_then(|()| write_hex(output, token.data)),
+        PostTokenKind::EndOfFile => output.write_all(b"eof"),
+    };
+    result?;
+    writeln!(output)
 }
 
 fn write_source(
