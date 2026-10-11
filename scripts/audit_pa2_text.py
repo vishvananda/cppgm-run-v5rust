@@ -81,6 +81,12 @@ def main():
         b'uR"d(\xff)d"', b'"x"\r\n"y"', b'"x"\x00',
         b'"x" "y"\\\n_suffix', b'operator ""\\\nsv',
     ]
+    # Lexer construction is outside posttoken's located-error handler. Probe
+    # initial decoding after BOM/splices as well as errors after ordinary input.
+    probes += [prefix + bad for prefix in
+               [b'', b'\xef\xbb\xbf', b'\\\n', b'??/\n', b' \n', b'1\n', b'"ok" ']
+               for bad in [b'\xc0', b'\xff', b'\xc2', b'\xe0\x80', b'\xed\xa0\x80',
+                           b'\xf4\x90\x80\x80', b'\xf5\x80\x80\x80']]
     inputs += [(f'probe-{i:02}', data, ()) for i, data in enumerate(probes)]
     inputs += [('batch-sentinel', b'one\n\nlast', ('--batch-stdin',))]
     inputs += [('frozen-' + path.stem, path.read_bytes(), ())

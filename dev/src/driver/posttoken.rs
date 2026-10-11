@@ -15,8 +15,9 @@ pub fn emit_posttokens(
     source: &SourceBuffer,
     output: &mut (impl Write + ?Sized),
 ) -> Result<(), TokenToolError> {
-    let mut tokens =
-        PostTokenizer::new(source, NumberDialect::Cxx11).map_err(TokenToolError::Source)?;
+    // C++ constructs the lexer outside its located SourceError handler.
+    let mut tokens = PostTokenizer::new(source, NumberDialect::Cxx11)
+        .map_err(TokenToolError::SourceInitialization)?;
     loop {
         let token = tokens.next_token().map_err(|error| match error {
             PostTokenError::Source(source) => TokenToolError::Source(source),
@@ -111,5 +112,33 @@ fn write_text_prefix(
         write!(output, " {}", form.name())
     } else {
         write_source(output, b"literal ", source)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn construction_failure_stays_distinct_from_stream_failure() {
+        let source = SourceBuffer::new(b"\xef\xbb\xbf??/\n\xc0".to_vec()).unwrap();
+        let mut output = Vec::new();
+        let Err(TokenToolError::SourceInitialization(error)) =
+            emit_posttokens(&source, &mut output)
+        else {
+            panic!("expected an unlocated construction failure");
+        };
+        assert_eq!(error.to_string(), "invalid UTF-8 leading byte");
+        assert!(output.is_empty());
+
+        let source = SourceBuffer::new(b"1\n\xc0".to_vec()).unwrap();
+        let Err(TokenToolError::Source(error)) = emit_posttokens(&source, &mut output) else {
+            panic!("expected a located stream failure");
+        };
+        assert_eq!(
+            source.format_error(&error),
+            "2:1: invalid UTF-8 leading byte"
+        );
+        assert_eq!(output, b"literal 1 int 01000000\n");
     }
 }

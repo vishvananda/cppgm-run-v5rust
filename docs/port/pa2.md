@@ -236,3 +236,27 @@ execution and the complete acceptance record follow in the final audit
 increment. All protected gates already pass after the span fix: PA2 26/26,
 original course target, PA1 58/58 plus course, preservation 26/26, preflight,
 strict quality, independent file audit and 17 harness tests.
+
+The span fix and independent typed audit are committed at `2d0c123`.
+Further CLI probes exposed a second mismatch: a failure decoding the initial
+logical character is caught by C++'s outer exception handler, with no source
+location, because its `PPLexer` constructor precedes the inner source-error
+handler. Rust previously rendered every source error with a location. The
+post-token renderer now returns a distinct structured `SourceInitialization`
+error; the CLI renders its message alone. Errors while consuming the stream
+still carry locations, and PA1's constructor remains in its located handler.
+`SourceError` implements standard `Display`/`Error` without changing its
+stored physical offset or lazy location rendering.
+
+New executed PA2 course cases are
+`tests/300-initial-source-decode-error.t` (BOM/trigraph splice then invalid
+UTF-8) and `tests/300-later-source-decode-error.t` (one emitted integer before
+a located failure). Their new rejection-status sidecars come from the frozen
+oracle; existing references and the 26-case manifest remain unchanged. The
+owning renderer unit checks both typed error variants and retained output.
+The supplemental text generator adds all 49 initial/late decoding combinations
+of BOM, splices, whitespace, integers and strings with malformed UTF-8.
+Stream/CLI evidence improves from 46/50 to 50/50 in both profiles combined.
+All protected gates pass again, with the original full course target now
+executing 28 cases including both added regressions. Final resource and
+requirement-by-requirement acceptance evidence is recorded below.

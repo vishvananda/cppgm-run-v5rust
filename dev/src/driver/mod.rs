@@ -14,6 +14,7 @@ pub mod posttoken;
 /// Errors retained until a source tool renders its diagnostics.
 #[derive(Debug)]
 pub enum TokenToolError {
+    SourceInitialization(crate::preprocess::source::SourceError),
     Source(crate::preprocess::source::SourceError),
     Output(std::io::Error),
     NotImplemented(&'static str),

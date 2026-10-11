@@ -20,6 +20,14 @@ pub struct SourceError {
     pub(crate) message: &'static str,
 }
 
+impl std::fmt::Display for SourceError {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        output.write_str(self.message)
+    }
+}
+
+impl std::error::Error for SourceError {}
+
 impl SourceError {
     pub(crate) fn new(offset: SourceOffset, message: &'static str) -> Self {
         Self { offset, message }

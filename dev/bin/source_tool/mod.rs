@@ -93,6 +93,9 @@ fn run(
         .map_err(|e| CliError::Message(e.to_string()))?;
     match result {
         Ok(()) => Ok(()),
+        Err(TokenToolError::SourceInitialization(error)) => {
+            Err(CliError::Message(error.to_string()))
+        }
         Err(TokenToolError::Source(error)) => Err(CliError::Message(format!(
             "<stdin>:{}",
             source.format_error(&error)

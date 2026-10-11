@@ -10,7 +10,7 @@ dev/lowir2native.cpp		pending
 dev/lowiropt-scaffold.cpp		pending
 dev/lowiropt.cpp		pending
 dev/posttoken-scaffold.cpp	dev/src/lex/vocabulary.rs,dev/src/driver/posttoken.rs	complete: PA2 vocabulary and all text/numeric output forms
-dev/posttoken.cpp	dev/bin/posttoken.rs,dev/bin/source_tool/mod.rs	complete: bare-lexer PA2 CLI, source/error ordering and stream behavior
+dev/posttoken.cpp	dev/bin/posttoken.rs,dev/bin/source_tool/mod.rs,dev/src/driver/posttoken.rs	complete: bare-lexer PA2 CLI, unlocated lexer-construction versus located stream failures and stream behavior
 dev/ppexpr-scaffold.cpp		pending
 dev/ppexpr.cpp		pending
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
