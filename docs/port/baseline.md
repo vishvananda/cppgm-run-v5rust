@@ -51,3 +51,20 @@ add CR and C3, rerun clean C1/C2, and prove all four equal before completion.
 
 Preparation logs live under
 `/home/vishvananda/work/private/v5rust/artifacts/`.
+
+## Live-run gate review
+
+After the first PA1 implementation handoff, comparison failure handling was
+strengthened: focused cases force nonzero comparator failures; full course
+runs check both `.test_failed` and per-lane counts even when make exits zero.
+The PA34 final gate repeats Rust release/debug checks and the ownership census,
+then runs PA1-PA33 and PA8/PA32/PA33 debug lanes with all primary and helper
+tools bound to the rebuilt C++ generation.
+
+Validation includes 17 clone harness tests, a real keep-going comparator
+failure/recovery, all 140 PA33 oracle cases with strict focused exits, and all
+33 course suites plus all three debug suites using the saved C++ fixed-point
+binaries. Evidence lives
+under `/home/vishvananda/work/private/v5rust/artifacts/observer/`.
+The first implementation's compiler files, fixtures and source ledger were
+not changed by this gate update.
