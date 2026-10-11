@@ -890,7 +890,7 @@ found during the repair is also fixed. The protected differential adapter still
 rejects a statistics invocation solely for an implementation-specific storage
 measurement; its policy needs an external disposition before full acceptance.
 No protected checker, oracle, existing reference, manifest or Ralph state was
-changed. The existing goal remains active; this entry does not advance PA4.
+changed. The existing goal awaits baseline disposition; this entry does not advance PA4.
 
 ### Findings and fixes beyond fixture coverage
 
@@ -1076,3 +1076,27 @@ count. Counter instrumentation records 2 invocations and 6 produced expansion
 tokens per nested call (4 final literals), without causing an extra prescan.
 The audit scratch evidence uses approximately 161 MiB; the shared filesystem
 uses approximately 5.62 GB of 105.09 GB, below the 100-GiB ceiling.
+
+
+## Blocked audit revalidation (2026-10-11)
+
+The same protected statistics-policy discrepancy has now been confirmed in
+three consecutive goal turns: the implementation/audit turn at `209cc51` and
+`2b4c7f6`, then two current-state revalidations. The immediately preceding turn
+is classified as no progress: it reconfirmed the existing finding without an
+implementation or external policy change. The third-turn reproduction uses
+the unchanged candidate and oracle binaries and the current protected adapter.
+Both tools return zero, their generated files are byte-identical, and only
+`arena_bytes=16384` versus `arena_bytes=0` differs in stderr. No new baseline
+disposition or change to statistics recognition was found.
+
+Current raw evidence is retained under
+`/home/vishvananda/work/private/v5rust/artifacts/pa4-full-audit/revalidation-3/`
+(`summary.json`, `trace.jsonl`, complete mismatch observations and tokens).
+The prior passing gate/course/quality evidence still describes the unchanged
+implementation. Full acceptance remains unproven. The blocked-audit threshold
+is satisfied: further acceptance work requires an external baseline-policy
+disposition, because changing the frozen checker or fabricating allocator
+measurements would violate the contract. The existing phase goal will be
+marked blocked at this handoff; no goal is created/replaced and no Ralph state
+file is edited. The reviewed implementation remains `209cc51`.
