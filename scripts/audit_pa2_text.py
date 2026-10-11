@@ -65,7 +65,13 @@ def main():
     root = args.evidence.resolve() / args.profile
     root.mkdir(parents=True, exist_ok=True)
     groups = corpus()
-    inputs = [(name, (' ;\n'.join(values) + ' ;\n').encode(), ()) for name, values in groups.items()]
+    # A splice can join a suffix to the next encoding prefix and make a later
+    # quoted body lexically ill-formed. Run mixed sequences independently so a
+    # source error in one cannot silently hide all remaining generated cases.
+    inputs = [(name, (' ;\n'.join(values) + ' ;\n').encode(), ())
+              for name, values in groups.items() if name != 'mixed-runs']
+    inputs += [(f'mixed-run-{i:04}', value.encode(), ())
+               for i, value in enumerate(groups['mixed-runs'])]
     probes = [
         b'1 "ok" /*', b'1 "ok" "\\q"', b'1 "ok" \\uD800', b'1 "ok" +\xff',
         b'operator ""sv /*', b'operator ""sv "\\q"', b'operator ""sv +\xff',
@@ -84,9 +90,13 @@ def main():
         directory = root / name
         actual = invoke(candidate, data, directory / 'candidate', arguments)
         expected = invoke(oracle, data, directory / 'oracle', arguments)
+        cases = 1 if name.startswith('mixed-run-') else len(groups.get(name, []))
+        # Every grouped stream must reach EOF; a matching lexical failure only
+        # proves the prefix through that error. Isolated inputs may reject.
+        allowed = (0,) if name in groups else (0, 1)
         rows.append(dict(group=name, input_sha256=hashlib.sha256(data).hexdigest(), input_bytes=len(data),
                          arguments=arguments, candidate=actual, oracle=expected,
-                         match=actual == expected and actual['exit'] in (0, 1), cases=len(groups.get(name, []))))
+                         match=actual == expected and actual['exit'] in allowed, cases=cases))
     result = dict(candidate=str(candidate), candidate_sha256=digest(candidate),
                   oracle=str(oracle), oracle_sha256=digest(oracle), comparisons=rows,
                   case_counts={k: len(v) for k, v in groups.items()},

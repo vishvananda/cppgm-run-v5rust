@@ -215,13 +215,14 @@ impl<'a> PostTokenizer<'a> {
 
     fn next_string(&mut self, first_kind: PpTokenKind) -> Result<PostToken<'_>, PostTokenError> {
         let first = self.input.token(first_kind);
-        let begin = first.begin;
+        let begin;
         let mut end = first.end;
         let split = self.after_operator
             && first_kind == PpTokenKind::UserDefinedStringLiteral
             && first.spelling.len() >= 3
             && first.spelling.starts_with(b"\"\"");
         if split {
+            begin = first.begin;
             self.strings
                 .add(&first.spelling[..2])
                 .map_err(PostTokenError::Text)?;
@@ -241,6 +242,11 @@ impl<'a> PostTokenizer<'a> {
                     kind,
                     PpTokenKind::StringLiteral | PpTokenKind::UserDefinedStringLiteral
                 ) {
+                    // The frozen bare lexer overwrites the PPToken referenced
+                    // as `first` during lookahead. Its final first.begin is
+                    // therefore this token's begin, even beyond the run's end.
+                    // Preserve that published fact without aliasing storage.
+                    begin = self.input.token(kind).begin;
                     self.lookahead = Some(kind);
                     break;
                 }
@@ -352,7 +358,7 @@ mod tests {
         assert_eq!(token.data, [0, 0xd8, 0, 0xd8, 0, 0xdc, 0, 0]);
         assert_eq!(
             (token.begin, token.end),
-            (SourceOffset(0), SourceOffset(24))
+            (SourceOffset(25), SourceOffset(24))
         );
         let token = tokens.next_token().unwrap();
         assert_eq!(token.source, "_π".as_bytes());
@@ -435,6 +441,35 @@ mod tests {
                 tokens.next_token().unwrap().kind,
                 PostTokenKind::Simple(_)
             ));
+        }
+    }
+
+    #[test]
+    fn bare_string_span_preserves_frozen_lookahead_overwrite() {
+        for (input, begin, end, valid) in [
+            (b"\"abc\" \"def\" 7".as_slice(), 12, 11, true),
+            (b"\"abc\"", 6, 5, true),
+            (b"u\"a\" U\"b\" 7", 10, 9, false),
+        ] {
+            let source = SourceBuffer::new(input.to_vec()).unwrap();
+            let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+            let token = tokens.next_token().unwrap();
+            assert_eq!(
+                (token.begin, token.end),
+                (SourceOffset(begin), SourceOffset(end))
+            );
+            assert_eq!(matches!(token.kind, PostTokenKind::String { .. }), valid);
+            let token = tokens.next_token().unwrap();
+            assert_eq!(token.begin, SourceOffset(begin));
+            if token.kind == PostTokenKind::EndOfFile {
+                let token = tokens.next_token().unwrap();
+                assert_eq!(
+                    (token.begin, token.end),
+                    (SourceOffset(begin), SourceOffset(begin))
+                );
+            } else {
+                assert_eq!(token.source, b"7");
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 # PA2 port ledger
 
 Stage base commit: `6f0c1b97b997e01289470a8220d658b9ef95bfc9`
-Last audited commit: INITIAL
+Last audited commit: INITIAL (final audit evidence below is being completed)
 Text-group entry HEAD: `8ca05d6de479d2663b9a8f5437c1a79cfca6ff8a`
 
 The PA2 implementation lane now passes its complete frozen manifest and original
@@ -206,3 +206,33 @@ before encoding, compact private piece storage, borrowed lookahead validity,
 capacity reuse, error/output demand ordering and the alternative-operator
 suffix lookup. Parsing, semantic demand and per-function backend lifetimes
 remain future-stage obligations, not certified by this lexical handoff.
+
+## Independent audit findings, 2026-10-11
+
+Audit entry: `d71823ceb4e9ed239f147be49c61286296c3f5b4`. Direct typed
+comparisons exposed a mismatch absent from the PA2 writer: the frozen bare
+lexer overwrites the `first` PPToken reference while finding the end of a
+string run. C++ therefore publishes the lookahead token's begin offset as the
+string's begin, including when it exceeds the string's end. For
+`"abc" "def" 7`, the frozen span is `(12, 11)`, not `(0, 11)`. Rust now
+records the same deterministic frozen fact explicitly, without aliased mutable
+storage. The literal-operator split still uses its original begin and never
+pulls a lookahead. This baseline quirk is reported and preserved; the oracle
+and references are unchanged. The owning Rust unit regression executes in
+both workspace test profiles; a PA2 text fixture cannot expose these spans.
+
+New test-only `scripts/audit_pa2_tokens.py` compares kinds, spans, spellings,
+simple identities, forms, suffix/prefix slices, types, scalar/array bytes,
+multicharacter packing, sequence sizes, repeated EOF and error ordering.
+Entry evidence was 14/842 matching, with 828 span mismatches; the fix passes
+842/842. Raw results and probe builds are under
+`/home/vishvananda/work/private/v5rust/artifacts/pa2-audit/typed-{entry,release}/`.
+
+The text audit's joined mixed stream stopped on a source error at line 29,
+after only 18 output lines. Its advertised 1,200 generated mixed cases were
+not all executed. The generator now runs each mixed sequence independently,
+and requires every remaining grouped stream to reach EOF. Final supplemental
+execution and the complete acceptance record follow in the final audit
+increment. All protected gates already pass after the span fix: PA2 26/26,
+original course target, PA1 58/58 plus course, preservation 26/26, preflight,
+strict quality, independent file audit and 17 harness tests.

@@ -44,7 +44,7 @@ dev/src/lex/number_literal.h	dev/src/lex/number.rs,dev/src/lex/floating.rs	parti
 dev/src/lex/post_token.h	dev/src/lex/mod.rs	partial: borrowed spans/spellings, scalar and sequence facts, multicharacter flag and suffix boundaries; interned identifiers deferred
 dev/src/lex/post_token_writer.cpp	dev/src/driver/posttoken.rs	complete: all PA2 forms, multicharacter invalid view and exact code-unit dumps
 dev/src/lex/post_token_writer.h	dev/src/driver/posttoken.rs	complete: typed scalar/array text view
-dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs	partial: complete Cxx11 bare-lexer conversion, one-token lookahead and literal-operator split; preprocessor/interned input and GNU dialect deferred
+dev/src/lex/post_tokenizer.cpp	dev/src/lex/mod.rs	partial: complete Cxx11 bare-lexer conversion, frozen lookahead-overwritten string start spans and literal-operator split; preprocessor/interned input and GNU dialect deferred
 dev/src/lex/post_tokenizer.h	dev/src/lex/mod.rs	partial: borrowed typed post-token pull API, reusable buffers and bounded lookahead; preprocessor/interned input deferred
 dev/src/lex/string_concatenation.cpp	dev/src/lex/strings.rs	partial: strict Cxx11 maximal sequences, prefix/suffix unification, scalar/numeric code-unit encoding and buffer reuse; GNU reserved suffix option deferred
 dev/src/lex/string_concatenation.h	dev/src/lex/strings.rs	partial: private sequence store with compact piece spans and parse-once boundaries; GNU reserved suffix option deferred
