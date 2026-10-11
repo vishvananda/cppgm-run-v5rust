@@ -7,12 +7,14 @@ Implementation checkpoints:
 
 - `52ff1e8344d359aaa501d740291fb105f6300df6`: macro group (2026-10-11).
 - `5c06195f4c6f7960bcc768092a844871f1eaa2df`: conditional inclusion and controlling-expression rescanning (2026-10-11); entry HEAD `fd2481a` (documentation handoff after the macro implementation).
+- `16f0a9779f89f5b82544b1f1085b53593df1f749`: presumed locations, file/line builtin replacement and macro-expanded line control (2026-10-11); entry HEAD `af7984f93d7ba4aedca00014cd7590441667d207`.
 
 The current checkpoint is a coherent partial PA4 handoff. Ralph owns stage
-advancement, checkpoint audits and the last-audited marker. The previous goal
-turn was progress: the macro implementation and its evidence are committed.
-This turn reduces the fixed failures from 28 to 14 while preserving 78/78
-turn-start passing identities.
+advancement, checkpoint audits and the last-audited marker, which remains
+`INITIAL`. The previous goal turn was progress: the conditional implementation
+and its evidence were committed. This turn reduces the fixed failures from
+14 to 8 while preserving 92/92 turn-start passing identities. Full PA4 is
+still incomplete.
 
 ## Contract and ownership
 
@@ -30,7 +32,9 @@ Consulted C++ owners and translated Rust responsibilities:
 | --- | --- | --- |
 | `preproc.cpp`, `src/lex/post_token_writer.cpp` | `dev/bin/preproc.rs`, `dev/src/driver/preproc.rs`, shared `driver/posttoken.rs` | File CLI, primary-source reset, post-token view and failure boundaries |
 | `src/lex/identifier_table.{h,cpp}` | `dev/src/lex/identifiers.rs` | Private spelling interning, compact `NameId` |
-| `src/preprocess/source/source_stack.{h,cpp}` | `dev/src/preprocess/input.rs` | Single-file text/directive/expanded-line boundaries, inactive lexing and stable spellings |
+| `src/preprocess/source/source_stack.{h,cpp}` | `dev/src/preprocess/input.rs` | Single-file text/directive/expanded-line boundaries, newline location, inactive lexing and stable spellings |
+| `src/preprocess/source/source_files.{h,cpp}`, `preprocessor.cpp` location queries | `dev/src/preprocess/locations.rs` | Lazy physical-line index, byte columns, presumed-name/delta history and cached escaped file literal |
+| `src/preprocess/preprocessor_directives.cpp` line control | `dev/src/preprocess/line_control.rs`, shared `dev/src/lex/{strings.rs,text.rs}` | Expanded-line operand grammar, range/diagnostic precedence and shared ordinary-string decoding |
 | `src/preprocess/macro/macro_definition.{h,cpp}` | `dev/src/preprocess/macros/definition.rs` | Definition grammar, immutable roles, expanded-argument demand and redefinition |
 | `src/preprocess/macro/macro_expander.{h,cpp}` | `dev/src/preprocess/macros/expander.rs` | Iterative rescanning, arguments, substitution, paste/paint, raw defined and attribute probes |
 | `src/preprocess/macro/hide_sets.{h,cpp}` | `dev/src/preprocess/macros/hide_sets.rs` | Ordered interned additions, skew-jump unions and persistent membership indexes |
@@ -57,9 +61,10 @@ predefined environments, directives or telemetry remain unported.
   substituted/raw argument flags, open context lifetimes, inherited disabled
   names and parameter-substitution nesting boundaries. No recursion cutoff.
 - Fixed predefined constants and the oracle's `__COUNTER__` replacement are
-  present. File/line/date/time definitions explicitly report missing
-  implementation when demanded, including during argument prescan. An unused
-  or stringized raw argument does not demand their values. Attribute probes
+  present. File/line values now use invocation locations and the current presumed
+  state. Date/time definitions still explicitly report missing implementation
+  when demanded. An unused or stringized raw argument does not demand builtin
+  values. Attribute probes
   remain identifiers outside controlling expressions, as in C++.
 - Source bytes remain immutable. Clean nonidentifier spellings borrow the
   image; translated/generated text and interned names share immutable `Rc`
@@ -172,7 +177,7 @@ cover malformed operators and sections, diagnostic precedence, branch
 selection, attributes, `defined` through prescan/paste and EOF without newline.
 No oracle or harness defect was identified.
 
-## Remaining exact case IDs and earliest divergent owners
+## Conditional checkpoint remaining case IDs (historical)
 
 All paths below are relative to `pa4/tests/directives/`.
 
@@ -246,21 +251,150 @@ Time follows input work; retained memory follows the immutable source plus
 nesting depth, rather than the volume of expanded output or skipped names.
 The 50,000-level invariant test also passes in debug and release.
 
-## Handoff
+## Location-control checkpoint behavior and architecture
 
-Next dependency boundary: source-file stores/inclusion frames with compact
-location ranges, per-file conditional depth, presumed file/line history and
-host file identity. Connect include operands through the existing expanded-line
-input; port raw/expanded name combination, search order, once/guard skips and
-exact diagnostics from the C++ owners. Then location-aware builtin replacement,
-line control, build-time CLI capture and pragma execution can complete PA4.
-Conditional ordering already handles inactive includes and header-name requests.
+C++ owners read directly: `dev/preproc.cpp` error/build-time boundaries,
+`preprocessor.cpp` (`FileLiteral`, `EarlierState`, `presumed_line`,
+`presumed_file_literal`, `describe`), `preprocessor_directives.cpp` (`run_line`,
+`DecodeOrdinaryString`), `source/source_files.{h,cpp}` line indexing and
+inclusion state, and `macro/macro_expander.cpp::replace_builtin` plus
+replacement/substitution location handling.
 
-Independent audit questions: review line-lookahead termination and error
-precedence, `defined` produced through substitution at argument barriers,
-attribute raw-operand reporting and empty invocation storage after directive
-lines. When frames arrive, verify conditional sections cannot cross file
-boundaries and preserved locations refer to their original inclusion state.
-Full PA4 and its course target remain incomplete. This coherent implementation
-handoff leaves all 14 exact missing dependencies explicit and does not advance
-the audited stage.
+The group completes single-file `__LINE__`, `__FILE__` and `#line`, including
+macro-expanded operands, comments/splices and the physical newline ending the
+directive, decimal-only line numbers in 1..=2147483647, exact operand/lexical
+error precedence, ordinary-string filename decoding, and file-literal escaping
+for quotes, backslashes, control bytes and non-UTF-8 bytes. Filename literals
+are cached until a filename operand changes their state. Source `NameId` and
+`SourceOffset` identities survive replacement and argument prescan; unused,
+stringized and pasted arguments retain the existing demand boundaries.
+
+Typed data flow: the CLI passes the primary path's bytes into
+`Preprocessor::with_name`; `SourceInput` owns one private `Locations` record
+for its immutable source image. `Expander` queries the invocation token's
+compact offset for a number or shared literal. A reusable directive-local
+vector receives typed expanded tokens; the line parser consumes those tokens
+and the shared phase-5 converter, producing a checked line number and optional
+filename bytes. After applying the state change, token contents are cleared.
+No text dump is used as phase transport, and no unit token sequence is built.
+
+The physical-line table is built once on first location demand, with one
+compact offset per physical line, not a record per character/token. Location
+lookup uses binary search. Presumed name/delta history is a flat vector with
+one record per `#line`, sharing unchanged names. Builtin replacement uses the
+latest state, exactly as C++ does; diagnostic lookup uses the state at its
+original location. The driver obtains the input owner's diagnostic before
+releasing it and writes bytes directly, preserving decoded filename bytes.
+Unit/line storage lifetimes remain bounded by the source unit/directive.
+Backend, optimizer and emission code is untouched; no dependencies, unsafe
+code, process fallback, environment reads or reference answers were added.
+
+Invariant tests prove lazy indexing and literal caching, original-location
+history including its newline boundary, BOM byte columns, binary filename
+escaping, line-operand prescan and complete release of directive/expansion
+contents. They pass in debug and release with the existing ownership tests.
+The file audit covers both new responsibility modules and finds no violations.
+
+## Location-control checkpoint validation
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/`.
+Validated implementation and source map: `16f0a9779f89f5b82544b1f1085b53593df1f749`.
+The subsequent ledger commit changes documentation only. Release `preproc`
+SHA-256: `f3ac4950678db1c64af9fde02e21620243f5e5a4da6e2d30ee7e08c61cb559fc`.
+
+| Command | Outcome | Log relative to evidence root |
+| --- | --- | --- |
+| `make build` | PASS | `pa4-locations-build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS | `pa4-locations-preflight.log` |
+| `make test-pa4` (required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa4`) | 98/106 PASS; 8 FAIL; checker exits 1, make exits 2 | `pa4-locations-stage.log` |
+| `make course-pa4` | 98/106; FAIL, failure marker remains | `pa4-locations-course.log`; `clone/course/pa4/test/{course-result.json,counts.txt,trace.jsonl}` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS: 104 fixed PA1–PA3 cases and all three course targets | `pa4-locations-prior.log`; `clone/course/pa{1,2,3}/test/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS: 92/92 turn-start identities retained | `pa4-locations-preserve.log` |
+| `make lint` (`python3 /home/vishvananda/work/v5rust-control/clone_quality.py`) | PASS: rustfmt, strict Clippy, debug/release tests, audit | `pa4-locations-quality.log` |
+| `make audit-rust` | PASS: 55 files, zero findings | `pa4-locations-audit.log` |
+
+Turn-start failures: **14/106**. Checkpoint failures: **8/106**. Coverage remains
+106 original identities. `pa4-locations-case-summary.json` captures every raw
+invocation record and confirms all 98 passing cases have matching status 0/1,
+stdout/stderr and complete output bytes; all 92 prior passes remain passes.
+Newly passing paths relative to `pa4/tests/directives/`: `300-line-new-line.t`,
+`500-predefined-macros.t`, `600-line-macro.t`,
+`600-predefined-macro-argument-expansion.t`, `610-line-macro.t`,
+`660-line-directive.t`. Example raw successful location trace:
+`clone/cases/pa4/51f30f389b5cb98b99a4/trace.jsonl`. Remaining traces still return
+explicit status 86 for their named missing inclusion or pragma dependency;
+none is claimed as a matching rejection.
+
+Supplemental generated differential reproducer:
+`pa4-locations-differential/{check.py,results.json}` and
+`pa4-locations-differential.log`. **173/173** match status, stdout, stderr and
+complete output bytes. Inputs and outputs are retained there. Coverage includes
+malformed/range/extra operands, filename prefixes/raw/suffixed literals,
+splices, BOMs, embedded control/non-UTF-8 bytes, nested/multiline arguments,
+#line operands demanding builtins, lexer-error precedence and delayed
+unterminated-conditional diagnostics using earlier filenames/line numbers.
+No oracle or harness defect was identified. Fixtures, manifests and policy
+remain unchanged.
+
+## Location-control checkpoint resource observations
+
+Reproducer and raw input/output/time/CSV observations:
+`/home/vishvananda/work/private/v5rust/artifacts/pa4-locations-resources/`.
+Run `python3 measure.py` there; `summary.txt` records this run. Five
+observations per size/tool; all nine workloads have matching complete output
+hashes. Median wall milliseconds include launch; RSS is the maximum of five
+`/usr/bin/time` observations. These are descriptive measurements collected
+alongside validation, not a calibrated C++/Rust performance comparison.
+
+| Supported workload | Scale | Input bytes | Rust ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| Repeated `ID(__LINE__)` and stringized `__FILE__` | 10,000 rows | 310,058 | 59.573 | 2,200 |
+| Same | 50,000 rows | 1,550,058 | 233.829 | 3,612 |
+| Same | 100,000 rows | 3,100,058 | 487.387 | 5,716 |
+| Repeated `#line` state plus file/line demand | 10,000 states | 458,894 | 29.737 | 3,612 |
+| Same | 50,000 states | 2,338,894 | 148.798 | 8,540 |
+| Same | 100,000 states | 4,688,895 | 297.112 | 14,872 |
+| Nested `ID` builtin argument prescan | 1,024 deep | 4,121 | 4.146 | 2,908 |
+| Same | 4,096 deep | 16,409 | 7.524 | 4,316 |
+| Same | 16,384 deep | 65,561 | 21.671 | 11,376 |
+
+Time scales with source/expansion work. Memory follows retained source bytes,
+physical lines, required line history and invocation depth; produced output is
+streamed. The cached file literal shares immutable spelling bytes across
+repeated demand. No native-stack failure occurs at 16,384 nested prescans.
+
+## Remaining exact case IDs and next dependency boundary
+
+All paths below are relative to `pa4/tests/directives/`.
+
+- Source frames/inclusion: `200-include.t`, `400-bad-include.t`,
+  `400-header-guard-shapes.t`, `400-header-guarded.t`, `600-pragma-op.t`,
+  `800-pragma-once.t`. Owners: `source_stack.cpp`, `source_files.cpp`,
+  `preprocessor_directives.cpp` includes/guards, and `preprocessor.cpp` once.
+- Pragma execution: `500-pragma-ignore.t`, `501-pragma-op-ignore.t`.
+  Owners: `run_pragma_directive` and `run_pragma_operator`.
+
+Next coherent boundary: a translation-unit source-file store with compact
+file/inclusion IDs and location ranges, private path/host-identity caches,
+source frames and per-file conditional depth. Transfer the single-inclusion
+physical index/history into those owners, retaining lookup after a file ends.
+Then port raw/expanded include-name combination, search relative to the current
+presumed name, once/guard skips and their diagnostic include chains. Pragmas
+require after-replacement text-sequence operator parsing, pragma destringizing
+and relexing, once identity and pack state. All of these must preserve the
+existing directive and macro demand boundaries.
+
+Other production responsibilities still pending: one-invocation build-time
+capture in `dev/bin/` with typed date/time options, complete deterministic
+statistics, include/location-space limits and later hosted probes/variadics.
+The date/time definitions explicitly return 86 if demanded; no fixed-manifest
+case prints those environmental values. These gaps are not evidence of full
+PA4 completion.
+
+Independent audit focus: verify newline/history boundaries and latest versus
+historical location queries, binary filename bytes at the driver boundary,
+line-operand error precedence and argument-location retention. When frames
+arrive, verify every token retains its inclusion range, conditional sections
+cannot cross file boundaries and inclusion search uses the presumed name.
+This handoff completes the location-control group without advancing the stage
+or changing the last-audited commit.
