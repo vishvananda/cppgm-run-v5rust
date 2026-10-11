@@ -186,6 +186,24 @@ mod tests {
     use crate::lex::pp_lexer::Punctuator;
 
     #[test]
+    fn wrapped_parameter_roles_report_a_limit_without_indexing_absent_arguments() {
+        let parameters = (0..u16::MAX)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let source =
+            SourceBuffer::new(format!("#define F({parameters},...) p0\nF()\n").into_bytes())
+                .unwrap();
+        let mut input = Preprocessor::new(&source).unwrap();
+        assert!(matches!(
+            input.next_non_whitespace_kind(),
+            Err(PreprocessError::Limit(
+                "macro parameter count exceeds its representation"
+            ))
+        ));
+    }
+
+    #[test]
     fn line_operand_prescan_uses_current_location_and_releases_transient_tokens() {
         let source = SourceBuffer::new(b"#define ID(x) x\n#define LINE __LINE__\n#line 80 \"virtual\"\nID(\nLINE\n)\n#line __LINE__\n__LINE__\n".to_vec()).unwrap();
         let mut input = Preprocessor::with_name(&source, b"physical").unwrap();

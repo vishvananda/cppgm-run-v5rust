@@ -36,6 +36,17 @@ struct Arguments {
     disabled: HideSetId,
     outer: HideSetId,
 }
+impl Arguments {
+    fn range(&self, slot: u16, expanded: bool) -> Result<Range<usize>, PreprocessError> {
+        let ranges = if expanded { &self.expanded } else { &self.raw };
+        ranges
+            .get(usize::from(slot))
+            .cloned()
+            .ok_or(PreprocessError::Limit(
+                "macro parameter count exceeds its representation",
+            ))
+    }
+}
 struct Invocation<'a> {
     definition: Rc<Definition<'a>>,
     head: Token<'a>,
@@ -496,7 +507,10 @@ impl<'a> Expander<'a> {
         source: &mut SourceInput<'a>,
         names: &mut Identifiers,
     ) -> Result<(), PreprocessError> {
-        let variable = definition.variadic.then(|| definition.parameters.len() - 1);
+        let variable = definition
+            .variadic
+            .then(|| definition.parameter_count().checked_sub(1))
+            .flatten();
         let mut start = arguments.token_mark;
         let mut links = Vec::new();
         let mut previous_serial = ContextId::default();
@@ -555,7 +569,10 @@ impl<'a> Expander<'a> {
             return Ok(false);
         };
         arguments.outer = self.hides.merge(arguments.disabled, context.outer)?;
-        let variable = definition.variadic.then(|| definition.parameters.len() - 1);
+        let variable = definition
+            .variadic
+            .then(|| definition.parameter_count().checked_sub(1))
+            .flatten();
         let mut start = context.cursor + 1;
         let mut at = self.argument_links[context.cursor]
             .ok_or(PreprocessError::Invariant("unlinked argument parenthesis"))?;
@@ -576,7 +593,7 @@ impl<'a> Expander<'a> {
         head: &Token<'a>,
         arguments: &mut Arguments,
     ) -> Result<(), PreprocessError> {
-        let parameters = definition.parameters.len();
+        let parameters = definition.parameter_count();
         if parameters == 0 {
             if arguments.raw.len() != 1 || !arguments.raw[0].is_empty() {
                 return Err(PreprocessError::at(head.begin, "too many macro arguments"));
@@ -723,7 +740,7 @@ impl<'a> Expander<'a> {
                     let arguments = arguments
                         .ok_or(PreprocessError::Invariant("parameter without arguments"))?;
                     self.substitute(
-                        arguments.expanded[usize::from(slot)].clone(),
+                        arguments.range(slot, true)?,
                         replacement,
                         Some(argument_hide),
                         &mut paste,
@@ -735,7 +752,7 @@ impl<'a> Expander<'a> {
                     let arguments = arguments.ok_or(PreprocessError::Invariant(
                         "raw parameter without arguments",
                     ))?;
-                    let range = arguments.raw[usize::from(slot)].clone();
+                    let range = arguments.range(slot, false)?;
                     if comma_paste {
                         comma_paste = false;
                         if range.is_empty() {
@@ -754,8 +771,7 @@ impl<'a> Expander<'a> {
                 Role::Stringize(slot) => {
                     let arguments = arguments
                         .ok_or(PreprocessError::Invariant("stringize without arguments"))?;
-                    let token =
-                        self.stringize(arguments.raw[usize::from(slot)].clone(), replacement, head);
+                    let token = self.stringize(arguments.range(slot, false)?, replacement, head);
                     self.emit(token, &mut paste, &building, names)?;
                 }
                 Role::StringizedParameter => {}

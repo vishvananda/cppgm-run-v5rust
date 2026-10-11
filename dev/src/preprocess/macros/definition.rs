@@ -126,6 +126,11 @@ impl<'a> Definitions<'a> {
     }
 }
 impl<'a> Definition<'a> {
+    pub(crate) fn parameter_count(&self) -> usize {
+        // C++ stores the count in uint16_t. The ellipsis branch can append
+        // one parameter after 65,535 named parameters, wrapping that count.
+        self.parameters.len() & usize::from(u16::MAX)
+    }
     fn empty(name: NameId) -> Self {
         Self {
             name,
@@ -141,7 +146,9 @@ impl<'a> Definition<'a> {
         self.builtin == other.builtin
             && self.function_like == other.function_like
             && self.variadic == other.variadic
-            && self.parameters == other.parameters
+            && self.parameter_count() == other.parameter_count()
+            && self.parameters[..self.parameter_count()]
+                == other.parameters[..other.parameter_count()]
             && self.body.len() == other.body.len()
             && self
                 .body
@@ -218,7 +225,13 @@ impl<'a> Definition<'a> {
                 let va_args = names
                     .intern(b"__VA_ARGS__")
                     .map_err(PreprocessError::Limit)?;
-                self.add_parameter(va_args, token.begin, slots)?;
+                if self.parameters.len() == usize::from(u16::MAX) {
+                    // The frozen parser wraps __VA_ARGS__'s one-based slot
+                    // to zero, so it has no parameter role in this definition.
+                    self.parameters.push(va_args);
+                } else {
+                    self.add_parameter(va_args, token.begin, slots)?;
+                }
                 source.allow_va_args = true;
                 token = source.next_in_line(names)?;
                 if !token.is_punctuator(Punctuator::RightParen) {

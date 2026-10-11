@@ -246,7 +246,7 @@ dev/src/preprocess/macro/feature_probes.cpp		pending
 dev/src/preprocess/macro/feature_probes.h		pending
 dev/src/preprocess/macro/hide_sets.cpp	dev/src/preprocess/macros/hide_sets.rs	complete: ordered interned additions, summary/chain membership, lazy persistent trie, skew-jump ancestor union and last-add removal
 dev/src/preprocess/macro/hide_sets.h	dev/src/preprocess/macros/hide_sets.rs	complete: private store and compact HideSetId; translation-unit cache ownership
-dev/src/preprocess/macro/macro_definition.cpp	dev/src/preprocess/macros/definition.rs	partial: complete course definition/parameter grammar, roles and redefinition; hosted named variadics deferred
+dev/src/preprocess/macro/macro_definition.cpp	dev/src/preprocess/macros/definition.rs	partial: complete course definition/parameter grammar, roles, redefinition and explicit uint16 parameter-count truncation; hosted named variadics deferred
 dev/src/preprocess/macro/macro_definition.h	dev/src/preprocess/macros/definition.rs	partial: immutable definitions, typed parameter/builtin roles, compact defined operator identity, expanded-use demand and file/line builtin locations; build-time values and hosted probes pending
 dev/src/preprocess/macro/macro_expander.cpp	dev/src/preprocess/macros/expander.rs	partial: course macro semantics, file/line/counter replacement, raw defined and standard/GNU attribute probes in controlling expressions; hosted probes and counters pending
 dev/src/preprocess/macro/macro_expander.h	dev/src/preprocess/macros/expander.rs,dev/src/preprocess/macros/token.rs	partial: context/invocation stacks, linked argument ranges, controlling-expression mode, compact invocation locations and released transient buffers; hosted environment and telemetry pending

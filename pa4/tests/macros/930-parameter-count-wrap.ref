@@ -1,0 +1,5 @@
+preproc 1
+sof tests/macros/930-parameter-count-wrap.t
+identifier __VA_ARGS__
+identifier __VA_ARGS__
+eof
