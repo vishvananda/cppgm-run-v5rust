@@ -11,8 +11,8 @@ dev/lowiropt-scaffold.cpp		pending
 dev/lowiropt.cpp		pending
 dev/posttoken-scaffold.cpp	dev/src/lex/vocabulary.rs,dev/src/driver/posttoken.rs	complete: PA2 vocabulary and all text/numeric output forms
 dev/posttoken.cpp	dev/bin/posttoken.rs,dev/bin/source_tool/mod.rs,dev/src/driver/posttoken.rs	complete: bare-lexer PA2 CLI, unlocated lexer-construction versus located stream failures and stream behavior
-dev/ppexpr-scaffold.cpp	dev/bin/ppexpr.rs,dev/src/driver/ppexpr.rs	complete: PA3 mock defined query and decimal/result/EOF view
-dev/ppexpr.cpp	dev/bin/ppexpr.rs,dev/bin/source_tool/mod.rs,dev/src/driver/ppexpr.rs	complete: PA3 bare CLI, 64-KiB result buffering, error flush and handler scopes
+dev/ppexpr-scaffold.cpp	dev/bin/ppexpr.rs,dev/src/driver/ppexpr.rs	complete: audited PA3 mock defined query and decimal/result/EOF view
+dev/ppexpr.cpp	dev/bin/ppexpr.rs,dev/bin/source_tool/mod.rs,dev/src/driver/ppexpr.rs	complete: audited PA3 bare CLI, 64-KiB result buffering, error flush, handler scopes and sticky stream failures
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/pptoken.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/preproc-scaffold.cpp		pending
@@ -231,10 +231,10 @@ dev/src/opt/slot_promotion.cpp		pending
 dev/src/opt/switch_formation.cpp		pending
 dev/src/opt/value_simplify.cpp		pending
 dev/src/opt/wide_integers.cpp		pending
-dev/src/preprocess/expr/controlling_expression.cpp	dev/src/preprocess/expression.rs	partial: complete PA3 pull conversion, explicit stacks, precedence, defined and skipped-operand typing; noncanonical macro-token spelling lookup and GNU literals deferred
-dev/src/preprocess/expr/controlling_expression.h	dev/src/preprocess/expression.rs,dev/src/lex/pp_lexer/mod.rs	partial: typed result/status, borrowed cursor and macro query, private reusable stacks; GNU literal dialects deferred
-dev/src/preprocess/expr/pp_arithmetic.cpp	dev/src/preprocess/arithmetic.rs	complete: target 64-bit conversions, signed overflow, wrap, comparisons, shifts and invalid intermediate values
-dev/src/preprocess/expr/pp_arithmetic.h	dev/src/preprocess/arithmetic.rs	complete: typed bit-pattern/signedness value, private operator vocabulary and arithmetic outcome
+dev/src/preprocess/expr/controlling_expression.cpp	dev/src/preprocess/expression.rs	partial: audited complete PA3 conversion, explicit stacks, precedence, defined query/demand order, recovery and skipped-operand typing; PA4 noncanonical macro-token lookup and later GNU literals deferred
+dev/src/preprocess/expr/controlling_expression.h	dev/src/preprocess/expression.rs,dev/src/lex/pp_lexer/mod.rs	partial: audited PA3 typed result/status, borrowed cursor/macro query, reusable stacks and repeated EOF; later GNU literal dialects deferred
+dev/src/preprocess/expr/pp_arithmetic.cpp	dev/src/preprocess/arithmetic.rs	complete: audited target 64-bit conversions, signed overflow, wrap, comparisons, shifts and invalid intermediate values
+dev/src/preprocess/expr/pp_arithmetic.h	dev/src/preprocess/arithmetic.rs	complete: audited bit-pattern/signedness value, private 23-operator vocabulary and typed arithmetic outcome
 dev/src/preprocess/lexer/char_classes.cpp	dev/src/lex/pp_lexer/classes.rs	complete
 dev/src/preprocess/lexer/char_classes.h	dev/src/lex/pp_lexer/classes.rs,dev/src/lex/pp_lexer/literals.rs	complete
 dev/src/preprocess/lexer/pp_lexer.cpp	dev/src/lex/pp_lexer/mod.rs	complete

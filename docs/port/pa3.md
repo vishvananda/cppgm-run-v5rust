@@ -1,7 +1,7 @@
 # PA3 port ledger
 
 Stage base commit: `34c05a7e739705d8a477761b9787589f0c390ee0`
-Last audited commit: INITIAL
+Last audited commit: `14002c70fc3d44722095edfb27242016a2a81330`
 
 ## Contract and ownership
 
@@ -27,9 +27,10 @@ retain identities. No graph edges require new IDs: both stacks are private
 flat LIFO storage with no cross-store indices or recursive ownership.
 
 Due tool: ppexpr, fixed PA3 manifest and full original course test target.
-Last audited commit remains INITIAL; implementation does not advance audit
-state. The predecessor's committed PA2 acceptance audit is authoritative
-progress. PA3 entered clean with its CLI still returning status 86 in all
+The implementation checkpoint left the last audited commit at INITIAL; the
+independent full-stage audit below now accepts its due PA3 responsibilities.
+The predecessor's committed PA2 acceptance audit is authoritative progress.
+PA3 entered clean with its CLI still returning status 86 in all
 twenty cases, so their shared earliest divergence was the missing tool.
 
 ## Coherent behavior groups
@@ -71,7 +72,7 @@ lookup for synthetic op tokens without canonical punctuator identity also
 belongs to later preprocessor input; it cannot execute on PA3's bare lexer.
 These partial source responsibilities remain explicit in source-map.tsv.
 
-## Evidence
+## Implementation checkpoint evidence
 
 Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa3-implement/`.
 Every `*-command.json` records command, status, elapsed time and log path.
@@ -173,7 +174,7 @@ granularity, warm caches and local scheduling limit interpretation; zero is
 below resolution. Rust throughput is recorded separately from generated-code
 performance. PA35 optimization targets were not imposed.
 
-## Handoff
+## Implementation checkpoint handoff
 
 The due PA3 group is complete and validated. Independent audits and stage
 advancement remain Ralph's responsibility. No remaining PA3 failure, oracle
@@ -186,3 +187,156 @@ Independent review should check reduction/error demand order, balancing of
 skipped scopes, conditional signedness, buffer flush/handler scopes and compact
 canonical token identities across macro expansion. Later GNU dialects and
 noncanonical synthetic-token lookup remain due at their actual consumer.
+
+## Independent full-stage acceptance audit, 2026-10-11
+
+Reviewed the stage base `34c05a7`, the complete PA3 implementation and audit
+entry `14002c7`, the full owning handout, AGENTS.md, CLONE_CONTRACT.md,
+spec.md, conversion plan and source map. The preceding goal turn was progress:
+it committed the complete controlling-expression group and reduced the fixed
+manifest's failures from twenty to zero. This audit independently read the
+frozen C++ owners above and revalidated the current checkout; reused checks
+were not used as acceptance evidence.
+
+No stage-owned compiler defect or unported due behavior was found. The evidence
+gap was direct observation of cursor demand, macro queries, typed outcomes and
+repeated EOF, which the decimal tool view does not expose. New test-only
+`scripts/audit_pa3_demand.py` builds isolated consumers of the frozen C++ owners
+and current Rust library, then compares every request/token/query/result and
+source-error diagnostic byte. Both profiles pass 81/81 comparisons: 33 focused
+boundary/recovery sequences, six generated groups, two empty/translation probes,
+all twenty unchanged course inputs and twenty source-error probes. Successful
+streams must reach three EOF results; failures must return exactly status 1.
+The source-error probe places lexer construction inside its located handler on
+both sides; separate CLI probes verify the real tool's outer constructor scope.
+
+This supplements direct source review rather than replacing it. Current fixed,
+full-course, typed/demand, supplemental and stream failing IDs are all `[]`.
+Every one of the twenty passing identities at audit entry remains passing;
+protected preservation reports 20/20 and the receipt independently compares
+the entry log with the fresh fixed result.
+
+### Responsibility review and completeness reasoning
+
+| Due C++ responsibility | Reviewed Rust behavior and evidence |
+| --- | --- |
+| Token conversion | Borrowed PP tokens are classified once as demanded. All keywords except true/false/defined become signed zero when their PP kind is Identifier. The frozen lexer treats new/delete and alternative operator words as punctuators; their operator meaning or rejection is preserved. Hash/digraph-hash tokens reject. Strict Cxx11 integer types and character scalar facts come directly from the PA2 owners; floats, arrays, user-defined and multicharacter literals reject even in unselected operands. |
+| Defined operands | Both forms require a PP Identifier, including keywords and decoded Unicode names. The mock tests the first UTF-8 byte, not a Unicode code point. The query executes before demanding the closing parenthesis and even in skipped operands; malformed operands and first-error line discard preserve query/request order. Direct traces include decoded UCNs, odd/even UTF-8 lead bytes, keyword operands and missing delimiters. |
+| Grammar and reductions | Every C++ unary/binary operator and precedence level has a typed Rust counterpart. Equal-precedence binaries reduce leftward; conditional alternatives remain pending for right association. Parentheses and incomplete expressions have the same boundaries. Reduction loops continue through pending operators even after arithmetic failure, exactly as in C++; the parse loop then stops and consumes the rest of the logical line without further conversion or queries. |
+| Skipped scopes and conditional types | Nested &&, || and ?: scopes suppress only arithmetic errors, preserving conversion and syntax errors. The logical operation is checked before its skipped scope is closed. Both alternatives determine unsignedness; invalid division/shift produces typed zero bits, while invalid signed arithmetic retains its wrapped intermediate bits, matching the frozen implementation. Traces and generated boundary cases cover nested skipped operations and scope reset after invalid lines. |
+| Target arithmetic | All 23 operator identities, precedence ranks and result types match. Signed add/subtract use bitwise overflow tests; signed multiplication compares magnitudes against the sign-dependent limit. Unary minus and INT64_MIN/-1 division/remainder reject. Division truncates toward zero; remainder follows the dividend. Unsigned arithmetic wraps explicitly. Signed comparisons flip the sign bit; shifts retain the left type, reject negative/count >=64, discard left-shift bits and fill negative right shifts. No host signed-overflow or debug/release arithmetic policy defines target behavior. |
+| Result and CLI bytes | Signed magnitudes, unsigned suffixes, error/empty lines, EOF and 64-KiB flushing match. Completed output survives later source failures; initial lexer failures remain unlocated, later failures located. Shared sticky output failure continues scanning. Ignored arguments, seek offsets, directory stdin and the documented no-runner batch sentinel match in both profiles. The batch sentinel is not used as successful course execution. |
+
+The strict bare-source PA3 tool reaches every due branch described above.
+The C++ spelling fallback for an operator token without punctuator identity
+cannot execute with PA3's lexer, which always assigns that identity; its first
+consumer is PA4 macro-produced input. GNU number dialects likewise cannot be
+selected by ppexpr, which constructs the Cxx11 evaluator. These future shared
+API responsibilities remain explicitly partial in the source map. Macro
+expansion/directives/predefined inputs are excluded by the PA3 handout and
+belong to PA4. PA33's implementation-wide census and debug release lanes, and
+PA34's bootstrap proof, remain due at those stages.
+
+### Architecture and Rust idioms
+
+All due work runs through `dev/bin/ppexpr.rs` into shared Rust source, lexing,
+literal, expression and arithmetic owners. Fresh course and fixed traces name
+the actual Rust release binary; the oracle serves only comparison/evaluation.
+The external C++ demand probe is a test consumer, never a candidate tool.
+Cargo.lock contains only the workspace package. No dependency, unsafe code,
+FFI, subprocess phase, fixture recognition, stored answer or environment read
+under dev/src exists on the due path.
+
+One immutable source image and one reused lexer scratch/current token feed
+private flat operator/value stacks. A spelling borrow ends before another
+request; typed enum identities and PpValue facts survive without reparsing or
+copied token sequences. No graph edges need new IDs. Parsing is iterative,
+without speculation, recursive ownership or abandoned trees. Each token and
+operator is pushed/popped at most once; stacks grow geometrically, reset
+contents per expression and retain capacity. The deep-stack unit and direct
+probes exercise 50,000/65,536-level nesting and recovery. Invalid language
+expressions, source failures and internal stack violations remain distinct
+structured outcomes.
+
+There are no semantic caches, template facts or machine functions in this
+phase; complete cache keys, transactional speculation and per-function backend
+lifetimes remain obligations of their actual owners. Current demand is one
+token at a time, including defined's explicit operand/closing-token demands.
+Optimizer, register allocator, code generation and emission policies were
+preserved. PA35 optimization targets were not imposed.
+
+Rustfmt and strict all/pedantic Clippy pass, with no new allowance or lint
+expectation. Both profiles pass 31 library tests and six shared CLI tests.
+The authoritative companion audit reports 42 files and zero findings.
+`shape.json` records maxima of 471 code lines per file, 94 per function and
+nesting four, below implementation/interface/model and function/nesting caps.
+No mechanical splits, compressed code or hidden phase dependency were found.
+
+### Fresh commands and retained artifacts
+
+Audit root: `/home/vishvananda/work/private/v5rust/artifacts/pa3-audit/`.
+`inputs.json` records base/reviewed/oracle commits, toolchain, source hashes,
+manifest and binary hashes. `*-command.json` records exact commands, exits,
+duration and log paths; `commands.json` collects them. `completion.json`
+verifies routes, current hashes, expected counts, unchanged compiler sources,
+entry-case preservation and the audit commit's clean-checkout handoff.
+Rust binary hashes remain those recorded in the implementation checkpoint.
+
+| Command | Fresh result; artifact relative to audit root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `cargo build --manifest-path dev/Cargo.toml --workspace --locked --target-dir obj/rust` | PASS; `debug-build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa3` (`make test-pa3`) | PASS, 20/20; `stage.log`, `pa3-result.json`, `pa3-cases/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa3` (`make course-pa3`) | PASS, original full course 20/20, no failure marker, twenty matching Rust invocations; `course.log`, `pa3-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa3` | PASS, PA1 58/58 and PA2 26/26 fixed cases, original full course targets 58/58 and 28/28; `prior.log`, `pa{1,2}-result.json`, `pa{1,2}-cases/`, `pa{1,2}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa3` | PASS, frozen inputs/sources/tools/policy and Rust routing; `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa3` | PASS, 20/20; `preserve.log`, `entry-stage.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_quality.py`, `make lint` | PASS, fmt/strict Clippy/both test profiles/companion audit; `quality.log`, `lint.log` |
+| `make audit-rust` | PASS, 42 files/zero findings; `audit.log`, `shape.json` |
+| `make test-harness` | PASS, seventeen protected checker tests; `harness.log` |
+| `python3 scripts/check_fixture_lanes.py` | PASS, all assignment inputs selected by executed lanes; `fixture-lanes.log` |
+| `python3 scripts/audit_pa3_expressions.py --evidence <root>/supplemental --profile release` and `--profile debug` | PASS, 39/39 exact comparisons per profile, 23,749 generated expressions, eleven source/CLI probes and twenty course inputs; `supplemental-{release,debug}.log`, `supplemental/{release,debug}/results.json` |
+| `python3 scripts/audit_pa3_demand.py --evidence <root>/demand-release --profile release` and `--evidence <root>/demand-debug --profile debug` | PASS, 81/81 typed/demand comparisons per profile; `demand-{release,debug}.log`, `demand-{release,debug}/results.json`, probe sources/build commands/raw traces |
+| `python3 <root>/streams.py` | PASS, 50/50 exact stream/CLI comparisons across both profiles; `streams.log`, `streams.json` |
+| `python3 <root>/measure.py` | PASS, paired byte equality at every scale; `performance.log`, `performance/results.json` and raw observations |
+| `git diff --check` | PASS; `completion.json` |
+
+The protected manifest SHA-256 remains
+`d3a98a505d9872f5a8b579b2f2b9937c606c0fcf6f372c9f7f2d1f5bfe9a3120`.
+No original fixture/reference, frozen C++ source, protected acceptance policy
+or Ralph state was edited. No production fix or new required language fixture
+was necessary; the new evidence tool tests the shared phase boundary directly.
+
+### Resource observations and handoff
+
+Measured the unchanged supported streamed/grouped/conditional workloads at
+4,096, 16,384 and 65,536 scale. The final measurement runs after validation
+jobs finish, with two Rust warmups and two ABBA blocks; every paired output
+matches. The earlier overlapping measurement is retained in
+`performance-overlap/` and is not the final resource receipt. Raw time/RSS,
+observed duration, commands, source hashes and tool hashes are retained.
+
+| Workload | Scale | Source bytes | Rust median ms / max RSS KiB | C++ median ms / max RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| streamed lines | 4,096 | 106,496 | 5 / 2,220 | 0 / 3,652 |
+| streamed lines | 16,384 | 425,984 | 20 / 2,224 | 10 / 4,344 |
+| streamed lines | 65,536 | 1,703,936 | 100 / 3,632 | 45 / 5,064 |
+| nested groups | 4,096 | 8,194 | 0 / 2,236 | 0 / 3,652 |
+| nested groups | 16,384 | 32,770 | 0 / 2,224 | 0 / 3,736 |
+| nested groups | 65,536 | 131,074 | 10 / 2,240 | 0 / 3,652 |
+| conditional chain | 4,096 | 36,867 | 0 / 2,216 | 0 / 4,344 |
+| conditional chain | 16,384 | 147,459 | 0 / 2,932 | 0 / 5,048 |
+| conditional chain | 65,536 | 589,827 | 30 / 5,040 | 15 / 8,504 |
+
+Ten-millisecond sample resolution, warm caches and local scheduling limit
+interpretation; zero is below resolution and medians can fall between samples.
+Storage/time increase with source bytes and necessary pending stacks. These are
+Rust compilation observations, separate from generated-code equality; no new
+code-generation or throughput target was introduced. Retained audit artifacts
+occupy approximately 2 GiB within the shared 100 GiB ceiling and are untracked.
+
+Acceptance is based on responsibility review, direct phase evidence, exact
+public bytes, original full course coverage, earlier-stage preservation and
+Rust quality together. PA3 is accepted at `14002c7`. The next dependency
+boundary is PA4's macro table and expansion/directive cursor, then later GNU
+dialects. Ralph retains ownership of stage advancement and its existing goal.
