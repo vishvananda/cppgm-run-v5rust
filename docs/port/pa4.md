@@ -1,7 +1,7 @@
 # PA4 port ledger
 
 Stage base commit: e953408ec36e27923018214d0c788e91d2756633
-Last audited commit: `209cc516db532a3ed94c5359fcef82d7e9a98231` (code/architecture reviewed; full acceptance remains open)
+Last audited commit: `bb77958cdcad46275c4ac785f56555bfce36ac78` (full PA4 acceptance verified; implementation remains `209cc516db532a3ed94c5359fcef82d7e9a98231`)
 
 Implementation checkpoints:
 
@@ -13,13 +13,13 @@ Implementation checkpoints:
 
 - `209cc516db532a3ed94c5359fcef82d7e9a98231`: full-stage audit fixes for predefined clock values, synthetic predefinition source ownership and work counters; entry HEAD `dfe3e9d`.
 
-The historical checkpoint sections below preserve their validation boundaries.
-The current fixed gate passes 106/106, the full course suite passes 112/112,
-and earlier PA1–PA3 stages and full course suites pass. The maintainer has now
-corrected the allocator-only statistics mismatch described below; the original
-empty-source probe passes the protected adapter. See the final maintainer
-disposition section for the revision and evidence. Full acceptance awaits the
-restarted PA4 audit; Ralph owns its phase goal and stage advancement.
+The historical checkpoint sections below preserve their validation boundaries,
+including their former missing behavior and resolved comparator finding.
+The resumed full-stage audit accepts PA4: the fixed gate passes 106/106, the
+full course suite passes 112/112, and earlier PA1–PA3 stages and full course
+suites pass. The final acceptance section records fresh source review,
+beyond-fixture checks and protected statistics receipts. No outstanding PA4
+implementation or acceptance finding remains. Ralph owns stage advancement.
 
 ## Contract and ownership
 
@@ -46,10 +46,11 @@ Consulted C++ owners and translated Rust responsibilities:
 | `src/preprocess/lexer/pp_token.h`, `src/lex/post_tokenizer.{h,cpp}` | `dev/src/preprocess/macros/token.rs`, shared `dev/src/lex/{mod.rs,pp_lexer/mod.rs}` | Stable spellings, typed punctuators, spans and name identity through phase 7 |
 | `src/preprocess/preprocessor{,_directives}.cpp`, `preprocessor_names.cpp`, `preprocess_error.h` | `dev/src/preprocess/{unit.rs,conditionals.rs,error.rs}` | Unit composition, macro/conditional directives, skipped nesting/order, reserved names and structured errors |
 
-`docs/port/source-map.tsv` records partial ownership where hosted syntax,
-predefined environments, directives or telemetry remain unported.
+`docs/port/source-map.tsv` records complete PA4 tool ownership and partial
+shared-module ownership where later hosted syntax, environments, source
+consumers or directives remain unported. PA4 telemetry is implemented.
 
-## Completed behavior group and architecture review
+## Completed behavior group and architecture review (historical macro/conditional checkpoint)
 
 - Object/function definitions, parameter grammar including variadics, missing
   whitespace and malformed-parameter diagnostics; exact redefinition checks
@@ -1132,3 +1133,142 @@ This disposition resolves the statistics-policy dependency in the historical
 blocked audit above. Resume the PA4 acceptance audit against the corrected
 harness and current implementation; rerun required gates and record its result.
 This maintenance handoff does not certify PA4 or manually advance Ralph state.
+
+## Resumed full-stage acceptance (2026-10-11 UTC)
+
+**PA4 full-stage audit: accepted.** Reviewed clean entry commit
+`bb77958cdcad46275c4ac785f56555bfce36ac78`, including its maintainer telemetry
+disposition, against stage base `e953408ec36e27923018214d0c788e91d2756633`.
+The compiler implementation is still `209cc516db532a3ed94c5359fcef82d7e9a98231`;
+`git diff 209cc51 bb77958 -- dev/ docs/port/source-map.tsv` is empty.
+The preceding goal turn is progress: the maintainer changed authoritative
+comparator state and resolved the audited storage-only dependency. No live
+compiler/check process remained at entry. This audit changes documentation and
+ownership descriptions only; it does not change acceptance policy or Ralph state.
+
+Read the repository instructions, clone contract, specification, conversion
+plan, complete PA4 handout and both detailed guides, source map and full stage
+ledger. Independently compared the frozen C++ owners listed below directly with
+the current Rust source. The implementation/oracle/host-clock binary hashes
+match the previous full audit, so its source, numeric, ownership and resource
+evidence remains applicable; fresh commands and raw observations establish
+current acceptance rather than assuming historical passes still hold.
+
+### Current completeness and architecture conclusions
+
+| C++ responsibilities under `dev/` | Reviewed Rust owners and conclusion |
+| --- | --- |
+| `preproc.cpp`, post-token writer | `bin/preproc.rs`, `driver/preproc.rs`, `driver/posttoken.rs`: exact argument precedence, byte paths, output records, primary reset, status/diagnostic order, failed-output scanning and non-runner batch response. Clock values are captured once per invocation, independently of unit reset. |
+| `preprocessor_names.{h,cpp}`, builtin setup and `PredefinedText` | `preprocess/macros/definition.rs`, `unit.rs`, `options.rs`: full fixed name vocabulary, indexed definition slots, reserved-name handling, ordinary synthetic definitions and compact builtin identity. Name-ID assignment need not equal pointer identity; output and deterministic name counts do. |
+| `macro_definition.{h,cpp}` | `macros/definition.rs`: all course grammar/redefinition branches, diagnostic precedence, whitespace identity, variadic arity and explicit uint16 count wrap. Replacement roles and expanded-use demand are computed once. Local parameter maps cannot survive failed parsing; definitions publish only after validation. |
+| `macro_expander.{h,cpp}`, `hide_sets.{h,cpp}`, `pp_token.h` | `macros/expander.rs`, `hide_sets.rs`, `token.rs`: argument/source barriers, prescan once, raw/stringized/pasted demand, paint/origin/nesting rules, placemarker and comma-paste ordering, rescanning, builtin replacement and exact counter sampling. Ordered additions and complete `(set, name)`/ordered union keys preserve last-add removal. Persistent membership indexes replace C++ open-chain shortcuts without changing answers; trie depth is bounded by name bits. |
+| `preprocessor_directives.cpp` conditional groups, shared PA3 owners | `conditionals.rs`, `expression.rs`, `arithmetic.rs`: active/skipped nesting order, unused elif demand, raw operators, per-file boundaries and first-error precedence. Arithmetic matches target 64-bit signedness/conversions, explicit wrap, invalid intermediate bits, signed overflow/division and checked shifts. Flat reusable evaluator stacks consume typed expanded tokens directly. |
+| Include parsing/search, `source_files.{h,cpp}`, `source_stack.{h,cpp}` | `inclusion.rs`, `files.rs`, `input.rs`, `driver/file_identity.rs`: raw header versus replaced operand branches, presumed-directory then working-directory precedence, regular-file stat, NUL/path bytes, aliases/misses, once before guard before depth check, EOF continuation and diagnostic include order. Guards are rechecked against current definitions. Each physical image and lazy line index is shared; each inclusion has a distinct checked range and parent edge. |
+| Location queries and `run_line` | `locations.rs`, `line_control.rs`, `input.rs`: decimal range/diagnostic precedence, shared ordinary-string decoding, physical byte columns, latest builtin state versus historical diagnostics, exclusive newline history boundaries and retained locations after frame release. |
+| Pragmas, `_Pragma`, packing and once registration | `pragmas.rs`, `unit.rs`: post-rescan execution/removal, exact destringizing, ignored-text failure boundary and presumed-name identity. Packing facts remain local until complete lexing; push/pop/show precedence, last numeric operand and uint32 wrap agree with C++. Packing is observed through the typed API, independently of the dump writer. |
+| Phase 5–7 integration and counters | Shared `lex`/`PostTokenInput`, `counters.rs` and phase stores: typed pull composition, literal bytes/concatenation and phase-7 failures; successful and failed-unit work snapshots preserve all deterministic fields. Resource storage remains measured, with raw receipts preserved. |
+
+The reviewed path retains bounded lookahead, active expansion/argument/frame
+storage and required directive-local operands, never whole-unit token copies.
+Source images, identifiers, immutable definitions, hide sets, inclusion history
+and file caches belong to one unit. Active contents are truncated at their
+owning boundaries; retained image spans stay valid after header return. Maps
+serve lookup, while explicit token/source/context order determines output.
+No text reparsing between phases, source-character records, global retry loop,
+incomplete semantic cache key or cross-unit state appears on this path.
+Token-paste and pragma relexing are their language operations, using the shared
+lexer rather than serialized phase output. No new lint exception is needed;
+the existing expansion-argument expectation is narrow and justified.
+
+Due preprocessing, numeric conversion and expression work all run in Rust.
+The sole external production query is the tool-boundary Python standard-library
+clock query documented above; it supplies environmental bytes and implements no
+compiler phase. Protected traces identify the Rust executable for every due
+tool. The C++ tool runs only as comparator, and scratch C++ packing views only
+observe frozen state for evaluation. There is no C++ fallback, authored unsafe,
+FFI, new dependency, environment read under `dev/src/`, fixture recognition or
+blanket allowance. There is no reachable PA4 missing-implementation constructor.
+
+No new semantic finding was identified. The prior clock/stats/source-count
+repairs are verified. The former `stats-policy/empty-primary-source` blocker
+now passes the unchanged installed protected adapter: both exits and complete
+outputs match, counters remain strict, and raw allocator observations remain
+16384 (C++) and 0 (Rust). Source-map preproc/scaffold and fixed-name vocabulary
+entries now reflect acceptance rather than the resolved blocker. Partial
+shared owners still denote later hosted extensions or consumers, not PA4 gaps.
+
+The historical wrapped-parameter C++ invalid-access report remains retained at
+`pa4-audit/parameter-limit/`. It has no ordinary oracle result to clone; it is
+not counted as a passing comparison or substituted with a successful rejection.
+Rust's checked range failure and invariant test preserve safe handling, as the
+contract requires for oracle-infrastructure faults. No baseline was modified.
+There are **no failing fixed or added course case IDs and no outstanding
+stage-owned implementation finding**.
+
+### Fresh validation and evidence
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa4-acceptance-resumed/`.
+`validation.json` records commands, exit statuses and elapsed costs;
+`summary.json` checks every fixed/course raw receipt, candidate routing, matching
+ordinary statuses and output digests, and maps requirements to evidence.
+Copied `cases/`, `paN-result.json` and `paN-course/` preserve the actual raw
+observations independently of later gate runs. `handoff.json` records the final
+audit commit and clean checkout after commit.
+
+| Command/check | Result; artifact relative to evidence root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS oracle/protected hashes and tool routing; `preflight.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa4` | PASS 106/106 original identities and raw invocations; `stage.log`, `pa4-result.json`, `cases/pa4/` |
+| `make course-pa4` (protected `clone_check.py course pa4`, original full `pa4/Makefile::test`) | PASS 112/112 with 112 matching raw invocations, no failure marker; `course.log`, `pa4-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS fixed PA1 58/58, PA2 26/26, PA3 20/20; full course PA1 58/58, PA2 28/28, PA3 20/20; `prior.log`, `pa{1,2,3}-result.json`, `pa{1,2,3}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS 106/106; `preserve.log`; summary independently verifies unchanged fixed identities |
+| `make lint` (protected `python3 /home/vishvananda/work/v5rust-control/clone_quality.py`) | PASS rustfmt, strict Clippy all targets/features, debug/release unit tests and file/architecture audit; `quality.log` |
+| `make audit-rust` | PASS 61 Rust files, zero findings; `audit.log`; source/function/nesting/role limits enforced by companion audit |
+| `make test-harness` | PASS 20 tests; `harness.log`; strict counter/diagnostic and raw-statistics regressions included |
+| Replayed macro/CLI, inclusion, pragma generators | PASS 917/917, 202/202, 549/549 complete status/stdout/stderr/output observations; `supplemental-validation.json`, `macros/`, `inclusion/`, `pragmas/` |
+| Replayed location/conditional generators | PASS 173/173 and 362/362; `lines-validation.json`, `locations-differential/`, `conditionals-differential/`; former three inclusion dependencies now match |
+| Rebuilt typed packing views and `python3 pack.py` | PASS 4,103/4,103 token-by-token state observations; `pack.log`, `pack/{build-commands.json,pack-results.json,pack-*.stdout}` |
+| `python3 stats-adapter.py` | PASS 136/136 protected differential receipts: all 112 course fixtures plus 24 focused work/error/demand probes; `stats-adapter-results.json`, `stats-adapter/*/trace.jsonl`; no local comparison exception |
+| Replayed timezone probes | PASS 6/6 exact output pairs including two primaries each, every pair in one recorded epoch second; `clock/{clock-zones.json,clock-zones/}` |
+
+Rust preproc SHA-256:
+`8532637505c9cc36d5c502b2f919d49dfacabf4fa8bb7501025b27716b58e8a3`.
+Oracle preproc SHA-256:
+`0f9f94f0b9d51205bc9d0fac0f213287e3147324777737c853981f670105ae46`.
+Protected manifest SHA-256:
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+This is the installed maintainer disposition, not an audit change to policy.
+
+### Resource observations and dependency handoff
+
+Fresh three-run nested-argument measurements, source/output hashes, work counters
+and `/usr/bin/time` RSS records are in `resources/macro-resources/`. Every paired
+complete output digest matches. Median wall time includes launch/clock input;
+RSS includes the clock child high-water mark. These runs overlapped supplemental
+validation and describe scaling, not a calibrated speed comparison or
+generated-code optimization requirement.
+
+| Nested `F(F(17))` calls | Primary bytes | Rust median ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| 10,000 | 90,017 | 44.070 | 7,992 |
+| 50,000 | 450,017 | 143.128 | 8,748 |
+| 100,000 | 900,017 | 300.100 | 8,836 |
+
+Required work remains two invocations/six produced tokens per call, yielding
+four final literals, with transient storage following active depth rather than
+emitted output. The previous identical-binary guard/once, location and skipped
+group measurements remain separately retained above. Current evidence occupies
+about 134 MiB; `storage.txt` records 5,768,876,032 bytes used on the shared
+105,089,261,568-byte filesystem, below the 107,374,182,400-byte ceiling.
+
+Next dependency is PA5's parser over the typed preprocessing stream. Hosted
+include paths, feature/environment probes, named variadics and dialect control
+remain later owners under PA29; parser rollback, semantic/template facts and
+per-function backend lifetime requirements become applicable with their stages.
+PA33 full release/debug suites and implementation-wide ownership census and
+PA34 C++ object/tool fixed-point proof are not PA4 acceptance claims. Existing
+optimizer/register-allocation policies are preserved and PA35 optimization
+targets are excluded. The existing phase goal can now complete; stage
+advancement remains Ralph's responsibility.
