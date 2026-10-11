@@ -1,7 +1,7 @@
 //! Literal validation, raw view switching, and contextual header names.
 use super::classes::octal;
 use super::{PpLexer, PpTokenKind, SourceChar, SourceError, basic, control, hex_value};
-use crate::preprocess::source::{END_OF_SOURCE, SourceOffset};
+use crate::support::source::{END_OF_SOURCE, SourceOffset};
 
 impl PpLexer<'_> {
     pub(super) fn quoted_literal(

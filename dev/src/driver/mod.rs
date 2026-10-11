@@ -8,3 +8,14 @@ pub fn run_tool(tool: &str) -> std::process::ExitCode {
 }
 
 pub mod pptoken;
+
+pub mod posttoken;
+
+/// Errors retained until a source tool renders its diagnostics.
+#[derive(Debug)]
+pub enum TokenToolError {
+    Source(crate::preprocess::source::SourceError),
+    Output(std::io::Error),
+    NotImplemented(&'static str),
+    Limit(&'static str),
+}

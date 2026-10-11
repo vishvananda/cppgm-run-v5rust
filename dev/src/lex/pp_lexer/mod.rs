@@ -1,10 +1,10 @@
 //! Demand-driven phase 3 lexer. Returned text borrows the source or one reused scratch buffer.
-mod classes;
+pub(crate) mod classes;
 mod literals;
 mod punctuators;
 pub use punctuators::Punctuator;
 
-use super::source::{
+use crate::support::source::{
     END_OF_SOURCE, SourceBuffer, SourceChar, SourceError, SourceOffset, TranslationReader,
 };
 use crate::support::unicode::append_utf8;
@@ -143,6 +143,22 @@ impl<'a> PpLexer<'a> {
     /// # Errors
     /// Returns the first lexical error; the partially scanned token is not emitted.
     pub fn next_token(&mut self) -> Result<PpToken<'_>, SourceError> {
+        let kind = self.scan_next()?;
+        Ok(self.token(kind))
+    }
+
+    /// Shared post-token consumers discard whitespace without retaining tokens.
+    pub(crate) fn next_non_whitespace(&mut self) -> Result<PpToken<'_>, SourceError> {
+        let kind = loop {
+            let kind = self.scan_next()?;
+            if !matches!(kind, PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine) {
+                break kind;
+            }
+        };
+        Ok(self.token(kind))
+    }
+
+    fn scan_next(&mut self) -> Result<PpTokenKind, SourceError> {
         self.begin = self.current.begin;
         self.clean_end = self.begin;
         self.end = self.begin;
@@ -150,6 +166,10 @@ impl<'a> PpLexer<'a> {
         self.punctuator = None;
         let kind = self.scan()?;
         self.update_context(kind);
+        Ok(kind)
+    }
+
+    fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
         let spelling = if matches!(
             kind,
             PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine | PpTokenKind::EndOfFile
@@ -158,14 +178,14 @@ impl<'a> PpLexer<'a> {
         } else {
             self.spelling()
         };
-        Ok(PpToken {
+        PpToken {
             kind,
             // The frozen producer adds the base in target uint32 arithmetic.
             begin: SourceOffset(self.options.location_base.wrapping_add(self.begin.0)),
             end: SourceOffset(self.options.location_base.wrapping_add(self.end.0)),
             spelling,
             punctuator: self.punctuator,
-        })
+        }
     }
 
     fn scan(&mut self) -> Result<PpTokenKind, SourceError> {

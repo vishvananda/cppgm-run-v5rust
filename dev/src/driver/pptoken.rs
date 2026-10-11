@@ -3,35 +3,33 @@
 //! Debug rendering adapter; text is output, never transport between phases.
 use crate::preprocess::{
     lexer::{PpLexer, PpTokenKind},
-    source::{SourceBuffer, SourceError},
+    source::SourceBuffer,
 };
-use std::io::{self, Write};
+use std::io::Write;
 
-/// Tool errors retain typed lexical facts until the CLI renders diagnostics.
-#[derive(Debug)]
-pub enum PpTokenError {
-    Source(SourceError),
-    Output(io::Error),
-}
+use super::TokenToolError;
 
 /// Dump the on-demand preprocessing tokens to the requested output.
 ///
 /// # Errors
 /// Returns the first lexical or output error, preserving prior emitted tokens.
-pub fn emit_pptokens(source: &SourceBuffer, output: &mut impl Write) -> Result<(), PpTokenError> {
-    let mut lexer = PpLexer::new(source).map_err(PpTokenError::Source)?;
+pub fn emit_pptokens(
+    source: &SourceBuffer,
+    output: &mut (impl Write + ?Sized),
+) -> Result<(), TokenToolError> {
+    let mut lexer = PpLexer::new(source).map_err(TokenToolError::Source)?;
     loop {
-        let token = lexer.next_token().map_err(PpTokenError::Source)?;
+        let token = lexer.next_token().map_err(TokenToolError::Source)?;
         if token.kind == PpTokenKind::EndOfFile {
-            writeln!(output, "eof").map_err(PpTokenError::Output)?;
+            writeln!(output, "eof").map_err(TokenToolError::Output)?;
             return Ok(());
         }
         write!(output, "{} {} ", token.kind.name(), token.spelling.len())
-            .map_err(PpTokenError::Output)?;
+            .map_err(TokenToolError::Output)?;
         output
             .write_all(token.spelling)
-            .map_err(PpTokenError::Output)?;
-        writeln!(output).map_err(PpTokenError::Output)?;
+            .map_err(TokenToolError::Output)?;
+        writeln!(output).map_err(TokenToolError::Output)?;
     }
 }
 
@@ -42,7 +40,7 @@ mod tests {
     fn physical_error_locations_and_lookahead_preserve_output_prefix() {
         let source = SourceBuffer::new(b"\xef\xbb\xbfok\n  /*".to_vec()).unwrap();
         let mut output = Vec::new();
-        let Err(PpTokenError::Source(error)) = emit_pptokens(&source, &mut output) else {
+        let Err(TokenToolError::Source(error)) = emit_pptokens(&source, &mut output) else {
             panic!("expected lexical error");
         };
         assert_eq!(
@@ -52,7 +50,7 @@ mod tests {
         assert_eq!(output, b"identifier 2 ok\nnew-line 0 \n");
         let source = SourceBuffer::new(b"ok +\xff".to_vec()).unwrap();
         let mut output = Vec::new();
-        let Err(PpTokenError::Source(error)) = emit_pptokens(&source, &mut output) else {
+        let Err(TokenToolError::Source(error)) = emit_pptokens(&source, &mut output) else {
             panic!("expected decoding error");
         };
         assert_eq!(

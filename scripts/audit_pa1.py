@@ -28,19 +28,19 @@ def digest(path):
 
 def vocabulary():
     cpp = (REFERENCE / 'dev/src/preprocess/lexer/char_classes.cpp').read_text()
-    rust = (ROOT / 'dev/src/preprocess/lexer/classes.rs').read_text()
+    rust = (ROOT / 'dev/src/lex/pp_lexer/classes.rs').read_text()
     cpp_tables = re.findall(r'Ranges\[\] = \{(.*?)\};', cpp, re.S)
     cpp_ranges = [[tuple(int(v, 16) for v in pair) for pair in
                    re.findall(r'\{\s*(0x\w+),\s*(0x\w+)\s*\}', table)]
                   for table in cpp_tables]
     e1 = rust.split('const ANNEX_E1:')[1]
-    e2 = rust.split('pub(super) fn identifier_start')[1].split('pub(super) fn identifier_continue')[0]
+    e2 = rust.split('pub(crate) fn identifier_start')[1].split('pub(crate) fn identifier_continue')[0]
     rust_ranges = [[tuple(int(v, 16) for v in pair) for pair in
                     re.findall(r'\((0x\w+),\s*(0x\w+)\)', table)] for table in (e1, e2)]
     if cpp_ranges != rust_ranges:
         raise RuntimeError('Annex E source vocabulary mismatch')
     cpp_punc = (REFERENCE / 'dev/src/preprocess/lexer/pp_lexer_punctuators.cpp').read_text()
-    rust_punc = (ROOT / 'dev/src/preprocess/lexer/punctuators.rs').read_text()
+    rust_punc = (ROOT / 'dev/src/lex/pp_lexer/punctuators.rs').read_text()
     cpp_spellings = re.findall(r'CPPGM_PUNCTUATOR\("([^"]+)"', cpp_punc)
     cpp_spellings += ['#', '##', '%:', '%:%:']
     rust_spellings = re.findall(r'\(b"([^"]+)", Punctuator::', rust_punc)

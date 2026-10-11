@@ -1,1 +1,3 @@
-//! Types phase; see `CLONE_CONTRACT.md` and the C++ ownership ledger.
+//! Typed target representation facts shared by compiler phases.
+mod fundamental;
+pub use fundamental::FundamentalType;

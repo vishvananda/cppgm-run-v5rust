@@ -1,3 +1,7 @@
+mod source_tool;
+
 fn main() -> std::process::ExitCode {
-    cppgm_rust::driver::run_tool("posttoken")
+    source_tool::main(|source, output| {
+        cppgm_rust::driver::posttoken::emit_posttokens(source, output)
+    })
 }

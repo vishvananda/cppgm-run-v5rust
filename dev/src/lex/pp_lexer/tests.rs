@@ -166,7 +166,7 @@ fn utf8_scalar_boundaries_roundtrip_without_character_storage() {
 
 #[test]
 fn source_cursor_advances_by_physical_bytes_and_rejects_backtracking() {
-    use crate::preprocess::source::SourceLineCursor;
+    use crate::support::source::SourceLineCursor;
     let source = SourceBuffer::new("\u{feff}a\nβ\nz".as_bytes().to_vec()).unwrap();
     let mut cursor = SourceLineCursor::new(&source);
     for (offset, line, column) in [(3, 1, 1), (5, 2, 1), (7, 2, 3), (8, 3, 1)] {
