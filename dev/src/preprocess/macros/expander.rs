@@ -78,8 +78,12 @@ pub(crate) struct Expander<'a> {
     read_disabled: HideSetId,
     counter: u64,
     controlling_expression: bool,
+    counters: crate::preprocess::counters::ExpansionCounters,
 }
 impl<'a> Expander<'a> {
+    pub(crate) fn counters(&self) -> crate::preprocess::counters::ExpansionCounters {
+        self.counters
+    }
     pub(crate) fn set_controlling_expression(&mut self, enabled: bool) {
         self.controlling_expression = enabled;
     }
@@ -261,9 +265,12 @@ impl<'a> Expander<'a> {
         } else {
             self.read_disabled
         };
-        if self.hides.contains(token.hide_set, definition.name)?
-            || self.hides.contains(disabled, definition.name)?
-        {
+        let hidden_by_set = self.hides.contains(token.hide_set, definition.name)?;
+        if hidden_by_set || self.hides.contains(disabled, definition.name)? {
+            if hidden_by_set && token.flags & (ARGUMENT | REPLACED_ARGUMENT) == ARGUMENT {
+                self.counters.raw_operands_hidden =
+                    self.counters.raw_operands_hidden.wrapping_add(1);
+            }
             token.flags |= PAINTED;
             return Ok(false);
         }
@@ -288,11 +295,6 @@ impl<'a> Expander<'a> {
                         ),
                     );
                     return Ok(false);
-                }
-                Builtin::DeferredValue => {
-                    return Err(PreprocessError::NotImplemented(
-                        "build-time predefined macros",
-                    ));
                 }
                 Builtin::HasCppAttribute | Builtin::HasAttribute => {
                     if self.controlling_expression {
@@ -386,6 +388,7 @@ impl<'a> Expander<'a> {
             argument: 0,
             pending_space: self.pending_space,
         });
+        self.counters.peak_invocations = self.counters.peak_invocations.max(self.invocations.len());
         self.advance_arguments(names)?;
         Ok(true)
     }
@@ -554,6 +557,10 @@ impl<'a> Expander<'a> {
             self.argument_links.push(None);
         }
         arguments.raw.push(start..self.argument_tokens.len());
+        self.counters.argument_tokens = self
+            .counters
+            .argument_tokens
+            .wrapping_add(self.argument_tokens.len() - arguments.token_mark);
         Ok(())
     }
     fn collect_nested_arguments(
@@ -569,6 +576,7 @@ impl<'a> Expander<'a> {
             return Ok(false);
         };
         arguments.outer = self.hides.merge(arguments.disabled, context.outer)?;
+        self.counters.nested_collections = self.counters.nested_collections.wrapping_add(1);
         let variable = definition
             .variadic
             .then(|| definition.parameter_count().checked_sub(1))
@@ -624,6 +632,8 @@ impl<'a> Expander<'a> {
             .ok_or(PreprocessError::Invariant("missing macro invocation"))?;
         while invocation.argument < invocation.arguments.raw.len() {
             if invocation.definition.expanded_uses[invocation.argument] {
+                self.counters.argument_expansions =
+                    self.counters.argument_expansions.wrapping_add(1);
                 let begin = self.expanded_tokens.len();
                 invocation.arguments.expanded.push(begin..begin);
                 let range = invocation.arguments.raw[invocation.argument].clone();
@@ -699,6 +709,7 @@ impl<'a> Expander<'a> {
         arguments: Option<&Arguments>,
         names: &mut Identifiers,
     ) -> Result<(), PreprocessError> {
+        self.counters.invocations = self.counters.invocations.wrapping_add(1);
         let begin = self.context_tokens.len();
         let argument_hide = if arguments.is_some() {
             self.hides.add(
@@ -793,6 +804,7 @@ impl<'a> Expander<'a> {
             }
         }
         self.context_tokens.truncate(out);
+        self.counters.produced_tokens = self.counters.produced_tokens.wrapping_add(out - begin);
         if out == begin {
             if head.flags & LEADING_SPACE != 0 {
                 self.pending_space = true;
@@ -813,6 +825,11 @@ impl<'a> Expander<'a> {
             inherited,
             outer: HideSetId::default(),
         });
+        self.counters.peak_contexts = self.counters.peak_contexts.max(self.contexts.len());
+        self.counters.peak_context_tokens = self
+            .counters
+            .peak_context_tokens
+            .max(self.context_tokens.len());
         Ok(())
     }
     fn substitute(
@@ -870,11 +887,12 @@ impl<'a> Expander<'a> {
         Ok(())
     }
     fn stringize(
-        &self,
+        &mut self,
         range: Range<usize>,
         operator: &Replacement<'a>,
         head: &Token<'a>,
     ) -> Token<'a> {
+        self.counters.stringizes = self.counters.stringizes.wrapping_add(1);
         let mut text = vec![b'"'];
         let begin = range.start;
         for at in range {
@@ -921,6 +939,7 @@ impl<'a> Expander<'a> {
             return Ok(result);
         }
         let mut text = left.spelling.bytes().to_vec();
+        self.counters.pastes = self.counters.pastes.wrapping_add(1);
         text.extend_from_slice(right.spelling.bytes());
         let length = text.len();
         let source = SourceBuffer::for_token_text(text).map_err(PreprocessError::Limit)?;

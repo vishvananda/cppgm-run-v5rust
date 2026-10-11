@@ -2,6 +2,7 @@
 use cppgm_rust::{
     driver::preproc::{PreprocToolError, describe, emit_preprocessed},
     preprocess::error::PreprocessError,
+    preprocess::options::PredefinedValues,
     support::source::SourceBuffer,
 };
 use std::{
@@ -39,6 +40,11 @@ enum CliError {
     Diagnostic(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
+    Statistics {
+        error: Box<Self>,
+        path: Vec<u8>,
+        counters: Box<cppgm_rust::preprocess::counters::PreprocessorCounters>,
+    },
 }
 fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -56,12 +62,12 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
         emit_unimplemented_batch(io::stdin().lock(), &mut output);
         return Ok(());
     }
-    if args.first().is_some_and(|arg| arg == "--stats") {
-        return Err(CliError::Missing("preprocessing counters"));
-    }
+    let stats = args.first().is_some_and(|arg| arg == "--stats");
+    let args = if stats { &args[1..] } else { args };
     if args.len() < 3 || args[0] != "-o" {
         return Err(CliError::Message("invalid usage".to_owned()));
     }
+    let values = build_time()?;
     let mut output = OutputStream {
         file: File::create(&args[1]).ok().map(io::BufWriter::new),
     };
@@ -84,7 +90,15 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_preprocessed(&source, path.as_bytes(), &mut output).map_err(|error| match error {
+        let mut counters = None;
+        let result = emit_preprocessed(
+            &source,
+            path.as_bytes(),
+            &values,
+            &mut output,
+            &mut counters,
+        )
+        .map_err(|error| match error {
             PreprocToolError::Initialization(PreprocessError::Source(error)) => {
                 CliError::Message(error.to_string())
             }
@@ -105,11 +119,51 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
             },
             PreprocToolError::InvalidToken => path_diagnostic(path, b"invalid phase-7 token"),
             PreprocToolError::Output(error) => CliError::Message(error.to_string()),
-        })?;
+        });
+        if stats && let Some(counters) = counters {
+            if let Err(error) = result {
+                return Err(CliError::Statistics {
+                    error: Box::new(error),
+                    path: path.as_bytes().to_vec(),
+                    counters: Box::new(counters),
+                });
+            }
+            report_counters(path.as_bytes(), &counters);
+        } else {
+            result?;
+        }
     }
     output
         .flush()
         .map_err(|error| CliError::Message(error.to_string()))
+}
+// Host clock input, confined to the tool boundary. Python's standard time
+// module uses the host's localtime, including libc's POSIX TZ rules. This
+// avoids authored FFI and the differing timezone policies of date utilities.
+// One query captures both fields for every primary source in this invocation.
+fn build_time() -> Result<PredefinedValues, CliError> {
+    let stamp = std::process::Command::new("/usr/bin/python3")
+        .args([
+            "-I", "-S", "-c",
+            "import time; stamp=time.asctime(time.localtime()); print(stamp[4:11]+stamp[20:24]); print(stamp[11:19])",
+        ])
+        .output()
+        .map_err(|error| CliError::Message(error.to_string()))?;
+    if !stamp.status.success() {
+        return Err(CliError::Message(
+            "cannot query the local build time".to_owned(),
+        ));
+    }
+    let Some(split) = stamp.stdout.iter().position(|&byte| byte == b'\n') else {
+        return Err(CliError::Message("invalid local build time".to_owned()));
+    };
+    let date = &stamp.stdout[..split];
+    let time = &stamp.stdout[split + 1..];
+    Ok(PredefinedValues {
+        author: b"Course Solution".to_vec(),
+        date: date.to_vec(),
+        time: time.strip_suffix(b"\n").unwrap_or(time).to_vec(),
+    })
 }
 fn emit_unimplemented_batch(input: impl BufRead, output: &mut impl Write) {
     for line in input.split(b'\n') {
@@ -123,26 +177,70 @@ fn emit_unimplemented_batch(input: impl BufRead, output: &mut impl Write) {
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(CliError::Missing(group)) => {
+        Err(error) => report_error(error),
+    }
+}
+fn report_error(error: CliError) -> ExitCode {
+    match error {
+        CliError::Missing(group) => {
             eprintln!("preproc: Rust port is not implemented yet: {group}");
             ExitCode::from(86)
         }
-        Err(CliError::Internal(message)) => {
+        CliError::Internal(message) => {
             eprintln!("internal compiler error: {message}");
             ExitCode::from(70)
         }
-        Err(CliError::Message(message)) => {
+        CliError::Message(message) => {
             eprintln!("ERROR: {message}");
             ExitCode::FAILURE
         }
-        Err(CliError::Diagnostic(diagnostic)) => {
+        CliError::Diagnostic(diagnostic) => {
             let mut stderr = io::stderr().lock();
             let _status = stderr.write_all(b"ERROR: ");
             let _status = stderr.write_all(&diagnostic);
             let _status = stderr.write_all(b"\n");
             ExitCode::FAILURE
         }
+        CliError::Statistics {
+            error,
+            path,
+            counters,
+        } => {
+            let status = report_error(*error);
+            report_counters(&path, &counters);
+            status
+        }
     }
+}
+fn report_counters(path: &[u8], counters: &cppgm_rust::preprocess::counters::PreprocessorCounters) {
+    let mut stderr = io::stderr().lock();
+    let _status = stderr.write_all(b"preproc stats ");
+    let _status = stderr.write_all(path);
+    let expansion = &counters.expansion;
+    let _status = writeln!(
+        stderr,
+        ": source_tokens={} directives={} skipped_directives={} includes={} guarded_skips={} files={} source_bytes={} identifiers={} arena_bytes={} invocations={} produced_tokens={} argument_tokens={} argument_expansions={} nested_collections={} pastes={} stringizes={} raw_operands_hidden={} peak_contexts={} peak_context_tokens={} peak_invocations={}",
+        counters.source_tokens,
+        counters.directives,
+        counters.skipped_directives,
+        counters.includes,
+        counters.guarded_skips,
+        counters.files,
+        counters.source_bytes,
+        counters.identifiers,
+        counters.arena_bytes,
+        expansion.invocations,
+        expansion.produced_tokens,
+        expansion.argument_tokens,
+        expansion.argument_expansions,
+        expansion.nested_collections,
+        expansion.pastes,
+        expansion.stringizes,
+        expansion.raw_operands_hidden,
+        expansion.peak_contexts,
+        expansion.peak_context_tokens,
+        expansion.peak_invocations
+    );
 }
 
 #[cfg(test)]

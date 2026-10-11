@@ -24,6 +24,7 @@ pub struct Preprocessor<'a> {
     conditionals: Conditionals,
     line_tokens: Vec<Token<'a>>,
     pragmas: super::pragmas::Pragmas,
+    directives: u64,
 }
 impl<'a> Preprocessor<'a> {
     /// # Errors
@@ -62,10 +63,28 @@ impl<'a> Preprocessor<'a> {
         name: &[u8],
         services: super::files::FileServices,
     ) -> Result<Self, PreprocessError> {
+        Self::with_options(
+            source,
+            name,
+            services,
+            &super::options::PredefinedValues::default(),
+        )
+    }
+    /// Construct a unit with invocation-wide predefined values and host file services.
+    /// # Errors
+    /// Returns source construction or compact-storage errors before token delivery.
+    pub fn with_options(
+        source: &'a SourceBuffer,
+        name: &[u8],
+        services: super::files::FileServices,
+        values: &super::options::PredefinedValues,
+    ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let definitions = Definitions::new(&mut names)?;
+        let mut input = SourceInput::with_file_services(source, name, services)?;
+        input.enter_predefined(values.text())?;
         Ok(Self {
-            source: SourceInput::with_file_services(source, name, services)?,
+            source: input,
             names,
             definitions,
             expander: Expander::default(),
@@ -73,6 +92,7 @@ impl<'a> Preprocessor<'a> {
             conditionals: Conditionals::default(),
             line_tokens: Vec::new(),
             pragmas: super::pragmas::Pragmas::new(services.identity),
+            directives: 0,
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -83,16 +103,18 @@ impl<'a> Preprocessor<'a> {
                 "a macro name must be an identifier",
             ));
         }
-        if matches!(
-            name.spelling.bytes(),
-            b"defined"
-                | b"__cplusplus"
-                | b"__DATE__"
-                | b"__FILE__"
-                | b"__LINE__"
-                | b"__STDC_HOSTED__"
-                | b"__TIME__"
-        ) {
+        if name.spelling.bytes() == b"defined"
+            || (!self.source.in_predefined()
+                && matches!(
+                    name.spelling.bytes(),
+                    b"__cplusplus"
+                        | b"__DATE__"
+                        | b"__FILE__"
+                        | b"__LINE__"
+                        | b"__STDC_HOSTED__"
+                        | b"__TIME__"
+                ))
+        {
             return Err(PreprocessError::at(
                 name.begin,
                 "this name cannot be defined or undefined",
@@ -102,6 +124,7 @@ impl<'a> Preprocessor<'a> {
             .ok_or(PreprocessError::Invariant("macro name without identifier"))
     }
     fn run_directive(&mut self) -> Result<(), PreprocessError> {
+        self.directives = self.directives.wrapping_add(1);
         let directive = self.source.next_in_line(&mut self.names)?;
         self.source
             .track_guard(directive.spelling.bytes(), self.conditionals.depth());
@@ -188,6 +211,17 @@ impl<'a> Preprocessor<'a> {
     pub fn pack_alignment(&self) -> u32 {
         self.pragmas.pack_alignment()
     }
+    /// Snapshot all work demanded so far, including a failed operation's work.
+    #[must_use]
+    pub fn counters(&self) -> super::counters::PreprocessorCounters {
+        super::counters::PreprocessorCounters {
+            directives: self.directives,
+            skipped_directives: self.conditionals.skipped_directives,
+            identifiers: self.names.len(),
+            expansion: self.expander.counters(),
+            ..self.source.counters()
+        }
+    }
     pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
         match error {
             PreprocessError::Source(error) => self.source.describe(error),
@@ -244,6 +278,48 @@ impl PostTokenInput for Preprocessor<'_> {
 mod tests {
     use super::*;
     use crate::lex::pp_lexer::Punctuator;
+
+    #[test]
+    fn predefined_values_are_owned_and_parsed_on_demand_in_each_unit() {
+        let source = SourceBuffer::new(b"__CPPGM_AUTHOR__ __DATE__ __TIME__\n".to_vec()).unwrap();
+        let values = super::super::options::PredefinedValues {
+            author: b"a\"\\b".to_vec(),
+            date: b"Jan  2 2003".to_vec(),
+            time: b"04:05:06".to_vec(),
+        };
+        let mut input = Preprocessor::with_options(
+            &source,
+            b"primary",
+            super::super::files::FileServices {
+                identity: |_| None,
+                read: |_| None,
+            },
+            &values,
+        )
+        .unwrap();
+        drop(values);
+        assert_eq!(input.counters().source_tokens, 0);
+        for expected in [
+            b"\"a\\\"\\\\b\"".as_slice(),
+            b"\"Jan  2 2003\"",
+            b"\"04:05:06\"",
+        ] {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, expected);
+        }
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        let counters = input.counters();
+        assert_eq!(counters.directives, 8);
+        assert_eq!(counters.source_tokens, 27);
+        assert_eq!(counters.files, 2);
+        assert_eq!(counters.identifiers, 31);
+        assert_eq!(counters.expansion.invocations, 3);
+        assert_eq!(counters.expansion.produced_tokens, 3);
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
 
     #[test]
     fn pragma_execution_waits_for_text_demand_and_follows_argument_prescan() {
@@ -541,7 +617,7 @@ mod inclusion_tests {
                 b")"
             ]
         );
-        assert_eq!(input.source.inclusion_count(), 3);
+        assert_eq!(input.source.inclusion_count(), 4);
         assert_eq!(input.expander.live_storage(), [0; 5]);
     }
     #[test]

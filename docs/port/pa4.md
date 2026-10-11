@@ -868,3 +868,209 @@ host environment/dialect extensions remain later-stage responsibilities.
 Independent pragma/inclusion architecture review and Ralph's checkpoint/final
 audits decide acceptance and advancement; this implementation leaves the
 last-audited marker unchanged.
+
+## Full-stage acceptance audit and remaining comparator finding (2026-10-11)
+
+Entry commit: `dfe3e9d`, the inclusion/source-ownership checkpoint. The
+previous goal turn is classified as progress: that commit implemented the six
+remaining inclusion cases and retained every earlier passing identity.
+Stage base remains `e953408ec36e27923018214d0c788e91d2756633`.
+This audit independently reviews the pragma checkpoint `1fc98f6`, inclusion
+checkpoint `dfe3e9d`, the previously audited macro/conditional/location groups,
+and the implementation changes introduced with this entry. Historical
+incomplete-group statements above describe their respective checkpoints.
+
+**Full stage acceptance remains open.** The fixed gate has zero failures,
+and the original full course suite and earlier stages pass. The audit found
+and repaired two required interfaces that those fixtures did not demand:
+clock-valued predefined macros and statistics. An additional host-clock defect
+found during the repair is also fixed. The protected differential adapter still
+rejects a statistics invocation solely for an implementation-specific storage
+measurement; its policy needs an external disposition before full acceptance.
+No protected checker, oracle, existing reference, manifest or Ralph state was
+changed. The existing goal remains active; this entry does not advance PA4.
+
+### Findings and fixes beyond fixture coverage
+
+1. `__DATE__` and `__TIME__` previously returned status 86 when demanded.
+   `PredefinedValues` now supplies owned author/date/time bytes. The entry point
+   captures the local time once for the entire invocation, and every primary
+   source receives the same values while all unit-local state resets. The
+   author remains exactly `Course Solution` for the standalone tool.
+2. Predefined definitions were manually installed, so their source/directive
+   work was absent. C++ reads `PredefinedText` as a synthetic source before
+   the primary file. Rust now does the same through its ordinary directive
+   parser: one immutable `<predefined>` image, an independent source range,
+   and no parent inclusion note. Escaping, definition roles, errors, demand
+   and reserved-name treatment use the existing phase owners. There is no
+   rendered-token transport or second parse of compiled source.
+3. `--stats` previously returned status 86. Unit-owned counters now observe
+   stabilization, active and skipped directives, physical files/bytes, actual
+   include entries and guard skips, and macro work at the same C++ transitions.
+   Ordinary builtin replacements and `defined` do not count as macro
+   invocations. Argument barriers count prescans; range-only nested collection
+   does not copy/count argument tokens; placemarker paste does not count a
+   paste. Peaks are sampled where C++ samples them, not at every intermediate
+   push. Unsigned telemetry totals wrap explicitly. Snapshot/reporting occurs
+   after successful work and after preprocessing/phase-7 failures; diagnostics
+   precede statistics. Missing primary files have no initialized-unit report.
+4. An initial host `date` query failed the POSIX `TZ=EST5EDT` probe: this host
+   ships uutils date, which returned UTC while libc returned daylight Eastern
+   time. The final clock boundary invokes the existing host Python interpreter's
+   standard `time.localtime`/`time.asctime` interface in isolated, no-site mode.
+   It supplies only environmental clock bytes, through the same substring
+   rules as C++ `SetBuildTime`; all preprocessing and literal conversion run
+   in Rust. No dependency was added to Cargo, no authored unsafe/FFI exists,
+   and no C++ executable implements a candidate phase. The interpreter path
+   and binary digest are recorded as host inputs. Six timezone pairs now
+   produce identical complete output with both tools called in the same
+   recorded wall-clock second. A separately retained pair crossing a second
+   differs by exactly that environmental time input, with each invocation
+   keeping its values constant across its two primary sources.
+
+Required regressions supplement the executed PA4 directive lane:
+`tests/directives/600-build-time-values.t` and `.t2` demand the clock values
+through post-rescan pragmas without printing volatile values; and
+`tests/directives/400-line-date-value.t` demands the date while rejecting an
+invalid line operand. Their new fixed expectations were checked against the
+unchanged oracle. An invariant test supplies fixed escaped author/date/time
+values, drops the input options, verifies retained literal ownership and
+lazy predefinition parsing, and checks the resulting work counts and empty
+expansion storage. No existing fixture or expected output was modified.
+
+### Responsibility and architecture review
+
+The full handout (`README.md`, `macros.md`, `directives.md`), clone contract,
+specification, conversion plan, source map and stage history were consulted.
+The directly reviewed frozen C++ owners are `preproc.cpp`,
+`preprocessor{,_directives}.cpp`, `preprocessor.h`,
+`preprocessor_names.{h,cpp}`, `source/source_files.{h,cpp}`,
+`source/source_stack.{h,cpp}`, `macro/macro_definition.{h,cpp}`,
+`macro/macro_expander.{h,cpp}`, `macro/hide_sets.{h,cpp}` and shared
+source/lexer/post-token/PA3 owners. The prior independent numeric audit is
+preserved, rather than replacing target arithmetic with host arithmetic.
+
+| Stage-owned responsibility | Review conclusion and Rust owner |
+| --- | --- |
+| CLI, writer, primary-source reset, non-runner batch protocol | `dev/bin/preproc.rs`, `driver/preproc.rs`, `driver/posttoken.rs`: exact file/path bytes, status and output failure behavior; documented non-runner batch response retained. Course routing selects the Rust executable for all due preprocessing. |
+| Predefined constants, clock values, reserved names | `preprocess/options.rs`, `unit.rs`, `macros/definition.rs`: synthetic definitions parsed once on demand; reserved names permitted only in that private physical source; builtin identity and macro slots remain typed. |
+| Definition/argument grammar, redefinition and parameter limits | `macros/definition.rs`: whitespace comparison and diagnostic order match; explicit uint16 parameter-count behavior retained. No shared mutable parameter scratch escapes a parse. |
+| Rescanning, recursion, stringizing and pasting | `macros/expander.rs`, `token.rs`, `hide_sets.rs`: token-local paint/origin rules, argument demand and prescan-once facts retained; ordered hide-set additions and complete `(set, other)` cache keys. Trie recursion is bounded by identifier bits. |
+| Conditional nesting, skipped demand and PA3 expressions | `conditionals.rs`, shared `expression.rs`/`arithmetic.rs`: flat stacks, exact nested ordering and short-circuit behavior, raw defined/attribute operators, per-file conditional boundaries and earliest failures. |
+| Include grammar/search/cache and header reentry | `inclusion.rs`, `files.rs`, `input.rs`: direct-header versus expanded operands, presumed-path then working-directory order, regular stat identity, cached misses/aliases, once before guard before depth checks; only guard skips increment guarded-skips. |
+| Locations, line control and diagnostics | `locations.rs`, `line_control.rs`, `input.rs`: lazy physical line index shared per image, per-inclusion history, token-owned invocation locations, checked global ranges, original byte columns and innermost-first notes. |
+| Pragmas, `_Pragma` and pack state | `pragmas.rs`, `unit.rs`: operators execute after replacement; exact destringizing, ignored unknown/ill-formed pragma text, transactional pack updates, push/pop/show precedence, decimal-prefix uint32 wrap and presumed-name once identity. |
+| Phase 5–7 and view integration | Shared `lex` and `PostTokenInput`: typed pull composition, string concatenation through removed operators/includes, exact literal/invalid-token records and errors. |
+| Deterministic work and resource observations | `counters.rs` plus the owning phase stores; CLI reporting retains field names/order. Allocation storage is explicitly separate from work; the Rust implementation has no bump arena, so `arena_bytes=0`. RSS/scaling are measured independently below. |
+
+Source frames and macro contexts retain bounded lookahead and active nesting,
+not whole-unit token vectors. Each physical file owns one immutable image;
+headers retain stable spellings after frame release. Compact name, hide-set,
+file, inclusion, location and context identities stay within their private
+owners. Definition roles and argument links are computed once. Maps never
+supply observable order. Caches are translation-unit-owned and keyed by full
+path, stat identity or ordered hide-set operands, with macro-defined state
+checked again at inclusion. Owned option bytes cannot dangle or be reread from
+the environment in a phase. Packing operands publish no partial update after a
+lexical failure. Structured Results preserve ordinary errors, limits and
+internal invariant failures distinctly. No new lint expectation was needed.
+Parser rollback, semantic/template caches, per-function backend storage,
+optimizer policies and PA33 implementation-wide census/debug requirements
+belong to later stages and are not certified by this PA4 review. No backend or
+optimizer code was changed, and no PA35 optimization objective was imposed.
+
+### Current validation and raw evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa4-full-audit/`.
+`entry-head.txt` records entry state; `validation.json` records every command
+and exit status. `summary.json` records final binary/manifest/host-input
+hashes, exact fixed case identities and inspection of all 106 PA4 invocation
+traces. `paN-result.json`, copied `cases/`, and `paN-course/` retain raw
+results rather than relying on aggregate fixture counts.
+
+| Command/check | Result and artifact relative to evidence root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS; `preflight.log`; unchanged protected inputs and oracle hashes |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa4` | PASS 106/106; `stage.log`, `pa4-result.json`, `cases/`; every raw invocation has equal ordinary status and externally visible bytes |
+| `make course-pa4` / `clone_check.py course pa4` | PASS 112/112; `course.log`, `pa4-course/{course-result.json,counts.txt,trace.jsonl}`; no failure marker or failed comparison |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS: PA1 58/58, PA2 26/26, PA3 20/20 and all full earlier course targets; `prior.log`, `pa{1,2,3}-result.json`, `pa{1,2,3}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS 106/106 identities; `preserve.log` |
+| `make lint` / protected `clone_quality.py` | PASS rustfmt, strict all-target/all-feature Clippy, debug/release unit tests and source audit; `quality.log` |
+| `make audit-rust` | PASS 61 files, zero source/function/nesting/architecture findings; `audit.log` |
+| Inclusion and pragma scratch probes, rerun against current Rust | PASS 202/202 and 549/549 exact status/stdout/stderr/complete output; `inclusion/` and `pragmas/` retain raw sources and observations |
+| Packing state through the typed preprocessing API | PASS 4,103/4,103 token-by-token observations; `pragmas/pack-results.json`, `pack-{cpp,rust}.stdout`; Rust scratch view rebuilt against the updated library |
+| Statistics on every course fixture | 112/112 equal work/status/diagnostics/output; `stats-fixtures-results.json`, `stats-fixtures/`; raw allocator storage retained and compared separately under the documented resource rule; this is supplemental evidence, not a protected-adapter pass |
+| Focused stats/clock/error/demand/scaling probes | 25/25 equal work/status/stdout/output; `probe-results.json`, `probe/`; same storage caveat |
+| Clock with UTC, fractional POSIX offset, implicit POSIX DST and named DST zones | 6/6 exact complete output pairs, each pair in one recorded epoch second; `clock-zones.json`, `clock-zones/`; initial host-date defect and differing-second observations retained separately |
+| Protected adapter statistics reproduction | FAIL: only stderr allocator storage differs; `stats-policy/trace.jsonl` and `stats-policy/mismatches/`; required follow-up below |
+
+### Remaining acceptance finding and dependency boundary
+
+The exact reproducer is an empty `primary.cpp` and the unchanged adapter:
+
+```sh
+V5RUST_TRACE=/absolute/scratch/trace.jsonl \
+  /home/vishvananda/work/v5rust-control/bin/preproc \
+  --stats -o tokens primary.cpp
+```
+
+Both compilers return status 0 and emit identical complete token files.
+Every deterministic field matches: source_tokens=24, directives=8,
+files=2, source_bytes=223, identifiers=31 and all expansion work/peaks zero.
+C++ reports `arena_bytes=16384`; Rust reports `arena_bytes=0`, because its
+storage uses owned typed stores rather than the C++ bump allocator. The
+protected trace records `match: false`, `differences: ["stderr"]`, and empty
+statistics arrays. `clone_adapter.py::is_stats_line` recognizes only
+`cppgm++`, `lowiropt` and `lowir2native` statistics, and its excluded storage
+field spellings also omit the standalone preprocessor's `arena_bytes`.
+This contradicts the conversion plan's explicit measurement treatment for
+implementation-specific allocations and leaves this tool's storage field
+outside the clone contract's recognized-statistics exception in the current
+frozen checker. Faking the C++ allocator's measured value or changing the
+protected comparator is not an authorized repair.
+
+There are **no failing fixed-manifest case IDs** and no remaining known PA4
+semantic stub. The outstanding beyond-fixture ID is
+`stats-policy/empty-primary-source`: the protected adapter rejects its raw
+storage observation. Full acceptance is not inferred from the green gates.
+An external baseline/policy disposition is the next dependency boundary;
+Ralph retains stage advancement and its existing goal. Hosted search paths,
+include-next, environment/feature probes and dialect extensions are still
+later-stage owners, as the PA4 handout specifies.
+
+### Current resource observations
+
+`measure.py` and `measure-macros.py` retain three runs per tool/scale,
+raw `/usr/bin/time` records, source identities, complete output hashes and
+macro work counters in `resources/` and `macro-resources/`. All corresponding
+output hashes match. These are compile-time/storage observations, not a
+paired performance-regression claim or generated-code optimization target.
+Measurements use the final Rust binary after the clock repair; clocks and
+statistics cannot select alternative semantic work. Wall time includes
+launch and the once-per-invocation host clock query. RSS includes the host
+clock subprocess high-water mark; it is not front-end arena storage.
+
+| Workload | Scale | Primary bytes | Rust median ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| guarded | 10,000 | 200,000 | 39.812 | 8,756 |
+| guarded | 50,000 | 1,000,000 | 85.305 | 8,752 |
+| guarded | 100,000 | 2,000,000 | 114.420 | 8,836 |
+| once | 10,000 | 200,000 | 40.045 | 8,748 |
+| once | 50,000 | 1,000,000 | 72.029 | 8,752 |
+| once | 100,000 | 2,000,000 | 108.235 | 8,752 |
+| unguarded-locations | 1,000 | 20,000 | 26.988 | 8,836 |
+| unguarded-locations | 5,000 | 100,000 | 53.307 | 8,756 |
+| unguarded-locations | 10,000 | 200,000 | 81.965 | 8,744 |
+| Nested argument expansion, four output literals per call | 10,000 | 90,017 | 47.046 | 8,744 |
+| Nested argument expansion, four output literals per call | 50,000 | 450,017 | 140.494 | 8,752 |
+| Nested argument expansion, four output literals per call | 100,000 | 900,017 | 238.921 | 8,744 |
+
+Guard/once skips retain one physical header image and location index;
+unguarded reentries add small inclusion records, not image copies. Nested
+argument expansions retain active context/argument buffers and reuse their
+capacity after each call; retained storage does not follow emitted-token
+count. Counter instrumentation records 2 invocations and 6 produced expansion
+tokens per nested call (4 final literals), without causing an extra prescan.
+The audit scratch evidence uses approximately 161 MiB; the shared filesystem
+uses approximately 5.62 GB of 105.09 GB, below the 100-GiB ceiling.

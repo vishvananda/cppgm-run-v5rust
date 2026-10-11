@@ -1,0 +1,4 @@
+// Every primary source starts with the same invocation's clock values.
+_Pragma(__DATE__)
+_Pragma(__TIME__)
+19

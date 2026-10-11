@@ -22,6 +22,9 @@ pub(crate) struct Identifiers {
 }
 
 impl Identifiers {
+    pub(crate) fn len(&self) -> usize {
+        self.spellings.len()
+    }
     pub(crate) fn intern(&mut self, text: &[u8]) -> Result<NameId, &'static str> {
         if let Some(&id) = self.index.get(text) {
             return Ok(id);

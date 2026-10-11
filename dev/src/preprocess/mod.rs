@@ -4,6 +4,7 @@ pub use crate::support::source;
 
 pub mod arithmetic;
 mod conditionals;
+pub mod counters;
 pub mod error;
 pub mod expression;
 pub mod files;
@@ -12,5 +13,6 @@ mod input;
 mod line_control;
 mod locations;
 mod macros;
+pub mod options;
 mod pragmas;
 pub mod unit;

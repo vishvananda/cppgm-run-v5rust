@@ -46,6 +46,12 @@ pub(crate) struct SourceFiles<'a> {
     services: FileServices,
 }
 impl<'a> SourceFiles<'a> {
+    pub(crate) fn counts(&self) -> (usize, usize) {
+        (
+            self.files.len(),
+            self.files.iter().map(|file| file.image.bytes().len()).sum(),
+        )
+    }
     pub(crate) fn new(source: &'a SourceBuffer, name: &[u8], services: FileServices) -> Self {
         let identity = (services.identity)(name);
         let id = FileId(0);
@@ -63,6 +69,20 @@ impl<'a> SourceFiles<'a> {
     }
     pub(crate) fn primary() -> FileId {
         FileId(0)
+    }
+    pub(crate) fn add_text(&mut self, bytes: Vec<u8>) -> Result<FileId, PreprocessError> {
+        let id = FileId(
+            u32::try_from(self.files.len())
+                .map_err(|_| PreprocessError::Limit("too many source files"))?,
+        );
+        self.files.push(SourceFile {
+            image: SourceImage::Shared(Rc::new(
+                SourceBuffer::new(bytes).map_err(PreprocessError::Limit)?,
+            )),
+            identity: None,
+            guard: None,
+        });
+        Ok(id)
     }
     pub(crate) fn image(&self, id: FileId) -> SourceImage<'a> {
         self.files[id.0 as usize].image.clone()

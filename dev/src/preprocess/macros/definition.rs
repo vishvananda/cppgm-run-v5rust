@@ -1,6 +1,6 @@
 // Translated from preprocess/macro/macro_definition.cpp. See NOTICE.
 //! One-time replacement-list role analysis; definitions are immutable and shared by invocations.
-use super::token::{LEADING_SPACE, Spelling, Token};
+use super::token::{LEADING_SPACE, Token};
 use crate::lex::identifiers::{Identifiers, NameId};
 use crate::lex::pp_lexer::{PpTokenKind, Punctuator};
 use crate::preprocess::{error::PreprocessError, input::SourceInput};
@@ -35,7 +35,6 @@ pub(crate) struct Definition<'a> {
 pub(crate) enum Builtin {
     File,
     Line,
-    DeferredValue,
     HasCppAttribute,
     HasAttribute,
     Counter,
@@ -50,38 +49,38 @@ impl<'a> Definitions<'a> {
             defined_name: names.intern(b"defined").map_err(PreprocessError::Limit)?,
             slots: Vec::new(),
         };
-        for (spelling, value, kind) in [
-            (
-                b"__CPPGM__".as_slice(),
-                b"201303L".as_slice(),
-                PpTokenKind::PpNumber,
-            ),
-            (b"__cplusplus", b"201103L", PpTokenKind::PpNumber),
-            (b"__STDC_HOSTED__", b"1", PpTokenKind::PpNumber),
-            (b"__x86_64__", b"1", PpTokenKind::PpNumber),
-            (b"__linux__", b"1", PpTokenKind::PpNumber),
-            (
-                b"__CPPGM_AUTHOR__",
-                b"\"Course Solution\"",
-                PpTokenKind::StringLiteral,
-            ),
+        // PreprocessorNames interns the directive/reserved vocabulary before any
+        // file is read. Retain even hosted-only roles for the observable name count.
+        for spelling in [
+            b"if".as_slice(),
+            b"ifdef",
+            b"ifndef",
+            b"elif",
+            b"else",
+            b"endif",
+            b"include",
+            b"define",
+            b"undef",
+            b"line",
+            b"error",
+            b"pragma",
+            b"include_next",
+            b"warning",
+            b"__VA_ARGS__",
+            b"_Pragma",
+            b"once",
+            b"__cplusplus",
+            b"__DATE__",
+            b"__FILE__",
+            b"__LINE__",
+            b"__STDC_HOSTED__",
+            b"__TIME__",
         ] {
-            let name = names.intern(spelling).map_err(PreprocessError::Limit)?;
-            let mut token = Token::end(crate::support::source::SourceOffset(0));
-            token.kind = kind;
-            token.spelling = Spelling::Source(value);
-            let mut definition = Definition::empty(name);
-            definition.body.push(Replacement {
-                token,
-                role: Role::Token,
-            });
-            definitions.define(definition, crate::support::source::SourceOffset(0))?;
+            names.intern(spelling).map_err(PreprocessError::Limit)?;
         }
         for (spelling, builtin) in [
             (b"__FILE__".as_slice(), Builtin::File),
             (b"__LINE__", Builtin::Line),
-            (b"__DATE__", Builtin::DeferredValue),
-            (b"__TIME__", Builtin::DeferredValue),
             (b"__COUNTER__", Builtin::Counter),
             (b"__has_cpp_attribute", Builtin::HasCppAttribute),
             (b"__has_attribute", Builtin::HasAttribute),

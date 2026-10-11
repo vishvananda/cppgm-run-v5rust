@@ -1,0 +1,7 @@
+preproc 2
+sof tests/directives/600-build-time-values.t
+literal 17 int 11000000
+eof
+sof tests/directives/600-build-time-values.t2
+literal 19 int 13000000
+eof

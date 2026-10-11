@@ -57,6 +57,10 @@ pub(crate) struct SourceInput<'a> {
     mode: InputMode,
     peeked: Option<Token<'a>>,
     pub(crate) allow_va_args: bool,
+    predefined: Option<FileId>,
+    tokens_read: u64,
+    includes: u64,
+    guarded_skips: u64,
 }
 impl<'a> SourceInput<'a> {
     #[cfg(test)]
@@ -110,6 +114,10 @@ impl<'a> SourceInput<'a> {
             mode: InputMode::Text,
             peeked: None,
             allow_va_args: false,
+            predefined: None,
+            tokens_read: 0,
+            includes: 0,
+            guarded_skips: 0,
         })
     }
     fn next_base(base: u32, source: &SourceBuffer) -> Result<u32, PreprocessError> {
@@ -135,11 +143,12 @@ impl<'a> SourceInput<'a> {
         &mut self.inclusions[self.frame.inclusion.0 as usize].locations
     }
     fn stabilize(
-        &self,
+        &mut self,
         kind: PpTokenKind,
         flags: u8,
         names: &mut Identifiers,
     ) -> Result<Token<'a>, PreprocessError> {
+        self.tokens_read = self.tokens_read.wrapping_add(1);
         let pp = self.frame.lexer.token(kind);
         let mut token = Token::end(pp.begin);
         token.kind = kind;
@@ -147,13 +156,13 @@ impl<'a> SourceInput<'a> {
         token.punctuator = pp.punctuator;
         token.flags = flags;
         if kind == PpTokenKind::Identifier {
+            let name = names.intern(pp.spelling).map_err(PreprocessError::Limit)?;
             if pp.spelling == b"__VA_ARGS__" && !self.allow_va_args {
                 return Err(PreprocessError::at(
                     pp.begin,
                     "__VA_ARGS__ outside a variadic macro's replacement list",
                 ));
             }
-            let name = names.intern(pp.spelling).map_err(PreprocessError::Limit)?;
             token.name = Some(name);
             token.spelling = Spelling::Shared(names.spelling(name));
         } else {
@@ -479,11 +488,15 @@ impl<'a> SourceInput<'a> {
             .files
             .identity(file)
             .is_some_and(|id| pragmas.is_once(id))
-            || self
-                .files
-                .guard(file)
-                .is_some_and(|name| definitions.is_defined(name))
         {
+            return Ok(());
+        }
+        if self
+            .files
+            .guard(file)
+            .is_some_and(|name| definitions.is_defined(name))
+        {
+            self.guarded_skips = self.guarded_skips.wrapping_add(1);
             return Ok(());
         }
         if self.suspended.len() + 1 > 200 {
@@ -492,6 +505,35 @@ impl<'a> SourceInput<'a> {
                 "#include nested too deeply",
             ));
         }
+        self.includes = self.includes.wrapping_add(1);
+        self.enter(file, &path, depth, Some(directive.begin))
+    }
+    pub(crate) fn enter_predefined(&mut self, text: Vec<u8>) -> Result<(), PreprocessError> {
+        let file = self.files.add_text(text)?;
+        self.predefined = Some(file);
+        self.enter(file, b"<predefined>", 0, None)
+    }
+    pub(crate) fn in_predefined(&self) -> bool {
+        self.predefined == Some(self.frame.file)
+    }
+    pub(crate) fn counters(&self) -> super::counters::PreprocessorCounters {
+        let (files, source_bytes) = self.files.counts();
+        super::counters::PreprocessorCounters {
+            source_tokens: self.tokens_read,
+            includes: self.includes,
+            guarded_skips: self.guarded_skips,
+            files,
+            source_bytes,
+            ..super::counters::PreprocessorCounters::default()
+        }
+    }
+    fn enter(
+        &mut self,
+        file: FileId,
+        path: &[u8],
+        depth: usize,
+        included_at: Option<SourceOffset>,
+    ) -> Result<(), PreprocessError> {
         let image = self.files.image(file);
         let base = self.next_base;
         let next_base = Self::next_base(base, &image)?;
@@ -509,9 +551,9 @@ impl<'a> SourceInput<'a> {
         )?;
         self.inclusions.push(Inclusion {
             base,
-            parent: Some(self.frame.inclusion),
-            included_at: directive.begin,
-            locations: super::locations::Locations::with_image(image.clone(), &path),
+            parent: included_at.map(|_| self.frame.inclusion),
+            included_at: included_at.unwrap_or(SourceOffset(0)),
+            locations: super::locations::Locations::with_image(image.clone(), path),
         });
         let frame = SourceFrame {
             source: image,

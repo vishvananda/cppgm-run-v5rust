@@ -51,6 +51,7 @@ pub(crate) struct Conditionals {
     sections: Vec<Conditional>,
     skipped: Vec<bool>,
     evaluator: ExpressionEvaluator<'static, ReplacedDefinitions, PreprocessError>,
+    pub(crate) skipped_directives: u64,
 }
 impl Default for Conditionals {
     fn default() -> Self {
@@ -58,6 +59,7 @@ impl Default for Conditionals {
             sections: Vec::new(),
             skipped: Vec::new(),
             evaluator: ExpressionEvaluator::new(&REPLACED_DEFINITIONS, NumberDialect::Cxx11),
+            skipped_directives: 0,
         }
     }
 }
@@ -169,6 +171,7 @@ impl Conditionals {
             if !source.skip_to_directive()? {
                 return self.check_end();
             }
+            self.skipped_directives = self.skipped_directives.wrapping_add(1);
             source.allow_va_args = true;
             let name = source.next_in_line(names);
             source.allow_va_args = false;

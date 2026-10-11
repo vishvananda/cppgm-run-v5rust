@@ -1,7 +1,7 @@
 // Translated from dev/preproc.cpp. See NOTICE.
 //! Preprocessor text view over the shared typed phase-7 converter.
 use crate::lex::{PostTokenError, PostTokenKind, PostTokenizer, number::NumberDialect};
-use crate::preprocess::{error::PreprocessError, unit::Preprocessor};
+use crate::preprocess::{error::PreprocessError, options::PredefinedValues, unit::Preprocessor};
 use crate::support::source::{SourceBuffer, SourceError};
 use std::io::Write;
 
@@ -20,18 +20,29 @@ pub enum PreprocToolError {
 pub fn emit_preprocessed(
     source: &SourceBuffer,
     name: &[u8],
+    values: &PredefinedValues,
     output: &mut (impl Write + ?Sized),
+    counters: &mut Option<crate::preprocess::counters::PreprocessorCounters>,
 ) -> Result<(), PreprocToolError> {
-    let input = Preprocessor::with_file_services(
+    let input = Preprocessor::with_options(
         source,
         name,
         crate::preprocess::files::FileServices {
             identity: super::file_identity::query,
             read: super::file_identity::read,
         },
+        values,
     )
     .map_err(PreprocToolError::Initialization)?;
     let mut tokens = PostTokenizer::from_input(input, NumberDialect::Cxx11);
+    let result = write_tokens(&mut tokens, output);
+    *counters = Some(tokens.input().counters());
+    result
+}
+fn write_tokens(
+    tokens: &mut PostTokenizer<Preprocessor<'_>>,
+    output: &mut (impl Write + ?Sized),
+) -> Result<(), PreprocToolError> {
     loop {
         let token = match tokens.next_token() {
             Ok(token) => token,
