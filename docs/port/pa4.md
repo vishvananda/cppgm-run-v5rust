@@ -1,7 +1,7 @@
 # PA4 port ledger
 
 Stage base commit: e953408ec36e27923018214d0c788e91d2756633
-Last audited commit: INITIAL
+Last audited commit: `a56a656f20d03249cf4d6b4581ece696f0f1f512`
 
 Implementation checkpoints:
 
@@ -9,12 +9,11 @@ Implementation checkpoints:
 - `5c06195f4c6f7960bcc768092a844871f1eaa2df`: conditional inclusion and controlling-expression rescanning (2026-10-11); entry HEAD `fd2481a` (documentation handoff after the macro implementation).
 - `16f0a9779f89f5b82544b1f1085b53593df1f749`: presumed locations, file/line builtin replacement and macro-expanded line control (2026-10-11); entry HEAD `af7984f93d7ba4aedca00014cd7590441667d207`.
 
-The current checkpoint is a coherent partial PA4 handoff. Ralph owns stage
-advancement, checkpoint audits and the last-audited marker, which remains
-`INITIAL`. The previous goal turn was progress: the conditional implementation
-and its evidence were committed. This turn reduces the fixed failures from
-14 to 8 while preserving 92/92 turn-start passing identities. Full PA4 is
-still incomplete.
+The three accepted implementation checkpoints are independently audited below,
+through the audit fixes in `4359650`, `637b946` and `a56a656`. Ralph retains stage advancement. The
+location-control checkpoint reduced fixed failures from 14 to 8; this audit
+preserves all 98 accepted passing identities and the same eight failing IDs.
+Full PA4 remains incomplete; this certifies only the completed groups.
 
 ## Contract and ownership
 
@@ -398,3 +397,185 @@ arrive, verify every token retains its inclusion range, conditional sections
 cannot cross file boundaries and inclusion search uses the presumed name.
 This handoff completes the location-control group without advancing the stage
 or changing the last-audited commit.
+
+## Independent partial checkpoint audit, 2026-10-11
+
+Audit entry: clean `bd013c2b02dc691d45ad2aa9c789a5131a3f0b63`. Reviewed the
+complete diff from stage base `e953408ec36e27923018214d0c788e91d2756633`,
+initially the last-audited boundary, through implementation
+`a56a656f20d03249cf4d6b4581ece696f0f1f512`. The preceding goal turn was
+progress: the accepted location implementation and its evidence are committed.
+The turn-start fixed result was independently rerun and retained in
+`entry-stage.json`: 98/106 passing and eight failures. The required full-stage
+command was run without making unfinished inclusion/pragma behavior a condition
+of partial-checkpoint acceptance.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, conversion plan, PA4 handout and
+both detailed guides, stage ledger and source map. Independently consulted the
+frozen C++ owners in the ownership table, including their headers, source-frame
+token stabilization, definition-parser slot rollback, hide-set intern/index
+operations, rescanner context/barrier handling, conditional skipping and
+evaluation, line-control decoding/history, post-token writer and CLI handlers.
+The oracle revision remains `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`.
+
+### Findings and fixes
+
+1. Active `#include_next` incorrectly entered the unfinished inclusion group
+   and returned 86. C++ `run_directive` rejects it before reading operands when
+   hosted mode is false. Removed it from the active inclusion arm, so it now
+   produces the exact located invalid-directive rejection, including after
+   `#line`. Inactive `include_next` still requests header-name lexing and skips
+   its operands as the C++ owner does. Regression:
+   `tests/directives/171-include-next-course-bad.t`.
+2. The CLI opened directories, ignored their read failure and accepted them as
+   empty primary sources. C++ `SourceFiles::find_or_read` checks regular-file
+   metadata before opening. The Rust CLI now does the same, preserving the
+   exact cannot-open diagnostic and output already emitted for earlier primary
+   sources. Checking before opening also rejects FIFOs without blocking.
+   Regression: `tests/directives/172-directory-source-bad.t`, with a committed
+   directory companion containing only a marker.
+3. `std::env::args` panicked on valid non-UTF-8 source/output path arguments,
+   while C++ processes their bytes. The entry point now collects `OsString`
+   arguments and preserves bytes in `sof`, presumed names and path diagnostics.
+   Regression: `tests/directives/173-source-path-bytes-bad.t`, whose companion
+   filename ends with byte FF. The bin unit test additionally checks successful
+   output and located failure for that path, plus directory rejection. No lossy
+   conversion or exception-to-rejection wrapper was introduced.
+4. The no-runner batch path decoded stdin as UTF-8 and stopped on a non-UTF-8
+   request, whereas C++ getline consumes bytes and emits one sentinel per line.
+   Replaced the string-line iterator with a byte-line iterator, retaining final
+   unterminated lines, empty requests and ignored output failures. A bin unit
+   regression and five direct CLI probes cover this interface. The sentinel
+   remains a no-runner response, never a successful compiler invocation.
+5. The Rust definition parser rejected 65,535 named parameters followed by
+   ellipsis. C++ accepts that definition but stores its count and the variadic
+   slot in uint16_t, wrapping them to zero. Preserve that explicit target
+   truncation in arity, role assignment and redefinition comparisons, while
+   retaining the full immutable declared parameter list. Argument substitution
+   now checks its ranges, so malformed wrapped roles cannot panic. Regression:
+   `tests/macros/930-parameter-count-wrap.t`, including redefinition with different
+   declared names that compare equal under C++'s zero effective count.
+6. Four source-map descriptions still called implemented NameId, retained
+   spelling, file/line builtin and expanded-expression cursor facts deferred.
+   Updated those responsibilities while retaining their remaining partial
+   status. No pending hosted/file-store responsibility is marked complete.
+
+The four new fixture families live in PA4's existing executed macro/directive
+lanes.
+Their new expected observations are checked against complete oracle-equal output
+bytes, and their focused protected checker invocations compare status, stdout,
+stderr and output bytes even for rejection. No frozen fixture/reference,
+manifest, gate policy, dependency or Ralph state was changed.
+
+### Completed-group completeness and ownership review
+
+| Reviewed group | Behavioral and architecture conclusions |
+| --- | --- |
+| Definition grammar and publication | All course object/function/variadic forms, parameter diagnostics, whitespace requirements, reserved-name rejection, role assignment and exact redefinition checks correspond to the C++ branches. Local parameter-slot maps disappear on failure; they cannot pollute later definitions. A definition is published only after parse/role analysis and redefinition checks succeed. Immutable Rc definitions are shared by active contexts; undef/redefinition cannot invalidate live references. |
+| Rescanning and substitution | Traced object/function invocation, lookahead popping, collected/nested argument links, arity checks, prescan demand, argument barriers and completion marks. Only plain parameter uses demand prescan, once per argument; raw/stringized operands do not. Hide-set additions, ordered unions, last-add removal, paint and origin/disabled/inherited facts match the course recursion rule. Source-following tokens can complete an invocation after a replacement context ends. Stringizing, placemarkers, adjacent paste operators, variadic comma paste and invalid-paste diagnostics match the C++ roles. No recursion/output cutoff or fixture shortcut exists. |
+| Conditional inclusion | Active stacks and the flat inactive nesting stack preserve order checks, taken-section operand skipping, extra-token and unterminated diagnostics. `defined` and attribute probes consume raw operands inside controlling expressions, including during argument prescan; they query compact definition slots and preserve C++ diagnostic precedence. Macro output feeds the shared PA3 evaluator directly. Its generic error change leaves arithmetic and reduction algorithms untouched; earlier PA3 checks and supplemental arithmetic/error cases pass. |
+| Single-file locations | Physical line starts are built lazily once, with compact byte offsets and binary search. Checked decimal line accumulation enforces 1..=2147483647 with the C++ error order. Ordinary filename strings use the shared phase-5 decoder. Builtins use invocation offsets and latest state; diagnostics use the historical state, with the same exclusive `until` boundary. Shared filename literals are invalidated only when a filename operand changes state. BOM columns, splices, binary/control filename bytes and delayed diagnostics are covered. |
+| Typed boundaries and lifetimes | Immutable source bytes and shallow shared spellings feed Token -> Expander -> PostTokenInput/PpTokenCursor -> PA2/PA3 consumers. No serialized phase transport, second parser, whole-unit token vector or source-character record was added. Context tokens, argument tokens/links and expanded tokens are flat LIFO stores truncated at their owning context/invocation boundary; line tokens clear after success. Canonical names and immutable hide-set caches remain unit-owned. Failed input is terminal: the driver renders its error while the input owner lives, then drops the unit; no speculative state is reused across primary sources. Existing invariant tests prove deep-stack behavior and empty live buffers at EOF. |
+| Determinism and implementation policy | NameId-indexed slots supply direct lookup. Hash maps are lookup indexes, never emission order; token/context/source order drives output. Clone calls copy ranges, small token facts or Rc references, not owning token trees/sets. No global registry scan, unsafe code, FFI, implementation subprocess, oracle delegation, new dependency or environment read under dev/src exists on the reviewed path. The sole new rescanner lint expectation is narrowly justified for its cohesive expansion inputs; the independent file audit passes. Responsibility modules are semantic owners, not mechanical file splits. Production tool names and Rust identifier conventions remain compatible. Backend, optimizer and register allocator are untouched. |
+
+All candidate defects above are fixed. The C++ parameter-limit fault described
+below is a reported frozen-baseline issue. Active file inclusion, pragma
+execution, build-time values, counters and hosted probes retain their previously
+documented unfinished status. Per-file conditional limits and inclusion location
+identity remain requirements of the next file-store/frame boundary, not claims
+of this single-file audit. PA34 source/object provenance checks are not applicable
+to this PA4 checkpoint; no bootstrap or object substitution occurred.
+
+### Fresh validation evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa4-audit/`.
+Validated implementation: `a56a656f20d03249cf4d6b4581ece696f0f1f512`.
+Release `preproc` SHA-256:
+`209a6bb1a83bc6cf85ef48885843a362b976127127f6589f191bd5d5eebf3b39`.
+Protected manifest digest remains
+`d3a98a505d9872f5a8b579b2f2b9937c606c0fcf6f372c9f7f2d1f5bfe9a3120`.
+
+| Actual command/check | Result and evidence relative to root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS; `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa4` | 98/106; exit 1 for the same eight unfinished cases; `stage.log`, `pa4-result.json` |
+| `make course-pa4` | 102/110, including all four new fixture families; exit 2, failure marker retained; `course.log`, `pa4-course/{course-result.json,counts.txt,trace.jsonl}` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS: PA1 58/58, PA2 26/26, PA3 20/20 and all three full course targets; `prior.log`, `pa{1,2,3}-result.json`, `pa{1,2,3}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS 98/98; `preserve.log` |
+| Fresh entry/current identity comparison and raw-trace inspection | PASS: same 106 identities, same eight failures, all 98 passes have exact oracle status 0/1 and complete output equality; `entry-stage.json`, `summary.json` |
+| `make lint` (protected `clone_quality.py`) | PASS: rustfmt, strict all-target/all-feature Clippy, debug/release tests including both CLI regressions and wrapped-parameter safety, independent audit; `quality.log` |
+| `make audit-rust` | PASS: 55 files, zero findings; `audit.log` |
+| Focused protected `execute_case` for the four added PA4 fixtures | PASS 4/4, one matching invocation each; `regressions.json` records raw trace/log paths |
+
+`probe.py` retains seeded inputs and raw observations in `probe/`, covering
+850 small macro graphs, 42 replacement/expression/line contexts, 16
+active/inactive directive cases, four path/file probes and five batch probes. Before fixes,
+`probe-before.log` records 906/911 matches: the five mismatches correspond to
+the three defects above. The separate `batch-before.json` records the later observed byte-request
+mismatch. After all fixes and adding FIFO/batch probes, `probe-after.log` and
+`probe-results.json` record **917/917** identical status, stdout, stderr and
+complete output bytes (batch probes have no output file).
+
+The earlier location/conditional generators were copied into this audit's
+artifact root to preserve historical evidence. `locations-differential/check.py`
+passes **173/173** (`locations-differential.log`). The full conditional generator
+reports **359/362** (`conditionals-differential.log` and its `results.json`).
+Its only mismatches are `case-0246.cpp`, `case-0259.cpp`, `case-0298.cpp`: active
+`#include <bad\q>` under respectively `#if 1`, `#ifdef X`, `#ifndef absent`
+reaches the explicitly unimplemented inclusion group (86 versus C++'s missing
+include rejection). Those inputs require the next dependency; the other 359
+observations, including inactive include header lexing, match exactly. These
+three results are recorded as failures, not silently dropped or called passes.
+
+The fixed failing IDs remain exactly the eight listed in the preceding section:
+`200-include.t`, `400-bad-include.t`, `400-header-guard-shapes.t`,
+`400-header-guarded.t`, `500-pragma-ignore.t`, `501-pragma-op-ignore.t`,
+`600-pragma-op.t`, `800-pragma-once.t` under `tests/directives/`.
+No added pass compensates for a lost accepted identity or new fixed failure.
+
+`parameter-limit/check.py` separately probes the target parameter-count boundary.
+`parameter-limit/before.json` retains the original Rust rejection of the empty
+wrapped definition. After the fix, all five defined oracle observations match:
+65,534 parameters plus ellipsis, 65,535 ordinary parameters, the empty wrapped
+variadic definition, rejection of 65,536 ordinary parameters, and expansion of
+wrapped `__VA_ARGS__` as an ordinary identifier. The sixth probe invokes a
+wrapped definition whose body uses `p0`: C++ crashes with SIGSEGV (-11), while
+Rust returns a structured representation-limit error (1), with no panic.
+`parameter-limit.log`, inputs, output bytes and stderr retain that evidence;
+core dumps were disabled for the deliberate oracle fault probe. The C++ parser
+wraps the count to zero, then indexes absent expanded-argument bounds for `p0`.
+This is a frozen-baseline invalid-access defect, reported as CLONE_CONTRACT.md
+requires; neither the C++ owner nor a reference/policy was patched, and the
+oracle crash is not claimed as a matching rejection. The Rust-only invariant
+test verifies this unsafe oracle path is handled through checked typed access.
+
+### Audit resource observations and handoff
+
+`python3 measure.py` records three runs per tool/workload, raw `/usr/bin/time`
+observations, retained source/output bytes and matching output SHA-256 values
+in `resources/`; `resources.log` and `resources/results.json` retain this run.
+Median wall time includes process launch; RSS is the maximum of three runs.
+All seven workloads have equal complete output hashes across both tools.
+
+| Supported workload | Scale | Input bytes | Rust ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| Nested argument prescan | 1,024 | 4,115 | 3.906 | 2,908 |
+| Same | 4,096 | 16,403 | 7.457 | 4,348 |
+| Same | 16,384 | 65,555 | 23.057 | 11,344 |
+| Nested inactive sections | 10,000 | 270,016 | 12.792 | 2,236 |
+| Same | 50,000 | 1,350,016 | 54.286 | 3,604 |
+| Repeated line state and builtin demand | 10,000 | 310,000 | 27.312 | 2,908 |
+| Same | 50,000 | 1,550,000 | 125.959 | 7,132 |
+
+The measurements are descriptive, not a calibrated performance claim. They
+support the reviewed bounds: flat nesting storage, streamed output and time
+following input/required expansion work. Source and scratch share the stated
+100-GiB budget; observed filesystem use was about 5.2 GB with about 99.9 GB
+available before these small audit artifacts.
+
+The reviewed partial checkpoint is accepted. The last-audited marker names the
+reviewed implementation/fix commit, followed only by this audit documentation.
+Next work remains the file-store/source-frame/inclusion boundary described
+above, followed by pragmas and other outstanding PA4 responsibilities. No claim
+of complete PA4 behavior or stage advancement is made.
