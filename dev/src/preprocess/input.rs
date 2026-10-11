@@ -13,12 +13,20 @@ enum Boundary {
     End,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Text,
+    Line,
+    LineEnd,
+}
+
 pub(crate) struct SourceInput<'a> {
     source: &'a SourceBuffer,
     lexer: PpLexer<'a>,
     at_line_start: bool,
     boundary: Boundary,
     location: SourceOffset,
+    mode: InputMode,
     peeked: Option<Token<'a>>,
     pub(crate) allow_va_args: bool,
 }
@@ -36,6 +44,7 @@ impl<'a> SourceInput<'a> {
             at_line_start: true,
             boundary: Boundary::Text,
             location: source.begin(),
+            mode: InputMode::Text,
             peeked: None,
             allow_va_args: false,
         })
@@ -76,6 +85,18 @@ impl<'a> SourceInput<'a> {
     }
     pub(crate) fn next(&mut self, names: &mut Identifiers) -> Result<Token<'a>, PreprocessError> {
         if let Some(token) = self.peeked.take() {
+            return Ok(token);
+        }
+        if self.mode != InputMode::Text {
+            if self.mode == InputMode::LineEnd {
+                return Ok(Token::end(self.location));
+            }
+            let token = self.next_in_line(names)?;
+            if token.kind == PpTokenKind::NewLine {
+                self.mode = InputMode::LineEnd;
+                self.location = token.begin;
+                return Ok(Token::end(token.begin));
+            }
             return Ok(token);
         }
         if self.boundary != Boundary::Text {
@@ -142,6 +163,63 @@ impl<'a> SourceInput<'a> {
                 return Ok(token);
             }
             return self.stabilize(kind, flags, names);
+        }
+    }
+    pub(crate) fn begin_line_input(&mut self) {
+        self.mode = InputMode::Line;
+        self.peeked = None;
+    }
+    pub(crate) fn end_line_input(&mut self) -> Result<(), PreprocessError> {
+        if self.mode != InputMode::LineEnd {
+            self.skip_line()?;
+        }
+        self.mode = InputMode::Text;
+        self.peeked = None;
+        Ok(())
+    }
+    pub(crate) fn request_header_name(&mut self) {
+        self.lexer.request_header_name();
+    }
+    pub(crate) fn skip_line(&mut self) -> Result<(), PreprocessError> {
+        if self.mode == InputMode::LineEnd {
+            return Ok(());
+        }
+        self.peeked = None;
+        loop {
+            let kind = self.lexer.next_token()?.kind;
+            if matches!(kind, PpTokenKind::NewLine | PpTokenKind::EndOfFile) {
+                self.at_line_start = true;
+                if self.mode != InputMode::Text {
+                    self.mode = InputMode::LineEnd;
+                }
+                return Ok(());
+            }
+        }
+    }
+    // Inactive text is lexed for boundaries only: it is never stabilized or interned.
+    pub(crate) fn skip_to_directive(&mut self) -> Result<bool, PreprocessError> {
+        let mut line_start = self.at_line_start;
+        self.peeked = None;
+        loop {
+            let pp = self.lexer.next_token()?;
+            match pp.kind {
+                PpTokenKind::WhitespaceSequence => continue,
+                PpTokenKind::NewLine => {
+                    line_start = true;
+                    continue;
+                }
+                PpTokenKind::EndOfFile => {
+                    self.at_line_start = true;
+                    return Ok(false);
+                }
+                _ => {}
+            }
+            if line_start && pp.punctuator == Some(Punctuator::Hash) {
+                self.at_line_start = false;
+                self.location = pp.begin;
+                return Ok(true);
+            }
+            line_start = false;
         }
     }
     pub(crate) fn at_directive(&self) -> bool {

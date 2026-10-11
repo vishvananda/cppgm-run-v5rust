@@ -66,8 +66,12 @@ pub(crate) struct Expander<'a> {
     read_serial: ContextId,
     read_disabled: HideSetId,
     counter: u64,
+    controlling_expression: bool,
 }
 impl<'a> Expander<'a> {
+    pub(crate) fn set_controlling_expression(&mut self, enabled: bool) {
+        self.controlling_expression = enabled;
+    }
     pub(crate) fn next(
         &mut self,
         source: &mut SourceInput<'a>,
@@ -231,6 +235,10 @@ impl<'a> Expander<'a> {
         names: &mut Identifiers,
         definitions: &Definitions<'a>,
     ) -> Result<bool, PreprocessError> {
+        if self.controlling_expression && definitions.is_defined_operator(token.name) {
+            self.replace_defined(token, source, names, definitions)?;
+            return Ok(false);
+        }
         let Some(definition) = token.name.and_then(|name| definitions.get(name)) else {
             return Ok(false);
         };
@@ -255,14 +263,22 @@ impl<'a> Expander<'a> {
                         "location and build-time predefined macros",
                     ));
                 }
-                Builtin::ExpressionProbe => return Ok(false),
+                Builtin::HasCppAttribute | Builtin::HasAttribute => {
+                    if self.controlling_expression {
+                        self.replace_attribute(
+                            token,
+                            source,
+                            names,
+                            builtin == Builtin::HasAttribute,
+                        )?;
+                    }
+                    return Ok(false);
+                }
                 Builtin::Counter => {
-                    token.kind = PpTokenKind::PpNumber;
-                    token.name = None;
-                    token.punctuator = None;
-                    token.spelling = Spelling::Shared(self.counter.to_string().into_bytes().into());
-                    token.hide_set = HideSetId::default();
-                    token.flags &= LEADING_SPACE | START_OF_LINE;
+                    Self::set_number(
+                        token,
+                        Spelling::Shared(self.counter.to_string().into_bytes().into()),
+                    );
                     self.counter = self.counter.wrapping_add(1);
                     return Ok(false);
                 }
@@ -341,6 +357,116 @@ impl<'a> Expander<'a> {
         });
         self.advance_arguments(names)?;
         Ok(true)
+    }
+    fn set_number(token: &mut Token<'a>, spelling: Spelling<'a>) {
+        token.kind = PpTokenKind::PpNumber;
+        token.name = None;
+        token.punctuator = None;
+        token.spelling = spelling;
+        token.hide_set = HideSetId::default();
+        token.flags &= LEADING_SPACE | START_OF_LINE;
+    }
+    fn read_operator_operand(
+        &mut self,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+    ) -> Result<Token<'a>, PreprocessError> {
+        // A raw read deliberately bypasses macro replacement. At an argument barrier
+        // C++ exposes its default end token, so malformed operators retain their own error.
+        Ok(self
+            .read(source, names)?
+            .unwrap_or_else(|| Token::end(crate::support::source::SourceOffset(0))))
+    }
+    fn identifier_like_operator(token: &Token<'a>) -> bool {
+        token.kind == PpTokenKind::PreprocessingOpOrPunc
+            && token
+                .spelling
+                .bytes()
+                .first()
+                .is_some_and(u8::is_ascii_lowercase)
+    }
+    fn replace_defined(
+        &mut self,
+        head: &mut Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+        definitions: &Definitions<'a>,
+    ) -> Result<(), PreprocessError> {
+        let mut operand = self.read_operator_operand(source, names)?;
+        let parenthesized = operand.is_punctuator(Punctuator::LeftParen);
+        if parenthesized {
+            operand = self.read_operator_operand(source, names)?;
+        }
+        let defined = if operand.kind == PpTokenKind::Identifier {
+            operand
+                .name
+                .is_some_and(|name| definitions.is_defined(name))
+        } else if Self::identifier_like_operator(&operand) {
+            false
+        } else {
+            return Err(PreprocessError::at(
+                head.begin,
+                "`defined` requires an identifier",
+            ));
+        };
+        if parenthesized
+            && !self
+                .read_operator_operand(source, names)?
+                .is_punctuator(Punctuator::RightParen)
+        {
+            return Err(PreprocessError::at(
+                head.begin,
+                "missing `)` after `defined`",
+            ));
+        }
+        Self::set_number(head, Spelling::Source(if defined { b"1" } else { b"0" }));
+        Ok(())
+    }
+    fn replace_attribute(
+        &mut self,
+        head: &mut Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+        gnu: bool,
+    ) -> Result<(), PreprocessError> {
+        if !self
+            .read_operator_operand(source, names)?
+            .is_punctuator(Punctuator::LeftParen)
+        {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected `(` after __has_cpp_attribute",
+            ));
+        }
+        let operand = self.read_operator_operand(source, names)?;
+        if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand) {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected an attribute name",
+            ));
+        }
+        let mut reported = reported_attribute(operand.spelling.bytes(), gnu);
+        let mut close = self.read_operator_operand(source, names)?;
+        if close.is_punctuator(Punctuator::Scope) {
+            let operand = self.read_operator_operand(source, names)?;
+            if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand)
+            {
+                return Err(PreprocessError::at(
+                    head.begin,
+                    "expected an attribute name",
+                ));
+            }
+            reported = false;
+            close = self.read_operator_operand(source, names)?;
+        }
+        if !close.is_punctuator(Punctuator::RightParen) {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected `)` after the attribute name",
+            ));
+        }
+        Self::set_number(head, Spelling::Source(if reported { b"1" } else { b"0" }));
+        Ok(())
     }
     fn collect_arguments(
         &mut self,
@@ -826,5 +952,35 @@ impl Expander<'_> {
             self.invocations.len(),
             self.expanded_tokens.len(),
         ]
+    }
+}
+
+// Exact attribute-reporting vocabulary from macro_expander.cpp; namespace probes
+// intentionally answer false even when the unqualified spelling is recognized.
+fn reported_attribute(mut name: &[u8], gnu: bool) -> bool {
+    if name.len() > 4 && name.starts_with(b"__") && name.ends_with(b"__") {
+        name = &name[2..name.len() - 2];
+    }
+    if gnu {
+        matches!(
+            name,
+            b"always_inline"
+                | b"noinline"
+                | b"noreturn"
+                | b"pure"
+                | b"const"
+                | b"used"
+                | b"weak"
+                | b"packed"
+                | b"aligned"
+                | b"section"
+                | b"vector_size"
+                | b"gnu_inline"
+                | b"abi_tag"
+                | b"using_if_exists"
+                | b"exclude_from_explicit_instantiation"
+        )
+    } else {
+        name == b"no_unique_address"
     }
 }

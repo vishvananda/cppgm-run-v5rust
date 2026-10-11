@@ -1,5 +1,6 @@
 // Translated from preprocess/preprocessor{,_directives}.cpp (macro group). See NOTICE.
 //! Translation-unit state and the typed preprocessing/post-token boundary.
+use super::conditionals::Conditionals;
 use super::error::PreprocessError;
 use super::input::SourceInput;
 use super::macros::{
@@ -20,6 +21,7 @@ pub struct Preprocessor<'a> {
     definitions: Definitions<'a>,
     expander: Expander<'a>,
     current: Token<'a>,
+    conditionals: Conditionals,
 }
 impl<'a> Preprocessor<'a> {
     /// # Errors
@@ -33,6 +35,7 @@ impl<'a> Preprocessor<'a> {
             definitions,
             expander: Expander::default(),
             current: Token::end(source.begin()),
+            conditionals: Conditionals::default(),
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -91,7 +94,13 @@ impl<'a> Preprocessor<'a> {
             }
             b"error" => return Err(PreprocessError::at(directive.begin, "#error")),
             b"if" | b"ifdef" | b"ifndef" | b"elif" | b"else" | b"endif" => {
-                return Err(PreprocessError::NotImplemented("conditional inclusion"));
+                self.conditionals.run(
+                    &directive,
+                    &mut self.source,
+                    &mut self.names,
+                    &self.definitions,
+                    &mut self.expander,
+                )?;
             }
             b"include" | b"include_next" => {
                 return Err(PreprocessError::NotImplemented("file inclusion"));
@@ -123,6 +132,9 @@ impl PostTokenInput for Preprocessor<'_> {
             if token.kind == PpTokenKind::Identifier && token.spelling.bytes() == b"_Pragma" {
                 return Err(PreprocessError::NotImplemented("pragma operator"));
             }
+            if token.kind == PpTokenKind::EndOfFile {
+                self.conditionals.check_end()?;
+            }
             let kind = token.kind;
             self.current = token;
             return Ok(kind);
@@ -143,6 +155,97 @@ impl PostTokenInput for Preprocessor<'_> {
 mod tests {
     use super::*;
     use crate::lex::pp_lexer::Punctuator;
+
+    #[test]
+    fn conditional_lines_leave_no_expansion_storage_and_only_active_definitions() {
+        let source = SourceBuffer::new(
+            br"#define ID(x) x
+#define SELECT defined
+#define present absent
+#if ID(SELECT(present)) && __has_cpp_attribute(__no_unique_address__)
+#define chosen 17
+#elif ignored(__LINE__, __VA_ARGS__)
+#error skipped
+#else
+#error also_skipped
+#endif
+#if __has_attribute(__always_inline__) && !__has_cpp_attribute(gnu::no_unique_address)
+chosen
+#endif
+"
+            .to_vec(),
+        )
+        .unwrap();
+        let mut input = Preprocessor::new(&source).unwrap();
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"17");
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
+
+    #[test]
+    fn inactive_text_does_not_intern_names_or_demand_builtins() {
+        let mut identities = Vec::new();
+        for body in [
+            b"".as_slice(),
+            b"ignored __VA_ARGS__ __LINE__ _Pragma(bad)\n",
+        ] {
+            let mut text = b"#if 0\n".to_vec();
+            text.extend_from_slice(body);
+            text.extend_from_slice(b"#endif\nvisible");
+            let source = SourceBuffer::new(text).unwrap();
+            let mut input = Preprocessor::new(&source).unwrap();
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, b"visible");
+            identities.push(input.token(kind).name);
+        }
+        assert_eq!(identities[0], identities[1]);
+    }
+
+    #[test]
+    fn skipped_sections_use_flat_depth_storage_and_check_nested_order() {
+        let depth = 50_000;
+        let mut text = b"#if 0\n".to_vec();
+        text.extend_from_slice("#if invalid ignored\n".repeat(depth).as_bytes());
+        text.extend_from_slice("#else ignored\n#endif ignored\n".repeat(depth).as_bytes());
+        text.extend_from_slice(b"#else\n17\n#endif");
+        let source = SourceBuffer::new(text).unwrap();
+        let mut input = Preprocessor::new(&source).unwrap();
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"17");
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        for (text, expected) in [
+            (
+                "#if 0\n#if bad\n#else ignored\n#elif ignored\n#endif\n#endif",
+                "4:2: #elif or #else after #else",
+            ),
+            (
+                "#if 0\n#if bad\n#else ignored",
+                "1:2: unterminated conditional directive",
+            ),
+            ("#if 1\n", "1:2: unterminated conditional directive"),
+            ("#else", "1:2: #elif, #else or #endif without #if"),
+            (
+                "#if 0\n#else extra",
+                "2:2: extra tokens at the end of the directive",
+            ),
+            (
+                "#if defined(3) \"\\q\"",
+                "1:5: `defined` requires an identifier",
+            ),
+        ] {
+            let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
+            let mut input = Preprocessor::new(&source).unwrap();
+            let error = input.next_non_whitespace_kind().unwrap_err();
+            assert_eq!(crate::driver::preproc::describe(&source, &error), expected);
+        }
+    }
 
     #[test]
     fn nested_argument_prescan_uses_ranges_and_releases_all_invocation_storage() {

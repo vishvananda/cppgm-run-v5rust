@@ -63,14 +63,16 @@ pub struct PpToken<'a> {
 
 /// Borrowed pull boundary for bare and, later, macro-expanded preprocessing input.
 pub trait PpTokenCursor {
+    type Error;
     /// Demand one token; its spelling lasts until the next demand.
     ///
     /// # Errors
     /// Propagates source decoding and tokenization failures.
-    fn next_token(&mut self) -> Result<PpToken<'_>, SourceError>;
+    fn next_token(&mut self) -> Result<PpToken<'_>, Self::Error>;
 }
 
 impl PpTokenCursor for PpLexer<'_> {
+    type Error = SourceError;
     fn next_token(&mut self) -> Result<PpToken<'_>, SourceError> {
         PpLexer::next_token(self)
     }

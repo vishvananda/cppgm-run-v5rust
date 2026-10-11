@@ -26,14 +26,14 @@ pub struct ExpressionResult {
 }
 
 #[derive(Debug)]
-pub enum ExpressionError {
-    Source(SourceError),
+pub enum ExpressionError<E = SourceError> {
+    Input(E),
     Invariant(&'static str),
 }
 
-impl From<SourceError> for ExpressionError {
-    fn from(error: SourceError) -> Self {
-        Self::Source(error)
+impl<E> From<E> for ExpressionError<E> {
+    fn from(error: E) -> Self {
+        Self::Input(error)
     }
 }
 
@@ -59,7 +59,8 @@ enum Pending {
 }
 
 /// Owns only pending operators and typed values, never a token sequence or tree.
-pub struct ExpressionEvaluator<'a, M: MacroDefinitionQuery> {
+pub struct ExpressionEvaluator<'a, M: MacroDefinitionQuery, E = SourceError> {
+    input_error: std::marker::PhantomData<E>,
     macros: &'a M,
     literals: NumberDialect,
     at_line_end: bool,
@@ -70,10 +71,11 @@ pub struct ExpressionEvaluator<'a, M: MacroDefinitionQuery> {
     pending: Vec<Pending>,
 }
 
-impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
+impl<'a, M: MacroDefinitionQuery, E> ExpressionEvaluator<'a, M, E> {
     #[must_use]
     pub fn new(macros: &'a M, literals: NumberDialect) -> Self {
         Self {
+            input_error: std::marker::PhantomData,
             macros,
             literals,
             at_line_end: false,
@@ -91,8 +93,8 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
     /// Propagates source errors and reports broken parser stack invariants separately.
     pub fn evaluate(
         &mut self,
-        input: &mut impl PpTokenCursor,
-    ) -> Result<ExpressionResult, ExpressionError> {
+        input: &mut impl PpTokenCursor<Error = E>,
+    ) -> Result<ExpressionResult, ExpressionError<E>> {
         self.at_line_end = false;
         self.failed = false;
         self.unevaluated = 0;
@@ -121,9 +123,9 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
     // Consume borrowed text within one demand; no spelling survives in the stacks.
     fn pull<T>(
         &mut self,
-        input: &mut impl PpTokenCursor,
+        input: &mut impl PpTokenCursor<Error = E>,
         consume: impl FnOnce(PpToken<'_>) -> T,
-    ) -> Result<T, ExpressionError> {
+    ) -> Result<T, ExpressionError<E>> {
         loop {
             let pp = input.next_token()?;
             if pp.kind == PpTokenKind::WhitespaceSequence {
@@ -137,12 +139,18 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         }
     }
 
-    fn read_token(&mut self, input: &mut impl PpTokenCursor) -> Result<Token, ExpressionError> {
+    fn read_token(
+        &mut self,
+        input: &mut impl PpTokenCursor<Error = E>,
+    ) -> Result<Token, ExpressionError<E>> {
         let dialect = self.literals;
         self.pull(input, |pp| classify_token(&pp, dialect))
     }
 
-    fn read_defined(&mut self, input: &mut impl PpTokenCursor) -> Result<(), ExpressionError> {
+    fn read_defined(
+        &mut self,
+        input: &mut impl PpTokenCursor<Error = E>,
+    ) -> Result<(), ExpressionError<E>> {
         let macros = self.macros;
         let read_name = |pp: PpToken<'_>| {
             if pp.kind == PpTokenKind::Identifier {
@@ -178,9 +186,9 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
 
     fn parse(
         &mut self,
-        input: &mut impl PpTokenCursor,
+        input: &mut impl PpTokenCursor<Error = E>,
         mut token: Token,
-    ) -> Result<(), ExpressionError> {
+    ) -> Result<(), ExpressionError<E>> {
         let mut want_operand = true;
         loop {
             if want_operand {
@@ -201,9 +209,9 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
 
     fn shift_operand(
         &mut self,
-        input: &mut impl PpTokenCursor,
+        input: &mut impl PpTokenCursor<Error = E>,
         token: Token,
-    ) -> Result<bool, ExpressionError> {
+    ) -> Result<bool, ExpressionError<E>> {
         match token {
             Token::Operand(value) => {
                 self.values.push(value);
@@ -231,7 +239,7 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         Ok(true)
     }
 
-    fn shift_operator(&mut self, token: Token) -> Result<bool, ExpressionError> {
+    fn shift_operator(&mut self, token: Token) -> Result<bool, ExpressionError<E>> {
         match token {
             Token::Operator(op) if !op.unary() => self.shift_binary(op)?,
             Token::Question => {
@@ -277,7 +285,7 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         Ok(true)
     }
 
-    fn shift_binary(&mut self, op: Operator) -> Result<(), ExpressionError> {
+    fn shift_binary(&mut self, op: Operator) -> Result<(), ExpressionError<E>> {
         while self.pending.last().is_some_and(|pending| matches!(pending, Pending::Operator(top) if top.precedence() >= op.precedence())) {
             self.reduce_top()?;
         }
@@ -288,7 +296,7 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         Ok(())
     }
 
-    fn reduce_operators(&mut self) -> Result<(), ExpressionError> {
+    fn reduce_operators(&mut self) -> Result<(), ExpressionError<E>> {
         while matches!(
             self.pending.last(),
             Some(Pending::Operator(_) | Pending::Alternative)
@@ -298,7 +306,7 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         Ok(())
     }
 
-    fn reduce_top(&mut self) -> Result<(), ExpressionError> {
+    fn reduce_top(&mut self) -> Result<(), ExpressionError<E>> {
         let pending = self
             .pending
             .pop()
@@ -347,7 +355,7 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         self.values.push(result.value);
     }
 
-    fn end_unevaluated(&mut self) -> Result<(), ExpressionError> {
+    fn end_unevaluated(&mut self) -> Result<(), ExpressionError<E>> {
         self.unevaluated = self
             .unevaluated
             .checked_sub(1)
@@ -355,14 +363,14 @@ impl<'a, M: MacroDefinitionQuery> ExpressionEvaluator<'a, M> {
         Ok(())
     }
 
-    fn top_value(&self) -> Result<PpValue, ExpressionError> {
+    fn top_value(&self) -> Result<PpValue, ExpressionError<E>> {
         self.values
             .last()
             .copied()
             .ok_or(ExpressionError::Invariant("missing expression value"))
     }
 
-    fn pop_value(&mut self) -> Result<PpValue, ExpressionError> {
+    fn pop_value(&mut self) -> Result<PpValue, ExpressionError<E>> {
         self.values
             .pop()
             .ok_or(ExpressionError::Invariant("missing expression operand"))

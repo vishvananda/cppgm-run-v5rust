@@ -37,7 +37,7 @@ pub fn emit_expressions(
             Err(error) => {
                 flush(&mut buffer, output)?;
                 return Err(match error {
-                    ExpressionError::Source(error) => TokenToolError::Source(error),
+                    ExpressionError::Input(error) => TokenToolError::Source(error),
                     ExpressionError::Invariant(message) => TokenToolError::Internal(message),
                 });
             }

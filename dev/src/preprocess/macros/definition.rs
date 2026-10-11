@@ -34,16 +34,20 @@ pub(crate) struct Definition<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Builtin {
     DeferredValue,
-    ExpressionProbe,
+    HasCppAttribute,
+    HasAttribute,
     Counter,
 }
-#[derive(Default)]
 pub(crate) struct Definitions<'a> {
+    defined_name: NameId,
     slots: Vec<Option<Rc<Definition<'a>>>>,
 }
 impl<'a> Definitions<'a> {
     pub(crate) fn new(names: &mut Identifiers) -> Result<Self, PreprocessError> {
-        let mut definitions = Self::default();
+        let mut definitions = Self {
+            defined_name: names.intern(b"defined").map_err(PreprocessError::Limit)?,
+            slots: Vec::new(),
+        };
         for (spelling, value, kind) in [
             (
                 b"__CPPGM__".as_slice(),
@@ -77,8 +81,8 @@ impl<'a> Definitions<'a> {
             (b"__DATE__", Builtin::DeferredValue),
             (b"__TIME__", Builtin::DeferredValue),
             (b"__COUNTER__", Builtin::Counter),
-            (b"__has_cpp_attribute", Builtin::ExpressionProbe),
-            (b"__has_attribute", Builtin::ExpressionProbe),
+            (b"__has_cpp_attribute", Builtin::HasCppAttribute),
+            (b"__has_attribute", Builtin::HasAttribute),
         ] {
             let name = names.intern(spelling).map_err(PreprocessError::Limit)?;
             let mut definition = Definition::empty(name);
@@ -86,6 +90,12 @@ impl<'a> Definitions<'a> {
             definitions.define(definition, crate::support::source::SourceOffset(0))?;
         }
         Ok(definitions)
+    }
+    pub(crate) fn is_defined_operator(&self, name: Option<NameId>) -> bool {
+        name == Some(self.defined_name)
+    }
+    pub(crate) fn is_defined(&self, name: NameId) -> bool {
+        self.slots.get(name.index()).is_some_and(Option::is_some)
     }
     pub(crate) fn get(&self, name: NameId) -> Option<Rc<Definition<'a>>> {
         self.slots.get(name.index()).and_then(Clone::clone)
