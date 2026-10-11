@@ -1,0 +1,38 @@
+#include "200-host-virtual-base-object-model.helper.h"
+
+void Marker::mark(int v) { set(v); }
+Leaf::Leaf() : leaf(3) { order[order_count++] = 3; }
+Leaf::~Leaf() { order[order_count++] = -3; }
+int Leaf::which() { return 3; }
+
+int main()
+{
+  Rows rows;
+  rows.a = 1; rows.b = 2; rows.c = 3;
+  if (host_read_rows(rows) != 123) return 1;
+  host_fill_rows(rows);
+  if (rows.a != 4 || rows.b != 5 || rows.c != 6) return 2;
+  Rows& made = *host_make_rows();
+  if (made.a != 7 || made.b != 8 || made.c != 9) return 3;
+  Marker marker;
+  host_mark(marker, 11);
+  if (marker.flags != 11) return 4;
+  marker.mark(12);
+  if (marker.flags != 12) return 5;
+  Weird weird;
+  weird.value = 21;
+  if (host_read_value(&weird) != 21) return 6;
+  OStream* out = host_make_weird();
+  if (out->value != 31) return 7;
+  {
+    Leaf leaf;
+    // Middle's constructor ran with Middle's construction vtable.
+    if (order_count != 3 || order[0] != 1 || order[1] != 2 || order[2] != 3)
+      return 8;
+    if (leaf.which() != 3 || host_which(leaf) != 3 || leaf.Middle::which() != 40)
+      return 9;
+  }
+  if (order_count != 6 || order[3] != -3 || order[4] != -2 || order[5] != -1)
+    return 10;
+  return 0;
+}

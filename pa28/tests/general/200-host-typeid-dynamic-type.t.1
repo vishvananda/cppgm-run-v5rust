@@ -1,0 +1,17 @@
+namespace std {
+class type_info;
+}
+
+struct Base {
+  virtual ~Base() {}
+};
+
+struct Derived : Base {
+};
+
+int main()
+{
+  Derived derived;
+  Base * base = &derived;
+  return &typeid(*base) == &typeid(Derived) ? 0 : 1;
+}

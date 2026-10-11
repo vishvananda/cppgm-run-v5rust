@@ -1,0 +1,8 @@
+// N3485 15.3p4, 15.3p15: an exception from the body of a constructor whose
+// body is a function-try-block destroys the members, then enters the handler,
+// which rethrows when it reaches its end
+static int r;
+static void g() { throw 1; }
+struct D { int id; D(int i) : id(i) {} ~D() { r += id; } };
+struct C { D m; C(int x) try : m(x) { g(); } catch (...) { r += 7; } };
+int main() { try { C c(100); } catch (...) { r += 200; } return r == 307 ? 0 : 1; }

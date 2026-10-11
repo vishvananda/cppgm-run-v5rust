@@ -1,0 +1,7 @@
+preproc 1
+sof tests/preproc/300-has-builtin-implemented-traits.t
+identifier signed_known
+identifier same_known
+identifier transform_known
+identifier unknown_off
+eof

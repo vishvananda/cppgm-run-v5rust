@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of () returning pointer to int
+    compound-statement
+      return-statement
+        cast-expression prvalue pointer to int KW_STATIC_CAST:static_cast
+          literal prvalue nullptr_t KW_NULLPTR:nullptr
+end translation unit

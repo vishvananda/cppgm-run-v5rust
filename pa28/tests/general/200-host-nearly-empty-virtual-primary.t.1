@@ -1,0 +1,21 @@
+#include "200-host-nearly-empty-virtual-primary.helper.h"
+
+int Joined::id() { return 30 + data; }
+MoreTagged::MoreTagged() : more(value + 1) {}
+
+int main()
+{
+  if (signature() != host_signature()) return 1;
+  Joined joined;
+  joined.data = 4;
+  if (host_id(joined) != 34 || host_right_id(joined) != 34) return 2;
+  LeftImpl left;
+  Interface& left_interface = left;
+  if (left_interface.id() != 10 || host_id(left) != 10) return 3;
+  MoreTagged more;
+  if (more.value != 2 || more.more != 3 || host_tag(more) != 2) return 4;
+  MoreTagged* made = host_make();
+  Tag& made_tag = *made;
+  if (made->more != 3 || made_tag.tag() != 2) return 5;
+  return 0;
+}

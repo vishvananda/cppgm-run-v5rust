@@ -1,0 +1,14 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @c_int___n__g()
+    return i32 0
+}
+function @c_int___n__g() -> void [binding=weak, object=_ZN1cIiE1n1gEv, inline_hint=yes] {
+  block ^entry:
+    call void @c_int___f()
+    return void
+}
+function @c_int___f() -> void [binding=weak, object=_ZN1cIiE1fEv, inline_hint=yes] {
+  block ^entry:
+    return void
+}

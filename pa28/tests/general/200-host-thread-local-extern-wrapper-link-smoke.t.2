@@ -1,0 +1,7 @@
+extern thread_local int tls_value;
+
+int read_a()
+{
+  tls_value += 1;
+  return tls_value;
+}

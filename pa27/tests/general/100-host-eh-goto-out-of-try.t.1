@@ -1,0 +1,30 @@
+int destroyed = 0;
+
+struct Guard
+{
+  ~Guard()
+  {
+    destroyed = destroyed + 1;
+  }
+};
+
+int main()
+{
+  int state = 0;
+  try
+  {
+    Guard g;
+    state = 7;
+    goto done;
+  }
+  catch (...)
+  {
+    state = 99;
+  }
+
+done:
+  if(destroyed != 1) {
+    return 1;
+  }
+  return state == 7 ? 0 : 2;
+}

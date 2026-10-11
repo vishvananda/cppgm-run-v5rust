@@ -1,0 +1,96 @@
+function @overloaded_member_pointer_target_init__C__set(%this : ptr [object_bytes=4], %v : i32) -> void [binding=strong, object=_ZN37overloaded_member_pointer_target_init1C3setEi] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @overloaded_member_pointer_target_init__C__set__ov2(%this : ptr [object_bytes=4], %v : i64) -> void [binding=strong, object=_ZN37overloaded_member_pointer_target_init1C3setEl] {
+  slot $this : ptr
+  slot $v : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %v, $v
+    %t1 = load typed i64 $v
+    %t2 = binary add nowrap i64 %t1, 1
+    %t3 = convert trunc i32 i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $setter : i128
+  slot $c : obj<4x4>
+  slot $member_pointer_callee__1 : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr @overloaded_member_pointer_target_init__C__set
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    store typed i128 %t3, $setter
+    %t4 = addr $c
+    call void @overloaded_member_pointer_target_init__C__C(%t4)
+    %t5 = addr $c
+    %t6 = load typed i128 $setter
+    %t7 = binary shr i128 %t6, 64
+    %t8 = convert trunc i64 i128 %t7
+    %t9 = convert trunc i64 i128 %t6
+    %t10 = binary and i64 %t9, 1
+    %t11 = cmp ne i64 %t10, 0
+    %t12 = index i8 %t5, %t8
+    branch %t11, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t13 = load typed ptr %t12
+    %t14 = binary sub i64 %t9, 1
+    %t15 = index i8 %t13, %t14
+    %t16 = load typed ptr %t15
+    store typed ptr %t16, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t17 = copy ptr %t9
+    store typed ptr %t17, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t18 = load typed ptr $member_pointer_callee__1
+    call void %t18(%t12, 4) as (%arg0 : ptr [object_bytes=4], %arg1 : i32) -> void
+    %t19 = addr $c
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = load typed i32 %t20
+    %t22 = cmp eq i32 %t21, 4
+    branch %t22, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t23 = load typed i32 $cond__2
+    return i32 %t23
+}
+function @overloaded_member_pointer_target_init__C__C(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN37overloaded_member_pointer_target_init1CC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN37overloaded_member_pointer_target_init1CC2Ev = @overloaded_member_pointer_target_init__C__C

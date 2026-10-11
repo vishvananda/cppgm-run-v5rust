@@ -1,0 +1,48 @@
+declare function @__external_runtime____cxa_throw_bad_array_new_length() -> void [return=noreturn, role=bad_array_new_length, linkage=c, binding=strong, object=__cxa_throw_bad_array_new_length]
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+declare function @operatordelete__(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete_array]
+
+function @count() -> i64 [binding=strong, object=_Z5countv] {
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    return i64 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $array_new_size__1 : i64
+  slot $zeroinit_offset__2 : i64
+
+  block ^entry:
+    %t1 = call i64 @count()
+    %t2 = cmp ugt i64 %t1, 9223372036854775807
+    branch %t2, ^array_new_length_invalid_1, ^array_new_length_valid_2
+
+  block ^array_new_length_invalid_1:
+    call void @__external_runtime____cxa_throw_bad_array_new_length()
+    unreachable
+
+  block ^array_new_length_valid_2:
+    store typed i64 %t1, $array_new_size__1
+    %t3 = call ptr @operatornew__(%t1)
+    %t4 = load typed i64 $array_new_size__1
+    store typed i64 0, $zeroinit_offset__2
+    jump ^zeroinit_cond_3
+
+  block ^zeroinit_cond_3:
+    %t5 = load typed i64 $zeroinit_offset__2
+    %t6 = cmp ult i64 %t5, %t4
+    branch %t6, ^zeroinit_body_4, ^zeroinit_end_5
+
+  block ^zeroinit_body_4:
+    %t7 = index i8 %t3, %t5
+    store i8 0, %t7
+    %t8 = binary add i64 %t5, 1
+    store typed i64 %t8, $zeroinit_offset__2
+    jump ^zeroinit_cond_3
+
+  block ^zeroinit_end_5:
+    store typed ptr %t3, $p
+    %t9 = load typed ptr $p
+    call void @operatordelete__(%t9)
+    return i32 0
+}

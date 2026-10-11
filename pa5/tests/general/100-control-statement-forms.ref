@@ -1,0 +1,61 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier statements
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier x
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier y
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            nested-declarator
+              declarator
+                ptr-operator OP_AMP:&
+                identifier values
+            array-suffix
+              literal 3
+    compound-statement
+      if-statement
+        condition
+          id-expression x
+        then
+          if-statement
+            condition
+              id-expression y
+            then
+              expression-statement
+                call-expression
+                  id-expression f
+                  argument-list
+            else
+              expression-statement
+                call-expression
+                  id-expression g
+                  argument-list
+      range-for-statement
+        range-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          declarator
+            identifier value
+        range-initializer
+          id-expression values
+        expression-statement
+          call-expression
+            id-expression use
+            argument-list
+              id-expression value
+end translation unit

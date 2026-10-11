@@ -1,0 +1,30 @@
+namespace std { namespace __1 {
+
+struct true_type {
+  static const bool value = true;
+};
+
+struct false_type {
+  static const bool value = false;
+};
+
+template <template <class...> class _Templ, class... _Args, class = _Templ<_Args...>>
+true_type __sfinae_test_impl(int);
+
+template <template <class...> class, class...>
+false_type __sfinae_test_impl(...);
+
+template <template <class...> class _Templ, class... _Args>
+using _IsValidExpansion = decltype(std::__1::__sfinae_test_impl<_Templ, _Args...>(0));
+
+}}
+
+template <class T>
+using add_ptr = T *;
+
+using X = std::__1::_IsValidExpansion<add_ptr, int>;
+
+int main()
+{
+  return X::value ? 0 : 1;
+}

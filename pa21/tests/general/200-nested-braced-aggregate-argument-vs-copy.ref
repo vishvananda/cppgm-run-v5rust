@@ -1,0 +1,33 @@
+declare function @algorithm__algorithm(%arg0 : ptr [object_bytes=4], %arg1 : obj<8x8>) -> void [binding=strong, object=_ZN9algorithmC1E6params]
+
+global @value : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $instance : obj<4x4>
+  slot $argobj__1 : obj<8x8>
+  slot $copied : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $instance
+    %t2 = addr $argobj__1
+    %t3 = addr @value
+    call void @params__params__aggregate(%t2, %t3)
+    call void @algorithm__algorithm(%t1, $argobj__1)
+    %t4 = addr $copied
+    %t5 = addr $instance
+    copyobj 4x4 %t5, %t4
+    return i32 0
+}
+function @params__params__aggregate(%this : ptr [object_bytes=8], %value : ptr) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}

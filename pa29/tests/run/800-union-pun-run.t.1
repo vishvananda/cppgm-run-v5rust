@@ -1,0 +1,53 @@
+// N3485 9.5p1 as GCC and Clang define it: reading a union member other than
+// the one last stored reads the stored bytes, so each read after a store
+// through another member sees that store
+#include <cstdio>
+
+union Bits
+{
+	float f;
+	int i;
+	long l;
+	int* p;
+	struct { int lo, hi; } half;
+};
+
+struct Holder
+{
+	int tag;
+	Bits bits;
+};
+
+__attribute__((noinline)) long pointer_bits(Bits* u, int* q, long n)
+{
+	u->l = n;
+	long s = 0;
+	for (int k = 0; k < 3; ++k)
+	{
+		u->p = q + k;
+		s += u->l;
+	}
+	return s;
+}
+
+__attribute__((noinline)) int float_bits(Bits* u, float x)
+{
+	u->f = x;
+	return u->i;
+}
+
+__attribute__((noinline)) int halves(Holder* h, long v)
+{
+	h->bits.l = v;
+	return h->bits.half.lo + h->bits.half.hi;
+}
+
+int main()
+{
+	Bits u;
+	Holder h;
+	int a[4];
+	long s = pointer_bits(&u, a, 5) - 3 * (long)a;
+	std::printf("%ld %d %d\n", s, float_bits(&u, 1.0f), halves(&h, (3L << 32) + 4));
+	return 0;
+}

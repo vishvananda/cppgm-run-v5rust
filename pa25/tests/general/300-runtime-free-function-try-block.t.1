@@ -1,0 +1,17 @@
+int compute(int fail)
+try
+{
+  if(fail) {
+    throw 7;
+  }
+  return 123;
+}
+catch (...)
+{
+  return 42;
+}
+
+int main()
+{
+  return compute(0) == 123 && compute(1) == 42 ? 0 : 1;
+}

@@ -1,0 +1,6 @@
+// N3485 14.8.2.1p1: for P = initializer_list<initializer_list<T>> deduction is
+// done per element with P' = initializer_list<T>, recursively (T = int);
+// expect exit 0
+#include <initializer_list>
+template<class T> int f(std::initializer_list<std::initializer_list<T> > l) { int s = 0; for (auto a : l) for (T x : a) s = s * 10 + x; return s; }
+int main() { return f({{1}, {2, 3}}) == 123 ? 0 : 1; }

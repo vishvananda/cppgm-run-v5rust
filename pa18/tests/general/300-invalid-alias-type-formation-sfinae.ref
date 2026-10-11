@@ -1,0 +1,12 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @h__use(0)
+    return i32 0
+}
+function @h__use(%__param0 : ptr) -> void [binding=weak, object=_ZN1h3useIN1m6false_EEEvPFvT_E] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}

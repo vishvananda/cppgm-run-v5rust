@@ -1,0 +1,6 @@
+declare global @is_invocable_void_int_int___int___value : u8 [binding=weak, object=_ZN12is_invocableIvRFiiEJiEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

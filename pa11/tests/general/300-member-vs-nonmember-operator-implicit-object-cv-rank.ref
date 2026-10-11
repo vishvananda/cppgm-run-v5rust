@@ -1,0 +1,53 @@
+function @operator_(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_ZmiRK4DateS1_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 22
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $date : obj<1x1>
+  slot $period : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $date
+    call void @Date__Date(%t1)
+    %t2 = addr $period
+    %t3 = addr $date
+    %t4 = addr $period
+    %t5 = call i32 @Date__operator_(%t3, %t4)
+    %t6 = cmp eq i32 %t5, 11
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @Date__Date(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN4DateC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Date__operator_(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZNK4DatemiERK6Period, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return i32 11
+}
+alias object _ZN4DateC2Ev = @Date__Date

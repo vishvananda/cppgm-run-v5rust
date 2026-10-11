@@ -1,0 +1,36 @@
+#include "200-host-by-address-parameter-unwind-ownership.helper.h"
+
+int live = 0, made = 0, destroyed = 0;
+
+Tracked::Tracked(int v) : id(v), self(this) { ++live; ++made; }
+Tracked::Tracked(const Tracked& other) : id(other.id), self(this) { ++live; ++made; }
+Tracked::~Tracked() { --live; ++destroyed; }
+
+namespace {
+struct Local : First, Second {
+  int first(Tracked value) { return value.id; }
+  int second(Tracked value) { return value.self == &value ? value.id + 1 : -1; }
+};
+}
+
+int student_throw(Tracked value) {
+  if (value.self == &value) throw value.id;
+  return 0;
+}
+
+Second* student_second() { static Local local; return &local; }
+
+int main()
+{
+  int status = 0;
+  {
+    Tracked original(10);
+    try { host_throw(original); status |= 16; }
+    catch (int thrown) { if (thrown != 10) status |= 32; }
+    if (live != 1 || made != 2 || destroyed != 1) status |= 64;
+    int result = host_second()->second(original);
+    if (result != 11 || live != 1 || made != 3 || destroyed != 2) status |= 128;
+  }
+  if (live != 0) status |= 256;
+  return status | host_calls_student();
+}

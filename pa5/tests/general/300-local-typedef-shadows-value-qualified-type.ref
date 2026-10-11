@@ -1,0 +1,44 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier duration
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier clock
+          parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier clock
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier clock::duration
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier d
+end translation unit

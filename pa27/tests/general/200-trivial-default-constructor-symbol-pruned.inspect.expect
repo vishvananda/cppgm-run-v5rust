@@ -1,0 +1,3 @@
+defined_symbol_canonical 1 _Z8make_boxIiE3BoxIT_Ev
+absent_defined_symbol_canonical 1 _ZN3BoxIiEC1Ev
+absent_defined_symbol_canonical 1 _ZN3BoxIiEC2Ev

@@ -1,0 +1,17 @@
+function @a__f() -> i32 [linkage=c, binding=internal] {
+  block ^entry:
+    return i32 1
+}
+function @b__f() -> i32 [linkage=c, binding=internal] {
+  block ^entry:
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @a__f()
+    %t2 = call i32 @b__f()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = cmp ne i32 %t3, 3
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}

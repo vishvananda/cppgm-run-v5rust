@@ -1,0 +1,30 @@
+global @global_value : i32 [binding=strong] = 7
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    call void @ref_counter_global_value___bump()
+    %t1 = load typed i32 @global_value
+    %t2 = cmp eq i32 %t1, 8
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @ref_counter_global_value___bump() -> void [binding=weak, object=_ZN11ref_counterIL_Z12global_valueEE4bumpEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @global_value
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @global_value
+    return void
+}

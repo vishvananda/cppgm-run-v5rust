@@ -1,0 +1,41 @@
+function @f(%a : ptr [pass=by_address, object_bytes=4], %b : ptr [pass=by_address, object_bytes=4], %c : u8) -> ptr [binding=strong, object=_Z1fRiS_b] {
+  slot $a : ptr
+  slot $b : ptr
+  slot $c : u8
+  slot $condaddr__1 : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    store u8 %c, $c
+    %t1 = load u8 $c
+    branch %t1, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t2 = load typed ptr $a
+    store typed ptr %t2, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t3 = load typed ptr $b
+    store typed ptr %t3, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t4 = load typed ptr $condaddr__1
+    return ptr %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed i32 1, $a
+    store typed i32 2, $b
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = call ptr @f(%t1, %t2, 1)
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t4, 1
+    return i32 %t5
+}

@@ -1,0 +1,98 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $discard__1 : obj<1x1>
+  slot $arg__2 : obj<1x1>
+  slot $refarg__3 : i32
+
+  block ^entry:
+    %t1 = addr $discard__1
+    %t2 = addr $arg__2
+    store typed i32 2, $refarg__3
+    %t3 = addr $refarg__3
+    %t4 = call obj<1x1> @constant(%t3)
+    %t5 = call obj<1x1> @protect(%t2)
+    return i32 0
+}
+function @constant(%t : ptr [pass=by_address, object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_Z8constantIiE14lambda_functorI8identityIKT_EERS3_] {
+  slot $t : ptr
+  slot $retobj__1 : obj<1x1>
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = addr $retobj__1
+    %t2 = addr $argobj__2
+    %t3 = load typed ptr $t
+    %t4 = load typed i32 %t3
+    call void @identity_constint___identity(%t2, %t4)
+    call void @lambda_functor___cppgm_class_template_identity_1___lambda_functor(%t1, $argobj__2)
+    return obj<1x1> $retobj__1
+}
+function @protect(%a1 : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_Z7protectI8identityIKiEEK14lambda_functorI19lambda_functor_baseI14protect_action5tupleIS3_IT_E9null_typeS9_S9_S9_S9_S9_S9_S9_S9_EEERKS8_] {
+  slot $a1 : ptr
+  slot $retobj__1 : obj<1x1>
+  slot $argobj__2 : obj<1x1>
+  slot $argobj__3 : obj<1x1>
+  slot $argobj__4 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %a1, $a1
+    %t1 = addr $retobj__1
+    %t2 = addr $argobj__2
+    %t3 = addr $argobj__3
+    %t4 = addr $argobj__4
+    %t5 = load typed ptr $a1
+    call void @tuple___cppgm_class_template_identity_3___tuple(%t3, $argobj__4)
+    call void @lambda_functor_base_protect_action___cppgm_class_template_identity_3___lambda_functor_base(%t2, $argobj__3)
+    call void @lambda_functor___cppgm_class_template_identity_4___lambda_functor(%t1, $argobj__2)
+    return obj<1x1> $retobj__1
+}
+function @identity_constint___identity(%this : ptr [object_bytes=1], %__param1 : i32) -> void [binding=weak, object=_ZN8identityIKiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return void
+}
+function @lambda_functor___cppgm_class_template_identity_1___lambda_functor(%this : ptr [object_bytes=1], %t : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN14lambda_functorI8identityIKiEEC1ES2_, inline_hint=yes] {
+  slot $this : ptr
+  slot $t : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    return void
+}
+function @tuple___cppgm_class_template_identity_3___tuple(%this : ptr [object_bytes=1], %__param1 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN5tupleI14lambda_functorI8identityIKiEE9null_typeS5_S5_S5_S5_S5_S5_S5_S5_EC1ES4_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @lambda_functor_base_protect_action___cppgm_class_template_identity_3___lambda_functor_base(%this : ptr [object_bytes=1], %__param1 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN19lambda_functor_baseI14protect_action5tupleI14lambda_functorI8identityIKiEE9null_typeS7_S7_S7_S7_S7_S7_S7_S7_EEC1ES8_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @lambda_functor___cppgm_class_template_identity_4___lambda_functor(%this : ptr [object_bytes=1], %t : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN14lambda_functorI19lambda_functor_baseI14protect_action5tupleIS_I8identityIKiEE9null_typeS7_S7_S7_S7_S7_S7_S7_S7_EEEC1ES9_, inline_hint=yes] {
+  slot $this : ptr
+  slot $t : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    return void
+}
+alias object _ZN8identityIKiEC2Ei = @identity_constint___identity
+alias object _ZN14lambda_functorI8identityIKiEEC2ES2_ = @lambda_functor___cppgm_class_template_identity_1___lambda_functor
+alias object _ZN5tupleI14lambda_functorI8identityIKiEE9null_typeS5_S5_S5_S5_S5_S5_S5_S5_EC2ES4_ = @tuple___cppgm_class_template_identity_3___tuple
+alias object _ZN19lambda_functor_baseI14protect_action5tupleI14lambda_functorI8identityIKiEE9null_typeS7_S7_S7_S7_S7_S7_S7_S7_EEC2ES8_ = @lambda_functor_base_protect_action___cppgm_class_template_identity_3___lambda_functor_base
+alias object _ZN14lambda_functorI19lambda_functor_baseI14protect_action5tupleIS_I8identityIKiEE9null_typeS7_S7_S7_S7_S7_S7_S7_S7_EEEC2ES9_ = @lambda_functor___cppgm_class_template_identity_4___lambda_functor

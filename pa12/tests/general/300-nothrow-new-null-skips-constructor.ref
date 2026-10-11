@@ -1,0 +1,52 @@
+global @std__nothrow [storage=readonly, binding=strong, object=_ZSt7nothrow] = {
+  zero 1
+}
+global @constructed : i32 [binding=strong] = 0
+
+function @operatornew__ov2(%__param0 : i64, %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [unwind=no, binding=strong, object=_ZnwmRKSt9nothrow_t] {
+  slot $__param0 : i64
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return ptr 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = addr @std__nothrow
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^new_init_1, ^new_end_2
+
+  block ^new_init_1:
+    call void @value__value(%t3)
+    jump ^new_end_2
+
+  block ^new_end_2:
+    store typed ptr %t3, $p
+    %t5 = load typed ptr $p
+    branch %t5, ^if_then_3, ^if_else_4
+
+  block ^if_then_3:
+    return i32 2
+
+  block ^if_else_4:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    %t6 = load typed i32 @constructed
+    return i32 %t6
+}
+function @value__value(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5valueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 1, @constructed
+    return void
+}
+alias object _ZN5valueC2Ev = @value__value

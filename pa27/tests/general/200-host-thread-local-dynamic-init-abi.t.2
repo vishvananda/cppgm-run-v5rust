@@ -1,0 +1,4 @@
+// defining TU for the dynamically initialized thread_local
+struct T { int id; T(int i); };
+T::T(int i) : id(i) {}
+thread_local T t3(3);

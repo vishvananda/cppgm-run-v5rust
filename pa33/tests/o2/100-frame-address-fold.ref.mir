@@ -1,0 +1,24 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $x -> [rbp-8] : i8
+
+  block ^entry
+    store.i8 [rbp-8], -1
+    load.i8 r8, [rbp-8]
+    cmp.i64 r8, -1
+    sete r8
+    movzx r8, r8
+    ret r8

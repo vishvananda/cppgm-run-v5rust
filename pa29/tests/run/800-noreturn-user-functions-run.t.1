@@ -1,0 +1,32 @@
+// lowir.md return=noreturn: a function declaration, definition or call
+// signature states return=noreturn when the function is declared [[noreturn]]
+// or GNU noreturn on any of its declarations (7.6.3): a free function, a member
+// function, a function template's specializations, a virtual function's call;
+// not a function template's explicit specialization without the attribute.
+// Behavior only here: PA29's lanes compare no LowIR; PA32's -O0 driver lane
+// compares the fact (pa32/tests/driver/o0/400-noreturn-user-functions).
+#include <cstdio>
+#include <cstdlib>
+[[noreturn]] void stop(int code) { std::exit(code); }
+__attribute__((noreturn)) void halt(int code);
+void halt(int code) { std::exit(code); }
+struct Guard
+{
+  [[noreturn]] void fail() const { std::exit(3); }
+  [[noreturn]] virtual void abandon() const { std::exit(4); }
+  virtual ~Guard() {}
+};
+template<class T> [[noreturn]] void raise_code(T code) { std::exit(static_cast<int>(code)); }
+template<> void raise_code<char>(char) { std::puts("explicit specialization returns"); }
+int main(int argc, char**)
+{
+  Guard guard;
+  raise_code('x');
+  if (argc > 5) stop(1);
+  if (argc > 4) halt(2);
+  if (argc > 3) guard.fail();
+  if (argc > 2) guard.abandon();
+  if (argc > 1) raise_code(5L);
+  std::puts("returned normally");
+  return 0;
+}

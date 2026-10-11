@@ -1,0 +1,7 @@
+declare global @qualifier_flags_int__global_functor______value : i32 [binding=weak, object=_ZN15qualifier_flagsIM14global_functorVFivREE5valueE]
+declare global @qualifier_flags_int__local_functor______value : i32 [binding=internal, object=_ZN15qualifier_flagsIMZ4mainE13local_functorVFivREE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

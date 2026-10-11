@@ -1,0 +1,14 @@
+global @b : u8 [storage=readonly, binding=internal, object=_ZL1b] = 1
+global @c : i8 [storage=readonly, binding=internal, object=_ZL1c] = 97
+global @ss : i16 [storage=readonly, binding=internal, object=_ZL2ss] = 42
+global @si : i32 [storage=readonly, binding=internal, object=_ZL2si] = 521
+global @ui : u32 [storage=readonly, binding=internal, object=_ZL2ui] = 124
+global @sl : i64 [storage=readonly, binding=internal, object=_ZL2sl] = 424
+global @ul : i64 [storage=readonly, binding=internal, object=_ZL2ul] = 300
+global @sll : i64 [storage=readonly, binding=internal, object=_ZL3sll] = 521
+global @ull : i64 [storage=readonly, binding=internal, object=_ZL3ull] = 124
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

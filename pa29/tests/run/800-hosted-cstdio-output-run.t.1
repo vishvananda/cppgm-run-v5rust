@@ -1,0 +1,9 @@
+#include <cstdio>
+
+int main()
+{
+  // std::puts appends a newline; std::fputs does not.
+  std::puts("cstdio-line");
+  std::fputs("fputs-line\n", stdout);
+  return 0;
+}

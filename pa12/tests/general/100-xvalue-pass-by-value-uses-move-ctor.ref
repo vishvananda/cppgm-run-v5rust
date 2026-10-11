@@ -1,0 +1,59 @@
+function @sink(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z4sink1S] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $cond__1 : i32
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    call void @S__S(%t1)
+    %t2 = addr $arg__2
+    %t3 = addr $source
+    call void @S__S__ov2(%t2, %t3)
+    %t4 = call i32 @sink(%t2)
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @S__S(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1SC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @S__S__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN1SC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+alias object _ZN1SC2Ev = @S__S
+alias object _ZN1SC2EOS_ = @S__S__ov2

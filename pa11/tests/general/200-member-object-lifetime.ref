@@ -1,0 +1,78 @@
+global @gx : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $b
+    call void @YB__YB(%t1)
+    %t2 = addr $b
+    call void @YB___YB(%t2)
+    %t3 = load typed i32 @gx
+    return i32 %t3
+}
+function @YB__YB(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN2YBC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @YA__YA(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @YA___YA(%t4)
+    eh_end
+    resume
+}
+function @YB___YB(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN2YBD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @YA___YA(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @YA___YA(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @YA__YA(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN2YAC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @gx
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @gx
+    return void
+}
+function @YA___YA(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN2YAD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @gx
+    %t2 = binary add nowrap i32 %t1, 2
+    store typed i32 %t2, @gx
+    return void
+}
+alias object _ZN2YBC2Ev = @YB__YB
+alias object _ZN2YBD2Ev = @YB___YB
+alias object _ZN2YAC2Ev = @YA__YA
+alias object _ZN2YAD2Ev = @YA___YA

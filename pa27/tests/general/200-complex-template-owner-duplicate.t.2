@@ -1,0 +1,9 @@
+#include "200-complex-template-owner-duplicate.helper.h"
+
+int one();
+
+int main()
+{
+  MyTable table;
+  return one() + table.value(31) - 43;
+}

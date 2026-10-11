@@ -1,0 +1,36 @@
+#include "200-host-destructor-entry-emission.helper.h"
+
+static int total;
+int note_destroyed(int value)
+{
+  total += value;
+  return total;
+}
+
+Base::~Base() { note_destroyed(1); }
+Second::~Second() { note_destroyed(2); }
+Derived::~Derived() { note_destroyed(3); }
+VBase::~VBase() { note_destroyed(4); }
+VDerived::~VDerived() { note_destroyed(5); }
+
+int HBase::key() { return 11; }
+int HDerived::key() { return 12; }
+int HVDerived::key() { return 13; }
+
+int main()
+{
+  Second* second = host_make_derived();
+  delete second;
+  if (total != 6) return 1;
+  VBase* vbase = host_make_vderived();
+  delete vbase;
+  if (total != 15) return 2;
+  total = 0;
+  host_delete_second(new HDerived);
+  if (total != 60) return 3;
+  HVBase* hvbase = new HVDerived;
+  delete hvbase;
+  host_delete_vbase(new HVDerived);
+  if (total != 240) return 4;
+  return 0;
+}

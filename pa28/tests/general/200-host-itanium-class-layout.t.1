@@ -1,0 +1,43 @@
+#include "200-host-itanium-class-layout.helper.h"
+
+// Our layouts of these classes match the host's, field accesses through
+// either side's code agree, and a host copy of a base subobject leaves the
+// derived member in its tail padding alone.
+int main()
+{
+  if (signature() != host_signature()) return 1;
+  Mixed mixed;
+  Signs signs;
+  After after;
+  host_fill(mixed, signs, after);
+  if (mixed.a != -2 || !mixed.b || mixed.c != 12345 || signs.v != 2 ||
+      signs.n != -3 || !signs.f || after.c != 'h' || after.x != 1234 ||
+      after.d != 'k')
+    return 2;
+  mixed.a = 3;
+  mixed.b = false;
+  mixed.c = -54321;
+  signs.v = 1;
+  signs.n = 2;
+  signs.f = false;
+  after.c = 'o';
+  after.x = -77;
+  after.d = 'u';
+  if (!host_check(mixed, signs, after)) return 3;
+  Derived derived;
+  Derived source;
+  derived.extra = 3;
+  derived.more = 4;
+  source.value = 11;
+  host_assign_base(derived, source);
+  if (derived.extra != 3 || derived.more != 4 || derived.value != 11) return 4;
+  Holder holder;
+  holder.tag = 6;
+  Mark& mark = holder;
+  mark.mark = 7;
+  if (host_read_mark(holder) != 7 || holder.tag != 6 || holder.value != 1)
+    return 5;
+  EmptyDerived empty;
+  if (empty.tail != 9) return 6;
+  return 0;
+}

@@ -1,0 +1,15 @@
+# budget from 100-cppgm-emit-lowir-o2-debug.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 5
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 5 in @f
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @f
+none(/!dbg\((?!(?:tests/debuginfo/driver/o2/100-cppgm-emit-lowir-o2-debug\.t, 1, 1|tests/debuginfo/driver/o2/100-cppgm-emit-lowir-o2-debug\.t, 2, 11|tests/debuginfo/driver/o2/100-cppgm-emit-lowir-o2-debug\.t, 3, 3)\))/) in @f
+none(/^return\b(?!.*!dbg\((?:tests/debuginfo/driver/o2/100-cppgm-emit-lowir-o2-debug\.t, 3, 3)\))/) in @f

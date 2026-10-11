@@ -1,0 +1,46 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition n
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_BOOL:bool
+            declarator
+              identifier Flag
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier Pointer
+      class-specifier iterator
+        class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier Flag
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier Pointer
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier range
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier n::iterator<Flag,Pointer>
+            declarator
+              identifier first
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier n::iterator<Flag,Pointer>
+            declarator
+              identifier last
+      compound-statement
+end translation unit

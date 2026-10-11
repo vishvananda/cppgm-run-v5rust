@@ -1,0 +1,46 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $score : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $score
+    jump ^if_else_2
+
+  block ^if_then_1:
+    %t1 = load typed i32 $score
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, $score
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    jump ^if_then_4
+
+  block ^if_then_4:
+    %t3 = load typed i32 $score
+    %t4 = binary add nowrap i32 %t3, 2
+    store typed i32 %t4, $score
+    jump ^if_end_6
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t5 = load typed i32 $score
+    %t6 = cmp eq i32 %t5, 2
+    branch %t6, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

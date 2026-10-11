@@ -1,0 +1,10 @@
+declare function @f(%arg0 : ptr [pass=indirect_result, object_bytes=24]) -> void [binding=strong, object=_Z1fv]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $discard__1 : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $discard__1
+    call void @f(%t1)
+    return i32 0
+}

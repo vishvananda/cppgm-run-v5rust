@@ -1,0 +1,57 @@
+typedef __uint128_t U128;
+
+int failures = 0;
+
+int same(const char *lhs, const char *rhs)
+{
+  if(lhs == 0 || rhs == 0) {
+    return 0;
+  }
+  for(int i = 0; ; ++i) {
+    if(lhs[i] != rhs[i]) {
+      return 0;
+    }
+    if(lhs[i] == 0) {
+      return 1;
+    }
+  }
+}
+
+unsigned long long low(U128 value)
+{
+  return static_cast<unsigned long long>(value);
+}
+
+unsigned long long high(U128 value)
+{
+  return static_cast<unsigned long long>(value >> 64);
+}
+
+void sink(const char *label, U128 value, int base)
+{
+  if(base != 10) {
+    failures += 1;
+  }
+  if(same(label, "small")) {
+    if(low(value) != 12345ULL || high(value) != 0ULL) {
+      failures += 2;
+    }
+    return;
+  }
+  if(same(label, "u128-hi")) {
+    if(low(value) != 12345ULL || high(value) != 1ULL) {
+      failures += 4;
+    }
+    return;
+  }
+  failures += 8;
+}
+
+int main()
+{
+  sink("small", static_cast<U128>(12345ULL), 10);
+  sink("u128-hi",
+       static_cast<U128>(18446744073709551615ULL) + static_cast<U128>(12346ULL),
+       10);
+  return failures;
+}

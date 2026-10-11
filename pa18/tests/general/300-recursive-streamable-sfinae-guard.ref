@@ -1,0 +1,6 @@
+declare global @is_streamable_Sink__Value__void___value : u8 [binding=weak, object=_ZN13is_streamableIR4SinkR5ValuevE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

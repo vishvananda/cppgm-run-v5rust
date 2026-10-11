@@ -1,0 +1,44 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $matrix : obj<36x4>
+  slot $vector : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $matrix
+    store typed i32 0, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    store typed i32 0, %t2
+    %t3 = index i8 [projection=array_element] %t1, 8
+    store typed i32 0, %t3
+    %t4 = index i8 %t1, 12
+    store typed i32 0, %t4
+    %t5 = index i8 [projection=array_element] %t4, 4
+    store typed i32 0, %t5
+    %t6 = index i8 [projection=array_element] %t4, 8
+    store typed i32 0, %t6
+    %t7 = index i8 %t1, 24
+    store typed i32 0, %t7
+    %t8 = index i8 [projection=array_element] %t7, 4
+    store typed i32 0, %t8
+    %t9 = index i8 [projection=array_element] %t7, 8
+    store typed i32 0, %t9
+    %t10 = addr $vector
+    copyobj 8x4 @__constexpr_template__1, %t10
+    %t11 = addr $matrix
+    %t12 = addr $vector
+    call void @translate(%t11, %t12)
+    return i32 0
+}
+function @translate(%__param0 : ptr [pass=by_address, object_bytes=36], %__param1 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_Z9translateIiLi3EEvRAT0__AT0__T_RAmiT0_Li1E_S0_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}

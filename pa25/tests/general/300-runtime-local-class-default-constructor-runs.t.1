@@ -1,0 +1,21 @@
+int ctor_count = 0;
+int dtor_count = 0;
+
+struct Tracker {
+  Tracker() { ++ctor_count; }
+  ~Tracker() { ++dtor_count; }
+};
+
+int main()
+{
+  {
+    struct Local {
+      Tracker tracker;
+    } value;
+    (void)value;
+    if(ctor_count != 1 || dtor_count != 0) {
+      return 1;
+    }
+  }
+  return dtor_count == 1 ? 0 : 2;
+}

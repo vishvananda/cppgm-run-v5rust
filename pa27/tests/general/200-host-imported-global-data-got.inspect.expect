@@ -1,0 +1,6 @@
+undefined_symbol_canonical 1 g
+relocation_class_canonical 1 data_any g
+undefined_symbol_canonical 1 _Z6calleev
+relocation_class_canonical 1 data_any _Z6calleev
+defined_symbol_canonical 2 g
+defined_symbol_canonical 2 _Z6calleev

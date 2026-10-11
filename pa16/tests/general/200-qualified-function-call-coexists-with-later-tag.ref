@@ -1,0 +1,8 @@
+global @value : i32 [storage=readonly, binding=internal, object=_ZL5value] = 6
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @value
+    %t2 = binary sub nowrap i32 %t1, 6
+    return i32 %t2
+}

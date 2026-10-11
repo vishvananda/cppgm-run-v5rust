@@ -1,0 +1,553 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @expected_template_arguments
+  storage scalar ptr
+  init ptr 0
+
+function @function_binding_qualified_name_for_symbol
+  abi
+    param %binding -> rdi : ptr
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i32 rax, [rdi+160]
+    ret rax
+
+function @function_binding_display_name_for_symbol
+  abi
+    param %binding -> rdi : ptr
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i32 rax, [rdi+164]
+    ret rax
+
+function @function_object_symbol_key
+  abi
+    param %binding -> rdi : ptr
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i32 rax, [rdi+376]
+    ret rax
+
+function @make_function_symbol_identity
+  abi
+    param %ret -> rdi : ptr
+    param %qualified_name -> rsi : i32
+    param %display_name -> rdx : i32
+    param %__param2 -> rcx : u8
+    param %__param3 -> r8 : ptr
+    param %options -> r9 : ptr
+    param %key -> [rbp+16] : i32
+    param %linkage -> [rbp+24] : i32
+    return void -> void
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    slot $cond__1 -> [rbp-8] : i32
+    param-slot %key -> [rbp-16] : i32
+
+  block ^entry
+    load.i32 rax, [rbp+16]
+    store.i32 [rbp-16], rax
+    mov rbx, rdi
+    mov r13, rsi
+    mov r14, rdx
+    mov r15, r9
+    load.i32 r12, [rbp+24]
+    mov rdi, rbx
+    call @SymbolIdentity__SymbolIdentity [args=(rdi), unwind=no]
+    store.i64 [rbx], r13
+    store.i64 [rbx+8], r14
+    load.i32 r11, [rbp-16]
+    store.i64 [rbx+16], r11
+    load.ptr r8, [r15+24]
+    store.ptr [rbx+32], r8
+    load.ptr r15, [r15+24]
+    cmp.ptr r15, @expected_template_arguments
+    je ^cond_then_1
+    jmp ^cond_else_2
+
+  block ^cond_then_1
+    store.i32 [rbp-8], 0
+    jmp ^cond_end_3
+
+  block ^cond_else_2
+    store.i32 [rbp-8], 10
+    jmp ^cond_end_3
+
+  block ^cond_end_3
+    load.i32 r8, [rbp-8]
+    store.i32 [rbx+40], r8
+    store.i32 [rbx+48], r12
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 512
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    slot $type_value -> [rbp-8] : i32
+    slot $binding -> [rbp-392] : obj<384x8>
+    slot $analyzer -> [rbp-400] : obj<1x1>
+    slot $out -> [rbp-456] : obj<56x8>
+
+  block ^entry
+    store.i32 [rbp-8], 5
+    lea rdi, [rbp-392]
+    call @FunctionBinding__FunctionBinding [args=(rdi), unwind=no]
+    store.i32 [rbp-232], 101
+    store.i32 [rbp-228], 202
+    lea r8, [rbp-8]
+    store.ptr [rbp-224], r8
+    store.u8 [rbp-216], 1
+    store.i32 [rbp-212], 17
+    store.i32 [rbp-208], 3
+    store.u8 [rbp-204], 1
+    store.ptr [rbp-200], 4660
+    store.i32 [rbp-80], 1
+    store.u8 [rbp-84], 1
+    store.u8 [rbp-83], 1
+    store.i32 [rbp-72], 7
+    store.u8 [rbp-56], 1
+    store.ptr [rbp-48], 17767
+    store.ptr [rbp-40], 35243
+    store.ptr [rbp-32], 52719
+    store.ptr [rbp-24], 4369
+    store.i32 [rbp-16], 303
+    lea r8, [rbp-72]
+    store.ptr @expected_template_arguments, r8
+    lea rdi, [rbp-456]
+    lea rsi, [rbp-400]
+    lea rdx, [rbp-392]
+    call @Analyzer__direct_call_symbol [args=(rdx,rsi,rdi)]
+    cmp.i32 [rbp-416], 0
+    jne ^if_then_1
+    jmp ^if_else_2
+
+  block ^if_then_1
+    load.i32 rax, [rbp-416]
+    ret rax
+
+  block ^if_else_2
+    jmp ^if_end_3
+
+  block ^if_end_3
+    load.ptr r8, [rbp-424]
+    lea r9, [rbp-72]
+    cmp.ptr r8, r9
+    jne ^if_then_4
+    jmp ^if_else_5
+
+  block ^if_then_4
+    mov rax, 20
+    ret rax
+
+  block ^if_else_5
+    jmp ^if_end_6
+
+  block ^if_end_6
+    load.u8 r8, [rbp-412]
+    cmp.i64 r8, 0
+    je ^if_then_7
+    jmp ^lor_rhs_10
+
+  block ^lor_rhs_10
+    load.u8 r8, [rbp-411]
+    cmp.i64 r8, 0
+    je ^if_then_7
+    jmp ^if_else_8
+
+  block ^if_then_7
+    mov rax, 30
+    ret rax
+
+  block ^if_else_8
+    jmp ^if_end_9
+
+  block ^if_end_9
+    mov rax, 0
+    ret rax
+
+function @SymbolIdentity__SymbolIdentity
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.ptr [rdi+32], 0
+    store.i32 [rdi+40], 0
+    store.u8 [rdi+44], 0
+    store.u8 [rdi+45], 0
+    store.i32 [rdi+48], 1
+    ret
+
+function @SymbolIdentity__SymbolIdentity__ov2
+  abi
+    param %this -> rdi : ptr
+    param %other -> rsi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    copy_bytes 52x8, rdi, rsi
+    ret
+
+function @FunctionBinding__FunctionBinding
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    store.i32 [rbx+160], 0
+    store.i32 [rbx+164], 0
+    store.ptr [rbx+168], 0
+    store.u8 [rbx+176], 0
+    store.u8 [rbx+177], 0
+    store.i32 [rbx+180], 0
+    store.i32 [rbx+184], 0
+    store.u8 [rbx+188], 0
+    store.u8 [rbx+189], 0
+    store.u8 [rbx+190], 0
+    store.ptr [rbx+192], 0
+    lea rdi, [rbx+264]
+    call @SymbolIdentity__SymbolIdentity [args=(rdi), unwind=no]
+    store.u8 [rbx+336], 0
+    store.ptr [rbx+344], 0
+    store.ptr [rbx+352], 0
+    store.ptr [rbx+360], 0
+    store.ptr [rbx+368], 0
+    store.i32 [rbx+376], 0
+    ret
+
+function @Analyzer__Analyzer
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @Analyzer__direct_call_symbol
+  abi
+    param %ret -> rdi : ptr
+    param %this -> rsi : ptr
+    param %target -> rdx : ptr
+    return void -> void
+  frame
+    stack_size 224
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    slot $options -> [rbp-72] : obj<72x8>
+    slot $updated -> [rbp-128] : obj<56x8>
+    temp %t39 -> [rbp-136] : ptr
+    temp %t42 -> [rbp-144] : ptr
+    temp %t45 -> [rbp-152] : ptr
+    temp %t48 -> [rbp-160] : ptr
+    temp %t61 -> [rbp-168] : u8
+    temp %t64 -> [rbp-176] : ptr
+    temp %t65 -> [rbp-184] : ptr
+
+  block ^entry
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    load.u8 r8, [r13+188]
+    cmp.i64 r8, 0
+    je ^land_rhs_4
+    jmp ^if_else_2
+
+  block ^land_rhs_4
+    load.u8 r8, [r13+189]
+    cmp.i64 r8, 0
+    je ^if_then_1
+    jmp ^if_else_2
+
+  block ^if_then_1
+    lea r13, [r13+264]
+    mov rdi, rbx
+    mov rsi, r13
+    call @SymbolIdentity__SymbolIdentity__ov3 [args=(rsi,rdi), unwind=no]
+    ret
+
+  block ^if_else_2
+    jmp ^if_end_3
+
+  block ^if_end_3
+    lea rdi, [rbp-72]
+    call @Options__Options [args=(rdi), unwind=no]
+    lea rsi, [rbp-72]
+    load.u8 rdx, [r13+176]
+    load.u8 rcx, [r13+177]
+    load.i32 r8, [r13+180]
+    load.u8 r9, [r13+188]
+    load.u8 rdi, [r13+189]
+    load.ptr rax, [r13+192]
+    lea r14, [r13+320]
+    load.u8 r15, [r13+336]
+    load.ptr r10, [r13+344]
+    store.ptr [rbp-136], r10
+    load.ptr r10, [r13+352]
+    store.ptr [rbp-144], r10
+    load.ptr r10, [r13+360]
+    store.ptr [rbp-152], r10
+    load.ptr r10, [r13+368]
+    store.ptr [rbp-160], r10
+    sub rsp, 64
+    store.u8 [rsp], rdi
+    store.ptr [rsp+8], rax
+    store.ptr [rsp+16], r14
+    store.u8 [rsp+24], r15
+    load.ptr r11, [rbp-136]
+    store.ptr [rsp+32], r11
+    load.ptr r11, [rbp-144]
+    store.ptr [rsp+40], r11
+    load.ptr r11, [rbp-152]
+    store.ptr [rsp+48], r11
+    load.ptr r11, [rbp-160]
+    store.ptr [rsp+56], r11
+    mov rdi, r12
+    call @Analyzer__populate [args=(rcx,rdx,rsi,rdi,r8,r9), stack=64]
+    add rsp, 64
+    load.i32 r8, [r13+184]
+    store.i32 [rbp-64], r8
+    lea r12, [rbp-128]
+    mov rdi, r13
+    call @function_binding_qualified_name_for_symbol [args=(rdi)]
+    mov r14, rax
+    sext.i32 r14
+    mov rdi, r13
+    call @function_binding_display_name_for_symbol [args=(rdi)]
+    mov r15, rax
+    sext.i32 r15
+    load.u8 r10, [r13+190]
+    store.u8 [rbp-168], r10
+    load.ptr r10, [r13+168]
+    store.ptr [rbp-176], r10
+    lea r10, [rbp-72]
+    store.ptr [rbp-184], r10
+    mov rdi, r13
+    call @function_object_symbol_key [args=(rdi)]
+    mov r8, rax
+    sext.i32 r8
+    load.i32 r9, [r13+312]
+    sub rsp, 16
+    store.i32 [rsp], r8
+    store.i32 [rsp+8], r9
+    mov rdi, r12
+    mov rsi, r14
+    mov rdx, r15
+    load.u8 rcx, [rbp-168]
+    load.ptr r8, [rbp-176]
+    load.ptr r9, [rbp-184]
+    call @make_function_symbol_identity [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    load.u8 r8, [r13+308]
+    store.u8 [rbp-84], r8
+    load.u8 r13, [r13+309]
+    store.u8 [rbp-83], r13
+    lea rsi, [rbp-128]
+    mov rdi, rbx
+    call @SymbolIdentity__SymbolIdentity__ov2 [args=(rsi,rdi), unwind=no]
+    ret
+
+function @Analyzer__populate
+  abi
+    param %this -> rdi : ptr
+    param %options -> rsi : ptr
+    param %is_const_method -> rdx : u8
+    param %is_volatile_method -> rcx : u8
+    param %ref_qualifier -> r8 : i32
+    param %is_constructor -> r9 : u8
+    param %is_destructor -> [rbp+16] : u8
+    param %source_template -> [rbp+24] : ptr
+    param %instantiation_arguments -> [rbp+32] : ptr
+    param %has_instantiation_arguments -> [rbp+40] : u8
+    param %owner_class -> [rbp+48] : ptr
+    param %declaration_scope -> [rbp+56] : ptr
+    param %declaration_node -> [rbp+64] : ptr
+    param %definition_node -> [rbp+72] : ptr
+    return void -> void
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %is_destructor -> [rbp-8] : u8
+    param-slot %source_template -> [rbp-16] : ptr
+    param-slot %instantiation_arguments -> [rbp-24] : ptr
+    param-slot %has_instantiation_arguments -> [rbp-32] : u8
+    param-slot %owner_class -> [rbp-40] : ptr
+    param-slot %declaration_scope -> [rbp-48] : ptr
+    param-slot %declaration_node -> [rbp-56] : ptr
+    param-slot %definition_node -> [rbp-64] : ptr
+
+  block ^entry
+    load.u8 rax, [rbp+16]
+    store.u8 [rbp-8], rax
+    load.ptr rax, [rbp+24]
+    store.ptr [rbp-16], rax
+    load.ptr rax, [rbp+32]
+    store.ptr [rbp-24], rax
+    load.u8 rax, [rbp+40]
+    store.u8 [rbp-32], rax
+    load.ptr rax, [rbp+48]
+    store.ptr [rbp-40], rax
+    load.ptr rax, [rbp+56]
+    store.ptr [rbp-48], rax
+    load.ptr rax, [rbp+64]
+    store.ptr [rbp-56], rax
+    load.ptr rax, [rbp+72]
+    store.ptr [rbp-64], rax
+    mov rdi, rdx
+    mov rdx, 0
+    cmp.ptr [rbp-40], rdx
+    setne rdx
+    movzx rdx, rdx
+    store.u8 [rsi], rdx
+    store.u8 [rsi+1], rdi
+    store.u8 [rsi+2], rcx
+    store.i32 [rsi+4], r8
+    store.u8 [rsi+12], r9
+    load.u8 r11, [rbp-8]
+    store.u8 [rsi+13], r11
+    cmp.ptr [rbp-16], 0
+    jne ^land_rhs_5
+    jmp ^if_else_2
+
+  block ^land_rhs_5
+    cmp.ptr [rbp-24], 0
+    jne ^land_rhs_4
+    jmp ^if_else_2
+
+  block ^land_rhs_4
+    cmp.u8 [rbp-32], 0
+    jne ^if_then_1
+    jmp ^if_else_2
+
+  block ^if_then_1
+    load.ptr r11, [rbp-16]
+    store.ptr [rsi+16], r11
+    load.ptr r11, [rbp-24]
+    store.ptr [rsi+24], r11
+    store.u8 [rsi+32], 1
+    load.ptr r11, [rbp-40]
+    store.ptr [rsi+40], r11
+    load.ptr r11, [rbp-48]
+    store.ptr [rsi+48], r11
+    load.ptr r11, [rbp-56]
+    store.ptr [rsi+56], r11
+    load.ptr r11, [rbp-64]
+    store.ptr [rsi+64], r11
+    jmp ^if_end_3
+
+  block ^if_else_2
+    jmp ^if_end_3
+
+  block ^if_end_3
+    ret
+
+function @TemplateArguments__TemplateArguments
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @SymbolIdentity__SymbolIdentity__ov3
+  abi
+    param %this -> rdi : ptr
+    param %other -> rsi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    copy_bytes 52x8, rdi, rsi
+    ret
+
+function @Options__Options
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.u8 [rdi], 0
+    store.u8 [rdi+1], 0
+    store.u8 [rdi+2], 0
+    store.i32 [rdi+4], 0
+    store.i32 [rdi+8], 0
+    store.u8 [rdi+12], 0
+    store.u8 [rdi+13], 0
+    store.ptr [rdi+16], 0
+    store.ptr [rdi+24], 0
+    store.u8 [rdi+32], 0
+    store.ptr [rdi+40], 0
+    store.ptr [rdi+48], 0
+    store.ptr [rdi+56], 0
+    store.ptr [rdi+64], 0
+    ret

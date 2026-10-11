@@ -1,0 +1,28 @@
+declare function @observe(%value : i64) -> void [unwind=no]
+
+function @below_zero(%x : i64) -> i64 [binding=strong] {
+  block ^entry:
+    return i64 0
+}
+function @zero_above(%x : i64) -> i64 [binding=strong] {
+  block ^entry:
+    return i64 0
+}
+function @at_least_zero(%x : i64) -> i64 [binding=strong] {
+  block ^entry:
+    return i64 1
+}
+function @zero_at_most(%x : i64) -> i64 [binding=strong] {
+  block ^entry:
+    return i64 1
+}
+function @signed_stays(%x : i64) -> i64 [binding=strong] {
+  block ^entry:
+    %r = cmp lt i64 %x, 0
+    return i64 %r
+}
+function @guard_folds(%pos : i64, %size : i64) -> void [binding=strong] {
+  block ^entry:
+    call void @observe(%size)
+    return void
+}

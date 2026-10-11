@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  static-assert-declaration
+    id-expression x
+    message "msg"
+end translation unit

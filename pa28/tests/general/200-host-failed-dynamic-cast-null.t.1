@@ -1,0 +1,18 @@
+struct Base {
+  virtual ~Base() {}
+};
+
+struct Left : Base {
+};
+
+struct Right : Base {
+};
+
+int main()
+{
+  Left left;
+  Right right;
+  Base * base = &left;
+  (void)right;
+  return dynamic_cast<Right *>(base) == 0 ? 0 : 1;
+}

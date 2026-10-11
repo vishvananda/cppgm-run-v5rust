@@ -1,0 +1,26 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp_branch.ge.i128 0x00000000000000010000000000000001, 0x00000000000000010000000000000000, ^good, ^bad
+
+  block ^bad
+    mov rax, 1
+    ret rax
+
+  block ^good
+    mov rax, 0
+    ret rax

@@ -1,0 +1,13 @@
+# budget from 500-boolean-phi-branch.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 27
+blocks <= 18
+count(call) <= 7
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 7 in @fold_boolean_diamond
+instructions <= 12 in @retain_observable_arm
+instructions <= 11 in @retain_shared_phi
+
+# outcomes from 500-boolean-phi-branch.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)

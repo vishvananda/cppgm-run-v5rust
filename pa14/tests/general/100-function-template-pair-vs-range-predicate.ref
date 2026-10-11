@@ -1,0 +1,46 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @choose__ov3(%p : ptr) -> i32 [binding=strong, object=_Z6choosePKc] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $p
+    %t3 = index i8 %t2, 1
+    %t4 = call i32 @choose(%t1, %t3)
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call i32 @choose__ov3(%t1)
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @choose(%__param0 : ptr, %__param1 : ptr) -> i32 [binding=weak, object=_Z6chooseIPKcEiT_S2_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 1
+}

@@ -1,0 +1,12 @@
+global @control_0__p : ptr [binding=strong, object=_ZN9control_01pE] = zero
+
+function @control_0__size() -> i32 [binding=strong, object=_ZN9control_04sizeEv] {
+  block ^entry:
+    %t1 = const i64 8
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

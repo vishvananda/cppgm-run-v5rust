@@ -1,0 +1,25 @@
+template<class T>
+struct template_base
+{
+  virtual int inherited() { return 1; }
+};
+
+struct secondary
+{
+  virtual int key() = 0;
+};
+
+struct derived : template_base<int>, secondary
+{
+  int key();
+};
+
+int main()
+{
+  derived object;
+  secondary * view = &object;
+  if(view == 0) {
+    return view->key();
+  }
+  return object.inherited() == 1 ? 0 : 1;
+}

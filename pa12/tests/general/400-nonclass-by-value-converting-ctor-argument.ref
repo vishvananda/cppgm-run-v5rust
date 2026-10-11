@@ -1,0 +1,75 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @take(%t : obj<16x8>) -> i32 [binding=strong, object=_Z4take4Text] {
+  slot $t : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $t
+    copyobj 16x8 %t, %t1
+    %t2 = addr $t
+    %t3 = index i8 [projection=field] %t2, 8
+    %t4 = load typed i32 %t3
+    %t5 = cmp eq i32 %t4, 7
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $argobj__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    %t2 = addr @__strlit__1
+    call void @Text__Text(%t1, %t2)
+    %t3 = call i32 @take($argobj__1)
+    return i32 %t3
+}
+function @Text__Text(%this : ptr [object_bytes=16], %p : ptr) -> void [binding=weak, object=_ZN4TextC1EPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed ptr $p
+    %t5 = index i8 [projection=array_element] %t4, 0
+    %t6 = load i8 %t5
+    %t7 = convert sext i32 i8 %t6
+    %t8 = cmp eq i32 %t7, 120
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 7, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 8
+    store typed i32 %t9, %t11
+    return void
+}
+alias object _ZN4TextC2EPKc = @Text__Text

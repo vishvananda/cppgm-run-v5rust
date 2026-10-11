@@ -1,0 +1,11 @@
+extern "C" void _Exit(int);
+namespace std {
+ typedef void (*terminate_handler)();
+ terminate_handler set_terminate(terminate_handler) noexcept;
+}
+void terminated(){_Exit(0);}
+// CWG 2176 retains the completed result when return-time destruction throws.
+struct S { ~S() noexcept(false){throw 2;} };
+struct G { ~G() noexcept(false){throw 1;} };
+S f(){G guard;return S();}
+int main(){std::set_terminate(terminated);try{S result=f();}catch(...){return 1;}return 2;}

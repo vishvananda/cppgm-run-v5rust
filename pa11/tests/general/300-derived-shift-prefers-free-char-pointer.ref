@@ -1,0 +1,69 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @operator__(%b : ptr [pass=by_address, object_bytes=4], %__param1 : ptr) -> ptr [binding=strong, object=_ZlsR4BasePKc] {
+  slot $b : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $b
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 2, %t2
+    %t3 = load typed ptr $b
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $d
+    call void @Derived__Derived(%t1)
+    %t2 = addr $d
+    %t3 = index i8 %t2, 0
+    %t4 = addr @__strlit__1
+    %t5 = call ptr @operator__(%t3, %t4)
+    %t6 = addr $d
+    %t7 = index i8 %t6, 0
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 2
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @Derived__Derived(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived

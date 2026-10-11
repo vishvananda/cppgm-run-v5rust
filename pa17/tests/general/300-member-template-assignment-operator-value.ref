@@ -1,0 +1,22 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $w : ptr
+
+  block ^entry:
+    store typed ptr 0, $w
+    %t1 = load typed ptr $w
+    %t2 = call ptr @wrapper_void_____operator_(%t1, 0)
+    return i32 0
+}
+function @wrapper_void_____operator_(%this : ptr [object_bytes=4], %__param1 : i32) -> ptr [binding=weak, object=_ZN7wrapperIFvvEEaSIiEERS1_T_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    %t3 = load typed ptr $this
+    return ptr %t3
+}

@@ -1,0 +1,20 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 1
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @run()
+    return i32 0
+}
+function @run() -> void [binding=weak, object=_Z3runIJLi0ELi1EEEvv] {
+  slot $values : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 12x4 @__constexpr_template__1, %t1
+    %t2 = addr $values
+    return void
+}

@@ -1,0 +1,26 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fn : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $fn
+    %t2 = addr $fn
+    %t3 = call i32 @__lambda_main_t22_24__operator__(%t2)
+    return i32 %t3
+}
+function @__lambda_main_t22_24__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $candidate : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $candidate
+    return i32 0
+}
+function @Candidate___Candidate(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=internal, object=_ZZZ4mainENK3$_0clEvEN9CandidateD1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZZZ4mainENK3$_0clEvEN9CandidateD2Ev = @Candidate___Candidate

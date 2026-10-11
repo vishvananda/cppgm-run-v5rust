@@ -1,0 +1,25 @@
+struct B {
+  virtual int f() = 0;
+  virtual ~B() {}
+};
+
+int B::f()
+{
+  return 3;
+}
+
+struct D : B {
+  int f()
+  {
+    int x = 0;
+    return x + 7;
+  }
+};
+
+int main()
+{
+  B * b = new D;
+  int v = b->f();
+  delete b;
+  return v == 7 ? 0 : 1;
+}

@@ -1,0 +1,5 @@
+// partner TU: a different function template g (condition <= 4)
+template<bool B, class T = void> struct enable_if {};
+template<class T> struct enable_if<true, T> { typedef T type; };
+template<class U> typename enable_if<(sizeof(U) <= 4), int>::type g(U) { return 20; }
+int from_b() { return g(1); }

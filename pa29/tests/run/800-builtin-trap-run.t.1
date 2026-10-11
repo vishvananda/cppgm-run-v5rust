@@ -1,0 +1,31 @@
+// GCC __builtin_trap: a call reached at run time executes a trap instruction
+// (SIGILL on x86-64), whose signal handler runs; a path to it is not assumed
+// unreachable
+#include <csignal>
+#include <cstdio>
+#include <unistd.h>
+
+static void on_ill(int)
+{
+	std::printf("trapped\n");
+	std::fflush(stdout);
+	_exit(0);
+}
+
+int check(int x)
+{
+	if (x > 2)
+		__builtin_trap();
+	return x;
+}
+
+volatile int three = 3;
+
+int main()
+{
+	std::signal(SIGILL, on_ill);
+	std::printf("%d\n", check(1));
+	std::printf("%d\n", check(three));
+	std::printf("not reached\n");
+	return 1;
+}

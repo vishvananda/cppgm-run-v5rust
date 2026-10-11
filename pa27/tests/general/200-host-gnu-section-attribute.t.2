@@ -1,0 +1,18 @@
+#if defined(__APPLE__)
+#define CPPGM_TEST_SECTION __attribute__((section("__DATA," "cppgmsec")))
+#else
+#define CPPGM_TEST_SECTION __attribute__((section("cppgmsec")))
+#endif
+
+namespace
+{
+void target()
+{
+}
+}
+
+extern "C" const void *retained_alias;
+
+CPPGM_TEST_SECTION
+__attribute__((weak)) const void *retained_alias =
+    reinterpret_cast<const void *>(reinterpret_cast<long>(&target));

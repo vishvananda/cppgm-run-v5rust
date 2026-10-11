@@ -1,0 +1,80 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cvt : obj<1x1>
+  slot $p : obj<4x4>
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $cvt
+    %t2 = addr $p
+    call void @path__path(%t2)
+    %t3 = addr $tmpobj__2
+    %t4 = addr $p
+    %t5 = addr $cvt
+    %t6 = call obj<4x4> @path__string(%t4, %t5)
+    copyobj 4x4 %t6, %t3
+    %t7 = index i8 [projection=field] %t3, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 7
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @path__path(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4pathC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @string__string(%t2)
+    return void
+}
+function @path__string(%this : ptr [object_bytes=4], %cvt : ptr [pass=by_address, object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK4path6stringI6stringEET_RK7codecvt, inline_hint=yes] {
+  slot $this : ptr
+  slot $cvt : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %cvt, $cvt
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $this
+    %t3 = load typed ptr $cvt
+    %t4 = call ptr @path__string__ov2(%t2, %t3)
+    copyobj 4x4 %t4, %t1
+    return obj<4x4> $retobj__1
+}
+function @string__string(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6stringC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @path__string__ov2(%this : ptr [object_bytes=4], %cvt : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_ZNK4path6stringERK7codecvt, inline_hint=yes] {
+  slot $this : ptr
+  slot $cvt : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %cvt, $cvt
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+alias object _ZN4pathC2Ev = @path__path
+alias object _ZN6stringC2Ev = @string__string

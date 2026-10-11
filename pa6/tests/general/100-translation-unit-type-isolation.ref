@@ -1,0 +1,13 @@
+2 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias value int
+    variable x int
+end translation unit
+start translation unit 2
+translation-unit
+  scope namespace <global>
+    type-alias value double
+    variable x double
+end translation unit

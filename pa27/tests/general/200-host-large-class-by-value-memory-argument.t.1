@@ -1,0 +1,29 @@
+struct Large {
+  unsigned long words[17];
+};
+
+extern "C" int inspect_large_value(Large value, unsigned long tail);
+extern "C" int host_calls_cppgm_large_value();
+
+extern "C" int cppgm_inspect_large_value(Large value, unsigned long tail)
+{
+  if(tail != 777) {
+    return 3;
+  }
+  for(unsigned long i = 0; i < 17; ++i) {
+    if(value.words[i] != 300 + i * 5) {
+      return 4;
+    }
+  }
+  return 0;
+}
+
+int main()
+{
+  Large value = {};
+  for(unsigned long i = 0; i < 17; ++i) {
+    value.words[i] = 100 + i * 3;
+  }
+  int outgoing = inspect_large_value(value, 901);
+  return outgoing != 0 ? outgoing : host_calls_cppgm_large_value();
+}

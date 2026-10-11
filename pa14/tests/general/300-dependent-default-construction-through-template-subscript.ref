@@ -1,0 +1,124 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<12x4>
+  slot $key : u8
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $values
+    call void @tiny_assoc_unsignedchar_value_box___tiny_assoc(%t1)
+    store u8 1, $key
+    %t2 = addr $values
+    %t3 = addr $key
+    %t4 = call ptr @tiny_assoc_unsignedchar_value_box___subscript(%t2, %t3)
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 3, %t5
+    %t6 = addr $values
+    %t7 = addr $key
+    %t8 = call ptr @tiny_assoc_unsignedchar_value_box___subscript(%t6, %t7)
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 3
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @tiny_assoc_unsignedchar_value_box___tiny_assoc(%this : ptr [object_bytes=12]) -> void [unwind=no, binding=weak, object=_ZN10tiny_assocIh9value_boxEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store u8 0, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    call void @value_box__value_box(%t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store u8 0, %t6
+    return void
+}
+function @tiny_assoc_unsignedchar_value_box___subscript(%this : ptr [object_bytes=12], %key : ptr [pass=by_address, object_bytes=1]) -> ptr [unwind=no, binding=weak, object=_ZN10tiny_assocIh9value_boxE9subscriptERKh, inline_hint=yes] {
+  slot $this : ptr
+  slot $key : ptr
+  slot $arg__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %key, $key
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load u8 %t2
+    %t4 = cmp eq u8 %t3, 0
+    branch %t4, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load u8 %t6
+    %t8 = load typed ptr $key
+    %t9 = load u8 %t8
+    %t10 = convert zext i32 u8 %t7
+    %t11 = convert zext i32 u8 %t9
+    %t12 = cmp ne i32 %t10, %t11
+    branch %t12, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t13 = load typed ptr $key
+    %t14 = load u8 %t13
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 0
+    store u8 %t14, %t16
+    %t17 = load typed ptr $this
+    %t18 = index i8 [projection=field] %t17, 4
+    %t19 = addr $arg__1
+    call void @value_box__value_box(%t19)
+    %t20 = call ptr @value_box__operator___ov2(%t18, %t19)
+    %t21 = load typed ptr $this
+    %t22 = index i8 [projection=field] %t21, 8
+    store u8 1, %t22
+    jump ^if_end_4
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t23 = load typed ptr $this
+    %t24 = index i8 [projection=field] %t23, 4
+    return ptr %t24
+}
+function @value_box__value_box(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN9value_boxC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @value_box__operator___ov2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN9value_boxaSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+alias object _ZN10tiny_assocIh9value_boxEC2Ev = @tiny_assoc_unsignedchar_value_box___tiny_assoc
+alias object _ZN9value_boxC2Ev = @value_box__value_box

@@ -1,0 +1,36 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $b : obj<1x1>
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = addr $value
+    %t4 = call i32 @box_int___call(%t2, %t3)
+    return i32 %t4
+}
+function @box_int___call(%this : ptr [object_bytes=1], %p : ptr) -> i32 [binding=weak, object=_ZN3boxIiE4callEPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $p
+    %t3 = load typed ptr $p
+    %t4 = call i32 @box_int___assign(%t1, %t2, %t3)
+    return i32 %t4
+}
+function @box_int___assign(%this : ptr [object_bytes=1], %__param1 : ptr, %__param2 : ptr) -> i32 [binding=weak, object=_ZN3boxIiE6assignIPiTnN9enable_ifIXsr16is_constructibleIiN15iterator_traitsIT_E9referenceEEE5valueEiE4typeELi0EEEiS5_S5_] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return i32 0
+}

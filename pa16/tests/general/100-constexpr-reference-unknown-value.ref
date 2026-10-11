@@ -1,0 +1,87 @@
+global @global : i32 [binding=strong] = zero
+
+function @get() -> i32 [binding=strong, object=_Z3getv] {
+  block ^entry:
+    return i32 7
+}
+function @compare(%a : i32, %b : i32) -> u8 [binding=strong, object=_Z7compareii] {
+  slot $a : i32
+  slot $b : i32
+  slot $result : u8
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = call u8 @equal(%t1, %t2)
+    store u8 %t3, $result
+    %t4 = load u8 $result
+    return u8 %t4
+}
+function @compare_call() -> u8 [binding=strong, object=_Z12compare_callv] {
+  slot $expected : i32
+  slot $result : u8
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = unary neg i32 1
+    store typed i32 %t1, $expected
+    %t2 = call i32 @get()
+    store typed i32 %t2, $refarg__1
+    %t3 = addr $refarg__1
+    %t4 = addr $expected
+    %t5 = call u8 @equal(%t3, %t4)
+    store u8 %t5, $result
+    %t6 = load u8 $result
+    return u8 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = unary neg i32 1
+    %t2 = call u8 @compare(7, %t1)
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = call u8 @compare_call()
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t4 = call u8 @compare(7, 7)
+    branch %t4, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 2, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @equal(%a : ptr [pass=by_address, object_bytes=4], %b : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=weak, object=_Z5equalRKiS0_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = load typed i32 %t1
+    %t3 = load typed ptr $b
+    %t4 = load typed i32 %t3
+    %t5 = cmp eq i32 %t2, %t4
+    %t6 = convert trunc u8 i64 %t5
+    return u8 %t6
+}

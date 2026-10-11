@@ -1,0 +1,6 @@
+preproc 1
+sof tests/macros/400-fun-macro-define.t
+identifier A
+identifier c
+identifier x
+eof

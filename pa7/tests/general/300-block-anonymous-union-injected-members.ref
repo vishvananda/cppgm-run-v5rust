@@ -1,0 +1,26 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (int) returning int
+    parameter x int
+    compound-statement
+      simple-declaration
+        variable __anonymous_union_storage__7_17 union __anonymous_union_type__7_17
+          constructor-action __anonymous_union_type__7_17::__anonymous_union_type__7_17
+            call-expression prvalue void
+              callee __anonymous_union_type__7_17::__anonymous_union_type__7_17 function of (pointer to union __anonymous_union_type__7_17) returning void
+              unary-expression prvalue pointer to union __anonymous_union_type__7_17 OP_AMP:&
+                id-expression lvalue union __anonymous_union_type__7_17 __anonymous_union_storage__7_17
+      expression-statement
+        assignment-expression lvalue int OP_ASS:=
+          member-expression lvalue int t
+            id-expression lvalue union __anonymous_union_type__7_17 __anonymous_union_storage__7_17
+          id-expression lvalue int x
+      return-statement
+        cast-expression prvalue int OP_LPAREN:
+          member-expression lvalue long int a
+            id-expression lvalue union __anonymous_union_type__7_17 __anonymous_union_storage__7_17
+  function-definition __anonymous_union_type__7_17::__anonymous_union_type__7_17 function of (pointer to union __anonymous_union_type__7_17) returning void
+    parameter this pointer to union __anonymous_union_type__7_17
+    compound-statement
+end translation unit

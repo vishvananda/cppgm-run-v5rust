@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (pointer to const char, int) returning pointer to const char
+    parameter p pointer to const char
+    parameter n int
+    compound-statement
+      expression-statement
+        assignment-expression lvalue pointer to const char OP_PLUSASS:+=
+          id-expression lvalue pointer to const char p
+          id-expression lvalue int n
+      return-statement
+        id-expression lvalue pointer to const char p
+end translation unit

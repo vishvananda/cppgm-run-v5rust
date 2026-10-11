@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = call i8 @box_int___insert(%t2, 1, 1)
+    %t4 = convert sext i32 i8 %t3
+    return i32 %t4
+}
+function @box_int___insert(%this : ptr [object_bytes=1], %__param1 : i32, %__param2 : i32) -> i8 [binding=weak, object=_ZN3boxIiE6insertIiTnN14enable_if_implIXaasr4sameIN6traitsIT_E9referenceERiEE5valueLN4sameIiiEUt_E1EEiE4typeELi0EEEcS4_S4_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    return i8 7
+}

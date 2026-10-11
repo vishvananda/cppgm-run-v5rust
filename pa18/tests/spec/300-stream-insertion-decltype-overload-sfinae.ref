@@ -1,0 +1,6 @@
+declare global @local__is_same_char_char___value : u8 [binding=weak, object=_ZN5local7is_sameIccE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

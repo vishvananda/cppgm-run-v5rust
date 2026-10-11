@@ -1,0 +1,69 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+  slot $p : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    %t1 = addr $x
+    call void @X__X(%t1)
+    %t2 = addr $x
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr @X__add
+    %t5 = copy i64 %t4
+    %t6 = convert zext i128 i64 %t5
+    store typed i128 %t6, $p
+    %t7 = addr $x
+    %t8 = load typed i128 $p
+    %t9 = binary shr i128 %t8, 64
+    %t10 = convert trunc i64 i128 %t9
+    %t11 = convert trunc i64 i128 %t8
+    %t12 = binary and i64 %t11, 1
+    %t13 = cmp ne i64 %t12, 0
+    %t14 = index i8 %t7, %t10
+    branch %t13, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t15 = load typed ptr %t14
+    %t16 = binary sub i64 %t11, 1
+    %t17 = index i8 %t15, %t16
+    %t18 = load typed ptr %t17
+    store typed ptr %t18, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t19 = copy ptr %t11
+    store typed ptr %t19, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t20 = load typed ptr $member_pointer_callee__1
+    %t21 = call i32 %t20(%t14, 4) as (%arg0 : ptr [object_bytes=4], %arg1 : i32) -> i32
+    %t22 = binary sub nowrap i32 %t21, 7
+    return i32 %t22
+}
+function @X__X(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1XC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @X__add(%this : ptr [object_bytes=4], %y : i32) -> i32 [binding=weak, object=_ZN1X3addEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $y : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %y, $y
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 $y
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}
+alias object _ZN1XC2Ev = @X__X

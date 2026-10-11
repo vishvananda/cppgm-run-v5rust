@@ -1,0 +1,24 @@
+#include "300-host-parameter-pack-expansion-symbol-spelling.helper.h"
+
+int X::m(int, char) const { return 0; }
+
+template<template<class...> class Tuple, class... A>
+int count_types(Tuple<A...>) { return sizeof...(A); }
+template<class R, class... A>
+int count_parameters(R (*)(A...)) { return sizeof...(A); }
+template<class R, class C, class... A>
+int count_member_parameters(R (C::*)(A...) const) { return sizeof...(A); }
+template<n::size_type... I>
+int count_indices(indices<I...>) { return sizeof...(I); }
+
+template int count_types(tuple<int, char, long>);
+template int count_parameters(long (*)(int, char));
+template int count_member_parameters(int (X::*)(int, char) const);
+template int count_indices(indices<0, 1, 2, 3>);
+
+int host_counts();
+
+int main()
+{
+  return host_counts() == 3 * 1000 + 2 * 100 + 2 * 10 + 4 ? 0 : 1;
+}

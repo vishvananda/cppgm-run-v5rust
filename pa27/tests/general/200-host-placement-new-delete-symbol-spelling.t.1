@@ -1,0 +1,18 @@
+namespace host_alloc {
+struct Tag {
+  int marker;
+};
+}
+
+void *operator new(unsigned long, const host_alloc::Tag &);
+void operator delete(void *, const host_alloc::Tag &);
+
+int main()
+{
+  host_alloc::Tag tag = {17};
+  void *p = ::operator new(8ul, tag);
+  char *q = (char *)p;
+  q[0] = 0;
+  ::operator delete(p, tag);
+  return p && q[0] == 42 ? 0 : 1;
+}

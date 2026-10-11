@@ -1,0 +1,148 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+sub usage
+{
+	print STDERR "portable rg fallback: unsupported arguments\n";
+	exit 2;
+}
+
+sub parse_args
+{
+	my @argv = @_;
+	my $quiet = 0;
+	my $fixed = 0;
+	my $show_line_numbers = 0;
+	my $max_count;
+	my @files;
+	my $pattern;
+
+	for(my $i = 0; $i < @argv; )
+	{
+		my $arg = $argv[$i];
+		if(defined $pattern)
+		{
+			push @files, $arg;
+			++$i;
+			next;
+		}
+		if($arg eq '--')
+		{
+			++$i;
+			usage() if $i >= @argv;
+			$pattern = $argv[$i++];
+			next;
+		}
+		if($arg !~ /^-/ || $arg eq '-')
+		{
+			$pattern = $arg;
+			++$i;
+			next;
+		}
+		if($arg eq '-q')
+		{
+			$quiet = 1;
+			++$i;
+			next;
+		}
+		if($arg eq '-F')
+		{
+			$fixed = 1;
+			++$i;
+			next;
+		}
+		if($arg eq '-n')
+		{
+			$show_line_numbers = 1;
+			++$i;
+			next;
+		}
+		if($arg =~ /^-m(.+)$/)
+		{
+			$max_count = 0 + $1;
+			++$i;
+			next;
+		}
+		if($arg eq '-m')
+		{
+			++$i;
+			usage() if $i >= @argv;
+			$max_count = 0 + $argv[$i++];
+			next;
+		}
+		if($arg =~ /^-[Fqn]+$/)
+		{
+			$quiet = 1 if index($arg, 'q') >= 0;
+			$fixed = 1 if index($arg, 'F') >= 0;
+			$show_line_numbers = 1 if index($arg, 'n') >= 0;
+			++$i;
+			next;
+		}
+		usage();
+	}
+
+	usage() if !defined $pattern;
+	return ($quiet, $fixed, $show_line_numbers, $max_count, $pattern, @files);
+}
+
+sub line_matches
+{
+	my ($pattern, $fixed, $line) = @_;
+	return index($line, $pattern) >= 0 if $fixed;
+	return $line =~ /$pattern/;
+}
+
+sub search_stream
+{
+	my ($fh, $quiet, $fixed, $show_line_numbers, $max_count, $pattern,
+	    $filename, $multi_file) = @_;
+	my $matches = 0;
+	my $line_number = 0;
+	while(my $line = <$fh>)
+	{
+		++$line_number;
+		next if !line_matches($pattern, $fixed, $line);
+		++$matches;
+		return $matches if $quiet;
+		my $prefix = '';
+		$prefix .= "$filename:" if $multi_file;
+		$prefix .= "$line_number:" if $show_line_numbers;
+		print $prefix, $line;
+		last if defined($max_count) && $matches >= $max_count;
+	}
+	return $matches;
+}
+
+my ($quiet, $fixed, $show_line_numbers, $max_count, $pattern, @files) =
+	parse_args(@ARGV);
+
+my $total_matches = 0;
+if(!@files)
+{
+	$total_matches += search_stream(\*STDIN, $quiet, $fixed,
+		$show_line_numbers, $max_count, $pattern, undef, 0);
+}
+else
+{
+	my $remaining = $max_count;
+	my $multi_file = @files > 1;
+	for my $filename (@files)
+	{
+		open(my $fh, '<', $filename) or die "$filename: $!\n";
+		my $matches = search_stream($fh, $quiet, $fixed,
+			$show_line_numbers, $remaining, $pattern, $filename,
+			$multi_file);
+		close($fh);
+		$total_matches += $matches;
+		exit 0 if $quiet && $total_matches > 0;
+		if(defined $remaining)
+		{
+			$remaining -= $matches;
+			last if $remaining <= 0;
+		}
+	}
+}
+
+exit($total_matches > 0 ? 0 : 1);

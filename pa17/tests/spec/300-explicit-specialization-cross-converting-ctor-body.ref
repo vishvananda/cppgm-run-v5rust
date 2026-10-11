@@ -1,0 +1,78 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<8x8>
+  slot $f : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $d
+    call void @complex_double___complex(%t1, 1.0)
+    %t2 = addr $f
+    %t3 = addr $d
+    call void @complex_float___complex(%t2, %t3)
+    %t4 = addr $f
+    %t5 = call f32 @complex_float___real(%t4)
+    %t6 = cmp eq f32 %t5, 1f
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @complex_double___complex(%this : ptr [object_bytes=8], %re : f64) -> void [binding=weak, object=_ZN7complexIdEC1Ed, inline_hint=yes] {
+  slot $this : ptr
+  slot $re : f64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed f64 %re, $re
+    %t1 = load typed f64 $re
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed f64 %t1, %t3
+    return void
+}
+function @complex_float___complex(%this : ptr [object_bytes=4], %c : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN7complexIfEC1ERKS_IdE, inline_hint=yes] {
+  slot $this : ptr
+  slot $c : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %c, $c
+    %t1 = load typed ptr $c
+    %t2 = call f64 @complex_double___real(%t1)
+    %t3 = convert fptrunc f32 f64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed f32 %t3, %t5
+    return void
+}
+function @complex_float___real(%this : ptr [object_bytes=4]) -> f32 [binding=weak, object=_ZNK7complexIfE4realEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed f32 %t2
+    return f32 %t3
+}
+function @complex_double___real(%this : ptr [object_bytes=8]) -> f64 [binding=weak, object=_ZNK7complexIdE4realEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed f64 %t2
+    return f64 %t3
+}
+alias object _ZN7complexIdEC2Ed = @complex_double___complex
+alias object _ZN7complexIfEC2ERKS_IdE = @complex_float___complex

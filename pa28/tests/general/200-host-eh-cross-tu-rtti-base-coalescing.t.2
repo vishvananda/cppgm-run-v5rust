@@ -1,0 +1,27 @@
+struct BaseError
+{
+  virtual ~BaseError();
+  virtual int tag() const;
+};
+
+struct DerivedError : BaseError
+{
+  DerivedError();
+  ~DerivedError();
+  int tag() const;
+};
+
+BaseError::~BaseError() {}
+
+int BaseError::tag() const
+{
+  return 3;
+}
+
+DerivedError::DerivedError() {}
+DerivedError::~DerivedError() {}
+
+int DerivedError::tag() const
+{
+  return 7;
+}

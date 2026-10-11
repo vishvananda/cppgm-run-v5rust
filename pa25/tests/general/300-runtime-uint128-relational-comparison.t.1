@@ -1,0 +1,35 @@
+typedef __uint128_t U128;
+
+int main()
+{
+  U128 low = 1;
+  U128 high = (U128)18446744073709551615ULL + 1;
+  U128 high_plus = high + 1;
+
+  if(!(low < high)) {
+    return 1;
+  }
+  if(high < low) {
+    return 2;
+  }
+  if(!(high <= high)) {
+    return 3;
+  }
+  if(!(high <= high_plus)) {
+    return 4;
+  }
+  if(!(high_plus > high)) {
+    return 5;
+  }
+  if(high > high_plus) {
+    return 6;
+  }
+  if(!(high_plus >= high_plus)) {
+    return 7;
+  }
+  if(!(high_plus >= high)) {
+    return 8;
+  }
+
+  return 0;
+}

@@ -1,0 +1,30 @@
+#include <fstream>
+#include <iostream>
+#include <string>
+
+static int count_lines(std::istream &in)
+{
+  std::string line;
+  int count = 0;
+  while(std::getline(in, line)) {
+    ++count;
+    if(count > 3) {
+      return 100;
+    }
+  }
+  return count;
+}
+
+int main()
+{
+  std::ofstream seed("/tmp/pa31-730.in");
+  seed << "x\n";
+  seed.close();
+
+  std::ifstream in("/tmp/pa31-730.in");
+  if(!in) {
+    return 11;
+  }
+
+  return count_lines(in) == 1 ? 0 : 1;
+}

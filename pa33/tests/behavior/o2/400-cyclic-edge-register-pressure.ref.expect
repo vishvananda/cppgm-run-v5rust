@@ -1,0 +1,11 @@
+# budget from 400-cyclic-edge-register-pressure.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 40
+blocks <= 10
+count(call) <= 5
+mem <= 14
+instructions <= 5 in @noop
+stack_size <= 32 in @noop
+instructions <= 36 in @probe
+stack_size <= 103 in @probe
+instructions <= 5 in @main
+stack_size <= 32 in @main

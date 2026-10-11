@@ -1,0 +1,12 @@
+# budget from 300-inline-callful-void-wrapper-phi-edge.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 10
+blocks <= 7
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 5 in @wrapper
+instructions <= 8 in @caller
+
+# outcomes from 300-inline-callful-void-wrapper-phi-edge.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @wrapper)

@@ -1,0 +1,101 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<4x4>
+  slot $second : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $first
+    call void @store_int___store(%t1)
+    %t2 = addr $second
+    call void @store_int___store(%t2)
+    %t3 = addr $second
+    %t4 = index i8 %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 11, %t6
+    %t7 = addr $first
+    %t8 = addr $second
+    %t9 = call i32 @store_int___move_from(%t7, %t8)
+    %t10 = cmp eq i32 %t9, 11
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @store_int___store(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5storeIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @allocator_base_int___allocator_base__base_entry(%t2)
+    return void
+}
+function @store_int___move_from(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZN5storeIiE9move_fromERS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr $other
+    %t5 = index i8 %t4, 0
+    %t6 = call ptr @allocator_base_int___get_alloc(%t5)
+    %t7 = call i32 @join_alloc(%t3, %t6)
+    return i32 %t7
+}
+function @allocator_base_int___allocator_base__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN14allocator_baseIiEC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    zeroinit 4x4 %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 7, %t5
+    return void
+}
+function @allocator_base_int___get_alloc(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN14allocator_baseIiE9get_allocEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @join_alloc(%left : ptr [pass=by_address, object_bytes=4], %right : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z10join_allocI13allocator_tagEiRT_S2_] {
+  slot $left : ptr
+  slot $right : ptr
+
+  block ^entry:
+    store typed ptr %left, $left
+    store typed ptr %right, $right
+    %t1 = load typed ptr $right
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $left
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $left
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+alias object _ZN5storeIiEC2Ev = @store_int___store

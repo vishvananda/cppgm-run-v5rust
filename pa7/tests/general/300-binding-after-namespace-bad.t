@@ -1,0 +1,3 @@
+namespace conflict {}
+
+int conflict;

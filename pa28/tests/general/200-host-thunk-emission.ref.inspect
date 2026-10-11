@@ -1,0 +1,4 @@
+defined_symbol_canonical 1 _ZTvn16_n32_N2TD1yEv 1
+defined_symbol_canonical 1 _ZTv0_n24_N2C12f0Ev 1
+undefined_symbol_canonical 1 _ZThn16_N2S32f2Ev 1
+absent_defined_symbol_canonical 1 _ZThn16_N2S32f2Ev 0

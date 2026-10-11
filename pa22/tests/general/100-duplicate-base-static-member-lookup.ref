@@ -1,0 +1,49 @@
+global @Base__value : i32 [binding=strong, object=_ZN4Base5valueE] = 21
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $zero : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $zero
+    %t1 = call i32 @Base__read()
+    %t2 = load typed i32 @Base__value
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @Base__width()
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @Base__Nested_char___width()
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = load typed i32 $zero
+    %t9 = binary add nowrap i32 %t7, %t8
+    %t10 = cmp eq i32 %t9, 44
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @Base__read() -> i32 [binding=weak, object=_ZN4Base4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @Base__value
+    return i32 %t1
+}
+function @Base__width() -> i32 [binding=weak, object=_ZN4Base5widthIcEEiv, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @Base__Nested_char___width() -> i32 [binding=weak, object=_ZN4Base6NestedIcE5widthEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

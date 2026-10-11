@@ -1,0 +1,43 @@
+typedef unsigned long size_t;
+
+void *operator new(size_t, void *p)
+{
+  return p;
+}
+
+template<class T>
+struct Base
+{
+  virtual ~Base() {}
+  virtual int value() { return 1; }
+};
+
+template<class T>
+struct Derived : Base<T>
+{
+  int n;
+
+  explicit Derived(int in) : n(in) {}
+  virtual ~Derived() {}
+  int value() { return n; }
+};
+
+char storage_p[sizeof(Derived<int *>)];
+char storage_r[sizeof(Derived<int &>)];
+
+Base<int *> *make_p()
+{
+  return new (storage_p) Derived<int *>(3);
+}
+
+Base<int &> *make_r()
+{
+  return new (storage_r) Derived<int &>(4);
+}
+
+int main()
+{
+  Base<int *> *p = make_p();
+  Base<int &> *r = make_r();
+  return p->value() == 3 && r->value() == 4 ? 0 : 1;
+}

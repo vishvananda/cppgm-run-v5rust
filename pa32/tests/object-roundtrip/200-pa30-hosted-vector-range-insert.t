@@ -1,0 +1,1 @@
+../../../pa30/tests/compile/700-hosted-vector-range-insert-compile.t

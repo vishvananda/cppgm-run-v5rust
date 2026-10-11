@@ -1,0 +1,28 @@
+global @data [binding=internal, object=_ZL4data] = {
+  i8 49
+  i8 10
+  i8 0
+}
+global @p : ptr [binding=internal, object=_ZL1p] = addr @data
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @p
+    %t2 = addr @data
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

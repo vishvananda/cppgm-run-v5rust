@@ -1,0 +1,7 @@
+declare global @pick_48271_0___value : i64 [binding=weak, object=_ZN4pickILy48271ELy0EE5valueE]
+declare global @engine_unsignedint_48271_0___value : i64 [binding=weak, object=_ZN6engineIjLj48271ELj0EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

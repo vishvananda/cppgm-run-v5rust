@@ -1,0 +1,7 @@
+declare global @classification___cppgm_class_template_identity_1___value : i32 [binding=weak, object=_ZN14classificationI15dependent_valueIiLi0EEE5valueE]
+declare global @classification___cppgm_class_template_identity_2___value : i32 [binding=weak, object=_ZN14classificationI9type_pairIiiEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

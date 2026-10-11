@@ -1,0 +1,7 @@
+#include "200-host-external-vbase-reference-field.helper.h"
+
+int main()
+{
+  Holder holder(host_stream());
+  return holder.read() == 77 ? 0 : 1;
+}

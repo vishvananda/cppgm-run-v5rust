@@ -1,0 +1,6 @@
+weak_symbol 1 _ZN4PolyC1Ev
+weak_symbol 1 _ZN4PolyD1Ev
+weak_symbol 1 _ZTV4Poly
+weak_symbol 2 _ZN4PolyC1Ev
+weak_symbol 2 _ZN4PolyD1Ev
+weak_symbol 2 _ZTV4Poly

@@ -1,0 +1,135 @@
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+declare function @operatordelete__(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete_array]
+
+global @live : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $array_new_index__1 : i64
+  slot $array_dtor_index__2 : i64
+  slot $count : i32
+  slot $array_delete_index__3 : i64
+  slot $lor__4 : i64
+
+  block ^entry:
+    %t1 = call ptr @operatornew__(12)
+    %t2 = index i8 %t1, 8
+    %t3 = const i64 4
+    store typed i64 %t3, %t1
+    %t4 = const i64 4
+    store typed i64 0, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_cond_1:
+    %t5 = load typed i64 $array_new_index__1
+    %t6 = cmp ult i64 %t5, %t4
+    branch %t6, ^array_new_ctor_body_2, ^array_new_ctor_end_3
+
+  block ^array_new_ctor_body_2:
+    %t7 = binary mul i64 %t5, 1
+    %t8 = index i8 %t2, %t7
+    eh_try ^array_new_ctor_cleanup_4
+    call void @X__X(%t8)
+    eh_end
+    %t9 = binary add i64 %t5, 1
+    store typed i64 %t9, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_end_3:
+    jump ^array_new_ctor_cont_5
+
+  block ^array_new_ctor_cleanup_4:
+    %t10 = load typed i64 $array_new_index__1
+    store typed i64 %t10, $array_dtor_index__2
+    jump ^array_dtor_cond_6
+
+  block ^array_dtor_cond_6:
+    %t11 = load typed i64 $array_dtor_index__2
+    %t12 = cmp ne i64 %t11, 0
+    branch %t12, ^array_dtor_body_7, ^array_dtor_end_8
+
+  block ^array_dtor_body_7:
+    %t13 = binary sub i64 %t11, 1
+    store typed i64 %t13, $array_dtor_index__2
+    %t14 = binary mul i64 %t13, 1
+    %t15 = index i8 %t2, %t14
+    call void @X___X(%t15)
+    jump ^array_dtor_cond_6
+
+  block ^array_dtor_end_8:
+    call void @operatordelete__(%t1)
+    resume
+
+  block ^array_new_ctor_cont_5:
+    store typed ptr %t2, $p
+    %t16 = load typed i32 @live
+    store typed i32 %t16, $count
+    %t17 = load typed ptr $p
+    %t18 = cmp ne ptr %t17, 0
+    branch %t18, ^array_delete_nonnull_9, ^array_delete_end_10
+
+  block ^array_delete_nonnull_9:
+    %t19 = index i8 %t17, -8
+    %t20 = load typed i64 %t19
+    store typed i64 %t20, $array_delete_index__3
+    jump ^array_delete_dtor_cond_11
+
+  block ^array_delete_dtor_cond_11:
+    %t21 = load typed i64 $array_delete_index__3
+    %t22 = cmp ne i64 %t21, 0
+    branch %t22, ^array_delete_dtor_body_12, ^array_delete_dtor_end_13
+
+  block ^array_delete_dtor_body_12:
+    %t23 = binary sub i64 %t21, 1
+    store typed i64 %t23, $array_delete_index__3
+    %t24 = binary mul i64 %t23, 1
+    %t25 = index i8 %t17, %t24
+    call void @X___X(%t25)
+    jump ^array_delete_dtor_cond_11
+
+  block ^array_delete_dtor_end_13:
+    call void @operatordelete__(%t19)
+    jump ^array_delete_end_10
+
+  block ^array_delete_end_10:
+    %t26 = load typed i32 $count
+    %t27 = cmp ne i32 %t26, 4
+    branch %t27, ^lor_short_15, ^lor_rhs_14
+
+  block ^lor_rhs_14:
+    %t28 = load typed i32 @live
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $lor__4
+    jump ^lor_end_16
+
+  block ^lor_short_15:
+    store typed i64 1, $lor__4
+    jump ^lor_end_16
+
+  block ^lor_end_16:
+    %t30 = load typed i64 $lor__4
+    %t31 = convert trunc i32 i64 %t30
+    return i32 %t31
+}
+function @X__X(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1XC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @X___X(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1XD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+alias object _ZN1XC2Ev = @X__X
+alias object _ZN1XD2Ev = @X___X

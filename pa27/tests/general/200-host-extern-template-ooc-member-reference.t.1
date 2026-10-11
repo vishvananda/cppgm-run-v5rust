@@ -1,0 +1,30 @@
+template<class T>
+struct Box {
+  ~Box();
+  int out();
+  __attribute__((noinline)) int in() { return 4; }
+};
+
+template<class T>
+Box<T>::~Box()
+{
+}
+
+template<class T>
+int Box<T>::out()
+{
+  return 1;
+}
+
+extern template struct Box<int>;
+
+void destroy(Box<int> * value)
+{
+  value->~Box();
+}
+
+int main()
+{
+  Box<int> box;
+  return box.out() == 9 && box.in() == 4 ? 0 : 1;
+}

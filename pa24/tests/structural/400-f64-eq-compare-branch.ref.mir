@@ -1,0 +1,29 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fcmp.f64 3.0, 3.0
+    jp ^bad
+    je ^ok
+    jmp ^bad
+
+  block ^bad
+    mov rax, 1
+    ret rax
+
+  block ^ok
+    mov rax, 0
+    ret rax

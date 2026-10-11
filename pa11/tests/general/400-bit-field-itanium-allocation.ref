@@ -1,0 +1,389 @@
+function @byte_at(%object : ptr, %index : i32) -> u8 [binding=strong, object=_Z7byte_atPKvi] {
+  slot $object : ptr
+  slot $index : i32
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i32 %index, $index
+    %t1 = load typed ptr $object
+    %t2 = load typed i32 $index
+    %t3 = index u8 [projection=array_element] %t1, %t2
+    %t4 = load u8 %t3
+    return u8 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $mixed : obj<8x8>
+  slot $signs : obj<4x4>
+  slot $after : obj<4x4>
+  slot $before : obj<4x4>
+  slot $straddle : obj<8x4>
+  slot $zero : obj<9x1>
+  slot $unnamed : obj<3x1>
+
+  block ^entry:
+    %t1 = const i64 8
+    %t2 = convert sext i64 i32 8
+    %t3 = cmp ne i64 %t1, %t2
+    branch %t3, ^if_then_1, ^lor_rhs_8
+
+  block ^lor_rhs_8:
+    %t4 = const i64 4
+    %t5 = convert sext i64 i32 4
+    %t6 = cmp ne i64 %t4, %t5
+    branch %t6, ^if_then_1, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t7 = const i64 4
+    %t8 = convert sext i64 i32 4
+    %t9 = cmp ne i64 %t7, %t8
+    branch %t9, ^if_then_1, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t10 = const i64 4
+    %t11 = convert sext i64 i32 4
+    %t12 = cmp ne i64 %t10, %t11
+    branch %t12, ^if_then_1, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    %t13 = const i64 8
+    %t14 = convert sext i64 i32 8
+    %t15 = cmp ne i64 %t13, %t14
+    branch %t15, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t16 = const i64 9
+    %t17 = convert sext i64 i32 9
+    %t18 = cmp ne i64 %t16, %t17
+    branch %t18, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t19 = const i64 3
+    %t20 = convert sext i64 i32 3
+    %t21 = cmp ne i64 %t19, %t20
+    branch %t21, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t22 = addr $mixed
+    %t23 = addr $mixed
+    %t24 = index i8 [projection=field] %t23, 0
+    %t25 = binary and i64 7, 0
+    store i64 %t25, %t24
+    %t26 = addr $mixed
+    %t27 = index i8 [projection=field] %t26, 0
+    %t28 = binary and i64 1, 0
+    %t29 = binary shl i64 %t28, 3
+    %t30 = load i64 %t27
+    %t31 = binary and i64 %t30, -9
+    %t32 = binary or i64 %t31, %t29
+    store i64 %t32, %t27
+    %t33 = addr $mixed
+    %t34 = index i8 [projection=field] %t33, 0
+    %t35 = unary neg i32 3
+    %t36 = convert sext i64 i32 %t35
+    %t37 = binary and i64 %t36, 7
+    %t38 = binary shl i64 %t37, 61
+    %t39 = binary shr i64 %t38, 61
+    %t40 = load i64 %t34
+    %t41 = binary and i64 %t40, -8
+    %t42 = binary or i64 %t41, %t37
+    store i64 %t42, %t34
+    %t43 = addr $mixed
+    %t44 = index i8 [projection=field] %t43, 0
+    %t45 = binary and i64 1, 1
+    %t46 = convert trunc u8 i64 %t45
+    %t47 = binary shl i64 %t45, 3
+    %t48 = load i64 %t44
+    %t49 = binary and i64 %t48, -9
+    %t50 = binary or i64 %t49, %t47
+    store i64 %t50, %t44
+    %t51 = addr $mixed
+    %t52 = index i8 [projection=field] %t51, 0
+    %t53 = load i64 %t52
+    %t54 = binary and i64 %t53, 7
+    %t55 = binary shl i64 %t54, 61
+    %t56 = binary shr i64 %t55, 61
+    %t57 = unary neg i32 3
+    %t58 = convert trunc i32 i64 %t56
+    %t59 = cmp ne i32 %t58, %t57
+    branch %t59, ^if_then_10, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t60 = addr $mixed
+    %t61 = index i8 [projection=field] %t60, 0
+    %t62 = load i64 %t61
+    %t63 = binary ushr i64 %t62, 3
+    %t64 = binary and i64 %t63, 1
+    %t65 = convert trunc u8 i64 %t64
+    %t66 = cmp eq u8 %t65, 0
+    branch %t66, ^if_then_10, ^lor_rhs_12
+
+  block ^lor_rhs_12:
+    %t67 = addr $mixed
+    %t68 = call u8 @byte_at(%t67, 0)
+    %t69 = convert zext i32 u8 %t68
+    %t70 = cmp ne i32 %t69, 13
+    branch %t70, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 2
+
+  block ^if_else_11:
+    jump ^if_end_14
+
+  block ^if_end_14:
+    %t71 = addr $signs
+    %t72 = addr $signs
+    %t73 = index i8 [projection=field] %t72, 0
+    %t74 = binary and u32 3, 3
+    store u32 %t74, %t73
+    %t75 = unary neg i32 2
+    %t76 = addr $signs
+    %t77 = index i8 [projection=field] %t76, 0
+    %t78 = binary and i32 7, %t75
+    %t79 = binary shl i32 %t78, 2
+    %t80 = load i32 %t77
+    %t81 = binary and i32 %t80, -29
+    %t82 = binary or i32 %t81, %t79
+    store i32 %t82, %t77
+    %t83 = addr $signs
+    %t84 = index i8 [projection=field] %t83, 0
+    %t85 = binary and i32 1, 1
+    %t86 = binary shl i32 %t85, 5
+    %t87 = load i32 %t84
+    %t88 = binary and i32 %t87, -33
+    %t89 = binary or i32 %t88, %t86
+    store i32 %t89, %t84
+    %t90 = addr $signs
+    %t91 = index i8 [projection=field] %t90, 0
+    %t92 = load i32 %t91
+    %t93 = binary and i32 %t92, 3
+    %t94 = copy u32 %t93
+    %t95 = copy i32 %t94
+    %t96 = cmp ne i32 %t95, 3
+    branch %t96, ^if_then_15, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t97 = addr $signs
+    %t98 = index i8 [projection=field] %t97, 0
+    %t99 = load i32 %t98
+    %t100 = binary shr i32 %t99, 2
+    %t101 = binary and i32 %t100, 7
+    %t102 = binary shl i32 %t101, 29
+    %t103 = binary shr i32 %t102, 29
+    %t104 = unary neg i32 2
+    %t105 = cmp ne i32 %t103, %t104
+    branch %t105, ^if_then_15, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t106 = addr $signs
+    %t107 = index i8 [projection=field] %t106, 0
+    %t108 = load i32 %t107
+    %t109 = binary shr i32 %t108, 5
+    %t110 = binary and i32 %t109, 1
+    %t111 = convert trunc u8 i32 %t110
+    %t112 = cmp eq u8 %t111, 0
+    branch %t112, ^if_then_15, ^lor_rhs_17
+
+  block ^lor_rhs_17:
+    %t113 = addr $signs
+    %t114 = call u8 @byte_at(%t113, 0)
+    %t115 = convert zext i32 u8 %t114
+    %t116 = cmp ne i32 %t115, 59
+    branch %t116, ^if_then_15, ^if_else_16
+
+  block ^if_then_15:
+    return i32 3
+
+  block ^if_else_16:
+    jump ^if_end_20
+
+  block ^if_end_20:
+    %t117 = addr $after
+    %t118 = addr $after
+    %t119 = index i8 [projection=field] %t118, 0
+    store i8 85, %t119
+    %t120 = addr $after
+    %t121 = index i8 [projection=field] %t120, 1
+    %t122 = binary and i8 5, 15
+    %t123 = binary shl i8 %t122, 4
+    %t124 = binary shr i8 %t123, 4
+    %t125 = convert sext i32 i8 %t124
+    %t126 = load i8 %t121
+    %t127 = binary and i8 %t126, -16
+    %t128 = binary or i8 %t127, %t122
+    store i8 %t128, %t121
+    %t129 = addr $after
+    %t130 = call u8 @byte_at(%t129, 0)
+    %t131 = convert zext i32 u8 %t130
+    %t132 = cmp ne i32 %t131, 85
+    branch %t132, ^if_then_21, ^lor_rhs_23
+
+  block ^lor_rhs_23:
+    %t133 = addr $after
+    %t134 = call u8 @byte_at(%t133, 1)
+    %t135 = convert zext i32 u8 %t134
+    %t136 = binary and i32 %t135, 15
+    %t137 = cmp ne i32 %t136, 5
+    branch %t137, ^if_then_21, ^if_else_22
+
+  block ^if_then_21:
+    return i32 4
+
+  block ^if_else_22:
+    jump ^if_end_24
+
+  block ^if_end_24:
+    %t138 = addr $before
+    %t139 = addr $before
+    %t140 = index i8 [projection=field] %t139, 0
+    %t141 = binary and i8 6, 15
+    %t142 = binary shl i8 %t141, 4
+    %t143 = binary shr i8 %t142, 4
+    %t144 = convert sext i32 i8 %t143
+    %t145 = load i8 %t140
+    %t146 = binary and i8 %t145, -16
+    %t147 = binary or i8 %t146, %t141
+    store i8 %t147, %t140
+    %t148 = addr $before
+    %t149 = index i8 [projection=field] %t148, 1
+    store i8 102, %t149
+    %t150 = addr $before
+    %t151 = call u8 @byte_at(%t150, 0)
+    %t152 = convert zext i32 u8 %t151
+    %t153 = binary and i32 %t152, 15
+    %t154 = cmp ne i32 %t153, 6
+    branch %t154, ^if_then_25, ^lor_rhs_27
+
+  block ^lor_rhs_27:
+    %t155 = addr $before
+    %t156 = call u8 @byte_at(%t155, 1)
+    %t157 = convert zext i32 u8 %t156
+    %t158 = cmp ne i32 %t157, 102
+    branch %t158, ^if_then_25, ^if_else_26
+
+  block ^if_then_25:
+    return i32 5
+
+  block ^if_else_26:
+    jump ^if_end_28
+
+  block ^if_end_28:
+    %t159 = addr $straddle
+    %t160 = addr $straddle
+    %t161 = index i8 [projection=field] %t160, 0
+    store i8 1, %t161
+    %t162 = addr $straddle
+    %t163 = index i8 [projection=field] %t162, 0
+    %t164 = binary and i32 74565, 1048575
+    %t165 = binary shl i32 %t164, 12
+    %t166 = binary shr i32 %t165, 12
+    %t167 = binary shl i32 %t164, 8
+    %t168 = load i32 %t163
+    %t169 = binary and i32 %t168, -268435201
+    %t170 = binary or i32 %t169, %t167
+    store i32 %t170, %t163
+    %t171 = addr $straddle
+    %t172 = index i8 [projection=field] %t171, 4
+    store i8 2, %t172
+    %t173 = addr $straddle
+    %t174 = index i8 [projection=field] %t173, 0
+    %t175 = load i32 %t174
+    %t176 = binary shr i32 %t175, 8
+    %t177 = binary and i32 %t176, 1048575
+    %t178 = binary shl i32 %t177, 12
+    %t179 = binary shr i32 %t178, 12
+    %t180 = cmp ne i32 %t179, 74565
+    branch %t180, ^if_then_29, ^lor_rhs_32
+
+  block ^lor_rhs_32:
+    %t181 = addr $straddle
+    %t182 = call u8 @byte_at(%t181, 1)
+    %t183 = convert zext i32 u8 %t182
+    %t184 = cmp ne i32 %t183, 69
+    branch %t184, ^if_then_29, ^lor_rhs_31
+
+  block ^lor_rhs_31:
+    %t185 = addr $straddle
+    %t186 = call u8 @byte_at(%t185, 4)
+    %t187 = convert zext i32 u8 %t186
+    %t188 = cmp ne i32 %t187, 2
+    branch %t188, ^if_then_29, ^if_else_30
+
+  block ^if_then_29:
+    return i32 6
+
+  block ^if_else_30:
+    jump ^if_end_33
+
+  block ^if_end_33:
+    %t189 = addr $zero
+    %t190 = convert trunc u8 i32 5
+    %t191 = addr $zero
+    %t192 = index i8 [projection=field] %t191, 0
+    %t193 = binary and u8 7, %t190
+    store u8 %t193, %t192
+    %t194 = convert trunc u8 i32 6
+    %t195 = addr $zero
+    %t196 = index i8 [projection=field] %t195, 8
+    %t197 = binary and u8 7, %t194
+    store u8 %t197, %t196
+    %t198 = addr $zero
+    %t199 = index i8 [projection=field] %t198, 0
+    %t200 = load u8 %t199
+    %t201 = binary and u8 %t200, 7
+    %t202 = convert zext i32 u8 %t201
+    %t203 = cmp ne i32 %t202, 5
+    branch %t203, ^if_then_34, ^lor_rhs_37
+
+  block ^lor_rhs_37:
+    %t204 = addr $zero
+    %t205 = index i8 [projection=field] %t204, 8
+    %t206 = load u8 %t205
+    %t207 = binary and u8 %t206, 7
+    %t208 = convert zext i32 u8 %t207
+    %t209 = cmp ne i32 %t208, 6
+    branch %t209, ^if_then_34, ^lor_rhs_36
+
+  block ^lor_rhs_36:
+    %t210 = addr $zero
+    %t211 = call u8 @byte_at(%t210, 8)
+    %t212 = convert zext i32 u8 %t211
+    %t213 = binary and i32 %t212, 7
+    %t214 = cmp ne i32 %t213, 6
+    branch %t214, ^if_then_34, ^if_else_35
+
+  block ^if_then_34:
+    return i32 7
+
+  block ^if_else_35:
+    jump ^if_end_38
+
+  block ^if_end_38:
+    %t215 = addr $unnamed
+    %t216 = addr $unnamed
+    %t217 = index i8 [projection=field] %t216, 0
+    store i8 7, %t217
+    %t218 = addr $unnamed
+    %t219 = index i8 [projection=field] %t218, 2
+    store i8 8, %t219
+    %t220 = addr $unnamed
+    %t221 = call u8 @byte_at(%t220, 2)
+    %t222 = convert zext i32 u8 %t221
+    %t223 = cmp ne i32 %t222, 8
+    branch %t223, ^if_then_39, ^if_else_40
+
+  block ^if_then_39:
+    return i32 8
+
+  block ^if_else_40:
+    jump ^if_end_41
+
+  block ^if_end_41:
+    return i32 0
+}

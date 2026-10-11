@@ -1,0 +1,40 @@
+declare function @Box__Box__ov2(%arg0 : ptr [object_bytes=4], %arg1 : i32, %arg2 : ptr, %arg3 : i32) -> void [binding=strong, object=_ZN3BoxC1EiPKci]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<1x1>
+  slot $box : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $box
+    %t3 = addr $source
+    call void @Box__Box__ov3(%t2, %t3)
+    return i32 0
+}
+function @Box__Box__ov3(%this : ptr [object_bytes=4], %source : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN3BoxC1ERK6Source, inline_hint=yes] {
+  slot $this : ptr
+  slot $source : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %source, $source
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $source
+    %t3 = call ptr @Source__c_str(%t2)
+    call void @Box__Box__ov2(%t1, 1, %t3, 2)
+    return void
+}
+function @Source__c_str(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZNK6Source5c_strEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @__strlit__1
+    return ptr %t1
+}
+alias object _ZN3BoxC2ERK6Source = @Box__Box__ov3

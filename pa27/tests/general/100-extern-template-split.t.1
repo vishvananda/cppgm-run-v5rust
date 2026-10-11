@@ -1,0 +1,8 @@
+#include "100-extern-template-split.helper.h"
+
+template int extern_template_add<int>(int);
+
+int one()
+{
+  return extern_template_add<int>(10);
+}

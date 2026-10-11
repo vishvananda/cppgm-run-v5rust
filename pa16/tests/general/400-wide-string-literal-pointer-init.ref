@@ -1,0 +1,11 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i32 97
+  i32 98
+  i32 0
+}
+global @wide : ptr [binding=strong] = addr @__strlit__1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

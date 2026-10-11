@@ -1,0 +1,7 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $box
+    return i32 0
+}

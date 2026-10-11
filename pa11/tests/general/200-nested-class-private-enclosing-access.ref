@@ -1,0 +1,20 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $d
+    %t2 = addr $d
+    %t3 = call i32 @B__D__f(%t2)
+    return i32 %t3
+}
+function @B__D__f(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN1B1D1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    return i32 0
+}

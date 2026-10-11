@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_TYPENAME:typename
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:T
+      declarator
+        identifier f
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              identifier x
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:T
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier y
+end translation unit

@@ -1,0 +1,63 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<8x8>
+
+  block ^entry:
+    store volatile i32 4, $value
+    %t1 = addr $tmpobj__2
+    %t2 = addr $value
+    %t3 = call obj<8x8> @cref_like(%t2)
+    copyobj 8x8 %t3, %t1
+    %t4 = call ptr @ref_view_constvolatileint___get(%t1)
+    %t5 = addr $value
+    %t6 = cmp eq ptr %t4, %t5
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @cref_like(%value : ptr [pass=by_address, object_bytes=4]) -> obj<8x8> [binding=weak, object=_Z9cref_likeIViE8ref_viewIKT_ERS3_] {
+  slot $value : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $value
+    call void @ref_view_constvolatileint___ref_view(%t1, %t2)
+    return obj<8x8> $retobj__1
+}
+function @ref_view_constvolatileint___get(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK8ref_viewIVKiE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+function @ref_view_constvolatileint___ref_view(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN8ref_viewIVKiEC1ERS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN8ref_viewIVKiEC2ERS0_ = @ref_view_constvolatileint___ref_view

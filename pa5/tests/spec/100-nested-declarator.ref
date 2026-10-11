@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier fp
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+end translation unit

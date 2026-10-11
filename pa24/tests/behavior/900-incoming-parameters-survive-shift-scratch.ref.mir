@@ -1,0 +1,52 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @encode
+  abi
+    param %this -> rdi : ptr
+    param %mode -> rsi : u32
+    param %reg -> rdx : u32
+    param %rm -> rcx : u32
+    return u32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    shl rsi, 6
+    zext.i32 rsi
+    and rdx, 7
+    shl rdx, 3
+    zext.i32 rdx
+    or rsi, rdx
+    and rcx, 7
+    or rsi, rcx
+    ret rsi
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 0
+    mov rsi, 3
+    mov rdx, 2
+    mov rcx, 5
+    call @encode [args=(rcx,rdx,rsi,rdi)]
+    zext.i32 rax
+    mov rdx, 213
+    cmp.u32 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

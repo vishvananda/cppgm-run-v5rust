@@ -1,0 +1,11 @@
+int g = 7;
+
+int * address_of_g()
+{
+  return &g;
+}
+
+int main()
+{
+  return *address_of_g() == 7 ? 0 : 1;
+}

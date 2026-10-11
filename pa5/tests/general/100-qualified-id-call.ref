@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression N::f
+          argument-list
+      expression-statement
+        call-expression
+          id-expression ::g
+          argument-list
+end translation unit

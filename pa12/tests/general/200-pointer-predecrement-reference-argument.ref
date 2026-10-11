@@ -1,0 +1,153 @@
+function @current(%it : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_Z7currentRP4cell] {
+  slot $it : ptr
+
+  block ^entry:
+    store typed ptr %it, $it
+    %t1 = load typed ptr $it
+    %t2 = load typed ptr %t1
+    return ptr %t2
+}
+function @copy_backward_like(%first : ptr, %last : ptr, %result : ptr) -> void [binding=strong, object=_Z18copy_backward_likeP4cellS0_S0_] {
+  slot $first : ptr
+  slot $last : ptr
+  slot $result : ptr
+  slot $last_iter : ptr
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    store typed ptr %result, $result
+    %t1 = load typed ptr $last
+    store typed ptr %t1, $last_iter
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t2 = load typed ptr $first
+    %t3 = load typed ptr $last_iter
+    %t4 = cmp ne ptr %t2, %t3
+    branch %t4, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t5 = load typed ptr $result
+    %t6 = binary mul i64 1, 8
+    %t7 = binary sub i64 0, %t6
+    %t8 = index i8 %t5, %t7
+    store typed ptr %t8, $result
+    %t9 = load typed ptr $last_iter
+    %t10 = binary mul i64 1, 8
+    %t11 = binary sub i64 0, %t10
+    %t12 = index i8 %t9, %t11
+    store typed ptr %t12, $last_iter
+    %t13 = addr $last_iter
+    %t14 = call ptr @current(%t13)
+    %t15 = call ptr @cell__operator_(%t8, %t14)
+    jump ^while_cond_1
+
+  block ^while_end_3:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data : obj<32x4>
+  slot $p : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $data
+    call void @cell__cell__aggregate(%t1, 1, 1)
+    %t2 = index i8 %t1, 8
+    call void @cell__cell__aggregate(%t2, 2, 2)
+    %t3 = index i8 %t1, 16
+    call void @cell__cell__aggregate(%t3, 3, 4)
+    %t4 = index i8 %t1, 24
+    call void @cell__cell__aggregate(%t4, 5, 5)
+    %t5 = addr $data
+    %t6 = binary mul i64 1, 8
+    %t7 = index i8 %t5, %t6
+    %t8 = addr $data
+    %t9 = binary mul i64 4, 8
+    %t10 = index i8 %t8, %t9
+    %t11 = addr $data
+    %t12 = binary mul i64 4, 8
+    %t13 = index i8 %t11, %t12
+    call void @copy_backward_like(%t7, %t10, %t13)
+    %t14 = addr $data
+    %t15 = binary mul i64 1, 8
+    %t16 = index i8 %t14, %t15
+    store typed ptr %t16, $p
+    %t17 = load typed ptr $p
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = load typed i32 %t18
+    %t20 = cmp eq i32 %t19, 2
+    branch %t20, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t21 = load typed ptr $p
+    %t22 = index i8 [projection=field] %t21, 4
+    %t23 = load typed i32 %t22
+    %t24 = cmp eq i32 %t23, 2
+    %t25 = cmp ne i64 %t24, 0
+    store typed i64 %t25, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t26 = load typed i64 $land__2
+    branch %t26, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t27 = load typed i32 $cond__1
+    return i32 %t27
+}
+function @cell__cell__aggregate(%this : ptr [object_bytes=8], %first : i32, %second : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $first : i32
+  slot $second : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %first, $first
+    store typed i32 %second, $second
+    %t1 = load typed i32 $first
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $second
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+function @cell__operator_(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN4cellaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $other
+    %t7 = index i8 [projection=field] %t6, 4
+    %t8 = load typed i32 %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 4
+    store typed i32 %t8, %t10
+    %t11 = load typed ptr $this
+    return ptr %t11
+}

@@ -1,0 +1,36 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<1x1>
+  slot $refarg__1 : i32
+  slot $refarg__2 : i32
+  slot $refarg__3 : i32
+  slot $refarg__4 : ptr
+
+  block ^entry:
+    %t1 = addr $v
+    store typed i32 1, $refarg__1
+    %t2 = addr $refarg__1
+    store typed i32 2, $refarg__2
+    %t3 = addr $refarg__2
+    store typed i32 3, $refarg__3
+    %t4 = addr $refarg__3
+    store typed ptr 0, $refarg__4
+    %t5 = addr $refarg__4
+    call void @vector_int_int_int_constchar____vector(%t1, %t2, %t3, %t4, %t5)
+    return i32 0
+}
+function @vector_int_int_int_constchar____vector(%this : ptr [object_bytes=1], %u : ptr [pass=by_address, object_bytes=4], %u__pack2 : ptr [pass=by_address, object_bytes=4], %u__pack3 : ptr [pass=by_address, object_bytes=4], %u__pack4 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN6vectorIJiiiPKcEEC1IJiiiS1_EvEEDpOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $u : ptr
+  slot $u__pack2 : ptr
+  slot $u__pack3 : ptr
+  slot $u__pack4 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %u, $u
+    store typed ptr %u__pack2, $u__pack2
+    store typed ptr %u__pack3, $u__pack3
+    store typed ptr %u__pack4, $u__pack4
+    return void
+}
+alias object _ZN6vectorIJiiiPKcEEC2IJiiiS1_EvEEDpOT_ = @vector_int_int_int_constchar____vector

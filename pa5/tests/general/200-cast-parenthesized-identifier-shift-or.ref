@@ -1,0 +1,44 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_LONG:long
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier dev_t
+  function-definition
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:dev_t
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier y
+    compound-statement
+      return-statement
+        cast-expression OP_LPAREN:
+          type-id
+            type-specifier-seq
+              type-name dev_t
+          parenthesized-expression
+            binary-expression OP_BOR:|
+              parenthesized-expression
+                binary-expression OP_LSHIFT:<<
+                  parenthesized-expression
+                    id-expression x
+                  literal 24
+              parenthesized-expression
+                id-expression y
+end translation unit

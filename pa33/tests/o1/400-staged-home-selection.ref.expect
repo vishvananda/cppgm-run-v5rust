@@ -1,0 +1,17 @@
+# budget from 400-staged-home-selection.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 160
+blocks <= 25
+count(call) <= 13
+mem <= 53
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 25 in @copy_to_edge_home
+stack_size <= 80 in @copy_to_edge_home
+instructions <= 26 in @call_result_to_edge_home
+stack_size <= 80 in @call_result_to_edge_home
+instructions <= 54 in @load_with_dead_address
+stack_size <= 128 in @load_with_dead_address
+instructions <= 24 in @load_with_live_address
+stack_size <= 64 in @load_with_live_address
+instructions <= 35 in @main
+stack_size <= 68 in @main

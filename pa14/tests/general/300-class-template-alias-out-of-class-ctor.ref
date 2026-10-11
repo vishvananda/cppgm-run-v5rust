@@ -1,0 +1,34 @@
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $b : obj<4x4>
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr $b
+    store typed i32 7, $refarg__1
+    %t2 = addr $refarg__1
+    call void @Box_int___Box(%t1, %t2)
+    %t3 = addr $b
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}
+function @Box_int___Box(%this : ptr [object_bytes=4], %x : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN3BoxIiEC1ERKi] {
+  slot $this : ptr
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = load typed i32 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+alias object _ZN3BoxIiEC2ERKi = @Box_int___Box

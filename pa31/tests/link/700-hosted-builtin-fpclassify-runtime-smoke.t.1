@@ -1,0 +1,9 @@
+int main()
+{
+  int zero = __builtin_fpclassify(11, 12, 13, 14, 15, 0.0);
+  int normal_float = __builtin_fpclassify(21, 22, 23, 24, 25, 1.0f);
+  int normal_long_double = __builtin_fpclassify(31, 32, 33, 34, 35, 1.0L);
+  return zero == 15 &&
+         normal_float == 23 &&
+         normal_long_double == 33 ? 0 : 1;
+}

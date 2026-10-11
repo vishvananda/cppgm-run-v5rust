@@ -1,0 +1,5 @@
+preproc 1
+sof tests/preproc/400-has-feature-deleted-functions.t
+identifier feature_on
+identifier extension_on
+eof

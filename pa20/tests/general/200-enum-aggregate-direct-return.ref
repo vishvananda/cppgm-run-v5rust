@@ -1,0 +1,11 @@
+function @make_one_enum() -> obj<4x4> [binding=strong, object=_Z13make_one_enumv] {
+  slot $out : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $out
+    %t2 = addr $retobj__1
+    %t3 = addr $out
+    copyobj 4x4 %t3, %t2
+    return obj<4x4> $retobj__1
+}

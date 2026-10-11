@@ -1,0 +1,56 @@
+function @read(%h : ptr) -> i32 [binding=strong, object=_Z4readP6Hidden] {
+  slot $h : ptr
+
+  block ^entry:
+    store typed ptr %h, $h
+    %t1 = load typed ptr $h
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $o : obj<8x8>
+  slot $h : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $o
+    %t2 = addr $h
+    %t3 = addr $h
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 4, %t4
+    %t5 = addr $o
+    %t6 = addr $h
+    call void @Outer__set(%t5, %t6)
+    %t7 = addr $o
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed ptr %t8
+    %t10 = call i32 @read(%t9)
+    %t11 = cmp eq i32 %t10, 4
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @Outer__set(%this : ptr [object_bytes=8], %q : ptr) -> void [binding=weak, object=_ZN5Outer3setEP6Hidden, inline_hint=yes] {
+  slot $this : ptr
+  slot $q : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %q, $q
+    %t1 = load typed ptr $q
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}

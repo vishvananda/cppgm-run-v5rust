@@ -1,0 +1,10 @@
+# budget from 400-inline-mutual-recursive-callee-blocked.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 18
+blocks <= 10
+count(call) <= 6
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @ping
+instructions <= 9 in @pong
+instructions <= 6 in @caller

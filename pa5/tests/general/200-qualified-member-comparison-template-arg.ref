@@ -1,0 +1,123 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:T
+          declarator
+            identifier V
+    class-specifier integral_constant
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_LONG:long
+            decl-specifier KW_LONG:long
+          declarator
+            identifier N
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_LONG:long
+            decl-specifier KW_LONG:long
+          declarator
+            identifier D
+          default-template-argument
+            literal 1
+    class-specifier ratio
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_LONG:long
+          decl-specifier KW_LONG:long
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier num
+            initializer
+              id-expression N
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_LONG:long
+          decl-specifier KW_LONG:long
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier den
+            initializer
+              id-expression D
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_LONG:long
+            decl-specifier KW_LONG:long
+          declarator
+            identifier N
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_LONG:long
+            decl-specifier KW_LONG:long
+          declarator
+            identifier D
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_CONST:const
+        decl-specifier KW_LONG:long
+        decl-specifier KW_LONG:long
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier ratio<N,D>::num
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier R1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier R2
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier B1
+          default-template-argument
+            keyword-literal KW_TRUE:true
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier B2
+          default-template-argument
+            keyword-literal KW_FALSE:false
+    class-forward-declaration ratio_less
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier R1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier R2
+    class-specifier ratio_less<R1,R2,true,false>
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name integral_constant<bool,R1::num<R2::num>
+end translation unit

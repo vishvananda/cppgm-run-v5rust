@@ -1,0 +1,4 @@
+template<int N> struct A {};
+extern int which;
+template<int N> A<N * 2 - 1> f(A<N>) { which = 2; return A<N * 2 - 1>(); }
+void in_b() { f(A<2>()); }

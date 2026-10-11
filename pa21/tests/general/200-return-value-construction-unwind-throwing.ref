@@ -1,0 +1,954 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+
+global @live : i32 [binding=strong] = zero
+global @order : i32 [binding=strong] = zero
+global @throw_at : i32 [binding=strong] = zero
+global @made : i32 [binding=strong] = zero
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @make(%ret : ptr [pass=indirect_result, object_bytes=4]) -> void [binding=strong, object=_Z4makev] {
+  block ^entry:
+    call void @R__R__ov2(%ret, 5)
+    return void
+}
+function @constructed(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z11constructedi] {
+  slot $m : i32
+  slot $h : obj<1x1>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $h
+    call void @H__H(%t1)
+    %t2 = load typed i32 $m
+    %t3 = cmp eq i32 %t2, 0
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    eh_try ^cleanup_action_4
+    call void @R__R(%ret)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_resume_3:
+    resume
+
+  block ^cleanup_action_4:
+    %t4 = addr $h
+    call void @H___H(%t4)
+    jump ^cleanup_resume_3
+
+  block ^call_unwind_end_5:
+    %t5 = addr $h
+    call void @H___H(%t5)
+    return void
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    eh_try ^cleanup_action_4
+    call void @R__R(%ret)
+    eh_end
+    %t6 = addr $h
+    call void @H___H(%t6)
+    return void
+}
+function @copied(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z6copiedi] {
+  slot $m : i32
+  slot $h : obj<1x1>
+  slot $g : obj<1x1>
+  slot $r : obj<4x4>
+  slot $s : obj<4x4>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $h
+    call void @H__H(%t1)
+    %t2 = addr $g
+    eh_try ^cleanup_action_2
+    call void @G__G(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $h
+    call void @H___H(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = addr $r
+    eh_try ^cleanup_action_4
+    call void @R__R(%t4)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_action_4:
+    eh_try ^lexical_cleanup_terminate_6
+    %t5 = addr $g
+    call void @G___G(%t5)
+    eh_end
+    jump ^cleanup_action_2
+
+  block ^lexical_cleanup_terminate_6:
+    eh_catch_all, 1
+    %t6 = exception ptr
+    call void @cppgm_call_terminate(%t6)
+    unreachable
+
+  block ^call_unwind_end_5:
+    %t7 = addr $s
+    eh_try ^cleanup_action_7
+    call void @R__R(%t7)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_action_7:
+    %t8 = addr $r
+    call void @R___R(%t8)
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_8:
+    %t9 = load typed i32 $m
+    branch %t9, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    %t10 = addr $r
+    eh_try ^cleanup_action_11
+    call void @R__R__ov3(%ret, %t10)
+    eh_end
+    %t11 = addr $s
+    call void @R___R(%t11)
+    %t12 = addr $r
+    call void @R___R(%t12)
+    eh_try ^lexical_cleanup_dispatch_14
+    %t13 = addr $g
+    call void @G___G(%t13)
+    eh_end
+    %t14 = addr $h
+    call void @H___H(%t14)
+    return void
+
+  block ^cleanup_action_11:
+    %t15 = addr $s
+    call void @R___R(%t15)
+    jump ^cleanup_action_7
+
+  block ^lexical_unwind_12:
+    resume
+
+  block ^lexical_unwind_13:
+    %t16 = addr $h
+    call void @H___H(%t16)
+    jump ^lexical_unwind_12
+
+  block ^lexical_cleanup_dispatch_14:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_13
+
+  block ^if_else_10:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    %t17 = addr $s
+    eh_try ^cleanup_action_11
+    call void @R__R__ov3(%ret, %t17)
+    eh_end
+    %t18 = addr $s
+    call void @R___R(%t18)
+    %t19 = addr $r
+    call void @R___R(%t19)
+    eh_try ^lexical_cleanup_dispatch_16
+    %t20 = addr $g
+    call void @G___G(%t20)
+    eh_end
+    %t21 = addr $h
+    call void @H___H(%t21)
+    return void
+
+  block ^lexical_cleanup_dispatch_16:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_13
+}
+function @converted(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z9convertedi] {
+  slot $m : i32
+  slot $h : obj<1x1>
+  slot $g : obj<1x1>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $h
+    call void @H__H(%t1)
+    %t2 = addr $g
+    eh_try ^cleanup_action_2
+    call void @G__G(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $h
+    call void @H___H(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load typed i32 $m
+    eh_try ^cleanup_action_4
+    call void @R__R__ov2(%ret, %t4)
+    eh_end
+    eh_try ^lexical_cleanup_dispatch_7
+    %t5 = addr $g
+    call void @G___G(%t5)
+    eh_end
+    %t6 = addr $h
+    call void @H___H(%t6)
+    return void
+
+  block ^cleanup_action_4:
+    eh_try ^lexical_cleanup_terminate_8
+    %t7 = addr $g
+    call void @G___G(%t7)
+    eh_end
+    jump ^cleanup_action_2
+
+  block ^lexical_cleanup_terminate_8:
+    eh_catch_all, 1
+    %t8 = exception ptr
+    call void @cppgm_call_terminate(%t8)
+    unreachable
+
+  block ^lexical_unwind_5:
+    resume
+
+  block ^lexical_unwind_6:
+    %t9 = addr $h
+    call void @H___H(%t9)
+    jump ^lexical_unwind_5
+
+  block ^lexical_cleanup_dispatch_7:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_6
+}
+function @called(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z6calledi] {
+  slot $m : i32
+  slot $h : obj<1x1>
+  slot $g : obj<1x1>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $h
+    call void @H__H(%t1)
+    %t2 = addr $g
+    eh_try ^cleanup_action_2
+    call void @G__G(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $h
+    call void @H___H(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load typed i32 $m
+    branch %t4, ^condobj_then_4, ^condobj_else_5
+
+  block ^condobj_then_4:
+    eh_try ^cleanup_action_7
+    call void @make(%ret)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_action_7:
+    eh_try ^lexical_cleanup_terminate_9
+    %t5 = addr $g
+    call void @G___G(%t5)
+    eh_end
+    jump ^cleanup_action_2
+
+  block ^lexical_cleanup_terminate_9:
+    eh_catch_all, 1
+    %t6 = exception ptr
+    call void @cppgm_call_terminate(%t6)
+    unreachable
+
+  block ^call_unwind_end_8:
+    jump ^condobj_end_6
+
+  block ^condobj_else_5:
+    eh_try ^cleanup_action_7
+    call void @make(%ret)
+    eh_end
+    jump ^condobj_end_6
+
+  block ^condobj_end_6:
+    eh_try ^lexical_cleanup_dispatch_12
+    %t7 = addr $g
+    call void @G___G(%t7)
+    eh_end
+    %t8 = addr $h
+    call void @H___H(%t8)
+    return void
+
+  block ^lexical_unwind_10:
+    resume
+
+  block ^lexical_unwind_11:
+    %t9 = addr $h
+    call void @H___H(%t9)
+    jump ^lexical_unwind_10
+
+  block ^lexical_cleanup_dispatch_12:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_11
+}
+function @parameter(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32, %p : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z9parameteri1R] {
+  slot $m : i32
+  slot $p : obj<4x4>
+  slot $g : obj<1x1>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $g
+    call void @G__G(%t1)
+    eh_try ^cleanup_action_2
+    call void @R__R__ov3(%ret, %p)
+    eh_end
+    eh_try ^lexical_cleanup_dispatch_4
+    %t2 = addr $g
+    call void @G___G(%t2)
+    eh_end
+    return void
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    eh_try ^lexical_cleanup_terminate_5
+    %t3 = addr $g
+    call void @G___G(%t3)
+    eh_end
+    jump ^cleanup_resume_1
+
+  block ^lexical_cleanup_terminate_5:
+    eh_catch_all, 1
+    %t4 = exception ptr
+    call void @cppgm_call_terminate(%t4)
+    unreachable
+
+  block ^lexical_unwind_3:
+    resume
+
+  block ^lexical_cleanup_dispatch_4:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_3
+}
+function @member(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z6memberi] {
+  slot $m : i32
+  slot $base : obj<4x4>
+  slot $g : obj<1x1>
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %m, $m
+    %t1 = addr $base
+    call void @R__R__ov2(%t1, 1)
+    %t2 = addr $g
+    eh_try ^cleanup_action_2
+    call void @G__G(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $base
+    call void @R___R(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load typed i32 $m
+    branch %t4, ^condobj_then_4, ^condobj_else_5
+
+  block ^condobj_then_4:
+    eh_try ^cleanup_action_7
+    %t5 = addr $base
+    call void @R__R__ov3(%ret, %t5)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_action_7:
+    eh_try ^lexical_cleanup_terminate_9
+    %t6 = addr $g
+    call void @G___G(%t6)
+    eh_end
+    jump ^cleanup_action_2
+
+  block ^lexical_cleanup_terminate_9:
+    eh_catch_all, 1
+    %t7 = exception ptr
+    call void @cppgm_call_terminate(%t7)
+    unreachable
+
+  block ^call_unwind_end_8:
+    jump ^condobj_end_6
+
+  block ^condobj_else_5:
+    %t8 = addr $tmpobj__1
+    eh_try ^cleanup_action_7
+    call void @Box__Box(%t8, 7)
+    eh_end
+    eh_try ^cleanup_action_10
+    %t9 = index i8 [projection=field] %t8, 0
+    call void @R__R__ov3(%ret, %t9)
+    call void @Box___Box(%t8)
+    eh_end
+    jump ^call_unwind_end_11
+
+  block ^cleanup_action_10:
+    call void @Box___Box(%t8)
+    jump ^cleanup_action_7
+
+  block ^call_unwind_end_11:
+    jump ^condobj_end_6
+
+  block ^condobj_end_6:
+    eh_try ^lexical_cleanup_dispatch_14
+    %t10 = addr $g
+    call void @G___G(%t10)
+    eh_end
+    %t11 = addr $base
+    call void @R___R(%t11)
+    return void
+
+  block ^lexical_unwind_12:
+    resume
+
+  block ^lexical_unwind_13:
+    %t12 = addr $base
+    call void @R___R(%t12)
+    jump ^lexical_unwind_12
+
+  block ^lexical_cleanup_dispatch_14:
+    eh_cleanup
+    eh_end
+    call void @R___R(%ret)
+    jump ^lexical_unwind_13
+}
+function @run_constructed() -> void [binding=strong, object=_Z15run_constructedv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    eh_try ^cleanup_resume_1
+    %t1 = addr $discard__1
+    call void @constructed(%t1, 0)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @R___R(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @R___R(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @run_copied() -> void [binding=strong, object=_Z10run_copiedv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    eh_try ^cleanup_resume_1
+    %t1 = addr $discard__1
+    call void @copied(%t1, 1)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @R___R(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @R___R(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @run_converted() -> void [binding=strong, object=_Z13run_convertedv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    eh_try ^cleanup_resume_1
+    %t1 = addr $discard__1
+    call void @converted(%t1, 1)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @R___R(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @R___R(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @run_called() -> void [binding=strong, object=_Z10run_calledv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    eh_try ^cleanup_resume_1
+    %t1 = addr $discard__1
+    call void @called(%t1, 1)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @R___R(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @R___R(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @run_parameter() -> void [binding=strong, object=_Z13run_parameterv] {
+  slot $p : obj<4x4>
+  slot $discard__1 : obj<4x4>
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $p
+    call void @R__R__ov2(%t1, 1)
+    %t2 = addr $discard__1
+    eh_try ^cleanup_action_2
+    %t3 = addr $arg__2
+    %t4 = addr $p
+    call void @R__R__ov3(%t3, %t4)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t5 = addr $p
+    call void @R___R(%t5)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    eh_try ^cleanup_action_4
+    call void @parameter(%t2, 1, %t3)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_action_4:
+    call void @R___R(%t3)
+    jump ^cleanup_action_2
+
+  block ^call_unwind_end_5:
+    eh_try ^cleanup_action_6
+    call void @R___R(%t2)
+    call void @R___R(%t3)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @R___R(%t2)
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_7:
+    %t6 = addr $p
+    call void @R___R(%t6)
+    return void
+}
+function @run_member() -> void [binding=strong, object=_Z10run_memberv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    eh_try ^cleanup_resume_1
+    %t1 = addr $discard__1
+    call void @member(%t1, 0)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @R___R(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @R___R(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @check(%f : ptr, %at : i32, %expect_order : i32) -> i32 [binding=strong, object=_Z5checkPFvvEii] {
+  slot $f : ptr
+  slot $at : i32
+  slot $expect_order : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed ptr %f, $f
+    store typed i32 %at, $at
+    store typed i32 %expect_order, $expect_order
+    store typed i32 0, @made
+    store typed i32 0, @order
+    store typed i32 0, @live
+    %t1 = load typed i32 $at
+    store typed i32 %t1, @throw_at
+    eh_try ^catch_dispatch_1
+    %t2 = load typed ptr $f
+    call void %t2() as () -> void
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t3 = exception ptr
+    %t4 = exception_selector i32
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t6 = call ptr @__external_runtime____cxa_begin_catch(%t3)
+    eh_cleanup ^catch_cleanup_6
+    %t7 = load typed i32 @live
+    %t8 = cmp eq i32 %t7, 0
+    branch %t8, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t9 = load typed i32 @order
+    %t10 = load typed i32 $expect_order
+    %t11 = cmp eq i32 %t9, %t10
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__2
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__2
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t13 = load typed i64 $land__2
+    branch %t13, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t14 = load typed i32 $cond__1
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t14
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @run_constructed
+    %t2 = call i32 @check(%t1, 1, 1)
+    %t3 = addr @run_copied
+    %t4 = call i32 @check(%t3, 3, 21)
+    %t5 = binary mul nowrap i32 2, %t4
+    %t6 = binary add nowrap i32 %t2, %t5
+    %t7 = addr @run_converted
+    %t8 = call i32 @check(%t7, 1, 21)
+    %t9 = binary mul nowrap i32 4, %t8
+    %t10 = binary add nowrap i32 %t6, %t9
+    %t11 = addr @run_called
+    %t12 = call i32 @check(%t11, 1, 21)
+    %t13 = binary mul nowrap i32 8, %t12
+    %t14 = binary add nowrap i32 %t10, %t13
+    %t15 = addr @run_parameter
+    %t16 = call i32 @check(%t15, 3, 2)
+    %t17 = binary mul nowrap i32 16, %t16
+    %t18 = binary add nowrap i32 %t14, %t17
+    %t19 = addr @run_member
+    %t20 = call i32 @check(%t19, 3, 2)
+    %t21 = binary mul nowrap i32 32, %t20
+    %t22 = binary add nowrap i32 %t18, %t21
+    return i32 %t22
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}
+function @R__R__ov2(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN1RC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    call void @R__step()
+    %t4 = load typed i32 @live
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @live
+    return void
+}
+function @H__H(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1HC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @R__R(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1RC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    call void @R__step()
+    %t3 = load typed i32 @live
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @live
+    return void
+}
+function @H___H(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1HD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    %t3 = load typed i32 @order
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @order
+    return void
+}
+function @G__G(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1GC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @G___G(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1GD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    %t3 = load typed i32 @order
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 2
+    store typed i32 %t5, @order
+    return void
+}
+function @R___R(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN1RD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @R__R__ov3(%this : ptr [alias=noalias, object_bytes=4], %o : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN1RC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $o : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %o, $o
+    %t1 = load typed ptr $o
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    call void @R__step()
+    %t6 = load typed i32 @live
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, @live
+    return void
+}
+function @Box__Box(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN3BoxC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 $x
+    call void @R__R__ov2(%t2, %t3)
+    eh_cleanup ^constructor_cleanup_1
+    %t4 = load typed i32 @live
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @live
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 0
+    call void @R___R(%t7)
+    eh_end
+    resume
+}
+function @Box___Box(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN3BoxD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    eh_end
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @R___R(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    call void @R___R(%t6)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @R__step() -> void [binding=weak, object=_ZN1R4stepEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @made
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @made
+    %t3 = load typed i32 @throw_at
+    %t4 = cmp eq i32 %t2, %t3
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t5 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 1, %t5
+    %t6 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t5, %t6, 0)
+    return void
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+alias object _ZN1RC2Ei = @R__R__ov2
+alias object _ZN1HC2Ev = @H__H
+alias object _ZN1RC2Ev = @R__R
+alias object _ZN1HD2Ev = @H___H
+alias object _ZN1GC2Ev = @G__G
+alias object _ZN1GD2Ev = @G___G
+alias object _ZN1RD2Ev = @R___R
+alias object _ZN1RC2ERKS_ = @R__R__ov3
+alias object _ZN3BoxC2Ei = @Box__Box
+alias object _ZN3BoxD2Ev = @Box___Box

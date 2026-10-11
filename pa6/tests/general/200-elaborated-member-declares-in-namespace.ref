@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type Outer struct Outer
+    type Hidden struct Hidden
+    type Hidden struct Hidden
+    function main function of () returning int
+    scope class Outer
+      variable p pointer to struct Hidden
+    scope class Hidden
+      variable v int
+    scope function main
+      scope block
+        variable h struct Hidden
+        variable o struct Outer
+end translation unit

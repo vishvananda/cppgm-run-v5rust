@@ -1,0 +1,26 @@
+declare global @owner_enum_sfinae__is_same_default_tag_member_tag___value : u8 [binding=weak, object=_ZN17owner_enum_sfinae7is_sameINS_11default_tagENS_10member_tagEE5valueE]
+declare global @owner_enum_sfinae__internal_base_hook_bool___cppgm_class_template_identity_1___value : u32 [binding=weak, object=_ZN17owner_enum_sfinae23internal_base_hook_boolINS_12generic_hookILNS_10algo_typesE1ENS_11node_traitsENS_11default_tagELNS_14link_mode_typeE0ELNS_14base_hook_typeE2EEEE5valueE]
+declare global @owner_enum_sfinae__internal_base_hook_bool_is_true___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN17owner_enum_sfinae31internal_base_hook_bool_is_trueINS_12generic_hookILNS_10algo_typesE1ENS_11node_traitsENS_11default_tagELNS_14link_mode_typeE0ELNS_14base_hook_typeE2EEEE5valueE]
+declare global @owner_enum_sfinae__internal_any_hook_bool___cppgm_class_template_identity_1___value : u32 [binding=weak, object=_ZN17owner_enum_sfinae22internal_any_hook_boolINS_12generic_hookILNS_10algo_typesE1ENS_11node_traitsENS_11default_tagELNS_14link_mode_typeE0ELNS_14base_hook_typeE2EEEE5valueE]
+declare global @owner_enum_sfinae__internal_any_hook_bool_is_true___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN17owner_enum_sfinae30internal_any_hook_bool_is_trueINS_12generic_hookILNS_10algo_typesE1ENS_11node_traitsENS_11default_tagELNS_14link_mode_typeE0ELNS_14base_hook_typeE2EEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = cmp eq u8 0, 0
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

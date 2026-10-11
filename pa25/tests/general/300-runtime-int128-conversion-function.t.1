@@ -1,0 +1,4 @@
+// N3485 12.3.2: a conversion-type-id may be GCC's `unsigned __int128`, as
+// other declarations spell it
+struct C { operator unsigned __int128() const { return 42; } };
+int main() { C c; return (unsigned __int128)c == 42 ? 0 : 1; }

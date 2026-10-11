@@ -1,0 +1,19 @@
+int main()
+{
+  float neg_float = -1.0f;
+  double pos_double = 1.0;
+  double inf_double = __builtin_inf();
+  float nan_float = __builtin_nanf("");
+  long double normal_long_double = 1.0L;
+  long double zero_long_double = 0.0L;
+
+  return __builtin_signbit(neg_float) &&
+         !__builtin_signbit(pos_double) &&
+         __builtin_isinf(inf_double) &&
+         !__builtin_isinf(zero_long_double) &&
+         __builtin_isfinite(zero_long_double) &&
+         !__builtin_isfinite(inf_double) &&
+         __builtin_isnormal(normal_long_double) &&
+         !__builtin_isnormal(zero_long_double) &&
+         !__builtin_isnormal(nan_float) ? 0 : 1;
+}

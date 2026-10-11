@@ -1,0 +1,59 @@
+global @copied = {
+  i64 0
+  i64 0
+}
+
+function @make_pair() -> obj<16x8> {
+  slot $tmp : obj<16x8>
+
+  block ^entry:
+    %p = addr $tmp
+    store i64 11, %p
+    %q = index i8 %p, 8
+    store i64 22, %q
+    return obj<16x8> $tmp
+}
+
+function @run(%a : i64, %b : i64, %c : i64, %d : i64, %e : i64, %f : i64, %g : i64, %h : i64, %i : i64, %j : i64) -> i64 [binding=strong] {
+  block ^entry:
+    %t1 = binary add i64 %a, 1
+    %t2 = binary add i64 %b, 2
+    %t3 = binary add i64 %c, 3
+    %t4 = binary add i64 %d, 4
+    %t5 = binary add i64 %e, 5
+    %t6 = binary add i64 %f, 6
+    %t7 = binary add i64 %g, 7
+    %t8 = binary add i64 %h, 8
+    %t9 = binary add i64 %i, 9
+    %t10 = binary add i64 %j, 10
+    %pair = call obj<16x8> @make_pair()
+    %dst = addr @copied
+    copyobj 16x8 %pair, %dst
+    %s1 = binary add i64 %t1, %t2
+    %s2 = binary add i64 %s1, %t3
+    %s3 = binary add i64 %s2, %t4
+    %s4 = binary add i64 %s3, %t5
+    %s5 = binary add i64 %s4, %t6
+    %s6 = binary add i64 %s5, %t7
+    %s7 = binary add i64 %s6, %t8
+    %s8 = binary add i64 %s7, %t9
+    %s9 = binary add i64 %s8, %t10
+    return i64 %s9
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %r = call i64 @run(1, 2, 3, 4, 5, 6, 7, 8, 9, 18)
+    %v0 = load i64 @copied
+    %p1 = addr @copied
+    %q1 = index i8 %p1, 8
+    %v1 = load i64 %q1
+    %ok_r = cmp eq i64 %r, 118
+    %ok0 = cmp eq i64 %v0, 11
+    %ok1 = cmp eq i64 %v1, 22
+    %ok_pair = binary and i64 %ok0, %ok1
+    %ok = binary and i64 %ok_r, %ok_pair
+    %failed = cmp eq i64 %ok, 0
+    %exit = convert trunc i32 i64 %failed
+    return i32 %exit
+}

@@ -1,0 +1,7 @@
+# budget from 100-ret0.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 5
+blocks <= 4
+count(call) <= 3
+mem <= 3
+instructions <= 5 in @main
+stack_size <= 320 in @main

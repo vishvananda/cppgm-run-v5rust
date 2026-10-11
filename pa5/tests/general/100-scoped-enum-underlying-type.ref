@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_LONG:long
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier size_t
+  enum-specifier __element_count
+    enum-key KW_CLASS:class
+    type-id
+      type-specifier-seq
+        type-name size_t
+end translation unit

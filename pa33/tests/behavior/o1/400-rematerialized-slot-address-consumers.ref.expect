@@ -1,0 +1,21 @@
+# budget from 400-rematerialized-slot-address-consumers.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 85
+blocks <= 14
+count(call) <= 14
+mem <= 28
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 18 in @copy_and_store_address
+stack_size <= 68 in @copy_and_store_address
+instructions <= 7 in @return_slot_address
+stack_size <= 50 in @return_slot_address
+instructions <= 10 in @integer_copy_arithmetic
+stack_size <= 50 in @integer_copy_arithmetic
+instructions <= 11 in @copy_and_store_global_address
+stack_size <= 50 in @copy_and_store_global_address
+instructions <= 7 in @return_global_address
+stack_size <= 50 in @return_global_address
+instructions <= 10 in @global_integer_arithmetic
+stack_size <= 32 in @global_integer_arithmetic
+instructions <= 33 in @main
+stack_size <= 85 in @main

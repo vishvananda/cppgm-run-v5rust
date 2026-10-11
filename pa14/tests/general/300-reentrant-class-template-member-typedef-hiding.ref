@@ -1,0 +1,12 @@
+global @values : obj<24x8> [binding=strong] = {
+  zero 24
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

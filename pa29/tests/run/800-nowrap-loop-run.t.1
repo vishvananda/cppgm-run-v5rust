@@ -1,0 +1,27 @@
+// N3485 6.5.3, 4.5: loops counting to 300 with an unsigned short counter
+// (promoted to int in the comparison) and with an int counter visit every
+// element once
+#include <cstdio>
+__attribute__((noinline)) int count(const unsigned short* p, unsigned short n)
+{
+	int s = 0;
+	for (unsigned short i = 0; i < n; ++i)
+		s += p[i];
+	return s;
+}
+__attribute__((noinline)) long signed_count(const int* p, int n)
+{
+	long s = 0;
+	for (int i = 0; i < n; ++i)
+		s += p[i] * (long)i;
+	return s;
+}
+int main()
+{
+	unsigned short v[300];
+	int w[300];
+	for (int i = 0; i < 300; ++i)
+		v[i] = (unsigned short)(i * 7), w[i] = i - 150;
+	std::printf("%d %ld\n", count(v, 300), signed_count(w, 300));
+	return 0;
+}

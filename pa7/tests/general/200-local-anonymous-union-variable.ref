@@ -1,0 +1,27 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias size_t unsigned long int
+  function-definition f function of (int) returning int
+    parameter x int
+    compound-statement
+      simple-declaration
+        variable u union __local_type1
+          constructor-action __local_type1::__local_type1
+            call-expression prvalue void
+              callee __local_type1::__local_type1 function of (pointer to union __local_type1) returning void
+              unary-expression prvalue pointer to union __local_type1 OP_AMP:&
+                id-expression lvalue union __local_type1 u
+      expression-statement
+        assignment-expression lvalue int OP_ASS:=
+          member-expression lvalue int OP_DOT:t
+            id-expression lvalue union __local_type1 u
+          id-expression lvalue int x
+      return-statement
+        cast-expression prvalue int OP_LPAREN:
+          member-expression lvalue unsigned long int OP_DOT:a
+            id-expression lvalue union __local_type1 u
+  function-definition __local_type1::__local_type1 function of (pointer to union __local_type1) returning void
+    parameter this pointer to union __local_type1
+    compound-statement
+end translation unit

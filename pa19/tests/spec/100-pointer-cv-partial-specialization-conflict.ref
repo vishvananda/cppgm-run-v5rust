@@ -1,0 +1,6 @@
+declare global @Match_constP__constP____value : i32 [binding=weak, object=_ZN5MatchIPK1PS2_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 1
+}

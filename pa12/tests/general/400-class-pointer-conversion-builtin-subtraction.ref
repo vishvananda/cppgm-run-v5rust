@@ -1,0 +1,57 @@
+function @distance(%first : obj<8x8>, %last : ptr) -> i64 [binding=strong, object=_Z8distance8iteratorPi] {
+  slot $first : obj<8x8>
+  slot $last : ptr
+
+  block ^entry:
+    %t1 = addr $first
+    copyobj 8x8 %first, %t1
+    store typed ptr %last, $last
+    %t2 = addr $first
+    %t3 = call ptr @iterator__operatorconstint_(%t2)
+    %t4 = load typed ptr $last
+    %t5 = binary sub ptr %t3, %t4
+    %t6 = binary shr exact i64 %t5, 2
+    return i64 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<4x4>
+  slot $first : obj<8x8>
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $values
+    %t3 = addr $first
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $argobj__2
+    %t6 = addr $first
+    copyobj 8x8 %t6, %t5
+    %t7 = addr $values
+    %t8 = call i64 @distance($argobj__2, %t7)
+    %t9 = cmp eq i64 %t8, 0
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @iterator__operatorconstint_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK8iteratorcvPKiEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}

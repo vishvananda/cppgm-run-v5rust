@@ -1,0 +1,9 @@
+global @value [binding=strong] = {
+  zero 1
+}
+
+function @f() -> ptr [binding=strong, object=_Z1fv] {
+  block ^entry:
+    %t1 = addr @value
+    return ptr %t1
+}

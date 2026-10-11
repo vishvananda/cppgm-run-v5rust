@@ -1,0 +1,23 @@
+function @takes_int_array(%__param0 : ptr [pass=by_address, object_bytes=40]) -> i32 [binding=strong, object=_Z15takes_int_arrayR5arrayIiLj10EE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @run()
+    return i32 %t1
+}
+function @run() -> i32 [binding=weak, object=_Z3runI7factoryEiv] {
+  slot $fac : obj<1x1>
+  slot $input : obj<40x4>
+
+  block ^entry:
+    %t1 = addr $fac
+    %t2 = addr $input
+    %t3 = addr $input
+    %t4 = call i32 @takes_int_array(%t3)
+    return i32 %t4
+}

@@ -1,0 +1,89 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $target : obj<4x4>
+  slot $other : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $target
+    %t3 = addr $source
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $target
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 1, %t6
+    %t7 = addr $target
+    %t8 = addr $source
+    %t9 = call ptr @box_int___operator_(%t7, %t8)
+    %t10 = addr $target
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    %t13 = cmp ne i32 %t12, 7
+    branch %t13, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t14 = addr $other
+    %t15 = addr $other
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed i64 9, %t16
+    %t17 = addr $target
+    %t18 = addr $other
+    %t19 = call ptr @box_int___operator___2(%t17, %t18)
+    %t20 = addr $target
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load typed i32 %t21
+    %t23 = cmp eq i32 %t22, 9
+    branch %t23, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t24 = load typed i32 $cond__1
+    return i32 %t24
+}
+function @box_int___operator_(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN3boxIiEaSERKS0_] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @box_int___operator___2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN3boxIiEaSIlEERS0_RKS_IT_E] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = convert trunc i32 i64 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $this
+    return ptr %t7
+}

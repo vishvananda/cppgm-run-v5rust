@@ -1,0 +1,70 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    call void @machine_f___row_0_int_0__f__on___execute(%t2, 0)
+    %t3 = addr $x
+    call void @machine_f___row_0_int_0__f__push___execute(%t3, 0)
+    return i32 0
+}
+function @machine_f___row_0_int_0__f__on___execute(%d : ptr [pass=by_address, object_bytes=1], %event : i8) -> void [binding=weak, object=_ZN7machineI1fE3rowILi0EiLi0EXadL_ZNS0_2onEcEEE7executeERS0_c, inline_hint=yes] {
+  slot $d : ptr
+  slot $event : i8
+
+  block ^entry:
+    store typed ptr %d, $d
+    store i8 %event, $event
+    %t1 = load typed ptr $d
+    %t2 = load i8 $event
+    %t3 = addr @f__on
+    call void %t3(%t1, %t2) as (%arg0 : ptr, %arg1 : i8) -> void
+    return void
+}
+function @machine_f___row_0_int_0__f__push___execute(%d : ptr [pass=by_address, object_bytes=1], %event : i8) -> void [binding=weak, object=_ZN7machineI1fE3rowILi0EiLi0EXadL_ZNS0_4pushIcEEvT_EEE7executeERS0_c, inline_hint=yes] {
+  slot $d : ptr
+  slot $event : i8
+
+  block ^entry:
+    store typed ptr %d, $d
+    store i8 %event, $event
+    %t1 = load typed ptr $d
+    %t2 = load i8 $event
+    %t3 = addr @f__push
+    call void %t3(%t1, %t2) as (%arg0 : ptr, %arg1 : i8) -> void
+    return void
+}
+function @f__push(%this : ptr [object_bytes=1], %c : i8) -> void [binding=weak, object=_ZN1f4pushIcEEvT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $c : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store i8 %c, $c
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load i8 $c
+    call void @machine_f___push(%t2, %t3)
+    return void
+}
+function @f__on(%this : ptr [object_bytes=1], %__param1 : i8) -> void [binding=weak, object=_ZN1f2onEc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store i8 %__param1, $__param1
+    %t1 = load typed ptr $this
+    call void @f__push(%t1, 120)
+    return void
+}
+function @machine_f___push(%this : ptr [object_bytes=1], %__param1 : i8) -> void [binding=weak, object=_ZN7machineI1fE4pushEc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store i8 %__param1, $__param1
+    return void
+}

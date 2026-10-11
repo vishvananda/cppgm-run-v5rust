@@ -1,0 +1,17 @@
+// N3485 15.3p4, 15.2p1: an exception no handler of an inner try block matches
+// is caught by a matching handler of an enclosing try block in the same
+// function, after the objects of the blocks it leaves are destroyed
+#include "200-host-eh-nested-catch-forward.helper.h"
+struct A { int v; A(int x) : v(x) {} ~A() { out_line("~A", v); } };
+void g(int x) { if (x == 6) throw 42; }
+int f(int x)
+{
+  A a(1);
+  try {
+    A b(2);
+    g(x);
+    try { g(x + 1); } catch (char c) { return c; }
+  } catch (int e) { return e; } catch (...) { throw; }
+  return 0;
+}
+int main() { out_line("f", f(5)); return 0; }

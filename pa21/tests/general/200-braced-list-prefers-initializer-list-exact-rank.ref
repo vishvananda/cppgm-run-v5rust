@@ -1,0 +1,45 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $item : obj<1x1>
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<16x8>
+  slot $initlist__3 : obj<3x1>
+
+  block ^entry:
+    %t1 = addr $item
+    %t2 = addr $item
+    %t3 = addr $argobj__2
+    %t4 = addr $initlist__3
+    store i8 49, %t4
+    %t5 = index i8 [projection=array_element] %t4, 1
+    store i8 50, %t5
+    %t6 = index i8 [projection=array_element] %t4, 2
+    store i8 51, %t6
+    store typed ptr %t4, %t3
+    %t7 = index i8 %t3, 8
+    store typed i64 3, %t7
+    %t8 = call i32 @value__assign__ov2(%t2, $argobj__2)
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @value__assign__ov2(%this : ptr [object_bytes=1], %__param1 : obj<16x8>) -> i32 [binding=weak, object=_ZN5value6assignESt16initializer_listIcE, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $__param1
+    copyobj 16x8 %__param1, %t1
+    return i32 2
+}

@@ -1,0 +1,18 @@
+declare function @operatornew__ov2(%arg0 : i64, %arg1 : ptr) -> ptr [unwind=no, binding=strong, object=_ZnwmPv]
+declare function @S__S(%arg0 : ptr [object_bytes=1], %arg1 : i32) -> void [binding=strong, object=_ZN1SC1Ei]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $buf : obj<8x1>
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = addr $buf
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    call void @S__S(%t3, 7)
+    store typed ptr %t3, $p
+    %t4 = load typed ptr $p
+    %t5 = cmp eq ptr %t4, 0
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

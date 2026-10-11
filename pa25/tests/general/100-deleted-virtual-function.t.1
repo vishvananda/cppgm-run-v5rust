@@ -1,0 +1,6 @@
+// Itanium ABI 5.2.3/2.5.2 + N3485 8.4.3: a deleted virtual function is not a
+// key function and has no definition (its slot is __cxa_deleted_virtual); K2's
+// key function is f (u2); expect link ok and exit 0
+struct K2 { virtual void d() = delete; virtual int f(); };
+K2* m2();
+int main() { K2 local; K2* p = &local; return p->f() + m2()->f() == 4 ? 0 : 1; }

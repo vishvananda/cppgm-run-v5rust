@@ -1,0 +1,4 @@
+preproc 1
+sof tests/macros/410-trigraph-in-raw-string.t
+literal "R\"(??=)\"" array of 9 char 5222283F3F3D292200
+eof

@@ -1,0 +1,6 @@
+declare global @same_char_char_void___value : u8 [binding=weak, object=_ZN4sameIccvE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

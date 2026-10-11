@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $t : obj<1x1>
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = addr $t
+    %t2 = addr $value
+    call void @tuple_constint____tuple(%t1, %t2)
+    return i32 0
+}
+function @tuple_constint____tuple(%this : ptr [object_bytes=1], %elements : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN5tupleIJRKiEEC1ILb1ETnN9enable_ifIXclsr3tccIXT_EEE13constructibleIS1_EEEbE4typeELb1EEES1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $elements : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %elements, $elements
+    return void
+}
+alias object _ZN5tupleIJRKiEEC2ILb1ETnN9enable_ifIXclsr3tccIXT_EEE13constructibleIS1_EEEbE4typeELb1EEES1_ = @tuple_constint____tuple

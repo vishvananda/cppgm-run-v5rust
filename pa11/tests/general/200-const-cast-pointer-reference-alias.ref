@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $x
+    store typed ptr %t1, $p
+    %t2 = addr $p
+    %t3 = call ptr @S__pass(%t2)
+    %t4 = addr $x
+    %t5 = cmp eq ptr %t3, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @S__pass(%p : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN1S4passERKPi, inline_hint=yes] {
+  slot $p : ptr
+  slot $q : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    store typed ptr %t1, $q
+    %t2 = load typed ptr $q
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}

@@ -1,0 +1,7 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $closure : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $closure
+    return i32 0
+}

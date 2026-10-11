@@ -1,0 +1,34 @@
+struct base_error {
+  virtual ~base_error() {}
+};
+
+struct derived_error : base_error {};
+
+struct thrower {
+  void operator()()
+  {
+    throw derived_error();
+  }
+};
+
+template<class F>
+int run(F f)
+{
+  int result = 0;
+  do {
+    try {
+      f();
+      result = 1;
+    } catch(base_error const &) {
+      result = 0;
+    } catch(...) {
+      result = 2;
+    }
+  } while(false);
+  return result;
+}
+
+int main()
+{
+  return run(thrower());
+}

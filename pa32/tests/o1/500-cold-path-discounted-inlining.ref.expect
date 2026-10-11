@@ -1,0 +1,2 @@
+# outcomes from 500-cold-path-discounted-inlining.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @cold_helper)

@@ -1,0 +1,62 @@
+function @make(%ret : ptr [pass=indirect_result, object_bytes=4], %owner : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z4makeR5Owner] {
+  slot $owner : ptr
+
+  block ^entry:
+    store typed ptr %owner, $owner
+    %t1 = load typed ptr $owner
+    call void @Owner__Owner__ov2(%ret, %t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    call void @Owner__Owner(%t1)
+    %t2 = addr $result
+    %t3 = addr $source
+    call void @make(%t2, %t3)
+    %t4 = addr $result
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @Owner__Owner__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN5OwnerC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @Owner__Owner(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5OwnerC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN5OwnerC2EOS_ = @Owner__Owner__ov2
+alias object _ZN5OwnerC2Ev = @Owner__Owner

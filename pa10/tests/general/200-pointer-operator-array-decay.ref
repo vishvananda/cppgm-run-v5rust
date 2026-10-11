@@ -1,0 +1,67 @@
+function @add_one(%p : ptr) -> ptr [binding=strong, object=_Z7add_onePi] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = binary mul i64 1, 4
+    %t3 = index i8 %t1, %t2
+    return ptr %t3
+}
+function @diff(%a : ptr, %b : ptr) -> i64 [binding=strong, object=_Z4diffPiS_] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = load typed ptr $b
+    %t3 = binary sub ptr %t1, %t2
+    %t4 = binary shr exact i64 %t3, 2
+    return i64 %t4
+}
+function @from_array() -> ptr [binding=strong, object=_Z10from_arrayv] {
+  slot $a : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = binary mul i64 1, 4
+    %t3 = index i8 %t1, %t2
+    return ptr %t3
+}
+function @prefix_ref(%p : ptr) -> i32 [binding=strong, object=_Z10prefix_refPi] {
+  slot $p : ptr
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = binary mul i64 1, 4
+    %t3 = index i8 %t1, %t2
+    store typed ptr %t3, $p
+    %t4 = addr $p
+    store typed ptr %t4, $r
+    %t5 = load typed ptr $r
+    %t6 = load typed ptr %t5
+    %t7 = load typed ptr $p
+    %t8 = cmp eq ptr %t6, %t7
+    %t9 = convert trunc i32 i64 %t8
+    return i32 %t9
+}
+function @array_eq() -> i32 [binding=strong, object=_Z8array_eqv] {
+  slot $a : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = binary mul i64 1, 4
+    %t3 = index i8 %t1, %t2
+    %t4 = addr $a
+    %t5 = cmp eq ptr %t3, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

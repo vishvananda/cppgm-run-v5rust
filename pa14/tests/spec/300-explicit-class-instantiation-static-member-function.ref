@@ -1,0 +1,8 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @static_box_int___value() -> i32 [binding=weak, object=_ZN10static_boxIiE5valueEv, object_root=yes] {
+  block ^entry:
+    return i32 9
+}

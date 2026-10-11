@@ -1,0 +1,10 @@
+# budget from 400-source-move-constructor-noalias.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 41
+blocks <= 6
+count(call) <= 5
+count(load) <= 8
+count(store) <= 9
+count(phi) <= 3
+instructions <= 28 in @main
+instructions <= 8 in @Bundle__Bundle__ov2
+instructions <= 9 in @Head__Head__ov2

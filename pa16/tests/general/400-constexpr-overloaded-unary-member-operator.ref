@@ -1,0 +1,53 @@
+global @source [storage=readonly, binding=internal, object=_ZL6source] = {
+  i32 3
+}
+global @negated [storage=readonly, binding=internal, object=_ZL7negated] = {
+  i32 -3
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @negated
+    %t2 = call i32 @duration__count(%t1)
+    %t3 = unary neg i32 3
+    %t4 = cmp eq i32 %t2, %t3
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @duration__duration(%this : ptr [object_bytes=4], %value : i32) -> void [binding=weak, object=_ZN8durationC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @duration__count(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK8duration5countEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+alias object _ZN8durationC2Ei = @duration__duration

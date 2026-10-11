@@ -1,0 +1,36 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 7
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i32 3
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $condaddr__1 : ptr
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 4x4 @__constexpr_template__1, %t1
+    %t2 = addr $b
+    copyobj 4x4 @__constexpr_template__2, %t2
+    branch 0, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t3 = addr $a
+    store typed ptr %t3, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t4 = addr $b
+    store typed ptr %t4, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t5 = load typed ptr $condaddr__1
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = binary sub nowrap i32 %t7, 3
+    return i32 %t8
+}

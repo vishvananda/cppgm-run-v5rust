@@ -1,0 +1,8 @@
+#include "100-inline-static-member-outdef-header-duplicate.helper.h"
+
+int other_value();
+
+int main()
+{
+  return InlineStaticMemberOutdef::value() + other_value() - 11;
+}

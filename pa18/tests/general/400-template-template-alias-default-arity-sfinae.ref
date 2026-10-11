@@ -1,0 +1,35 @@
+declare global @bool__false___value : u8 [binding=weak, object=_ZN5bool_ILb0EE5valueE]
+declare global @bool__true___value : u8 [binding=weak, object=_ZN5bool_ILb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    jump ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    jump ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t1 = cmp eq u8 1, 0
+    branch %t1, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}

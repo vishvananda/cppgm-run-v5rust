@@ -1,0 +1,35 @@
+// A lambda of a default member initializer is named in its data member
+// (`<class> <member> M Ul..E_`), one closure whichever constructor
+// initializes the member; one of a class template's static data member
+// initializer likewise, one per specialization; one of a non-template
+// class's static data member initializer is a unit-local `$_<n>` in its
+// class; one of an in-class default argument is named in its function with
+// the parameter's position from the last one (`Ed0_`), one closure wherever
+// a call uses it.
+struct WithInit
+{
+  int (*fp)() = [] { return 1; };
+  int (*gp)(int) = [](int v) { return v; };
+  int base;
+  WithInit() : base(0) {}
+  explicit WithInit(int b) : base(b) {}
+  int pick(int (*a)() = [] { return 3; }, int b = 0) { return a() + b; }
+};
+
+template<class T> struct Table { static int (*size)(); };
+template<class T> int (*Table<T>::size)() = [] { return int(sizeof(T)); };
+
+struct Plain { static int (*seven)(); };
+int (*Plain::seven)() = [] { return 7; };
+
+int early = WithInit().pick();
+
+int main()
+{
+  WithInit w;
+  WithInit v(5);
+  if (w.fp != v.fp) return 2;
+  if (Table<int>::size() != 4 || Table<char>::size() != 1) return 3;
+  return w.fp() + w.gp(2) + w.pick() + Plain::seven() + early +
+    v.base == 21 ? 0 : 1;
+}

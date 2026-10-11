@@ -1,0 +1,21 @@
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $storage : obj<4x1>
+
+  block ^entry:
+    %t1 = addr $storage
+    %t2 = addr $storage
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=array_element] %t3, 0
+    store i8 7, %t4
+    %t5 = addr $storage
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i8 [projection=array_element] %t6, 0
+    %t8 = load i8 %t7
+    %t9 = convert sext i32 i8 %t8
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}

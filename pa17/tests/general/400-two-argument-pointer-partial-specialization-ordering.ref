@@ -1,0 +1,8 @@
+declare global @select_int_int___value : i32 [binding=weak, object=_ZN6selectIiiE5valueE]
+declare global @select_int__int___value : i32 [binding=weak, object=_ZN6selectIPiiE5valueE]
+declare global @select_int__int____value : i32 [binding=weak, object=_ZN6selectIPiS0_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

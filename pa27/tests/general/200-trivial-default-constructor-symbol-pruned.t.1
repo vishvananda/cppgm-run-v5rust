@@ -1,0 +1,21 @@
+template<class T>
+struct Box
+{
+};
+
+template<class T>
+__attribute__((noinline)) Box<T> make_box()
+{
+  return Box<T>();
+}
+
+int use_box()
+{
+  Box<int> b = make_box<int>();
+  return sizeof(b);
+}
+
+int main()
+{
+  return use_box() == 1 ? 0 : 1;
+}

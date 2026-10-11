@@ -1,0 +1,40 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $q : ptr
+  slot $basecast__1 : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    store typed ptr 0, $p
+    %t1 = load typed ptr $p
+    %t2 = cmp eq ptr %t1, 0
+    branch %t2, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t3 = index i8 %t1, -4
+    store typed ptr %t3, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t4 = load typed ptr $basecast__1
+    store typed ptr %t4, $q
+    %t5 = load typed ptr $q
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t7 = load typed i32 $cond__2
+    return i32 %t7
+}

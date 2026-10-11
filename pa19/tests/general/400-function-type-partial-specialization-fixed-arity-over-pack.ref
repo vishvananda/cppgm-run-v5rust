@@ -1,0 +1,6 @@
+declare global @message_void_error_code____value : i32 [binding=weak, object=_ZN7messageIFv10error_codeEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

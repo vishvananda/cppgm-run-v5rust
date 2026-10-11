@@ -1,0 +1,5 @@
+preproc 1
+sof tests/directives/200-defined-identifier-like-operator.t
+identifier right1
+identifier right2
+eof

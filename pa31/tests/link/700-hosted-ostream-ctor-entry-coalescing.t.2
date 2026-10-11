@@ -1,0 +1,22 @@
+#include <ostream>
+#include <sstream>
+#include <string>
+
+int force_ostream_base_entry();
+
+struct StreamWrapper {
+  std::stringbuf buffer;
+  std::ostream out;
+
+  StreamWrapper() : buffer(), out(&buffer) {}
+};
+
+int main()
+{
+  StreamWrapper wrapper;
+  wrapper.out << "ok";
+  if(force_ostream_base_entry() != 0) {
+    return 1;
+  }
+  return wrapper.buffer.str() == "ok" ? 0 : 2;
+}

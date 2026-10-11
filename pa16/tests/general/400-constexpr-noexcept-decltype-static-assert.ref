@@ -1,0 +1,20 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr 0, $p
+    %t1 = load typed ptr $p
+    call void @box_constchar____f(%t1)
+    return i32 0
+}
+function @box_constchar____f(%p : ptr) -> void [binding=weak, object=_ZN3boxIPKcE1fES1_, inline_hint=yes] {
+  slot $p : ptr
+  slot $q : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    store typed ptr %t1, $q
+    %t2 = load typed ptr $q
+    return void
+}

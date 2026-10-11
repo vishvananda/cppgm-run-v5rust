@@ -1,0 +1,3 @@
+extern constexpr const char* p = "abc";
+static_assert(p, "constant pointer is not null");
+const char* defined_pointer() { return p; }

@@ -1,0 +1,63 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @lhs_true
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 1
+    ret rax
+
+function @rhs_true
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 1
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call @lhs_true [args=()]
+    mov r8, rax
+    cmp.i64 r8, 0
+    jne ^rhs
+    jmp ^false
+
+  block ^rhs
+    call @rhs_true [args=()]
+    mov r8, rax
+    cmp.i64 r8, 0
+    jne ^true
+    jmp ^false
+
+  block ^true
+    mov rax, 0
+    ret rax
+
+  block ^false
+    mov rax, 1
+    ret rax

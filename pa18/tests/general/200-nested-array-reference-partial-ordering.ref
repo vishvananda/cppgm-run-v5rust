@@ -1,0 +1,31 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    store typed i32 0, %t1
+    %t2 = addr $a
+    %t3 = call i32 @depth(%t2)
+    %t4 = cmp eq i32 %t3, 2
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @depth(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z5depthIiLi1ELi1EEiRAT0__AT1__T_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}

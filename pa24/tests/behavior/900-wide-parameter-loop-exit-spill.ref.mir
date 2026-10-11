@@ -1,0 +1,209 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @phimem
+  storage data
+  item zero 232
+  item ptr addr @argsmem
+  item ptr addr @argsmem+192
+
+global @argsmem
+  storage data
+  item i32 999
+  item zero 44
+  item zero 48
+  item i32 3
+  item zero 8
+  item u32 7
+  item zero 32
+  item i32 4
+  item i32 0
+  item u8 1
+  item zero 7
+  item i64 4242
+  item zero 24
+
+global @comparemem
+  storage data
+  item zero 40
+  item i32 18
+  item zero 4
+
+global @branchmem
+  storage data
+  item zero 136
+  item i64 1111
+  item zero 40
+  item i64 2222
+  item zero 40
+
+global @outmem
+  storage data
+  item zero 48
+
+function @probe
+  abi
+    param %phi -> rdi : ptr
+    param %compare -> rsi : ptr
+    param %constant -> rdx : i64
+    param %predecessor -> rcx : u32
+    param %branch -> r8 : ptr
+    param %selected -> r9 : ptr
+    return u8 -> rax
+  frame
+    stack_size 80
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+    temp %i -> [rbp-8] : i64
+    temp %off -> [rbp-16] : i64
+    temp %off2 -> [rbp-24] : i64
+    temp %val -> [rbp-32] : i64
+    temp %eq -> [rbp-40] : i64
+    temp %cond -> [rbp-48] : u8
+    temp %chosen -> [rbp-56] : ptr
+
+  block ^entry
+    mov rbx, rdx
+    lea r12, [rdi+232]
+    lea r13, [r12+8]
+    store.i64 [rbp-8], 0
+    jmp ^for_cond
+
+  block ^for_cond
+    load.ptr rdi, [r13]
+    sub rdi, [r12]
+    mov r11, 48
+    mov rax, rdi
+    cqo
+    idiv r11
+    cmp.i64 [rbp-8], rax
+    jb ^for_body
+    jmp ^for_end
+
+  block ^for_body
+    load.ptr rdi, [r12]
+    load.i64 rdx, [rbp-8]
+    imul rdx, 48
+    store.i64 [rbp-16], rdx
+    cmp.i32 [rdi+rdx], 3
+    jne ^for_iter
+    jmp ^check2
+
+  block ^check2
+    load.ptr rdi, [r12]
+    load.i64 r10, [rbp-16]
+    cmp.u32 [rdi+r10+12], rcx
+    jne ^for_iter
+    jmp ^check3
+
+  block ^check3
+    load.i64 rdi, [rbp-8]
+    add rdi, 1
+    load.ptr rdx, [r12]
+    imul rdi, 48
+    store.i64 [rbp-24], rdi
+    cmp.i32 [rdx+rdi], 4
+    jne ^for_iter
+    jmp ^check4
+
+  block ^check4
+    load.ptr rdi, [r12]
+    load.i64 r10, [rbp-24]
+    cmp.u8 [rdi+r10+8], 0
+    je ^for_iter
+    jmp ^hit
+
+  block ^hit
+    load.ptr rdi, [r12]
+    load.i64 r10, [rbp-24]
+    load.i64 rdi, [rdi+r10+16]
+    store.i64 [rbp-32], rdi
+    cmp.i64 rdi, rbx
+    sete rdi
+    movzx rdi, rdi
+    store.i64 [rbp-40], rdi
+    cmp.i32 [rsi+40], 18
+    je ^then
+    jmp ^else
+
+  block ^then
+    load.u8 r11, [rbp-40]
+    store.u8 [rbp-48], r11
+    jmp ^condend
+
+  block ^else
+    cmp.i64 [rbp-32], rbx
+    setne rdi
+    movzx rdi, rdi
+    store.u8 [rbp-48], rdi
+    jmp ^condend
+
+  block ^condend
+    cmp.u8 [rbp-48], 0
+    jne ^taddr
+    jmp ^faddr
+
+  block ^taddr
+    lea rdi, [r8+136]
+    store.ptr [rbp-56], rdi
+    jmp ^sel
+
+  block ^faddr
+    lea rdi, [r8+184]
+    store.ptr [rbp-56], rdi
+    jmp ^sel
+
+  block ^sel
+    load.ptr r11, [rbp-56]
+    copy_bytes 48x8, r9, r11
+    mov rax, 1
+    ret rax
+
+  block ^for_iter
+    load.i64 rdi, [rbp-8]
+    add rdi, 2
+    store.i64 [rbp-8], rdi
+    jmp ^for_cond
+
+  block ^for_end
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @phimem
+    mov rsi, @comparemem
+    mov r8, @branchmem
+    mov r9, @outmem
+    mov rdx, 4242
+    mov rcx, 7
+    call @probe [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    mov r8, rax
+    zext.i8 r8
+    cmp.i64 r8, 1
+    jne ^bad
+    jmp ^checkcopy
+
+  block ^checkcopy
+    cmp.i64 @outmem, 1111
+    setne rax
+    movzx rax, rax
+    ret rax
+
+  block ^bad
+    mov rax, 2
+    ret rax

@@ -1,0 +1,42 @@
+global @header_init [binding=internal, object=_ZL11header_init] = {
+  zero 1
+}
+global @counter : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @counter
+    return i32 %t1
+}
+function @HeaderInit__HeaderInit(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN10HeaderInitC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 7, @counter
+    return void
+}
+function @HeaderInit___HeaderInit(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN10HeaderInitD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @counter
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @counter
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @header_init
+    call void @HeaderInit__HeaderInit(%t1)
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @header_init
+    call void @HeaderInit___HeaderInit(%t1)
+    return void
+}
+alias object _ZN10HeaderInitC2Ev = @HeaderInit__HeaderInit
+alias object _ZN10HeaderInitD2Ev = @HeaderInit___HeaderInit

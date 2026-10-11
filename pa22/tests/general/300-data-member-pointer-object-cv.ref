@@ -1,0 +1,7 @@
+declare global @same_constint___constint_____value : u8 [binding=weak, object=_ZN4sameIOKiS1_E5valueE]
+declare global @same_constint__constint____value : u8 [binding=weak, object=_ZN4sameIRKiS1_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

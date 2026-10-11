@@ -1,0 +1,24 @@
+int local_enum_result()
+{
+  enum push_result : unsigned
+  {
+    not_pushed = 2u,
+    pushed = 5u
+  };
+
+  struct local
+  {
+    static push_result value()
+    {
+      push_result result = not_pushed;
+      return result;
+    }
+  };
+
+  return local::value() == not_pushed ? 17 : 3;
+}
+
+int main()
+{
+  return local_enum_result() == 17 ? 0 : 1;
+}

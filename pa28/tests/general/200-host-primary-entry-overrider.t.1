@@ -1,0 +1,23 @@
+#include "200-host-primary-entry-overrider.helper.h"
+
+int X::x() { return 1; }
+int Y::y() { return 2; }
+int V::y() { return 20; }
+int W::w() { return 3; }
+int D::x() { return 10; }
+
+int main()
+{
+  D d;
+  if (host_d_x(d) != 10) return 1;
+  if (host_v_y(d) != 20 || host_v_x(d) != 10) return 2;
+  V& v = d;
+  if (v.y() != 20 || v.x() != 10 || d.x() != 10 || d.w() != 3) return 3;
+  HD* made = host_make();
+  if (made->x() != 110 || made->w() != 103) return 4;
+  HV* view = made;
+  if (view->y() != 120 || view->x() != 110) return 5;
+  HY* second = view;
+  if (second->y() != 120) return 6;
+  return 0;
+}

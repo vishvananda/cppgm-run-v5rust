@@ -1,0 +1,21 @@
+namespace std {
+class type_info;
+}
+
+struct Base {
+  virtual ~Base() {}
+};
+
+int main()
+{
+  Base * base = 0;
+  try
+  {
+    (void)&typeid(*base);
+    return 1;
+  }
+  catch (...)
+  {
+    return 0;
+  }
+}

@@ -1,0 +1,19 @@
+#include "200-host-inline-lambda-closure-weak-link.helper.h"
+
+int host_ticket();
+int* host_tag();
+int (*unit_source())();
+int* unit_tag();
+
+int main()
+{
+  // _ZZZ11next_ticketvENKUlvE_clEvE6ticket is shared with the host unit.
+  if (next_ticket() != 1 || host_ticket() != 2 || next_ticket() != 3) return 1;
+  // closure_tag<ticket_tag()::{lambda()#1}> is one weak function in every
+  // unit, the host unit's included.
+  if (ticket_tag() != host_tag() || ticket_tag() != unit_tag()) return 2;
+  // The static invoker _ZZ13ticket_sourcevENUlvE_8__invokeEv (GCC's is
+  // _FUN) is one function in both units the course compiles.
+  if (ticket_source() != unit_source()) return 3;
+  return unit_source()() == 101 && ticket_source()() == 102 ? 0 : 4;
+}

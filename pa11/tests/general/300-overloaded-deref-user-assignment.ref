@@ -1,0 +1,34 @@
+global @g : i32 [binding=strong] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $it : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $it
+    %t2 = addr $it
+    %t3 = call ptr @Iter__operator_(%t2)
+    %t4 = call ptr @Iter__operator___2(%t3, 7)
+    %t5 = load typed i32 @g
+    %t6 = binary sub nowrap i32 %t5, 7
+    return i32 %t6
+}
+function @Iter__operator_(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN4IterdeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Iter__operator___2(%this : ptr [object_bytes=1], %n : i32) -> ptr [binding=weak, object=_ZN4IteraSEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    store typed i32 %t1, @g
+    %t2 = load typed ptr $this
+    return ptr %t2
+}

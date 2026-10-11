@@ -1,0 +1,13 @@
+namespace {
+thread_local const int g_value = 7;
+}
+
+int read_value()
+{
+  return g_value;
+}
+
+int main()
+{
+  return read_value() != 7;
+}

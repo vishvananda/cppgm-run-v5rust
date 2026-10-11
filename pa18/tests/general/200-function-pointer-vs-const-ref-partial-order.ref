@@ -1,0 +1,21 @@
+function @f(%__param0 : i64) -> i32 [binding=strong, object=_Z1fm] {
+  slot $__param0 : i64
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @f
+    %t2 = call i32 @pick(%t1)
+    %t3 = binary sub nowrap i32 %t2, 2
+    return i32 %t3
+}
+function @pick(%__param0 : ptr) -> i32 [binding=weak, object=_Z4pickIFimEEiPT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}

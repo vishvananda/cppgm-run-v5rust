@@ -1,0 +1,41 @@
+template<typename T>
+struct pad {
+  explicit pad(int value) : value_(value) {}
+
+  int value_;
+};
+
+template<typename T>
+struct base {
+  virtual ~base() {}
+  virtual int f() const = 0;
+};
+
+template<typename T>
+struct middle : base<T> {
+  explicit middle(int value) : marker_(value) {}
+
+  virtual int g() const { return marker_ + 1; }
+
+  int marker_;
+};
+
+template<typename T>
+struct derived : pad<T>, middle<T> {
+  explicit derived(int value) : pad<T>(value), middle<T>(100) {}
+
+  int f() const { return this->value_ + this->marker_; }
+  int g() const { return this->value_ + 7; }
+};
+
+int main()
+{
+  derived<int> d(17);
+  middle<int> *p = &d;
+  derived<int> *downcast = static_cast<derived<int> *>(p);
+  pad<int> *pad_base = &d;
+  return p->g() == 24 &&
+         p->f() == 117 &&
+         downcast->value_ == 17 &&
+         pad_base->value_ == 17 ? 0 : 1;
+}

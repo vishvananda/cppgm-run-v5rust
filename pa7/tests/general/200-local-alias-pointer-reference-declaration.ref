@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias I int
+  function-definition f function of (lvalue-reference to int) returning int
+    parameter in lvalue-reference to int
+    compound-statement
+      simple-declaration
+        variable p pointer to int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int in
+      simple-declaration
+        variable r lvalue-reference to int
+          unary-expression lvalue int OP_STAR:*
+            id-expression lvalue pointer to int p
+      return-statement
+        id-expression lvalue int r
+end translation unit

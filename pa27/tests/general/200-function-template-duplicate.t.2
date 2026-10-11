@@ -1,0 +1,8 @@
+#include "200-function-template-duplicate.helper.h"
+
+int one();
+
+int main()
+{
+  return one() + add_template<int>(31) - 43;
+}

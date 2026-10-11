@@ -1,0 +1,15 @@
+struct KeyFunctionBase
+{
+  virtual ~KeyFunctionBase() {}
+  virtual int value() = 0;
+};
+
+struct KeyFunctionDerived : KeyFunctionBase
+{
+  int value();
+};
+
+int KeyFunctionDerived::value()
+{
+  return 11;
+}

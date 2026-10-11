@@ -1,0 +1,13 @@
+global @observed : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    store volatile i32 0, @observed
+    store volatile i32 1, @observed
+    store volatile i32 3, @observed
+    store volatile i32 6, @observed
+    %t1 = load volatile i32 @observed
+    %t2 = cmp eq i32 %t1, 6
+    %t3 = select i32 %t2, 0, 1
+    return i32 %t3
+}

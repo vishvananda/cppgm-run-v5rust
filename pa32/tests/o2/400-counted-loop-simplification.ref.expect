@@ -1,0 +1,12 @@
+# budget from 400-counted-loop-simplification.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 23
+blocks <= 14
+count(call) <= 3
+count(load) <= 4
+count(store) <= 4
+count(phi) <= 5
+instructions <= 13 in @strength_reduce
+instructions <= 4 in @remove_finite_empty_loop
+instructions <= 10 in @keep_unproven_loop
+instructions <= 4 in @remove_zero_trip_loop
+instructions <= 4 in @remove_one_trip_loop

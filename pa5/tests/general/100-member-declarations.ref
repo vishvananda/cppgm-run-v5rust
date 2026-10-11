@@ -1,0 +1,93 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    special-member-declaration C
+      declarator
+        identifier C
+        parameter-clause
+    special-member-declaration ~C
+      declarator
+        identifier ~C
+        parameter-clause
+    special-member-declaration operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        cv-qualifier KW_CONST:const
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier operator[]
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier i
+            cv-qualifier KW_CONST:const
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:C
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_AMP:&
+            identifier operator=
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_CONST:const
+                  decl-specifier TT_IDENTIFIER:C
+                declarator
+                  ptr-operator OP_AMP:&
+          initializer
+            special-initializer default
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier value
+          initializer
+            braced-init-list
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      declarator
+        identifier method
+        parameter-clause
+      compound-statement
+        return-statement
+          literal 0
+    empty-declaration
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VIRTUAL:virtual
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_STAR:*
+            identifier pure
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier x
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_CONST:const
+                  decl-specifier TT_IDENTIFIER:C
+                declarator
+                  ptr-operator OP_LAND:&&
+                  identifier y
+          initializer
+            literal 0
+end translation unit

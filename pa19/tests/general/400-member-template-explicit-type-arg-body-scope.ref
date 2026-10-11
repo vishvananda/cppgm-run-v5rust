@@ -1,0 +1,21 @@
+declare function @forward(%arg0 : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z7forwardImEOT_RS0_]
+
+function @g(%x : i64) -> i64 [binding=strong, object=_Z1gm] {
+  slot $x : i64
+
+  block ^entry:
+    store typed i64 %x, $x
+    %t1 = addr $x
+    %t2 = call ptr @X_int___f(%t1)
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+function @X_int___f(%u1 : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN1XIiE1fImEEOT_RS2_, inline_hint=yes] {
+  slot $u1 : ptr
+
+  block ^entry:
+    store typed ptr %u1, $u1
+    %t1 = load typed ptr $u1
+    %t2 = call ptr @forward(%t1)
+    return ptr %t2
+}

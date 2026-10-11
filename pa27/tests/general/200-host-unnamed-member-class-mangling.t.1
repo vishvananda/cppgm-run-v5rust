@@ -1,0 +1,9 @@
+// N3485 3.2p6, 3.5p4 + Itanium ABI 5.1.6 (unnamed types, Ut_): H's unnamed
+// member class is one type in every unit, so Box<it>::s is one object;
+// expect exit 0
+int shift_positions(int, int, int);
+struct H { struct { int a; } m; };
+template<class T> struct Box { static int s; };
+template<class T> int Box<T>::s = 0;
+int other();
+int main() { H h; ++Box<decltype(h.m)>::s; return other() == 2 ? 0 : 1; }

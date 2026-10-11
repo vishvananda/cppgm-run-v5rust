@@ -1,0 +1,38 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @cell
+  storage data
+  item i64 7
+
+function @read
+  abi
+    param %p -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rax, [rdi]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @cell
+    call @read [args=(rdi)]
+    ret rax

@@ -1,0 +1,12 @@
+// An inline variable is one object however many translation units define it,
+// so each definition has to merge weakly instead of claiming the name.
+inline const char digits[4] = { 'a', 'b', 'c', 'd' };
+
+const char* second_view();
+
+int main()
+{
+  if (digits != second_view()) return 1;
+  if (digits[3] != 'd') return 2;
+  return 0;
+}

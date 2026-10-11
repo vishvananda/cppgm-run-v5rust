@@ -1,0 +1,20 @@
+struct RefHolder {
+  int& r;
+  RefHolder(int& x) : r(x) {}
+  RefHolder(const RefHolder&) = default;
+};
+
+struct Holder {
+  struct {
+    int* ptr;
+    RefHolder del;
+  };
+
+  Holder(int* p, RefHolder d) : ptr(p), del(d) {}
+};
+
+int main() {
+  int x = 7;
+  Holder h(nullptr, RefHolder(x));
+  return h.ptr == nullptr && &h.del.r == &x ? 0 : 1;
+}

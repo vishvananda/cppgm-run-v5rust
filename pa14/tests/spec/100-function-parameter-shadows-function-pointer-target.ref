@@ -1,0 +1,50 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @g(%x : i32) -> i32 [binding=strong, object=_Z1gi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $target : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @g
+    %t2 = call ptr @preserve_target(%t1)
+    store typed ptr %t2, $target
+    %t3 = load typed ptr $target
+    %t4 = call i32 %t3(1) as (%arg0 : i32) -> i32
+    %t5 = cmp eq i32 %t4, 2
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @preserve_target(%f : ptr) -> ptr [binding=weak, object=_Z15preserve_targetIPFiiEET_S2_] {
+  slot $f : ptr
+
+  block ^entry:
+    store typed ptr %f, $f
+    %t1 = load typed ptr $f
+    return ptr %t1
+}

@@ -1,0 +1,31 @@
+global @g : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @YU__YU(%t1)
+    %t2 = addr $value
+    call void @YU___YU(%t2)
+    return i32 0
+}
+function @YU__YU(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN2YUC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store i32 0, %t2
+    return void
+}
+function @YU___YU(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN2YUD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN2YUC2Ev = @YU__YU
+alias object _ZN2YUD2Ev = @YU___YU

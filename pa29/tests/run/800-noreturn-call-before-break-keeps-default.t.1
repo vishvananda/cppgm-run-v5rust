@@ -1,0 +1,44 @@
+#include <cstdio>
+#include <cstdlib>
+
+template <int N>
+[[noreturn]] void thrower() { throw N; }
+
+[[noreturn]] void aborter();
+
+int classify(const char* p)
+{
+  int r = 0;
+  switch (*p) {
+  case '.':
+    r = 1;
+    break;
+  case '*':
+  case '+':
+    thrower<3>();
+    break;
+  case '#':
+    aborter();
+    break;
+  case '@':
+    return 9;
+    break;
+  default:
+    r = 5;
+    break;
+  }
+  return r;
+}
+
+void aborter() { std::abort(); }
+
+int main()
+{
+  std::printf("%d %d %d\n", classify("."), classify("x"), classify("@"));
+  try {
+    classify("+");
+  } catch (int n) {
+    std::printf("caught %d\n", n);
+  }
+  return 0;
+}

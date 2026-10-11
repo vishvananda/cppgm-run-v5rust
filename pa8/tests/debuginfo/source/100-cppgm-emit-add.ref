@@ -1,0 +1,9 @@
+function @add1(%x : i32) -> i32 [binding=strong, object=_Z4add1i] !dbg(tests/debuginfo/source/100-cppgm-emit-add.t, 1, 1) {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x !dbg(tests/debuginfo/source/100-cppgm-emit-add.t, 1, 1)
+    %t1 = load typed i32 $x !dbg(tests/debuginfo/source/100-cppgm-emit-add.t, 2, 10)
+    %t2 = binary add nowrap i32 %t1, 1 !dbg(tests/debuginfo/source/100-cppgm-emit-add.t, 2, 10)
+    return i32 %t2 !dbg(tests/debuginfo/source/100-cppgm-emit-add.t, 2, 3)
+}

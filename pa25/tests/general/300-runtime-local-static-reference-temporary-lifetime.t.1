@@ -1,0 +1,37 @@
+// N3485 12.2p5, 6.7p4, 3.6.3p1: a temporary bound to a block-scope static
+// reference has static storage duration; it survives the call and is
+// destroyed at exit, after objects constructed later.
+int calls, alive, destroyed, order;
+struct Verify {
+  ~Verify() { if (alive != 0 || destroyed != 4 || order != 4321) __builtin_abort(); }
+} verify;
+struct Owner {
+  int tag; long value;
+  Owner(int n) : tag(n), value(100 + n) { ++alive; }
+  ~Owner() { if (value != 100 + tag) __builtin_abort(); --alive; ++destroyed; order = order * 10 + tag; }
+};
+int next() { return ++calls + 40; }
+const Owner& direct() { static const Owner& held = Owner(1); return held; }
+const long& member() { static const long& held = Owner(2).value; return held; }
+const Owner& chosen(bool pick) { static const Owner& held = pick ? Owner(3) : Owner(9); return held; }
+const int& scalar() { static const int& held = next(); return held; }
+struct Late { ~Late() { if (destroyed != 0) __builtin_abort(); } };
+int touch() { volatile long clobber[16]; for (int i = 0; i < 16; ++i) clobber[i] = 77; return (int)clobber[3]; }
+int main() {
+  const Owner& a = direct();
+  touch();
+  const long& b = member();
+  touch();
+  const Owner& c = chosen(true);
+  touch();
+  const int& d = scalar();
+  touch();
+  static Owner last(4);
+  static Late late;
+  if (a.value != 101 || &a != &direct()) return 1;
+  if (b != 102 || &b != &member()) return 2;
+  if (c.value != 103 || &c != &chosen(false)) return 3;
+  if (d != 41 || &d != &scalar() || calls != 1) return 4;
+  if (alive != 4 || destroyed != 0) return 5;
+  return 0;
+}

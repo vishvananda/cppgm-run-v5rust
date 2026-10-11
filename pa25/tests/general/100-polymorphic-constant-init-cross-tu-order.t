@@ -1,0 +1,1 @@
+polymorphic constant initialization precedes cross-translation-unit dynamic initialization

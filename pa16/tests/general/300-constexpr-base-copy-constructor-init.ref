@@ -1,0 +1,40 @@
+global @payload [storage=readonly, binding=internal, object=_ZL7payload] = {
+  i32 7
+}
+global @adapted [storage=readonly, binding=internal, object=_ZL7adapted] = {
+  i32 7
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @Payload__Payload(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN7PayloadC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Adapted__Adapted(%this : ptr [object_bytes=4], %p : obj<4x4>) -> void [binding=weak, object=_ZN7AdaptedC1E7Payload, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $p
+    copyobj 4x4 %p, %t1
+    %t2 = load typed ptr $this
+    %t3 = index i8 %t2, 0
+    %t4 = addr $p
+    copyobj 4x4 %t4, %t3
+    return void
+}
+alias object _ZN7PayloadC2Ei = @Payload__Payload
+alias object _ZN7AdaptedC2E7Payload = @Adapted__Adapted

@@ -1,0 +1,9 @@
+declare global @similar_impl___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : i32 [binding=weak, object=_ZN12similar_implI4listIJEES1_E5valueE]
+declare global @similar_impl___cppgm_class_template_identity_2___cppgm_class_template_identity_2___value : i32 [binding=weak, object=_ZN12similar_implI4listIJiEES1_E5valueE]
+declare global @similar_impl___cppgm_class_template_identity_2___cppgm_class_template_identity_3___value : i32 [binding=weak, object=_ZN12similar_implI4listIJiEES0_IJlEEE5valueE]
+declare global @similar_impl___cppgm_class_template_identity_1___cppgm_class_template_identity_4___value : i32 [binding=weak, object=_ZN12similar_implI4listIJEES0_IJS1_EEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

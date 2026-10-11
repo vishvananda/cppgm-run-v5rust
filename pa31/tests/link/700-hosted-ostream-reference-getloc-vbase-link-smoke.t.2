@@ -1,0 +1,10 @@
+#include "700-hosted-ostream-reference-getloc-vbase-link-smoke.shared.h"
+
+#include <sstream>
+
+int main()
+{
+  std::ostringstream out;
+  HostedOstreamLocaleProbe probe(out);
+  return probe.touch();
+}

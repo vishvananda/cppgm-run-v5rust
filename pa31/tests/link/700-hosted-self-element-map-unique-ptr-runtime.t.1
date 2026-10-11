@@ -1,0 +1,40 @@
+#include <map>
+#include <memory>
+
+template<class T>
+struct holder
+{
+  std::map<int, std::unique_ptr<T> > items;
+
+  T* find(int key)
+  {
+    typename std::map<int, std::unique_ptr<T> >::iterator it = items.find(key);
+    return it == items.end() ? 0 : it->second.get();
+  }
+
+  void put(int key, T* value)
+  {
+    items[key] = std::unique_ptr<T>(value);
+  }
+};
+
+struct record
+{
+  holder<record> nested;
+  int value;
+
+  record() : value(0) {}
+};
+
+int main()
+{
+  record root;
+  root.value = 3;
+  record* child = new record();
+  child->value = 11;
+  root.nested.put(1, child);
+
+  record* found = root.nested.find(1);
+  record* missing = root.nested.find(2);
+  return root.value == 3 && found && found->value == 11 && !missing ? 0 : 1;
+}

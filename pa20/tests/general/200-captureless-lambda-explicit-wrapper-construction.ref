@@ -1,0 +1,175 @@
+function @use(%wrapper : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z3useRK7Wrapper] {
+  slot $wrapper : ptr
+
+  block ^entry:
+    store typed ptr %wrapper, $wrapper
+    %t1 = load typed ptr $wrapper
+    %t2 = call i32 @Wrapper__operator__(%t1, 4)
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $closure : obj<1x1>
+  slot $direct : obj<8x8>
+  slot $direct_list : obj<8x8>
+  slot $copy_list : obj<8x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $arg__5 : obj<8x8>
+  slot $land__6 : i64
+  slot $arg__7 : obj<8x8>
+  slot $land__8 : i64
+  slot $arg__9 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $closure
+    %t2 = addr $direct
+    %t3 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t2, %t3)
+    %t4 = addr $direct_list
+    %t5 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t4, %t5)
+    %t6 = addr $copy_list
+    %t7 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t6, %t7)
+    %t8 = addr $direct
+    %t9 = call i32 @use(%t8)
+    %t10 = cmp eq i32 %t9, 5
+    branch %t10, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t11 = addr $direct_list
+    %t12 = call i32 @use(%t11)
+    %t13 = cmp eq i32 %t12, 5
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t16 = addr $copy_list
+    %t17 = call i32 @use(%t16)
+    %t18 = cmp eq i32 %t17, 5
+    %t19 = cmp ne i64 %t18, 0
+    store typed i64 %t19, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t20 = load typed i64 $land__3
+    branch %t20, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t21 = addr $arg__5
+    %t22 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t21, %t22)
+    %t23 = call i32 @use(%t21)
+    %t24 = cmp eq i32 %t23, 5
+    %t25 = cmp ne i64 %t24, 0
+    store typed i64 %t25, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t26 = load typed i64 $land__4
+    branch %t26, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t27 = addr $arg__7
+    %t28 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t27, %t28)
+    %t29 = call i32 @use(%t27)
+    %t30 = cmp eq i32 %t29, 5
+    %t31 = cmp ne i64 %t30, 0
+    store typed i64 %t31, $land__6
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__6
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t32 = load typed i64 $land__6
+    branch %t32, ^land_rhs_16, ^land_short_17
+
+  block ^land_rhs_16:
+    %t33 = addr $arg__9
+    %t34 = addr @__lambda_main_t75_79___FUN
+    call void @Wrapper__Wrapper(%t33, %t34)
+    %t35 = call i32 @use(%t33)
+    %t36 = cmp eq i32 %t35, 5
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $land__8
+    jump ^land_end_18
+
+  block ^land_short_17:
+    store typed i64 0, $land__8
+    jump ^land_end_18
+
+  block ^land_end_18:
+    %t38 = load typed i64 $land__8
+    branch %t38, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t39 = load typed i32 $cond__1
+    return i32 %t39
+}
+function @Wrapper__operator__(%this : ptr [object_bytes=8], %n : i32) -> i32 [binding=weak, object=_ZNK7WrapperclEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = call i32 %t4(%t1) as (%arg0 : i32) -> i32
+    return i32 %t5
+}
+function @__lambda_main_t75_79___FUN(%n : i32) -> i32 [binding=internal, object=_ZZ4mainEN3$_08__invokeEi, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $n : i32
+
+  block ^entry:
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @Wrapper__Wrapper(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN7WrapperC1EPFiiE, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN7WrapperC2EPFiiE = @Wrapper__Wrapper

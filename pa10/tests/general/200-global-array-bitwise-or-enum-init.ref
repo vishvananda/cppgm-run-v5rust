@@ -1,0 +1,29 @@
+global @masks [storage=readonly, binding=internal, object=_ZL5masks] = {
+  u32 0
+  u32 1120
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @masks
+    %t2 = index u32 [projection=array_element] %t1, 1
+    %t3 = load typed u32 %t2
+    %t4 = binary or i32 96, 1024
+    %t5 = copy u32 %t4
+    %t6 = cmp eq u32 %t3, %t5
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

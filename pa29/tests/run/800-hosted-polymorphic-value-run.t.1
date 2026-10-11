@@ -1,0 +1,26 @@
+// Itanium: a polymorphic class has a non-trivial copy constructor, so
+// by-value passing uses the invisible reference (caller copy, address
+// passed). The virtual call inside the receiver proves the sliced
+// copy's vptr installed the static type's table.
+struct Poly
+{
+	virtual int tag() { return 7; }
+	long value;
+};
+
+double host_take_poly(Poly p);
+extern "C" int host_drive();
+
+double our_take_poly(Poly p)
+{
+	return double(p.tag()) + double(p.value);
+}
+
+int main()
+{
+	Poly p;
+	p.value = 35;
+	if (our_take_poly(p) != 42.0) return 1;
+	if (host_take_poly(p) != 42.0) return 2;
+	return host_drive();
+}

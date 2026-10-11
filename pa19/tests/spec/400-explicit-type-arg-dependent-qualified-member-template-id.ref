@@ -1,0 +1,101 @@
+function @boost__runtime__run_case() -> i32 [binding=strong, object=_ZN5boost7runtime8run_caseEv] {
+  slot $first : obj<4x4>
+  slot $second : obj<4x4>
+  slot $combined : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $second
+    %t3 = addr $first
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 3, %t4
+    %t5 = addr $second
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 7, %t6
+    %t7 = addr $combined
+    %t8 = addr $first
+    %t9 = addr $second
+    %t10 = call obj<4x4> @boost__nfp__opt_append(%t8, %t9)
+    copyobj 4x4 %t10, %t7
+    %t11 = addr $combined
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 7
+    branch %t15, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t16 = addr $combined
+    %t17 = index i8 %t16, 0
+    %t18 = call i32 @boost__nfp__nfp_detail__named_parameter_base___cppgm_class_template_identity_1___marker(%t17)
+    %t19 = cmp eq i32 %t18, 1
+    %t20 = cmp ne i64 %t19, 0
+    store typed i64 %t20, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t21 = load typed i64 $land__2
+    branch %t21, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t22 = load typed i32 $cond__1
+    return i32 %t22
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @boost__runtime__run_case()
+    return i32 %t1
+}
+function @boost__nfp__opt_append(%__param0 : ptr [pass=by_address, object_bytes=4], %np : ptr [pass=by_address, object_bytes=4]) -> obj<4x4> [binding=internal, object=_ZN5boost3nfp10opt_appendINS0_15named_parameterIiNS_7runtime12_GLOBAL__N_18first_idERKiEENS2_IiNS4_9second_idES7_EEEENS_11enable_if_cIXntsr9has_paramIT_NS0_7keywordINT0_2idELb0EEEEE5valueENS0_23named_parameter_combineISE_SC_EEE4typeERKSC_RKSE_] {
+  slot $__param0 : ptr
+  slot $np : ptr
+  slot $result : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %np, $np
+    %t1 = addr $result
+    %t2 = addr $result
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr $np
+    %t5 = call ptr @boost__nfp__named_parameter_int_second_id_constint____operator_(%t3, %t4)
+    %t6 = addr $retobj__1
+    %t7 = addr $result
+    copyobj 4x4 %t7, %t6
+    return obj<4x4> $retobj__1
+}
+function @boost__nfp__nfp_detail__named_parameter_base___cppgm_class_template_identity_1___marker(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZNK5boost3nfp10nfp_detail20named_parameter_baseINS0_23named_parameter_combineINS0_15named_parameterIiNS_7runtime12_GLOBAL__N_19second_idERKiEENS4_IiNS6_8first_idES9_EEEEE6markerEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @boost__nfp__named_parameter_int_second_id_constint____operator_(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=internal, object=_ZN5boost3nfp15named_parameterIiNS_7runtime12_GLOBAL__N_19second_idERKiEaSERKS7_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}

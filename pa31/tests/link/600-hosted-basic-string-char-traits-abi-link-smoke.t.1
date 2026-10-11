@@ -1,0 +1,8 @@
+#include "600-hosted-basic-string-char-traits-abi-link-smoke.shared.h"
+
+int accept_basic_string(
+    const std::basic_string<char, std::char_traits<char>, std::allocator<char> > & lhs,
+    std::basic_string<char, std::char_traits<char>, std::allocator<char> > & rhs)
+{
+  return lhs.size() == rhs.size() ? 0 : 1;
+}

@@ -1,0 +1,87 @@
+function @inspect(%array : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z7inspectO5ArrayI4ItemLi2EE] {
+  slot $array : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed ptr %array, $array
+    %t1 = load typed ptr $array
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary mul i64 0, 8
+    %t4 = index i8 [projection=array_element] %t2, %t3
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = load typed ptr $array
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = binary mul i64 0, 8
+    %t10 = index i8 [projection=array_element] %t8, %t9
+    %t11 = cmp eq ptr %t6, %t10
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = load typed ptr $array
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = binary mul i64 1, 8
+    %t15 = index i8 [projection=array_element] %t13, %t14
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = load typed ptr %t16
+    %t18 = load typed ptr $array
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = binary mul i64 1, 8
+    %t21 = index i8 [projection=array_element] %t19, %t20
+    %t22 = cmp eq ptr %t17, %t21
+    %t23 = cmp ne i64 %t22, 0
+    store typed i64 %t23, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t24 = load typed i64 $land__2
+    branch %t24, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t25 = load typed i32 $cond__1
+    return i32 %t25
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @check()
+    return i32 %t1
+}
+function @check() -> i32 [binding=weak, object=_Z5checkI5ArrayI4ItemLi2EEEiv] {
+  slot $arg__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $arg__1
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Item__Item(%t2, 0)
+    %t3 = index i8 %t2, 8
+    call void @Item__Item(%t3, 1)
+    %t4 = call i32 @inspect(%t1)
+    return i32 %t4
+}
+function @Item__Item(%this : ptr [object_bytes=8], %__param1 : i32) -> void [unwind=no, binding=weak, object=_ZN4ItemC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN4ItemC2Ei = @Item__Item

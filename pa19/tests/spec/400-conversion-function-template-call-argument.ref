@@ -1,0 +1,32 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $x
+    %t5 = call i32 @box__operatorT(%t4)
+    %t6 = call i32 @f(%t5)
+    %t7 = binary sub nowrap i32 %t6, 7
+    return i32 %t7
+}
+function @box__operatorT(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK3boxcvT_IiEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

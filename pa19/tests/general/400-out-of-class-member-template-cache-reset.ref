@@ -1,0 +1,12 @@
+declare global @execute_member_valid_const__cppgm_class_template_identity_1_function_object_void___value : u8 [binding=weak, object=_ZN20execute_member_validIK8executorIiLj0EE15function_objectvE5valueE]
+declare global @execute_member_noexcept_const__cppgm_class_template_identity_1_function_object_void___value : u8 [binding=weak, object=_ZN23execute_member_noexceptIK8executorIiLj0EE15function_objectvE5valueE]
+
+global @force_full_collection : i32 [binding=strong] = 1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @force_full_collection
+    %t2 = cmp eq i32 %t1, 0
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}

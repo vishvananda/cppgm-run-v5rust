@@ -1,0 +1,5 @@
+inline int answer();
+int answer() { return 7; }
+int left() { return answer(); }
+typedef int (*answer_pointer)();
+answer_pointer left_address() { return &answer; }

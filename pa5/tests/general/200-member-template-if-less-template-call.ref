@@ -1,0 +1,96 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier S
+    class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_BOOL:bool
+            declarator
+              identifier U
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier g
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_BOOL:bool
+            declarator
+              identifier U
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier f
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+                  declarator
+                    identifier n
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+                  declarator
+                    identifier bc
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier U
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier S::f
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier n
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier bc
+      compound-statement
+        if-statement
+          condition
+            binary-expression OP_LT:<
+              id-expression n
+              id-expression bc
+          then
+            expression-statement
+              call-expression
+                id-expression g<U>
+                argument-list
+                  id-expression n
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

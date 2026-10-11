@@ -1,0 +1,5 @@
+// GCC __builtin_popcount and __builtin_popcountl count the set bits of their
+// operand: popcount(0xf0f1) is 9 and popcountl(0xff00ff00ff00ff01) is 33
+int count(unsigned x) { return __builtin_popcount(x); }
+int count_long(unsigned long x) { return __builtin_popcountl(x); }
+int main(int argc, char**) { unsigned x = 0xf0f0u + (unsigned)argc; unsigned long y = 0xff00ff00ff00ff00ul + (unsigned long)argc; return count(x) == 9 && count_long(y) == 33 ? 0 : 1; }

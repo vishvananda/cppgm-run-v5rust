@@ -1,0 +1,42 @@
+struct Iterator
+{
+  int value;
+};
+
+struct Result
+{
+  int value;
+
+  Result() : value(0) {}
+  ~Result() {}
+
+  bool empty() const { return false; }
+  int& front() { return value; }
+
+  Iterator begin()
+  {
+    if (value < 0)
+      throw value;
+    Iterator result;
+    result.value = 0;
+    return result;
+  }
+
+  Iterator erase(Iterator unused)
+  {
+    (void) unused;
+    if (value < 0)
+      throw value;
+    Iterator result;
+    result.value = 0;
+    return result;
+  }
+};
+
+int main()
+{
+  Result result;
+  if (!result.empty() && result.front() == 0)
+    result.erase(result.begin());
+  return 0;
+}

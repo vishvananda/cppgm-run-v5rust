@@ -1,0 +1,62 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 98
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i8 0
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $src_buf : obj<2x1>
+  slot $dst_buf : obj<2x1>
+  slot $src : ptr
+  slot $dst : ptr
+  slot $tmpobj__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $src_buf
+    copyobj 2x1 @__constexpr_template__1, %t1
+    %t2 = addr $dst_buf
+    copyobj 2x1 @__constexpr_template__2, %t2
+    %t3 = addr $src_buf
+    store typed ptr %t3, $src
+    %t4 = addr $dst_buf
+    store typed ptr %t4, $dst
+    %t5 = addr $tmpobj__1
+    %t6 = load typed ptr $src
+    %t7 = load typed ptr $dst
+    %t8 = call obj<16x8> @helper(%t6, 2, %t7)
+    copyobj 16x8 %t8, %t5
+    %t9 = index i8 [projection=field] %t5, 8
+    %t10 = load typed ptr %t9
+    %t11 = load typed ptr $dst
+    %t12 = binary sub ptr %t10, %t11
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}
+function @helper(%first : ptr, %n : i64, %result : ptr) -> obj<16x8> [binding=weak, object=_Z6helperI6PolicyPcS1_TnN9enable_ifIXsr6is_ptrIT0_EE5valueEiE4typeELi0EE4PairIS3_T1_ES3_N7IterOpsIT_E15difference_typeIS3_EES7_] {
+  slot $first : ptr
+  slot $n : i64
+  slot $result : ptr
+  slot $p : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed i64 %n, $n
+    store typed ptr %result, $result
+    %t1 = addr $p
+    %t2 = load typed ptr $first
+    %t3 = addr $p
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = load typed ptr $result
+    %t6 = addr $p
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed ptr %t5, %t7
+    %t8 = addr $retobj__1
+    %t9 = addr $p
+    copyobj 16x8 %t9, %t8
+    return obj<16x8> $retobj__1
+}

@@ -1,0 +1,57 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier base
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VIRTUAL:virtual
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VIRTUAL:virtual
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier g
+            parameter-clause
+  class-specifier derived
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name base
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+            virt-specifier TT_IDENTIFIER:override
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier g
+            parameter-clause
+            virt-specifier TT_IDENTIFIER:final
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier h
+          parameter-clause
+          function-qualifier noexcept(true)
+            keyword-literal KW_TRUE:true
+end translation unit

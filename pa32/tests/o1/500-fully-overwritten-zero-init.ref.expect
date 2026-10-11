@@ -1,0 +1,12 @@
+# budget from 500-fully-overwritten-zero-init.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 43
+blocks <= 8
+count(call) <= 4
+count(load) <= 3
+count(store) <= 19
+count(phi) <= 3
+instructions <= 8 in @remove_fully_overwritten
+instructions <= 6 in @retain_partial_overwrite
+instructions <= 9 in @retain_observed_zero
+instructions <= 8 in @retain_volatile_store
+instructions <= 22 in @retain_large_zero

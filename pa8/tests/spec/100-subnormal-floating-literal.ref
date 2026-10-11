@@ -1,0 +1,5 @@
+function @f() -> i64 {
+  block ^entry:
+    %a = const f64 0x0.0000000000001p-1022
+    return i64 0
+}

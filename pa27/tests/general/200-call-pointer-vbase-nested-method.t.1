@@ -1,0 +1,5 @@
+struct C { int n; C() : n(7) {} int get() const { return n; } };
+struct V : C { virtual ~V() {} };
+struct D : virtual V {};
+D *pass(D *p) { return p; }
+int main() { D d; return pass(&d)->get() != 7; }

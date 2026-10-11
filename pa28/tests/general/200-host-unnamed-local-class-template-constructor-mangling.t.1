@@ -1,0 +1,33 @@
+int initial_value()
+{
+  return 7;
+}
+
+int second_value()
+{
+  return 11;
+}
+
+template<class T>
+struct holder
+{
+  static int read()
+  {
+    struct
+    {
+      int value = initial_value();
+    } object;
+
+    struct
+    {
+      int value = second_value();
+    } second;
+
+    return object.value + second.value;
+  }
+};
+
+int main()
+{
+  return holder<int>::read() == 18 ? 0 : 1;
+}

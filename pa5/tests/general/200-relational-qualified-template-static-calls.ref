@@ -1,0 +1,81 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition limits_support
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_LONG:long
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier integer
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier limits
+        class-key KW_STRUCT:struct
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_STATIC:static
+            decl-specifier TT_IDENTIFIER:T
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier min
+                parameter-clause
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_STATIC:static
+            decl-specifier TT_IDENTIFIER:T
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier max
+                parameter-clause
+  class-specifier address
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_LONG:long
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier offset
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    declarator
+      identifier outside
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_LONG:long
+          declarator
+            identifier distance
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_CONST:const
+            decl-specifier TT_IDENTIFIER:address
+          declarator
+            ptr-operator OP_AMP:&
+            identifier value
+    compound-statement
+      return-statement
+        binary-expression OP_LOR:||
+          binary-expression OP_LT:<
+            id-expression distance
+            call-expression
+              id-expression limits_support::limits<limits_support::integer>::min
+              argument-list
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression value
+              identifier offset
+            call-expression
+              id-expression limits_support::limits<limits_support::integer>::max
+              argument-list
+end translation unit

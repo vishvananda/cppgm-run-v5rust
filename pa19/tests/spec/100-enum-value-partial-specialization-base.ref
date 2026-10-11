@@ -1,0 +1,6 @@
+declare global @size_of_type___cppgm_class_template_identity_1___value : i32 [binding=weak, object=_ZN12size_of_typeI5AllocIiLj0EEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

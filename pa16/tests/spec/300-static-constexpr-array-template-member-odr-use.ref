@@ -1,0 +1,29 @@
+global @tables_void___data [storage=readonly, binding=weak, object=_ZN6tablesIvE4dataE] = {
+  i32 4
+  i32 10
+  i32 3
+  i32 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $r : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $r
+    %t2 = addr $r
+    %t3 = call i32 @reader__read(%t2)
+    %t4 = binary sub nowrap i32 %t3, 3
+    return i32 %t4
+}
+function @reader__read(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN6reader4readEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @tables_void___data
+    %t2 = binary mul i64 1, 8
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    %t4 = index i32 [projection=array_element] %t3, 0
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}

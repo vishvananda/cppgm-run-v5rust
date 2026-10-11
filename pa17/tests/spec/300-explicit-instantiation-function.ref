@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @plus_one(4)
+    %t2 = cmp eq i32 %t1, 5
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @plus_one(%value : i32) -> i32 [binding=weak, object=_Z8plus_oneIiET_S0_, object_root=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}

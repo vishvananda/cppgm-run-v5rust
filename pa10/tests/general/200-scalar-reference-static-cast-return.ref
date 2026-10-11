@@ -1,0 +1,35 @@
+function @read_value(%result : ptr) -> f64 [binding=strong, object=_Z10read_valuePd] {
+  slot $result : ptr
+
+  block ^entry:
+    store typed ptr %result, $result
+    %t1 = load typed ptr $result
+    %t2 = load typed f64 %t1
+    return f64 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : f64
+  slot $x : f64
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed f64 3.5, $d
+    %t1 = addr $d
+    %t2 = call f64 @read_value(%t1)
+    store typed f64 %t2, $x
+    %t3 = load typed f64 $x
+    %t4 = cmp eq f64 %t3, 3.5
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

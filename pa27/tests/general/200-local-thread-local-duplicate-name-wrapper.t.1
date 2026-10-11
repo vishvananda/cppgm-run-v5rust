@@ -1,0 +1,18 @@
+inline int & first_depth()
+{
+  static thread_local int depth = 0;
+  return depth;
+}
+
+inline int & second_depth()
+{
+  static thread_local int depth = 0;
+  return depth;
+}
+
+int main()
+{
+  first_depth() = 2;
+  second_depth() = 3;
+  return first_depth() + second_depth() - 5;
+}

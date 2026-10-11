@@ -1,0 +1,79 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @pick
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, -7
+    ret rax
+
+function @spoil
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 9
+    ret rax
+
+function @classify
+  abi
+    return i32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    call @pick [args=()]
+    mov rbx, rax
+    sext.i32 rbx
+    call @spoil [args=()]
+    cmp.i32 rbx, -7
+    je ^hit
+    cmp.i32 rbx, 9
+    je ^wrong
+    jmp ^default
+
+  block ^hit
+    mov rax, 0
+    ret rax
+
+  block ^wrong
+    mov rax, 2
+    ret rax
+
+  block ^default
+    mov rax, 1
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call @classify [args=()]
+    sext.i32 rax
+    ret rax

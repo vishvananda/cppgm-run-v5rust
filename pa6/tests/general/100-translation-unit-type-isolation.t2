@@ -1,0 +1,2 @@
+using value = double;
+value x;

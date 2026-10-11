@@ -1,0 +1,56 @@
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+declare function @operatordelete__(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete_array]
+
+function @count() -> u32 [binding=strong, object=_Z5countv] {
+  block ^entry:
+    return u32 3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $buckets : ptr
+  slot $array_new_size__1 : i64
+  slot $ok : i32
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = call u32 @count()
+    %t2 = convert zext i64 u32 %t1
+    %t3 = binary mul i64 %t2, 16
+    store typed i64 %t3, $array_new_size__1
+    %t4 = call ptr @operatornew__(%t3)
+    %t5 = load typed i64 $array_new_size__1
+    %t6 = binary udiv i64 %t5, 16
+    store typed ptr %t4, $buckets
+    %t7 = load typed ptr $buckets
+    %t8 = load typed ptr $buckets
+    %t9 = binary mul i64 1, 16
+    %t10 = index i8 [projection=array_element] %t8, %t9
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = index i8 [projection=field] %t11, 0
+    store typed ptr %t7, %t12
+    %t13 = load typed ptr $buckets
+    %t14 = binary mul i64 1, 16
+    %t15 = index i8 [projection=array_element] %t13, %t14
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = index i8 [projection=field] %t16, 0
+    %t18 = load typed ptr %t17
+    %t19 = load typed ptr $buckets
+    %t20 = cmp eq ptr %t18, %t19
+    %t21 = convert trunc i32 i64 %t20
+    store typed i32 %t21, $ok
+    %t22 = load typed ptr $buckets
+    call void @operatordelete__(%t22)
+    %t23 = load typed i32 $ok
+    branch %t23, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t24 = load typed i32 $cond__2
+    return i32 %t24
+}

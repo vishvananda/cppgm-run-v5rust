@@ -1,0 +1,12 @@
+#include "header-guard-undef.h"
+#undef GUARD_UNDEF
+#include "header-guard-undef.h"
+#include "header-guard-undef.h"
+#include "header-guard-trailing.h"
+#include "header-guard-trailing.h"
+#include "header-guard-else.h"
+#include "header-guard-else.h"
+#include "header-guard-defined-form.h"
+#include "header-guard-defined-form.h"
+#include "header-guard-leading.h"
+#include "header-guard-leading.h"

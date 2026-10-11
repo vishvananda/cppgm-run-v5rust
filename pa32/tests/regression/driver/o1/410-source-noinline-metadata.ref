@@ -1,0 +1,11 @@
+function @retained_leaf(%value : i32) -> i32 [binding=strong, object=_Z13retained_leafi, no_inline=yes] {
+  block ^entry:
+    %t1 = binary add nowrap i32 %value, 1
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @retained_leaf(4)
+    %t2 = binary sub nowrap i32 %t1, 5
+    return i32 %t2
+}

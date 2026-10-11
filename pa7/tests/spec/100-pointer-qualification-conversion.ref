@@ -1,0 +1,32 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (pointer to const char16_t, pointer to const char16_t, pointer to const char16_t) returning bool
+    parameter a pointer to const char16_t
+    parameter b pointer to const char16_t
+    parameter p pointer to const char16_t
+    compound-statement
+      return-statement
+        binary-expression prvalue bool OP_LAND:&&
+          binary-expression prvalue bool OP_EQ:==
+            id-expression lvalue pointer to const char16_t a
+            id-expression lvalue pointer to const char16_t b
+          binary-expression prvalue bool OP_EQ:==
+            id-expression lvalue pointer to const char16_t p
+            id-expression lvalue pointer to const char16_t a
+  function-definition g function of (pointer to const char16_t, pointer to const char16_t, pointer to char16_t) returning bool
+    parameter a pointer to const char16_t
+    parameter b pointer to const char16_t
+    parameter p pointer to char16_t
+    compound-statement
+      return-statement
+        call-expression prvalue bool
+          callee f function of (pointer to const char16_t, pointer to const char16_t, pointer to const char16_t) returning bool
+          id-expression lvalue pointer to const char16_t a
+          id-expression lvalue pointer to const char16_t b
+          id-expression lvalue pointer to char16_t p
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+end translation unit

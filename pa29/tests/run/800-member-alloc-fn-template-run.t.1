@@ -1,0 +1,7 @@
+// N3485 5.3.4p12, 13.3.1: a member allocation function template is a candidate
+// for a placement new-expression; expect exit 0
+#include <cstdlib>
+#include <cstddef>
+static int hit = 0;
+struct A { template <class T> static void* operator new(std::size_t n, T) { hit = 1; return std::malloc(n); } static void operator delete(void* p) { std::free(p); } };
+int main() { A* a = new (3) A; delete a; return hit ? 0 : 1; }

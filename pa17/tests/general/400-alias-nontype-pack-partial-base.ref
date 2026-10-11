@@ -1,0 +1,10 @@
+global @value [binding=strong] = {
+  zero 1
+}
+global @first : ptr [binding=strong] = addr @value
+global @second : ptr [binding=strong] = addr @value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

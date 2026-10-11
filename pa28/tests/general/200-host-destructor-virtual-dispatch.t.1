@@ -1,0 +1,31 @@
+int seen = 0;
+
+struct Base {
+  virtual ~Base()
+  {
+    seen = value();
+  }
+
+  virtual int value()
+  {
+    return 5;
+  }
+};
+
+struct Derived : Base {
+  ~Derived()
+  {
+  }
+
+  int value()
+  {
+    return 9;
+  }
+};
+
+int main()
+{
+  Base * value = new Derived();
+  delete value;
+  return seen == 5 ? 0 : 1;
+}

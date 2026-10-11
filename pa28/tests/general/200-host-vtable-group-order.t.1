@@ -1,0 +1,22 @@
+#include "200-host-vtable-group-order.helper.h"
+
+int B1::f() { return 10 + m1; }
+int B2::g() { return 20 + m2; }
+int P::p() { return 30 + mp; }
+int T::t() { return 40 + mt; }
+int T::f() { return 50 + mt; }
+int T::g() { return 60 + mt; }
+
+int main()
+{
+  T* made = host_make();
+  B1& b1 = *made;
+  B2& b2 = *made;
+  P& p = *made;
+  if (b1.f() != 54 || host_f(b1) != 54) return 1;
+  if (b2.g() != 64 || host_g(b2) != 64) return 2;
+  if (p.p() != 33 || made->t() != 44) return 3;
+  made->mt = 5;
+  if (host_f(*made) != 55 || host_g(*made) != 65) return 4;
+  return 0;
+}

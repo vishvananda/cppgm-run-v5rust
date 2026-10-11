@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = addr $h
+    %t3 = call i32 @Holder_int___read(%t2)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @Holder_int___read(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK6HolderIiE4readEv] {
+  slot $this : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $tmpobj__1
+    %t2 = load typed ptr $this
+    %t3 = call obj<4x4> @Holder_int___locate(%t2)
+    copyobj 4x4 %t3, %t1
+    %t4 = index i8 [projection=field] %t1, 0
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}
+function @Holder_int___locate(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK6HolderIiE6locateEv] {
+  slot $this : ptr
+  slot $loc : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $loc
+    %t2 = addr $loc
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $loc
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}

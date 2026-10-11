@@ -1,0 +1,7 @@
+// N3485 12.8p15: H2's implicit copy constructor copies each array element with
+// C's copy constructor C(const C&, P = P(3)) (default argument supplied);
+// expect exit 0
+struct P { int id; P(int i) : id(i) {} ~P() {} };
+struct C { int c; C() : c(0) {} C(const C& o, P p = P(3)) : c(o.c + p.id) {} };
+struct H2 { C arr[2]; };
+int main() { H2 a; H2 b(a); return b.arr[1].c == 3 ? 0 : 1; }

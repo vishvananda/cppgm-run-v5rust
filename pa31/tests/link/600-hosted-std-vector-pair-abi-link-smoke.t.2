@@ -1,0 +1,9 @@
+#include "600-hosted-std-vector-pair-abi-link-smoke.shared.h"
+
+int main()
+{
+  std::vector<std::pair<unsigned long, unsigned long> > ranges(
+      1,
+      std::pair<unsigned long, unsigned long>(1u, 2u));
+  return accept_std_pair_ranges(ranges) ? 0 : 1;
+}

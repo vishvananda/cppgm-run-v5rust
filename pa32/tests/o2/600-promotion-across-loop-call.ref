@@ -1,0 +1,25 @@
+declare function @observe(%arg0 : i32) -> i32 [binding=strong, object=_Z7observei]
+
+function @call_in_loop(%values : ptr, %count : i32, %scale : i32) -> i32 [binding=strong, object=_Z12call_in_loopPKiii] {
+  block ^entry:
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = phi i32 [^entry: 0, ^for_body_2: %t17]
+    %t2 = phi i32 [^entry: 0, ^for_body_2: %t15]
+    %t3 = cmp lt i32 %t1, %count
+    branch %t3, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t6 = index i32 [projection=array_element] %values, %t1
+    %t7 = load typed i32 %t6
+    %t9 = binary mul nowrap i32 %scale, %t7
+    %t12 = call i32 @observe(%t9)
+    %t14 = binary add nowrap i32 %t9, %t12
+    %t15 = binary add nowrap i32 %t14, %t2
+    %t17 = binary add nowrap i32 %t1, 1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return i32 %t2
+}

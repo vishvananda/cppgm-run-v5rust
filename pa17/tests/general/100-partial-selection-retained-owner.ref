@@ -1,0 +1,7 @@
+declare global @selected_constincomplete___value : i32 [binding=weak, object=_ZN8selectedIK10incompleteE5valueE]
+declare global @late_int__char___value : i32 [binding=weak, object=_ZN4lateIPicE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

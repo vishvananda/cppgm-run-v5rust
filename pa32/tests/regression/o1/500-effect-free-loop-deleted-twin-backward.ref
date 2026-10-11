@@ -1,0 +1,4 @@
+function @destroy_backward(%begin : ptr, %end : ptr) -> ptr {
+  block ^entry:
+    return ptr %begin
+}

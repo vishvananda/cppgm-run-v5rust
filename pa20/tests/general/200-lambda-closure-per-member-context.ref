@@ -1,0 +1,184 @@
+global @first_default : ptr [binding=strong] = 0
+global @early : i32 [binding=strong] = zero
+global @width_int___get : ptr [binding=weak, object=_ZN5widthIiE3getE] = addr @width_int_____lambda3___FUN
+global @width_char___get : ptr [binding=weak, object=_ZN5widthIcE3getE] = addr @width_char_____lambda4___FUN
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<16x8>
+  slot $b : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    call void @holder__holder(%t1)
+    %t2 = addr $b
+    call void @holder__holder__ov2(%t2, 5)
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = addr $b
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed ptr %t7
+    %t9 = cmp ne ptr %t5, %t8
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 10
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t10 = load typed ptr @width_int___get
+    %t11 = call i32 %t10() as () -> i32
+    %t12 = cmp ne i32 %t11, 4
+    branch %t12, ^if_then_4, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t13 = load typed ptr @width_char___get
+    %t14 = call i32 %t13() as () -> i32
+    %t15 = cmp ne i32 %t14, 1
+    branch %t15, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 11
+
+  block ^if_else_5:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    %t16 = addr @chooser____lambda2___FUN
+    %t17 = call i32 @chooser__call(%t16)
+    %t18 = cmp ne i32 %t17, 2
+    branch %t18, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    return i32 12
+
+  block ^if_else_9:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    %t19 = addr $a
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = load typed ptr %t20
+    %t22 = call i32 %t21() as () -> i32
+    %t23 = load typed i32 @early
+    %t24 = binary add nowrap i32 %t22, %t23
+    %t25 = addr $b
+    %t26 = index i8 [projection=field] %t25, 8
+    %t27 = load typed i32 %t26
+    %t28 = binary add nowrap i32 %t24, %t27
+    %t29 = cmp eq i32 %t28, 8
+    branch %t29, ^cond_then_11, ^cond_else_12
+
+  block ^cond_then_11:
+    store typed i32 0, $cond__1
+    jump ^cond_end_13
+
+  block ^cond_else_12:
+    store typed i32 13, $cond__1
+    jump ^cond_end_13
+
+  block ^cond_end_13:
+    %t30 = load typed i32 $cond__1
+    return i32 %t30
+}
+function @chooser____lambda2___FUN() -> i32 [binding=weak, object=_ZN7chooserUlvE_8__invokeEv, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    return i32 2
+}
+function @chooser__call(%f : ptr) -> i32 [binding=weak, object=_ZN7chooser4callEPFivE, inline_hint=yes] {
+  slot $f : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %f, $f
+    %t1 = load typed ptr @first_default
+    %t2 = cmp eq ptr %t1, 0
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t3 = load typed ptr $f
+    store typed ptr %t3, @first_default
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = load typed ptr $f
+    %t5 = load typed ptr @first_default
+    %t6 = cmp eq ptr %t4, %t5
+    branch %t6, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    %t7 = load typed ptr $f
+    %t8 = call i32 %t7() as () -> i32
+    store typed i32 %t8, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 100, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @holder__holder(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN6holderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @holder____lambda1___FUN
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i32 0, %t5
+    return void
+}
+function @holder__holder__ov2(%this : ptr [object_bytes=16], %b : i32) -> void [binding=weak, object=_ZN6holderC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %b, $b
+    %t1 = addr @holder____lambda1___FUN
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i32 $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i32 %t4, %t6
+    return void
+}
+function @width_int_____lambda3___FUN() -> i32 [binding=internal, object=_ZN5widthIiEUlvE_8__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @width_char_____lambda4___FUN() -> i32 [binding=internal, object=_ZN5widthIcEUlvE0_8__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @holder____lambda1___FUN() -> i32 [binding=weak, object=_ZN6holderUlvE_8__invokeEv, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    return i32 1
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @chooser____lambda2___FUN
+    %t2 = call i32 @chooser__call(%t1)
+    store typed i32 %t2, @early
+    return void
+}
+alias object _ZN6holderC2Ev = @holder__holder
+alias object _ZN6holderC2Ei = @holder__holder__ov2

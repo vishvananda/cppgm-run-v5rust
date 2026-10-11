@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition use function of () returning void
+    compound-statement
+      expression-statement
+        call-expression prvalue void
+          callee take function of (pointer to function of (struct stream) returning void) returning void
+          cast-expression prvalue pointer to function of (struct stream) returning void KW_STATIC_CAST:static_cast
+            unary-expression prvalue pointer to function of (struct stream) returning void OP_AMP:&
+              id-expression lvalue function of (struct stream) returning void hello<stream>
+  function-declaration hello function of (struct stream) returning void
+    parameter  struct stream
+  function-declaration take function of (pointer to function of (struct stream) returning void) returning void
+    parameter  pointer to function of (struct stream) returning void
+end translation unit

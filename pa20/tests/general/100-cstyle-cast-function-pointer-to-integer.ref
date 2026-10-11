@@ -1,0 +1,13 @@
+function @cast_fn(%fp : ptr) -> i64 [binding=strong, object=_Z7cast_fnPFiiPKviE] {
+  slot $fp : ptr
+
+  block ^entry:
+    store typed ptr %fp, $fp
+    %t1 = load typed ptr $fp
+    %t2 = copy i64 %t1
+    return i64 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

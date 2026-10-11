@@ -1,0 +1,40 @@
+declare global @same_int_int___value : u8 [binding=weak, object=_ZN4sameIiiE5valueE]
+declare global @same_code_code___value : u8 [binding=weak, object=_ZN4sameI4codeS0_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @match___cppgm_class_template_identity_1__code_0__code_1___run()
+    return i32 %t1
+}
+function @match___cppgm_class_template_identity_1__code_0__code_1___run() -> i32 [binding=weak, object=_ZN5matchI9conditionI4codeS1_ELS1_0EJLS1_1EEE3runEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @compare_pack(0, 0, 1)
+    return i32 %t1
+}
+function @compare_pack(%match : i32, %value : i32, %rest : i32) -> i32 [binding=weak, object=_Z12compare_packIi4codeJS0_EEiT_T0_DpT1_] {
+  slot $match : i32
+  slot $value : i32
+  slot $rest : i32
+
+  block ^entry:
+    store typed i32 %match, $match
+    store typed i32 %value, $value
+    store typed i32 %rest, $rest
+    %t1 = load typed i32 $match
+    %t2 = load typed i32 $value
+    %t3 = call i32 @compare_pack__2(%t1, %t2)
+    %t4 = load typed i32 $match
+    %t5 = load typed i32 $rest
+    %t6 = call i32 @compare_pack__2(%t4, %t5)
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @compare_pack__2(%__param0 : i32, %__param1 : i32) -> i32 [binding=weak, object=_Z12compare_packIi4codeEiT_T0_] {
+  slot $__param0 : i32
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return i32 0
+}

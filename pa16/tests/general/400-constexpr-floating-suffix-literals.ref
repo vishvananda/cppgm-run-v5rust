@@ -1,0 +1,12 @@
+global @f : f32 [storage=readonly, binding=internal, object=_ZL1f] = 1f
+global @d : f64 [storage=readonly, binding=internal, object=_ZL1d] = 2
+global @ld : f80 [storage=readonly, binding=internal, object=_ZL2ld] = 3L
+global @arr [storage=readonly, binding=internal, object=_ZL3arr] = {
+  f80 1L
+  f80 10L
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

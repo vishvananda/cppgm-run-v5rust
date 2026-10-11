@@ -1,0 +1,56 @@
+function @parse_number_token(%error : u8) -> i64 [binding=strong, object=_Z18parse_number_tokenb] {
+  slot $error : u8
+
+  block ^entry:
+    store u8 %error, $error
+    %t1 = load u8 $error
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i64 0
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t2 = convert sext i64 i32 3
+    return i64 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = call i64 @parse_number_token(1)
+    %t2 = convert sext i64 i32 0
+    %t3 = cmp eq i64 %t1, %t2
+    branch %t3, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t4 = call i64 @parse_number_token(0)
+    %t5 = convert sext i64 i32 3
+    %t6 = cmp eq i64 %t4, %t5
+    %t7 = cmp ne i64 %t6, 0
+    store typed i64 %t7, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t8 = load typed i64 $land__2
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

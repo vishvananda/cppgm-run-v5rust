@@ -1,0 +1,1 @@
+global @p : ptr [binding=strong] = zero

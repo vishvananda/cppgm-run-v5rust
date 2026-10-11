@@ -1,0 +1,39 @@
+extern "C" long cppgm_test_read_stdin(char * buf, unsigned long count);
+extern "C" long cppgm_test_write_stdout(const char * buf, unsigned long count);
+
+int main()
+{
+  char input[512];
+  char output[512];
+  unsigned long input_len = 0;
+
+  for(;;)
+  {
+    long nread = cppgm_test_read_stdin(input + input_len, sizeof(input) - input_len);
+    if(nread < 0)
+    {
+      return 1;
+    }
+    if(nread == 0)
+    {
+      break;
+    }
+    input_len += (unsigned long)nread;
+    if(input_len == sizeof(input))
+    {
+      long overflow_probe = cppgm_test_read_stdin(input, 1);
+      if(overflow_probe != 0)
+      {
+        return 2;
+      }
+      break;
+    }
+  }
+
+  for(unsigned long i = 0; i < input_len; ++i)
+  {
+    output[input_len - i - 1] = input[i];
+  }
+
+  return cppgm_test_write_stdout(output, input_len) < 0 ? 1 : 0;
+}

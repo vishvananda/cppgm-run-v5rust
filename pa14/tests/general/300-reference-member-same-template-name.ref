@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x2>
+  slot $it : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i16 2, %t3
+    %t4 = addr $it
+    %t5 = addr $value
+    call void @iter___cppgm_class_template_identity_1___iter(%t4, %t5)
+    %t6 = addr $it
+    %t7 = call ptr @deref(%t6)
+    store typed i16 7, %t7
+    %t8 = addr $value
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i16 %t9
+    %t11 = convert sext i32 i16 %t10
+    %t12 = cmp eq i32 %t11, 7
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @iter___cppgm_class_template_identity_1___iter(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4iterI4consIs3nilEEC1ERS2_, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @deref(%i : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z5derefI4consIs3nilEERNT_8car_typeERK4iterIS3_E] {
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %i, $i
+    %t1 = load typed ptr $i
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=field] %t3, 0
+    return ptr %t4
+}
+alias object _ZN4iterI4consIs3nilEEC2ERS2_ = @iter___cppgm_class_template_identity_1___iter

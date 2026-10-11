@@ -1,0 +1,72 @@
+global @outer__shadow_maker [binding=strong, object=_ZN5outer12shadow_makerE] = {
+  zero 1
+}
+
+function @outer__inner__run() -> i32 [binding=strong, object=_ZN5outer5inner3runEv] {
+  slot $value : i32
+  slot $argobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $argobj__1
+    %t2 = addr $value
+    call void @outer__inner__shadow_maker__shadow_maker(%t1, %t2)
+    call void @outer__inner__invoke($argobj__1)
+    %t3 = load typed i32 $value
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @outer__inner__run()
+    %t2 = cmp eq i32 %t1, 19
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @outer__inner__shadow_maker__shadow_maker(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN5outer5inner12shadow_makerC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @outer__inner__invoke(%f : obj<8x8>) -> void [binding=weak, object=_ZN5outer5inner6invokeINS0_12shadow_makerEEEvT_] {
+  slot $f : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $f
+    copyobj 8x8 %f, %t1
+    %t2 = addr $f
+    call void @outer__inner__shadow_maker__operator__(%t2)
+    return void
+}
+function @outer__inner__shadow_maker__operator__(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN5outer5inner12shadow_makerclEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    store typed i32 19, %t3
+    return void
+}
+alias object _ZN5outer5inner12shadow_makerC2EPi = @outer__inner__shadow_maker__shadow_maker

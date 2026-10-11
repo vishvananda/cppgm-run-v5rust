@@ -1,0 +1,10 @@
+// N3485 3.6.2p2 + Itanium 2.8: a class template's class-type static data
+// member instantiated in two TUs is initialized once (guard variable, vague
+// linkage); expect exit 0
+int made;
+struct Noisy { int id; Noisy(int i); };
+Noisy::Noisy(int i) : id(i) { ++made; }
+template<class T> struct Holder { static Noisy n; };
+template<class T> Noisy Holder<T>::n(4);
+int use_b();
+int main() { int a = Holder<int>::n.id; return a + use_b() == 8 && made == 1 ? 0 : 1; }

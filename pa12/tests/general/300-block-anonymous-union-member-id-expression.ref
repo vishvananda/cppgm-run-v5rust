@@ -1,0 +1,33 @@
+function @read_variant() -> i32 [binding=strong, object=_Z12read_variantv] {
+  slot $__anonymous_union_storage__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $__anonymous_union_storage__1
+    %t2 = addr $__anonymous_union_storage__1
+    %t3 = index i8 [projection=field] %t2, 0
+    store i32 7, %t3
+    %t4 = addr $__anonymous_union_storage__1
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load i32 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @read_variant()
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

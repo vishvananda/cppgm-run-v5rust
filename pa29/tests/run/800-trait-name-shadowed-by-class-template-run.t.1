@@ -1,0 +1,11 @@
+// PA29 README (builtin trait identifiers used as ordinary names):
+// __is_class(T) is the GNU trait inside a template argument even where a class
+// template of that name is visible (libstdc++ writes
+// bool_constant<__is_invocable(_Fn, _Args...)> beside std::__is_invocable)
+namespace N {
+template<class T> struct __is_class { static const bool value = false; };
+template<bool B> struct bc { static const bool value = B; };
+template<class T> struct is_cls : bc<__is_class(T)> {};
+}
+struct S {};
+int main() { return N::is_cls<S>::value && !N::__is_class<S>::value ? 0 : 1; }

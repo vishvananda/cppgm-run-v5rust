@@ -1,0 +1,19 @@
+struct Counter {
+  int value;
+
+  Counter() : value(40) {}
+};
+
+int next_value()
+{
+  static Counter counter;
+  counter.value = counter.value + 1;
+  return counter.value;
+}
+
+int main()
+{
+  int a = next_value();
+  int b = next_value();
+  return (a == 41 && b == 42) ? 0 : 9;
+}

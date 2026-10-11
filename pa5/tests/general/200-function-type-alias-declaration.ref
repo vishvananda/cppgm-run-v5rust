@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration Fn
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+      abstract-declarator
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+end translation unit

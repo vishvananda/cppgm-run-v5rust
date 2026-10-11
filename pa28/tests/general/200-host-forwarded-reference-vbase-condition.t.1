@@ -1,0 +1,11 @@
+#include "200-host-forwarded-reference-vbase-condition.helper.h"
+
+static int check_stream(HostForwardStream &stream)
+{
+  return host_forward_stream(stream) ? 0 : 1;
+}
+
+int main()
+{
+  return check_stream(host_forward_derived());
+}

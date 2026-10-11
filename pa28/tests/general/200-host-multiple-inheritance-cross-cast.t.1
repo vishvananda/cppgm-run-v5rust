@@ -1,0 +1,21 @@
+struct LeftBase {
+  virtual ~LeftBase() {}
+};
+
+struct RightBase {
+  int payload;
+
+  RightBase() : payload(7) {}
+  virtual ~RightBase() {}
+};
+
+struct Derived : LeftBase, RightBase {
+};
+
+int main()
+{
+  Derived derived;
+  LeftBase * left = &derived;
+  RightBase * right = dynamic_cast<RightBase *>(left);
+  return right && right->payload == 7 ? 0 : 1;
+}

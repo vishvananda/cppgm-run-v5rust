@@ -1,0 +1,114 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 95
+  i8 95
+  i8 97
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 98
+  i8 0
+}
+global @__strlit__3 [storage=readonly, binding=internal] = {
+  i8 95
+  i8 95
+  i8 99
+  i8 0
+}
+
+function @count_underscored(%names : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z17count_underscoredRKSt16initializer_listIPKcE] {
+  slot $names : ptr
+  slot $count : i32
+  slot $__idx1 : i32
+  slot $name : ptr
+
+  block ^entry:
+    store typed ptr %names, $names
+    store typed i32 0, $count
+    store typed i32 0, $__idx1
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $__idx1
+    %t2 = load typed ptr $names
+    %t3 = index i8 [projection=field] %t2, 8
+    %t4 = load typed i64 %t3
+    %t5 = convert sext i64 i32 %t1
+    %t6 = cmp lt i64 %t5, %t4
+    branch %t6, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t7 = load typed ptr $names
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed ptr %t8
+    %t10 = load typed i32 $__idx1
+    %t11 = index ptr [projection=array_element] %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $name
+    %t13 = load typed ptr $name
+    branch %t13, ^land_rhs_7, ^if_else_6
+
+  block ^land_rhs_7:
+    %t14 = load typed ptr $name
+    %t15 = index i8 [projection=array_element] %t14, 0
+    %t16 = load i8 %t15
+    %t17 = convert sext i32 i8 %t16
+    %t18 = cmp eq i32 %t17, 95
+    branch %t18, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    %t19 = load typed i32 $count
+    %t20 = binary add nowrap i32 %t19, 1
+    store typed i32 %t20, $count
+    jump ^if_end_8
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t21 = load typed i32 $__idx1
+    %t22 = binary add nowrap i32 %t21, 1
+    store typed i32 %t22, $__idx1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t23 = load typed i32 $count
+    return i32 %t23
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $arg__2 : obj<16x8>
+  slot $initlist__3 : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $arg__2
+    %t2 = addr $initlist__3
+    %t3 = addr @__strlit__1
+    store typed ptr %t3, %t2
+    %t4 = addr @__strlit__2
+    %t5 = index i8 [projection=array_element] %t2, 8
+    store typed ptr %t4, %t5
+    %t6 = addr @__strlit__3
+    %t7 = index i8 [projection=array_element] %t2, 16
+    store typed ptr %t6, %t7
+    store typed ptr %t2, %t1
+    %t8 = index i8 %t1, 8
+    store typed i64 3, %t8
+    %t9 = call i32 @count_underscored(%t1)
+    %t10 = cmp eq i32 %t9, 2
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}

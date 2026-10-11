@@ -1,0 +1,188 @@
+#include "pa24-runtime-support.inc"
+
+int main()
+{
+  if(cppgm_test_init_io() != 0)
+  {
+    return 1;
+  }
+
+  cppgm_u64 count = cppgm_test_take_count_line();
+  while(count != 0)
+  {
+    char size_ch = cppgm_test_take_char();
+    int bytes = (size_ch == '0') ? 10 : (size_ch - '0');
+    cppgm_test_take_char();
+
+    char op0 = 0;
+    char op1 = ' ';
+
+    if(bytes == 4)
+    {
+      float lhs = cppgm_test_take_f32();
+      cppgm_test_take_char();
+      op0 = cppgm_test_take_char();
+      if(cppgm_test_peek_char() != ' ')
+      {
+        op1 = cppgm_test_take_char();
+      }
+      cppgm_test_take_char();
+      float rhs = cppgm_test_take_f32();
+      cppgm_test_take_char();
+
+      if(op0 == '+' && op1 == ' ')
+      {
+        cppgm_test_out_f32(lhs + rhs);
+      }
+      else if(op0 == '-' && op1 == ' ')
+      {
+        cppgm_test_out_f32(lhs - rhs);
+      }
+      else if(op0 == '*' && op1 == ' ')
+      {
+        cppgm_test_out_f32(lhs * rhs);
+      }
+      else if(op0 == '/' && op1 == ' ')
+      {
+        cppgm_test_out_f32(lhs / rhs);
+      }
+      else if(op0 == '=' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs == rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '!' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs != rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs < rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '>' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs > rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs <= rhs ? 1ULL : 0ULL);
+      }
+      else
+      {
+        cppgm_test_out_unsigned_decimal(lhs >= rhs ? 1ULL : 0ULL);
+      }
+    }
+    else if(bytes == 8)
+    {
+      double lhs = cppgm_test_take_f64();
+      cppgm_test_take_char();
+      op0 = cppgm_test_take_char();
+      if(cppgm_test_peek_char() != ' ')
+      {
+        op1 = cppgm_test_take_char();
+      }
+      cppgm_test_take_char();
+      double rhs = cppgm_test_take_f64();
+      cppgm_test_take_char();
+
+      if(op0 == '+' && op1 == ' ')
+      {
+        cppgm_test_out_f64(lhs + rhs);
+      }
+      else if(op0 == '-' && op1 == ' ')
+      {
+        cppgm_test_out_f64(lhs - rhs);
+      }
+      else if(op0 == '*' && op1 == ' ')
+      {
+        cppgm_test_out_f64(lhs * rhs);
+      }
+      else if(op0 == '/' && op1 == ' ')
+      {
+        cppgm_test_out_f64(lhs / rhs);
+      }
+      else if(op0 == '=' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs == rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '!' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs != rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs < rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '>' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs > rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs <= rhs ? 1ULL : 0ULL);
+      }
+      else
+      {
+        cppgm_test_out_unsigned_decimal(lhs >= rhs ? 1ULL : 0ULL);
+      }
+    }
+    else
+    {
+      long double lhs = cppgm_test_take_f80();
+      cppgm_test_take_char();
+      op0 = cppgm_test_take_char();
+      if(cppgm_test_peek_char() != ' ')
+      {
+        op1 = cppgm_test_take_char();
+      }
+      cppgm_test_take_char();
+      long double rhs = cppgm_test_take_f80();
+      cppgm_test_take_char();
+
+      if(op0 == '+' && op1 == ' ')
+      {
+        cppgm_test_out_f80(lhs + rhs);
+      }
+      else if(op0 == '-' && op1 == ' ')
+      {
+        cppgm_test_out_f80(lhs - rhs);
+      }
+      else if(op0 == '*' && op1 == ' ')
+      {
+        cppgm_test_out_f80(lhs * rhs);
+      }
+      else if(op0 == '/' && op1 == ' ')
+      {
+        cppgm_test_out_f80(lhs / rhs);
+      }
+      else if(op0 == '=' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs == rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '!' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs != rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs < rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '>' && op1 == ' ')
+      {
+        cppgm_test_out_unsigned_decimal(lhs > rhs ? 1ULL : 0ULL);
+      }
+      else if(op0 == '<' && op1 == '=')
+      {
+        cppgm_test_out_unsigned_decimal(lhs <= rhs ? 1ULL : 0ULL);
+      }
+      else
+      {
+        cppgm_test_out_unsigned_decimal(lhs >= rhs ? 1ULL : 0ULL);
+      }
+    }
+
+    cppgm_test_out_char('\n');
+    --count;
+  }
+
+  return cppgm_test_flush_output();
+}

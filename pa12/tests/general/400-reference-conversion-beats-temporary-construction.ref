@@ -1,0 +1,45 @@
+global @selected_constructor : i32 [binding=strong] = 0
+global @stored_target [binding=strong] = {
+  zero 1
+}
+
+function @source__operatorconsttarget_(%this : ptr [object_bytes=1]) -> ptr [binding=strong, object=_ZNK6sourcecvRK6targetEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @stored_target
+    return ptr %t1
+}
+function @consume(%__param0 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z7consumeRK6target] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call ptr @source__operatorconsttarget_(%t2)
+    call void @consume(%t3)
+    %t4 = load typed i32 @selected_constructor
+    return i32 %t4
+}
+function @target__target(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN6targetC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @stored_target
+    call void @target__target(%t1)
+    return void
+}
+alias object _ZN6targetC2Ev = @target__target

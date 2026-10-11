@@ -1,0 +1,5 @@
+// TU where Derived is complete
+struct Base { virtual ~Base(); };
+Base::~Base() {}
+struct Derived : Base { int x; };
+void thr() { throw new Derived; }

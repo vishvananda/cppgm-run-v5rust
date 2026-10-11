@@ -1,0 +1,51 @@
+global @outer_char___inner_int___value : i32 [binding=weak, object=_ZN5outerIcE5innerIiE5valueE] = 7
+global @outer_int___first__value : i32 [binding=weak, object=_ZN5outerIiE5first5valueE] = 3
+
+function @read() -> i32 [binding=strong, object=_Z4readv] {
+  block ^entry:
+    %t1 = load typed i32 @outer_char___inner_int___value
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<1x1>
+  slot $lor__1 : i64
+  slot $lor__2 : i64
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = load typed i32 @outer_int___first__value
+    %t3 = cmp ne i32 %t2, 3
+    branch %t3, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t4 = call i32 @read()
+    %t5 = cmp ne i32 %t4, 7
+    %t6 = cmp ne i64 %t5, 0
+    store typed i64 %t6, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t7 = load typed i64 $lor__1
+    branch %t7, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t8 = const i64 1
+    %t9 = convert sext i64 i32 0
+    %t10 = cmp eq i64 %t8, %t9
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t12 = load typed i64 $lor__2
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}

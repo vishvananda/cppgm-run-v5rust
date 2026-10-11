@@ -1,0 +1,12 @@
+declare function @expect(%arg0 : ptr) -> void [binding=strong, object=_Z6expectPi]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = index i8 [projection=field] %t2, 0
+    call void @expect(%t3)
+    return i32 0
+}

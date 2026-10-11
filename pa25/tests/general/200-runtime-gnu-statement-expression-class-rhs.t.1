@@ -1,0 +1,25 @@
+int side_effects;
+
+struct Foo {
+  int x;
+
+  Foo()
+    : x(7)
+  {}
+
+  Foo(int v)
+    : x(v)
+  {}
+};
+
+void bar()
+{
+  ++side_effects;
+}
+
+int main()
+{
+  Foo value(1);
+  value = ({ bar(); Foo(); });
+  return side_effects == 1 && value.x == 7 ? 0 : 1;
+}

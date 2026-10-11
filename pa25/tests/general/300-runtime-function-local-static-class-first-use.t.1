@@ -1,0 +1,30 @@
+int observed = 0;
+
+struct Counter {
+  int value;
+
+  Counter() : value(40) { observed = observed + 1; }
+};
+
+int next_value()
+{
+  static Counter counter;
+  counter.value = counter.value + 1;
+  return counter.value;
+}
+
+int main()
+{
+  if(observed != 0) {
+    return 8;
+  }
+  int a = next_value();
+  if(observed != 1) {
+    return 9;
+  }
+  int b = next_value();
+  if(observed != 1) {
+    return 10;
+  }
+  return (a == 41 && b == 42) ? 0 : 11;
+}

@@ -1,0 +1,126 @@
+global @pair_object [storage=readonly, binding=internal, object=_ZL11pair_object] = {
+  i32 1
+  i32 2
+}
+global @pair_array [storage=readonly, binding=internal, object=_ZL10pair_array] = {
+  i32 3
+  i32 4
+  i32 5
+  i32 6
+}
+global @nested_object [storage=readonly, binding=internal, object=_ZL13nested_object] = {
+  i32 7
+  i32 8
+  i32 9
+}
+global @mutable_member [binding=internal, object=_ZL14mutable_member] = {
+  i32 10
+  i32 0
+}
+global @mutable_in_member [binding=internal, object=_ZL17mutable_in_member] = {
+  i32 11
+  i32 0
+  i32 12
+}
+global @mutable_in_base [binding=internal, object=_ZL15mutable_in_base] = {
+  i32 0
+  i32 0
+  i32 0
+}
+global @volatile_member [binding=internal, object=_ZL15volatile_member] = {
+  i32 13
+}
+global @destroyed [binding=internal, object=_ZL9destroyed] = {
+  i32 14
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $sum : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @mutable_member
+    %t2 = index i8 [projection=field] %t1, 4
+    store typed i32 1, %t2
+    %t3 = addr @pair_object
+    %t4 = index i8 [projection=field] %t3, 4
+    %t5 = load typed i32 %t4
+    %t6 = addr @pair_array
+    %t7 = binary mul i64 1, 8
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = binary add nowrap i32 %t5, %t10
+    %t12 = addr @nested_object
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = index i8 [projection=field] %t13, 4
+    %t15 = load typed i32 %t14
+    %t16 = binary add nowrap i32 %t11, %t15
+    %t17 = addr @nested_object
+    %t18 = index i8 [projection=field] %t17, 8
+    %t19 = load typed i32 %t18
+    %t20 = binary add nowrap i32 %t16, %t19
+    %t21 = addr @mutable_member
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load typed i32 %t22
+    %t24 = binary add nowrap i32 %t20, %t23
+    %t25 = addr @mutable_member
+    %t26 = index i8 [projection=field] %t25, 4
+    %t27 = load typed i32 %t26
+    %t28 = binary add nowrap i32 %t24, %t27
+    %t29 = addr @mutable_in_member
+    %t30 = index i8 [projection=field] %t29, 8
+    %t31 = load typed i32 %t30
+    %t32 = binary add nowrap i32 %t28, %t31
+    %t33 = addr @mutable_in_base
+    %t34 = index i8 [projection=field] %t33, 8
+    %t35 = load typed i32 %t34
+    %t36 = binary add nowrap i32 %t32, %t35
+    %t37 = addr @volatile_member
+    %t38 = index i8 [projection=field] %t37, 0
+    %t39 = load volatile i32 %t38
+    %t40 = binary add nowrap i32 %t36, %t39
+    %t41 = addr @destroyed
+    %t42 = index i8 [projection=field] %t41, 0
+    %t43 = load typed i32 %t42
+    %t44 = binary add nowrap i32 %t40, %t43
+    store typed i32 %t44, $sum
+    %t45 = load typed i32 $sum
+    %t46 = binary add nowrap i32 2, 5
+    %t47 = binary add nowrap i32 %t46, 8
+    %t48 = binary add nowrap i32 %t47, 9
+    %t49 = binary add nowrap i32 %t48, 10
+    %t50 = binary add nowrap i32 %t49, 1
+    %t51 = binary add nowrap i32 %t50, 12
+    %t52 = binary add nowrap i32 %t51, 0
+    %t53 = binary add nowrap i32 %t52, 13
+    %t54 = binary add nowrap i32 %t53, 14
+    %t55 = cmp eq i32 %t45, %t54
+    branch %t55, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t56 = load typed i32 $cond__1
+    return i32 %t56
+}
+function @Logged___Logged(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6LoggedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @destroyed
+    call void @Logged___Logged(%t1)
+    return void
+}
+alias object _ZN6LoggedD2Ev = @Logged___Logged

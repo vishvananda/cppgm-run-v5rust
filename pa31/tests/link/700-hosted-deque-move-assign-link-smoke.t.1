@@ -1,0 +1,26 @@
+#include <deque>
+#include <utility>
+
+struct CalcToken {
+  long long value;
+
+  CalcToken() : value(0) {}
+  explicit CalcToken(long long value) : value(value) {}
+  CalcToken(const CalcToken &) = default;
+  CalcToken(CalcToken &&) = default;
+  CalcToken & operator=(const CalcToken &) = default;
+  CalcToken & operator=(CalcToken &&) = default;
+  ~CalcToken() = default;
+};
+
+void move_assign(std::deque<CalcToken> & dst, std::deque<CalcToken> & src) {
+  dst = std::move(src);
+}
+
+int main() {
+  std::deque<CalcToken> dst;
+  std::deque<CalcToken> src;
+  src.push_back(CalcToken(7));
+  move_assign(dst, src);
+  return dst.size() == 1 && dst.front().value == 7 ? 0 : 1;
+}

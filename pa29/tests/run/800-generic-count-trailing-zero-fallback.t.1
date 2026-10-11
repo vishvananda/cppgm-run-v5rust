@@ -1,0 +1,18 @@
+#include <cstdio>
+
+static_assert(__builtin_ctzg(8u, 32) == 3, "trailing zeros of 8");
+static_assert(__builtin_ctzg(0u, 32) == 32, "fallback for zero");
+static_assert(__builtin_ctzg(1ull << 40, 64) == 40, "trailing zeros of a wide value");
+static_assert(__builtin_clzg(0u, 32) == 32, "clz fallback for zero");
+
+template <class T>
+int trailing(T value) { return __builtin_ctzg(value, static_cast<int>(sizeof(T) * 8)); }
+
+int main()
+{
+  volatile unsigned int a = 0;
+  volatile unsigned long b = 1ul << 63;
+  volatile unsigned char c = 0x30;
+  std::printf("%d %d %d %d\n", trailing<unsigned int>(a), trailing<unsigned long>(b), trailing<unsigned char>(c), __builtin_ctzg(a, 7));
+  return 0;
+}

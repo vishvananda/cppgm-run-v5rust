@@ -1,0 +1,72 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $p : ptr
+  slot $refarg__1 : i32
+  slot $refarg__2 : i32
+  slot $cond__3 : i32
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = addr $stream
+    %t2 = addr $stream
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $stream
+    store typed i32 1, $refarg__1
+    %t5 = addr $refarg__1
+    %t6 = call ptr @operator__(%t4, %t5)
+    store typed i32 2, $refarg__2
+    %t7 = addr $refarg__2
+    %t8 = call ptr @operator__(%t6, %t7)
+    store typed ptr %t8, $p
+    %t9 = load typed ptr $p
+    %t10 = addr $stream
+    %t11 = cmp eq ptr %t9, %t10
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = addr $stream
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 2
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $land__4
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__4
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t17 = load typed i64 $land__4
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__3
+    return i32 %t18
+}
+function @operator__(%stream : ptr [pass=by_address, object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZlsIiER6StreamS1_RKT_] {
+  slot $stream : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $stream
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $stream
+    return ptr %t7
+}

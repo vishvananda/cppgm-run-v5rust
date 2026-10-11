@@ -1,0 +1,12 @@
+struct External {
+  External();
+  External(int v) : value(v) {}
+  int value;
+};
+
+External global_external;
+
+int main()
+{
+  return global_external.value == 9 ? 0 : 1;
+}

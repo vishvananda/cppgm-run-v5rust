@@ -1,0 +1,35 @@
+declare function @observe(%arg0 : i32) -> i32 [binding=strong, object=_Z7observei]
+
+function @with_cleanup(%values : ptr, %count : i32, %slot : ptr) -> i32 [binding=strong, object=_Z12with_cleanupPKiiPi] {
+  block ^entry:
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t21 = phi i32 [^entry: 0, ^for_body_2: %t17]
+    %t5 = phi i32 [^entry: 0, ^for_body_2: %t20]
+    %t7 = cmp lt i32 %t5, %count
+    branch %t7, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    eh_try ^cleanup_action_6
+    %t11 = index i32 [projection=array_element] %values, %t5
+    %t12 = load typed i32 %t11
+    %t13 = call i32 @observe(%t12)
+    %t16 = binary add nowrap i32 %t5, %t13
+    %t17 = binary add nowrap i32 %t16, %t21
+    eh_end
+    %t20 = binary add nowrap i32 %t5, 1
+    jump ^for_cond_1
+
+  block ^cleanup_action_6:
+    %t4_15 = load typed i32 %slot
+    %t5_18 = binary add nowrap i32 %t4_15, 1
+    store typed i32 %t5_18, %slot
+    resume
+
+  block ^for_end_4:
+    %t4_19 = load typed i32 %slot
+    %t5_22 = binary add nowrap i32 %t4_19, 1
+    store typed i32 %t5_22, %slot
+    return i32 %t21
+}

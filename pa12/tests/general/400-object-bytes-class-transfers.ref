@@ -1,0 +1,70 @@
+function @consume(%value : ptr [pass=by_address, object_bytes=24]) -> i64 [binding=strong, object=_Z7consume5Large] {
+  slot $value : obj<24x8>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = load typed i64 %t1
+    %t3 = index i8 [projection=field] %value, 8
+    %t4 = load typed i64 %t3
+    %t5 = binary add nowrap i64 %t2, %t4
+    %t6 = index i8 [projection=field] %value, 16
+    %t7 = load typed i64 %t6
+    %t8 = binary add nowrap i64 %t5, %t7
+    return i64 %t8
+}
+function @produce(%ret : ptr [pass=indirect_result, object_bytes=24], %x : i64) -> void [binding=strong, object=_Z7producel] {
+  slot $x : i64
+
+  block ^entry:
+    store typed i64 %x, $x
+    %t1 = load typed i64 $x
+    call void @Large__Large(%ret, %t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $arg__2 : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $arg__2
+    call void @produce(%t1, 1)
+    %t2 = call i64 @consume(%t1)
+    %t3 = cmp eq i64 %t2, 6
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @Large__Large(%this : ptr [object_bytes=24], %x : i64) -> void [binding=weak, object=_ZN5LargeC1El, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %x, $x
+    %t1 = load typed i64 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    %t4 = load typed i64 $x
+    %t5 = binary add nowrap i64 %t4, 1
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i64 %t5, %t7
+    %t8 = load typed i64 $x
+    %t9 = binary add nowrap i64 %t8, 2
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 16
+    store typed i64 %t9, %t11
+    return void
+}
+alias object _ZN5LargeC2El = @Large__Large

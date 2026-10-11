@@ -1,0 +1,32 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : f64
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed f64 0, $value
+    %t1 = addr $value
+    %t2 = call ptr @Base_int___f(%t1)
+    %t3 = addr $value
+    %t4 = cmp eq ptr %t2, %t3
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @Base_int___f(%p : ptr) -> ptr [binding=weak, object=_ZN4BaseIiE1fIdEEPT_S3_, inline_hint=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}

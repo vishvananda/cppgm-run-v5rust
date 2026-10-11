@@ -1,0 +1,102 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition std
+    namespace-definition __1
+      inline
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            non-type-template-parameter
+              decl-specifier-seq
+                decl-specifier KW_BOOL:bool
+        class-specifier _BoolConstant
+          class-key KW_STRUCT:struct
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier T
+        class-specifier is_polymorphic
+          class-key KW_STRUCT:struct
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier KW_STATIC:static
+              decl-specifier KW_CONST:const
+              decl-specifier KW_BOOL:bool
+            init-declarator-list
+              init-declarator
+                declarator
+                  identifier value
+                initializer
+                  keyword-literal KW_TRUE:true
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier T
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier U
+        class-specifier is_base_of
+          class-key KW_STRUCT:struct
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier KW_STATIC:static
+              decl-specifier KW_CONST:const
+              decl-specifier KW_BOOL:bool
+            init-declarator-list
+              init-declarator
+                declarator
+                  identifier value
+                initializer
+                  keyword-literal KW_TRUE:true
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier T
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier U
+        class-specifier is_convertible
+          class-key KW_STRUCT:struct
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier KW_STATIC:static
+              decl-specifier KW_CONST:const
+              decl-specifier KW_BOOL:bool
+            init-declarator-list
+              init-declarator
+                declarator
+                  identifier value
+                initializer
+                  keyword-literal KW_TRUE:true
+  namespace-definition std
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier From
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier To
+      class-specifier can_dynamic_cast
+        class-key KW_STRUCT:struct
+        base-clause
+          base-specifier
+            base-name _BoolConstant<is_polymorphic<From>::value&&(!is_base_of<To,From>::value||is_convertible<const From*,const To*>::value)>
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

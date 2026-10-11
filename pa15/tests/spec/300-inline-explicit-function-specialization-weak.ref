@@ -1,0 +1,52 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @digits(4)
+    %t2 = call i32 @digits__2(9)
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = binary sub nowrap i32 %t3, 13
+    return i32 %t4
+}
+function @digits(%x : u32) -> i32 [binding=weak, object=_Z6digitsIjEiT_, inline_hint=yes] {
+  slot $x : u32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed u32 %x, $x
+    %t1 = load typed u32 $x
+    %t2 = cmp eq u32 %t1, 4
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 4, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @digits__2(%x : i64) -> i32 [binding=weak, object=_Z6digitsIyEiT_, inline_hint=yes] {
+  slot $x : i64
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i64 %x, $x
+    %t1 = load typed i64 $x
+    %t2 = cmp eq i64 %t1, 9
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 9, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

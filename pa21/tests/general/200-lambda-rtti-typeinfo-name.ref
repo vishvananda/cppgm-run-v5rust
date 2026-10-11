@@ -1,0 +1,80 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name_type_ZN14LambdaRttiHost7captureEiEUliE_ [storage=readonly, binding=internal, object=_ZTSZN14LambdaRttiHost7captureEiEUliE_] = {
+  i8 90
+  i8 78
+  i8 49
+  i8 52
+  i8 76
+  i8 97
+  i8 109
+  i8 98
+  i8 100
+  i8 97
+  i8 82
+  i8 116
+  i8 116
+  i8 105
+  i8 72
+  i8 111
+  i8 115
+  i8 116
+  i8 55
+  i8 99
+  i8 97
+  i8 112
+  i8 116
+  i8 117
+  i8 114
+  i8 101
+  i8 69
+  i8 105
+  i8 69
+  i8 85
+  i8 108
+  i8 105
+  i8 69
+  i8 95
+  i8 0
+}
+global @__rtti_type_ZN14LambdaRttiHost7captureEiEUliE_ [storage=readonly, binding=internal, object=_ZTIZN14LambdaRttiHost7captureEiEUliE_] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name_type_ZN14LambdaRttiHost7captureEiEUliE_
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call ptr @LambdaRttiHost__capture(%t2, 7)
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @LambdaRttiHost__capture(%this : ptr [object_bytes=1], %base : i32) -> ptr [binding=weak, object=_ZN14LambdaRttiHost7captureEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $base : i32
+  slot $add : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %base, $base
+    %t1 = addr $add
+    %t2 = load typed i32 $base
+    store typed i32 %t2, %t1
+    %t3 = addr @__rtti_type_ZN14LambdaRttiHost7captureEiEUliE_
+    return ptr %t3
+}

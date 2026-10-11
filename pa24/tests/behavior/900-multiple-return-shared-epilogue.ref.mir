@@ -1,0 +1,240 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @void_result
+  storage scalar i64
+  init i64 0
+
+function @clobber
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @choose
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    call @clobber [args=()]
+    cmp.i64 rbx, 0
+    je ^return_11
+    jmp ^second_test
+
+  block ^second_test
+    cmp.i64 rbx, 1
+    je ^return_22
+    jmp ^third_test
+
+  block ^third_test
+    cmp.i64 rbx, 2
+    je ^return_33
+    jmp ^return_44
+
+  block ^return_11
+    mov rax, 11
+    ret rax
+
+  block ^return_22
+    mov rax, 22
+    ret rax
+
+  block ^return_33
+    mov rax, 33
+    ret rax
+
+  block ^return_44
+    mov rax, 44
+    ret rax
+
+function @choose_float
+  abi
+    param %value -> rdi : i64
+    return f64 -> xmm0
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    call @clobber [args=()]
+    cmp.i64 rbx, 0
+    je ^return_first
+    jmp ^second_test
+
+  block ^second_test
+    cmp.i64 rbx, 1
+    je ^return_second
+    jmp ^return_third
+
+  block ^return_first
+    fmov.f64 xmm0, 1.25
+    ret xmm0
+
+  block ^return_second
+    fmov.f64 xmm0, 2.5
+    ret xmm0
+
+  block ^return_third
+    fmov.f64 xmm0, 3.75
+    ret xmm0
+
+function @choose_extended
+  abi
+    param %value -> rdi : i64
+    return f80 -> st0
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    call @clobber [args=()]
+    cmp.i64 rbx, 0
+    je ^return_first
+    jmp ^return_second
+
+  block ^return_first
+    fret.f80 4.5L
+
+  block ^return_second
+    fret.f80 5.5L
+
+function @choose_void
+  abi
+    param %value -> rdi : i64
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    call @clobber [args=()]
+    cmp.i64 rbx, 0
+    je ^return_first
+    jmp ^second_test
+
+  block ^second_test
+    cmp.i64 rbx, 1
+    je ^return_second
+    jmp ^return_third
+
+  block ^return_first
+    store.i64 @void_result, 51
+    ret
+
+  block ^return_second
+    store.i64 @void_result, 52
+    ret
+
+  block ^return_third
+    store.i64 @void_result, 53
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 128
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14
+    temp %f0 -> [rbp-8] : f64
+    temp %f1 -> [rbp-16] : f64
+    temp %f2 -> [rbp-24] : f64
+    temp %extended -> [rbp-48] : f80
+
+  block ^entry
+    mov rdi, 0
+    call @choose [args=(rdi)]
+    mov rbx, rax
+    mov rdi, 1
+    call @choose [args=(rdi)]
+    mov r12, rax
+    mov rdi, 2
+    call @choose [args=(rdi)]
+    mov r13, rax
+    mov rdi, 3
+    call @choose [args=(rdi)]
+    mov r14, rax
+    mov rdi, 0
+    call @choose_float [args=(rdi)]
+    fmov.f64 xmm14, xmm0
+    fmov.f64 [rbp-8], xmm14
+    mov rdi, 1
+    call @choose_float [args=(rdi)]
+    fmov.f64 xmm14, xmm0
+    fmov.f64 [rbp-16], xmm14
+    mov rdi, 2
+    call @choose_float [args=(rdi)]
+    fmov.f64 xmm14, xmm0
+    fmov.f64 [rbp-24], xmm14
+    mov rdi, 1
+    call @choose_extended [args=(rdi)]
+    fstp.f80 [rbp-48]
+    mov rdi, 2
+    call @choose_void [args=(rdi)]
+    load.i64 r8, @void_result
+    mov rdx, 11
+    cmp.i64 rbx, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov rdx, 22
+    cmp.i64 r12, rdx
+    setne r12
+    movzx r12, r12
+    mov rdx, 33
+    cmp.i64 r13, rdx
+    setne r13
+    movzx r13, r13
+    mov rdx, 44
+    cmp.i64 r14, rdx
+    setne r14
+    movzx r14, r14
+    fne.f64 r9, [rbp-8], 1.25
+    fne.f64 rdi, [rbp-16], 2.5
+    fne.f64 rsi, [rbp-24], 3.75
+    fne.f80 rcx, [rbp-48], 5.5L
+    mov rdx, 53
+    cmp.i64 r8, rdx
+    setne r8
+    movzx r8, r8
+    or rbx, r12
+    or r13, r14
+    or r9, rdi
+    or rsi, rcx
+    or rsi, r8
+    or rbx, r13
+    or r9, rsi
+    or rbx, r9
+    sext.i32 rbx
+    ret rbx

@@ -1,0 +1,160 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @one
+  storage scalar i64
+  init i64 1
+
+global @two
+  storage scalar i64
+  init i64 2
+
+global @three
+  storage scalar i64
+  init i64 3
+
+global @four
+  storage scalar i64
+  init i64 4
+
+global @five
+  storage scalar i64
+  init i64 5
+
+global @six
+  storage scalar i64
+  init i64 6
+
+global @seven
+  storage scalar i64
+  init i64 7
+
+global @observed
+  storage scalar i64
+  init i64 0
+
+global @cppgm_priv_exc_top
+  storage scalar ptr
+  init ptr 0
+
+global @cppgm_priv_exc_value
+  storage scalar ptr
+  init ptr 0
+
+function @cppgm_priv_exc_unhandled
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @target
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    param %d -> rcx : ptr
+    param %e -> r8 : ptr
+    param %f -> r9 : ptr
+    param %g -> [rbp+16] : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 r9, [r9]
+    store.i64 @observed, r9
+    ret
+
+function @consume
+  abi
+    param %value -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @forward
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    param %d -> rcx : ptr
+    param %e -> r8 : ptr
+    param %f -> r9 : ptr
+    param %g -> [rbp+16] : ptr
+    return void -> void
+  frame
+    stack_size 112
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $temporary -> [rbp-8] : i64
+    param-slot %a -> [rbp-16] : ptr
+    param-slot %g -> [rbp-24] : ptr
+
+  block ^entry
+    load.ptr rax, [rbp+16]
+    store.ptr [rbp-24], rax
+    store.ptr [rbp-16], rdi
+    eh_push ^unwind, 0
+    lea rdi, [rbp-8]
+    sub rsp, 16
+    load.ptr r11, [rbp-24]
+    store.ptr [rsp], r11
+    call @target [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    eh_pop
+    jmp ^done
+
+  block ^unwind
+    resume
+
+  block ^done
+    load.ptr rdi, [rbp-16]
+    call @consume [args=(rdi)]
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @one
+    mov rsi, @two
+    mov rdx, @three
+    mov rcx, @four
+    mov r8, @five
+    mov r9, @six
+    mov rax, @seven
+    sub rsp, 16
+    store.ptr [rsp], rax
+    call @forward [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    mov rdx, 6
+    cmp.i64 @observed, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

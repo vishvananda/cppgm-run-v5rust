@@ -1,0 +1,13 @@
+# budget from 300-aggregate-slot-scalar-replacement.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 28
+blocks <= 8
+count(call) <= 4
+count(load) <= 5
+count(store) <= 9
+count(phi) <= 4
+instructions <= 18 in @decomposes
+instructions <= 5 in @copies_between_locals
+instructions <= 10 in @escaping_stays
+
+# outcomes from 300-aggregate-slot-scalar-replacement.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(copyobj)

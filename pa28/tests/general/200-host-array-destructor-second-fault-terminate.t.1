@@ -1,0 +1,24 @@
+extern "C" void _Exit(int);
+namespace std {
+typedef void (*terminate_handler)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+}
+
+int created, drops, bad, next = 12;
+struct G {
+  int id;
+  G() : id(++created) {}
+  ~G() noexcept(false) {
+    if (id != next--) bad = 1;
+    ++drops;
+    if (id == 2) throw 7;
+    if (id == 1) throw 8;
+  }
+};
+void terminated() { _Exit(drops == 12 && next == 0 && !bad ? 0 : 1); }
+void f() { G objects[12]; }
+int main() {
+  std::set_terminate(terminated);
+  try { f(); } catch (...) { return 2; }
+  return 3;
+}

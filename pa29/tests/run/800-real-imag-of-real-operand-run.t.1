@@ -1,0 +1,4 @@
+// PA29 README (GNU complex component operators __real__/__imag__) / GCC
+// manual: on a non-complex operand __real__ x is x and __imag__ x is 0;
+// __real__ r is an lvalue; expect exit 0
+int main() { double r = 1.5; double re = __real__ r, im = __imag__ r; __real__ r = 4.0; return re == 1.5 && im == 0 && r == 4.0 ? 0 : 1; }

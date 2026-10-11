@@ -1,0 +1,9 @@
+# budget from 700-call-setup-forwarding-no-preserve.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 45
+blocks <= 5
+count(call) <= 4
+mem <= 11
+instructions <= 19 in @mix
+stack_size <= 480 in @mix
+instructions <= 27 in @main
+stack_size <= 416 in @main

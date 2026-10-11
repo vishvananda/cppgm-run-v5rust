@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = addr $s
+    %t4 = call i32 @S__f(%t2, %t3)
+    %t5 = binary sub nowrap i32 %t4, 7
+    return i32 %t5
+}
+function @S__f(%this : ptr [object_bytes=1], %s : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZNK1S1fERS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = addr @S____lambda_S__f_t29_36___FUN
+    %t3 = call i32 %t2(%t1) as (%arg0 : ptr [pass=by_address, object_bytes=1]) -> i32
+    return i32 %t3
+}
+function @S____lambda_S__f_t29_36___FUN(%x : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZZNK1S1fERS_ENUlS0_E_8__invokeES0_, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = call i32 @S__hidden(%t1)
+    return i32 %t2
+}
+function @S__hidden(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK1S6hiddenEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}

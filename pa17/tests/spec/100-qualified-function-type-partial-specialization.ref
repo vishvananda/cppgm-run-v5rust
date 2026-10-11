@@ -1,0 +1,25 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $hooks : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $hooks
+    %t2 = addr $hooks
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

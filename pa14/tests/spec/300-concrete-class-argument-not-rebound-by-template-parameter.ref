@@ -1,0 +1,40 @@
+function @make_f() -> obj<4x4> [binding=strong, object=_Z6make_fv] {
+  slot $value : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $value
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = call obj<4x4> @make_f()
+    copyobj 4x4 %t2, %t1
+    %t3 = addr $value
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

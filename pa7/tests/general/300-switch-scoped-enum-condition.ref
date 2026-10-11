@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (enum class K) returning int
+    parameter k enum class K
+    compound-statement
+      switch-statement
+        condition
+          id-expression lvalue enum class K k
+        compound-statement
+          case-statement
+            literal prvalue enum class K 0
+            return-statement
+              literal prvalue int 1
+          case-statement
+            literal prvalue enum class K 1
+            return-statement
+              literal prvalue int 2
+      return-statement
+        literal prvalue int 0
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_MINUS:-
+          call-expression prvalue int
+            callee f function of (enum class K) returning int
+            literal prvalue enum class K 1
+          literal prvalue int 2
+end translation unit

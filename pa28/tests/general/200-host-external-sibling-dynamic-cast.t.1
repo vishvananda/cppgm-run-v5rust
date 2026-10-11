@@ -1,0 +1,8 @@
+#include "200-host-external-sibling-dynamic-cast.helper.h"
+
+int main()
+{
+  HiddenLeft * left = make_hidden_left();
+  HiddenRight * right = dynamic_cast<HiddenRight *>(left);
+  return right && right->payload == 19 ? 0 : 1;
+}

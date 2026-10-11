@@ -1,0 +1,9 @@
+global @source__value : i32 [binding=strong, object=_ZN6source5valueE] = 4
+global @target__alias : ptr [binding=internal, object=_ZN6targetL5aliasE] = addr @source__value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    store typed i32 7, @source__value
+    %t1 = load typed i32 @source__value
+    return i32 %t1
+}

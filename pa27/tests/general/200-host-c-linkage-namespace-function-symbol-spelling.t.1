@@ -1,0 +1,8 @@
+namespace abi_link {
+extern "C" int c_namespace_probe(int);
+}
+
+int main()
+{
+  return abi_link::c_namespace_probe(4) - 9;
+}

@@ -1,0 +1,27 @@
+// [except.terminate]: a second exception during unwind invokes terminate.
+// The standard permits remaining-stack destruction to vary before termination.
+extern "C" void _Exit(int);
+namespace std {
+typedef void (*terminate_handler)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+} // namespace std
+int trace;
+void terminated() { _Exit((trace == 21 || trace == 2) ? 0 : 7); }
+struct G {
+  int id;
+  G(int n) : id(n) {}
+  ~G() noexcept(false) {
+    trace = trace * 10 + id;
+    throw id;
+  }
+};
+void f() { G a(1), b(2); }
+int main() {
+  std::set_terminate(terminated);
+  try {
+    f();
+  } catch (...) {
+    return 1;
+  }
+  return 2;
+}

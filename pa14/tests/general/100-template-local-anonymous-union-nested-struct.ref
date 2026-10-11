@@ -1,0 +1,50 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<16x8>
+  slot $h : obj<1x1>
+  slot $argobj__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 0, %t3
+    %t4 = addr $p
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i64 0, %t5
+    %t6 = addr $h
+    %t7 = addr $h
+    %t8 = addr $argobj__1
+    %t9 = addr $p
+    copyobj 16x8 %t9, %t8
+    %t10 = call i32 @H_P___f(%t7, $argobj__1)
+    return i32 %t10
+}
+function @H_P___f(%this : ptr [object_bytes=1], %v : obj<16x8>) -> i32 [binding=weak, object=_ZNK1HI1PE1fES0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : obj<16x8>
+  slot $__u : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $v
+    copyobj 16x8 %v, %t1
+    %t2 = addr $__u
+    %t3 = addr $__u
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = addr $v
+    %t6 = call ptr @P__operator_(%t4, %t5)
+    return i32 0
+}
+function @P__operator_(%this : ptr [object_bytes=16], %other : ptr [pass=by_address, object_bytes=16]) -> ptr [unwind=no, binding=weak, object=_ZN1PaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 16x8 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}

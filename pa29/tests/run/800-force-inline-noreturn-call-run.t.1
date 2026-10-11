@@ -1,0 +1,28 @@
+// A force-inline function that does not return ends its caller's block: no
+// terminator can follow the call, so there is no continuation to split off.
+// The inliner still has to place the callee's body, and the block its returns
+// would have landed in is simply not reachable.  libc++ writes vector's
+// __throw_length_error exactly this way, which is what found this.
+
+__attribute__((always_inline, noreturn)) inline void die()
+{
+	for (;;) { }
+}
+
+// The call is the whole body, so it is the last instruction in the block.
+__attribute__((noreturn)) void rethrow()
+{
+	die();
+}
+
+// The same call on an error path, with live code after it.
+int checked(int x)
+{
+	if (x < 0) die();
+	return x * 2;
+}
+
+int main()
+{
+	return checked(5) == 10 ? 0 : 1;
+}

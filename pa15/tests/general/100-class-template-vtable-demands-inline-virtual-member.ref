@@ -1,0 +1,50 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_box_int_ [storage=readonly, binding=weak, object=_ZTS3boxIiE] = {
+  i8 51
+  i8 98
+  i8 111
+  i8 120
+  i8 73
+  i8 105
+  i8 69
+  i8 0
+}
+global @__rtti_struct_box_int_ [storage=readonly, binding=weak, object=_ZTI3boxIiE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_box_int_
+}
+global @box_int___vtable [storage=readonly, binding=weak, object=_ZTV3boxIiE] = {
+  i64 0
+  ptr addr @__rtti_struct_box_int_
+  ptr addr @box_int___value
+}
+global @value [binding=strong] = {
+  ptr addr @box_int___vtable + 16
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @box_int___value(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZN3boxIiE5valueEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 4
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @box_int___box(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3boxIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @box_int___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN3boxIiEC2Ev = @box_int___box

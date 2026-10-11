@@ -1,0 +1,6 @@
+global @value : f32 [storage=readonly, binding=internal, object=_ZL5value] = 16777216f
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

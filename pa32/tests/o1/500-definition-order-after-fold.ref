@@ -1,0 +1,19 @@
+declare function @observe(%value : i64) -> void [unwind=no]
+
+function @late_block_becomes_dominator(%x : ptr, %n : i64) -> i64 {
+  block ^entry:
+    %p = index i8 %x, 8
+    %w = load i64 %p
+    call void @observe(%w)
+    %v = load i64 %p
+    jump ^loop
+
+  block ^loop:
+    %i = phi i64 [^entry: 0, ^loop: %next]
+    %next = binary add i64 %v, %i
+    %done = cmp eq i64 %n, %next
+    branch %done, ^exit, ^loop
+
+  block ^exit:
+    return i64 %next
+}

@@ -1,0 +1,32 @@
+declare global @is_same_int_int___value : u8 [binding=weak, object=_ZN7is_sameIiiE5valueE]
+declare global @is_same_int__int____value : u8 [binding=weak, object=_ZN7is_sameIRiS0_E5valueE]
+
+global @global_value : i32 [binding=strong] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : i32
+  slot $b : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $a
+    %t1 = addr @global_value
+    store typed ptr %t1, $b
+    %t2 = load typed ptr $b
+    store typed i32 5, %t2
+    %t3 = load typed i32 @global_value
+    %t4 = cmp eq i32 %t3, 5
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

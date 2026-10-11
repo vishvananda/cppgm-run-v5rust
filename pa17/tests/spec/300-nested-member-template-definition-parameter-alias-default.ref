@@ -1,0 +1,84 @@
+function @convert(%source : ptr [pass=by_address, object_bytes=4]) -> obj<4x4> [binding=strong, object=_Z7convertRKN7adaptorIiE5rangeILb1EEE] {
+  slot $source : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %source, $source
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $source
+    %t3 = copy ptr 0
+    call void @adaptor_int___range_false___range(%t1, %t2, %t3)
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    call void @adaptor_int___range_true___range(%t1)
+    %t2 = addr $tmpobj__1
+    %t3 = addr $source
+    %t4 = call obj<4x4> @convert(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = index i8 [projection=field] %t2, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp ne i32 %t6, 1
+    %t8 = convert trunc i32 i64 %t7
+    return i32 %t8
+}
+function @adaptor_int___range_false___range(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4], %__param2 : ptr) -> void [binding=weak, object=_ZN7adaptorIiE5rangeILb0EEC1ILb0EvEERKNS1_ILb1EEEPT0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+  slot $__param2 : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    store typed ptr %__param2, $__param2
+    branch 0, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    store typed i32 %t3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+function @adaptor_int___range_true___range(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7adaptorIiE5rangeILb1EEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN7adaptorIiE5rangeILb0EEC2ILb0EvEERKNS1_ILb1EEEPT0_ = @adaptor_int___range_false___range
+alias object _ZN7adaptorIiE5rangeILb1EEC2Ev = @adaptor_int___range_true___range

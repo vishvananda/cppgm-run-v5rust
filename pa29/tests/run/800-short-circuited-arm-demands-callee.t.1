@@ -1,0 +1,28 @@
+#include <cstdio>
+
+template <class T>
+struct Holder {
+  static constexpr bool fits(unsigned long n) { return n < 23; }
+  static bool wide(unsigned long n) { return n >= 23; }
+  int size() const;
+  bool is_long() const { return false; }
+};
+template <class T> int Holder<T>::size() const { return 2; }
+
+template <class T>
+inline bool same_length(const Holder<T>& h, const char* r)
+{
+  unsigned long len = __builtin_strlen(r);
+  if (__builtin_constant_p(len) && !Holder<T>::fits(len)) {
+    if (!h.is_long()) return false;
+  }
+  if (0 && Holder<T>::wide(len)) return false;
+  return len == static_cast<unsigned long>(h.size());
+}
+
+int main()
+{
+  Holder<char> h;
+  std::printf("%d %d\n", same_length(h, "hi") ? 1 : 0, same_length(h, "three") ? 1 : 0);
+  return 0;
+}

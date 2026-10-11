@@ -1,0 +1,26 @@
+function @test(%source : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z4testRK3boxIJiiEE] {
+  slot $source : ptr
+  slot $value : obj<1x1>
+
+  block ^entry:
+    store typed ptr %source, $source
+    %t1 = addr $value
+    %t2 = load typed ptr $source
+    call void @box_const__cppgm_class_template_identity_1____box(%t1, %t2)
+    %t3 = addr $value
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @box_const__cppgm_class_template_identity_1____box(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN3boxIJRKS_IJiiEEEEC1IJiiELb0ETnN9enable_ifIXclsr4gateIXT0_EEE2noIDpRKT_EEEbE4typeELb0EEERKS_IJDpS6_EE, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZN3boxIJRKS_IJiiEEEEC2IJiiELb0ETnN9enable_ifIXclsr4gateIXT0_EEE2noIDpRKT_EEEbE4typeELb0EEERKS_IJDpS6_EE = @box_const__cppgm_class_template_identity_1____box

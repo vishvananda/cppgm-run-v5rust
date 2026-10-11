@@ -1,0 +1,9 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+function @make_value() -> ptr [binding=strong, object=_Z10make_valuev] {
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    %t2 = call ptr @operatornew(%t1)
+    store typed u32 0, %t2
+    return ptr %t2
+}

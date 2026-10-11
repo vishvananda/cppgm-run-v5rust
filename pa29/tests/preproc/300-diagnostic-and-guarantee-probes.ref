@@ -1,0 +1,7 @@
+preproc 1
+sof tests/preproc/300-diagnostic-and-guarantee-probes.t
+identifier warning_off
+identifier declspec_off
+identifier constexpr_builtin_off
+identifier rmw_off
+eof

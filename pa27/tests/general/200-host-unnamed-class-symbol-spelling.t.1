@@ -1,0 +1,14 @@
+#include "200-host-unnamed-class-symbol-spelling.helper.h"
+
+int NamedByTypedef::get() const { return y + 1; }
+
+template<class T> int unnamed_size(T *) { return static_cast<int>(sizeof(T)); }
+template int unnamed_size(decltype(Holder().pair) *);
+
+int host_named();
+int host_unnamed();
+
+int main()
+{
+  return host_named() == 3 && host_unnamed() == 8 ? 0 : 1;
+}

@@ -1,0 +1,10 @@
+# budget from 300-share-exact-cleanup-tail.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 42
+blocks <= 16
+count(call) <= 15
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 17 in @share_tail
+instructions <= 16 in @keep_different_tail
+instructions <= 13 in @keep_different_context

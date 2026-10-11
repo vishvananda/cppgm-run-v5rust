@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (lvalue-reference to int) returning lvalue-reference to int
+    parameter x lvalue-reference to int
+    compound-statement
+      return-statement
+        id-expression lvalue int x
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 0
+      expression-statement
+        postfix-expression prvalue int OP_INC:++
+          call-expression lvalue lvalue-reference to int
+            callee f function of (lvalue-reference to int) returning lvalue-reference to int
+            id-expression lvalue int x
+      return-statement
+        id-expression lvalue int x
+end translation unit

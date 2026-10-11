@@ -1,0 +1,27 @@
+long double negate(long double value)
+{
+  return -value;
+}
+
+void discard_result(long double value)
+{
+  negate(value);
+}
+
+int main()
+{
+  discard_result(1.0L);
+  discard_result(2.0L);
+  discard_result(3.0L);
+  discard_result(4.0L);
+  discard_result(5.0L);
+  discard_result(6.0L);
+  discard_result(7.0L);
+  discard_result(8.0L);
+  discard_result(9.0L);
+  discard_result(10.0L);
+
+  long double value = 1.0L;
+  long double epsilon = 0.0000001L;
+  return value >= 1.0L - epsilon && value <= 1.0L + epsilon ? 0 : 1;
+}

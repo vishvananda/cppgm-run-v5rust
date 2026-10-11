@@ -1,0 +1,13 @@
+# budget from 500-unsigned-compare-against-zero.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 11
+blocks <= 9
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @below_zero
+instructions <= 4 in @zero_above
+instructions <= 4 in @at_least_zero
+instructions <= 4 in @zero_at_most
+instructions <= 5 in @signed_stays
+instructions <= 5 in @guard_folds

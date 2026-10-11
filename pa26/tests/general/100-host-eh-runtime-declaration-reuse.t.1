@@ -1,0 +1,16 @@
+extern "C" void *__cxa_allocate_exception(unsigned long);
+extern "C" void __cxa_free_exception(void *);
+
+int main()
+{
+  void *p = __cxa_allocate_exception(4);
+  __cxa_free_exception(p);
+  try
+  {
+    throw 7;
+  }
+  catch (int x)
+  {
+    return x - 7;
+  }
+}

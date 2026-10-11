@@ -1,0 +1,6 @@
+declare global @value_2___result : i64 [binding=weak, object=_ZN5valueILm2EE6resultE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,151 @@
+global @buffer : obj<32x16> [binding=strong] = {
+  zero 32
+}
+
+function @fill() -> void [binding=strong, object=_Z4fillv] {
+  slot $i : u32
+
+  block ^entry:
+    store typed u32 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed u32 $i
+    %t2 = const i64 32
+    %t3 = convert zext i64 u32 %t1
+    %t4 = cmp ult i64 %t3, %t2
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = addr @buffer
+    %t6 = load typed u32 $i
+    %t7 = index u8 [projection=array_element] %t5, %t6
+    store u8 85, %t7
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t8 = load typed u32 $i
+    %t9 = binary add u32 %t8, 1
+    store typed u32 %t9, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $built : ptr
+  slot $aggregate : ptr
+
+  block ^entry:
+    call void @fill()
+    %t1 = convert sext i64 i32 12
+    %t2 = addr @buffer
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    call void @Builds__Builds(%t3)
+    store typed ptr %t3, $built
+    %t4 = load typed ptr $built
+    %t5 = index i8 %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp ne i32 %t7, 0
+    branch %t8, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t9 = load typed ptr $built
+    %t10 = index i8 %t9, 0
+    %t11 = index i8 [projection=field] %t10, 4
+    %t12 = load i8 %t11
+    %t13 = convert sext i32 i8 %t12
+    %t14 = cmp ne i32 %t13, 0
+    branch %t14, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t15 = load typed ptr $built
+    %t16 = index i8 [projection=field] %t15, 8
+    %t17 = load i8 %t16
+    %t18 = convert sext i32 i8 %t17
+    %t19 = cmp ne i32 %t18, 7
+    branch %t19, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    call void @fill()
+    %t20 = convert sext i64 i32 12
+    %t21 = addr @buffer
+    %t22 = call ptr @operatornew__ov2(%t20, %t21)
+    call void @Aggregates__Aggregates(%t22)
+    store typed ptr %t22, $aggregate
+    %t23 = load typed ptr $aggregate
+    %t24 = index i8 %t23, 0
+    %t25 = index i8 [projection=field] %t24, 0
+    %t26 = load typed i32 %t25
+    %t27 = cmp ne i32 %t26, 0
+    branch %t27, ^if_then_6, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t28 = load typed ptr $aggregate
+    %t29 = index i8 %t28, 0
+    %t30 = index i8 [projection=field] %t29, 4
+    %t31 = load typed i32 %t30
+    %t32 = cmp ne i32 %t31, 0
+    branch %t32, ^if_then_6, ^lor_rhs_8
+
+  block ^lor_rhs_8:
+    %t33 = load typed ptr $aggregate
+    %t34 = index i8 [projection=field] %t33, 8
+    %t35 = load typed i32 %t34
+    %t36 = cmp ne i32 %t35, 8
+    branch %t36, ^if_then_6, ^if_else_7
+
+  block ^if_then_6:
+    return i32 2
+
+  block ^if_else_7:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    return i32 0
+}
+function @operatornew__ov2(%__param0 : i64, %place : ptr) -> ptr [unwind=no, binding=weak, object=_ZnwmPv, inline_hint=yes] {
+  slot $__param0 : i64
+  slot $place : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %place, $place
+    %t1 = load typed ptr $place
+    return ptr %t1
+}
+function @Builds__Builds(%this : ptr [object_bytes=12]) -> void [binding=weak, object=_ZN6BuildsC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    zeroinit 8x4 %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store i8 7, %t4
+    return void
+}
+function @Aggregates__Aggregates(%this : ptr [object_bytes=12]) -> void [binding=weak, object=_ZN10AggregatesC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    zeroinit 8x4 %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed i32 8, %t4
+    return void
+}
+alias object _ZN6BuildsC2Ev = @Builds__Builds
+alias object _ZN10AggregatesC2Ev = @Aggregates__Aggregates

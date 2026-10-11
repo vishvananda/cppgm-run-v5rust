@@ -1,0 +1,45 @@
+function @get(%u : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z3getR1U] {
+  slot $u : ptr
+
+  block ^entry:
+    store typed ptr %u, $u
+    %t1 = load typed ptr $u
+    %t2 = addr @__lambda_get_t31_36___FUN
+    %t3 = call i32 %t2(%t1) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> i32
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $u : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $u
+    call void @U__U(%t1, 7)
+    %t2 = addr $u
+    %t3 = call i32 @get(%t2)
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}
+function @__lambda_get_t31_36___FUN(%x : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=internal, object=_ZZ3getR1UEN3$_08__invokeES0_, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @U__U(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN1UC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN1UC2Ei = @U__U

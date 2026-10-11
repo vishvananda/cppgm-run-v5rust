@@ -1,0 +1,20 @@
+#include <600-system-include-aggregate-field-copy.helper.h>
+
+struct Entry
+{
+  SystemBuffer<int> buffer;
+};
+
+static int observed;
+
+void consume(const Entry& entry)
+{
+  observed = entry.buffer.value;
+}
+
+int main()
+{
+  SystemBuffer<int> source(7);
+  consume(Entry{source});
+  return observed == 8 ? 0 : 1;
+}

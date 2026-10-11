@@ -1,0 +1,53 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier trait
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_BOOL:bool
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              keyword-literal KW_TRUE:true
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier validate
+            parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      if-statement
+        condition
+          id-expression trait<int>::value
+        then
+          compound-statement
+            expression-statement
+              call-expression
+                id-expression validate<int>
+                argument-list
+end translation unit

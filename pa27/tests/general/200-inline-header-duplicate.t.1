@@ -1,0 +1,13 @@
+#include "200-inline-header-duplicate.helper.h"
+
+int right();
+
+int left()
+{
+  return add2(1);
+}
+
+int main()
+{
+  return left() + right() - 9;
+}

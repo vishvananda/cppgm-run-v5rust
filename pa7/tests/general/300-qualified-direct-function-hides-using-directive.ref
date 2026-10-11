@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition imported
+    function-declaration imported::f function of (int) returning long int
+  function-declaration f function of (int) returning char
+  variable value char
+end translation unit

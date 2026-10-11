@@ -1,0 +1,17 @@
+struct A
+{
+  virtual ~A();
+};
+
+struct B : virtual A
+{
+  virtual ~B();
+};
+
+A::~A()
+{
+}
+
+B::~B()
+{
+}

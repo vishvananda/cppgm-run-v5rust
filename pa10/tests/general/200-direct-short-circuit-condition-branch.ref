@@ -1,0 +1,48 @@
+function @f(%x : i32, %y : i32) -> i32 [binding=strong, object=_Z1fii] {
+  slot $x : i32
+  slot $y : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    store typed i32 %y, $y
+    %t1 = load typed i32 $x
+    %t2 = cmp eq i32 %t1, 1
+    branch %t2, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t3 = load typed i32 $x
+    %t4 = cmp eq i32 %t3, 2
+    branch %t4, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t5 = load typed i32 $x
+    %t6 = cmp eq i32 %t5, 3
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    %t7 = load typed i32 $x
+    branch %t7, ^land_rhs_8, ^if_else_7
+
+  block ^land_rhs_8:
+    %t8 = load typed i32 $y
+    branch %t8, ^if_then_6, ^if_else_7
+
+  block ^if_then_6:
+    return i32 2
+
+  block ^if_else_7:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function f function of (const int) returning void
+    function f function of (volatile int) returning void
+    function g function of (function of (int) returning void, pointer to int) returning void
+    function g function of (pointer to function of (int) returning void, array of 3 int) returning void
+end translation unit

@@ -1,0 +1,35 @@
+global @__local_static__digits__decl0__arr [storage=readonly, binding=internal, object=_ZZ6digitsvE3arr] = {
+  i8 48
+  i8 49
+  i8 50
+  i8 51
+}
+
+function @digits() -> ptr [unwind=no, binding=strong, object=_Z6digitsv] {
+  block ^entry:
+    %t1 = addr @__local_static__digits__decl0__arr
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call ptr @digits()
+    %t2 = index i8 [projection=array_element] %t1, 2
+    %t3 = load i8 %t2
+    %t4 = convert sext i32 i8 %t3
+    %t5 = cmp eq i32 %t4, 50
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

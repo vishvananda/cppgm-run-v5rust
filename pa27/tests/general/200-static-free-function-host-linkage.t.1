@@ -1,0 +1,11 @@
+static int local_helper()
+{
+  return 3;
+}
+
+int other_value();
+
+int main()
+{
+  return local_helper() + other_value() - 7;
+}

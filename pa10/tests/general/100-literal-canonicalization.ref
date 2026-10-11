@@ -1,0 +1,9 @@
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  block ^entry:
+    %t1 = binary add nowrap i32 127, 97
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

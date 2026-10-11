@@ -1,0 +1,52 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+    alias-declaration void_t
+      type-id
+        type-specifier-seq
+          type-specifier KW_VOID:void
+  class-specifier false_type
+    class-key KW_STRUCT:struct
+  class-specifier true_type
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier U
+        type-parameter
+          parameter-key KW_CLASS:class
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_VOID:void
+    class-specifier less_than
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name false_type
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier U
+    class-specifier less_than<T,U,void_t<decltype((0)<(0))>>
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name true_type
+end translation unit

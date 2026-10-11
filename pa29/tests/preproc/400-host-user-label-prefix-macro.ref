@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/400-host-user-label-prefix-macro.t
+identifier have_user_label_prefix
+eof

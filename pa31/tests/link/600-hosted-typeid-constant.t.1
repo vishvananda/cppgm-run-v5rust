@@ -1,0 +1,21 @@
+// N3485 5.19p3, 5.2.8: the address of typeid of a type is an address constant:
+// it may initialize constexpr objects and references (libc++'s std::function
+// policy)
+#include <cstdio>
+#include <typeinfo>
+// typeid of a static type in constant initializers (libc++'s std::function
+// policy: `static constexpr __policy __policy = {..., &typeid(void)}`).
+struct Policy { const void* clone; bool is_null; const std::type_info* type; };
+struct Poly { virtual ~Poly() {} };
+const Policy* empty_policy()
+{
+	static constexpr Policy policy = { nullptr, true, &typeid(void) };
+	return &policy;
+}
+constexpr const std::type_info* int_info = &typeid(int);
+constexpr const std::type_info& poly_info = typeid(Poly);
+int main() {
+	std::printf("%d %d %d %d\n", (int)(empty_policy()->type == &typeid(void)), (int)(*int_info == typeid(int)),
+		(int)(&poly_info == &typeid(Poly)), (int)(int_info != &typeid(long)));
+	return 0;
+}

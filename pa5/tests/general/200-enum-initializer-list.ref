@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  enum-specifier EY
+    enumerator A
+    enumerator B
+      literal 4
+    enumerator C
+end translation unit

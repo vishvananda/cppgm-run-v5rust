@@ -1,0 +1,22 @@
+int main()
+{
+  float negative_float_zero = -0.0f;
+  float positive_float_zero = 0.0f;
+  double negative_double_zero = -0.0;
+  double positive_double_zero = 0.0;
+  long double negative_long_double_zero = -0.0L;
+  long double positive_long_double_zero = 0.0L;
+  float negative_float_nan = -__builtin_nanf("");
+  double negative_double_nan = -__builtin_nan("");
+  long double negative_long_double_nan = -__builtin_nanl("");
+
+  return __builtin_signbit(negative_float_zero) &&
+         !__builtin_signbit(positive_float_zero) &&
+         __builtin_signbit(negative_double_zero) &&
+         !__builtin_signbit(positive_double_zero) &&
+         __builtin_signbit(negative_long_double_zero) &&
+         !__builtin_signbit(positive_long_double_zero) &&
+         __builtin_signbit(negative_float_nan) &&
+         __builtin_signbit(negative_double_nan) &&
+         __builtin_signbit(negative_long_double_nan) ? 0 : 1;
+}

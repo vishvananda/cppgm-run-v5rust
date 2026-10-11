@@ -1,0 +1,7 @@
+#include "200-header-inline-friend-alias-link-smoke.helper.h"
+
+int main()
+{
+  int result = header_friend_alias::throw_like(header_friend_alias::error_bad, "!");
+  return result == 40 ? 0 : 1;
+}

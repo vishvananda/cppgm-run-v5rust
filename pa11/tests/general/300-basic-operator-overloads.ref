@@ -1,0 +1,481 @@
+function @operator__(%stream : ptr [pass=by_address, object_bytes=4], %number : ptr [pass=by_address, object_bytes=12]) -> ptr [binding=strong, object=_ZlsR6StreamRK6Number] {
+  slot $stream : ptr
+  slot $number : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %number, $number
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $number
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = load typed ptr $stream
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 %t7, %t9
+    %t10 = load typed ptr $stream
+    return ptr %t10
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $a : obj<12x4>
+  slot $b : obj<12x4>
+  slot $p : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+  slot $land__6 : i64
+  slot $land__7 : i64
+  slot $land__8 : i64
+  slot $land__9 : i64
+  slot $land__10 : i64
+  slot $land__11 : i64
+  slot $land__12 : i64
+  slot $land__13 : i64
+  slot $land__14 : i64
+
+  block ^entry:
+    %t1 = addr $stream
+    %t2 = addr $a
+    %t3 = addr $b
+    %t4 = addr $stream
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 0, %t5
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 5, %t7
+    %t8 = addr $a
+    %t9 = index i8 [projection=field] %t8, 4
+    %t10 = index i32 [projection=array_element] %t9, 0
+    store typed i32 4, %t10
+    %t11 = addr $a
+    %t12 = index i8 [projection=field] %t11, 4
+    %t13 = index i32 [projection=array_element] %t12, 1
+    store typed i32 9, %t13
+    %t14 = addr $b
+    %t15 = index i8 [projection=field] %t14, 0
+    store typed i32 3, %t15
+    %t16 = addr $b
+    %t17 = index i8 [projection=field] %t16, 4
+    %t18 = index i32 [projection=array_element] %t17, 0
+    store typed i32 1, %t18
+    %t19 = addr $b
+    %t20 = index i8 [projection=field] %t19, 4
+    %t21 = index i32 [projection=array_element] %t20, 1
+    store typed i32 2, %t21
+    %t22 = addr $stream
+    %t23 = addr $a
+    %t24 = call ptr @operator__(%t22, %t23)
+    %t25 = addr $b
+    %t26 = call ptr @operator__(%t24, %t25)
+    store typed ptr %t26, $p
+    %t27 = load typed ptr $p
+    %t28 = addr $stream
+    %t29 = cmp eq ptr %t27, %t28
+    branch %t29, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t30 = addr $stream
+    %t31 = index i8 [projection=field] %t30, 0
+    %t32 = load typed i32 %t31
+    %t33 = cmp eq i32 %t32, 8
+    %t34 = cmp ne i64 %t33, 0
+    store typed i64 %t34, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t35 = load typed i64 $land__2
+    branch %t35, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t36 = addr $a
+    %t37 = call i32 @Number__operator__(%t36, 1)
+    %t38 = cmp eq i32 %t37, 9
+    %t39 = cmp ne i64 %t38, 0
+    store typed i64 %t39, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t40 = load typed i64 $land__3
+    branch %t40, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t41 = addr $a
+    %t42 = call i32 @Number__operator____2(%t41)
+    %t43 = cmp eq i32 %t42, 6
+    %t44 = cmp ne i64 %t43, 0
+    store typed i64 %t44, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t45 = load typed i64 $land__4
+    branch %t45, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t46 = addr $a
+    %t47 = call i32 @Number__operator_(%t46)
+    %t48 = cmp eq i32 %t47, 5
+    %t49 = cmp ne i64 %t48, 0
+    store typed i64 %t49, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t50 = load typed i64 $land__5
+    branch %t50, ^land_rhs_16, ^land_short_17
+
+  block ^land_rhs_16:
+    %t51 = addr $a
+    %t52 = call i32 @Number__operator___2(%t51)
+    %t53 = unary neg i32 5
+    %t54 = cmp eq i32 %t52, %t53
+    %t55 = cmp ne i64 %t54, 0
+    store typed i64 %t55, $land__6
+    jump ^land_end_18
+
+  block ^land_short_17:
+    store typed i64 0, $land__6
+    jump ^land_end_18
+
+  block ^land_end_18:
+    %t56 = load typed i64 $land__6
+    branch %t56, ^land_rhs_19, ^land_short_20
+
+  block ^land_rhs_19:
+    %t57 = addr $a
+    %t58 = addr $b
+    %t59 = call i32 @operator_(%t57, %t58)
+    %t60 = cmp eq i32 %t59, 8
+    %t61 = cmp ne i64 %t60, 0
+    store typed i64 %t61, $land__7
+    jump ^land_end_21
+
+  block ^land_short_20:
+    store typed i64 0, $land__7
+    jump ^land_end_21
+
+  block ^land_end_21:
+    %t62 = load typed i64 $land__7
+    branch %t62, ^land_rhs_22, ^land_short_23
+
+  block ^land_rhs_22:
+    %t63 = addr $a
+    %t64 = addr $b
+    %t65 = call i32 @operator___2(%t63, %t64)
+    %t66 = cmp eq i32 %t65, 2
+    %t67 = cmp ne i64 %t66, 0
+    store typed i64 %t67, $land__8
+    jump ^land_end_24
+
+  block ^land_short_23:
+    store typed i64 0, $land__8
+    jump ^land_end_24
+
+  block ^land_end_24:
+    %t68 = load typed i64 $land__8
+    branch %t68, ^land_rhs_25, ^land_short_26
+
+  block ^land_rhs_25:
+    %t69 = addr $b
+    %t70 = addr $a
+    %t71 = call u8 @operator___3(%t69, %t70)
+    %t72 = cmp ne i64 %t71, 0
+    store typed i64 %t72, $land__9
+    jump ^land_end_27
+
+  block ^land_short_26:
+    store typed i64 0, $land__9
+    jump ^land_end_27
+
+  block ^land_end_27:
+    %t73 = load typed i64 $land__9
+    branch %t73, ^land_rhs_28, ^land_short_29
+
+  block ^land_rhs_28:
+    %t74 = addr $a
+    %t75 = addr $b
+    %t76 = call u8 @operator___4(%t74, %t75)
+    %t77 = cmp ne i64 %t76, 0
+    store typed i64 %t77, $land__10
+    jump ^land_end_30
+
+  block ^land_short_29:
+    store typed i64 0, $land__10
+    jump ^land_end_30
+
+  block ^land_end_30:
+    %t78 = load typed i64 $land__10
+    branch %t78, ^land_rhs_31, ^land_short_32
+
+  block ^land_rhs_31:
+    %t79 = addr $a
+    %t80 = addr $a
+    %t81 = call u8 @operator____2(%t79, %t80)
+    %t82 = cmp ne i64 %t81, 0
+    store typed i64 %t82, $land__11
+    jump ^land_end_33
+
+  block ^land_short_32:
+    store typed i64 0, $land__11
+    jump ^land_end_33
+
+  block ^land_end_33:
+    %t83 = load typed i64 $land__11
+    branch %t83, ^land_rhs_34, ^land_short_35
+
+  block ^land_rhs_34:
+    %t84 = addr $a
+    %t85 = addr $a
+    %t86 = call u8 @operator____3(%t84, %t85)
+    %t87 = cmp ne i64 %t86, 0
+    store typed i64 %t87, $land__12
+    jump ^land_end_36
+
+  block ^land_short_35:
+    store typed i64 0, $land__12
+    jump ^land_end_36
+
+  block ^land_end_36:
+    %t88 = load typed i64 $land__12
+    branch %t88, ^land_rhs_37, ^land_short_38
+
+  block ^land_rhs_37:
+    %t89 = addr $a
+    %t90 = addr $a
+    %t91 = call u8 @operator____4(%t89, %t90)
+    %t92 = cmp ne i64 %t91, 0
+    store typed i64 %t92, $land__13
+    jump ^land_end_39
+
+  block ^land_short_38:
+    store typed i64 0, $land__13
+    jump ^land_end_39
+
+  block ^land_end_39:
+    %t93 = load typed i64 $land__13
+    branch %t93, ^land_rhs_40, ^land_short_41
+
+  block ^land_rhs_40:
+    %t94 = addr $a
+    %t95 = addr $b
+    %t96 = call u8 @operator____5(%t94, %t95)
+    %t97 = cmp ne i64 %t96, 0
+    store typed i64 %t97, $land__14
+    jump ^land_end_42
+
+  block ^land_short_41:
+    store typed i64 0, $land__14
+    jump ^land_end_42
+
+  block ^land_end_42:
+    %t98 = load typed i64 $land__14
+    branch %t98, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t99 = load typed i32 $cond__1
+    return i32 %t99
+}
+function @Number__operator__(%this : ptr [object_bytes=12], %i : i32) -> i32 [binding=weak, object=_ZNK6NumberixEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %i, $i
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 4
+    %t3 = load typed i32 $i
+    %t4 = index i32 [projection=array_element] %t2, %t3
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}
+function @Number__operator____2(%this : ptr [object_bytes=12]) -> i32 [binding=weak, object=_ZNK6NumberclEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @Number__operator_(%this : ptr [object_bytes=12]) -> i32 [binding=weak, object=_ZNK6NumberpsEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @Number__operator___2(%this : ptr [object_bytes=12]) -> i32 [binding=weak, object=_ZNK6NumberngEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = unary neg i32 %t3
+    return i32 %t4
+}
+function @operator_(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> i32 [binding=weak, object=_ZplRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @operator___2(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> i32 [binding=weak, object=_ZmiRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary sub nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @operator___3(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZltRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp lt i32 %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @operator___4(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZgtRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp gt i32 %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @operator____2(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZleRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp le i32 %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @operator____3(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZgeRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp ge i32 %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @operator____4(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZeqRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @operator____5(%a : ptr [pass=by_address, object_bytes=12], %b : ptr [pass=by_address, object_bytes=12]) -> u8 [binding=weak, object=_ZneRK6NumberS1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = load typed ptr $b
+    %t3 = call u8 @operator____4(%t1, %t2)
+    %t4 = cmp eq u8 %t3, 0
+    %t5 = convert trunc u8 i64 %t4
+    return u8 %t5
+}

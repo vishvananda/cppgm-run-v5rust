@@ -1,0 +1,7 @@
+#include "300-class-template-out-of-class-member-odr.shared.h"
+
+int other_value()
+{
+  odr_holder<int> local(23);
+  return local.value;
+}

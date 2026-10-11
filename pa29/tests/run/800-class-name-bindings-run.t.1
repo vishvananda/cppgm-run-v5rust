@@ -1,0 +1,85 @@
+// Where a class name is bound: `friend struct X;` declares X in no scope that
+// lookup searches before X's own declaration (7.3.1.2p3), `struct Y* p;` in a
+// class declares ::Y (3.3.2p7), a class hidden by a function before its
+// definition keeps the scope its typedef names, and `struct N::Z {... }`
+// defines the Z of N's inline namespace (7.3.1p8). Each class's members are
+// then found through every name of it, in statements and in declarations. g++
+// and clang++ print "9 13 30 2".
+#include <cstdio>
+
+struct A
+{
+	friend struct X;
+	int f();
+};
+struct X
+{
+	typedef int t;
+	static int w;
+};
+int X::w = 9;
+int A::f()
+{
+	X::t* p = &X::w;
+	return *p;
+}
+
+struct S
+{
+	struct Y* p;
+	int g();
+};
+struct Y
+{
+	typedef int t;
+	static int v;
+};
+int Y::v = 13;
+int S::g()
+{
+	Y::t* q = &Y::v;
+	return *q;
+}
+
+struct st;
+typedef struct st ST;
+int st(int v)
+{
+	return v * 10;
+}
+struct st
+{
+	int a;
+	typedef int t;
+};
+int h(ST::t* q)
+{
+	return st(*q);
+}
+
+namespace N {
+inline namespace I {
+struct Z;
+}
+typedef Z ZZ;
+}
+struct N::Z
+{
+	typedef int t;
+	static int v;
+};
+int N::Z::v = 2;
+int k(N::ZZ::t* q)
+{
+	return *q;
+}
+
+int main()
+{
+	A a;
+	S s;
+	ST::t three = 3;
+	N::ZZ::t two = N::ZZ::v;
+	std::printf("%d %d %d %d\n", a.f(), s.g(), h(&three), k(&two));
+	return 0;
+}

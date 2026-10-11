@@ -1,0 +1,23 @@
+int base_destroyed = 0;
+int derived_destroyed = 0;
+
+struct Base {
+  virtual ~Base()
+  {
+    ++base_destroyed;
+  }
+};
+
+struct Derived : Base {
+  ~Derived()
+  {
+    ++derived_destroyed;
+  }
+};
+
+int main()
+{
+  Base * value = new Derived();
+  delete value;
+  return base_destroyed == 1 && derived_destroyed == 1 ? 0 : 1;
+}

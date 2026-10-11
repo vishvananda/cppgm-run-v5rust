@@ -1,0 +1,39 @@
+struct S {
+  S()
+  {
+  }
+
+  S(const S &)
+  {
+  }
+
+  ~S()
+  {
+  }
+
+  explicit operator bool() const
+  {
+    return true;
+  }
+
+  S & operator=(const S &)
+  {
+    return *this;
+  }
+};
+
+bool f(S & out, S in)
+{
+  if(S direct_member = in) {
+    out = direct_member;
+    return true;
+  }
+  return false;
+}
+
+int main()
+{
+  S a;
+  S b;
+  return f(a, b) ? 0 : 1;
+}

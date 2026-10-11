@@ -1,0 +1,43 @@
+function @accessor(%p : ptr) -> i64 [prefer_local=yes] {
+  block ^entry:
+    %t5 = load i8 %p
+    %t6 = binary and i8 %t5, 1
+    branch %t6, ^long, ^short
+
+  block ^long:
+    %t10 = index i8 [projection=field] %p, 8
+    %t11 = load i64 %t10
+    jump ^end
+
+  block ^short:
+    %t17 = binary shr i8 %t5, 1
+    %t18 = binary and i8 %t17, 127
+    %t9 = convert sext i64 i8 %t18
+    jump ^end
+
+  block ^end:
+    %t12 = phi i64 [^long: %t11, ^short: %t9]
+    return i64 %t12
+}
+function @caller(%p : ptr) -> i64 {
+  block ^entry:
+    %t5_1 = load i8 %p
+    %t6_3 = binary and i8 %t5_1, 1
+    branch %t6_3, ^long_1, ^short_2
+
+  block ^long_1:
+    %t10_4 = index i8 [projection=field] %p, 8
+    %t11_5 = load i64 %t10_4
+    jump ^end_3
+
+  block ^short_2:
+    %t17_6 = binary shr i8 %t5_1, 1
+    %t18_7 = binary and i8 %t17_6, 127
+    %t8 = convert sext i64 i8 %t18_7
+    jump ^end_3
+
+  block ^end_3:
+    %t9 = phi i64 [^long_1: %t11_5, ^short_2: %t8]
+    %t2 = binary add i64 %t9, 1
+    return i64 %t2
+}

@@ -1,0 +1,69 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier a
+          parameter-clause
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier g
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier h
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier y
+    compound-statement
+      if-statement
+        condition
+          binary-expression OP_LAND:&&
+            binary-expression OP_LAND:&&
+              id-expression a
+              call-expression
+                id-expression f
+                argument-list
+                  id-expression x
+            call-expression
+              id-expression g
+              argument-list
+                id-expression y
+        then
+          return-statement
+            literal 1
+      return-statement
+        literal 0
+end translation unit

@@ -1,0 +1,151 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> i32 [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_HeaderVtableBase [storage=readonly, binding=weak, object=_ZTS16HeaderVtableBase] = {
+  i8 49
+  i8 54
+  i8 72
+  i8 101
+  i8 97
+  i8 100
+  i8 101
+  i8 114
+  i8 86
+  i8 116
+  i8 97
+  i8 98
+  i8 108
+  i8 101
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_HeaderVtableBase [storage=readonly, binding=weak, object=_ZTI16HeaderVtableBase] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_HeaderVtableBase
+}
+global @HeaderVtableBase__vtable [storage=readonly, binding=weak, object=_ZTV16HeaderVtableBase] = {
+  i64 0
+  ptr addr @__rtti_struct_HeaderVtableBase
+  ptr addr @__cxa_pure_virtual
+}
+global @__typeinfo_name__struct_HeaderVtableDerived [storage=readonly, binding=weak, object=_ZTS19HeaderVtableDerived] = {
+  i8 49
+  i8 57
+  i8 72
+  i8 101
+  i8 97
+  i8 100
+  i8 101
+  i8 114
+  i8 86
+  i8 116
+  i8 97
+  i8 98
+  i8 108
+  i8 101
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__rtti_struct_HeaderVtableDerived [storage=readonly, binding=weak, object=_ZTI19HeaderVtableDerived] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_HeaderVtableDerived
+  ptr addr @__rtti_struct_HeaderVtableBase
+}
+global @HeaderVtableDerived__vtable [storage=readonly, binding=strong, object=_ZTV19HeaderVtableDerived] = {
+  i64 0
+  ptr addr @__rtti_struct_HeaderVtableDerived
+  ptr addr @HeaderVtableDerived__value
+}
+
+function @HeaderVtableDerived__HeaderVtableDerived__base_entry(%this : ptr [object_bytes=16]) -> void [binding=strong, object=_ZN19HeaderVtableDerivedC2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @HeaderVtableBase__HeaderVtableBase__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @HeaderVtableDerived__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i32 7, %t7
+    return void
+}
+function @HeaderVtableDerived__HeaderVtableDerived(%this : ptr [object_bytes=16]) -> void [binding=strong, object=_ZN19HeaderVtableDerivedC1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @HeaderVtableBase__HeaderVtableBase__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @HeaderVtableDerived__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i32 7, %t7
+    return void
+}
+function @HeaderVtableDerived__value(%this : ptr [object_bytes=16]) -> i32 [binding=strong, object=_ZN19HeaderVtableDerived5valueEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $d
+    call void @HeaderVtableDerived__HeaderVtableDerived(%t1)
+    %t2 = addr $d
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr %t3
+    %t5 = call i32 %t4(%t2) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @HeaderVtableBase__HeaderVtableBase__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN16HeaderVtableBaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @HeaderVtableBase__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}

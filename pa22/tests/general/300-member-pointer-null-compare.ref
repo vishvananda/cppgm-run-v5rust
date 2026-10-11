@@ -1,0 +1,46 @@
+function @member_pointer_null_compare_class__method(%this : ptr [object_bytes=4], %arg : i32) -> i32 [binding=strong, object=_ZN33member_pointer_null_compare_class6methodEi] {
+  slot $this : ptr
+  slot $arg : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %arg, $arg
+    %t1 = load typed i32 $arg
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data_ptr : i64
+  slot $function_ptr : i128
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i64 -1, $data_ptr
+    store typed i128 0, $function_ptr
+    %t1 = load typed i64 $data_ptr
+    %t2 = cmp ne i64 %t1, -1
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = load typed i128 $function_ptr
+    %t4 = cmp eq i128 %t3, 0
+    branch %t4, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 2, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

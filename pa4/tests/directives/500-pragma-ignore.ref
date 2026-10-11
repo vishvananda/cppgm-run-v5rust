@@ -1,0 +1,3 @@
+preproc 1
+sof tests/directives/500-pragma-ignore.t
+eof

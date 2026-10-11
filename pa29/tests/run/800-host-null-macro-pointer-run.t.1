@@ -1,0 +1,18 @@
+#include <cstddef>
+#include <cstdlib>
+
+int main()
+{
+  // The NULL macro must compare equal/unequal cleanly against a pointer.
+  int *p = NULL;
+  if (!(p == NULL))
+    return 1;
+  if (p != NULL)
+    return 2;
+  // <cstdlib> strtoull must parse against the host C library.
+  if (strtoull("255", NULL, 0) != 255ULL)
+    return 3;
+  if (strtoull("0x10", NULL, 0) != 16ULL)
+    return 4;
+  return 0;
+}

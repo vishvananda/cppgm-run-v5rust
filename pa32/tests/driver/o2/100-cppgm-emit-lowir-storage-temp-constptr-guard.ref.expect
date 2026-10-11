@@ -1,0 +1,8 @@
+# budget from 100-cppgm-emit-lowir-storage-temp-constptr-guard.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 7
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 4
+count(phi) <= 3
+instructions <= 7 in @main

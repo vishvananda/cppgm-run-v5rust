@@ -1,0 +1,208 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name_type_Z5firstvE5local [storage=readonly, binding=internal, object=_ZTSZ5firstvE5local] = {
+  i8 90
+  i8 53
+  i8 102
+  i8 105
+  i8 114
+  i8 115
+  i8 116
+  i8 118
+  i8 69
+  i8 53
+  i8 108
+  i8 111
+  i8 99
+  i8 97
+  i8 108
+  i8 0
+}
+global @__typeinfo_name__struct_base [storage=readonly, binding=weak, object=_ZTS4base] = {
+  i8 52
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_base [storage=readonly, binding=weak, object=_ZTI4base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_base
+}
+global @__rtti_type_Z5firstvE5local [storage=readonly, binding=internal, object=_ZTIZ5firstvE5local] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name_type_Z5firstvE5local
+  ptr addr @__rtti_struct_base
+}
+global @__vtable_type_Z5firstvE5local [storage=readonly, binding=internal, object=_ZTVZ5firstvE5local] = {
+  i64 0
+  ptr addr @__rtti_type_Z5firstvE5local
+  ptr addr @local__value
+}
+global @__typeinfo_name_type_Z6secondvE5local [storage=readonly, binding=internal, object=_ZTSZ6secondvE5local] = {
+  i8 90
+  i8 54
+  i8 115
+  i8 101
+  i8 99
+  i8 111
+  i8 110
+  i8 100
+  i8 118
+  i8 69
+  i8 53
+  i8 108
+  i8 111
+  i8 99
+  i8 97
+  i8 108
+  i8 0
+}
+global @__rtti_type_Z6secondvE5local [storage=readonly, binding=internal, object=_ZTIZ6secondvE5local] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name_type_Z6secondvE5local
+  ptr addr @__rtti_struct_base
+}
+global @__vtable_type_Z6secondvE5local [storage=readonly, binding=internal, object=_ZTVZ6secondvE5local] = {
+  i64 0
+  ptr addr @__rtti_type_Z6secondvE5local
+  ptr addr @local__value__2
+}
+global @base__vtable [storage=readonly, binding=weak, object=_ZTV4base] = {
+  i64 0
+  ptr addr @__rtti_struct_base
+  ptr addr @base__value
+}
+
+function @first() -> i32 [binding=strong, object=_Z5firstv] {
+  slot $object : obj<8x8>
+  slot $polymorphic : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    call void @local__local(%t1)
+    %t2 = addr $object
+    %t3 = index i8 %t2, 0
+    store typed ptr %t3, $polymorphic
+    %t4 = load typed ptr $polymorphic
+    %t5 = load typed ptr %t4
+    %t6 = load typed ptr %t5
+    %t7 = call i32 %t6(%t4) as (%arg0 : ptr [object_bytes=8]) -> i32
+    return i32 %t7
+}
+function @second() -> i32 [binding=strong, object=_Z6secondv] {
+  slot $object : obj<8x8>
+  slot $polymorphic : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    call void @local__local__2(%t1)
+    %t2 = addr $object
+    %t3 = index i8 %t2, 0
+    store typed ptr %t3, $polymorphic
+    %t4 = load typed ptr $polymorphic
+    %t5 = load typed ptr %t4
+    %t6 = load typed ptr %t5
+    %t7 = call i32 %t6(%t4) as (%arg0 : ptr [object_bytes=8]) -> i32
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = call i32 @first()
+    %t2 = cmp eq i32 %t1, 1
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = call i32 @second()
+    %t4 = cmp eq i32 %t3, 2
+    %t5 = cmp ne i64 %t4, 0
+    store typed i64 %t5, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t6 = load typed i64 $land__2
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @local__local(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=internal, object=_ZZ5firstvEN5localC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @base__base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @__vtable_type_Z5firstvE5local
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @local__value(%this : ptr [object_bytes=8]) -> i32 [binding=internal, object=_ZZ5firstvENK5local5valueEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @base__value(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK4base5valueEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 0
+}
+function @local__local__2(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=internal, object=_ZZ6secondvEN5localC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @base__base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @__vtable_type_Z6secondvE5local
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @local__value__2(%this : ptr [object_bytes=8]) -> i32 [binding=internal, object=_ZZ6secondvENK5local5valueEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+function @base__base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4baseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZZ5firstvEN5localC2Ev = @local__local
+alias object _ZZ6secondvEN5localC2Ev = @local__local__2

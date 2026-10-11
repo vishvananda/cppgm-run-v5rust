@@ -1,0 +1,6 @@
+// second unit: an extra lambda before the class shifts any per-unit closure
+// numbering
+int pre() { return [] { return 1; }(); }
+struct K { int d(int x = [] { static int n = 0; return n += 10; }()) { return x; } };
+template<class T> struct KT { int d(int x = [] { static int n = 0; return n += 1; }()) { return x; } };
+int other() { return K().d() + KT<int>().d(); }

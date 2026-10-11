@@ -1,0 +1,15 @@
+struct State
+{
+  int value;
+};
+
+int main()
+{
+  State state = {1};
+  __asm__ __volatile__(
+      "lock; incl %[storage]\n\t"
+      : [storage] "+m" (state.value)
+      :
+      : "cc", "memory");
+  return state.value == 2 ? 0 : 1;
+}

@@ -1,0 +1,86 @@
+#include <cstdlib>
+#include <new>
+
+int allocations = 0;
+int releases = 0;
+
+void* operator new[](std::size_t size)
+{
+  ++allocations;
+  void* storage = std::malloc(size ? size : 1);
+  if (!storage) throw std::bad_alloc();
+  return storage;
+}
+
+void operator delete[](void* storage) noexcept
+{
+  ++releases;
+  std::free(storage);
+}
+
+struct Destructible
+{
+  long value;
+  Destructible() : value(3) {}
+  ~Destructible() {}
+};
+
+template <class Element, class Count>
+int rejects(Count count)
+{
+  const int before = allocations;
+  try
+  {
+    delete[] new Element[count];
+  }
+  catch (const std::bad_array_new_length&)
+  {
+    return allocations == before ? 0 : 2;
+  }
+  return 1;
+}
+
+int count_of(int value) { return value; }
+
+int fail(int value)
+{
+  if (value) throw value;
+  return value;
+}
+
+int main()
+{
+  if (rejects<int>(count_of(-1))) return 1;
+  if (rejects<char>(-1L)) return 2;
+  if (rejects<long>(~0ul)) return 3;
+  if (rejects<long>(1ul << 61)) return 4;
+  if (rejects<Destructible>(count_of(-4))) return 5;
+  if (rejects<Destructible>(1ul << 60)) return 6;
+  Destructible* valid = new Destructible[count_of(2)];
+  const int value = static_cast<int>(valid[1].value);
+  delete[] valid;
+  if (value != 3) return 7;
+  // Fewer elements than initializer-clauses obtain no storage either.
+  const int before = allocations;
+  try
+  {
+    delete[] new int[count_of(2)]{1, 2, 3};
+    return 8;
+  }
+  catch (const std::bad_array_new_length&)
+  {
+    if (allocations != before) return 9;
+  }
+  // A throwing clause frees the storage it was initializing.
+  try
+  {
+    delete[] new int[count_of(4)]{1, fail(6), 3};
+    return 10;
+  }
+  catch (int thrown)
+  {
+    if (thrown != 6 || allocations != before + 1 || releases != allocations)
+      return 11;
+  }
+  return 0;
+}

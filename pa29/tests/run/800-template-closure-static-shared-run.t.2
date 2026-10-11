@@ -1,0 +1,3 @@
+// second TU using counter<int>()
+template<class T> __attribute__((always_inline)) inline int counter() { auto l = [] { static int n; return ++n; }; return l(); }
+int other() { return counter<int>(); }

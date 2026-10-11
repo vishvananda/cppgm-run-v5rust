@@ -1,0 +1,1 @@
+# unit-local symbols of function-local unnamed classes and closures: the member functions the program calls exist as local symbols whose names admit the clang and GCC spellings; a private helper such as the thunk behind a closure conversion to a function pointer is not required under any name

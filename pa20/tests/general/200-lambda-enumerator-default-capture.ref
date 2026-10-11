@@ -1,0 +1,26 @@
+declare function @Token__is_simple(%arg0 : ptr [object_bytes=1], %arg1 : i32) -> u8 [binding=strong, object=_ZNK5Token9is_simpleE10ETokenType]
+
+function @f(%tok : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=strong, object=_Z1fRK5Token] {
+  slot $tok : ptr
+  slot $check : obj<8x8>
+
+  block ^entry:
+    store typed ptr %tok, $tok
+    %t1 = addr $check
+    %t2 = load typed ptr $tok
+    store typed ptr %t2, %t1
+    %t3 = addr $check
+    %t4 = call u8 @__lambda_f_t37_41__operator__(%t3)
+    return u8 %t4
+}
+function @__lambda_f_t37_41__operator__(%this : ptr [object_bytes=8]) -> u8 [binding=internal, object=_ZZ1fRK5TokenENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = call u8 @Token__is_simple(%t3, 77)
+    return u8 %t4
+}

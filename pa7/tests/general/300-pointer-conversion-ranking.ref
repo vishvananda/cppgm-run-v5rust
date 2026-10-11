@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition sink function of (bool) returning int
+    parameter  bool
+    compound-statement
+      return-statement
+        literal prvalue int 1
+  function-definition sink function of (pointer to const void) returning int
+    parameter  pointer to const void
+    compound-statement
+      return-statement
+        literal prvalue int 2
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 0
+      return-statement
+        call-expression prvalue int
+          callee sink function of (pointer to const void) returning int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int x
+end translation unit

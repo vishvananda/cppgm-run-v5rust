@@ -1,0 +1,10 @@
+# budget from 300-branch-boolean-conversion.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 14
+blocks <= 12
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 7 in @truth_trunc
+instructions <= 6 in @truth_widen
+instructions <= 7 in @keeps_value_truncation

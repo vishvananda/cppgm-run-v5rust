@@ -1,0 +1,24 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $g : obj<1x1>
+
+  block ^entry:
+    store typed ptr 0, $p
+    %t1 = addr $g
+    %t2 = load typed ptr $p
+    %t3 = convert sext i64 i32 1
+    call void @G_int____G(%t1, %t2, %t3)
+    return i32 0
+}
+function @G_int____G(%this : ptr [object_bytes=1], %b : ptr, %n : i64) -> void [binding=weak, object=_ZN1GIPiEC1IS0_EET_m, inline_hint=yes] {
+  slot $this : ptr
+  slot $b : ptr
+  slot $n : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %b, $b
+    store typed i64 %n, $n
+    return void
+}
+alias object _ZN1GIPiEC2IS0_EET_m = @G_int____G

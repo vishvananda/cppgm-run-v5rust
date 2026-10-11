@@ -1,0 +1,22 @@
+function @f(%p : ptr) -> ptr [binding=strong, object=_Z1fPKDs] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = addr $p
+    %t2 = call ptr @mv(%t1)
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @mv(%t : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z2mvIRPKDsEON10remove_refIT_E4typeEOS4_] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}

@@ -1,0 +1,28 @@
+#include <cstdio>
+#include <functional>
+
+namespace std_function_recursive_lambda_abi {
+
+struct Value {
+  int value;
+};
+
+}
+
+int main()
+{
+  using std_function_recursive_lambda_abi::Value;
+  std::function<void(const Value &)> visit;
+  int total = 0;
+  visit = [&visit, &total](const Value & value) -> void {
+    total += value.value;
+    if(value.value > 1) {
+      Value next = {value.value - 1};
+      visit(next);
+    }
+  };
+  Value value = {3};
+  visit(value);
+  std::printf("%d\n", total);
+  return 0;
+}

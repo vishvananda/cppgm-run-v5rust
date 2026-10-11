@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+    compound-statement
+      switch-statement
+        condition
+          id-expression x
+        compound-statement
+          case-statement
+            literal 3
+            expression-statement
+              call-expression
+                id-expression std::g<int>
+                argument-list
+          return-statement
+            keyword-literal KW_TRUE:true
+      return-statement
+        keyword-literal KW_TRUE:true
+end translation unit

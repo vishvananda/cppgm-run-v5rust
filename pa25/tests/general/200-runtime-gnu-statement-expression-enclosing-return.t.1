@@ -1,0 +1,34 @@
+struct failure
+{
+  int code;
+};
+
+struct outcome
+{
+  outcome(failure error)
+    : value(-error.code)
+  {
+  }
+
+  explicit outcome(int success)
+    : value(success)
+  {
+  }
+
+  int value;
+};
+
+outcome run(bool fail)
+{
+  int value = ({
+    if(fail)
+      return failure{7};
+    3;
+  });
+  return outcome(value);
+}
+
+int main()
+{
+  return run(true).value == -7 && run(false).value == 3 ? 0 : 1;
+}

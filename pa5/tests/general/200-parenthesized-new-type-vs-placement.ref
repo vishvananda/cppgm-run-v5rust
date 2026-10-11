@@ -1,0 +1,58 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier operatornew
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier decltype(sizeof(0))
+                  sizeof-expression
+                    literal 0
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_VOID:void
+              declarator
+                ptr-operator OP_STAR:*
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier allocate
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_VOID:void
+          declarator
+            ptr-operator OP_STAR:*
+            identifier storage
+    compound-statement
+      expression-statement
+        new-expression
+          type-id
+            type-specifier-seq
+              type-specifier KW_INT:int
+      expression-statement
+        new-expression
+          type-id
+            type-specifier-seq
+              type-specifier KW_CHAR:char
+            abstract-declarator
+              ptr-operator OP_STAR:*
+          initializer
+            paren-initializer
+      expression-statement
+        new-expression
+          placement (storage)
+            paren-argument-list
+              id-expression storage
+          type-id
+            type-specifier-seq
+              type-specifier KW_INT:int
+end translation unit

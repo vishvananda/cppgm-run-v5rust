@@ -1,0 +1,354 @@
+# PA8 LowIR syntax specification
+#
+# This file uses the same token-style EBNF conventions as the earlier `.gram`
+# files:
+#
+#   foo?       means 0 or 1 foo in sequence
+#   foo*       means 0 or more foo
+#   foo+       means 1 or more foo
+#   (foo)      groups symbols together for application of the above operators
+#
+# This file is the whole LowIR syntax.  Later assignments give meaning to
+# forms declared here; none of them adds syntax, so anything a later tool
+# may read or write has to appear below.  The PA8 milestone itself only
+# requires the reader/writer subset documented in its handout.
+
+program:
+	top-level-item* ST_EOF
+
+top-level-item:
+	global-declaration
+	function-declaration
+	global-definition
+	function-definition
+	object-alias
+
+global-declaration:
+	KW_DECLARE KW_GLOBAL global-name (OP_COLON type)? metadata?
+
+function-declaration:
+	KW_DECLARE KW_FUNCTION function-name OP_LPAREN parameter-list OP_RPAREN
+	OP_ARROW type function-metadata?
+
+global-definition:
+	scalar-global-definition
+	structured-global-definition
+
+scalar-global-definition:
+	KW_GLOBAL global-name KW_READONLY? OP_COLON type metadata? OP_ASS global-initializer
+
+structured-global-definition:
+	KW_GLOBAL global-name KW_READONLY? metadata? OP_ASS OP_LCURLY global-data-item+ OP_RCURLY
+
+object-alias:
+	KW_ALIAS KW_OBJECT object-symbol OP_ASS alias-target
+
+metadata:
+	OP_LSQUARE metadata-item (OP_COMMA metadata-item)* OP_RSQUARE
+
+metadata-item:
+	TT_IDENTIFIER OP_ASS metadata-value
+
+metadata-value:
+	TT_IDENTIFIER
+	global-name
+
+global-name:
+	LOW_GLOBAL_NAME
+
+object-symbol:
+	TT_IDENTIFIER
+
+alias-target:
+	global-name
+	function-name
+
+function-definition:
+	KW_FUNCTION function-name OP_LPAREN parameter-list OP_RPAREN OP_ARROW type
+	function-metadata? OP_LCURLY function-item* OP_RCURLY
+
+function-metadata:
+	OP_LSQUARE function-metadata-item (OP_COMMA function-metadata-item)* OP_RSQUARE
+
+function-metadata-item:
+	TT_IDENTIFIER OP_ASS metadata-value
+
+function-name:
+	LOW_FUNCTION_NAME
+
+parameter-list:
+	parameter-declaration-list?
+
+parameter-declaration-list:
+	parameter-declaration (OP_COMMA parameter-declaration)*
+
+parameter-declaration:
+	temporary-name OP_COLON type parameter-metadata?
+
+parameter-metadata:
+	OP_LSQUARE parameter-metadata-item (OP_COMMA parameter-metadata-item)* OP_RSQUARE
+
+parameter-metadata-item:
+	TT_IDENTIFIER OP_ASS TT_IDENTIFIER
+	TT_IDENTIFIER OP_ASS TT_LITERAL
+
+index-metadata:
+	OP_LSQUARE index-metadata-item (OP_COMMA index-metadata-item)* OP_RSQUARE
+
+index-metadata-item:
+	TT_IDENTIFIER OP_ASS TT_IDENTIFIER
+
+function-item:
+	slot-declaration
+	block-definition
+	instruction
+
+slot-declaration:
+	KW_SLOT slot-name OP_COLON type
+
+block-definition:
+	KW_BLOCK block-name OP_COLON
+
+instruction:
+	assign-instruction instruction-debug-location?
+	store-instruction instruction-debug-location?
+	atomic-store-instruction instruction-debug-location?
+	atomic-thread-fence-instruction instruction-debug-location?
+	atomic-signal-fence-instruction instruction-debug-location?
+	va-start-instruction instruction-debug-location?
+	call-void-instruction instruction-debug-location?
+	copyobj-instruction instruction-debug-location?
+	zeroinit-instruction instruction-debug-location?
+	eh-try-instruction instruction-debug-location?
+	eh-cleanup-instruction instruction-debug-location?
+	eh-catch-instruction instruction-debug-location?
+	eh-filter-instruction instruction-debug-location?
+	eh-catch-all-instruction instruction-debug-location?
+	eh-end-instruction instruction-debug-location?
+	throw-instruction instruction-debug-location?
+	resume-instruction instruction-debug-location?
+	jump-instruction instruction-debug-location?
+	branch-instruction instruction-debug-location?
+	switch-instruction instruction-debug-location?
+	return-instruction instruction-debug-location?
+	unreachable-instruction instruction-debug-location?
+
+# `TT_INSTRUCTION_DEBUG_LOCATION` is the concrete trailing suffix
+# `!dbg(<file>, <line>, <column>)`. The current parser accepts any single
+# unquoted LowIR token for `<file>`.
+instruction-debug-location:
+	TT_INSTRUCTION_DEBUG_LOCATION
+
+assign-instruction:
+	temporary-name OP_ASS rvalue-instruction
+
+rvalue-instruction:
+	KW_CONST type scalar-literal
+	KW_COPY type value
+	KW_PHI type OP_LSQUARE phi-incoming (OP_COMMA phi-incoming)* OP_RSQUARE
+	KW_ADDR addressable
+	KW_LOAD KW_VOLATILE? type storage
+	KW_ATOMIC_LOAD type value OP_COMMA integer-literal
+	KW_INDEX type index-metadata? value OP_COMMA value
+	KW_UNARY unary-operator type value
+	KW_BINARY binary-operator type value OP_COMMA value
+	KW_CMP compare-predicate type value OP_COMMA value
+	KW_CONVERT conversion-operator type type value
+	KW_ATOMIC_ADD_FETCH type value OP_COMMA value OP_COMMA integer-literal
+	KW_ATOMIC_EXCHANGE type value OP_COMMA value OP_COMMA integer-literal
+	KW_ATOMIC_COMPARE_EXCHANGE type value OP_COMMA value OP_COMMA value
+	OP_COMMA integer-literal OP_COMMA integer-literal
+	KW_VA_ARG type value
+	KW_STACK_ALLOC value
+	KW_CALL type callee OP_LPAREN argument-list OP_RPAREN call-metadata? call-signature?
+	KW_EXCEPTION type
+	KW_EXCEPTION_SELECTOR type
+
+phi-incoming:
+	block-name OP_COLON value
+
+store-instruction:
+	KW_STORE KW_VOLATILE? type value OP_COMMA storage
+
+atomic-store-instruction:
+	KW_ATOMIC_STORE type value OP_COMMA value OP_COMMA integer-literal
+
+atomic-thread-fence-instruction:
+	KW_ATOMIC_THREAD_FENCE integer-literal
+
+atomic-signal-fence-instruction:
+	KW_ATOMIC_SIGNAL_FENCE integer-literal
+
+va-start-instruction:
+	KW_VA_START value
+
+call-void-instruction:
+	KW_CALL KW_VOID callee OP_LPAREN argument-list OP_RPAREN call-metadata? call-signature?
+
+call-metadata:
+	OP_LSQUARE TT_IDENTIFIER OP_ASS TT_IDENTIFIER OP_RSQUARE
+
+call-signature:
+	KW_AS OP_LPAREN parameter-list OP_RPAREN OP_ARROW type function-metadata?
+
+copyobj-instruction:
+	KW_COPYOBJ bulk-span value OP_COMMA value
+
+zeroinit-instruction:
+	KW_ZEROINIT bulk-span value
+
+eh-try-instruction:
+	KW_EH_TRY block-name
+
+eh-cleanup-instruction:
+	KW_EH_CLEANUP block-name
+	KW_EH_CLEANUP
+
+eh-catch-instruction:
+	KW_EH_CATCH global-name (OP_COMMA integer-literal)?
+
+eh-filter-instruction:
+	KW_EH_FILTER (global-name (OP_COMMA global-name)*)? (OP_COMMA integer-literal)?
+
+eh-catch-all-instruction:
+	KW_EH_CATCH_ALL (OP_COMMA integer-literal)?
+
+eh-end-instruction:
+	KW_EH_END
+
+throw-instruction:
+	KW_THROW type value
+
+resume-instruction:
+	KW_RESUME
+
+jump-instruction:
+	KW_JUMP block-name
+
+branch-instruction:
+	KW_BRANCH value OP_COMMA block-name OP_COMMA block-name
+
+switch-instruction:
+	KW_SWITCH value OP_COMMA block-name (OP_COMMA value OP_COLON block-name)*
+
+return-instruction:
+	KW_RETURN type value?
+
+unreachable-instruction:
+	KW_UNREACHABLE
+
+argument-list:
+	(value (OP_COMMA value)*)?
+
+global-initializer:
+	KW_ZERO
+	scalar-literal
+	KW_ADDR global-name address-addend?
+	KW_ADDR function-name address-addend?
+
+global-data-item:
+	type scalar-literal
+	KW_PTR KW_ADDR global-name address-addend?
+	KW_PTR KW_ADDR function-name address-addend?
+	KW_ZERO integer-literal
+
+address-addend:
+	OP_PLUS integer-literal
+	OP_MINUS integer-literal
+
+type:
+	KW_VOID
+	LOW_TYPE
+
+value:
+	temporary-name
+	slot-name
+	global-name
+	scalar-literal
+
+storage:
+	temporary-name
+	slot-name
+	global-name
+
+callee:
+	function-name
+	temporary-name
+	global-name
+
+addressable:
+	slot-name
+	global-name
+	function-name
+
+temporary-name:
+	LOW_TEMP_NAME
+
+slot-name:
+	LOW_SLOT_NAME
+
+block-name:
+	LOW_BLOCK_NAME
+
+integer-literal:
+	TT_LITERAL
+	OP_MINUS TT_LITERAL
+
+# `LOW_NAMED_LITERAL` is a single word standing for a value no digit
+# spelling reaches: `nullptr` for the null pointer, and `inf`, `INFINITY`,
+# `nan`, `NAN`, `snan` and `SNAN` for the floating specials.
+scalar-literal:
+	TT_LITERAL
+	OP_MINUS TT_LITERAL
+	LOW_NAMED_LITERAL
+	OP_MINUS LOW_NAMED_LITERAL
+
+# `LOW_SPAN` is the single token `<bytes>x<alignment>`, or a bare
+# `<bytes>` when the alignment is 1.  Both counts are positive and the
+# alignment is a power of two.
+bulk-span:
+	LOW_SPAN
+
+unary-operator:
+	KW_NEG
+	KW_NOT
+	KW_BITNOT
+	KW_BSWAP
+
+binary-operator:
+	KW_ADD
+	KW_SUB
+	KW_MUL
+	KW_DIV
+	KW_MOD
+	KW_UDIV
+	KW_UMOD
+	KW_AND
+	KW_OR
+	KW_XOR
+	KW_SHL
+	KW_SHR
+	KW_USHR
+
+compare-predicate:
+	KW_EQ
+	KW_NE
+	KW_LT
+	KW_LE
+	KW_GT
+	KW_GE
+	KW_ULT
+	KW_ULE
+	KW_UGT
+	KW_UGE
+
+conversion-operator:
+	KW_SEXT
+	KW_ZEXT
+	KW_TRUNC
+	KW_SITOFP
+	KW_UITOFP
+	KW_FPTOSI
+	KW_FPTOUI
+	KW_FPEXT
+	KW_FPTRUNC

@@ -1,0 +1,41 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 7
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<8x4>
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $values
+    %t3 = addr $tmpobj__2
+    zeroinit 1x1 %t3
+    %t4 = call i64 @index__operatorlong(%t3)
+    %t5 = index i32 [projection=array_element] %t2, %t4
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @index__operatorlong(%this : ptr [object_bytes=1]) -> i64 [binding=weak, object=_ZNK5indexcvlEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i64 1
+}

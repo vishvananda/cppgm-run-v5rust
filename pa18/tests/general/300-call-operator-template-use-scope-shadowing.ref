@@ -1,0 +1,51 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @N__run_algorithm(1, 2, 3)
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @N__run_algorithm(%first : i32, %last : i32, %out : i32) -> i32 [binding=weak, object=_ZN1N13run_algorithmINS_9copy_implEiiiEEiT0_T1_T2_] {
+  slot $first : i32
+  slot $last : i32
+  slot $out : i32
+  slot $tmpobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed i32 %first, $first
+    store typed i32 %last, $last
+    store typed i32 %out, $out
+    %t1 = addr $tmpobj__1
+    zeroinit 1x1 %t1
+    %t2 = load typed i32 $first
+    %t3 = load typed i32 $last
+    %t4 = load typed i32 $out
+    %t5 = call i32 @N__copy_impl__operator__(%t1, %t2, %t3, %t4)
+    return i32 %t5
+}
+function @N__copy_impl__operator__(%this : ptr [object_bytes=1], %__param1 : i32, %__param2 : i32, %__param3 : i32) -> i32 [binding=weak, object=_ZNK1N9copy_implclIiiiTnNS_9enable_ifIXntsr21specialized_algorithmINS_9algorithm4copyET_T1_EE3hasEiE4typeELi0EEEiS5_T0_S6_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : i32
+  slot $__param3 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    store typed i32 %__param3, $__param3
+    return i32 7
+}

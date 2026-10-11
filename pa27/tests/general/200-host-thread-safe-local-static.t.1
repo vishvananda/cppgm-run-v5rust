@@ -1,0 +1,9 @@
+// N3485 6.7p4: concurrent entry into a block-scope static's declaration waits
+// for its initialization (Itanium __cxa_guard_acquire); 4 threads, slow
+// constructor -> exactly one construction; expect exit 0
+extern "C" { int usleep(unsigned); typedef unsigned long pthread_t; int pthread_create(pthread_t*, const void*, void* (*)(void*), void*); int pthread_join(pthread_t, void**); }
+static int ctors;
+struct Slow { int v; Slow() { __atomic_fetch_add(&ctors, 1, 5); usleep(20000); v = 42; } };
+static int get() { static Slow s; return s.v; }
+static void* work(void*) { get(); return 0; }
+int main() { pthread_t t[4]; for (int i = 0; i < 4; ++i) pthread_create(&t[i], 0, work, 0); for (int i = 0; i < 4; ++i) pthread_join(t[i], 0); return ctors == 1 ? 0 : 1; }

@@ -1,0 +1,18 @@
+function @use() -> i32 [binding=strong, object=_Z3usev] {
+  block ^entry:
+    %t1 = call i32 @pick(3, 0)
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @pick(%__param0 : i32, %__param1 : i32) -> i32 [binding=weak, object=_Z4pickIiEiT_i] {
+  slot $__param0 : i32
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return i32 2
+}

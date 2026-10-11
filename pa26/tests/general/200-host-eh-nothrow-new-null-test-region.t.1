@@ -1,0 +1,13 @@
+// N3485 5.3.4p13,p18: a non-throwing allocation function may return null (the
+// new-expression tests it); with a live local and a constructor that may
+// throw, host -c must compile; expect exit 0
+typedef decltype(sizeof(0)) size_type;
+static int c = 1, live;
+static void tick() { if (c == 5) throw 1; }
+struct T { T() { ++live; } ~T() { --live; } };
+struct N { N() { tick(); }
+  static void* operator new(size_type s, int h) noexcept { return h != 0 ? ::operator new(s) : 0; }
+  static void operator delete(void* p, int) noexcept { ::operator delete(p); }
+  static void operator delete(void* p) { ::operator delete(p); } };
+static void f() { T v; delete new (c) N; }
+int main() { f(); return live; }

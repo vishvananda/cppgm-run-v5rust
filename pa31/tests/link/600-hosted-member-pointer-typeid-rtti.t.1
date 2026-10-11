@@ -1,0 +1,4 @@
+#include <typeinfo>
+struct C { int f(); };
+typedef int (C::*M)();
+int main() { return typeid(M).name() ? 0 : 1; }

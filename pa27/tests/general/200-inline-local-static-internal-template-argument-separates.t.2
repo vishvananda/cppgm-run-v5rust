@@ -1,0 +1,4 @@
+#include "200-inline-local-static-internal-template-argument-separates.helper.h"
+
+int * first_slot();
+int main() { return first_slot() != slot<tag>() ? 0 : 1; }

@@ -1,0 +1,28 @@
+function @g(%x : i32) -> i32 [binding=strong, object=_Z1gi] {
+  slot $x : i32
+  slot $h : obj<1x1>
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = addr $h
+    %t2 = addr $h
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 $x
+    %t5 = call i32 @Fn__operator__(%t3, %t4)
+    return i32 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @Fn__operator__(%this : ptr [object_bytes=1], %x : i32) -> i32 [binding=weak, object=_ZNK2FnclEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}

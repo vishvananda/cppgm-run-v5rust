@@ -1,0 +1,40 @@
+// N3485 3.10p10, 1.9p15: a store through an int glvalue does not change a
+// pointer object, nor a store through a long glvalue a double: each later read
+// gives the object's own value, and the stores take effect
+#include <cstdio>
+struct Node { Node* next; long* counter; int* flags; };
+__attribute__((noinline)) long walk(Node* n, int k)
+{
+	long s = 0;
+	for (int i = 0; i < k; ++i)
+	{
+		Node* m = n->next;
+		*n->counter += i;
+		*n->flags = i;
+		s += (long)(n->next == m) + *n->flags;
+	}
+	return s;
+}
+__attribute__((noinline)) double mix(double* d, long* l, int n)
+{
+	double s = 0;
+	for (int i = 0; i < n; ++i)
+	{
+		*l += i;
+		s += *d;
+	}
+	return s;
+}
+int main()
+{
+	long c = 0;
+	int f = 0;
+	Node b = { 0, &c, &f };
+	Node a = { &b, &c, &f };
+	double d = 1.5;
+	long l = 2;
+	const long w = walk(&a, 10);
+	const double m = mix(&d, &l, 4);
+	std::printf("%ld %ld %d %.1f %ld\n", w, c, f, m, l);
+	return 0;
+}

@@ -1,0 +1,9 @@
+// N3485 16.9p1: _Pragma("pack(push, 1)") has the effect of #pragma pack(push,
+// 1), the GCC pragma
+_Pragma("pack(push, 1)")
+struct X { char c; int i; };
+_Pragma("pack(pop)")
+#pragma pack(push, 1)
+struct Y { char c; int i; };
+#pragma pack(pop)
+int main() { return sizeof(Y) == 5 && sizeof(X) == 5 ? 0 : 1; }

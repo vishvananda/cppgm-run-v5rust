@@ -1,0 +1,11 @@
+# budget from 400-loop-invariant-memory.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 44
+blocks <= 19
+count(call) <= 4
+count(load) <= 6
+count(store) <= 6
+count(phi) <= 7
+instructions <= 12 in @hoist_disjoint_global
+instructions <= 11 in @keep_aliased_global
+instructions <= 13 in @keep_across_unknown_call
+instructions <= 14 in @keep_across_atomic

@@ -1,0 +1,13 @@
+# budget from 200-non-type-class-specialization.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 25
+blocks <= 9
+count(call) <= 7
+mem <= 13
+instructions <= 17 in @main
+stack_size <= 352 in @main
+instructions <= 5 in @Box_3___get
+stack_size <= 320 in @Box_3___get
+instructions <= 4 in @Box_3___Box
+stack_size <= 320 in @Box_3___Box
+instructions <= 4 in @Box_3____Box
+stack_size <= 320 in @Box_3____Box

@@ -1,0 +1,61 @@
+whitespace-sequence 0 
+new-line 0 
+whitespace-sequence 0 
+new-line 0 
+whitespace-sequence 0 
+new-line 0 
+identifier 3 int
+whitespace-sequence 0 
+identifier 4 main
+preprocessing-op-or-punc 1 (
+preprocessing-op-or-punc 1 )
+whitespace-sequence 0 
+preprocessing-op-or-punc 1 {
+whitespace-sequence 0 
+identifier 5 const
+whitespace-sequence 0 
+identifier 4 char
+preprocessing-op-or-punc 1 *
+whitespace-sequence 0 
+identifier 1 s
+whitespace-sequence 0 
+preprocessing-op-or-punc 1 =
+whitespace-sequence 0 
+string-literal 14 "\u0041\u0022"
+preprocessing-op-or-punc 1 ;
+whitespace-sequence 0 
+identifier 6 return
+whitespace-sequence 0 
+identifier 1 s
+preprocessing-op-or-punc 1 [
+pp-number 1 0
+preprocessing-op-or-punc 1 ]
+whitespace-sequence 0 
+preprocessing-op-or-punc 2 ==
+whitespace-sequence 0 
+pp-number 4 0x41
+whitespace-sequence 0 
+preprocessing-op-or-punc 2 &&
+whitespace-sequence 0 
+identifier 1 s
+preprocessing-op-or-punc 1 [
+pp-number 1 1
+preprocessing-op-or-punc 1 ]
+whitespace-sequence 0 
+preprocessing-op-or-punc 2 ==
+whitespace-sequence 0 
+pp-number 4 0x22
+whitespace-sequence 0 
+preprocessing-op-or-punc 1 ?
+whitespace-sequence 0 
+pp-number 1 0
+whitespace-sequence 0 
+preprocessing-op-or-punc 1 :
+whitespace-sequence 0 
+pp-number 1 1
+preprocessing-op-or-punc 1 ;
+whitespace-sequence 0 
+preprocessing-op-or-punc 1 }
+whitespace-sequence 0 
+new-line 0 
+eof

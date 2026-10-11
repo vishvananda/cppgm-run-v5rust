@@ -1,0 +1,110 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $test : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $test
+    call void @parser_test__parser_test(%t1)
+    %t2 = addr $test
+    call void @parser_test__run(%t2)
+    %t3 = addr $test
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 3
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @parser_test__parser_test(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11parser_testC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @parser_test__run(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11parser_test3runEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $invoke : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $invoke
+    %t2 = load typed ptr $this
+    store typed ptr %t2, %t1
+    %t3 = addr $invoke
+    call void @parser_test____lambda_parser_test__run_t68_72__operator__(%t3, 2)
+    return void
+}
+function @parser_test____lambda_parser_test__run_t68_72__operator__(%this : ptr [object_bytes=8], %message : i32) -> void [binding=weak, object=_ZZN11parser_test3runEvENKUliE_clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $message : i32
+  slot $arg__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %message, $message
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i32 $message
+    %t5 = addr $arg__1
+    call void @parser_test__parse(%t3, %t4, %t5, 0)
+    return void
+}
+function @parser_test__parse(%this : ptr [object_bytes=4], %message : i32, %check : ptr [pass=by_address, object_bytes=1], %skip : u8) -> void [binding=internal, object=_ZN11parser_test5parseIiZZNS_3runEvENKUliE_clEiEUliE_EEviRKT0_b, inline_hint=yes] {
+  slot $this : ptr
+  slot $message : i32
+  slot $check : ptr
+  slot $skip : u8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %message, $message
+    store typed ptr %check, $check
+    store u8 %skip, $skip
+    %t1 = load u8 $skip
+    %t2 = cmp eq u8 %t1, 0
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = load typed ptr $check
+    %t7 = load typed i32 $message
+    %t8 = call i32 @parser_test____lambda_parser_test__run_t68_72____lambda_nested_t83_87__operator__(%t6, %t7)
+    %t9 = binary add nowrap i32 %t5, %t8
+    store typed i32 %t9, %t4
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+function @parser_test____lambda_parser_test__run_t68_72____lambda_nested_t83_87__operator__(%this : ptr [object_bytes=1], %value : i32) -> i32 [binding=weak, object=_ZZZN11parser_test3runEvENKUliE_clEiENKUliE_clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+alias object _ZN11parser_testC2Ev = @parser_test__parser_test

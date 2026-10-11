@@ -1,0 +1,14 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f(0, 1)
+    return i32 %t1
+}
+function @f(%__param0 : ptr, %__param1 : i64) -> i32 [binding=weak, object=_Z1fI3tagPKcEiT0_N15iterator_traitsIS3_E15difference_typeE] {
+  slot $__param0 : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i64 %__param1, $__param1
+    return i32 7
+}

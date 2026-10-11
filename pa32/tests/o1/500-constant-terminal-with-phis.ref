@@ -1,0 +1,26 @@
+declare function @observe(%value : i64) -> void [unwind=no]
+
+function @constant_branch_drops_phi_input(%n : i64, %x : i64) -> i64 {
+  block ^entry:
+    jump ^head
+
+  block ^head:
+    %i = phi i64 [^entry: 0, ^keep: %next]
+    %acc = phi i64 [^entry: 0, ^keep: %acc2]
+    %done = cmp eq i64 %n, %i
+    branch %done, ^exit, ^keep
+
+  block ^keep:
+    call void @observe(%i)
+    %next = binary add i64 %i, 1
+    %acc2 = binary add i64 %x, %acc
+    jump ^head
+
+  block ^exit:
+    return i64 %acc
+}
+function @constant_switch_erases_region(%x : i64) -> i64 {
+  block ^entry:
+    call void @observe(2)
+    return i64 %x
+}

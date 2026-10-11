@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_TYPENAME:typename
+          identifier T
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-name C
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Ts
+    class-forward-declaration S
+      class-key KW_STRUCT:struct
+end translation unit

@@ -1,0 +1,73 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $d : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    call void @arg__arg(%t1, 7)
+    %t2 = addr $d
+    %t3 = addr $a
+    call void @derived_int___derived(%t2, %t3)
+    %t4 = addr $d
+    %t5 = index i8 %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @arg__arg(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN3argC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @derived_int___derived(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN7derivedIiEC1EO3arg, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $__param1
+    call void @base_int___base__base_entry(%t2, %t3)
+    return void
+}
+function @base_int___base__base_entry(%this : ptr [object_bytes=4], %u : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4baseIiEC2I3argEEOT_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $u : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %u, $u
+    %t1 = load typed ptr $u
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+alias object _ZN3argC2Ei = @arg__arg
+alias object _ZN7derivedIiEC2EO3arg = @derived_int___derived

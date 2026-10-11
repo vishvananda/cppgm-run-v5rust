@@ -1,0 +1,141 @@
+TARGET = cppgm++
+TARGET_ARGS = --emit-lowir -O0
+export CPPGM_APP_ARGS := $(TARGET_ARGS)
+CXX = g++
+CPPGM_STDLIB_FLAGS ?=
+CPPGM_TEST_RUNNER ?= 1
+CPPGM_TEST_APP ?= ../dev/$(TARGET)
+REF_TEST_APP ?= $(CPPGM_TEST_APP)-ref
+NATIVE_REFERENCE_APP ?= ../dev/lowir2native-ref
+TEST_DEPS ?= dev-shared-target
+TEST_RUNNER_SHARED_FLAGS = $(if $(filter 1,$(CPPGM_TEST_RUNNER)),-DTEST_RUNNER_ENABLE,)
+TEST_RUNNER_ENTRY_FLAGS = $(TEST_RUNNER_SHARED_FLAGS) $(if $(filter 1,$(CPPGM_TEST_RUNNER)),-Dmain=test_runner_real_main,)
+CC_FLAGS = -std=gnu++11 -Wall -O3 $(CPPGM_STDLIB_FLAGS)
+ENTRY_CC_FLAGS = $(CC_FLAGS) $(TEST_RUNNER_ENTRY_FLAGS)
+SRC = ../dev/src
+GENERATED = ../obj/generated
+INC = -I$(SRC) -I$(GENERATED)
+OBJ = ../obj
+VPATH = $(SRC)
+RDEPDIR = $(OBJ)/release/.d
+DDEPDIR = $(OBJ)/debug/.d
+CONTROL_TEST_ROOT ?= tests/controls
+
+$(shell mkdir -p $(RDEPDIR) $(DDEPDIR) >/dev/null)
+
+include ../dev/frontend_source_sets.mk
+
+common_obj_basenames = $(FRONTEND_OBJ_BASENAMES_$(TARGET))
+common_objs = $(addprefix $(OBJ)/$(1)/,$(addsuffix .o,$(common_obj_basenames)))
+runner_obj = $(if $(filter 1,$(CPPGM_TEST_RUNNER)),$(OBJ)/$(1)/test_runner_enabled.o)
+runner_state_stamp = $(OBJ)/$(1)/.test_runner_mode
+link_objs = $(call common_objs,$(1)) $(call runner_obj,$(1))
+link_prereqs = $(call link_objs,$(1)) $(call runner_state_stamp,$(1))
+
+all: dev-shared-target
+
+$(OBJ)/release $(OBJ)/debug: %:
+	@- mkdir -p $@
+
+FORCE:
+
+$(OBJ)/release/.test_runner_mode $(OBJ)/debug/.test_runner_mode: FORCE | $(OBJ)/release $(OBJ)/debug
+	@current=$$(cat $@ 2>/dev/null || true); \
+	if [ "$$current" != "$(CPPGM_TEST_RUNNER)" ]; then \
+		printf '%s\n' '$(CPPGM_TEST_RUNNER)' > $@; \
+	fi
+
+$(OBJ)/release/%.o: %.cpp
+	@mkdir -p $(@D) $(dir $(RDEPDIR)/$*)
+	$(CXX) $(CC_FLAGS) $(INC) -c -MT $@ -MMD -MP -MF $(RDEPDIR)/$*.Td -o $@ $<
+	mv -f $(RDEPDIR)/$*.Td $(RDEPDIR)/$*.d
+
+$(OBJ)/debug/%.o: %.cpp
+	@mkdir -p $(@D) $(dir $(DDEPDIR)/$*)
+	$(CXX) $(CC_FLAGS) $(INC) -c -MT $@ -MMD -MP -MF $(DDEPDIR)/$*.Td -o $@ $<
+	mv -f $(DDEPDIR)/$*.Td $(DDEPDIR)/$*.d
+
+$(OBJ)/release/test_runner_enabled.o: $(SRC)/$(FRONTEND_TEST_RUNNER_SOURCE_ID).cpp
+	$(CXX) $(CC_FLAGS) $(TEST_RUNNER_SHARED_FLAGS) $(INC) -c -MT $@ -MMD -MP -MF $(RDEPDIR)/test_runner_enabled.Td -o $@ $<
+	mv -f $(RDEPDIR)/test_runner_enabled.Td $(RDEPDIR)/test_runner_enabled.d
+
+$(OBJ)/debug/test_runner_enabled.o: $(SRC)/$(FRONTEND_TEST_RUNNER_SOURCE_ID).cpp
+	$(CXX) $(CC_FLAGS) $(TEST_RUNNER_SHARED_FLAGS) $(INC) -c -MT $@ -MMD -MP -MF $(DDEPDIR)/test_runner_enabled.Td -o $@ $<
+	mv -f $(DDEPDIR)/test_runner_enabled.Td $(DDEPDIR)/test_runner_enabled.d
+
+# tests/controls: a control that states its expected outcome is a self-checking
+# program graded by ../scripts/check_controls.pl (see TESTING_AND_REFERENCES.md).
+CONTROLS_RUN = if [ -d "$(CONTROL_TEST_ROOT)" ]; then \
+		status=0; \
+		perl ../scripts/check_pa11_string_literal_storage.pl \
+			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
+		perl ../scripts/check_pa11_lifecycle_policy.pl \
+			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
+		perl ../scripts/check_pa11_unreachable_terminator.pl \
+			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
+		perl ../scripts/check_controls.pl \
+			$(CPPGM_TEST_APP) $(NATIVE_REFERENCE_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
+		exit $$status; \
+	fi
+
+test: $(TEST_DEPS)
+	@scripts/run_all_tests.pl $(CPPGM_TEST_APP) my tests
+	@scripts/compare_results.pl ref my tests
+	@$(CONTROLS_RUN)
+
+test-controls: $(TEST_DEPS)
+	@$(CONTROLS_RUN)
+
+# The LowIR comparison seams: the harness's own unit tests, then every
+# rewrite of this lane's outputs that ../pa8/lowir.md says the comparison
+# absorbs must pass, and every rewrite it says the course enforces as a
+# convention must fail.  Needs the `.my` outputs `test` produces.
+# Maintainer lane: the invariant is about the comparison harness and the
+# contract text in ../pa8/lowir.md, not about an implementation, so the
+# repository-root report runs it rather than `make test`.
+test-seams:
+	@python3 ../scripts/tests/test_compare_lowir_results.py
+	@python3 ../scripts/check_lowir_seams.py . tests/general
+
+ref-test:
+	@$(REF_TEST_RUN)
+
+REF_TEST_RUN = case "$(TEST)" in \
+	$(CONTROL_TEST_ROOT)/*) echo "$(TEST): focused LowIR property has no reference sidecar" ;; \
+	*) scripts/run_all_tests.pl $(REF_TEST_APP) ref "$(if $(strip $(TEST)),$(TEST),tests)" ;; \
+esac
+
+CHECK_RUN = case "$(TEST)" in \
+	$(CONTROL_TEST_ROOT)/*string-literal-readonly*) perl ../scripts/check_pa11_string_literal_storage.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
+	$(CONTROL_TEST_ROOT)/*lifecycle-inline-policy*) perl ../scripts/check_pa11_lifecycle_policy.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
+	$(CONTROL_TEST_ROOT)/*unreachable-terminator*) perl ../scripts/check_pa11_unreachable_terminator.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
+	$(CONTROL_TEST_ROOT)/*) perl ../scripts/check_controls.pl $(CPPGM_TEST_APP) $(NATIVE_REFERENCE_APP) "$(TEST)" ;; \
+	*) scripts/run_all_tests.pl $(CPPGM_TEST_APP) check "$(TEST)" ;; \
+esac
+CHECK_COMPARE = case "$(TEST)" in \
+	$(CONTROL_TEST_ROOT)/*) true ;; \
+	*) scripts/compare_results.pl ref check "$(TEST)" ;; \
+esac
+
+include ../scripts/pa_run_check_targets.mk
+
+.PHONY: dev-shared-target ref-test test-seams
+../dev/$(TARGET):
+	$(MAKE) -C ../dev $(TARGET) CXX=$(CXX)
+
+dev-shared-target:
+	@if [ "$(CPPGM_SKIP_DEV_REBUILD)" = "1" ]; then true; else $(MAKE) -C ../dev $(TARGET) CXX=$(CXX); fi
+
+clean:
+	-rm -f $(TARGET) $(TARGET)-debug $(OBJ)/release/*.o $(OBJ)/debug/*.o
+
+$(RDEPDIR)/%.d: ;
+.PRECIOUS: $(RDEPDIR)/%.d
+
+$(DDEPDIR)/%.d: ;
+.PRECIOUS: $(DDEPDIR)/%.d
+
+-include $(addprefix $(RDEPDIR)/,$(addsuffix .d,$(common_obj_basenames)))
+-include $(addprefix $(DDEPDIR)/,$(addsuffix .d,$(common_obj_basenames)))
+-include $(RDEPDIR)/test_runner_enabled.d
+-include $(DDEPDIR)/test_runner_enabled.d

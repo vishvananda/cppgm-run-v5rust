@@ -1,0 +1,23 @@
+const char * other_text();
+
+const char * local_text()
+{
+  return "shared-text";
+}
+
+int same_text(const char * a, const char * b)
+{
+  int i = 0;
+  while (a[i] != 0 || b[i] != 0) {
+    if (a[i] != b[i]) {
+      return 0;
+    }
+    ++i;
+  }
+  return 1;
+}
+
+int main()
+{
+  return same_text(local_text(), other_text()) ? 0 : 1;
+}

@@ -1,0 +1,21 @@
+declare function @id(%arg0 : i32) -> i32 [binding=weak, object=_Z2idIiET_S0_]
+declare function @g(%arg0 : i32) -> i32 [binding=strong, object=_Z1gi]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f(1)
+    return i32 %t1
+}
+function @f(%a : i32) -> i32 [binding=weak, object=_Z1fIJiEEiDpT_] {
+  slot $a : i32
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    %t1 = load typed i32 $a
+    %t2 = call i32 @id(%t1)
+    %t3 = call i32 @g(%t2)
+    store typed i32 %t3, $x
+    %t4 = load typed i32 $x
+    return i32 %t4
+}

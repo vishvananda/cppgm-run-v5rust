@@ -1,0 +1,64 @@
+machine_ir x86_64 linux
+
+startup
+    call @__cppgm_406d61696e [args=()]
+    mov rdi, rax
+    exit
+
+function @clobber
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret r8
+
+function @f
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    mov rdi, 10
+    mov rsi, 20
+    mov rdx, 30
+    mov rcx, 40
+    mov r8, 50
+    mov r9, 60
+    call @clobber [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    ret rbx
+
+function @__cppgm_406d61696e
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 41
+    call @f [args=(rdi)]
+    mov rdx, 41
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

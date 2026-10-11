@@ -1,0 +1,12 @@
+global @observed : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 3, 1) {
+  block ^entry:
+    store volatile i32 0, @observed !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 6, 5)
+    store volatile i32 1, @observed !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 6, 5)
+    store volatile i32 2, @observed !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 6, 5)
+    %t1 = load volatile i32 @observed !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 7, 10)
+    %t2 = cmp eq i32 %t1, 2 !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 7, 10)
+    %t3 = select i32 %t2, 0, 1 !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 7, 10)
+    return i32 %t3 !dbg(tests/debuginfo/driver/o3/500-source-full-unroll-debug.t, 7, 3)
+}

@@ -1,0 +1,60 @@
+global @N__g : i32 [binding=strong, object=_ZN1N1gE] = zero
+
+function @N__M__make() -> obj<8x8> [binding=strong, object=_ZN1N1M4makeEv] {
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = addr @N__g
+    call void @N__Id__Id(%t1, %t2)
+    return obj<8x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $tmpobj__2
+    %t2 = call obj<8x8> @N__M__make()
+    copyobj 8x8 %t2, %t1
+    %t3 = call ptr @N__Id__get(%t1)
+    %t4 = addr @N__g
+    %t5 = cmp eq ptr %t3, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @N__Id__Id(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN1N2IdC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @N__Id__get(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK1N2Id3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+alias object _ZN1N2IdC2EPi = @N__Id__Id

@@ -1,0 +1,7 @@
+#include "200-host-lazy-template-base-rtti-cross-cast.helper.h"
+
+Root *make_object()
+{
+  static Leaf object;
+  return &object;
+}

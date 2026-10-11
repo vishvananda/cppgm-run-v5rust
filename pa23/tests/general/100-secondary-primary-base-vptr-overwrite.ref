@@ -1,0 +1,172 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> i32 [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_Derived [storage=readonly, binding=weak, object=_ZTS7Derived] = {
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Tag [storage=readonly, binding=weak, object=_ZTS3Tag] = {
+  i8 51
+  i8 84
+  i8 97
+  i8 103
+  i8 0
+}
+global @__rtti_struct_Tag [storage=readonly, binding=weak, object=_ZTI3Tag] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Tag
+}
+global @__typeinfo_name__struct_Mid [storage=readonly, binding=weak, object=_ZTS3Mid] = {
+  i8 51
+  i8 77
+  i8 105
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Base [storage=readonly, binding=weak, object=_ZTS4Base] = {
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Base [storage=readonly, binding=weak, object=_ZTI4Base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Base
+}
+global @__rtti_struct_Mid [storage=readonly, binding=weak, object=_ZTI3Mid] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Mid
+  ptr addr @__rtti_struct_Base
+}
+global @__rtti_struct_Derived [storage=readonly, binding=weak, object=_ZTI7Derived] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Tag
+  i64 2050
+  ptr addr @__rtti_struct_Mid
+  i64 2
+}
+global @Derived__vtable [storage=readonly, binding=weak, object=_ZTV7Derived] = {
+  i64 0
+  ptr addr @__rtti_struct_Derived
+  ptr addr @Derived__f
+  ptr addr @Derived__g
+}
+global @Mid__vtable [storage=readonly, binding=weak, object=_ZTV3Mid] = {
+  i64 0
+  ptr addr @__rtti_struct_Mid
+  ptr addr @__cxa_pure_virtual
+  ptr addr @Mid__g
+}
+global @Base__vtable [storage=readonly, binding=weak, object=_ZTV4Base] = {
+  i64 0
+  ptr addr @__rtti_struct_Base
+  ptr addr @__cxa_pure_virtual
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<16x8>
+  slot $view : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @Derived__Derived(%t1)
+    %t2 = addr $value
+    %t3 = index i8 %t2, 0
+    store typed ptr %t3, $view
+    %t4 = load typed ptr $view
+    %t5 = load typed ptr %t4
+    %t6 = index i8 %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call i32 %t7(%t4) as (%arg0 : ptr [object_bytes=8]) -> i32
+    %t9 = cmp eq i32 %t8, 7
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @Derived__Derived(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Mid__Mid__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Derived__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Derived__f(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZNK7Derived1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+function @Derived__g(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZNK7Derived1gEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}
+function @Mid__g(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK3Mid1gEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @Mid__Mid__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3MidC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Mid__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived

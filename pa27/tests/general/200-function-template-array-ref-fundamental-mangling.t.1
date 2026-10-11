@@ -1,0 +1,32 @@
+struct algo {
+  typedef int result_type;
+};
+
+template<class H, unsigned long N>
+__attribute__((noinline))
+typename H::result_type array_ref_probe(unsigned long seed,
+                                        char const (&str)[N])
+{
+  return static_cast<int>(seed + N + str[0]);
+}
+
+template<class H, unsigned long N>
+__attribute__((noinline))
+typename H::result_type array_ref_probe(unsigned long seed,
+                                        unsigned char const (&buf)[N])
+{
+  return static_cast<int>(seed + N + buf[0]);
+}
+
+int main()
+{
+  char text[57] = "";
+  unsigned char bytes[57] = {};
+  if(array_ref_probe<algo>(0, text) != 57) {
+    return 1;
+  }
+  if(array_ref_probe<algo>(7, bytes) != 64) {
+    return 2;
+  }
+  return 0;
+}

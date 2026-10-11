@@ -1,0 +1,6 @@
+preproc 1
+sof tests/preproc/400-host-binary-integer-ud-literal.t
+literal 0b1010 int 0A000000
+user-defined-literal 0B11110000_buf _buf integer 0B11110000
+user-defined-literal 0b00000000_buf _buf integer 0b00000000
+eof

@@ -1,0 +1,27 @@
+declare global @ns__stable_true___value : u8 [binding=weak, object=_ZN2ns6stableILb1EE5valueE]
+declare global @ns__heap_int___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN2ns4heapIiNS_6stableILb1EEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    %t2 = binary sub nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @f() -> i32 [binding=weak, object=_Z1fILb1EEiv] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}

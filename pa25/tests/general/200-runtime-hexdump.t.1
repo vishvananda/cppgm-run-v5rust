@@ -1,0 +1,53 @@
+extern "C" long cppgm_test_read_stdin(char * buf, unsigned long count);
+extern "C" long cppgm_test_write_stdout(const char * buf, unsigned long count);
+
+int main()
+{
+  static const char digits[] = "0123456789abcdef";
+  unsigned char input[512];
+  char output[2048];
+  unsigned long input_len = 0;
+  unsigned long output_len = 0;
+
+  for(;;)
+  {
+    long nread =
+        cppgm_test_read_stdin((char *)input + input_len, sizeof(input) - input_len);
+    if(nread < 0)
+    {
+      return 1;
+    }
+    if(nread == 0)
+    {
+      break;
+    }
+    input_len += (unsigned long)nread;
+    if(input_len == sizeof(input))
+    {
+      long overflow_probe = cppgm_test_read_stdin((char *)input, 1);
+      if(overflow_probe != 0)
+      {
+        return 2;
+      }
+      break;
+    }
+  }
+
+  for(unsigned long i = 0; i < input_len; ++i)
+  {
+    unsigned char value = input[i];
+    output[output_len++] = digits[value >> 4];
+    output[output_len++] = digits[value & 0x0FU];
+
+    if((i % 16UL) == 15UL)
+    {
+      output[output_len++] = '\n';
+    }
+    else if((i % 2UL) == 1UL)
+    {
+      output[output_len++] = ' ';
+    }
+  }
+
+  return cppgm_test_write_stdout(output, output_len) < 0 ? 1 : 0;
+}

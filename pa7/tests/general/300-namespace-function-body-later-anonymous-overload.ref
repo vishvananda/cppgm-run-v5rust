@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition A
+    function-definition A::helper function of (lvalue-reference to const int) returning int
+      parameter value lvalue-reference to const int
+      compound-statement
+        return-statement
+          id-expression lvalue const int value
+    function-definition A::use function of () returning int
+      compound-statement
+        return-statement
+          call-expression prvalue int
+            callee A::helper function of (lvalue-reference to const int) returning int
+            literal prvalue int 3
+    namespace-definition <unnamed>
+      function-definition A::helper function of (lvalue-reference to const int) returning int
+        parameter value lvalue-reference to const int
+        compound-statement
+          return-statement
+            binary-expression prvalue int OP_PLUS:+
+              id-expression lvalue const int value
+              literal prvalue int 1
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee A::use function of () returning int
+end translation unit

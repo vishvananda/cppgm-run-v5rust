@@ -1,0 +1,467 @@
+function @operator__(%stream : ptr [pass=by_address, object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=strong, object=_ZlsR6StreamRK5Token] {
+  slot $stream : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $stream
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $stream
+    return ptr %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $token : obj<1x1>
+  slot $p : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $stream
+    %t2 = addr $token
+    %t3 = addr $stream
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $stream
+    %t6 = addr $token
+    %t7 = call ptr @operator__(%t5, %t6)
+    %t8 = call ptr @Stream__operator__(%t7, 1)
+    %t9 = addr $token
+    %t10 = call ptr @operator__(%t8, %t9)
+    %t11 = call ptr @Stream__operator__(%t10, 1)
+    %t12 = addr $token
+    %t13 = call ptr @operator__(%t11, %t12)
+    %t14 = call ptr @Stream__operator__(%t13, 1)
+    %t15 = addr $token
+    %t16 = call ptr @operator__(%t14, %t15)
+    %t17 = call ptr @Stream__operator__(%t16, 1)
+    %t18 = addr $token
+    %t19 = call ptr @operator__(%t17, %t18)
+    %t20 = call ptr @Stream__operator__(%t19, 1)
+    %t21 = addr $token
+    %t22 = call ptr @operator__(%t20, %t21)
+    %t23 = call ptr @Stream__operator__(%t22, 1)
+    %t24 = addr $token
+    %t25 = call ptr @operator__(%t23, %t24)
+    %t26 = call ptr @Stream__operator__(%t25, 1)
+    %t27 = addr $token
+    %t28 = call ptr @operator__(%t26, %t27)
+    %t29 = call ptr @Stream__operator__(%t28, 1)
+    %t30 = addr $token
+    %t31 = call ptr @operator__(%t29, %t30)
+    %t32 = call ptr @Stream__operator__(%t31, 1)
+    %t33 = addr $token
+    %t34 = call ptr @operator__(%t32, %t33)
+    %t35 = call ptr @Stream__operator__(%t34, 1)
+    %t36 = addr $token
+    %t37 = call ptr @operator__(%t35, %t36)
+    %t38 = call ptr @Stream__operator__(%t37, 1)
+    %t39 = addr $token
+    %t40 = call ptr @operator__(%t38, %t39)
+    %t41 = call ptr @Stream__operator__(%t40, 1)
+    %t42 = addr $token
+    %t43 = call ptr @operator__(%t41, %t42)
+    %t44 = call ptr @Stream__operator__(%t43, 1)
+    %t45 = addr $token
+    %t46 = call ptr @operator__(%t44, %t45)
+    %t47 = call ptr @Stream__operator__(%t46, 1)
+    %t48 = addr $token
+    %t49 = call ptr @operator__(%t47, %t48)
+    %t50 = call ptr @Stream__operator__(%t49, 1)
+    %t51 = addr $token
+    %t52 = call ptr @operator__(%t50, %t51)
+    %t53 = call ptr @Stream__operator__(%t52, 1)
+    %t54 = addr $token
+    %t55 = call ptr @operator__(%t53, %t54)
+    %t56 = call ptr @Stream__operator__(%t55, 1)
+    %t57 = addr $token
+    %t58 = call ptr @operator__(%t56, %t57)
+    %t59 = call ptr @Stream__operator__(%t58, 1)
+    %t60 = addr $token
+    %t61 = call ptr @operator__(%t59, %t60)
+    %t62 = call ptr @Stream__operator__(%t61, 1)
+    %t63 = addr $token
+    %t64 = call ptr @operator__(%t62, %t63)
+    %t65 = call ptr @Stream__operator__(%t64, 1)
+    %t66 = addr $token
+    %t67 = call ptr @operator__(%t65, %t66)
+    %t68 = call ptr @Stream__operator__(%t67, 1)
+    %t69 = addr $token
+    %t70 = call ptr @operator__(%t68, %t69)
+    %t71 = call ptr @Stream__operator__(%t70, 1)
+    %t72 = addr $token
+    %t73 = call ptr @operator__(%t71, %t72)
+    %t74 = call ptr @Stream__operator__(%t73, 1)
+    %t75 = addr $token
+    %t76 = call ptr @operator__(%t74, %t75)
+    %t77 = call ptr @Stream__operator__(%t76, 1)
+    %t78 = addr $token
+    %t79 = call ptr @operator__(%t77, %t78)
+    %t80 = call ptr @Stream__operator__(%t79, 1)
+    %t81 = addr $token
+    %t82 = call ptr @operator__(%t80, %t81)
+    %t83 = call ptr @Stream__operator__(%t82, 1)
+    %t84 = addr $token
+    %t85 = call ptr @operator__(%t83, %t84)
+    %t86 = call ptr @Stream__operator__(%t85, 1)
+    %t87 = addr $token
+    %t88 = call ptr @operator__(%t86, %t87)
+    %t89 = call ptr @Stream__operator__(%t88, 1)
+    %t90 = addr $token
+    %t91 = call ptr @operator__(%t89, %t90)
+    %t92 = call ptr @Stream__operator__(%t91, 1)
+    %t93 = addr $token
+    %t94 = call ptr @operator__(%t92, %t93)
+    %t95 = call ptr @Stream__operator__(%t94, 1)
+    %t96 = addr $token
+    %t97 = call ptr @operator__(%t95, %t96)
+    %t98 = call ptr @Stream__operator__(%t97, 1)
+    %t99 = addr $token
+    %t100 = call ptr @operator__(%t98, %t99)
+    %t101 = call ptr @Stream__operator__(%t100, 1)
+    %t102 = addr $token
+    %t103 = call ptr @operator__(%t101, %t102)
+    %t104 = call ptr @Stream__operator__(%t103, 1)
+    %t105 = addr $token
+    %t106 = call ptr @operator__(%t104, %t105)
+    %t107 = call ptr @Stream__operator__(%t106, 1)
+    %t108 = addr $token
+    %t109 = call ptr @operator__(%t107, %t108)
+    %t110 = call ptr @Stream__operator__(%t109, 1)
+    %t111 = addr $token
+    %t112 = call ptr @operator__(%t110, %t111)
+    %t113 = call ptr @Stream__operator__(%t112, 1)
+    %t114 = addr $token
+    %t115 = call ptr @operator__(%t113, %t114)
+    %t116 = call ptr @Stream__operator__(%t115, 1)
+    %t117 = addr $token
+    %t118 = call ptr @operator__(%t116, %t117)
+    %t119 = call ptr @Stream__operator__(%t118, 1)
+    %t120 = addr $token
+    %t121 = call ptr @operator__(%t119, %t120)
+    %t122 = call ptr @Stream__operator__(%t121, 1)
+    %t123 = addr $token
+    %t124 = call ptr @operator__(%t122, %t123)
+    %t125 = call ptr @Stream__operator__(%t124, 1)
+    %t126 = addr $token
+    %t127 = call ptr @operator__(%t125, %t126)
+    %t128 = call ptr @Stream__operator__(%t127, 1)
+    %t129 = addr $token
+    %t130 = call ptr @operator__(%t128, %t129)
+    %t131 = call ptr @Stream__operator__(%t130, 1)
+    %t132 = addr $token
+    %t133 = call ptr @operator__(%t131, %t132)
+    %t134 = call ptr @Stream__operator__(%t133, 1)
+    %t135 = addr $token
+    %t136 = call ptr @operator__(%t134, %t135)
+    %t137 = call ptr @Stream__operator__(%t136, 1)
+    %t138 = addr $token
+    %t139 = call ptr @operator__(%t137, %t138)
+    %t140 = call ptr @Stream__operator__(%t139, 1)
+    %t141 = addr $token
+    %t142 = call ptr @operator__(%t140, %t141)
+    %t143 = call ptr @Stream__operator__(%t142, 1)
+    %t144 = addr $token
+    %t145 = call ptr @operator__(%t143, %t144)
+    %t146 = call ptr @Stream__operator__(%t145, 1)
+    %t147 = addr $token
+    %t148 = call ptr @operator__(%t146, %t147)
+    %t149 = call ptr @Stream__operator__(%t148, 1)
+    %t150 = addr $token
+    %t151 = call ptr @operator__(%t149, %t150)
+    %t152 = call ptr @Stream__operator__(%t151, 1)
+    %t153 = addr $token
+    %t154 = call ptr @operator__(%t152, %t153)
+    %t155 = call ptr @Stream__operator__(%t154, 1)
+    %t156 = addr $token
+    %t157 = call ptr @operator__(%t155, %t156)
+    %t158 = call ptr @Stream__operator__(%t157, 1)
+    %t159 = addr $token
+    %t160 = call ptr @operator__(%t158, %t159)
+    %t161 = call ptr @Stream__operator__(%t160, 1)
+    %t162 = addr $token
+    %t163 = call ptr @operator__(%t161, %t162)
+    %t164 = call ptr @Stream__operator__(%t163, 1)
+    %t165 = addr $token
+    %t166 = call ptr @operator__(%t164, %t165)
+    %t167 = call ptr @Stream__operator__(%t166, 1)
+    %t168 = addr $token
+    %t169 = call ptr @operator__(%t167, %t168)
+    %t170 = call ptr @Stream__operator__(%t169, 1)
+    %t171 = addr $token
+    %t172 = call ptr @operator__(%t170, %t171)
+    %t173 = call ptr @Stream__operator__(%t172, 1)
+    %t174 = addr $token
+    %t175 = call ptr @operator__(%t173, %t174)
+    %t176 = call ptr @Stream__operator__(%t175, 1)
+    %t177 = addr $token
+    %t178 = call ptr @operator__(%t176, %t177)
+    %t179 = call ptr @Stream__operator__(%t178, 1)
+    %t180 = addr $token
+    %t181 = call ptr @operator__(%t179, %t180)
+    %t182 = call ptr @Stream__operator__(%t181, 1)
+    %t183 = addr $token
+    %t184 = call ptr @operator__(%t182, %t183)
+    %t185 = call ptr @Stream__operator__(%t184, 1)
+    %t186 = addr $token
+    %t187 = call ptr @operator__(%t185, %t186)
+    %t188 = call ptr @Stream__operator__(%t187, 1)
+    %t189 = addr $token
+    %t190 = call ptr @operator__(%t188, %t189)
+    %t191 = call ptr @Stream__operator__(%t190, 1)
+    %t192 = addr $token
+    %t193 = call ptr @operator__(%t191, %t192)
+    %t194 = call ptr @Stream__operator__(%t193, 1)
+    %t195 = addr $token
+    %t196 = call ptr @operator__(%t194, %t195)
+    %t197 = call ptr @Stream__operator__(%t196, 1)
+    %t198 = addr $token
+    %t199 = call ptr @operator__(%t197, %t198)
+    %t200 = call ptr @Stream__operator__(%t199, 1)
+    %t201 = addr $token
+    %t202 = call ptr @operator__(%t200, %t201)
+    %t203 = call ptr @Stream__operator__(%t202, 1)
+    %t204 = addr $token
+    %t205 = call ptr @operator__(%t203, %t204)
+    %t206 = call ptr @Stream__operator__(%t205, 1)
+    %t207 = addr $token
+    %t208 = call ptr @operator__(%t206, %t207)
+    %t209 = call ptr @Stream__operator__(%t208, 1)
+    %t210 = addr $token
+    %t211 = call ptr @operator__(%t209, %t210)
+    %t212 = call ptr @Stream__operator__(%t211, 1)
+    %t213 = addr $token
+    %t214 = call ptr @operator__(%t212, %t213)
+    %t215 = call ptr @Stream__operator__(%t214, 1)
+    %t216 = addr $token
+    %t217 = call ptr @operator__(%t215, %t216)
+    %t218 = call ptr @Stream__operator__(%t217, 1)
+    %t219 = addr $token
+    %t220 = call ptr @operator__(%t218, %t219)
+    %t221 = call ptr @Stream__operator__(%t220, 1)
+    %t222 = addr $token
+    %t223 = call ptr @operator__(%t221, %t222)
+    %t224 = call ptr @Stream__operator__(%t223, 1)
+    %t225 = addr $token
+    %t226 = call ptr @operator__(%t224, %t225)
+    %t227 = call ptr @Stream__operator__(%t226, 1)
+    %t228 = addr $token
+    %t229 = call ptr @operator__(%t227, %t228)
+    %t230 = call ptr @Stream__operator__(%t229, 1)
+    %t231 = addr $token
+    %t232 = call ptr @operator__(%t230, %t231)
+    %t233 = call ptr @Stream__operator__(%t232, 1)
+    %t234 = addr $token
+    %t235 = call ptr @operator__(%t233, %t234)
+    %t236 = call ptr @Stream__operator__(%t235, 1)
+    %t237 = addr $token
+    %t238 = call ptr @operator__(%t236, %t237)
+    %t239 = call ptr @Stream__operator__(%t238, 1)
+    %t240 = addr $token
+    %t241 = call ptr @operator__(%t239, %t240)
+    %t242 = call ptr @Stream__operator__(%t241, 1)
+    %t243 = addr $token
+    %t244 = call ptr @operator__(%t242, %t243)
+    %t245 = call ptr @Stream__operator__(%t244, 1)
+    %t246 = addr $token
+    %t247 = call ptr @operator__(%t245, %t246)
+    %t248 = call ptr @Stream__operator__(%t247, 1)
+    %t249 = addr $token
+    %t250 = call ptr @operator__(%t248, %t249)
+    %t251 = call ptr @Stream__operator__(%t250, 1)
+    %t252 = addr $token
+    %t253 = call ptr @operator__(%t251, %t252)
+    %t254 = call ptr @Stream__operator__(%t253, 1)
+    %t255 = addr $token
+    %t256 = call ptr @operator__(%t254, %t255)
+    %t257 = call ptr @Stream__operator__(%t256, 1)
+    %t258 = addr $token
+    %t259 = call ptr @operator__(%t257, %t258)
+    %t260 = call ptr @Stream__operator__(%t259, 1)
+    %t261 = addr $token
+    %t262 = call ptr @operator__(%t260, %t261)
+    %t263 = call ptr @Stream__operator__(%t262, 1)
+    %t264 = addr $token
+    %t265 = call ptr @operator__(%t263, %t264)
+    %t266 = call ptr @Stream__operator__(%t265, 1)
+    %t267 = addr $token
+    %t268 = call ptr @operator__(%t266, %t267)
+    %t269 = call ptr @Stream__operator__(%t268, 1)
+    %t270 = addr $token
+    %t271 = call ptr @operator__(%t269, %t270)
+    %t272 = call ptr @Stream__operator__(%t271, 1)
+    %t273 = addr $token
+    %t274 = call ptr @operator__(%t272, %t273)
+    %t275 = call ptr @Stream__operator__(%t274, 1)
+    %t276 = addr $token
+    %t277 = call ptr @operator__(%t275, %t276)
+    %t278 = call ptr @Stream__operator__(%t277, 1)
+    %t279 = addr $token
+    %t280 = call ptr @operator__(%t278, %t279)
+    %t281 = call ptr @Stream__operator__(%t280, 1)
+    %t282 = addr $token
+    %t283 = call ptr @operator__(%t281, %t282)
+    %t284 = call ptr @Stream__operator__(%t283, 1)
+    %t285 = addr $token
+    %t286 = call ptr @operator__(%t284, %t285)
+    %t287 = call ptr @Stream__operator__(%t286, 1)
+    %t288 = addr $token
+    %t289 = call ptr @operator__(%t287, %t288)
+    %t290 = call ptr @Stream__operator__(%t289, 1)
+    %t291 = addr $token
+    %t292 = call ptr @operator__(%t290, %t291)
+    %t293 = call ptr @Stream__operator__(%t292, 1)
+    %t294 = addr $token
+    %t295 = call ptr @operator__(%t293, %t294)
+    %t296 = call ptr @Stream__operator__(%t295, 1)
+    %t297 = addr $token
+    %t298 = call ptr @operator__(%t296, %t297)
+    %t299 = call ptr @Stream__operator__(%t298, 1)
+    %t300 = addr $token
+    %t301 = call ptr @operator__(%t299, %t300)
+    %t302 = call ptr @Stream__operator__(%t301, 1)
+    %t303 = addr $token
+    %t304 = call ptr @operator__(%t302, %t303)
+    %t305 = call ptr @Stream__operator__(%t304, 1)
+    %t306 = addr $token
+    %t307 = call ptr @operator__(%t305, %t306)
+    %t308 = call ptr @Stream__operator__(%t307, 1)
+    %t309 = addr $token
+    %t310 = call ptr @operator__(%t308, %t309)
+    %t311 = call ptr @Stream__operator__(%t310, 1)
+    %t312 = addr $token
+    %t313 = call ptr @operator__(%t311, %t312)
+    %t314 = call ptr @Stream__operator__(%t313, 1)
+    %t315 = addr $token
+    %t316 = call ptr @operator__(%t314, %t315)
+    %t317 = call ptr @Stream__operator__(%t316, 1)
+    %t318 = addr $token
+    %t319 = call ptr @operator__(%t317, %t318)
+    %t320 = call ptr @Stream__operator__(%t319, 1)
+    %t321 = addr $token
+    %t322 = call ptr @operator__(%t320, %t321)
+    %t323 = call ptr @Stream__operator__(%t322, 1)
+    %t324 = addr $token
+    %t325 = call ptr @operator__(%t323, %t324)
+    %t326 = call ptr @Stream__operator__(%t325, 1)
+    %t327 = addr $token
+    %t328 = call ptr @operator__(%t326, %t327)
+    %t329 = call ptr @Stream__operator__(%t328, 1)
+    %t330 = addr $token
+    %t331 = call ptr @operator__(%t329, %t330)
+    %t332 = call ptr @Stream__operator__(%t331, 1)
+    %t333 = addr $token
+    %t334 = call ptr @operator__(%t332, %t333)
+    %t335 = call ptr @Stream__operator__(%t334, 1)
+    %t336 = addr $token
+    %t337 = call ptr @operator__(%t335, %t336)
+    %t338 = call ptr @Stream__operator__(%t337, 1)
+    %t339 = addr $token
+    %t340 = call ptr @operator__(%t338, %t339)
+    %t341 = call ptr @Stream__operator__(%t340, 1)
+    %t342 = addr $token
+    %t343 = call ptr @operator__(%t341, %t342)
+    %t344 = call ptr @Stream__operator__(%t343, 1)
+    %t345 = addr $token
+    %t346 = call ptr @operator__(%t344, %t345)
+    %t347 = call ptr @Stream__operator__(%t346, 1)
+    %t348 = addr $token
+    %t349 = call ptr @operator__(%t347, %t348)
+    %t350 = call ptr @Stream__operator__(%t349, 1)
+    %t351 = addr $token
+    %t352 = call ptr @operator__(%t350, %t351)
+    %t353 = call ptr @Stream__operator__(%t352, 1)
+    %t354 = addr $token
+    %t355 = call ptr @operator__(%t353, %t354)
+    %t356 = call ptr @Stream__operator__(%t355, 1)
+    %t357 = addr $token
+    %t358 = call ptr @operator__(%t356, %t357)
+    %t359 = call ptr @Stream__operator__(%t358, 1)
+    %t360 = addr $token
+    %t361 = call ptr @operator__(%t359, %t360)
+    %t362 = call ptr @Stream__operator__(%t361, 1)
+    %t363 = addr $token
+    %t364 = call ptr @operator__(%t362, %t363)
+    %t365 = call ptr @Stream__operator__(%t364, 1)
+    %t366 = addr $token
+    %t367 = call ptr @operator__(%t365, %t366)
+    %t368 = call ptr @Stream__operator__(%t367, 1)
+    %t369 = addr $token
+    %t370 = call ptr @operator__(%t368, %t369)
+    %t371 = call ptr @Stream__operator__(%t370, 1)
+    %t372 = addr $token
+    %t373 = call ptr @operator__(%t371, %t372)
+    %t374 = call ptr @Stream__operator__(%t373, 1)
+    %t375 = addr $token
+    %t376 = call ptr @operator__(%t374, %t375)
+    %t377 = call ptr @Stream__operator__(%t376, 1)
+    %t378 = addr $token
+    %t379 = call ptr @operator__(%t377, %t378)
+    %t380 = call ptr @Stream__operator__(%t379, 1)
+    %t381 = addr $token
+    %t382 = call ptr @operator__(%t380, %t381)
+    %t383 = call ptr @Stream__operator__(%t382, 1)
+    %t384 = addr $token
+    %t385 = call ptr @operator__(%t383, %t384)
+    %t386 = call ptr @Stream__operator__(%t385, 1)
+    %t387 = addr $token
+    %t388 = call ptr @operator__(%t386, %t387)
+    %t389 = call ptr @Stream__operator__(%t388, 1)
+    store typed ptr %t389, $p
+    %t390 = load typed ptr $p
+    %t391 = addr $stream
+    %t392 = cmp eq ptr %t390, %t391
+    branch %t392, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t393 = addr $stream
+    %t394 = index i8 [projection=field] %t393, 0
+    %t395 = load typed i32 %t394
+    %t396 = cmp eq i32 %t395, 256
+    %t397 = cmp ne i64 %t396, 0
+    store typed i64 %t397, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t398 = load typed i64 $land__2
+    branch %t398, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t399 = load typed i32 $cond__1
+    return i32 %t399
+}
+function @Stream__operator__(%this : ptr [object_bytes=4], %__param1 : i64) -> ptr [binding=weak, object=_ZN6StreamlsEm, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $this
+    return ptr %t7
+}

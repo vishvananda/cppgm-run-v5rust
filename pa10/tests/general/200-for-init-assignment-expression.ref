@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $i : i32
+
+  block ^entry:
+    store typed i32 2, $i
+    store typed i32 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $i
+    %t2 = cmp ne i32 %t1, 1
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t3 = load typed i32 $i
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t5 = load typed i32 $i
+    %t6 = binary sub nowrap i32 %t5, 1
+    return i32 %t6
+}

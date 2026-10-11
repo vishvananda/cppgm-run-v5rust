@@ -1,0 +1,2 @@
+global @observed : i64 [storage=readonly, binding=internal, object=_ZL8observed] = 3
+global @bucket_array_base_true___sizes_length : i64 [storage=readonly, binding=weak, object=_ZN17bucket_array_baseILb1EE12sizes_lengthE] = 3

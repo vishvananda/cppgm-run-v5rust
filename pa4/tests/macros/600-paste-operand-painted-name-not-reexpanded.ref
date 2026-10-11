@@ -1,0 +1,30 @@
+preproc 1
+sof tests/macros/600-paste-operand-painted-name-not-reexpanded.t
+simple int KW_INT
+identifier xH
+simple = OP_ASS
+literal 5 int 05000000
+simple ; OP_SEMICOLON
+simple int KW_INT
+identifier K
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+simple { OP_LBRACE
+simple return KW_RETURN
+literal 2 int 02000000
+simple ; OP_SEMICOLON
+simple } OP_RBRACE
+simple int KW_INT
+identifier main
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+simple { OP_LBRACE
+simple return KW_RETURN
+identifier xH
+simple + OP_PLUS
+identifier K
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+simple ; OP_SEMICOLON
+simple } OP_RBRACE
+eof

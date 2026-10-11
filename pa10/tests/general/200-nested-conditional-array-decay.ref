@@ -1,0 +1,90 @@
+global @short_array [binding=strong] = {
+  zero 3
+}
+global @first_array [binding=strong] = {
+  zero 4
+}
+global @second_array [binding=strong] = {
+  zero 4
+}
+global @third_array [binding=strong] = {
+  zero 4
+}
+
+function @select_array(%index : i32) -> ptr [binding=strong, object=_Z12select_arrayi] {
+  slot $index : i32
+  slot $cond__1 : ptr
+  slot $condaddr__2 : ptr
+  slot $condaddr__3 : ptr
+
+  block ^entry:
+    store typed i32 %index, $index
+    %t1 = load typed i32 $index
+    %t2 = cmp eq i32 %t1, 0
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t3 = addr @short_array
+    store typed ptr %t3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t4 = load typed i32 $index
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^condaddr_then_4, ^condaddr_else_5
+
+  block ^condaddr_then_4:
+    %t6 = addr @first_array
+    store typed ptr %t6, $condaddr__2
+    jump ^condaddr_end_6
+
+  block ^condaddr_else_5:
+    %t7 = load typed i32 $index
+    %t8 = cmp eq i32 %t7, 2
+    branch %t8, ^condaddr_then_7, ^condaddr_else_8
+
+  block ^condaddr_then_7:
+    %t9 = addr @second_array
+    store typed ptr %t9, $condaddr__3
+    jump ^condaddr_end_9
+
+  block ^condaddr_else_8:
+    %t10 = addr @third_array
+    store typed ptr %t10, $condaddr__3
+    jump ^condaddr_end_9
+
+  block ^condaddr_end_9:
+    %t11 = load typed ptr $condaddr__3
+    store typed ptr %t11, $condaddr__2
+    jump ^condaddr_end_6
+
+  block ^condaddr_end_6:
+    %t12 = load typed ptr $condaddr__2
+    store typed ptr %t12, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed ptr $cond__1
+    return ptr %t13
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call ptr @select_array(1)
+    %t2 = addr @first_array
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

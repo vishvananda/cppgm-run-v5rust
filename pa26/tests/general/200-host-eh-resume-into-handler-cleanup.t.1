@@ -1,0 +1,21 @@
+// N3485 15.2p2, 15.3p4, 15.1p8: an exception from an element constructor of an
+// array declared in a handler destroys the elements already constructed, ends
+// the handler and is caught by the enclosing try block's catch (...)
+#include "200-host-eh-resume-into-handler-cleanup.helper.h"
+static int made, fail_at;
+struct U { int id; U() : id(++made) { if (made == fail_at) throw 2.5; out_line("U", id); } ~U() { out_line("~U", id); } };
+void g(int x) { if (x) throw x; }
+int f(int x)
+{
+  try {
+    try { g(x); } catch (int) { U v[3]; out_line("handled", x); }
+  } catch (...) { out_line("outer", x); return 1; }
+  return 0;
+}
+int main()
+{
+  fail_at = 0; out_line("f", f(1));
+  made = 0; fail_at = 2; out_line("f", f(1));
+  made = 0; fail_at = 3; out_line("f", f(0));
+  return 0;
+}

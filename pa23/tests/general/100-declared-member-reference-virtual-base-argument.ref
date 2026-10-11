@@ -1,0 +1,120 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @Log__set_stream(%arg0 : ptr [object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=16]) -> void [binding=strong, object=_ZN3Log10set_streamER7OStream]
+
+global @__typeinfo_name__struct_OStream [storage=readonly, binding=weak, object=_ZTS7OStream] = {
+  i8 55
+  i8 79
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__typeinfo_name__struct_IOS [storage=readonly, binding=weak, object=_ZTS3IOS] = {
+  i8 51
+  i8 73
+  i8 79
+  i8 83
+  i8 0
+}
+global @__rtti_struct_IOS [storage=readonly, binding=weak, object=_ZTI3IOS] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_IOS
+}
+global @__rtti_struct_OStream [storage=readonly, binding=weak, object=_ZTI7OStream] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_OStream
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_IOS
+  i64 -6141
+}
+global @OStream__vtable [storage=readonly, binding=weak, object=_ZTV7OStream] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_OStream
+}
+global @OStream____vtt [storage=readonly, binding=weak, object=_ZTT7OStream, object_root=yes] = {
+  ptr addr @OStream__vtable + 24
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $os : obj<16x8>
+  slot $holder : obj<8x8>
+  slot $log : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $os
+    call void @OStream__OStream(%t1)
+    %t2 = addr $holder
+    %t3 = addr $os
+    call void @Holder__Holder(%t2, %t3)
+    %t4 = addr $log
+    %t5 = addr $log
+    %t6 = addr $holder
+    %t7 = call ptr @Holder__ref(%t6)
+    call void @Log__set_stream(%t5, %t7)
+    return i32 0
+}
+function @OStream__OStream(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN7OStreamC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 8
+    call void @IOS__IOS__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @OStream__vtable
+    %t5 = index i8 %t4, 24
+    store typed ptr %t5, %t3
+    return void
+}
+function @Holder__Holder(%this : ptr [object_bytes=8], %os : ptr [pass=by_address, object_bytes=16]) -> void [binding=weak, object=_ZN6HolderC1ER7OStream, inline_hint=yes] {
+  slot $this : ptr
+  slot $os : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %os, $os
+    %t1 = load typed ptr $os
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Holder__ref(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK6Holder3refEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+function @IOS__IOS__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3IOSC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @IOS__IOS(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3IOSC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN6HolderC2ER7OStream = @Holder__Holder

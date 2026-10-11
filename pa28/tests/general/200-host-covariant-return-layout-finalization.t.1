@@ -1,0 +1,58 @@
+struct ReturnBase {
+  int value;
+};
+
+struct ReturnInterface {
+  virtual ~ReturnInterface() {}
+  virtual ReturnBase *self() { return 0; }
+};
+
+struct ReturnPadding {
+  long words[3];
+};
+
+struct ReturnDerived : ReturnInterface, ReturnPadding, ReturnBase {
+  ReturnDerived *self() { return this; }
+};
+
+int check_primary_return_adjustment()
+{
+  ReturnDerived object;
+  ReturnInterface *interface = &object;
+  ReturnBase *expected = &object;
+  return interface->self() == expected ? 0 : 1;
+}
+
+struct VirtualResult {
+  virtual ~VirtualResult() {}
+};
+
+struct VirtualOwner : virtual VirtualResult {
+  virtual VirtualResult *self() { return this; }
+};
+
+struct VirtualPadding {
+  long words[5];
+};
+
+struct VirtualDerived : VirtualOwner, VirtualPadding {
+  VirtualDerived *self() { return this; }
+};
+
+struct MoreDerived : VirtualDerived {
+  long more[7];
+};
+
+int check_virtual_return_adjustment()
+{
+  MoreDerived object;
+  VirtualOwner *owner = &object;
+  VirtualResult *expected = &object;
+  return owner->self() == expected ? 0 : 2;
+}
+
+int main()
+{
+  int result = check_primary_return_adjustment();
+  return result ? result : check_virtual_return_adjustment();
+}

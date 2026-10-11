@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition numbers
+    alias-declaration word
+      type-id
+        type-specifier-seq
+          type-specifier KW_UNSIGNED:unsigned
+          type-specifier KW_LONG:long
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_LONG:long
+    declarator
+      identifier mask
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_UNSIGNED:unsigned
+            decl-specifier KW_INT:int
+          declarator
+            identifier bits
+    compound-statement
+      return-statement
+        binary-expression OP_LSHIFT:<<
+          call-expression
+            id-expression numbers::word
+            argument-list
+              literal 1
+          id-expression bits
+end translation unit

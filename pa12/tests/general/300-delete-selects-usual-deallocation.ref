@@ -1,0 +1,49 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+global @selected : i32 [binding=strong] = zero
+
+function @operatordelete(%__param0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i32 1, @selected
+    return void
+}
+function @operatordelete__ov2(%__param0 : ptr, %__param1 : ptr) -> void [unwind=no, binding=strong, object=_ZdlPvS_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    store typed i32 2, @selected
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    %t2 = call ptr @operatornew(%t1)
+    store typed ptr %t2, $p
+    %t3 = load typed ptr $p
+    call void @operatordelete(%t3)
+    %t4 = load typed i32 @selected
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t6 = load typed i32 @selected
+    store typed i32 %t6, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

@@ -1,0 +1,43 @@
+extern "C" int printf(const char *, ...);
+
+struct secondary_base
+{
+  virtual ~secondary_base();
+};
+
+secondary_base::~secondary_base() {}
+
+struct left_one
+{
+  long pad;
+  virtual ~left_one();
+};
+
+left_one::~left_one() {}
+
+struct left_two
+{
+  long pad;
+  virtual ~left_two();
+};
+
+left_two::~left_two() {}
+
+template<class T>
+struct wrapper : T, secondary_base
+{
+  ~wrapper() {}
+};
+
+void delete_secondary(secondary_base *value)
+{
+  delete value;
+}
+
+int main()
+{
+  delete_secondary(new wrapper<left_one>);
+  delete_secondary(new wrapper<left_two>);
+  printf("0\n");
+  return 0;
+}

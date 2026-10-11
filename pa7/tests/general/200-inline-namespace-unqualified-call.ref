@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition api
+    function-definition api::select function of (int) returning int
+      parameter value int
+      compound-statement
+        return-statement
+          id-expression lvalue int value
+  function-definition call function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee api::select function of (int) returning int
+          literal prvalue int 1
+end translation unit

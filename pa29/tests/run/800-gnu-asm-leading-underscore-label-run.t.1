@@ -1,0 +1,7 @@
+extern "C" int cppgm_pa29_asm_leading_probe_alias(void)
+    __asm("_cppgm_pa29_asm_leading_probe");
+
+int main()
+{
+  return cppgm_pa29_asm_leading_probe_alias() - 7;
+}

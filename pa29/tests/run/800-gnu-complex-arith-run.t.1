@@ -1,0 +1,8 @@
+// GNU _Complex (used by libstdc++ std::complex<double>): real->complex
+// conversion and complex arithmetic; expect exit 0
+int main() {
+  _Complex double z = 2.0;
+  __imag__ z = 1.0;
+  z = z * z + 1.0;
+  return (__real__ z == 4.0 && __imag__ z == 4.0) ? 0 : 1;
+}

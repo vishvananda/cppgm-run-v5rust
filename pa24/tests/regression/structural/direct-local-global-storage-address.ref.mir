@@ -1,0 +1,70 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar i64
+  init i64 41
+
+function @direct_storage_use
+  abi
+    param %replacement -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rax, @value
+    store.i64 @value, rdi
+    ret rax
+
+function @observe_address
+  abi
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, @value
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    mov rdi, 42
+    call @direct_storage_use [args=(rdi), unwind=no]
+    mov rbx, rax
+    load.i64 r12, @value
+    call @observe_address [args=(), unwind=no]
+    mov rdx, 41
+    cmp.i64 rbx, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov rdx, 42
+    cmp.i64 r12, rdx
+    setne r12
+    movzx r12, r12
+    mov rdx, 0
+    cmp.ptr rax, rdx
+    sete rax
+    movzx rax, rax
+    or rbx, r12
+    or rbx, rax
+    ret rbx

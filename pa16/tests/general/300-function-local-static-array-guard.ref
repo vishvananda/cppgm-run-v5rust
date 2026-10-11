@@ -1,0 +1,63 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 98
+  i8 98
+  i8 0
+}
+global @__local_static__f__decl0__values [binding=internal, object=_ZZ1fvE6values] = {
+  ptr addr @__strlit__1
+  ptr addr @__strlit__2
+}
+global @__local_static__f__decl1__nested [storage=readonly, binding=internal, object=_ZZ1fvE6nested] = {
+  i8 120
+  i8 0
+}
+
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  block ^entry:
+    %t1 = addr @__local_static__f__decl0__values
+    %t2 = index ptr [projection=array_element] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=array_element] %t3, 0
+    %t5 = load i8 %t4
+    %t6 = addr @__local_static__f__decl0__values
+    %t7 = index ptr [projection=array_element] %t6, 1
+    %t8 = load typed ptr %t7
+    %t9 = index i8 [projection=array_element] %t8, 1
+    %t10 = load i8 %t9
+    %t11 = convert sext i32 i8 %t5
+    %t12 = convert sext i32 i8 %t10
+    %t13 = binary add nowrap i32 %t11, %t12
+    %t14 = addr @__local_static__f__decl1__nested
+    %t15 = binary mul i64 0, 2
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    %t17 = index i8 [projection=array_element] %t16, 1
+    %t18 = load i8 %t17
+    %t19 = convert sext i32 i8 %t18
+    %t20 = binary add nowrap i32 %t13, %t19
+    return i32 %t20
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @f()
+    %t2 = binary add nowrap i32 97, 98
+    %t3 = cmp eq i32 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

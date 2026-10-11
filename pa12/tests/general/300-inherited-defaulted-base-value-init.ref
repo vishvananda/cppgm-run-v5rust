@@ -1,0 +1,77 @@
+function @operatornew__ov2(%__param0 : i64, %pointer : ptr) -> ptr [binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $pointer : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %pointer, $pointer
+    %t1 = load typed ptr $pointer
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $storage : obj<8x1>
+  slot $i : i64
+  slot $object : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 0
+    store typed i64 %t1, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i64 $i
+    %t3 = const i64 8
+    %t4 = cmp ne i64 %t2, %t3
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = addr $storage
+    %t6 = load typed i64 $i
+    %t7 = index u8 [projection=array_element] %t5, %t6
+    store u8 255, %t7
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t8 = load typed i64 $i
+    %t9 = binary add i64 %t8, 1
+    store typed i64 %t9, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t10 = convert sext i64 i32 8
+    %t11 = addr $storage
+    %t12 = call ptr @operatornew__ov2(%t10, %t11)
+    call void @holder__holder(%t12)
+    store typed ptr %t12, $object
+    %t13 = load typed ptr $object
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = index i8 %t14, 0
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = load typed ptr %t16
+    %t18 = cmp eq ptr %t17, 0
+    branch %t18, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t19 = load typed i32 $cond__1
+    return i32 %t19
+}
+function @holder__holder(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6holderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    zeroinit 8x8 %t2
+    return void
+}
+alias object _ZN6holderC2Ev = @holder__holder

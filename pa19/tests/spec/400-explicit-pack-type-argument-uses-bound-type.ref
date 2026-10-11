@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @add_all()
+    %t2 = cmp eq i32 %t1, 35
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @add_all() -> i32 [binding=weak, object=_Z7add_allIJ1A1BEEiv] {
+  slot $result : i32
+  slot $discardarr__1 : obj<12x4>
+
+  block ^entry:
+    store typed i32 0, $result
+    %t1 = addr $discardarr__1
+    store typed i32 0, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    %t3 = load typed i32 $result
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = call i32 @add_each()
+    %t6 = binary add nowrap i32 %t4, %t5
+    store typed i32 %t6, $result
+    store typed i32 %t6, %t2
+    %t7 = index i8 [projection=array_element] %t1, 8
+    %t8 = load typed i32 $result
+    %t9 = binary mul nowrap i32 %t8, 10
+    %t10 = call i32 @add_each__2()
+    %t11 = binary add nowrap i32 %t9, %t10
+    store typed i32 %t11, $result
+    store typed i32 %t11, %t7
+    %t12 = load typed i32 $result
+    return i32 %t12
+}
+function @add_each() -> i32 [binding=weak, object=_Z8add_eachI1AEiv] {
+  block ^entry:
+    return i32 3
+}
+function @add_each__2() -> i32 [binding=weak, object=_Z8add_eachI1BEiv] {
+  block ^entry:
+    return i32 5
+}

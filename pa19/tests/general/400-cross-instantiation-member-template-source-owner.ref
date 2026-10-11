@@ -1,0 +1,67 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<8x8>
+  slot $f : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $d
+    %t2 = call obj<8x8> @convert()
+    copyobj 8x8 %t2, %t1
+    %t3 = addr $f
+    %t4 = call obj<4x4> @convert__2()
+    copyobj 4x4 %t4, %t3
+    %t5 = addr $d
+    %t6 = addr $f
+    return i32 0
+}
+function @convert() -> obj<8x8> [unwind=no, binding=weak, object=_Z7convertI10double_tag6traitsIS0_EE3boxINT0_7carrierEEv] {
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = call obj<8x8> @impl_double_tag___cppgm_class_template_identity_1___compute(1)
+    copyobj 8x8 %t2, %t1
+    return obj<8x8> $retobj__1
+}
+function @convert__2() -> obj<4x4> [unwind=no, binding=weak, object=_Z7convertI9float_tag6traitsIS0_EE3boxINT0_7carrierEEv] {
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = call obj<4x4> @impl_float_tag___cppgm_class_template_identity_2___compute(1)
+    copyobj 4x4 %t2, %t1
+    return obj<4x4> $retobj__1
+}
+function @impl_double_tag___cppgm_class_template_identity_1___compute(%value : i32) -> obj<8x8> [unwind=no, binding=weak, object=_ZN4implI10double_tag6traitsIS0_EE7computeI3boxIxE6policyEET_i, inline_hint=yes] {
+  slot $value : i32
+  slot $result : obj<8x8>
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = addr $result
+    %t3 = addr $result
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i64 0, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $result
+    copyobj 8x8 %t6, %t5
+    return obj<8x8> $retobj__1
+}
+function @impl_float_tag___cppgm_class_template_identity_2___compute(%value : i32) -> obj<4x4> [unwind=no, binding=weak, object=_ZN4implI9float_tag6traitsIS0_EE7computeI3boxIiE6policyEET_i, inline_hint=yes] {
+  slot $value : i32
+  slot $result : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = addr $result
+    %t3 = addr $result
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $result
+    copyobj 4x4 %t6, %t5
+    return obj<4x4> $retobj__1
+}

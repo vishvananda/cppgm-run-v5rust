@@ -1,0 +1,69 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $it : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $it
+    %t2 = addr $it
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr $it
+    %t5 = call ptr @Iter__operator__(%t4, 0)
+    %t6 = call ptr @Iter__operator_(%t5)
+    call void @Iter__set(%t6, 9)
+    %t7 = addr $it
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 9
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @Iter__operator__(%this : ptr [object_bytes=4], %__param1 : i32) -> ptr [binding=weak, object=_ZN4IterppEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $this
+    return ptr %t7
+}
+function @Iter__operator_(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN4IterdeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Iter__set(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN4Iter3setEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}

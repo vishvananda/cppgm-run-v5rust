@@ -1,0 +1,15 @@
+function @cheap() -> i32 [unwind=no, binding=strong, object=_Z5cheapv] {
+  block ^entry:
+    return i32 1
+}
+function @general() -> i32 [unwind=no, binding=strong, object=_Z7generalv] {
+  block ^entry:
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @cheap()
+    %t2 = call i32 @general()
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}

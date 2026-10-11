@@ -1,0 +1,75 @@
+declare global @is_small_int___value : u8 [binding=weak, object=_ZN8is_smallIiE5valueE]
+declare global @all_of_int___value : u8 [binding=weak, object=_ZN6all_ofIJiEE5valueE]
+declare global @lazy_all_of_int___value : u8 [binding=weak, object=_ZN4lazyI6all_ofJiEE5valueE]
+declare global @is_small_double___value : u8 [binding=weak, object=_ZN8is_smallIdE5valueE]
+declare global @all_of_double___value : u8 [binding=weak, object=_ZN6all_ofIJdEE5valueE]
+declare global @lazy_all_of_double___value : u8 [binding=weak, object=_ZN4lazyI6all_ofJdEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $small_box : obj<4x4>
+  slot $large_box : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $small_box
+    call void @box_int___box(%t1)
+    %t2 = addr $large_box
+    call void @box_double___box(%t2)
+    %t3 = addr $small_box
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t7 = addr $large_box
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 7
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t12 = load typed i64 $land__2
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @box_int___box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxIJiEEC1IiEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @box_double___box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxIJdEEC1IiEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN3boxIJiEEC2IiEEv = @box_int___box
+alias object _ZN3boxIJdEEC2IiEEv = @box_double___box

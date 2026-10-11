@@ -1,0 +1,22 @@
+function @target(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z6targetRi] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @invoke(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z6invokeRi] {
+  slot $value : ptr
+  slot $function : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = addr @target
+    store typed ptr %t1, $function
+    %t2 = load typed ptr $value
+    %t3 = load typed ptr $function
+    %t4 = call i32 %t3(%t2) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> i32
+    return i32 %t4
+}

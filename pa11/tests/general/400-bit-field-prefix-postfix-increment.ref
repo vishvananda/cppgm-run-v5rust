@@ -1,0 +1,93 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $bits : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $bits
+    %t2 = addr $bits
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = binary and u32 1, 1
+    store u32 %t4, %t3
+    %t5 = addr $bits
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = binary and u32 3, 1
+    %t8 = binary shl u32 %t7, 1
+    %t9 = load u32 %t6
+    %t10 = binary and u32 %t9, 4294967289
+    %t11 = binary or u32 %t10, %t8
+    store u32 %t11, %t6
+    %t12 = addr $bits
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load i32 %t13
+    %t15 = binary shr i32 %t14, 1
+    %t16 = binary and i32 %t15, 3
+    %t17 = copy u32 %t16
+    %t18 = copy i32 %t17
+    %t19 = binary add nowrap i32 %t18, 1
+    %t20 = addr $bits
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = binary and i32 %t19, 3
+    %t23 = copy u32 %t22
+    %t24 = binary shl i32 %t22, 1
+    %t25 = load i32 %t21
+    %t26 = binary and i32 %t25, -7
+    %t27 = binary or i32 %t26, %t24
+    store i32 %t27, %t21
+    %t28 = addr $bits
+    %t29 = index i8 [projection=field] %t28, 0
+    %t30 = load i32 %t29
+    %t31 = binary shr i32 %t30, 1
+    %t32 = binary and i32 %t31, 3
+    %t33 = copy u32 %t32
+    %t34 = copy i32 %t33
+    %t35 = binary add nowrap i32 %t34, 1
+    %t36 = binary and i32 %t35, 3
+    %t37 = copy u32 %t36
+    %t38 = binary shl i32 %t36, 1
+    %t39 = load i32 %t29
+    %t40 = binary and i32 %t39, -7
+    %t41 = binary or i32 %t40, %t38
+    store i32 %t41, %t29
+    %t42 = addr $bits
+    %t43 = index i8 [projection=field] %t42, 0
+    %t44 = load i32 %t43
+    %t45 = binary and i32 %t44, 1
+    %t46 = copy u32 %t45
+    %t47 = copy i32 %t46
+    %t48 = cmp eq i32 %t47, 1
+    branch %t48, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t49 = addr $bits
+    %t50 = index i8 [projection=field] %t49, 0
+    %t51 = load i32 %t50
+    %t52 = binary shr i32 %t51, 1
+    %t53 = binary and i32 %t52, 3
+    %t54 = copy u32 %t53
+    %t55 = copy i32 %t54
+    %t56 = cmp eq i32 %t55, 3
+    %t57 = cmp ne i64 %t56, 0
+    store typed i64 %t57, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t58 = load typed i64 $land__2
+    branch %t58, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t59 = load typed i32 $cond__1
+    return i32 %t59
+}

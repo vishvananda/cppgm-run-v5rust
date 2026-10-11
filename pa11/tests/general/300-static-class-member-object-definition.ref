@@ -1,0 +1,29 @@
+global @Holder__cell : obj<4x4> [binding=strong, object=_ZN6Holder4cellE] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @Holder__cell
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}
+function @Cell__Cell(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4CellC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @Holder__cell
+    call void @Cell__Cell(%t1)
+    return void
+}
+alias object _ZN4CellC2Ev = @Cell__Cell

@@ -1,0 +1,9 @@
+# budget from 400-source-copy-constructor-noalias.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 37
+blocks <= 5
+count(call) <= 4
+count(load) <= 8
+count(store) <= 8
+count(phi) <= 3
+instructions <= 22 in @main
+instructions <= 16 in @Pair__Pair__ov2

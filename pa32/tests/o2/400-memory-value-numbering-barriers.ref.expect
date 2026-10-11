@@ -1,0 +1,9 @@
+# budget from 400-memory-value-numbering-barriers.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 6
+count(call) <= 4
+count(load) <= 6
+count(store) <= 3
+count(phi) <= 3
+instructions <= 10 in @atomic_barrier
+instructions <= 10 in @exception_region

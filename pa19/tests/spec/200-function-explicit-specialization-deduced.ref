@@ -1,0 +1,27 @@
+function @f(%__param0 : i32) -> i32 [binding=strong, object=_Z1fIiEiT_] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @f(0)
+    %t2 = cmp eq i32 %t1, 2
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

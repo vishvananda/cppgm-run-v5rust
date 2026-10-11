@@ -1,0 +1,7 @@
+declare global @is_same_char___char_const____value : u8 [binding=weak, object=_ZN7is_sameIRPcRKS0_E5valueE]
+declare global @is_same_constchar___constchar_const____value : u8 [binding=weak, object=_ZN7is_sameIRPKcRKS1_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

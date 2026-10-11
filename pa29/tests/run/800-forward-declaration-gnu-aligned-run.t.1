@@ -1,0 +1,55 @@
+// GNU aligned after the class-key of a declaration that declares the class
+// alone requests the class's alignment before its definition (GCC's type
+// attribute: the definition keeps it, the strictest winning); one in a
+// declaration with declarators does not align the variables.
+#include <cstdio>
+struct __attribute__((aligned(32))) A;
+struct A
+{
+	char c;
+};
+struct __attribute__((aligned(8))) B;
+struct __attribute__((aligned(16))) B
+{
+	char c;
+};
+struct C;
+struct __attribute__((__aligned__(64))) C;
+struct C
+{
+	int x;
+};
+struct H
+{
+	char c;
+	A a;
+};
+struct S
+{
+	struct X;
+	X* p;
+	struct __attribute__((aligned(16))) Y;
+	Y* q;
+};
+struct S::X
+{
+	int k;
+};
+struct S::Y
+{
+	int m;
+};
+namespace N {
+struct __attribute__((aligned(16))) F;
+struct F
+{
+	short s;
+};
+}
+struct __attribute__((aligned(16))) E* ep;
+int main()
+{
+	std::printf("%d %d %d %d %d %d %d %d\n", (int)alignof(A), (int)sizeof(A), (int)alignof(B), (int)alignof(C),
+		(int)sizeof(H), (int)alignof(S::Y), (int)alignof(N::F), (int)alignof(decltype(ep)));
+	return 0;
+}

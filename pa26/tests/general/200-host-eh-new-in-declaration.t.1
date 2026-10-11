@@ -1,0 +1,30 @@
+// N3485 15.2p1, 5.3.4p18: when a new-expression in the initializer of a
+// declared object, or the object's construction after it, throws while other
+// automatic objects are alive, each of those objects is destroyed once and the
+// allocated storage freed
+#include "200-host-eh-new-in-declaration.helper.h"
+static int r, mode;
+struct T { int k; T(int i) : k(i) { if (mode == 4 && i == 100) throw 4; } T(int i, int j) : k(i + j) { if (mode == 4) throw 4; } ~T() { r += k; } };
+struct N { int v; N() : v(1) { if (mode == 2) throw 2; } };
+template <class X> struct Ptr { X* p; explicit Ptr(X* q) : p(q) { if (mode == 5) throw 5; } ~Ptr() { delete p; r += 1; } };
+static void h() { if (mode == 3) throw 3; }
+static int pick(N* n) { int v = n->v; delete n; return v; }
+static void g0() { T v6(10); T v7((new N != 0) ? 100 : 0); h(); }
+static void g1() { T v6(10); Ptr<N> p(new N); h(); }
+static void g2() { T v6(10); T v7(pick(new N), (new N != 0) ? 100 : 0); h(); }
+static void g3() { T v6(10); T v7((pick(new N) + pick(new N)) * 50); h(); }
+static void g4() { T v6(10); T v7 = T(pick(new N) * 100); h(); }
+static void g5() { T v6(10); int x(pick(new N)); T v7(x * 100); h(); }
+static void g6() { T v6(10); T v7((pick(new N) ? 100 : 0)); T v8((pick(new N) ? 1000 : 0)); h(); }
+int main()
+{
+  void (*gs[])() = { g0, g1, g2, g3, g4, g5, g6 };
+  for (int g = 0; g < 7; ++g)
+    for (mode = 0; mode < 6; ++mode)
+    {
+      r = 0;
+      try { gs[g](); } catch (int e) { r += 100000 * e; }
+      out_line("g", (unsigned long long)(g * 10000000 + mode * 1000000 + r));
+    }
+  return 0;
+}

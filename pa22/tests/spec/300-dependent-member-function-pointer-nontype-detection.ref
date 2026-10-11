@@ -1,0 +1,40 @@
+declare global @has_select___cppgm_class_template_identity_2___value : u8 [binding=weak, object=_ZN10has_selectI9allocatorIcLb0EEMS1_KFS1_vEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}
+function @allocator_char_false___select_on_container_copy_construction(%this : ptr [object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZNK9allocatorIcLb0EE37select_on_container_copy_constructionEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    branch 0, ^condobj_then_1, ^condobj_else_2
+
+  block ^condobj_then_1:
+    %t2 = load typed ptr $this
+    jump ^condobj_end_3
+
+  block ^condobj_else_2:
+    zeroinit 1x1 %t1
+    jump ^condobj_end_3
+
+  block ^condobj_end_3:
+    return obj<1x1> $retobj__1
+}

@@ -1,0 +1,45 @@
+struct insertion_result
+{
+  void* first;
+  bool second;
+};
+
+struct payload
+{
+  ~payload();
+};
+
+struct argument
+{
+  payload value;
+};
+
+struct map
+{
+  ~map() {}
+  insertion_result insert(const argument&);
+};
+
+argument make_argument();
+
+payload::~payload() {}
+
+insertion_result map::insert(const argument&)
+{
+  insertion_result result = {0, true};
+  return result;
+}
+
+argument make_argument()
+{
+  return argument();
+}
+
+int main()
+{
+  map result;
+  for (int i = 0; i != 2; ++i)
+    if (!result.insert(make_argument()).second)
+      throw i;
+  return 0;
+}

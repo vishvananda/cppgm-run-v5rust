@@ -1,0 +1,9 @@
+#include <sstream>
+#include <string>
+
+int force_ostream_base_entry()
+{
+  std::ostringstream out;
+  out << "base";
+  return out.str() == "base" ? 0 : 1;
+}

@@ -1,0 +1,11 @@
+# budget from 500-eh-loop-call-cleanup.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 59
+blocks <= 15
+count(call) <= 5
+mem <= 27
+instructions <= 29 in @eh_loop
+stack_size <= 68 in @eh_loop
+instructions <= 5 in @work
+stack_size <= 48 in @work
+instructions <= 29 in @main
+stack_size <= 128 in @main

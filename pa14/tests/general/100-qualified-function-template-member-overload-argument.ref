@@ -1,0 +1,136 @@
+function @iterlib__operator_(%last : obj<4x4>, %first : obj<4x4>) -> i32 [binding=strong, object=_ZN7iterlibmiENS_4iterES0_] {
+  slot $last : obj<4x4>
+  slot $first : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $last
+    copyobj 4x4 %last, %t1
+    %t2 = addr $first
+    copyobj 4x4 %first, %t2
+    %t3 = addr $last
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = addr $first
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = binary sub nowrap i32 %t5, %t8
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<4x4>
+  slot $last : obj<4x4>
+  slot $s : obj<4x4>
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+  slot $cond__3 : i32
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $first
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $last
+    %t5 = addr $last
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 3, %t6
+    %t7 = addr $s
+    call void @iterlib__range_sink__range_sink(%t7)
+    %t8 = addr $s
+    %t9 = addr $argobj__1
+    %t10 = addr $first
+    copyobj 4x4 %t10, %t9
+    %t11 = addr $argobj__2
+    %t12 = addr $last
+    copyobj 4x4 %t12, %t11
+    call void @iterlib__range_sink__assign(%t8, $argobj__1, $argobj__2)
+    %t13 = addr $s
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed i32 %t14
+    %t16 = cmp eq i32 %t15, 3
+    branch %t16, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed i32 $cond__3
+    return i32 %t17
+}
+function @iterlib__range_sink__range_sink(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7iterlib10range_sinkC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @iterlib__range_sink__assign(%this : ptr [object_bytes=4], %first : obj<4x4>, %last : obj<4x4>) -> void [binding=weak, object=_ZN7iterlib10range_sink6assignENS_4iterES1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $first : obj<4x4>
+  slot $last : obj<4x4>
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+  slot $argobj__3 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $first
+    copyobj 4x4 %first, %t1
+    %t2 = addr $last
+    copyobj 4x4 %last, %t2
+    %t3 = load typed ptr $this
+    %t4 = addr $argobj__1
+    %t5 = addr $first
+    copyobj 4x4 %t5, %t4
+    %t6 = addr $argobj__2
+    %t7 = addr $last
+    copyobj 4x4 %t7, %t6
+    %t8 = addr $argobj__3
+    %t9 = addr $first
+    %t10 = call obj<1x1> @iterlib__iterator_category(%t9)
+    call void @iterlib__range_sink__construct(%t3, $argobj__1, $argobj__2, $argobj__3)
+    return void
+}
+function @iterlib__iterator_category(%__param0 : ptr [pass=by_address, object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN7iterlib17iterator_categoryINS_4iterEEENS_18input_iterator_tagERKT_] {
+  slot $__param0 : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr $retobj__1
+    return obj<1x1> $retobj__1
+}
+function @iterlib__range_sink__construct(%this : ptr [object_bytes=4], %first : obj<4x4>, %last : obj<4x4>, %__param3 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN7iterlib10range_sink9constructENS_4iterES1_NS_18input_iterator_tagE, inline_hint=yes] {
+  slot $this : ptr
+  slot $first : obj<4x4>
+  slot $last : obj<4x4>
+  slot $__param3 : obj<1x1>
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $first
+    copyobj 4x4 %first, %t1
+    %t2 = addr $last
+    copyobj 4x4 %last, %t2
+    %t3 = addr $argobj__1
+    %t4 = addr $last
+    copyobj 4x4 %t4, %t3
+    %t5 = addr $argobj__2
+    %t6 = addr $first
+    copyobj 4x4 %t6, %t5
+    %t7 = call i32 @iterlib__operator_($argobj__1, $argobj__2)
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 %t7, %t9
+    return void
+}
+alias object _ZN7iterlib10range_sinkC2Ev = @iterlib__range_sink__range_sink

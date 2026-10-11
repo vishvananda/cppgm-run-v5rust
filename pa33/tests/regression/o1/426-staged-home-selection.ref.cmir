@@ -1,0 +1,269 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @keep1
+  storage scalar i64
+  init i64 1
+
+global @keep2
+  storage scalar i64
+  init i64 2
+
+global @keep3
+  storage scalar i64
+  init i64 3
+
+global @keep4
+  storage scalar i64
+  init i64 4
+
+global @keep5
+  storage scalar i64
+  init i64 5
+
+global @number
+  storage scalar i64
+  init i64 40
+
+global @number_pointer
+  storage data
+  item ptr addr @number
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @copy_to_edge_home
+  abi
+    param %value -> rdi : i64
+    param %condition -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+    param-slot %value -> [rbp-<off0>] : i64
+    temp %result -> [rbp-<off1>] : i64
+
+  block ^entry
+    store.i64 [rbp-<off0>], rdi
+    mov <gpr0>, rsi
+    eh_push ^handler, 0
+    mov rdi, 7
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 <gpr0>, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-<off0>]
+    add r8, 1
+    store.i64 [rbp-<off1>], r8
+
+  block ^done
+    mov rax, r8
+    ret rax
+
+  block ^right
+    load.i64 r8, [rbp-<off0>]
+    sub r8, 1
+    store.i64 [rbp-<off1>], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @call_result_to_edge_home
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+    temp %value -> [rbp-<off0>] : i64
+    temp %result -> [rbp-<off1>] : i64
+
+  block ^entry
+    mov <gpr0>, rdi
+    eh_push ^handler, 0
+    mov rdi, 40
+    call @identity [args=(rdi), unwind=no]
+    store.i64 [rbp-<off0>], rax
+    mov rdi, 9
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 <gpr0>, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-<off0>]
+    add r8, 2
+    store.i64 [rbp-<off1>], r8
+
+  block ^done
+    mov rax, r8
+    ret rax
+
+  block ^right
+    load.i64 r8, [rbp-<off0>]
+    sub r8, 2
+    store.i64 [rbp-<off1>], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @load_with_dead_address
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+    temp %a -> [rbp-<off0>] : i64
+    temp %b -> [rbp-<off1>] : i64
+    temp %c -> [rbp-<off2>] : i64
+    temp %d -> [rbp-<off3>] : i64
+    temp %e -> [rbp-<off4>] : i64
+    temp %value -> [rbp-<off5>] : i64
+    temp %result -> [rbp-<off6>] : i64
+
+  block ^entry
+    mov <gpr0>, rdi
+    eh_push ^handler, 0
+    load.i64 r8, @keep1
+    store.i64 [rbp-<off0>], r8
+    load.i64 r8, @keep2
+    store.i64 [rbp-<off1>], r8
+    load.i64 r8, @keep3
+    store.i64 [rbp-<off2>], r8
+    load.i64 r8, @keep4
+    store.i64 [rbp-<off3>], r8
+    load.i64 r8, @keep5
+    store.i64 [rbp-<off4>], r8
+    load.ptr r8, @number_pointer
+    load.i64 r8, [r8]
+    store.i64 [rbp-<off5>], r8
+    mov rdi, 11
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 <gpr0>, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-<off0>]
+    add r8, [rbp-<off1>]
+    load.i64 r9, [rbp-<off2>]
+    add r9, [rbp-<off3>]
+    add r8, r9
+    add r8, [rbp-<off4>]
+    add r8, 3
+    store.i64 [rbp-<off6>], r8
+
+  block ^done
+    add r8, [rbp-<off5>]
+    ret r8
+
+  block ^right
+    load.i64 r8, [rbp-<off0>]
+    add r8, [rbp-<off1>]
+    load.i64 r9, [rbp-<off2>]
+    add r9, [rbp-<off3>]
+    add r8, r9
+    add r8, [rbp-<off4>]
+    sub r8, 3
+    store.i64 [rbp-<off6>], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @load_with_live_address
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1>
+
+  block ^entry
+    eh_push ^handler, 0
+    load.ptr <gpr0>, @number_pointer
+    load.i64 <gpr1>, [<gpr0>]
+    mov rdi, 13
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.ptr <gpr0>, 0
+    sete <gpr0>
+    movzx <gpr0>, <gpr0>
+    cmp.i64 <gpr1>, 40
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    or <gpr0>, <gpr1>
+    ret <gpr0>
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2>
+
+  block ^entry
+    mov rdi, 40
+    mov rsi, 1
+    call @copy_to_edge_home [args=(rsi,rdi)]
+    mov <gpr0>, rax
+    mov rdi, 1
+    call @call_result_to_edge_home [args=(rdi)]
+    mov <gpr1>, rax
+    mov rdi, 1
+    call @load_with_dead_address [args=(rdi)]
+    mov <gpr2>, rax
+    call @load_with_live_address [args=()]
+    cmp.i64 <gpr0>, 41
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    cmp.i64 <gpr1>, 42
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    cmp.i64 <gpr2>, 58
+    setne <gpr2>
+    movzx <gpr2>, <gpr2>
+    or <gpr0>, <gpr1>
+    or <gpr2>, rax
+    or <gpr0>, <gpr2>
+    ret <gpr0>

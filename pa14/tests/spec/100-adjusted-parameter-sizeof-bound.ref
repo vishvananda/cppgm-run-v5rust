@@ -1,0 +1,136 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 5
+  i32 0
+  i32 0
+  i32 0
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+}
+global @__constexpr_template__3 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+}
+
+function @increment(%value : i32) -> i32 [binding=strong, object=_Z9incrementi] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @callback_size(%callback : ptr, %bytes : ptr [pass=by_address, object_bytes=32]) -> i32 [binding=strong, object=_Z13callback_sizePFiiERA8_i] {
+  slot $callback : ptr
+  slot $bytes : ptr
+
+  block ^entry:
+    store typed ptr %callback, $callback
+    store typed ptr %bytes, $bytes
+    %t1 = load typed ptr $callback
+    %t2 = call i32 %t1(3) as (%arg0 : i32) -> i32
+    %t3 = const i64 32
+    %t4 = convert sext i64 i32 %t2
+    %t5 = binary add i64 %t4, %t3
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}
+function @qualification(%__param0 : ptr) -> i32 [binding=strong, object=_Z13qualificationPi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}
+function @qualification__ov2(%__param0 : ptr) -> i32 [binding=strong, object=_Z13qualificationPKi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}
+function @qualified(%value : i32, %bytes : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z9qualifiediRA4_i] {
+  slot $value : i32
+  slot $bytes : ptr
+
+  block ^entry:
+    store typed i32 %value, $value
+    store typed ptr %bytes, $bytes
+    %t1 = addr $value
+    %t2 = call i32 @qualification__ov2(%t1)
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $array : obj<16x4>
+  slot $pointer_bytes : obj<32x4>
+  slot $value_bytes : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $array
+    copyobj 16x4 @__constexpr_template__1, %t1
+    %t2 = addr $pointer_bytes
+    copyobj 32x4 @__constexpr_template__2, %t2
+    %t3 = addr $value_bytes
+    copyobj 16x4 @__constexpr_template__3, %t3
+    %t4 = addr $array
+    %t5 = addr $pointer_bytes
+    %t6 = call i32 @adjusted(%t4, %t5)
+    %t7 = const i64 32
+    %t8 = binary add i64 5, %t7
+    %t9 = convert sext i64 i32 %t6
+    %t10 = cmp ne i64 %t9, %t8
+    branch %t10, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t11 = addr @increment
+    %t12 = addr $pointer_bytes
+    %t13 = call i32 @callback_size(%t11, %t12)
+    %t14 = const i64 32
+    %t15 = binary add i64 4, %t14
+    %t16 = convert sext i64 i32 %t13
+    %t17 = cmp ne i64 %t16, %t15
+    branch %t17, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t18 = addr $value_bytes
+    %t19 = call i32 @qualified(3, %t18)
+    return i32 %t19
+}
+function @adjusted(%array : ptr, %bytes : ptr [pass=by_address, object_bytes=32]) -> i32 [binding=weak, object=_Z8adjustedIiEiPT_RAszfL0p__i] {
+  slot $array : ptr
+  slot $bytes : ptr
+
+  block ^entry:
+    store typed ptr %array, $array
+    store typed ptr %bytes, $bytes
+    %t1 = load typed ptr $array
+    %t2 = index i32 [projection=array_element] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = const i64 32
+    %t5 = convert sext i64 i32 %t3
+    %t6 = binary add i64 %t5, %t4
+    %t7 = convert trunc i32 i64 %t6
+    return i32 %t7
+}

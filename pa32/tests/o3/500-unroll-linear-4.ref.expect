@@ -1,0 +1,14 @@
+# budget from 500-unroll-linear-4.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 7
+blocks <= 7
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @loop0
+instructions <= 4 in @loop1
+instructions <= 4 in @loop2
+instructions <= 4 in @loop3
+
+# outcomes from 500-unroll-linear-4.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)

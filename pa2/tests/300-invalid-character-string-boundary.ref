@@ -1,0 +1,5 @@
+literal "a" array of 2 char 6100
+invalid ''
+literal "b" array of 2 char 6200
+simple ; OP_SEMICOLON
+eof

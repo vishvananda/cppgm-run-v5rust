@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    class-specifier B
+      class-key KW_STRUCT:struct
+  class-specifier C
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name N::B
+    special-member-definition C
+      declarator
+        identifier C
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id N::B
+          paren-argument-list
+      compound-statement
+end translation unit

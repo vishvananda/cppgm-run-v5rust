@@ -1,0 +1,23 @@
+declare function @function_void_int_____operator_(%arg0 : ptr [object_bytes=1], %arg1 : obj<1x1> [classes=none]) -> ptr [binding=internal, object=_ZN8functionIFviEJEEaSIZN1S1gEvE1GvEERS1_T_]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    call void @S__g(%t2)
+    return i32 0
+}
+function @S__g(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1S1gEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = addr $argobj__1
+    %t4 = call ptr @function_void_int_____operator_(%t2, $argobj__1)
+    return void
+}

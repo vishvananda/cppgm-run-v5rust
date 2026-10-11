@@ -1,0 +1,6 @@
+declare global @Check_int___value : i32 [binding=weak, object=_ZN5CheckIiE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 1
+}

@@ -1,0 +1,48 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $argument : obj<8x8>
+  slot $result : obj<8x8>
+  slot $argobj__1 : obj<8x8>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $argument
+    %t2 = addr $argument
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 0, %t3
+    %t4 = addr $result
+    %t5 = addr $argobj__1
+    %t6 = addr $argument
+    copyobj 8x8 %t6, %t5
+    call void @pick__pick__ov2(%t4, $argobj__1)
+    %t7 = addr $result
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i64 %t8
+    %t10 = cmp eq i64 %t9, 2
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__2
+    return i32 %t11
+}
+function @pick__pick__ov2(%this : ptr [object_bytes=8], %__param1 : obj<8x8>) -> void [binding=weak, object=_ZN4pickC1EN6familyIlE8argumentE, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $__param1
+    copyobj 8x8 %__param1, %t1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 2, %t3
+    return void
+}
+alias object _ZN4pickC2EN6familyIlE8argumentE = @pick__pick__ov2

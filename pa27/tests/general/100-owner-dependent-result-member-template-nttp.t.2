@@ -1,0 +1,11 @@
+#include "100-owner-dependent-result-member-template-nttp.helper.h"
+
+int run_interface_once(int value);
+
+int main()
+{
+  a_class value;
+  interface_x iface(value);
+  iface.call(17);
+  return run_interface_once(42) == 42 && a_class::seen == 42 ? 0 : 1;
+}

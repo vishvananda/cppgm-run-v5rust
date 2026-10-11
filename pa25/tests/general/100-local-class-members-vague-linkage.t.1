@@ -1,0 +1,7 @@
+// N3485 7.1.2p4/3.2p6 + Itanium 5.1.6/5.2: member functions (here the virtual
+// i() and destructor) of a local class of an inline function are vague-linkage
+// entities shared by all TUs; expect link ok and exit 0
+struct I { virtual int i() { return 7; } virtual ~I() {} };
+inline I* mklocal(int k) { struct Loc : I { int n; Loc(int n) : n(n) {} int i() { return 70 + n; } ~Loc() {} }; return new Loc(k); }
+int other();
+int main() { I* p = mklocal(1); int r = p->i(); delete p; return r + other() == 143 ? 0 : 1; }

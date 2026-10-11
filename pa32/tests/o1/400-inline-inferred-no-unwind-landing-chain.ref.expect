@@ -1,0 +1,15 @@
+# budget from 400-inline-inferred-no-unwind-landing-chain.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 11
+blocks <= 6
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @consumer
+instructions <= 5 in @main
+
+# outcomes from 400-inline-inferred-no-unwind-landing-chain.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @leaf)
+none(call @wrapper)
+absent(@leaf)
+absent(@wrapper)

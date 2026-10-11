@@ -1,0 +1,160 @@
+global @constructed : i32 [binding=strong] = 0
+global @__local_static__make_result__decl0__prefixes : obj<32x8> [binding=internal, object=_ZZ11make_resultvE8prefixes] = {
+  zero 32
+}
+global @__local_static__make_result__decl0__prefixes__guard : i64 [binding=internal, object=_ZGVZ11make_resultvE8prefixes] = zero
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 99
+  i8 108
+  i8 97
+  i8 115
+  i8 115
+  i8 32
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 115
+  i8 116
+  i8 114
+  i8 117
+  i8 99
+  i8 116
+  i8 32
+  i8 0
+}
+
+function @make_result() -> obj<16x8> [binding=strong, object=_Z11make_resultv] {
+  slot $result : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = load typed i64 @__local_static__make_result__decl0__prefixes__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__make_result__decl0__prefixes
+    %t4 = addr @__strlit__1
+    %t5 = convert sext i64 i32 6
+    call void @Prefix__Prefix(%t3, %t4, %t5)
+    %t6 = index i8 %t3, 16
+    %t7 = addr @__strlit__2
+    %t8 = convert sext i64 i32 7
+    call void @Prefix__Prefix(%t6, %t7, %t8)
+    store typed i64 1, @__local_static__make_result__decl0__prefixes__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t9 = addr $result
+    %t10 = addr @__local_static__make_result__decl0__prefixes
+    %t11 = binary mul i64 1, 16
+    %t12 = index i8 [projection=array_element] %t10, %t11
+    %t13 = index i8 [projection=field] %t12, 8
+    %t14 = load typed i64 %t13
+    %t15 = addr $result
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed i64 %t14, %t16
+    %t17 = load typed i32 @constructed
+    %t18 = addr $result
+    %t19 = index i8 [projection=field] %t18, 8
+    store typed i32 %t17, %t19
+    %t20 = addr $retobj__1
+    %t21 = addr $result
+    copyobj 16x8 %t21, %t20
+    return obj<16x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $result : obj<16x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = load typed i32 @constructed
+    %t2 = cmp ne i32 %t1, 0
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = addr $result
+    %t4 = call obj<16x8> @make_result()
+    copyobj 16x8 %t4, %t3
+    %t5 = addr $result
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i64 %t6
+    %t8 = convert sext i64 i32 7
+    %t9 = cmp eq i64 %t7, %t8
+    branch %t9, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t10 = addr $result
+    %t11 = index i8 [projection=field] %t10, 8
+    %t12 = load typed i32 %t11
+    %t13 = cmp eq i32 %t12, 2
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__2
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t16 = load typed i32 @constructed
+    %t17 = cmp eq i32 %t16, 2
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $land__3
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__3
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t19 = load typed i64 $land__3
+    branch %t19, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t20 = load typed i32 $cond__1
+    return i32 %t20
+}
+function @Prefix__Prefix(%this : ptr [object_bytes=16], %t : ptr, %s : i64) -> void [binding=internal, object=_ZZ11make_resultvEN6PrefixC1EPKcm, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $t : ptr
+  slot $s : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %t, $t
+    store typed i64 %s, $s
+    %t1 = load typed ptr $t
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $s
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    %t7 = load typed i32 @constructed
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @constructed
+    return void
+}
+alias object _ZZ11make_resultvEN6PrefixC2EPKcm = @Prefix__Prefix

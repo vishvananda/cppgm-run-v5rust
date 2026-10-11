@@ -1,0 +1,83 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $result : obj<16x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed i32 7, $value
+    %t1 = addr $result
+    %t2 = addr $value
+    %t3 = convert sext i64 i32 1
+    %t4 = call obj<16x8> @allocate_at_least(%t2, %t3)
+    copyobj 16x8 %t4, %t1
+    %t5 = addr $result
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed ptr %t6
+    %t8 = addr $value
+    %t9 = cmp eq ptr %t7, %t8
+    branch %t9, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t10 = addr $result
+    %t11 = index i8 [projection=field] %t10, 8
+    %t12 = load typed i64 %t11
+    %t13 = convert sext i64 i32 1
+    %t14 = cmp eq i64 %t12, %t13
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t16 = load typed i64 $land__2
+    branch %t16, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed i32 $cond__1
+    return i32 %t17
+}
+function @allocate_at_least(%ptr : ptr, %n : i64) -> obj<16x8> [binding=weak, object=_Z17allocate_at_leastIiE17allocation_resultIT_EPS1_m] {
+  slot $ptr : ptr
+  slot $n : i64
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %ptr, $ptr
+    store typed i64 %n, $n
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $ptr
+    %t3 = load typed i64 $n
+    call void @allocation_result__allocation_result__aggregate(%t1, %t2, %t3)
+    return obj<16x8> $retobj__1
+}
+function @allocation_result__allocation_result__aggregate(%this : ptr [object_bytes=16], %ptr : ptr, %count : i64) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $ptr : ptr
+  slot $count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %ptr, $ptr
+    store typed i64 %count, $count
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $count
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}

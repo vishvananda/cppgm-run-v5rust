@@ -1,0 +1,43 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $item : obj<4x4>
+  slot $holder : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $item
+    %t2 = addr $item
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 9, %t3
+    %t4 = addr $holder
+    %t5 = addr $item
+    call void @Holder__Holder(%t4, %t5)
+    %t6 = addr $holder
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed ptr %t7
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = binary sub nowrap i32 %t10, 9
+    return i32 %t11
+}
+function @Holder__Holder(%this : ptr [object_bytes=8], %item : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6HolderC1EO4Item, inline_hint=yes] {
+  slot $this : ptr
+  slot $item : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %item, $item
+    %t1 = load typed ptr $item
+    %t2 = call ptr @fwd(%t1)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    return void
+}
+function @fwd(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z3fwdI4ItemEOT_RS1_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+alias object _ZN6HolderC2EO4Item = @Holder__Holder

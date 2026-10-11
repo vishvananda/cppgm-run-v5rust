@@ -1,0 +1,428 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @constructions : i32 [binding=strong] = zero
+global @destructions : i32 [binding=strong] = zero
+global @invalid_destructions : i32 [binding=strong] = zero
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @use(%__param0 : ptr [pass=by_address, object_bytes=4], %fail : u8) -> i32 [binding=strong, object=_Z3useRK5Guardb] {
+  slot $__param0 : ptr
+  slot $fail : u8
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store u8 %fail, $fail
+    %t1 = load u8 $fail
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t2
+    %t3 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t2, %t3, 0)
+    return i32 0
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return i32 0
+}
+function @exercise(%first : u8, %second : u8) -> i32 [binding=strong, object=_Z8exercisebb] {
+  slot $first : u8
+  slot $second : u8
+  slot $caught : i32
+  slot $discard__1 : obj<4x4>
+  slot $lifetime__2 : u8
+  slot $throw_alloc__3 : ptr
+  slot $cond__4 : i32
+  slot $arg__5 : obj<4x4>
+  slot $lifetime__6 : u8
+  slot $call__7 : i32
+  slot $arg__8 : obj<4x4>
+  slot $lifetime__9 : u8
+  slot $call__10 : i32
+  slot $catch__11 : ptr
+  slot $error : i32
+  slot $lor__12 : i64
+  slot $lor__13 : i64
+  slot $lor__14 : i64
+  slot $cond__15 : i32
+  slot $lor__16 : i64
+
+  block ^entry:
+    store u8 %first, $first
+    store u8 %second, $second
+    store typed i32 0, @invalid_destructions
+    store typed i32 0, @destructions
+    store typed i32 0, @constructions
+    store typed i32 0, $caught
+    eh_try ^catch_dispatch_1
+    store u8 0, $lifetime__9
+    store u8 0, $lifetime__6
+    store u8 0, $lifetime__2
+    eh_try ^call_unwind_dispatch_16
+    %t1 = load u8 $first
+    eh_end
+    branch %t1, ^discard_cond_then_5, ^discard_cond_else_6
+
+  block ^call_unwind_dispatch_16:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    jump ^conditional_cleanup_dispatch_15
+
+  block ^cleanup_resume_12:
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^conditional_cleanup_dispatch_13:
+    %t13 = load u8 $lifetime__2
+    branch %t13, ^conditional_temporary_destroy_17, ^conditional_temporary_done_18
+
+  block ^conditional_temporary_destroy_17:
+    store u8 0, $lifetime__2
+    %t14 = addr $discard__1
+    call void @Guard___Guard(%t14)
+    jump ^conditional_temporary_done_18
+
+  block ^conditional_temporary_done_18:
+    jump ^cleanup_resume_12
+
+  block ^conditional_cleanup_dispatch_14:
+    %t15 = load u8 $lifetime__6
+    branch %t15, ^conditional_temporary_destroy_19, ^conditional_temporary_done_20
+
+  block ^conditional_temporary_destroy_19:
+    store u8 0, $lifetime__6
+    %t16 = addr $arg__5
+    call void @Guard___Guard(%t16)
+    jump ^conditional_temporary_done_20
+
+  block ^conditional_temporary_done_20:
+    jump ^conditional_cleanup_dispatch_13
+
+  block ^conditional_cleanup_dispatch_15:
+    %t17 = load u8 $lifetime__9
+    branch %t17, ^conditional_temporary_destroy_21, ^conditional_temporary_done_22
+
+  block ^conditional_temporary_destroy_21:
+    store u8 0, $lifetime__9
+    %t18 = addr $arg__8
+    call void @Guard___Guard(%t18)
+    jump ^conditional_temporary_done_22
+
+  block ^conditional_temporary_done_22:
+    jump ^conditional_cleanup_dispatch_14
+
+  block ^discard_cond_then_5:
+    %t2 = addr $discard__1
+    eh_try ^call_unwind_dispatch_16
+    call void @Guard__Guard(%t2)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^call_unwind_dispatch_16
+    %t3 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t3
+    %t4 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t3, %t4, 0)
+    eh_end
+    return i32 0
+
+  block ^unreachable_8:
+    jump ^discard_cond_end_7
+
+  block ^discard_cond_else_6:
+    %t5 = load u8 $second
+    branch %t5, ^cond_then_9, ^cond_else_10
+
+  block ^cond_then_9:
+    eh_try ^call_unwind_dispatch_16
+    %t6 = addr $arg__5
+    call void @Guard__Guard(%t6)
+    store u8 1, $lifetime__6
+    eh_end
+    eh_try ^call_unwind_dispatch_16
+    %t7 = call i32 @use(%t6, 1)
+    store typed i32 %t7, $call__7
+    %t8 = load typed i32 $call__7
+    store typed i32 %t8, $cond__4
+    eh_end
+    jump ^cond_end_11
+
+  block ^cond_else_10:
+    eh_try ^call_unwind_dispatch_16
+    %t9 = addr $arg__8
+    call void @Guard__Guard(%t9)
+    store u8 1, $lifetime__9
+    eh_end
+    eh_try ^call_unwind_dispatch_16
+    %t10 = call i32 @use(%t9, 0)
+    store typed i32 %t10, $call__10
+    %t11 = load typed i32 $call__10
+    store typed i32 %t11, $cond__4
+    eh_end
+    jump ^cond_end_11
+
+  block ^cond_end_11:
+    %t12 = load typed i32 $cond__4
+    jump ^discard_cond_end_7
+
+  block ^discard_cond_end_7:
+    %t19 = load u8 $lifetime__9
+    branch %t19, ^conditional_temporary_destroy_23, ^conditional_temporary_done_24
+
+  block ^conditional_temporary_destroy_23:
+    store u8 0, $lifetime__9
+    %t20 = addr $arg__8
+    call void @Guard___Guard(%t20)
+    jump ^conditional_temporary_done_24
+
+  block ^conditional_temporary_done_24:
+    %t21 = load u8 $lifetime__6
+    branch %t21, ^conditional_temporary_destroy_25, ^conditional_temporary_done_26
+
+  block ^conditional_temporary_destroy_25:
+    store u8 0, $lifetime__6
+    %t22 = addr $arg__5
+    call void @Guard___Guard(%t22)
+    jump ^conditional_temporary_done_26
+
+  block ^conditional_temporary_done_26:
+    %t23 = load u8 $lifetime__2
+    branch %t23, ^conditional_temporary_destroy_27, ^conditional_temporary_done_28
+
+  block ^conditional_temporary_destroy_27:
+    store u8 0, $lifetime__2
+    %t24 = addr $discard__1
+    call void @Guard___Guard(%t24)
+    jump ^conditional_temporary_done_28
+
+  block ^conditional_temporary_done_28:
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t25 = exception ptr
+    %t26 = exception_selector i32
+    %t27 = cmp eq i32 %t26, 1
+    branch %t27, ^catch_body_29, ^catch_next_30
+
+  block ^catch_body_29:
+    %t28 = call ptr @__external_runtime____cxa_begin_catch(%t25)
+    store typed ptr %t28, $catch__11
+    eh_cleanup ^catch_cleanup_31
+    %t29 = load typed i32 %t28
+    store typed i32 %t29, $error
+    %t30 = load typed i32 $error
+    store typed i32 %t30, $caught
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_31:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_30:
+    resume
+
+  block ^try_end_3:
+    %t31 = load typed i32 @constructions
+    %t32 = cmp ne i32 %t31, 1
+    branch %t32, ^lor_short_33, ^lor_rhs_32
+
+  block ^lor_rhs_32:
+    %t33 = load typed i32 @destructions
+    %t34 = cmp ne i32 %t33, 1
+    %t35 = cmp ne i64 %t34, 0
+    store typed i64 %t35, $lor__12
+    jump ^lor_end_34
+
+  block ^lor_short_33:
+    store typed i64 1, $lor__12
+    jump ^lor_end_34
+
+  block ^lor_end_34:
+    %t36 = load typed i64 $lor__12
+    branch %t36, ^lor_short_36, ^lor_rhs_35
+
+  block ^lor_rhs_35:
+    %t37 = load typed i32 @invalid_destructions
+    %t38 = cmp ne i32 %t37, 0
+    %t39 = cmp ne i64 %t38, 0
+    store typed i64 %t39, $lor__13
+    jump ^lor_end_37
+
+  block ^lor_short_36:
+    store typed i64 1, $lor__13
+    jump ^lor_end_37
+
+  block ^lor_end_37:
+    %t40 = load typed i64 $lor__13
+    branch %t40, ^lor_short_39, ^lor_rhs_38
+
+  block ^lor_rhs_38:
+    %t41 = load typed i32 $caught
+    %t42 = load u8 $first
+    branch %t42, ^lor_short_45, ^lor_rhs_44
+
+  block ^lor_rhs_44:
+    %t43 = load u8 $second
+    %t44 = cmp ne i64 %t43, 0
+    store typed i64 %t44, $lor__16
+    jump ^lor_end_46
+
+  block ^lor_short_45:
+    store typed i64 1, $lor__16
+    jump ^lor_end_46
+
+  block ^lor_end_46:
+    %t45 = load typed i64 $lor__16
+    branch %t45, ^cond_then_41, ^cond_else_42
+
+  block ^cond_then_41:
+    store typed i32 7, $cond__15
+    jump ^cond_end_43
+
+  block ^cond_else_42:
+    store typed i32 0, $cond__15
+    jump ^cond_end_43
+
+  block ^cond_end_43:
+    %t46 = load typed i32 $cond__15
+    %t47 = cmp ne i32 %t41, %t46
+    %t48 = cmp ne i64 %t47, 0
+    store typed i64 %t48, $lor__14
+    jump ^lor_end_40
+
+  block ^lor_short_39:
+    store typed i64 1, $lor__14
+    jump ^lor_end_40
+
+  block ^lor_end_40:
+    %t49 = load typed i64 $lor__14
+    %t50 = convert trunc i32 i64 %t49
+    return i32 %t50
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : i32
+  slot $second : i32
+
+  block ^entry:
+    store typed i32 0, $first
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $first
+    %t2 = cmp ne i32 %t1, 2
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    store typed i32 0, $second
+    jump ^for_cond_5
+
+  block ^for_cond_5:
+    %t3 = load typed i32 $second
+    %t4 = cmp ne i32 %t3, 2
+    branch %t4, ^for_body_6, ^for_end_8
+
+  block ^for_body_6:
+    %t5 = load typed i32 $first
+    %t6 = cmp ne i32 %t5, 0
+    %t7 = convert trunc u8 i64 %t6
+    %t8 = load typed i32 $second
+    %t9 = cmp ne i32 %t8, 0
+    %t10 = convert trunc u8 i64 %t9
+    %t11 = call i32 @exercise(%t7, %t10)
+    branch %t11, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    return i32 1
+
+  block ^if_else_10:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    jump ^for_iter_7
+
+  block ^for_iter_7:
+    %t12 = load typed i32 $second
+    %t13 = binary add nowrap i32 %t12, 1
+    store typed i32 %t13, $second
+    jump ^for_cond_5
+
+  block ^for_end_8:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t14 = load typed i32 $first
+    %t15 = binary add nowrap i32 %t14, 1
+    store typed i32 %t15, $first
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return i32 0
+}
+function @Guard__Guard(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5GuardC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    %t3 = load typed i32 @constructions
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @constructions
+    return void
+}
+function @Guard___Guard(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5GuardD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 7
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t5 = load typed i32 @invalid_destructions
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @invalid_destructions
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = load typed i32 @destructions
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @destructions
+    return void
+}
+alias object _ZN5GuardC2Ev = @Guard__Guard
+alias object _ZN5GuardD2Ev = @Guard___Guard

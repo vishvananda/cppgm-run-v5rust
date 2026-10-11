@@ -1,0 +1,43 @@
+global @g : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $w : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $w
+    %t2 = addr $w
+    call void @Wrapper___Wrapper(%t2)
+    return i32 0
+}
+function @Wrapper___Wrapper(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7WrapperD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    call void @Sink___Sink(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    call void @Sink___Sink(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Sink___Sink(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN4SinkD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 1, @g
+    return void
+}
+alias object _ZN7WrapperD2Ev = @Wrapper___Wrapper
+alias object _ZN4SinkD2Ev = @Sink___Sink

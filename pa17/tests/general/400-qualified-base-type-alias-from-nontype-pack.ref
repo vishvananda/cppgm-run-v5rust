@@ -1,0 +1,11 @@
+declare function @expect(%arg0 : ptr) -> i32 [binding=strong, object=_Z6expectP11index_tupleIJLm0ELm1ELm2EEE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr 0, $p
+    %t1 = load typed ptr $p
+    %t2 = call i32 @expect(%t1)
+    return i32 %t2
+}

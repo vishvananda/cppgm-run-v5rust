@@ -1,0 +1,72 @@
+global @default_alloc : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $item : obj<4x4>
+  slot $bucket : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $item
+    call void @Item__Item(%t1, 7)
+    %t2 = addr $bucket
+    %t3 = addr $item
+    %t4 = addr @default_alloc
+    call void @Bucket__Bucket__ov2(%t2, 3, %t3, %t4)
+    %t5 = addr $bucket
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @Item__Item(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN4ItemC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Bucket__Bucket__ov2(%this : ptr [object_bytes=4], %count : i32, %item : ptr [pass=by_address, object_bytes=4], %alloc : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6BucketC1EiRK4ItemRK5Alloc, inline_hint=yes] {
+  slot $this : ptr
+  slot $count : i32
+  slot $item : ptr
+  slot $alloc : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %count, $count
+    store typed ptr %item, $item
+    store typed ptr %alloc, $alloc
+    %t1 = load typed ptr $item
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}
+alias object _ZN4ItemC2Ei = @Item__Item
+alias object _ZN6BucketC2EiRK4ItemRK5Alloc = @Bucket__Bucket__ov2

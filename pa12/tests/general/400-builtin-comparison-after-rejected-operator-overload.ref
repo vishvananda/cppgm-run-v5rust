@@ -1,0 +1,45 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $p
+    call void @Property__Property(%t1)
+    %t2 = addr $p
+    %t3 = call ptr @Property__operatorread_access_t(%t2)
+    %t4 = load typed u32 %t3
+    %t5 = cmp ne u32 %t4, 0
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @Property__Property(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN8PropertyC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed u32 1, %t2
+    return void
+}
+function @Property__operatorread_access_t(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZNK8PropertycvRKjEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+alias object _ZN8PropertyC2Ev = @Property__Property

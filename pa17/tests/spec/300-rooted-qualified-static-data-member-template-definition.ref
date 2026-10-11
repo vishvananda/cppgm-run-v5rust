@@ -1,0 +1,50 @@
+global @n__keyword_color_map___instance [binding=weak, object=_ZN1n7keywordIN3tag9color_mapEE8instanceE] = {
+  zero 1
+}
+global @__cppgm_guard__n__keyword_color_map___instance : i64 [binding=weak, object=_ZGVN1n7keywordIN3tag9color_mapEE8instanceE] = zero
+global @_GLOBAL__N_1__color_map : ptr [binding=internal, object=_ZN12_GLOBAL__N_19color_mapE] = addr @n__keyword_color_map___instance
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @_GLOBAL__N_1__color_map
+    %t2 = addr @n__keyword_color_map___instance
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @n__keyword_color_map___keyword(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1n7keywordIN3tag9color_mapEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = load typed i64 @__cppgm_guard__n__keyword_color_map___instance
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ctor_done_2, ^local_static_ctor_run_1
+
+  block ^local_static_ctor_run_1:
+    store typed i64 1, @__cppgm_guard__n__keyword_color_map___instance
+    %t3 = addr @n__keyword_color_map___instance
+    call void @n__keyword_color_map___keyword(%t3)
+    jump ^local_static_ctor_done_2
+
+  block ^local_static_ctor_done_2:
+    return void
+}
+alias object _ZN1n7keywordIN3tag9color_mapEEC2Ev = @n__keyword_color_map___keyword

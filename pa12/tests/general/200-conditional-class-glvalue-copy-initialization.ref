@@ -1,0 +1,237 @@
+global @conditions : i32 [binding=strong] = zero
+global @copies : i32 [binding=strong] = zero
+global @alive : i32 [binding=strong] = zero
+
+function @select_left() -> u8 [binding=strong, object=_Z11select_leftv] {
+  block ^entry:
+    %t1 = load typed i32 @conditions
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @conditions
+    return u8 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base : obj<4x4>
+  slot $derived : obj<4x4>
+  slot $copy : obj<4x4>
+  slot $condaddr__1 : ptr
+  slot $first : obj<4x4>
+  slot $second : obj<4x4>
+  slot $copied : obj<4x4>
+  slot $condaddr__2 : ptr
+  slot $call__3 : u8
+
+  block ^entry:
+    %t1 = addr $base
+    %t2 = addr $base
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr $derived
+    call void @Derived__Derived(%t4)
+    %t5 = addr $copy
+    %t6 = call u8 @select_left()
+    branch %t6, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t7 = addr $base
+    store typed ptr %t7, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t8 = addr $derived
+    %t9 = index i8 %t8, 0
+    store typed ptr %t9, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t10 = load typed ptr $condaddr__1
+    copyobj 4x4 %t10, %t5
+    %t11 = addr $copy
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i32 %t12
+    %t14 = cmp ne i32 %t13, 7
+    branch %t14, ^if_then_4, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t15 = load typed i32 @conditions
+    %t16 = cmp ne i32 %t15, 1
+    branch %t16, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 1
+
+  block ^if_else_5:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    %t17 = addr $copy
+    %t18 = index i8 [projection=field] %t17, 0
+    store typed i32 9, %t18
+    %t19 = addr $derived
+    %t20 = index i8 %t19, 0
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load typed i32 %t21
+    %t23 = cmp ne i32 %t22, 7
+    branch %t23, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    return i32 2
+
+  block ^if_else_9:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    %t24 = addr $first
+    call void @Observed__Observed(%t24, 5)
+    %t25 = addr $second
+    eh_try ^cleanup_action_12
+    call void @Observed__Observed(%t25, 8)
+    eh_end
+    jump ^call_unwind_end_13
+
+  block ^cleanup_resume_11:
+    resume
+
+  block ^cleanup_action_12:
+    %t26 = addr $first
+    call void @Observed___Observed(%t26)
+    jump ^cleanup_resume_11
+
+  block ^call_unwind_end_13:
+    %t27 = addr $copied
+    eh_try ^cleanup_action_17
+    %t28 = call u8 @select_left()
+    store u8 %t28, $call__3
+    %t29 = load u8 $call__3
+    eh_end
+    jump ^call_unwind_end_18
+
+  block ^cleanup_action_17:
+    %t30 = addr $second
+    call void @Observed___Observed(%t30)
+    jump ^cleanup_action_12
+
+  block ^call_unwind_end_18:
+    branch %t29, ^condaddr_then_14, ^condaddr_else_15
+
+  block ^condaddr_then_14:
+    %t31 = addr $first
+    store typed ptr %t31, $condaddr__2
+    jump ^condaddr_end_16
+
+  block ^condaddr_else_15:
+    %t32 = addr $second
+    store typed ptr %t32, $condaddr__2
+    jump ^condaddr_end_16
+
+  block ^condaddr_end_16:
+    %t33 = load typed ptr $condaddr__2
+    eh_try ^cleanup_action_17
+    call void @Observed__Observed__ov2(%t27, %t33)
+    eh_end
+    %t34 = addr $copied
+    %t35 = index i8 [projection=field] %t34, 0
+    %t36 = load typed i32 %t35
+    %t37 = cmp ne i32 %t36, 8
+    branch %t37, ^if_then_19, ^lor_rhs_23
+
+  block ^lor_rhs_23:
+    %t38 = load typed i32 @copies
+    %t39 = cmp ne i32 %t38, 1
+    branch %t39, ^if_then_19, ^lor_rhs_22
+
+  block ^lor_rhs_22:
+    %t40 = load typed i32 @alive
+    %t41 = cmp ne i32 %t40, 3
+    branch %t41, ^if_then_19, ^lor_rhs_21
+
+  block ^lor_rhs_21:
+    %t42 = load typed i32 @conditions
+    %t43 = cmp ne i32 %t42, 2
+    branch %t43, ^if_then_19, ^if_else_20
+
+  block ^if_then_19:
+    %t44 = addr $copied
+    call void @Observed___Observed(%t44)
+    %t45 = addr $second
+    call void @Observed___Observed(%t45)
+    %t46 = addr $first
+    call void @Observed___Observed(%t46)
+    return i32 3
+
+  block ^if_else_20:
+    jump ^if_end_24
+
+  block ^if_end_24:
+    %t47 = addr $copied
+    call void @Observed___Observed(%t47)
+    %t48 = addr $second
+    call void @Observed___Observed(%t48)
+    %t49 = addr $first
+    call void @Observed___Observed(%t49)
+    %t50 = load typed i32 @alive
+    %t51 = cmp ne i32 %t50, 0
+    %t52 = convert trunc i32 i64 %t51
+    return i32 %t52
+}
+function @Derived__Derived(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    return void
+}
+function @Observed__Observed(%this : ptr [object_bytes=4], %input : i32) -> void [binding=weak, object=_ZN8ObservedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %input, $input
+    %t1 = load typed i32 $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @alive
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @alive
+    return void
+}
+function @Observed___Observed(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN8ObservedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @alive
+    return void
+}
+function @Observed__Observed__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN8ObservedC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed i32 @alive
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, @alive
+    %t8 = load typed i32 @copies
+    %t9 = binary add nowrap i32 %t8, 1
+    store typed i32 %t9, @copies
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN8ObservedC2Ei = @Observed__Observed
+alias object _ZN8ObservedD2Ev = @Observed___Observed
+alias object _ZN8ObservedC2ERKS_ = @Observed__Observed__ov2

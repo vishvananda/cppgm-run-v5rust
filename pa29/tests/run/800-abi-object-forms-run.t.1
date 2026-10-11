@@ -1,0 +1,55 @@
+// SysV psABI 3.2.3, 3.5.7, Itanium C++ ABI 2.3 and GNU attributes: functions
+// returning a long double class (x87) and a vector (SSE), a packed class,
+// classes passed to `...` and read with va_arg, a NaN with a payload,
+// over-aligned globals, a weak definition and a zero-initialized array of
+// pointers to data members (null is -1) print what GCC's build prints
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+
+struct LD { long double v; };
+typedef float v4 __attribute__((vector_size(16)));
+struct Pair { double a, b; };
+struct __attribute__((packed)) Packed { char c; int i; };
+struct Member { int x, y; };
+
+__attribute__((noinline)) LD make_ld(long double x) { LD l = { x * 2 }; return l; }
+__attribute__((noinline)) v4 add_v(v4 a, v4 b) { return a + b; }
+__attribute__((noinline)) Packed make_packed(int i) { Packed p = { 'p', i }; return p; }
+__attribute__((noinline)) double sum_pairs(int n, ...)
+{
+	va_list ap;
+	va_start(ap, n);
+	double s = 0;
+	for (int i = 0; i < n; ++i)
+	{
+		const Pair p = va_arg(ap, Pair);
+		s += p.a * p.b;
+	}
+	va_end(ap);
+	return s;
+}
+__attribute__((noinline)) double payload_nan() { return __builtin_nan("0x55"); }
+__attribute__((weak)) int weak_hook() { return 4; }
+
+alignas(32) int aligned_table[4] = { 1, 2, 3, 4 };
+int __attribute__((aligned(64))) aligned_counter = 5;
+int Member::*members[6];
+
+int main()
+{
+	const v4 a = { 1, 2, 3, 4 }, b = { 10, 20, 30, 40 };
+	const v4 c = add_v(a, b);
+	const Pair p = { 1.5, 2 }, q = { 3, 4 };
+	const double nan = payload_nan();
+	unsigned long long bits;
+	std::memcpy(&bits, &nan, sizeof bits);
+	int nulls = 0;
+	for (int i = 0; i < 6; ++i)
+		nulls += members[i] == 0;
+	std::printf("%g %g %d %g %llx %d %d %d %d\n", static_cast<double>(make_ld(1.25L).v), static_cast<double>(c[3]),
+		make_packed(9).i, sum_pairs(2, p, q), bits & 0xfff, weak_hook(),
+		static_cast<int>(reinterpret_cast<unsigned long>(aligned_table) % 32 + reinterpret_cast<unsigned long>(&aligned_counter) % 64),
+		aligned_table[3] + aligned_counter, nulls);
+	return 0;
+}

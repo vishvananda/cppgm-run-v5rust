@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition keep function of (lvalue-reference to const pointer to const struct A) returning void
+    parameter x lvalue-reference to const pointer to const struct A
+    compound-statement
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable a struct A
+          constructor-action A::A
+            call-expression prvalue void
+              callee A::A function of (pointer to struct A) returning void
+              unary-expression prvalue pointer to struct A OP_AMP:&
+                id-expression lvalue struct A a
+      simple-declaration
+        variable p pointer to struct A
+          unary-expression prvalue pointer to struct A OP_AMP:&
+            id-expression lvalue struct A a
+      expression-statement
+        call-expression prvalue void
+          callee keep function of (lvalue-reference to const pointer to const struct A) returning void
+          id-expression lvalue pointer to struct A p
+      return-statement
+        literal prvalue int 0
+  function-definition A::A function of (pointer to struct A) returning void
+    parameter this pointer to struct A
+    compound-statement
+end translation unit

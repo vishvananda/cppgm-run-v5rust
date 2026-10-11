@@ -1,0 +1,14 @@
+# budget from 400-inline-discardable-single-call.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 146
+blocks <= 6
+count(call) <= 7
+count(load) <= 3
+count(store) <= 137
+count(phi) <= 3
+instructions <= 48 in @multiple
+instructions <= 48 in @addressed
+instructions <= 53 in @main
+
+# outcomes from 400-inline-discardable-single-call.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @single)
+absent(@single)

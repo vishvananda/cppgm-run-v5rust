@@ -1,0 +1,26 @@
+function @sink(%__param0 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z4sinkRN1N3VecIiEE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lazy : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $lazy
+    %t2 = addr $lazy
+    %t3 = call ptr @Lazy_int___operatorN__Vec_T____ov2(%t2)
+    call void @sink(%t3)
+    return i32 0
+}
+function @Lazy_int___operatorN__Vec_T____ov2(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN4LazyIiEcvRN1N3VecIiEEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition types
+    class-specifier value
+      class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier ::types::value
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier pointer
+  class-specifier holder
+    class-key KW_STRUCT:struct
+    special-member-declaration operator::types::value*
+      declarator
+        identifier operator::types::value*
+        parameter-clause
+        cv-qualifier KW_CONST:const
+end translation unit

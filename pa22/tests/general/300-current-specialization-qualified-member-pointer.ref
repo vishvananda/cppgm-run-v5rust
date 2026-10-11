@@ -1,0 +1,68 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call u8 @matcher_int_longint_char___find(%t2)
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @matcher_int_longint_char___find(%this : ptr [object_bytes=1]) -> u8 [binding=weak, object=_ZN7matcherIilcE4findEv] {
+  slot $this : ptr
+  slot $pointer : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @matcher_int_longint_char___first
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    store typed i128 %t3, $pointer
+    %t4 = load typed ptr $this
+    %t5 = load typed i128 $pointer
+    %t6 = binary shr i128 %t5, 64
+    %t7 = convert trunc i64 i128 %t6
+    %t8 = convert trunc i64 i128 %t5
+    %t9 = binary and i64 %t8, 1
+    %t10 = cmp ne i64 %t9, 0
+    %t11 = index i8 %t4, %t7
+    branch %t10, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t12 = load typed ptr %t11
+    %t13 = binary sub i64 %t8, 1
+    %t14 = index i8 %t12, %t13
+    %t15 = load typed ptr %t14
+    store typed ptr %t15, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t16 = copy ptr %t8
+    store typed ptr %t16, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t17 = load typed ptr $member_pointer_callee__1
+    %t18 = call u8 %t17(%t11) as (%arg0 : ptr [object_bytes=1]) -> u8
+    return u8 %t18
+}
+function @matcher_int_longint_char___first(%this : ptr [object_bytes=1]) -> u8 [binding=weak, object=_ZN7matcherIilcE5firstEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return u8 1
+}

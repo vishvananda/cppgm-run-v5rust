@@ -1,0 +1,140 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> ptr [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_leaf [storage=readonly, binding=weak, object=_ZTS4leaf] = {
+  i8 52
+  i8 108
+  i8 101
+  i8 97
+  i8 102
+  i8 0
+}
+global @__typeinfo_name__struct_mid [storage=readonly, binding=weak, object=_ZTS3mid] = {
+  i8 51
+  i8 109
+  i8 105
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_base [storage=readonly, binding=weak, object=_ZTS4base] = {
+  i8 52
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_base [storage=readonly, binding=weak, object=_ZTI4base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_base
+}
+global @__rtti_struct_mid [storage=readonly, binding=weak, object=_ZTI3mid] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_mid
+  ptr addr @__rtti_struct_base
+}
+global @__rtti_struct_leaf [storage=readonly, binding=weak, object=_ZTI4leaf] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_leaf
+  ptr addr @__rtti_struct_mid
+}
+global @leaf__vtable [storage=readonly, binding=weak, object=_ZTV4leaf] = {
+  i64 0
+  ptr addr @__rtti_struct_leaf
+  ptr addr @leaf__what
+}
+global @mid__vtable [storage=readonly, binding=weak, object=_ZTV3mid] = {
+  i64 0
+  ptr addr @__rtti_struct_mid
+  ptr addr @__cxa_pure_virtual
+}
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 111
+  i8 107
+  i8 0
+}
+global @base__vtable [storage=readonly, binding=weak, object=_ZTV4base] = {
+  i64 0
+  ptr addr @__rtti_struct_base
+  ptr addr @__cxa_pure_virtual
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $object
+    call void @leaf__leaf(%t1)
+    %t2 = addr $object
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr %t3
+    %t5 = call ptr %t4(%t2) as (%arg0 : ptr [object_bytes=8]) -> ptr
+    %t6 = index i8 [projection=array_element] %t5, 0
+    %t7 = load i8 %t6
+    %t8 = convert sext i32 i8 %t7
+    %t9 = cmp eq i32 %t8, 111
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @leaf__leaf(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4leafC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @mid__mid__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @leaf__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @leaf__what(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK4leaf4whatEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @__strlit__1
+    return ptr %t1
+}
+function @mid__mid__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3midC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @base__base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @mid__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @base__base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4baseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN4leafC2Ev = @leaf__leaf

@@ -1,0 +1,44 @@
+function @ns__json__value___value__base_entry(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=strong, object=_ZN2ns4json5valueD2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @destroy(%h : ptr) -> void [binding=strong, object=_Z7destroyPN2ns4json6detail6holderE] {
+  slot $h : ptr
+
+  block ^entry:
+    store typed ptr %h, $h
+    %t1 = load typed ptr $h
+    call void @ns__json__detail__holder___holder(%t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @ns__json__detail__holder___holder(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN2ns4json6detail6holderD1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    store typed ptr %t3, $p
+    %t4 = load typed ptr $p
+    %t5 = binary mul i64 0, 4
+    %t6 = index i8 [projection=array_element] %t4, %t5
+    call void @ns__json__value___value(%t6)
+    return void
+}
+function @ns__json__value___value(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=strong, object=_ZN2ns4json5valueD1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN2ns4json6detail6holderD2Ev = @ns__json__detail__holder___holder

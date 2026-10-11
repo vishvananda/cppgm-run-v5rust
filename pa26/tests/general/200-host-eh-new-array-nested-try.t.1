@@ -1,0 +1,35 @@
+// N3485 5.3.4p18, 15.2p2, 15.3p2: an exception from an element constructor of
+// an array new-expression, or of a local array, inside nested try blocks
+// destroys the elements already constructed, frees the storage, and is caught
+// by the innermost handler that matches it, also for a new-expression inside a
+// handler
+#include "200-host-eh-new-array-nested-try.helper.h"
+static int n, k, r;
+struct U
+{
+  U() { if (++n == k) { if (k == 2) throw 2L; if (k == 3) throw 'c'; throw 1; } }
+  ~U() { r += 10; }
+};
+static void f()
+{
+  try { try { try { new U[4]; } catch (int) { r += 1; } } catch (long) { r += 100; } } catch (char) { r += 1000; }
+}
+static void g() { try { try { U v[3]; (void)v; } catch (int) { r += 1; } } catch (long) { r += 100; } }
+static void h(int m)
+{
+  try { try { throw 1; } catch (int) { try { new U[m]; } catch (long) { r += 7; } } } catch (int) { r += 100000; }
+}
+static void e() { try { try { new U[3]; } catch (int) { r += 1; } catch (...) { r += 3; } } catch (long) { r += 100; } }
+static void x(int m)
+{
+  try { try { U a; try { new U[m]; } catch (char) { r += 2; } } catch (int) { r += 1; } } catch (long) { r += 100; }
+}
+int main()
+{
+  for (k = 1; k <= 3; ++k) { n = 0; try { f(); } catch (...) { r += 5000; } out_line("f", r); }
+  for (k = 1; k <= 3; ++k) { n = 0; try { g(); } catch (...) { r += 5000; } out_line("g", r); }
+  for (k = 1; k <= 3; ++k) { n = 0; try { h(3); } catch (...) { r += 50000; } out_line("h", r); }
+  for (k = 1; k <= 3; ++k) { n = 0; try { e(); } catch (...) { r += 90000; } out_line("e", r); }
+  for (k = 1; k <= 4; ++k) { n = 0; try { x(3); } catch (...) { r += 90000; } out_line("x", r); }
+  return 0;
+}

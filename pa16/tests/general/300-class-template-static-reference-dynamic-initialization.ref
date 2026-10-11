@@ -1,0 +1,35 @@
+global @holder_value___instance : ptr [binding=weak, object=_ZN6holderI5valueE8instanceE] = zero
+global @__cppgm_guard__holder_value___instance : i64 [binding=weak, object=_ZGVN6holderI5valueE8instanceE] = zero
+global @__local_static__function_symbol_5f5a33676574493576616c75654552545f76__decl0__stored [binding=weak, object=_ZZ3getI5valueERT_vE6stored] = {
+  i32 7
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed ptr @holder_value___instance
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 7
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @get() -> ptr [binding=weak, object=_Z3getI5valueERT_v] {
+  block ^entry:
+    %t1 = addr @__local_static__function_symbol_5f5a33676574493576616c75654552545f76__decl0__stored
+    return ptr %t1
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = load typed i64 @__cppgm_guard__holder_value___instance
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ctor_done_2, ^local_static_ctor_run_1
+
+  block ^local_static_ctor_run_1:
+    store typed i64 1, @__cppgm_guard__holder_value___instance
+    %t3 = call ptr @get()
+    store typed ptr %t3, @holder_value___instance
+    jump ^local_static_ctor_done_2
+
+  block ^local_static_ctor_done_2:
+    return void
+}

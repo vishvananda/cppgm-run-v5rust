@@ -1,0 +1,11 @@
+.cproject
+.project
+tests/*.my*
+ppexpr
+ppexpr-fast
+ppexpr-self-fast
+ppexpr-debug
+*.dSYM
+testin
+testout
+.test_failed

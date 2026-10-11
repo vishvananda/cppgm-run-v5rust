@@ -1,0 +1,14 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+global @p : ptr [storage=readonly, binding=internal, object=_ZL1p] = addr @__strlit__1
+global @a [binding=strong] = {
+  zero 3
+}
+global @q : ptr [storage=readonly, binding=internal, object=_ZL1q] = addr @a
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

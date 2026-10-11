@@ -1,0 +1,60 @@
+function @operator_(%left : ptr [pass=by_address, object_bytes=4], %right : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_ZmiRK4IterS1_] {
+  slot $left : ptr
+  slot $right : ptr
+
+  block ^entry:
+    store typed ptr %left, $left
+    store typed ptr %right, $right
+    %t1 = load typed ptr $left
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $right
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary sub nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<4x4>
+  slot $last : obj<4x4>
+  slot $diff : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $first
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 5, %t3
+    %t4 = addr $last
+    %t5 = addr $last
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 3, %t6
+    %t7 = addr $first
+    %t8 = addr $last
+    %t9 = call i32 @operator_(%t7, %t8)
+    %t10 = call i32 @identity(%t9)
+    store typed i32 %t10, $diff
+    %t11 = load typed i32 $diff
+    %t12 = cmp eq i32 %t11, 2
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @identity(%value : i32) -> i32 [binding=weak, object=_Z8identityIiET_S0_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}

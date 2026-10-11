@@ -1,0 +1,6 @@
+2 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable bound const int
+end translation unit

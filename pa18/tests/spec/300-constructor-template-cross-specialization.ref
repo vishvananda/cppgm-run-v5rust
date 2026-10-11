@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $src : obj<4x4>
+  slot $dst : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $src
+    call void @wrap_int___wrap(%t1, 3)
+    %t2 = addr $dst
+    %t3 = addr $src
+    call void @wrap_longint___wrap(%t2, %t3)
+    %t4 = addr $dst
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 13
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @wrap_int___wrap(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN4wrapIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @wrap_longint___wrap(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4wrapIlEC1IiEERKS_IT_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 10
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN4wrapIiEC2Ei = @wrap_int___wrap
+alias object _ZN4wrapIlEC2IiEERKS_IT_E = @wrap_longint___wrap

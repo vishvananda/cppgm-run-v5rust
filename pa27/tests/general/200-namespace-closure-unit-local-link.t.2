@@ -1,0 +1,14 @@
+auto choose = []() -> int { return 30; };
+
+static struct
+{
+  int base;
+  int get() const { return base + 2; }
+} second = { 3 };
+
+int first_unit();
+
+int main()
+{
+  return first_unit() + choose() + second.get() == 7 + 1 + 30 + 5 ? 0 : 1;
+}

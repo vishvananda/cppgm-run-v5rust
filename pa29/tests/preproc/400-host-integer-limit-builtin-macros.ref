@@ -1,0 +1,8 @@
+preproc 1
+sof tests/preproc/400-host-integer-limit-builtin-macros.t
+identifier have_long_long_max
+identifier have_int_max
+identifier have_size_max
+identifier have_wchar_max
+identifier have_ptrdiff_max
+eof

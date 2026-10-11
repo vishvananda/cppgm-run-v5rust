@@ -1,0 +1,63 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @dispatch()
+    %t2 = cmp ne i32 %t1, 2
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = call i32 @dispatch__2()
+    %t4 = cmp eq i32 %t3, 3
+    branch %t4, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 2, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @dispatch() -> i32 [binding=weak, object=_Z8dispatchIiLm2EET_v] {
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    %t2 = call i32 @count($argobj__1)
+    return i32 %t2
+}
+function @dispatch__2() -> i32 [binding=weak, object=_Z8dispatchIiLm3EET_v] {
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    %t2 = call i32 @count__2($argobj__1)
+    return i32 %t2
+}
+function @count(%__param0 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_Z5countIJLm0ELm1EEEi16integer_sequenceImJXspT_EEE] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    %t1 = const i64 2
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @count__2(%__param0 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_Z5countIJLm0ELm1ELm2EEEi16integer_sequenceImJXspT_EEE] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    %t1 = const i64 3
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

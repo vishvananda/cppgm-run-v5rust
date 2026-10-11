@@ -1,0 +1,233 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Pair [storage=readonly, binding=weak, object=_ZTS4Pair] = {
+  i8 52
+  i8 80
+  i8 97
+  i8 105
+  i8 114
+  i8 0
+}
+global @__typeinfo_name__struct_Shell [storage=readonly, binding=weak, object=_ZTS5Shell] = {
+  i8 53
+  i8 83
+  i8 104
+  i8 101
+  i8 108
+  i8 108
+  i8 0
+}
+global @__typeinfo_name__struct_Value [storage=readonly, binding=weak, object=_ZTS5Value] = {
+  i8 53
+  i8 86
+  i8 97
+  i8 108
+  i8 117
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Value [storage=readonly, binding=weak, object=_ZTI5Value] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Value
+}
+global @__rtti_struct_Shell [storage=readonly, binding=weak, object=_ZTI5Shell] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Shell
+  ptr addr @__rtti_struct_Value
+}
+global @__typeinfo_name__struct_Lane [storage=readonly, binding=weak, object=_ZTS4Lane] = {
+  i8 52
+  i8 76
+  i8 97
+  i8 110
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Lane [storage=readonly, binding=weak, object=_ZTI4Lane] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Lane
+  ptr addr @__rtti_struct_Value
+}
+global @__rtti_struct_Pair [storage=readonly, binding=weak, object=_ZTI4Pair] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Pair
+  i32 1
+  i32 2
+  ptr addr @__rtti_struct_Shell
+  i64 -6141
+  ptr addr @__rtti_struct_Lane
+  i64 2
+}
+global @Pair__vtable [storage=readonly, binding=weak, object=_ZTV4Pair] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Pair
+  ptr addr @Value__get
+}
+global @Pair____view__Shell__16__vtable [storage=readonly, binding=internal] = {
+  i64 0
+  i64 -16
+  ptr addr @__rtti_struct_Pair
+  ptr addr @Shell__get
+}
+global @Pair____vtt [storage=readonly, binding=weak, object=_ZTT4Pair, object_root=yes] = {
+  ptr addr @Pair__vtable + 24
+  ptr addr @Pair____view__Shell__16__vtable + 24
+}
+global @Shell__vtable [storage=readonly, binding=weak, object=_ZTV5Shell] = {
+  i64 0
+  ptr addr @__rtti_struct_Shell
+  ptr addr @Shell__get
+}
+global @Lane__vtable [storage=readonly, binding=weak, object=_ZTV4Lane] = {
+  i64 0
+  ptr addr @__rtti_struct_Lane
+  ptr addr @Value__get
+}
+global @Value__vtable [storage=readonly, binding=weak, object=_ZTV5Value] = {
+  i64 0
+  ptr addr @__rtti_struct_Value
+  ptr addr @Value__get
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $pair : obj<32x8>
+  slot $direct : ptr
+  slot $inner : ptr
+
+  block ^entry:
+    %t1 = addr $pair
+    call void @Pair__Pair(%t1)
+    %t2 = addr $pair
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 %t3, 0
+    store typed ptr %t4, $direct
+    %t5 = addr $pair
+    %t6 = index i8 %t5, 16
+    %t7 = index i8 %t6, 0
+    store typed ptr %t7, $inner
+    %t8 = load typed ptr $direct
+    %t9 = index i8 [projection=field] %t8, 8
+    store typed i32 1, %t9
+    %t10 = load typed ptr $inner
+    %t11 = index i8 [projection=field] %t10, 8
+    store typed i32 2, %t11
+    %t12 = load typed ptr $direct
+    %t13 = load typed ptr %t12
+    %t14 = load typed ptr %t13
+    %t15 = call i32 %t14(%t12) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t16 = cmp ne i32 %t15, 1
+    branch %t16, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t17 = load typed ptr $inner
+    %t18 = load typed ptr %t17
+    %t19 = load typed ptr %t18
+    %t20 = call i32 %t19(%t17) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t21 = cmp ne i32 %t20, 102
+    branch %t21, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}
+function @Pair__Pair(%this : ptr [object_bytes=32]) -> void [unwind=no, binding=weak, object=_ZN4PairC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 16
+    call void @Shell__Shell__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Lane__Lane__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = addr @Pair__vtable
+    %t7 = index i8 %t6, 24
+    store typed ptr %t7, %t5
+    %t8 = load typed ptr $this
+    %t9 = load typed ptr %t8
+    %t10 = index i8 %t9, -24
+    %t11 = load typed i64 %t10
+    %t12 = index i8 %t8, %t11
+    %t13 = index i8 %t12, 0
+    %t14 = addr @Pair____view__Shell__16__vtable
+    %t15 = index i8 %t14, 24
+    store typed ptr %t15, %t13
+    return void
+}
+function @Value__get(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN5Value3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @Shell__get(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN5Shell3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 8
+    %t4 = load typed i32 %t3
+    %t5 = binary add nowrap i32 %t4, 100
+    return i32 %t5
+}
+function @Shell__Shell__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ShellC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Value__Value__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Shell__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Lane__Lane__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4LaneC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Value__Value__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Lane__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Value__Value__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ValueC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Value__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}

@@ -1,0 +1,141 @@
+global @copies : i32 [binding=strong] = zero
+global @moves : i32 [binding=strong] = zero
+
+function @choose(%ret : ptr [pass=indirect_result, object_bytes=4], %use_local : u8, %fallback : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z6choosebRK5Value] {
+  slot $use_local : u8
+  slot $fallback : ptr
+  slot $local : obj<4x4>
+
+  block ^entry:
+    store u8 %use_local, $use_local
+    store typed ptr %fallback, $fallback
+    %t1 = addr $local
+    call void @Value__Value(%t1, 11)
+    %t2 = load u8 $use_local
+    branch %t2, ^condobj_then_1, ^condobj_else_2
+
+  block ^condobj_then_1:
+    %t3 = addr $local
+    call void @Value__Value__ov2(%ret, %t3)
+    jump ^condobj_end_3
+
+  block ^condobj_else_2:
+    %t4 = load typed ptr $fallback
+    call void @Value__Value__ov2(%ret, %t4)
+    jump ^condobj_end_3
+
+  block ^condobj_end_3:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fallback : obj<4x4>
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = addr $fallback
+    call void @Value__Value(%t1, 22)
+    %t2 = addr $result
+    %t3 = addr $fallback
+    call void @choose(%t2, 1, %t3)
+    %t4 = addr $result
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 11
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = load typed i32 @copies
+    %t9 = cmp ne i32 %t8, 0
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t12 = load typed i32 @moves
+    %t13 = cmp eq i32 %t12, 0
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t15 = load typed i64 $land__3
+    branch %t15, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t16 = addr $fallback
+    %t17 = index i8 [projection=field] %t16, 0
+    %t18 = load typed i32 %t17
+    %t19 = cmp eq i32 %t18, 22
+    %t20 = cmp ne i64 %t19, 0
+    store typed i64 %t20, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t21 = load typed i64 $land__4
+    branch %t21, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t22 = load typed i32 $cond__1
+    return i32 %t22
+}
+function @Value__Value(%this : ptr [object_bytes=4], %input : i32) -> void [binding=weak, object=_ZN5ValueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %input, $input
+    %t1 = load typed i32 $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Value__Value__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN5ValueC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed i32 @copies
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, @copies
+    return void
+}
+alias object _ZN5ValueC2Ei = @Value__Value
+alias object _ZN5ValueC2ERKS_ = @Value__Value__ov2

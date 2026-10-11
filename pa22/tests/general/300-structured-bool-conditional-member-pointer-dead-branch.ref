@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $h
+    call void @holder_int___holder(%t1)
+    return i32 0
+}
+function @holder_int___holder(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN6holderIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @holder_int___good
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i128 %t3, %t5
+    return void
+}
+function @holder_int___good(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZNK6holderIiE4goodEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 0
+}
+alias object _ZN6holderIiEC2Ev = @holder_int___holder

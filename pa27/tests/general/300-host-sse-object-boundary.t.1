@@ -1,0 +1,44 @@
+extern "C" int printf(const char *, ...);
+
+struct SD { double d; long l; };
+struct FF { float a, b, c; };
+struct DD { double x, y; };
+struct LD { long l; double d; };
+struct IF { int i; float f; };
+struct AL { alignas(16) double d; };
+struct LDB { long double x; };
+struct E {};
+
+// Defined by the host-compiled provider.
+SD host_make(double d, long l);
+double host_use(SD s, FF f, DD d, LD x, AL a, LDB b);
+DD host_swap(DD v);
+extern double (*host_pointer)(SD, FF, DD, LD, AL, LDB);
+double host_many(DD a, DD b, DD c, DD d, DD e, double f);
+double host_calls_back(double (*callback)(SD, FF, IF, E, int));
+LD host_mix_back(LD (*callback)(LD, IF));
+
+// Called by the provider.
+SD make(double d, long l) { SD s = {d, l}; return s; }
+double use(SD s, FF f, IF i, E, int k) { return s.d + s.l + f.a + f.c + i.i + i.f + k; }
+LD mix(LD a, IF b) { LD r = {a.l + b.i, a.d + b.f}; return r; }
+DD swap(DD v) { DD r = {v.y, v.x}; return r; }
+
+int main()
+{
+  SD s = host_make(2.5, 3);
+  FF f = {1, 2, 3};
+  DD d = {0.5, 0.25};
+  LD x = {4, 0.125};
+  AL a = {8};
+  LDB b = {16};
+  DD w = host_swap(DD{1, 2});
+  printf("%g %ld %g %g %g %g\n", s.d, s.l, host_use(s, f, d, x, a, b), w.x, w.y,
+    host_pointer(s, f, d, x, a, b));
+  printf("%g %g\n", host_many(DD{1, 2}, DD{3, 4}, DD{5, 6}, DD{7, 8}, DD{9, 10}, 11),
+    host_calls_back(use));
+  LD m = host_mix_back(mix);
+  DD back = swap(DD{6, 7});
+  printf("%ld %g %g %g\n", m.l, m.d, back.x, back.y);
+  return 0;
+}

@@ -1,0 +1,65 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $sink : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $sink
+    %t2 = addr $sink
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 4, %t3
+    %t4 = addr $sink
+    %t5 = addr @finish
+    %t6 = call ptr @Sink__operator__(%t4, %t5)
+    %t7 = addr $sink
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 7
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @finish(%stream : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z6finishIcEiR6StreamIT_E] {
+  slot $stream : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 3
+    return i32 %t4
+}
+function @Sink__operator__(%this : ptr [object_bytes=4], %fn : ptr) -> ptr [binding=weak, object=_ZN4SinklsEPFiR6StreamIcEE, inline_hint=yes] {
+  slot $this : ptr
+  slot $fn : ptr
+  slot $stream : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %fn, $fn
+    %t1 = addr $stream
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = addr $stream
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = addr $stream
+    %t8 = load typed ptr $fn
+    %t9 = call i32 %t8(%t7) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> i32
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    store typed i32 %t9, %t11
+    %t12 = load typed ptr $this
+    return ptr %t12
+}

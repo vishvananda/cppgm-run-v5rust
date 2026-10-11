@@ -1,0 +1,34 @@
+extern "C" void _Exit(int);
+
+namespace std {
+typedef void (*terminate_handler)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+}  // namespace std
+
+void mark_terminate()
+{
+  _Exit(7);
+}
+
+template<class T>
+struct carrier
+{
+  void fire() noexcept(sizeof(T) < 100)
+  {
+    throw 1;
+  }
+};
+
+int main()
+{
+  std::set_terminate(mark_terminate);
+  try
+  {
+    carrier<int>().fire();
+  }
+  catch (...)
+  {
+    return 4;
+  }
+  return 3;
+}

@@ -1,0 +1,28 @@
+function @leaf(%cond : i1, %p : ptr) -> obj<8x8> {
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    branch %cond, ^then, ^else
+
+  block ^then:
+    %t1 = addr $retobj__1
+    store ptr %p, %t1
+    return obj<8x8> $retobj__1
+
+  block ^else:
+    %t2 = addr $retobj__1
+    store ptr 0, %t2
+    return obj<8x8> $retobj__1
+}
+function @caller(%cond : i1, %p : ptr, %out : ptr) -> void {
+  block ^entry:
+    branch %cond, ^inline_cont_2, ^else_1
+
+  block ^else_1:
+    jump ^inline_cont_2
+
+  block ^inline_cont_2:
+    %t1 = phi ptr [^else_1: 0, ^entry: %p]
+    store ptr %t1, %out
+    return void
+}

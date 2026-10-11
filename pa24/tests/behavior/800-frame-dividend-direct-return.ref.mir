@@ -1,0 +1,94 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @division_value
+  storage scalar i64
+  init i64 160
+
+global @guard_value
+  storage scalar i64
+  init i64 7
+
+function @may_unwind
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @observe_values
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @divide_frame_value
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    return i64 -> rax
+  frame
+    stack_size 96
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    load.i64 rbx, @division_value
+    eh_push ^cleanup, 0
+    call @may_unwind [args=()]
+    eh_pop
+    mov r11, 5
+    mov rax, rbx
+    cqo
+    idiv r11
+    ret rax
+
+  block ^cleanup
+    resume
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 10
+    mov rsi, 20
+    mov rdx, 30
+    mov rcx, 40
+    mov r8, 50
+    call @divide_frame_value [args=(rcx,rdx,rsi,rdi,r8)]
+    mov rdx, 32
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

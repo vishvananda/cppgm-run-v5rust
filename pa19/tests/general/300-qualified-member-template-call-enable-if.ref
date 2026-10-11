@@ -1,0 +1,24 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $p : obj<1x1>
+
+  block ^entry:
+    store typed i32 1, $x
+    %t1 = addr $p
+    %t2 = addr $x
+    %t3 = addr $x
+    call void @pair_like_int_int___pair_like(%t1, %t2, %t3)
+    return i32 0
+}
+function @pair_like_int_int___pair_like(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=4], %__param2 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN9pair_likeIiiEC1I5checkIiiETnN9enable_ifIXclsrT_1fIRKiS7_EEEiE4typeELi0EEES7_S7_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return void
+}
+alias object _ZN9pair_likeIiiEC2I5checkIiiETnN9enable_ifIXclsrT_1fIRKiS7_EEEiE4typeELi0EEES7_S7_ = @pair_like_int_int___pair_like

@@ -1,0 +1,7 @@
+// PA29 README (builtins hosted headers use): __builtin_object_size(p, 0),
+// which <istream>'s operator>>(istream&, char*) calls when __OPTIMIZE__ is
+// defined, yields the object's size or (size_t)-1 and does not evaluate its
+// operand
+static int evaluated;
+static char* touch(char* p) { ++evaluated; return p; }
+int main() { char b[4]; unsigned long n = __builtin_object_size(touch(b), 0); return (n == 4 || n == (unsigned long)-1) && evaluated == 0 ? 0 : 1; }

@@ -1,0 +1,7 @@
+declare global @is_complete_complete_void___value : u8 [binding=weak, object=_ZN11is_completeI8completevE5valueE]
+declare global @is_complete_incomplete_void___value : u8 [binding=weak, object=_ZN11is_completeI10incompletevE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

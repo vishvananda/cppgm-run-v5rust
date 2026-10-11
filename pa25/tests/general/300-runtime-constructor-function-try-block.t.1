@@ -1,0 +1,27 @@
+int init_calls;
+
+int init_value(int x)
+{
+  ++init_calls;
+  return x;
+}
+
+struct Box {
+  int value;
+  Box(int x);
+};
+
+Box::Box(int x)
+try
+: value(init_value(x))
+{
+}
+catch (...)
+{
+}
+
+int main()
+{
+  Box box(7);
+  return init_calls == 1 && box.value == 7 ? 0 : 1;
+}

@@ -1,0 +1,90 @@
+namespace std {
+template<class T>
+struct allocator {
+};
+
+template<class T, class Alloc = allocator<T> >
+struct vector {
+};
+
+template<class T>
+struct less {
+};
+
+template<class First, class Second>
+struct pair {
+};
+
+template<class T>
+struct char_traits {
+};
+
+namespace __cxx11 {
+template<class CharT, class Traits = char_traits<CharT>, class Alloc = allocator<CharT> >
+struct basic_string {
+};
+}
+
+template<class Key,
+         class Value,
+         class Compare = less<Key>,
+         class Alloc = allocator<pair<const Key, Value> > >
+struct map {
+};
+}
+
+namespace model {
+struct Argument {
+};
+
+struct Partial {
+};
+
+struct Services {
+};
+
+struct Scope {
+};
+}
+
+namespace host_substitution_probe {
+namespace {
+template<class Partial>
+__attribute__((noinline, used))
+bool match_like(model::Services & services,
+                model::Scope & scope,
+                const Partial & partial,
+                const std::vector<model::Argument> & actual,
+                std::vector<model::Argument> & deduced,
+                unsigned long & score,
+                std::map<std::__cxx11::basic_string<char,
+                                                    std::char_traits<char>,
+                                                    std::allocator<char> >,
+                         unsigned long> * pack_sizes)
+{
+  return pack_sizes != 0;
+}
+}
+}
+
+int main()
+{
+  model::Services services;
+  model::Scope scope;
+  model::Partial partial;
+  std::vector<model::Argument> actual;
+  std::vector<model::Argument> deduced;
+  unsigned long score = 0;
+  std::map<std::__cxx11::basic_string<char,
+                                      std::char_traits<char>,
+                                      std::allocator<char> >,
+           unsigned long> pack_sizes;
+  return host_substitution_probe::match_like(
+      services,
+      scope,
+      partial,
+      actual,
+      deduced,
+      score,
+      &pack_sizes) ? 0 : 1;
+}

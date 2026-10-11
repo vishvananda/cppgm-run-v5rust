@@ -1,0 +1,7 @@
+// PA29 README (GNU inline bodies, emission deferred) / GCC gnu_inline: an
+// extern inline gnu_inline definition is for inlining only and never emitted;
+// the address names the external abs from libc; expect exit 0
+extern "C" int abs(int);
+extern "C++" int library_abs(int) __asm__("abs");
+extern __inline __attribute__((__gnu_inline__)) int library_abs(int x) { return 42; }
+int main() { int (*p)(int) = library_abs; return p(-3) == 3 ? 0 : 1; }

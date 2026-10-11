@@ -1,0 +1,101 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @state
+  storage data
+  item i64 0
+  item i64 0
+
+global @shift_state
+  storage data
+  item i64 0
+  item i64 0
+
+function @loop_shift
+  abi
+    param %result -> rdi : ptr
+    param %value -> rsi : i64
+    param %limit -> rdx : i64
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    lea rbx, [rdi+8]
+    store.i64 [rbx], 0
+    jmp ^condition
+
+  block ^condition
+    load.i64 r12, [rbx]
+    cmp.i64 r12, rdx
+    jb ^body
+    jmp ^done
+
+  block ^body
+    mov r8, r12
+    imul r8, 8
+    mov rcx, r8
+    mov r8, rsi
+    shr r8, rcx
+    and r8, 255
+    store.i64 [rdi], r8
+    mov r8, r12
+    add r8, 1
+    store.i64 [rbx], r8
+    jmp ^condition
+
+  block ^done
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    store.i64 @state+8, 0
+    jmp ^condition
+
+  block ^condition
+    load.i64 r8, @state+8
+    cmp.i64 r8, 2
+    jb ^body
+    jmp ^done
+
+  block ^body
+    store.i64 @state, 7
+    mov r9, r8
+    add r9, 1
+    store.i64 @state+8, r9
+    jmp ^condition
+
+  block ^done
+    mov rdx, 7
+    cmp.i64 @state, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov r12, @shift_state
+    mov rdi, r12
+    mov rsi, 118046
+    mov rdx, 3
+    call @loop_shift [args=(rdx,rsi,rdi)]
+    mov rdx, 1
+    cmp.i64 [r12], rdx
+    setne r8
+    movzx r8, r8
+    or rbx, r8
+    sext.i32 rbx
+    ret rbx

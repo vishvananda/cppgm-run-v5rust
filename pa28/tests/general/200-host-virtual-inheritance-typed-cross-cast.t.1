@@ -1,0 +1,34 @@
+struct Root {
+  int payload;
+
+  Root() : payload(0) {}
+  virtual ~Root() {}
+};
+
+struct Left : virtual Root {
+  virtual ~Left() {}
+};
+
+struct Right : virtual Root {
+  virtual ~Right() {}
+
+  int value()
+  {
+    return payload;
+  }
+};
+
+struct Leaf : Left, Right {
+  Leaf()
+  {
+    payload = 9;
+  }
+};
+
+int main()
+{
+  Leaf leaf;
+  Left * left = &leaf;
+  Right * right = dynamic_cast<Right *>(left);
+  return right && right->value() == 9 ? 0 : 1;
+}

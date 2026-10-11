@@ -1,0 +1,52 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @owner_int___nested__nested(%t1, 2)
+    %t2 = addr $value
+    %t3 = call i32 @owner_int___nested__add(%t2, 3)
+    %t4 = cmp eq i32 %t3, 5
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @owner_int___nested__nested(%this : ptr [object_bytes=4], %value : i32) -> void [binding=weak, object=_ZN5ownerIiE6nestedC1IiEET_] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @owner_int___nested__add(%this : ptr [object_bytes=4], %value : i32) -> i32 [binding=weak, object=_ZN5ownerIiE6nested3addIiEEiT_] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 $value
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}
+alias object _ZN5ownerIiE6nestedC2IiEET_ = @owner_int___nested__nested

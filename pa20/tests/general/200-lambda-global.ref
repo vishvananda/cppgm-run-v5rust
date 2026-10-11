@@ -1,0 +1,22 @@
+global @g [binding=internal, object=g] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @g
+    %t2 = call i32 @__lambda1__operator__(%t1)
+    return i32 %t2
+}
+function @__lambda1__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZNK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @g
+    return void
+}

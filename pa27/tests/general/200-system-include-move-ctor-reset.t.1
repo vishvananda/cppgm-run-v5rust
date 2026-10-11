@@ -1,0 +1,17 @@
+#include <200-system-include-move-ctor-reset.helper.h>
+
+static long storage;
+
+int main()
+{
+  SystemMoveData source;
+  source.ptr = &storage;
+  SystemMoveData moved(static_cast<SystemMoveData &&>(source));
+  if(moved.ptr != &storage) {
+    return 1;
+  }
+  if(source.ptr != 0) {
+    return 2;
+  }
+  return 0;
+}

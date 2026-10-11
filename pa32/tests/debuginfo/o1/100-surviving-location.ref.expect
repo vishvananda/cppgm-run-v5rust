@@ -1,0 +1,15 @@
+# budget from 100-surviving-location.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 4
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @probe
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @probe
+none(/!dbg\((?!(?:calc\.cpp, 10, 6|calc\.cpp, 11, 4|calc\.cpp, 12, 2|calc\.cpp, 13, 2)\))/) in @probe
+none(/^return\b(?!.*!dbg\((?:calc\.cpp, 13, 2)\))/) in @probe

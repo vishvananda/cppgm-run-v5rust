@@ -1,0 +1,36 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call i8 @first(%t1)
+    %t3 = convert sext i32 i8 %t2
+    %t4 = cmp eq i32 %t3, 120
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @first(%p : ptr) -> i8 [binding=weak, object=_Z5firstIcET_PKS0_] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load i8 %t1
+    return i8 %t2
+}

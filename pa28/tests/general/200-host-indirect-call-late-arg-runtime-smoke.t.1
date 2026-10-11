@@ -1,0 +1,38 @@
+struct Buffer {
+  unsigned char bytes[1];
+  Buffer() { bytes[0] = 7; }
+  __attribute__((noinline)) const unsigned char *data() const { return bytes; }
+  __attribute__((noinline)) unsigned long size() const { return 1; }
+};
+
+struct Out {
+  virtual void emit(const char *src,
+                    unsigned long num,
+                    int type,
+                    const unsigned char *data,
+                    unsigned long nbytes) = 0;
+};
+
+unsigned long g_num = 0;
+int g_type = 0;
+unsigned long g_nbytes = 0;
+
+struct Impl : Out {
+  __attribute__((noinline)) void emit(const char *,
+                                      unsigned long num,
+                                      int type,
+                                      const unsigned char *,
+                                      unsigned long nbytes) {
+    g_num = num;
+    g_type = type;
+    g_nbytes = nbytes;
+  }
+};
+
+int main() {
+  Impl impl;
+  Out *out = &impl;
+  Buffer buffer;
+  out->emit("", 1, 13, buffer.data(), buffer.size());
+  return (g_num == 1 && g_type == 13 && g_nbytes == 1) ? 0 : 1;
+}

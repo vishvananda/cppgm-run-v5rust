@@ -1,0 +1,19 @@
+namespace api
+{
+extern "C"
+{
+extern const void *alias;
+}
+}
+
+namespace api
+{
+__attribute__((weak)) const void *alias = 0;
+}
+
+const void *second_alias();
+
+int main()
+{
+  return api::alias == 0 && second_alias() == 0 ? 0 : 1;
+}

@@ -1,0 +1,10 @@
+#include <locale>
+#include <sstream>
+
+int main()
+{
+  std::ostringstream out;
+  std::locale loc = out.getloc();
+  const std::num_put<char> & facet = std::use_facet<std::num_put<char> >(loc);
+  return &facet ? 0 : 1;
+}

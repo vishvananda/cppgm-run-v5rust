@@ -1,0 +1,88 @@
+global @identity_address : ptr [binding=strong] = addr @identity
+global @result_address : ptr [binding=strong] = addr @result
+
+function @selected(%__param0 : f64) -> i64 [binding=strong, object=_Z8selectedd] {
+  slot $__param0 : f64
+
+  block ^entry:
+    store typed f64 %__param0, $__param0
+    return i64 7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+  slot $refarg__2 : i32
+  slot $refarg__3 : i32
+  slot $lor__4 : i64
+
+  block ^entry:
+    store typed i32 2, $refarg__2
+    %t1 = addr $refarg__2
+    store typed i32 9, $refarg__3
+    %t2 = addr $refarg__3
+    %t3 = call i32 @diff(%t1, %t2)
+    %t4 = cmp ne i32 %t3, 7
+    branch %t4, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t5 = call i32 @identity(7)
+    %t6 = cmp ne i32 %t5, 7
+    %t7 = cmp ne i64 %t6, 0
+    store typed i64 %t7, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t8 = load typed i64 $lor__1
+    branch %t8, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t9 = call i64 @result(0)
+    %t10 = cmp ne i64 %t9, 7
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $lor__4
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__4
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t12 = load typed i64 $lor__4
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}
+function @identity(%value : i32) -> i32 [binding=weak, object=_Z8identityIiEDtfp_ET_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+function @result(%value : i32) -> i64 [binding=weak, object=_Z6resultIiEDTcl8selectedfp_EET_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = convert sitofp f64 i32 %t1
+    %t3 = call i64 @selected(%t2)
+    return i64 %t3
+}
+function @diff(%x : ptr [pass=by_address, object_bytes=4], %y : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z4diffIiiEDTmifp0_fp_ERKT_RKT0_, inline_hint=yes] {
+  slot $x : ptr
+  slot $y : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    %t1 = load typed ptr $y
+    %t2 = load typed i32 %t1
+    %t3 = load typed ptr $x
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t2, %t4
+    return i32 %t5
+}

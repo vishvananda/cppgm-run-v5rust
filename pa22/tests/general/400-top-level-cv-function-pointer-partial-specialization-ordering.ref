@@ -1,0 +1,11 @@
+declare global @function_pointer_select_void___const___value : i32 [binding=weak, object=_ZN23function_pointer_selectIKPFvvEE5valueE]
+declare global @function_pointer_select_void___volatile___value : i32 [binding=weak, object=_ZN23function_pointer_selectIVPFvvEE5valueE]
+declare global @function_pointer_select_void___constvolatile___value : i32 [binding=weak, object=_ZN23function_pointer_selectIVKPFvvEE5valueE]
+declare global @member_function_pointer_select_constvoid__target______value : i32 [binding=weak, object=_ZN30member_function_pointer_selectIKM6targetFvvEE5valueE]
+declare global @member_function_pointer_select_volatilevoid__target______value : i32 [binding=weak, object=_ZN30member_function_pointer_selectIVM6targetFvvEE5valueE]
+declare global @member_function_pointer_select_constvolatilevoid__target______value : i32 [binding=weak, object=_ZN30member_function_pointer_selectIVKM6targetFvvEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

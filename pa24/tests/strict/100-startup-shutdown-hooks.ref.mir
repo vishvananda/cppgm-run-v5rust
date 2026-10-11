@@ -1,0 +1,125 @@
+machine_ir x86_64 linux
+
+startup
+    call @__cppgm_init [args=()]
+    call @main [args=()]
+    mov r12, rax
+    atexit_drain
+    call @__cppgm_fini [args=()]
+    mov rdi, r12
+    exit
+
+global @g
+  storage scalar i64
+  init i64 0
+
+function @__cppgm_init
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 @g, 5
+    ret
+
+function @__cppgm_fini
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp.i64 @g, 8
+    je ^finish
+    jmp ^fail
+
+  block ^fail
+    store.i64 [0], 1
+    ret
+
+  block ^finish
+    store.i64 @g, 9
+    ret
+
+function @first
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp.i64 @g, 7
+    je ^finish
+    jmp ^fail
+
+  block ^fail
+    store.i64 [0], 1
+    ret
+
+  block ^finish
+    store.i64 @g, 8
+    ret
+
+function @third
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp.i64 @g, 6
+    je ^finish
+    jmp ^fail
+
+  block ^fail
+    store.i64 [0], 1
+    ret
+
+  block ^finish
+    store.i64 @g, 7
+    ret
+
+function @second
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 @g, 6
+    mov rdi, @third
+    call @atexit [args=(rdi)]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @first
+    call @atexit [args=(rdi)]
+    mov rdi, @second
+    call @atexit [args=(rdi)]
+    load.i64 rax, @g
+    ret rax

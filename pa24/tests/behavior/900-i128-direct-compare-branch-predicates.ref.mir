@@ -1,0 +1,53 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp_branch.eq.i128 0x00000000000000010000000000000001, 0x00000000000000010000000000000001, ^ne, ^bad
+
+  block ^ne
+    cmp_branch.ne.i128 0x00000000000000010000000000000001, 0x00000000000000010000000000000002, ^lt, ^bad
+
+  block ^lt
+    cmp_branch.lt.i128 0xffffffffffffffff0000000000000000, 0, ^le, ^bad
+
+  block ^le
+    cmp_branch.le.i128 0xffffffffffffffff0000000000000000, 0xffffffffffffffff0000000000000000, ^gt, ^bad
+
+  block ^gt
+    cmp_branch.gt.i128 0x00000000000000010000000000000000, 0, ^ge, ^bad
+
+  block ^ge
+    cmp_branch.ge.i128 0x00000000000000010000000000000000, 0x00000000000000010000000000000000, ^ult, ^bad
+
+  block ^ult
+    cmp_branch.ult.i128 0x00000000000000010000000000000000, 0x00000000000000010000000000000001, ^ule, ^bad
+
+  block ^ule
+    cmp_branch.ule.i128 0x00000000000000010000000000000000, 0x00000000000000010000000000000000, ^ugt, ^bad
+
+  block ^ugt
+    cmp_branch.ugt.i128 -1, 0x00000000000000010000000000000000, ^uge, ^bad
+
+  block ^uge
+    cmp_branch.uge.i128 -1, -1, ^good, ^bad
+
+  block ^bad
+    mov rax, 1
+    ret rax
+
+  block ^good
+    mov rax, 0
+    ret rax

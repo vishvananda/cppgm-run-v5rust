@@ -1,0 +1,18 @@
+global @deferred : ptr [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @Probe_int___value()
+    %t2 = cmp ne i32 %t1, 7
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}
+function @Probe_int___value() -> i32 [binding=weak, object=_ZN5ProbeIiE5valueEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @Traits_int___value()
+    return i32 %t1
+}
+function @Traits_int___value() -> i32 [binding=weak, object=_ZN6TraitsIiE5valueEv, inline_hint=yes] {
+  block ^entry:
+    return i32 7
+}

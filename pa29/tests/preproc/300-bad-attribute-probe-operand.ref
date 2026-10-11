@@ -1,0 +1,2 @@
+preproc 1
+sof tests/preproc/300-bad-attribute-probe-operand.t

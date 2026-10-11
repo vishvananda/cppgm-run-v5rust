@@ -1,0 +1,38 @@
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 2, $x
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t1 = load typed i32 $x
+    %t2 = cmp gt i32 %t1, 0
+    branch %t2, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t3 = load typed i32 $x
+    %t4 = binary sub nowrap i32 %t3, 1
+    store typed i32 %t4, $x
+    %t5 = load typed i32 $x
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    jump ^while_end_3
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    jump ^while_cond_1
+
+  block ^while_end_3:
+    %t7 = load typed i32 $x
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}

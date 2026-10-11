@@ -1,0 +1,36 @@
+namespace std {
+typedef void (*unexpected_handler)();
+unexpected_handler set_unexpected(unexpected_handler) throw();
+}  // namespace std
+
+void convert_unexpected()
+{
+  throw 1.0;
+}
+
+void only_double() throw(double)
+{
+  throw 3;
+}
+
+int main()
+{
+  std::set_unexpected(convert_unexpected);
+  try
+  {
+    only_double();
+  }
+  catch (double value)
+  {
+    return value == 1.0 ? 0 : 1;
+  }
+  catch (int)
+  {
+    return 2;
+  }
+  catch (...)
+  {
+    return 3;
+  }
+  return 4;
+}

@@ -1,0 +1,80 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $dst : obj<8x4>
+  slot $src : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $dst
+    %t2 = addr $src
+    %t3 = addr $dst
+    %t4 = index i8 [projection=field] %t3, 4
+    store typed i32 1, %t4
+    %t5 = addr $src
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 2, %t6
+    %t7 = addr $dst
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = addr $dst
+    %t10 = addr $src
+    call void @box_node___demand(%t8, %t9, %t10)
+    %t11 = addr $dst
+    %t12 = index i8 [projection=field] %t11, 4
+    %t13 = load typed i32 %t12
+    %t14 = cmp ne i32 %t13, 2
+    %t15 = convert trunc i32 i64 %t14
+    return i32 %t15
+}
+function @box_node___demand(%this : ptr [object_bytes=1], %dst : ptr [pass=by_address, object_bytes=8], %src : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN3boxI4nodeE6demandERS0_RKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $dst : ptr
+  slot $src : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %dst, $dst
+    store typed ptr %src, $src
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $dst
+    %t3 = load typed ptr $src
+    call void @box_node___assign(%t1, %t2, %t3)
+    return void
+}
+function @box_node___assign(%this : ptr [object_bytes=1], %dst : ptr [pass=by_address, object_bytes=8], %src : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN3boxI4nodeE6assignIS0_EEvRT_RKS3_] {
+  slot $this : ptr
+  slot $dst : ptr
+  slot $src : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %dst, $dst
+    store typed ptr %src, $src
+    %t1 = load typed ptr $dst
+    %t2 = load typed ptr $src
+    %t3 = call ptr @node__operator_(%t1, %t2)
+    return void
+}
+function @node__operator_(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> ptr [unwind=no, binding=weak, object=_ZN4nodeaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 4
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @box_node___operator_(%this : ptr [object_bytes=1], %other : ptr [pass=by_address, object_bytes=1]) -> ptr [unwind=no, binding=weak, object=_ZN3boxI4nodeEaSERKS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    return ptr %t1
+}

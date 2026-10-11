@@ -1,0 +1,44 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition ns
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier box
+        class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier A
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier B
+      class-specifier andx
+        class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_TYPENAME:typename
+          identifier T
+    alias-declaration left_alias
+      type-id
+        type-specifier-seq
+          type-name ns::andx<ns::box<T>,int>
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_TYPENAME:typename
+          identifier T
+    alias-declaration right_alias
+      type-id
+        type-specifier-seq
+          type-name ns::andx<int,ns::box<T>>
+end translation unit

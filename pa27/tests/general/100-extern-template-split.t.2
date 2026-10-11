@@ -1,0 +1,8 @@
+#include "100-extern-template-split.helper.h"
+
+int one();
+
+int main()
+{
+  return one() + extern_template_add<int>(31) - 43;
+}

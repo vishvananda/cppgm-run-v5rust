@@ -1,0 +1,13 @@
+namespace {
+thread_local void * g_ptr;
+}
+
+void ** get_ptr_addr()
+{
+  return &g_ptr;
+}
+
+int main()
+{
+  return *get_ptr_addr() != 0;
+}

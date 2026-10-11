@@ -1,0 +1,48 @@
+void operator_names()
+{
+	operator+;
+	operator-;
+	operator*;
+	operator/;
+	operator%;
+	operator^;
+	operator&;
+	operator|;
+	operator~;
+	operator!;
+	operator=;
+	operator<;
+	operator>;
+	operator+=;
+	operator-=;
+	operator*=;
+	operator/=;
+	operator^=;
+	operator&=;
+	operator|=;
+	operator>>=;
+	operator<<=;
+	operator==;
+	operator!=;
+	operator<=;
+	operator>=;
+	operator&&;
+	operator||;
+	operator++;
+	operator--;
+	operator,;
+	operator->*;
+	operator->;
+	operator>>;
+	operator<<;
+	operator%=;
+	operator new;
+	operator delete;
+	operator [];
+	operator();
+	operator new[];
+	operator delete[];
+	operator C;
+	operator int;
+	operator"" _foo;
+}

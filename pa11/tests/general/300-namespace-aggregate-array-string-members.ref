@@ -1,0 +1,115 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 99
+  i8 111
+  i8 115
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 114
+  i8 114
+  i8 0
+}
+global @__strlit__3 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 116
+  i8 97
+  i8 110
+  i8 50
+  i8 0
+}
+global @__strlit__4 [storage=readonly, binding=internal] = {
+  i8 114
+  i8 114
+  i8 114
+  i8 0
+}
+global @__strlit__5 [storage=readonly, binding=internal] = {
+  i8 99
+  i8 98
+  i8 114
+  i8 116
+  i8 0
+}
+global @families [storage=readonly, binding=internal, object=_ZL8families] = {
+  ptr addr @__strlit__1
+  ptr addr @__strlit__2
+  ptr addr @__strlit__3
+  ptr addr @__strlit__4
+  ptr addr @__strlit__5
+  ptr addr @__strlit__2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr @families
+    %t2 = binary mul i64 0, 16
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = index i8 [projection=array_element] %t5, 0
+    %t7 = load i8 %t6
+    %t8 = convert sext i32 i8 %t7
+    %t9 = cmp eq i32 %t8, 97
+    branch %t9, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t10 = addr @families
+    %t11 = binary mul i64 1, 16
+    %t12 = index i8 [projection=array_element] %t10, %t11
+    %t13 = index i8 [projection=field] %t12, 8
+    %t14 = load typed ptr %t13
+    %t15 = index i8 [projection=array_element] %t14, 2
+    %t16 = load i8 %t15
+    %t17 = convert sext i32 i8 %t16
+    %t18 = cmp eq i32 %t17, 114
+    %t19 = cmp ne i64 %t18, 0
+    store typed i64 %t19, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t20 = load typed i64 $land__2
+    branch %t20, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t21 = addr @families
+    %t22 = binary mul i64 2, 16
+    %t23 = index i8 [projection=array_element] %t21, %t22
+    %t24 = index i8 [projection=field] %t23, 0
+    %t25 = load typed ptr %t24
+    %t26 = index i8 [projection=array_element] %t25, 0
+    %t27 = load i8 %t26
+    %t28 = convert sext i32 i8 %t27
+    %t29 = cmp eq i32 %t28, 99
+    %t30 = cmp ne i64 %t29, 0
+    store typed i64 %t30, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t31 = load typed i64 $land__3
+    branch %t31, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t32 = load typed i32 $cond__1
+    return i32 %t32
+}

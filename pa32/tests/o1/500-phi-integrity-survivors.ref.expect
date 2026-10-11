@@ -1,0 +1,16 @@
+# budget from 500-phi-integrity-survivors.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 15
+blocks <= 10
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 5
+instructions <= 7 in @repair_fold_target_phi
+instructions <= 4 in @inline_after_dead_predecessor
+instructions <= 9 in @cross_slot_needed_phi
+
+# outcomes from 500-phi-integrity-survivors.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @stale_phi_callee)
+none(load)
+none(store)
+absent(@stale_phi_callee)

@@ -1,0 +1,49 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_B [storage=readonly, binding=weak, object=_ZTS1B] = {
+  i8 49
+  i8 66
+  i8 0
+}
+global @__rtti_struct_B [storage=readonly, binding=weak, object=_ZTI1B] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_B
+}
+global @B__vtable [storage=readonly, binding=weak, object=_ZTV1B] = {
+  i64 0
+  ptr addr @__rtti_struct_B
+  ptr addr @B__f
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $b
+    call void @B__B(%t1)
+    %t2 = addr $b
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr %t3
+    %t5 = call i32 %t4(%t2) as (%arg0 : ptr [object_bytes=8]) -> i32
+    %t6 = binary sub nowrap i32 %t5, 1
+    return i32 %t6
+}
+function @B__B(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1BC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @B__f(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK1B1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+alias object _ZN1BC2Ev = @B__B

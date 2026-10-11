@@ -1,0 +1,60 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition std
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier U
+      class-specifier pair
+        class-key KW_STRUCT:struct
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_VOID:void
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier swap
+                parameter-clause
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier TT_IDENTIFIER:pair
+                    declarator
+                      ptr-operator OP_AMP:&
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier I
+    class-specifier sub_match
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name std::pair<I,I>
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        declarator
+          identifier swap
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:sub_match
+              declarator
+                ptr-operator OP_AMP:&
+                identifier s
+        compound-statement
+          expression-statement
+            call-expression
+              member-expression OP_ARROW:->
+                keyword-literal KW_THIS:this
+                identifier std::pair<I,I>::swap
+              argument-list
+                id-expression s
+end translation unit

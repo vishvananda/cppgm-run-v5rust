@@ -1,0 +1,135 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+    class-specifier _And
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONSTEXPR:constexpr
+          decl-specifier KW_BOOL:bool
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              keyword-literal KW_TRUE:true
+  class-specifier less_tag
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+    class-specifier desugars_to
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+    class-specifier has_default_three_way_comparator
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONSTEXPR:constexpr
+          decl-specifier KW_BOOL:bool
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              keyword-literal KW_TRUE:true
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_VOID:void
+    class-specifier enable_if
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier enable_if<true,T>
+      class-key KW_STRUCT:struct
+      alias-declaration type
+        type-id
+          type-specifier-seq
+            type-name T
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Ts
+    alias-declaration enable_if_t
+      type-id
+        type-specifier-seq
+          type-name enable_if<true,int>::type
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier Comparator
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier LHS
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier RHS
+        type-parameter
+          parameter-key KW_CLASS:class
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_VOID:void
+    class-specifier comparator
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier Comparator
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier LHS
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier RHS
+    class-specifier comparator<Comparator,LHS,RHS,enable_if_t<_And<desugars_to<less_tag,Comparator,LHS,RHS>,has_default_three_way_comparator<LHS,RHS>>::value>>
+      class-key KW_STRUCT:struct
+      special-member-definition comparator
+        declarator
+          identifier comparator
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_CONST:const
+                decl-specifier TT_IDENTIFIER:Comparator
+              declarator
+                ptr-operator OP_AMP:&
+        compound-statement
+end translation unit

@@ -1,0 +1,10 @@
+// Without -std, cppgm++ compiles the GNU dialect (gnu++11): __STRICT_ANSI__ is
+// not defined, and libstdc++ makes __int128 an integral type
+#ifdef __STRICT_ANSI__
+#error "-std=gnu++11 does not define __STRICT_ANSI__"
+#endif
+#include <type_traits>
+#if defined(__GLIBCXX__)
+static_assert(std::is_integral<__int128>::value, "GNU libstdc++: __int128 is an integral type");
+#endif
+int main() { return 0; }

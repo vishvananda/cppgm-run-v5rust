@@ -1,0 +1,4 @@
+#include "200-host-weak-thread-local-selected.helper.h"
+int from_weak() { printf("weak init\n"); return 1; }
+__attribute__((weak)) thread_local int w = from_weak();
+int read_u2() { return w; }

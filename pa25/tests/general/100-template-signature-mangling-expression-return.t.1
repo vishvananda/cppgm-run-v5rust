@@ -1,0 +1,10 @@
+// Itanium C++ ABI 5.1.5, 5.1.8, N3485 14.5.6.1: a function template
+// specialization is mangled with the template's unsubstituted signature, so
+// g<int> from enable_if<(sizeof(U) >= 4)> and from enable_if<(sizeof(U) <=
+// 4)>, different templates in the two units, get different names
+// (..XgestT_Li4EE.. and ..XlestT_Li4EE..)
+template<bool B, class T = void> struct enable_if {};
+template<class T> struct enable_if<true, T> { typedef T type; };
+template<class U> typename enable_if<(sizeof(U) >= 4), int>::type g(U) { return 10; }
+int from_b();
+int main() { int y = g(1); int z = from_b(); return y == 10 && z == 20 ? 0 : 1; }

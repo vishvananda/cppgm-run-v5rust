@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @g(1, 97)
+    %t2 = cmp ne i32 %t1, 2
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}
+function @g(%args : i32, %args__pack2 : i8) -> i32 [binding=weak, object=_Z1gIJicEEiDpT_] {
+  slot $args : i32
+  slot $args__pack2 : i8
+  slot $f : obj<1x1>
+
+  block ^entry:
+    store typed i32 %args, $args
+    store i8 %args__pack2, $args__pack2
+    %t1 = addr $f
+    %t2 = addr $f
+    %t3 = load typed i32 $args
+    %t4 = load i8 $args__pack2
+    %t5 = call i64 @__lambda_g_t19_24__operator__(%t2, %t3, %t4)
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}
+function @__lambda_g_t19_24__operator__(%this : ptr [object_bytes=1], %args2 : i32, %args2__pack2 : i8) -> i64 [binding=internal, object=_ZZ1gIJicEEiDpT_ENKUlicE_clEic, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $args2 : i32
+  slot $args2__pack2 : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %args2, $args2
+    store i8 %args2__pack2, $args2__pack2
+    %t1 = const i64 2
+    return i64 %t1
+}

@@ -1,0 +1,70 @@
+function @use_service(%ioc : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_Z11use_serviceI7serviceERT_R10io_context] {
+  slot $ioc : ptr
+
+  block ^entry:
+    store typed ptr %ioc, $ioc
+    %t1 = load typed ptr $ioc
+    %t2 = index i8 [projection=field] %t1, 4
+    return ptr %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $c
+    call void @context__context(%t1)
+    %t2 = addr $c
+    %t3 = call ptr @use_service__2(%t2)
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 3
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @context__context(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7contextC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @service__service(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 3, %t5
+    return void
+}
+function @use_service__2(%e : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z11use_serviceI7serviceERT_R7context] {
+  slot $e : ptr
+
+  block ^entry:
+    store typed ptr %e, $e
+    %t1 = load typed ptr $e
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @service__service(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7serviceC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN7contextC2Ev = @context__context
+alias object _ZN7serviceC2Ev = @service__service

@@ -1,0 +1,49 @@
+int depth = 0;
+
+struct Match {};
+struct Other {};
+
+struct Guard
+{
+  Guard()
+  {
+    ++depth;
+  }
+
+  ~Guard()
+  {
+    --depth;
+  }
+};
+
+int fail()
+{
+  throw Other();
+  return 1;
+}
+
+int inner()
+{
+  try
+  {
+    Guard guard;
+    return fail();
+  }
+  catch(Match &)
+  {
+    return 10;
+  }
+}
+
+int main()
+{
+  try
+  {
+    inner();
+  }
+  catch(Other &)
+  {
+    return depth;
+  }
+  return 20;
+}

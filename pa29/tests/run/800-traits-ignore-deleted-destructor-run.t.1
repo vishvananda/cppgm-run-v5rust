@@ -1,0 +1,8 @@
+// N3485 20.9.4.3 + 12.4/11, 12.1/5:
+// is_constructible/is_assignable/is_convertible are false when the object or
+// temporary has a deleted or inaccessible destructor (directly or through a
+// subobject); expect exit 0
+struct T { T(int); ~T() = delete; };
+struct H { private: ~H() {} };
+struct S { H h; };
+int main() { return !__is_constructible(const T&, int) && !__is_assignable(T&, int) && !__is_convertible(int, const T&) && !__is_constructible(S) ? 0 : 1; }

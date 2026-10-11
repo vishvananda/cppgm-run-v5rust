@@ -1,0 +1,46 @@
+function @Owner_SafeLeaf____Owner__base_entry(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5OwnerI8SafeLeafED2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Owner_ThrowingLeaf____Owner__base_entry(%this : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN5OwnerI12ThrowingLeafED2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @destroy_safe(%value : ptr) -> void [binding=strong, object=_Z12destroy_safeP5OwnerI8SafeLeafE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    call void @Owner_SafeLeaf____Owner(%t1)
+    return void
+}
+function @destroy_throwing(%value : ptr) -> void [binding=strong, object=_Z16destroy_throwingP5OwnerI12ThrowingLeafE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    call void @Owner_ThrowingLeaf____Owner(%t1)
+    return void
+}
+function @Owner_SafeLeaf____Owner(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5OwnerI8SafeLeafED1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Owner_ThrowingLeaf____Owner(%this : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN5OwnerI12ThrowingLeafED1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

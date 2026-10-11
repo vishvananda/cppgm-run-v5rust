@@ -1,0 +1,11 @@
+declare global @Pred_int___value : u8 [binding=weak, object=_ZN4PredIiE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}
+function @f() -> i32 [binding=weak, object=_Z1fIiEiv] {
+  block ^entry:
+    return i32 0
+}

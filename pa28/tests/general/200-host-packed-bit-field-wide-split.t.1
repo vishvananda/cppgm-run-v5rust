@@ -1,0 +1,15 @@
+#include "200-host-packed-bit-field-wide-split.helper.h"
+
+int main()
+{
+  if (sizeof(Spans) != 10) return 1;
+  Spans spans;
+  spans.low = 2;
+  spans.after = 5;
+  spans.wide = 0x0123456789abcdefULL;
+  if (host_read(spans) != 0x0123456789abcdefULL + 2005) return 2;
+  host_write(&spans, 0xfedcba9876543210ULL);
+  if (spans.wide != 0xfedcba9876543210ULL || spans.low != 2 || spans.after != 5)
+    return 3;
+  return 0;
+}

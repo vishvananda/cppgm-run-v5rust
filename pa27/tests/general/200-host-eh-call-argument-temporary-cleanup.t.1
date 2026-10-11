@@ -1,0 +1,72 @@
+struct E {};
+
+struct Counter
+{
+  static int count;
+
+  Counter()
+  {
+    ++count;
+  }
+
+  Counter(const Counter &)
+  {
+    ++count;
+  }
+
+  ~Counter()
+  {
+    --count;
+  }
+};
+
+int Counter::count = 0;
+
+void fail_free(const Counter &)
+{
+  throw E();
+}
+
+struct Target
+{
+  void fail_member(const Counter &)
+  {
+    throw E();
+  }
+};
+
+int test_free_call()
+{
+  try {
+    fail_free(Counter());
+    return 10;
+  } catch(E const &) {
+  } catch(...) {
+    return 11;
+  }
+
+  return Counter::count == 0 ? 0 : 1;
+}
+
+int test_member_call()
+{
+  Target target;
+  try {
+    target.fail_member(Counter());
+    return 20;
+  } catch(E const &) {
+  } catch(...) {
+    return 21;
+  }
+
+  return Counter::count == 0 ? 0 : 2;
+}
+
+int main()
+{
+  int result = test_free_call();
+  if(result != 0) {
+    return result;
+  }
+  return test_member_call();
+}

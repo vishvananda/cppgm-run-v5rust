@@ -1,0 +1,21 @@
+global @value : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $assign : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $assign
+    %t2 = addr $assign
+    call void @__lambda_main_t14_16__operator__(%t2)
+    %t3 = load typed i32 @value
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @__lambda_main_t14_16__operator__(%this : ptr [object_bytes=1]) -> void [binding=internal, object=_ZZ4mainENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 1, @value
+    return void
+}

@@ -1,0 +1,15 @@
+global @values : obj<12x4> [binding=strong] = {
+  zero 12
+}
+global @middle : ptr [binding=strong] = addr @values + 4
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed ptr @middle
+    %t2 = addr @values
+    %t3 = binary sub ptr %t1, %t2
+    %t4 = binary shr exact i64 %t3, 2
+    %t5 = binary sub nowrap i64 %t4, 1
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

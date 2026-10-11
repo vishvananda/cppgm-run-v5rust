@@ -1,0 +1,1 @@
+declare global @Traits_int___size : i32 [binding=weak, object=_ZN6TraitsIiE4sizeE]

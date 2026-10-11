@@ -1,0 +1,10 @@
+// N3485 15.2p1/12.2p4: when constructing Q a[3] (Q's default ctor has a
+// by-value default argument P(7)) throws on a later element, the
+// already-constructed local `before` is still destroyed; expect exit 0
+static int live, countdown;
+static void tick() { if (countdown > 0 && --countdown == 0) throw 1; }
+struct P { int id; explicit P(int i) : id(i) { tick(); ++live; } P(const P& o) : id(o.id) { ++live; } ~P() { --live; } };
+struct Q { int q; Q(P p = P(7)) : q(p.id) { tick(); ++live; } ~Q() { --live; } };
+struct L { L() { ++live; } ~L() { --live; } };
+static void shape() { L before; Q a[3]; }
+int main() { for (int k = 1; k < 7; ++k) { countdown = k; live = 0; try { shape(); } catch (int) {} if (live) return 1; } return 0; }

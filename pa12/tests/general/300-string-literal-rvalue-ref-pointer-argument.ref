@@ -1,0 +1,42 @@
+global @saved : ptr [binding=strong] = 0
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 66
+  i8 97
+  i8 114
+  i8 0
+}
+
+function @sink(%p : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_Z4sinkOPKc] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr %t1
+    store typed ptr %t2, @saved
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $refarg__1 : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    store typed ptr %t1, $refarg__1
+    %t2 = addr $refarg__1
+    call void @sink(%t2)
+    %t3 = load typed ptr @saved
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__2
+    return i32 %t4
+}

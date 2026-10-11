@@ -1,0 +1,12 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i64 @f()
+    %t2 = const i64 4
+    %t3 = binary sub i64 %t1, %t2
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}
+function @f() -> i64 [binding=weak, object=_Z1fIiEmv] {
+  block ^entry:
+    return i64 4
+}

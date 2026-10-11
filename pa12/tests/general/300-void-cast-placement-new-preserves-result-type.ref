@@ -1,0 +1,63 @@
+function @operatornew__ov2(%__param0 : i64, %p : ptr) -> ptr [binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $p : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}
+function @construct(%p : ptr) -> void [binding=strong, object=_Z9constructP1S] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = convert sext i64 i32 4
+    %t2 = load typed ptr $p
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    call void @S__S(%t3, 16)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $s
+    call void @S__S(%t1, 1)
+    %t2 = addr $s
+    call void @construct(%t2)
+    %t3 = addr $s
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 16
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @S__S(%this : ptr [object_bytes=4], %i : u32) -> void [binding=weak, object=_ZN1SC1Ej, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : u32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed u32 %i, $i
+    %t1 = load typed u32 $i
+    %t2 = copy i32 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+alias object _ZN1SC2Ej = @S__S

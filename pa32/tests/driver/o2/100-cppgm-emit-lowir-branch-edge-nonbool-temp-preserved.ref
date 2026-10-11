@@ -1,0 +1,49 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @printf(%arg0 : ptr) -> i32 [arity=variadic, linkage=c, binding=strong]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 37
+  i8 112
+  i8 10
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    store typed ptr 4660, %t1
+    call void @P___P(%t1)
+    return i32 0
+}
+function @P___P(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN1PD1Ev, inline_hint=yes] {
+  block ^entry:
+    eh_try ^function_exception_landing_3
+    %t1 = load typed ptr %this
+    store typed ptr 0, %this
+    branch %t1, ^inline_entry_1, ^inline_cont_2
+
+  block ^inline_entry_1:
+    %t2 = addr @__strlit__1
+    %t3 = call i32 @printf(%t2, %t1)
+    jump ^inline_cont_2
+
+  block ^inline_cont_2:
+    eh_end
+    return void
+
+  block ^function_exception_landing_3:
+    eh_catch_all, 1
+    %t4 = exception ptr
+    call void @cppgm_call_terminate(%t4)
+    unreachable
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    unreachable
+}
+alias object _ZN1PD2Ev = @P___P

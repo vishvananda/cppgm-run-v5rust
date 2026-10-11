@@ -1,0 +1,102 @@
+function @as_rvalue(%owner : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_Z9as_rvalueR5Owner] {
+  slot $owner : ptr
+
+  block ^entry:
+    store typed ptr %owner, $owner
+    %t1 = load typed ptr $owner
+    return ptr %t1
+}
+function @make(%ret : ptr [pass=indirect_result, object_bytes=8], %owner : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_Z4makeR5Owner] {
+  slot $owner : ptr
+
+  block ^entry:
+    store typed ptr %owner, $owner
+    %t1 = load typed ptr $owner
+    %t2 = call ptr @as_rvalue(%t1)
+    call void @Owner__Owner__ov2(%ret, %t2)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $source : obj<8x8>
+  slot $moved : obj<8x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed i32 7, $value
+    %t1 = addr $source
+    %t2 = addr $value
+    call void @Owner__Owner(%t1, %t2)
+    %t3 = addr $moved
+    %t4 = addr $source
+    call void @make(%t3, %t4)
+    %t5 = addr $source
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed ptr %t6
+    %t8 = cmp eq ptr %t7, 0
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $moved
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed ptr %t10
+    %t12 = addr $value
+    %t13 = cmp eq ptr %t11, %t12
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t16 = load typed i32 $cond__1
+    return i32 %t16
+}
+function @Owner__Owner__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN5OwnerC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = load typed ptr $other
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed ptr 0, %t7
+    return void
+}
+function @Owner__Owner(%this : ptr [object_bytes=8], %ptr : ptr) -> void [binding=weak, object=_ZN5OwnerC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $ptr : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %ptr, $ptr
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN5OwnerC2EOS_ = @Owner__Owner__ov2
+alias object _ZN5OwnerC2EPi = @Owner__Owner

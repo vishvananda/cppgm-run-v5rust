@@ -1,0 +1,15 @@
+#if defined(__APPLE__)
+#define CPPGM_TEST_SECTION __attribute__((section("__DATA," "cppgmsec")))
+#else
+#define CPPGM_TEST_SECTION __attribute__((section("cppgmsec")))
+#endif
+
+extern "C" const void *section_alias;
+
+CPPGM_TEST_SECTION
+const void *section_alias = &section_alias;
+
+int main()
+{
+  return section_alias == &section_alias ? 0 : 1;
+}

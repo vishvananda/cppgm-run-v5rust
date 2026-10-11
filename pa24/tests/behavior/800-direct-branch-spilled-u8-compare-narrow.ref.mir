@@ -1,0 +1,75 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @probe
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    param %d -> rcx : ptr
+    return u8 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 0
+    ret rax
+
+function @clobber
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $value -> [rbp-24] : obj<24x8>
+    slot $ud_suffix -> [rbp-48] : obj<24x8>
+    slot $literal_type -> [rbp-56] : i32
+
+  block ^entry
+    store.i32 [rbp-56], 1
+    lea rdi, [rbp-24]
+    lea rsi, [rbp-48]
+    lea rdx, [rbp-56]
+    lea rcx, [rbp-48]
+    call @probe [args=(rcx,rdx,rsi,rdi)]
+    mov rbx, rax
+    zext.i8 rbx
+    call @clobber [args=()]
+    cmp.i64 rbx, 0
+    je ^then
+    jmp ^else
+
+  block ^then
+    mov r8, 10
+    add r8, 11
+    mov r9, 12
+    add r9, 13
+    add r8, r9
+    add r8, 14
+    ret r8
+
+  block ^else
+    mov rax, 0
+    ret rax

@@ -1,0 +1,15 @@
+// N3485 15.3p16, 15.3p4: a handler whose exception-declaration is a class by
+// value copy-initializes its parameter from the exception object, in a
+// function and in a destructor run when the function returns; each try block
+// catches its own exception
+#include "200-host-eh-terminate-guard-selector.helper.h"
+struct E0 { int v; E0(int x) : v(x) {} E0(const E0& o) : v(o.v) {} virtual ~E0() {} };
+struct G { int id; ~G() { try { throw E0(id); } catch (E0 e) { out_line("dtor-inner", e.v); } } };
+int f(int k)
+{
+  G g = { k };
+  try { if (k) throw E0(k * 10); }
+  catch (E0 h) { out_line("catch", h.v); return h.v; }
+  return 0;
+}
+int main() { out_line("f", f(3)); out_line("f", f(0)); return 0; }

@@ -1,0 +1,80 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $v
+    %t2 = addr $v
+    %t3 = call i32 @N__Vec__add(%t2, 1)
+    %t4 = binary sub nowrap i32 %t3, 8
+    return i32 %t4
+}
+function @N__Vec__add(%this : ptr [object_bytes=1], %cond : u8) -> i32 [binding=weak, object=_ZN1N3Vec3addEb, inline_hint=yes] {
+  slot $this : ptr
+  slot $cond : u8
+  slot $n : i32
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store u8 %cond, $cond
+    store typed i32 7, $n
+    %t1 = load u8 $cond
+    %t2 = addr $argobj__1
+    %t3 = load typed i32 $n
+    store typed i32 %t3, %t2
+    %t4 = addr $argobj__2
+    %t5 = load typed i32 $n
+    store typed i32 %t5, %t4
+    %t6 = call i32 @N__helper(%t1, $argobj__1, $argobj__2)
+    return i32 %t6
+}
+function @N__helper(%cond : u8, %if_fn : obj<4x4>, %else_fn : obj<4x4>) -> i32 [binding=internal, object=_ZN1N6helperIZNS_3Vec3addEbEUlvE_ZNS1_3addEbEUlvE0_EEibT_T0_] {
+  slot $cond : u8
+  slot $if_fn : obj<4x4>
+  slot $else_fn : obj<4x4>
+
+  block ^entry:
+    store u8 %cond, $cond
+    %t1 = addr $if_fn
+    copyobj 4x4 %if_fn, %t1
+    %t2 = addr $else_fn
+    copyobj 4x4 %else_fn, %t2
+    %t3 = load u8 $cond
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t4 = addr $if_fn
+    %t5 = call i32 @N__Vec____lambda_N__Vec__add_t66_66__operator__(%t4)
+    return i32 %t5
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t6 = addr $else_fn
+    %t7 = call i32 @N__Vec____lambda_N__Vec__add_t77_77_n1__operator__(%t6)
+    return i32 %t7
+}
+function @N__Vec____lambda_N__Vec__add_t66_66__operator__(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZZN1N3Vec3addEbENKUlvE_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @N__Vec____lambda_N__Vec__add_t77_77_n1__operator__(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZZN1N3Vec3addEbENKUlvE0_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}

@@ -1,0 +1,58 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call u8 @signed_widen_equal()
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @signed_widen_equal() -> u8 [binding=weak, object=_Z18signed_widen_equalv, inline_hint=yes] {
+  slot $tmpobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = unary neg i32 100
+    %t3 = convert sext i64 i32 %t2
+    call void @value_holder__value_holder(%t1, %t3)
+    %t4 = call u8 @value_holder__matches(%t1)
+    return u8 %t4
+}
+function @value_holder__value_holder(%this : ptr [object_bytes=8], %v : i64) -> void [binding=weak, object=_ZN12value_holderC1Ex, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %v, $v
+    %t1 = load typed i64 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    return void
+}
+function @value_holder__matches(%this : ptr [object_bytes=8]) -> u8 [binding=weak, object=_ZNK12value_holder7matchesEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = unary neg i32 100
+    %t5 = convert sext i64 i32 %t4
+    %t6 = cmp eq i64 %t3, %t5
+    %t7 = convert trunc u8 i64 %t6
+    return u8 %t7
+}
+alias object _ZN12value_holderC2Ex = @value_holder__value_holder

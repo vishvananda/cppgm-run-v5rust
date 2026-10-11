@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition g function of (int) returning int
+    parameter x int
+    compound-statement
+      return-statement
+        id-expression lvalue int x
+  function-definition f function of () returning int
+    compound-statement
+      simple-declaration
+        variable fp pointer to function of (int) returning int
+          id-expression lvalue function of (int) returning int g
+      return-statement
+        call-expression prvalue int
+          unary-expression lvalue function of (int) returning int OP_STAR:*
+            id-expression lvalue pointer to function of (int) returning int fp
+          literal prvalue int 0
+end translation unit

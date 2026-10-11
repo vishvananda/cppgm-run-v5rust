@@ -1,0 +1,49 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $b
+    %t4 = index i8 %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 12, %t5
+    %t6 = addr $a
+    %t7 = addr $b
+    %t8 = call ptr @Derived_int___assign_from(%t6, %t7)
+    %t9 = addr $a
+    %t10 = index i8 %t9, 0
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    %t13 = binary sub nowrap i32 %t12, 12
+    return i32 %t13
+}
+function @Derived_int___assign_from(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN7DerivedIiE11assign_fromERKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 %t3, 0
+    %t5 = call ptr @Base_int___operator_(%t2, %t4)
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @Base_int___operator_(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN4BaseIiEaSERKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}

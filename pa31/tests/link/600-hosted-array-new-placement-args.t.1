@@ -1,0 +1,12 @@
+// N3485 5.3.4p11/p13: an array new-expression passes its new-placement
+// arguments: new (buf) int[2] uses buf, new (std::nothrow) int[4] calls the
+// nothrow operator new[]; expect exit 0
+#include <new>
+static int calls;
+void* operator new[](std::size_t, const std::nothrow_t&) noexcept { ++calls; return nullptr; }
+int main() {
+  alignas(16) unsigned char buf[64];
+  int* q = new (buf) int[2];
+  int* c = new (std::nothrow) int[4];
+  return ((void*)q == (void*)buf && calls == 1 && c == nullptr) ? 0 : 1;
+}

@@ -1,0 +1,36 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $o : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $o
+    %t2 = addr $o
+    %t3 = index i8 [projection=field] %t2, 0
+    zeroinit 4x4 %t3
+    %t4 = addr $o
+    %t5 = call ptr @get(%t4)
+    %t6 = addr $o
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = index i8 %t7, 0
+    %t9 = cmp ne ptr %t5, %t8
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @get(%o : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z3getIXadL_ZN1O1mEEEEP1BRS0_] {
+  slot $o : ptr
+
+  block ^entry:
+    store typed ptr %o, $o
+    %t1 = load typed ptr $o
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 %t2, 0
+    %t4 = call ptr @addr(%t3)
+    return ptr %t4
+}
+function @addr(%b : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z4addrR1B, inline_hint=yes] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    return ptr %t1
+}

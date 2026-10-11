@@ -1,0 +1,67 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @float_loop
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+
+  block ^loop
+    fcmp.f64 3.5, 3.5
+    jp ^loop
+    jne ^loop
+
+  block ^done
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+
+  block ^entry
+    mov <gpr0>, 40
+    add <gpr0>, 2
+
+  block ^loop
+    mov rdi, <gpr0>
+    call @identity [args=(rdi), unwind=no]
+    cmp.i64 rax, 0
+    je ^loop
+
+  block ^done
+    cmp.i64 rax, 42
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    call @float_loop [args=(), unwind=no]
+    or <gpr0>, rax
+    ret <gpr0>

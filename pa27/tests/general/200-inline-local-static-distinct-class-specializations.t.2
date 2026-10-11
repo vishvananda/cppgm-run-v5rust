@@ -1,0 +1,6 @@
+#include "200-inline-local-static-distinct-class-specializations.helper.h"
+
+struct second_tag {};
+template struct slot<map<second_tag> >;
+int * first_slot();
+int main() { return first_slot() != slot<map<second_tag> >::get() ? 0 : 1; }

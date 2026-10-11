@@ -1,0 +1,10 @@
+preproc 1
+sof tests/preproc/300-include-next.t
+identifier top
+identifier one
+identifier next
+identifier two
+identifier nomore
+identifier three
+identifier done
+eof

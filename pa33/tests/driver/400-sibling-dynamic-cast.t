@@ -1,0 +1,1 @@
+../../../pa23/tests/general/100-sibling-dynamic-cast.t

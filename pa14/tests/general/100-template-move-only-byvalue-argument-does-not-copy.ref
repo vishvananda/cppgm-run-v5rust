@@ -1,0 +1,109 @@
+function @sink(%value : ptr [pass=by_address, object_bytes=8], %expected : ptr) -> i32 [binding=strong, object=_Z4sink3boxI9move_onlyEPi] {
+  slot $value : obj<8x8>
+  slot $expected : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %expected, $expected
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $expected
+    %t5 = cmp eq ptr %t3, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $source : obj<8x8>
+  slot $boxed : obj<8x8>
+  slot $arg__1 : obj<8x8>
+
+  block ^entry:
+    store typed i32 3, $value
+    %t1 = addr $source
+    %t2 = addr $value
+    call void @move_only__move_only(%t1, %t2)
+    %t3 = addr $boxed
+    %t4 = addr $source
+    call void @box_move_only___box(%t3, %t4)
+    %t5 = addr $arg__1
+    %t6 = addr $boxed
+    call void @box_move_only___box__ov2(%t5, %t6)
+    %t7 = addr $value
+    %t8 = call i32 @sink(%t5, %t7)
+    return i32 %t8
+}
+function @move_only__move_only(%this : ptr [object_bytes=8], %value : ptr) -> void [binding=weak, object=_ZN9move_onlyC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @box_move_only___box(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN3boxI9move_onlyEC1EOS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $value
+    call void @move_only__move_only__ov2(%t2, %t3)
+    return void
+}
+function @box_move_only___box__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN3boxI9move_onlyEC1EOS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @move_only__move_only__ov2(%t2, %t4)
+    return void
+}
+function @move_only__move_only__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN9move_onlyC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = load typed ptr $other
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed ptr 0, %t7
+    return void
+}
+alias object _ZN9move_onlyC2EPi = @move_only__move_only
+alias object _ZN3boxI9move_onlyEC2EOS0_ = @box_move_only___box
+alias object _ZN3boxI9move_onlyEC2EOS1_ = @box_move_only___box__ov2
+alias object _ZN9move_onlyC2EOS_ = @move_only__move_only__ov2

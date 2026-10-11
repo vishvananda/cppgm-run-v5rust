@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (pointer to const char) returning int
+    parameter p pointer to const char
+    compound-statement
+      simple-declaration
+        variable q pointer to const char
+          postfix-expression prvalue pointer to const char OP_INC:++
+            id-expression lvalue pointer to const char p
+      return-statement
+        conditional-expression prvalue int
+          binary-expression prvalue bool OP_EQ:==
+            id-expression lvalue pointer to const char q
+            id-expression lvalue pointer to const char p
+          literal prvalue int 0
+          literal prvalue int 1
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+end translation unit

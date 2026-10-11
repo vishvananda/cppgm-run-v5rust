@@ -1,0 +1,21 @@
+template<class T>
+struct Cache
+{
+  static int table;
+};
+
+template<class T>
+int Cache<T>::table = 3;
+
+template<>
+int Cache<int>::table;
+
+int read_table()
+{
+  return Cache<int>::table;
+}
+
+int main()
+{
+  return read_table() == 9 ? 0 : 1;
+}

@@ -1,0 +1,16 @@
+declare function @observe(%arg0 : i32) -> i32 [binding=strong, object=_Z7observei]
+
+function @after_unreachable(%x : i32) -> i32 [binding=strong, object=_Z17after_unreachablei] {
+  block ^entry:
+    %t4 = binary mul nowrap i32 %x, 2
+    %t6 = cmp gt i32 %t4, 100
+    branch %t6, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    %t8 = call i32 @observe(%t4)
+    return i32 %t8
+
+  block ^if_else_5:
+    %t10 = binary add nowrap i32 %t4, 1
+    return i32 %t10
+}

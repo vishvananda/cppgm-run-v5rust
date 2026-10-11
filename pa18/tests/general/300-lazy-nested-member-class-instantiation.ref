@@ -1,0 +1,36 @@
+function @take(%__param0 : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z4takeRKN5outerIiE6holderE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $h
+    call void @outer_int___holder__holder(%t1, 5)
+    %t2 = addr $h
+    call void @take(%t2)
+    %t3 = addr $h
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = binary sub nowrap i32 %t5, 5
+    return i32 %t6
+}
+function @outer_int___holder__holder(%this : ptr [object_bytes=4], %v : i64) -> void [binding=weak, object=_ZN5outerIiE6holderC1El, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %v, $v
+    %t1 = load typed i64 $v
+    %t2 = convert trunc i32 i64 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+alias object _ZN5outerIiE6holderC2El = @outer_int___holder__holder

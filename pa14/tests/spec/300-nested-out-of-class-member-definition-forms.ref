@@ -1,0 +1,95 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $first : obj<8x8>
+  slot $second : obj<8x8>
+  slot $iter : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = addr $first
+    %t2 = addr $value
+    call void @Outer_int___Ref__Ref(%t1, %t2)
+    %t3 = addr $second
+    %t4 = addr $first
+    copyobj 8x8 %t4, %t3
+    %t5 = addr $iter
+    %t6 = addr $iter
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 0, %t7
+    %t8 = addr $iter
+    %t9 = call ptr @Iter_int___operator__(%t8)
+    %t10 = addr $second
+    %t11 = call u8 @Outer_int___Ref__operatorbool(%t10)
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = addr $iter
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 1
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t17 = load typed i64 $land__2
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__1
+    return i32 %t18
+}
+function @Outer_int___Ref__Ref(%this : ptr [object_bytes=8], %input : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN5OuterIiE3RefC1ERi, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %input, $input
+    %t1 = load typed ptr $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Iter_int___operator__(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN4IterIiEppEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, %t2
+    %t5 = load typed ptr $this
+    return ptr %t5
+}
+function @Outer_int___Ref__operatorbool(%this : ptr [object_bytes=8]) -> u8 [binding=weak, object=_ZNK5OuterIiE3RefcvbEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 0
+    %t6 = convert trunc u8 i64 %t5
+    return u8 %t6
+}
+alias object _ZN5OuterIiE3RefC2ERi = @Outer_int___Ref__Ref

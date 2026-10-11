@@ -1,0 +1,28 @@
+#include <vector>
+
+struct node
+{
+  std::vector<node> elements;
+  int value;
+};
+
+int main()
+{
+  node leaf;
+  leaf.value = 7;
+
+  node parent;
+  parent.value = 1;
+  parent.elements.push_back(leaf);
+  parent.elements.push_back(leaf);
+  parent.elements.insert(parent.elements.begin(), 2, leaf);
+
+  std::vector<node> forest;
+  forest.push_back(parent);
+  forest.push_back(parent);
+
+  return parent.elements.size() == 4 && parent.elements[0].value == 7 &&
+         parent.value == 1 && forest.size() == 2 &&
+         forest[1].elements.size() == 4 &&
+         forest[0].elements[2].value == 7 ? 0 : 1;
+}

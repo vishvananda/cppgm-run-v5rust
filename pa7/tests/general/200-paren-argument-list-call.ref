@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration __libcpp_verbose_abort function of (pointer to const char, ...) returning void
+  function-definition f function of () returning void
+    compound-statement
+      expression-statement
+        call-expression prvalue void
+          callee __libcpp_verbose_abort function of (pointer to const char, ...) returning void
+          literal lvalue array of 2 const char "x"
+end translation unit

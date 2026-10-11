@@ -1,0 +1,21 @@
+function @g(%x : ptr [pass=by_address, object_bytes=8]) -> obj<1x1> [result_classes=none, binding=strong, object=_Z1gRm] {
+  slot $x : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $x
+    call void @X__X(%t1, %t2)
+    return obj<1x1> $retobj__1
+}
+function @X__X(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN1XC1ImEERT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZN1XC2ImEERT_ = @X__X

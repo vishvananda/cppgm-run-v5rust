@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $threads_count : i64
+  slot $barrier : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    store typed i64 %t1, $threads_count
+    %t2 = addr $barrier
+    %t3 = load typed i64 $threads_count
+    call void @simple_barrier__simple_barrier(%t2, %t3)
+    %t4 = addr $barrier
+    %t5 = call i64 @simple_barrier__count(%t4)
+    %t6 = convert sext i64 i32 4
+    %t7 = cmp eq i64 %t5, %t6
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @simple_barrier__simple_barrier(%this : ptr [object_bytes=8], %count : i64) -> void [binding=weak, object=_ZN14simple_barrierC1Em, inline_hint=yes] {
+  slot $this : ptr
+  slot $count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %count, $count
+    %t1 = load typed i64 $count
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    return void
+}
+function @simple_barrier__count(%this : ptr [object_bytes=8]) -> i64 [binding=weak, object=_ZNK14simple_barrier5countEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+alias object _ZN14simple_barrierC2Em = @simple_barrier__simple_barrier

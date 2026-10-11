@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $wrapped : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 42, $value
+    %t1 = addr $wrapped
+    %t2 = addr $value
+    call void @result_int___result(%t1, %t2, 0)
+    %t3 = addr $wrapped
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 42
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @result_int___result(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=4], %__param2 : ptr) -> void [binding=weak, object=_ZN6resultIiEC1IRiEEOT_PDTclL_ZNS0_14accepts_lvalueES2_EscS3_fL0p_EE, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    store typed ptr %__param2, $__param2
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $value
+    call void @reference_int___reference(%t2, %t3)
+    return void
+}
+function @reference_int___reference(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN9referenceIiEC1ERi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN6resultIiEC2IRiEEOT_PDTclL_ZNS0_14accepts_lvalueES2_EscS3_fL0p_EE = @result_int___result
+alias object _ZN9referenceIiEC2ERi = @reference_int___reference

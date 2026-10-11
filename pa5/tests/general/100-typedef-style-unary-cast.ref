@@ -1,0 +1,34 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_SHORT:short
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier __uint16_t
+  function-definition
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:__uint16_t
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:__uint16_t
+          declarator
+            identifier x
+    compound-statement
+      return-statement
+        cast-expression OP_LPAREN:
+          type-id
+            type-specifier-seq
+              type-name __uint16_t
+          parenthesized-expression
+            binary-expression OP_RSHIFT:>>
+              id-expression x
+              literal 8
+end translation unit

@@ -1,0 +1,33 @@
+function @make(%a : i32, %b : i32) -> obj<8x4> [binding=strong, object=_Z4makeii] {
+  slot $a : i32
+  slot $b : i32
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = addr $retobj__1
+    %t2 = load typed i32 $a
+    %t3 = load typed i32 $b
+    call void @pair__pair__aggregate(%t1, %t2, %t3)
+    return obj<8x4> $retobj__1
+}
+function @pair__pair__aggregate(%this : ptr [object_bytes=8], %first : i32, %second : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $first : i32
+  slot $second : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %first, $first
+    store typed i32 %second, $second
+    %t1 = load typed i32 $first
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $second
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}

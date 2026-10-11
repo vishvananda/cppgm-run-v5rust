@@ -1,0 +1,9 @@
+# Preserve source locations without fixing instructions, registers or layout.
+# Deleted computations need not retain their locations.
+has(/!dbg\(/) in @id
+none(/!dbg\((?!(?:test\.cpp, 1, 1)\))/) in @id
+none(/^ret\b(?!.*!dbg\((?:test\.cpp, 1, 1)\))/) in @id
+has(/!dbg\(/) in @main
+none(/!dbg\((?!(?:test\.cpp, 5, 1|test\.cpp, 6, 1|test\.cpp, 7, 1)\))/) in @main
+none(/^ret\b(?!.*!dbg\((?:test\.cpp, 7, 1)\))/) in @main
+none(/^call @id\b(?!.*!dbg\((?:test\.cpp, 6, 1)\))/) in @main

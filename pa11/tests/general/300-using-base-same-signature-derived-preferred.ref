@@ -1,0 +1,37 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<1x1>
+  slot $x : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $d
+    store typed i32 0, $x
+    %t2 = addr $d
+    %t3 = addr $x
+    %t4 = call i64 @Derived__erase(%t2, %t3)
+    %t5 = convert sext i64 i32 2
+    %t6 = cmp eq i64 %t4, %t5
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @Derived__erase(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=4]) -> i64 [binding=weak, object=_ZN7Derived5eraseERKi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = convert sext i64 i32 2
+    return i64 %t1
+}

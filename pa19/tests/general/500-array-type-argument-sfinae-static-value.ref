@@ -1,0 +1,2 @@
+declare global @used_value_size___cppgm_class_template_identity_1_void___value : i64 [binding=weak, object=_ZN15used_value_sizeI5blockIA4_jLm4EEvE5valueE]
+declare global @filter_core_1___cppgm_class_template_identity_1___prefetched : i64 [binding=weak, object=_ZN11filter_coreILm1E5blockIA4_jLm4EEE10prefetchedE]

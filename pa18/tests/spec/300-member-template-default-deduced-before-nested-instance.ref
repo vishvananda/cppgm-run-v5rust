@@ -1,0 +1,166 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<4x4>
+  slot $p : ptr
+  slot $argobj__1 : obj<8x8>
+  slot $cond__2 : i32
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr $d
+    call void @S__S__aggregate(%t1, 7)
+    %t2 = addr $argobj__1
+    %t3 = addr $d
+    call void @rev_S____rev__ov2(%t2, %t3)
+    %t4 = call ptr @arrow($argobj__1)
+    store typed ptr %t4, $p
+    %t5 = load typed ptr $p
+    %t6 = addr $d
+    %t7 = cmp eq ptr %t5, %t6
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = load typed ptr $p
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 7
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__3
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__3
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t13 = load typed i64 $land__3
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__2
+    return i32 %t14
+}
+function @S__S__aggregate(%this : ptr [object_bytes=4], %x : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @rev_S____rev__ov2(%this : ptr [object_bytes=8], %x : ptr) -> void [binding=weak, object=_ZN3revIP1SEC1ES1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @arrow(%first : obj<8x8>) -> ptr [binding=weak, object=_Z5arrowI3revIP1SEES2_T_] {
+  slot $first : obj<8x8>
+  slot $copy : obj<8x8>
+  slot $tmpobj__1 : obj<8x8>
+  slot $argobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $first
+    copyobj 8x8 %first, %t1
+    %t2 = addr $copy
+    %t3 = addr $first
+    copyobj 8x8 %t3, %t2
+    %t4 = addr $tmpobj__1
+    %t5 = addr $argobj__2
+    %t6 = addr $copy
+    copyobj 8x8 %t6, %t5
+    call void @rev___cppgm_class_template_identity_1___rev__ov2(%t4, $argobj__2)
+    %t7 = call ptr @rev___cppgm_class_template_identity_1___operator__(%t4)
+    return ptr %t7
+}
+function @rev___cppgm_class_template_identity_1___rev__ov2(%this : ptr [object_bytes=8], %x : obj<8x8>) -> void [binding=weak, object=_ZN3revIS_IP1SEEC1ES2_, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $x
+    copyobj 8x8 %x, %t1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = addr $x
+    copyobj 8x8 %t4, %t3
+    return void
+}
+function @rev___cppgm_class_template_identity_1___operator__(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK3revIS_IP1SEEptEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = call ptr @rev___cppgm_class_template_identity_1___operator_(%t1)
+    return ptr %t2
+}
+function @rev___cppgm_class_template_identity_1___operator_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK3revIS_IP1SEEdeEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $tmp : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $tmp
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    copyobj 8x8 %t3, %t1
+    %t4 = addr $tmp
+    %t5 = call ptr @rev_S____operator__(%t4)
+    %t6 = call ptr @rev_S____operator_(%t5)
+    return ptr %t6
+}
+function @rev_S____operator__(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN3revIP1SEmmEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 %t3, %t4
+    store typed ptr %t5, %t2
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @rev_S____operator_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK3revIP1SEdeEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $tmp : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    store typed ptr %t3, $tmp
+    %t4 = load typed ptr $tmp
+    %t5 = binary mul i64 1, 4
+    %t6 = binary sub i64 0, %t5
+    %t7 = index i8 %t4, %t6
+    store typed ptr %t7, $tmp
+    return ptr %t7
+}
+alias object _ZN3revIP1SEC2ES1_ = @rev_S____rev__ov2
+alias object _ZN3revIS_IP1SEEC2ES2_ = @rev___cppgm_class_template_identity_1___rev__ov2

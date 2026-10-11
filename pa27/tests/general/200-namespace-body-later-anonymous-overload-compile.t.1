@@ -1,0 +1,25 @@
+namespace N {
+  int strip(int);
+
+  int use()
+  {
+    return strip(1);
+  }
+
+  namespace {
+    int strip(int value)
+    {
+      return value + 1;
+    }
+  }
+}
+
+int N::strip(int value)
+{
+  return value;
+}
+
+int main()
+{
+  return N::use() == 1 ? 0 : 1;
+}

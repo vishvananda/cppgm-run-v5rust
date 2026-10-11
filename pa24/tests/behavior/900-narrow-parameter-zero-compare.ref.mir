@@ -1,0 +1,48 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @check
+  abi
+    param %unused0 -> rdi : i64
+    param %unused1 -> rsi : i64
+    param %value -> rdx : u8
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp.u8 rdx, 0
+    je ^zero
+    jmp ^nonzero
+
+  block ^zero
+    mov rax, 1
+    ret rax
+
+  block ^nonzero
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 1
+    call @check [args=(rdx,rsi,rdi)]
+    sext.i32 rax
+    ret rax

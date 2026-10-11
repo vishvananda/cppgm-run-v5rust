@@ -1,0 +1,62 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_base [storage=readonly, binding=weak, object=_ZTS4base] = {
+  i8 52
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_base [storage=readonly, binding=weak, object=_ZTI4base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_base
+}
+global @base__vtable [storage=readonly, binding=weak, object=_ZTV4base] = {
+  i64 0
+  ptr addr @__rtti_struct_base
+  ptr addr @base__key
+}
+
+function @probe(%value : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z5probeR4base] {
+  slot $value : ptr
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = addr $argobj__1
+    call void @argument__argument(%t1)
+    %t2 = load typed ptr $value
+    %t3 = call ptr @select($argobj__1, %t2)
+    %t4 = load typed ptr %t3
+    %t5 = index i8 %t4, -8
+    %t6 = load typed ptr %t5
+    %t7 = addr @__rtti_struct_base
+    %t8 = cmp eq ptr %t6, %t7
+    %t9 = convert trunc i32 i64 %t8
+    return i32 %t9
+}
+function @argument__argument(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN8argumentC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @select(%__param0 : obj<1x1> [classes=none], %value : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z6select8argumentR4base, inline_hint=yes] {
+  slot $__param0 : obj<1x1>
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+function @base__key(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZN4base3keyEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 0
+}
+alias object _ZN8argumentC2Ev = @argument__argument

@@ -1,0 +1,158 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @src
+  storage data
+  item i64 7
+
+global @dst
+  storage data
+  item i64 99
+
+function @clobber
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 0
+    ret rax
+
+function @f
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    param %g -> [rbp+16] : i64
+    param %h -> [rbp+24] : i64
+    param %i -> [rbp+32] : i64
+    param %j -> [rbp+40] : i64
+    return i64 -> rax
+  frame
+    stack_size 128
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    param-slot %g -> [rbp-8] : i64
+    param-slot %h -> [rbp-16] : i64
+    param-slot %i -> [rbp-24] : i64
+    param-slot %j -> [rbp-32] : i64
+    temp %t6 -> [rbp-40] : i64
+    temp %t7 -> [rbp-48] : i64
+    temp %t8 -> [rbp-56] : i64
+    temp %t9 -> [rbp-64] : i64
+    temp %t10 -> [rbp-72] : i64
+    temp %ignored -> [rbp-80] : i64
+
+  block ^entry
+    load.i64 rax, [rbp+16]
+    store.i64 [rbp-8], rax
+    load.i64 rax, [rbp+24]
+    store.i64 [rbp-16], rax
+    load.i64 rax, [rbp+32]
+    store.i64 [rbp-24], rax
+    load.i64 rax, [rbp+40]
+    store.i64 [rbp-32], rax
+    mov rbx, rdi
+    add rbx, 1
+    mov r12, rsi
+    add r12, 2
+    mov r13, rdx
+    add r13, 3
+    mov r14, rcx
+    add r14, 4
+    mov r15, r8
+    add r15, 5
+    mov r10, r9
+    add r10, 6
+    store.i64 [rbp-40], r10
+    load.i64 r10, [rbp-8]
+    add r10, 7
+    store.i64 [rbp-48], r10
+    load.i64 r10, [rbp-16]
+    add r10, 8
+    store.i64 [rbp-56], r10
+    load.i64 r10, [rbp-24]
+    add r10, 9
+    store.i64 [rbp-64], r10
+    load.i64 r10, [rbp-32]
+    add r10, 10
+    store.i64 [rbp-72], r10
+    zero_bytes 8x8, @dst
+    copy_bytes 8x8, @dst, @src
+    mov rdi, 1
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    mov r9, 6
+    call @clobber [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    store.i64 [rbp-80], rax
+    load.i64 r8, @dst
+    add rbx, r12
+    add rbx, r13
+    add rbx, r14
+    add rbx, r15
+    add rbx, [rbp-40]
+    add rbx, [rbp-48]
+    add rbx, [rbp-56]
+    add rbx, [rbp-64]
+    add rbx, [rbp-72]
+    add rbx, r8
+    add rbx, [rbp-80]
+    ret rbx
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    sub rsp, 32
+    mov rdi, 1
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    mov r9, 6
+    mov r11, 7
+    store.i64 [rsp], r11
+    mov r11, 8
+    store.i64 [rsp+8], r11
+    mov r11, 9
+    store.i64 [rsp+16], r11
+    mov r11, 18
+    store.i64 [rsp+24], r11
+    call @f [args=(rcx,rdx,rsi,rdi,r8,r9), stack=32]
+    add rsp, 32
+    mov rdx, 125
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    mov rdx, 0
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    ret rax

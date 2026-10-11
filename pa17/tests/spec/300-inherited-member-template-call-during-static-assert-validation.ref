@@ -1,0 +1,64 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 105
+  i8 110
+  i8 112
+  i8 117
+  i8 116
+  i8 46
+  i8 99
+  i8 112
+  i8 112
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call i32 @derived__test(%t2)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @derived__test(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN7derived4testEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr @__strlit__1
+    %t4 = addr @__strlit__2
+    %t5 = call i32 @base__fail(%t2, %t3, %t4, 1)
+    return i32 %t5
+}
+function @base__fail(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1], %__param2 : ptr, %__param3 : i32) -> i32 [binding=weak, object=_ZN4base4failIA1_cEEiRKT_PKci, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+  slot $__param3 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    store typed i32 %__param3, $__param3
+    return i32 7
+}

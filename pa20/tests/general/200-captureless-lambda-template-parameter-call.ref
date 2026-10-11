@@ -1,0 +1,42 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    %t2 = call i32 @invoke($argobj__1)
+    return i32 %t2
+}
+function @invoke(%pred : obj<1x1> [classes=none]) -> i32 [binding=internal, object=_Z6invokeIZ4mainE3$_0EiT_] {
+  slot $pred : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $pred
+    %t2 = call u8 @__lambda_main_t33_38__operator__(%t1, 32)
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @__lambda_main_t33_38__operator__(%this : ptr [object_bytes=1], %ch : u8) -> u8 [binding=internal, object=_ZZ4mainENK3$_0clEh, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $ch : u8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store u8 %ch, $ch
+    %t1 = load u8 $ch
+    %t2 = convert zext i32 u8 %t1
+    %t3 = cmp eq i32 %t2, 32
+    %t4 = convert trunc u8 i64 %t3
+    return u8 %t4
+}

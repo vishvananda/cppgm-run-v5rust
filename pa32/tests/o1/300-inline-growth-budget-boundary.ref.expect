@@ -1,0 +1,12 @@
+# budget from 300-inline-growth-budget-boundary.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 1743
+blocks <= 5
+count(call) <= 4
+count(load) <= 3
+count(store) <= 1741
+count(phi) <= 3
+instructions <= 37 in @piece
+instructions <= 1708 in @driver
+
+# outcomes from 300-inline-growth-budget-boundary.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @piece)

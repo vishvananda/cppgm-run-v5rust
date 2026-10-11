@@ -1,0 +1,9 @@
+# budget from 100-call-address-cleanup.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 5
+count(call) <= 4
+mem <= 7
+instructions <= 5 in @id
+stack_size <= 48 in @id
+instructions <= 7 in @main
+stack_size <= 50 in @main

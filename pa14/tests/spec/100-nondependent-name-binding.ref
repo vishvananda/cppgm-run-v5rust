@@ -1,0 +1,32 @@
+function @target(%__param0 : i32) -> i32 [binding=strong, object=_Z6targeti] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @call_target()
+    %t2 = cmp eq i32 %t1, 1
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @call_target() -> i32 [binding=weak, object=_Z11call_targetIiEiv] {
+  block ^entry:
+    %t1 = call i32 @target(0)
+    return i32 %t1
+}

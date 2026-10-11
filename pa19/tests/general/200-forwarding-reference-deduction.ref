@@ -1,0 +1,66 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $refarg__3 : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $x
+    %t2 = call i32 @classify(%t1)
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    store typed i32 0, $refarg__3
+    %t4 = addr $refarg__3
+    %t5 = call i32 @classify__2(%t4)
+    %t6 = cmp eq i32 %t5, 2
+    %t7 = cmp ne i64 %t6, 0
+    store typed i64 %t7, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t8 = load typed i64 $land__2
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @classify(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z8classifyIRiEiOT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = call i32 @category_int____value()
+    return i32 %t1
+}
+function @classify__2(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z8classifyIiEiOT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = call i32 @category_int___value()
+    return i32 %t1
+}
+function @category_int____value() -> i32 [binding=weak, object=_ZN8categoryIRiE5valueEv, inline_hint=yes] {
+  block ^entry:
+    return i32 1
+}
+function @category_int___value() -> i32 [binding=weak, object=_ZN8categoryIiE5valueEv, inline_hint=yes] {
+  block ^entry:
+    return i32 2
+}

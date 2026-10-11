@@ -1,0 +1,50 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $it : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 11, %t3
+    %t4 = addr $it
+    %t5 = addr $value
+    call void @iter__iter(%t4, %t5)
+    %t6 = addr $it
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed ptr %t7
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 23, %t9
+    %t10 = addr $value
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    %t13 = cmp eq i32 %t12, 23
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @iter__iter(%this : ptr [object_bytes=8], %value : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4iterC1ER4cons, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN4iterC2ER4cons = @iter__iter

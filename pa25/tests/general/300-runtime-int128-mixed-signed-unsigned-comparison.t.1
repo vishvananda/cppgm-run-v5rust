@@ -1,0 +1,16 @@
+typedef __int128_t I128;
+typedef __uint128_t U128;
+
+int main()
+{
+  I128 negative = -1;
+  U128 one = 1;
+
+  if(negative < one) {
+    return 1;
+  }
+  if(!(one < negative)) {
+    return 2;
+  }
+  return 0;
+}

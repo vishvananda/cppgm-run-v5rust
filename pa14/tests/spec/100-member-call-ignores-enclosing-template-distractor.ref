@@ -1,0 +1,192 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8], %arg1 : ptr) -> ptr [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_boost__exception_detail__impl [storage=readonly, binding=weak, object=_ZTSN5boost16exception_detail4implE] = {
+  i8 78
+  i8 53
+  i8 98
+  i8 111
+  i8 111
+  i8 115
+  i8 116
+  i8 49
+  i8 54
+  i8 101
+  i8 120
+  i8 99
+  i8 101
+  i8 112
+  i8 116
+  i8 105
+  i8 111
+  i8 110
+  i8 95
+  i8 100
+  i8 101
+  i8 116
+  i8 97
+  i8 105
+  i8 108
+  i8 52
+  i8 105
+  i8 109
+  i8 112
+  i8 108
+  i8 69
+  i8 0
+}
+global @__typeinfo_name__struct_boost__exception_detail__error_info_container [storage=readonly, binding=weak, object=_ZTSN5boost16exception_detail20error_info_containerE] = {
+  i8 78
+  i8 53
+  i8 98
+  i8 111
+  i8 111
+  i8 115
+  i8 116
+  i8 49
+  i8 54
+  i8 101
+  i8 120
+  i8 99
+  i8 101
+  i8 112
+  i8 116
+  i8 105
+  i8 111
+  i8 110
+  i8 95
+  i8 100
+  i8 101
+  i8 116
+  i8 97
+  i8 105
+  i8 108
+  i8 50
+  i8 48
+  i8 101
+  i8 114
+  i8 114
+  i8 111
+  i8 114
+  i8 95
+  i8 105
+  i8 110
+  i8 102
+  i8 111
+  i8 95
+  i8 99
+  i8 111
+  i8 110
+  i8 116
+  i8 97
+  i8 105
+  i8 110
+  i8 101
+  i8 114
+  i8 69
+  i8 0
+}
+global @__rtti_struct_boost__exception_detail__error_info_container [storage=readonly, binding=weak, object=_ZTIN5boost16exception_detail20error_info_containerE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_boost__exception_detail__error_info_container
+}
+global @__rtti_struct_boost__exception_detail__impl [storage=readonly, binding=weak, object=_ZTIN5boost16exception_detail4implE] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_boost__exception_detail__impl
+  ptr addr @__rtti_struct_boost__exception_detail__error_info_container
+}
+global @boost__exception_detail__impl__vtable [storage=readonly, binding=weak, object=_ZTVN5boost16exception_detail4implE] = {
+  i64 0
+  ptr addr @__rtti_struct_boost__exception_detail__impl
+  ptr addr @boost__exception_detail__impl__diagnostic_information
+}
+global @boost__exception_detail__error_info_container__vtable [storage=readonly, binding=weak, object=_ZTVN5boost16exception_detail20error_info_containerE] = {
+  i64 0
+  ptr addr @__rtti_struct_boost__exception_detail__error_info_container
+  ptr addr @__cxa_pure_virtual
+}
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 111
+  i8 107
+  i8 0
+}
+
+function @boost__exception_detail__get_diagnostic_information(%c : ptr, %header : ptr) -> ptr [binding=strong, object=_ZN5boost16exception_detail26get_diagnostic_informationEPNS0_20error_info_containerEPKc] {
+  slot $c : ptr
+  slot $header : ptr
+  slot $di : ptr
+
+  block ^entry:
+    store typed ptr %c, $c
+    store typed ptr %header, $header
+    %t1 = load typed ptr $c
+    %t2 = load typed ptr $header
+    %t3 = load typed ptr %t1
+    %t4 = load typed ptr %t3
+    %t5 = call ptr %t4(%t1, %t2) as (%arg0 : ptr [object_bytes=8], %arg1 : ptr) -> ptr
+    store typed ptr %t5, $di
+    %t6 = load typed ptr $di
+    return ptr %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $c
+    call void @boost__exception_detail__impl__impl(%t1)
+    %t2 = addr $c
+    %t3 = index i8 %t2, 0
+    %t4 = call ptr @boost__exception_detail__get_diagnostic_information(%t3, 0)
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @boost__exception_detail__impl__impl(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5boost16exception_detail4implC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @boost__exception_detail__error_info_container__error_info_container__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @boost__exception_detail__impl__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @boost__exception_detail__impl__diagnostic_information(%this : ptr [object_bytes=8], %__param1 : ptr) -> ptr [binding=weak, object=_ZNK5boost16exception_detail4impl22diagnostic_informationEPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = addr @__strlit__1
+    return ptr %t1
+}
+function @boost__exception_detail__error_info_container__error_info_container__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5boost16exception_detail20error_info_containerC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @boost__exception_detail__error_info_container__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN5boost16exception_detail4implC2Ev = @boost__exception_detail__impl__impl

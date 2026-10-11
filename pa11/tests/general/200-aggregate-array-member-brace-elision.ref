@@ -1,0 +1,144 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $numbers : obj<16x4>
+  slot $text : obj<8x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $numbers
+    %t2 = addr $numbers
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index u32 [projection=array_element] %t3, 0
+    store typed u32 7, %t4
+    %t5 = addr $numbers
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index u32 [projection=array_element] %t6, 1
+    store typed u32 0, %t7
+    %t8 = addr $numbers
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = index u32 [projection=array_element] %t9, 2
+    store typed u32 0, %t10
+    %t11 = addr $numbers
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = index u32 [projection=array_element] %t12, 3
+    store typed u32 0, %t13
+    %t14 = addr $numbers
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = index u32 [projection=array_element] %t15, 0
+    %t17 = load typed u32 %t16
+    %t18 = cmp ne u32 %t17, 7
+    branch %t18, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t19 = addr $numbers
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = index u32 [projection=array_element] %t20, 1
+    %t22 = load typed u32 %t21
+    %t23 = cmp ne u32 %t22, 0
+    branch %t23, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t24 = addr $numbers
+    %t25 = index i8 [projection=field] %t24, 0
+    %t26 = index u32 [projection=array_element] %t25, 3
+    %t27 = load typed u32 %t26
+    %t28 = cmp ne u32 %t27, 0
+    branch %t28, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t29 = addr $text
+    %t30 = addr $text
+    %t31 = index i8 [projection=field] %t30, 0
+    %t32 = index i8 [projection=array_element] %t31, 0
+    store i8 104, %t32
+    %t33 = addr $text
+    %t34 = index i8 [projection=field] %t33, 0
+    %t35 = index i8 [projection=array_element] %t34, 1
+    store i8 105, %t35
+    %t36 = addr $text
+    %t37 = index i8 [projection=field] %t36, 0
+    %t38 = index i8 [projection=array_element] %t37, 2
+    store i8 0, %t38
+    %t39 = addr $text
+    %t40 = index i8 [projection=field] %t39, 4
+    store typed i32 11, %t40
+    %t41 = addr $text
+    %t42 = index i8 [projection=field] %t41, 0
+    %t43 = index i8 [projection=array_element] %t42, 0
+    %t44 = load i8 %t43
+    %t45 = convert sext i32 i8 %t44
+    %t46 = cmp ne i32 %t45, 104
+    branch %t46, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 4
+
+  block ^if_else_11:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    %t47 = addr $text
+    %t48 = index i8 [projection=field] %t47, 0
+    %t49 = index i8 [projection=array_element] %t48, 1
+    %t50 = load i8 %t49
+    %t51 = convert sext i32 i8 %t50
+    %t52 = cmp ne i32 %t51, 105
+    branch %t52, ^if_then_13, ^if_else_14
+
+  block ^if_then_13:
+    return i32 5
+
+  block ^if_else_14:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    %t53 = addr $text
+    %t54 = index i8 [projection=field] %t53, 0
+    %t55 = index i8 [projection=array_element] %t54, 2
+    %t56 = load i8 %t55
+    %t57 = convert sext i32 i8 %t56
+    %t58 = cmp ne i32 %t57, 0
+    branch %t58, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 6
+
+  block ^if_else_17:
+    jump ^if_end_18
+
+  block ^if_end_18:
+    %t59 = addr $text
+    %t60 = index i8 [projection=field] %t59, 4
+    %t61 = load typed i32 %t60
+    %t62 = cmp eq i32 %t61, 11
+    branch %t62, ^cond_then_19, ^cond_else_20
+
+  block ^cond_then_19:
+    store typed i32 0, $cond__1
+    jump ^cond_end_21
+
+  block ^cond_else_20:
+    store typed i32 7, $cond__1
+    jump ^cond_end_21
+
+  block ^cond_end_21:
+    %t63 = load typed i32 $cond__1
+    return i32 %t63
+}

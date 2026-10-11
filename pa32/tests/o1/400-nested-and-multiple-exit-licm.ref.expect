@@ -1,0 +1,9 @@
+# budget from 400-nested-and-multiple-exit-licm.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 33
+blocks <= 16
+count(call) <= 3
+count(load) <= 6
+count(store) <= 5
+count(phi) <= 6
+instructions <= 21 in @nested
+instructions <= 14 in @multiple_exits

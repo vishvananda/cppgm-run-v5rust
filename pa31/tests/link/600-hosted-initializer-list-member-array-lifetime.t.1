@@ -1,0 +1,8 @@
+// N3485 8.5.4p6 + 12.2p5: an initializer_list member of an aggregate (or
+// element of an outer list) extends its backing array to the enclosing
+// object's lifetime; expect exit 0
+#include <initializer_list>
+int live;
+struct C { int v; C(int x) : v(x) { ++live; } C(const C& o) : v(o.v) { ++live; } ~C() { --live; } };
+struct A { std::initializer_list<C> l; int k; };
+int main() { int in; { A a = {{1, 2}, 5}; in = live; } return in == 2 && live == 0 ? 0 : 1; }

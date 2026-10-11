@@ -1,0 +1,7 @@
+function @main() -> i64 {
+  block ^entry:
+    %0 = const i64 0
+    return i64 %0
+}
+
+alias object _Z4mainv = @main

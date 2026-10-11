@@ -1,0 +1,13 @@
+declare global @success_void___value : u8 [binding=weak, object=_ZN7successIvE5valueE]
+declare global @is_invocable_void__object____object___value : u8 [binding=weak, object=_ZN12is_invocableIM6objectFvvES0_E5valueE]
+declare global @is_invocable_void__object____object___value__2 : u8 [binding=weak, object=_ZN12is_invocableIM6objectFvvRES0_E5valueE]
+declare global @is_invocable_void__object____object____value : u8 [binding=weak, object=_ZN12is_invocableIM6objectFvvRERS0_E5valueE]
+declare global @is_invocable_void__object____object___value__3 : u8 [binding=weak, object=_ZN12is_invocableIM6objectKFvvRES0_E5valueE]
+declare global @is_invocable_void__object____constobject____value : u8 [binding=weak, object=_ZN12is_invocableIM6objectKFvvRERKS0_E5valueE]
+declare global @is_invocable_void__object____object___value__4 : u8 [binding=weak, object=_ZN12is_invocableIM6objectFvvOES0_E5valueE]
+declare global @is_invocable_void__object____object____value__2 : u8 [binding=weak, object=_ZN12is_invocableIM6objectFvvOERS0_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

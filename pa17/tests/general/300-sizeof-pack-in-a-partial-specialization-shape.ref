@@ -1,0 +1,72 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $score : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $score
+    jump ^if_then_1
+
+  block ^if_then_1:
+    %t1 = load typed i32 $score
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, $score
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = cmp eq u8 0, 0
+    branch %t3, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    %t4 = load typed i32 $score
+    %t5 = binary add nowrap i32 %t4, 2
+    store typed i32 %t5, $score
+    jump ^if_end_6
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t6 = cmp eq u8 0, 0
+    branch %t6, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    %t7 = load typed i32 $score
+    %t8 = binary add nowrap i32 %t7, 4
+    store typed i32 %t8, $score
+    jump ^if_end_9
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    jump ^if_then_10
+
+  block ^if_then_10:
+    %t9 = load typed i32 $score
+    %t10 = binary add nowrap i32 %t9, 8
+    store typed i32 %t10, $score
+    jump ^if_end_12
+
+  block ^if_else_11:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    %t11 = load typed i32 $score
+    %t12 = cmp eq i32 %t11, 15
+    branch %t12, ^cond_then_13, ^cond_else_14
+
+  block ^cond_then_13:
+    store typed i32 0, $cond__1
+    jump ^cond_end_15
+
+  block ^cond_else_14:
+    store typed i32 1, $cond__1
+    jump ^cond_end_15
+
+  block ^cond_end_15:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}

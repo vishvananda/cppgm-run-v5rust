@@ -1,0 +1,48 @@
+global @inactive : obj<4x4> [storage=readonly, binding=internal, object=_ZL8inactive] = {
+  u8 0
+  zero 3
+}
+global @active [storage=readonly, binding=internal, object=_ZL6active] = {
+  i32 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @U_int___U(%this : ptr [object_bytes=4], %__param1 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN1UIiEC1E3tag, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store u8 0, %t2
+    return void
+}
+function @U_int___U__2(%this : ptr [object_bytes=4], %args : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1UIiEC1IJiEEEDpOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $args : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %args, $args
+    %t1 = load typed ptr $args
+    %t2 = call ptr @forward(%t1)
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store i32 %t3, %t5
+    return void
+}
+function @forward(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z7forwardIiEOT_RS0_, inline_hint=yes] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+alias object _ZN1UIiEC2E3tag = @U_int___U
+alias object _ZN1UIiEC2IJiEEEDpOT_ = @U_int___U__2

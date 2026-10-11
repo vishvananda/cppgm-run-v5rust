@@ -1,0 +1,149 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $object
+    call void @buffer__buffer(%t1, 3, 8)
+    %t2 = addr $object
+    call void @buffer__shrink_to_fit(%t2)
+    %t3 = addr $object
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp ne i32 %t5, 3
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = addr $object
+    %t8 = index i8 [projection=field] %t7, 4
+    %t9 = load typed i32 %t8
+    %t10 = cmp ne i32 %t9, 3
+    branch %t10, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}
+function @buffer__buffer(%this : ptr [object_bytes=8], %size : i32, %capacity : i32) -> void [binding=weak, object=_ZN6bufferC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $size : i32
+  slot $capacity : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %size, $size
+    store typed i32 %capacity, $capacity
+    %t1 = load typed i32 $size
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $capacity
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+function @buffer__shrink_to_fit(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6buffer13shrink_to_fitEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $tmpobj__1 : obj<8x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 4
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp gt i32 %t3, %t6
+    branch %t7, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t8 = addr $tmpobj__1
+    %t9 = load typed ptr $this
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    call void @buffer__buffer__ov2(%t8, %t9, %t12)
+    %t13 = load typed ptr $this
+    call void @buffer__swap(%t8, %t13)
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+function @buffer__buffer__ov2(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8], %capacity : i32) -> void [binding=weak, object=_ZN6bufferC1ERKS_i, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+  slot $capacity : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    store typed i32 %capacity, $capacity
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed i32 $capacity
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 4
+    store typed i32 %t6, %t8
+    return void
+}
+function @buffer__swap(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN6buffer4swapERS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+  slot $size_copy : i32
+  slot $capacity_copy : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    store typed i32 %t3, $size_copy
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    %t6 = load typed i32 %t5
+    store typed i32 %t6, $capacity_copy
+    %t7 = load typed ptr $other
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    store typed i32 %t9, %t11
+    %t12 = load typed ptr $other
+    %t13 = index i8 [projection=field] %t12, 4
+    %t14 = load typed i32 %t13
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 4
+    store typed i32 %t14, %t16
+    %t17 = load typed i32 $size_copy
+    %t18 = load typed ptr $other
+    %t19 = index i8 [projection=field] %t18, 0
+    store typed i32 %t17, %t19
+    %t20 = load typed i32 $capacity_copy
+    %t21 = load typed ptr $other
+    %t22 = index i8 [projection=field] %t21, 4
+    store typed i32 %t20, %t22
+    return void
+}
+alias object _ZN6bufferC2Eii = @buffer__buffer
+alias object _ZN6bufferC2ERKS_i = @buffer__buffer__ov2

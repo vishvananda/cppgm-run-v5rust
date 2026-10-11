@@ -1,0 +1,225 @@
+global @destroyed : i32 [binding=strong] = 0
+
+function @use(%__param0 : ptr [pass=by_address, object_bytes=1], %value : u8) -> u8 [unwind=no, binding=strong, object=_Z3useRK5Probeb] {
+  slot $__param0 : ptr
+  slot $value : u8
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store u8 %value, $value
+    %t1 = load u8 $value
+    return u8 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+  slot $arg__2 : obj<1x1>
+  slot $call__3 : u8
+  slot $land__4 : i64
+  slot $arg__5 : obj<1x1>
+  slot $call__6 : u8
+  slot $lor__7 : i64
+  slot $arg__8 : obj<1x1>
+  slot $call__9 : u8
+  slot $land__10 : i64
+  slot $arg__11 : obj<1x1>
+  slot $call__12 : u8
+  slot $cond__13 : i32
+
+  block ^entry:
+    eh_try ^cleanup_resume_6
+    %t1 = addr $arg__2
+    zeroinit 1x1 %t1
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_resume_6:
+    resume
+
+  block ^call_unwind_end_7:
+    eh_try ^cleanup_action_8
+    %t2 = call u8 @use(%t1, 1)
+    store u8 %t2, $call__3
+    %t3 = load u8 $call__3
+    eh_end
+    jump ^call_unwind_end_9
+
+  block ^cleanup_action_8:
+    call void @Probe___Probe(%t1)
+    jump ^cleanup_resume_6
+
+  block ^call_unwind_end_9:
+    branch %t3, ^lor_short_4, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    eh_try ^cleanup_action_8
+    %t4 = addr $arg__5
+    zeroinit 1x1 %t4
+    eh_end
+    eh_try ^cleanup_action_13
+    %t5 = call u8 @use(%t4, 1)
+    store u8 %t5, $call__6
+    %t6 = load u8 $call__6
+    eh_end
+    jump ^call_unwind_end_14
+
+  block ^cleanup_action_13:
+    call void @Probe___Probe(%t4)
+    jump ^cleanup_action_8
+
+  block ^call_unwind_end_14:
+    branch %t6, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t7 = cmp ne i64 1, 0
+    store typed i64 %t7, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t8 = load typed i64 $land__4
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__1
+    call void @Probe___Probe(%t4)
+    jump ^lor_end_5
+
+  block ^lor_short_4:
+    store typed i64 1, $lor__1
+    jump ^lor_end_5
+
+  block ^lor_end_5:
+    %t10 = load typed i64 $lor__1
+    branch %t10, ^cond_true_cleanup_15, ^cond_false_cleanup_16
+
+  block ^cond_true_cleanup_15:
+    call void @Probe___Probe(%t1)
+    jump ^if_then_1
+
+  block ^cond_false_cleanup_16:
+    call void @Probe___Probe(%t1)
+    jump ^if_else_2
+
+  block ^if_then_1:
+    %t11 = load typed i32 @destroyed
+    %t12 = cmp ne i32 %t11, 1
+    branch %t12, ^if_then_17, ^if_else_18
+
+  block ^if_then_17:
+    return i32 1
+
+  block ^if_else_18:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    jump ^if_end_20
+
+  block ^if_else_2:
+    jump ^if_end_20
+
+  block ^if_end_20:
+    store typed i32 0, @destroyed
+    eh_try ^cleanup_resume_6
+    %t13 = addr $arg__8
+    zeroinit 1x1 %t13
+    eh_end
+    eh_try ^cleanup_action_26
+    %t14 = call u8 @use(%t13, 0)
+    store u8 %t14, $call__9
+    %t15 = load u8 $call__9
+    eh_end
+    jump ^call_unwind_end_27
+
+  block ^cleanup_action_26:
+    call void @Probe___Probe(%t13)
+    jump ^cleanup_resume_6
+
+  block ^call_unwind_end_27:
+    branch %t15, ^lor_short_24, ^lor_rhs_23
+
+  block ^lor_rhs_23:
+    eh_try ^cleanup_action_26
+    %t16 = addr $arg__11
+    zeroinit 1x1 %t16
+    eh_end
+    eh_try ^cleanup_action_31
+    %t17 = call u8 @use(%t16, 1)
+    store u8 %t17, $call__12
+    %t18 = load u8 $call__12
+    eh_end
+    jump ^call_unwind_end_32
+
+  block ^cleanup_action_31:
+    call void @Probe___Probe(%t16)
+    jump ^cleanup_action_26
+
+  block ^call_unwind_end_32:
+    branch %t18, ^land_rhs_28, ^land_short_29
+
+  block ^land_rhs_28:
+    %t19 = cmp ne i64 1, 0
+    store typed i64 %t19, $land__10
+    jump ^land_end_30
+
+  block ^land_short_29:
+    store typed i64 0, $land__10
+    jump ^land_end_30
+
+  block ^land_end_30:
+    %t20 = load typed i64 $land__10
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $lor__7
+    call void @Probe___Probe(%t16)
+    jump ^lor_end_25
+
+  block ^lor_short_24:
+    store typed i64 1, $lor__7
+    jump ^lor_end_25
+
+  block ^lor_end_25:
+    %t22 = load typed i64 $lor__7
+    branch %t22, ^cond_true_cleanup_33, ^cond_false_cleanup_34
+
+  block ^cond_true_cleanup_33:
+    call void @Probe___Probe(%t13)
+    jump ^if_then_21
+
+  block ^cond_false_cleanup_34:
+    call void @Probe___Probe(%t13)
+    jump ^if_else_22
+
+  block ^if_then_21:
+    %t23 = load typed i32 @destroyed
+    %t24 = cmp eq i32 %t23, 2
+    branch %t24, ^cond_then_35, ^cond_else_36
+
+  block ^cond_then_35:
+    store typed i32 0, $cond__13
+    jump ^cond_end_37
+
+  block ^cond_else_36:
+    store typed i32 2, $cond__13
+    jump ^cond_end_37
+
+  block ^cond_end_37:
+    %t25 = load typed i32 $cond__13
+    return i32 %t25
+
+  block ^if_else_22:
+    jump ^if_end_38
+
+  block ^if_end_38:
+    return i32 3
+}
+function @Probe___Probe(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5ProbeD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN5ProbeD2Ev = @Probe___Probe

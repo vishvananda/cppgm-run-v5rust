@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type FY enum class FY
+    variable arr array of 4 int
+    scope enum FY
+end translation unit

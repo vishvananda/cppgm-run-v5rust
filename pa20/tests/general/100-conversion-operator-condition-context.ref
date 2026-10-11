@@ -1,0 +1,54 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @Flag__Flag(%t1, 1)
+    %t2 = addr $b
+    call void @Flag__Flag(%t2, 0)
+    %t3 = addr $a
+    %t4 = call u8 @Flag__operatorbool(%t3)
+    branch %t4, ^land_rhs_3, ^if_else_2
+
+  block ^land_rhs_3:
+    %t5 = addr $b
+    %t6 = call u8 @Flag__operatorbool(%t5)
+    %t7 = cmp eq u8 %t6, 0
+    branch %t7, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 0
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    return i32 1
+}
+function @Flag__Flag(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN4FlagC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Flag__operatorbool(%this : ptr [object_bytes=4]) -> u8 [binding=weak, object=_ZNK4FlagcvbEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 0
+    %t5 = convert trunc u8 i64 %t4
+    return u8 %t5
+}
+alias object _ZN4FlagC2Ei = @Flag__Flag

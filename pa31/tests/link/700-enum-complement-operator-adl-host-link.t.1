@@ -1,0 +1,30 @@
+#include <cstdio>
+
+namespace flags {
+namespace detail {
+enum mode { none = 0, one = 1, two = 2, four = 4 };
+mode operator|(mode x, mode y);
+mode operator&(mode x, mode y);
+mode operator~(mode x);
+}
+struct state { detail::mode value; };
+template <class T> struct wrapper { detail::mode value; };
+}
+
+namespace flags {
+template <class T>
+int masked(const wrapper<T>& w)
+{
+  return static_cast<int>((w.value | detail::one) & ~detail::two);
+}
+}
+
+int main()
+{
+  flags::state s = { flags::detail::two };
+  flags::wrapper<int> w = { flags::detail::four };
+  const int a = static_cast<int>(~s.value);
+  const int b = static_cast<int>(~(s.value | flags::detail::one));
+  std::printf("%d %d %d\n", a, b, flags::masked(w));
+  return 0;
+}

@@ -1,0 +1,11 @@
+global @v : i64 [storage=readonly, binding=internal, object=_ZL1v] = 42
+global @x : ptr [binding=strong] = addr @v
+global @y : ptr [binding=strong] = addr @v
+global @arr : obj<336x8> [binding=strong] = {
+  zero 336
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

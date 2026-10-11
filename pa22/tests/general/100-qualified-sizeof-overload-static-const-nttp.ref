@@ -1,0 +1,14 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $composite_value : obj<1x1>
+  slot $composite_ref : ptr
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = addr $composite_value
+    %t4 = addr $composite_value
+    store typed ptr %t4, $composite_ref
+    %t5 = load typed ptr $composite_ref
+    return i32 0
+}

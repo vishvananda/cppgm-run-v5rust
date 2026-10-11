@@ -1,0 +1,4 @@
+// C++11 26.4 <complex>: including the hosted <complex> and calling std::abs on
+// complex<double> must compile; expect exit 0
+#include <complex>
+int main() { std::complex<double> z(3.0, 4.0); return std::abs(z) == 5.0 ? 0 : 1; }

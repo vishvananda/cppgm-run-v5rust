@@ -1,0 +1,6 @@
+global @x : i64 [storage=readonly, binding=internal, object=_ZL1x] = 1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

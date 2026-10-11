@@ -1,0 +1,48 @@
+function @using_namespace_vector_link__total(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_ZN27using_namespace_vector_link5totalERKN16helper_inline_ns2v13vecIiEE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @helper_inline_ns__v1__vec_int___vec(%t1, 6)
+    %t2 = addr $value
+    %t3 = call i32 @using_namespace_vector_link__total(%t2)
+    %t4 = cmp eq i32 %t3, 6
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @helper_inline_ns__v1__vec_int___vec(%this : ptr [object_bytes=4], %init : i32) -> void [binding=weak, object=_ZN16helper_inline_ns2v13vecIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $init : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %init, $init
+    %t1 = load typed i32 $init
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN16helper_inline_ns2v13vecIiEC2Ei = @helper_inline_ns__v1__vec_int___vec

@@ -1,0 +1,21 @@
+int main()
+{
+  float nan_float = __builtin_nanf("");
+  double inf_double = __builtin_inf();
+  long double nan_long_double = __builtin_nanl("");
+  long double inf_long_double = __builtin_infl();
+  long double normal_long_double = 1.0L;
+  long double zero_long_double = 0.0L;
+
+  return __builtin_isnan(nan_float) &&
+         __builtin_isnan(nan_long_double) &&
+         !__builtin_isnan(normal_long_double) &&
+         __builtin_isinf(inf_double) &&
+         __builtin_isinf(inf_long_double) &&
+         !__builtin_isinf(zero_long_double) &&
+         __builtin_isfinite(zero_long_double) &&
+         !__builtin_isfinite(inf_double) &&
+         __builtin_isnormal(normal_long_double) &&
+         !__builtin_isnormal(zero_long_double) &&
+         !__builtin_isnormal(nan_float) ? 0 : 1;
+}

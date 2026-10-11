@@ -1,0 +1,88 @@
+function @in_range(%value : ptr [pass=by_address, object_bytes=8], %lo : ptr [pass=by_address, object_bytes=8], %hi : ptr [pass=by_address, object_bytes=8]) -> u8 [binding=strong, object=_Z8in_rangeRKdS0_S0_] {
+  slot $value : ptr
+  slot $lo : ptr
+  slot $hi : ptr
+  slot $cond__1 : u8
+  slot $cond__2 : u8
+
+  block ^entry:
+    store typed ptr %value, $value
+    store typed ptr %lo, $lo
+    store typed ptr %hi, $hi
+    %t1 = load typed ptr $value
+    %t2 = load typed f64 %t1
+    %t3 = load typed ptr $lo
+    %t4 = load typed f64 %t3
+    %t5 = cmp lt f64 %t2, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store u8 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t6 = load typed ptr $hi
+    %t7 = load typed f64 %t6
+    %t8 = load typed ptr $value
+    %t9 = load typed f64 %t8
+    %t10 = cmp lt f64 %t7, %t9
+    branch %t10, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store u8 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store u8 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t11 = load u8 $cond__2
+    store u8 %t11, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load u8 $cond__1
+    return u8 %t12
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lo : f32
+  slot $hi : f32
+  slot $cond__1 : i32
+  slot $refarg__2 : f64
+  slot $refarg__3 : f64
+  slot $refarg__4 : f64
+
+  block ^entry:
+    %t1 = convert fptrunc f32 f64 0.125
+    store typed f32 %t1, $lo
+    %t2 = convert fptrunc f32 f64 0.625
+    store typed f32 %t2, $hi
+    %t3 = load typed f32 $lo
+    %t4 = convert fpext f64 f32 %t3
+    %t5 = binary add f64 %t4, 0.010000000000000000208
+    store typed f64 %t5, $refarg__2
+    %t6 = addr $refarg__2
+    %t7 = load typed f32 $lo
+    %t8 = convert fpext f64 f32 %t7
+    store typed f64 %t8, $refarg__3
+    %t9 = addr $refarg__3
+    %t10 = load typed f32 $hi
+    %t11 = convert fpext f64 f32 %t10
+    store typed f64 %t11, $refarg__4
+    %t12 = addr $refarg__4
+    %t13 = call u8 @in_range(%t6, %t9, %t12)
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}

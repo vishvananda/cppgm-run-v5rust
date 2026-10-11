@@ -1,0 +1,18 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = call i32 @n__number__operatorint(%t2)
+    %t4 = cmp gt i32 %t3, 0
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @n__number__operatorint(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK1n6numbercviEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}

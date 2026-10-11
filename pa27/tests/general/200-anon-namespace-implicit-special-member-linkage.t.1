@@ -1,0 +1,19 @@
+namespace {
+
+struct Member {
+  int *p;
+  Member() : p(new int(7)) {}
+  ~Member() { delete p; }
+};
+
+struct Analyzer {
+  Member m;
+};
+
+}
+
+int main()
+{
+  Analyzer a;
+  return *a.m.p - 7;
+}

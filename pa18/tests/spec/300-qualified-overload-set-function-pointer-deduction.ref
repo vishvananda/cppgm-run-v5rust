@@ -1,0 +1,59 @@
+function @api__create(%value : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=strong, object=_ZN3api6createERKNS_4pathE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 7
+    %t5 = convert trunc u8 i64 %t4
+    return u8 %t5
+}
+function @api__create__ov2(%__param0 : ptr [pass=by_address, object_bytes=4], %__param1 : i32) -> u8 [binding=strong, object=_ZN3api6createERKNS_4pathEi] {
+  slot $__param0 : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return u8 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr @api__create
+    %t5 = addr $value
+    %t6 = call i32 @bind(%t4, %t5)
+    return i32 %t6
+}
+function @bind(%function : ptr, %argument : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z4bindIN3api4pathEEiPFbRKT_ES4_] {
+  slot $function : ptr
+  slot $argument : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %function, $function
+    store typed ptr %argument, $argument
+    %t1 = load typed ptr $argument
+    %t2 = load typed ptr $function
+    %t3 = call u8 %t2(%t1) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> u8
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

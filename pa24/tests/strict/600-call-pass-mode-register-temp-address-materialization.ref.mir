@@ -1,0 +1,62 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @make_value
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 7
+    ret rax
+
+function @copy_ref
+  abi
+    param %ret -> rdi : ptr
+    param %src -> rsi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rsi, [rsi]
+    store.i64 [rdi], rsi
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $dst -> [rbp-8] : i64
+    temp %v -> [rbp-16] : i64
+
+  block ^entry
+    store.i64 [rbp-8], 0
+    call @make_value [args=()]
+    store.i64 [rbp-16], rax
+    lea rdi, [rbp-8]
+    lea rsi, [rbp-16]
+    call @copy_ref [args=(rsi,rdi)]
+    mov rdx, 7
+    cmp.i64 [rbp-8], rdx
+    sete r8
+    movzx r8, r8
+    cmp.i64 r8, 0
+    sete r8
+    movzx r8, r8
+    ret r8

@@ -1,0 +1,19 @@
+enum SmallValue
+{
+  SV_SEVEN = 7
+};
+
+unsigned long widen(unsigned long x)
+{
+  return x;
+}
+
+SmallValue make_value()
+{
+  return SV_SEVEN;
+}
+
+int main()
+{
+  return widen(make_value()) == 7ul ? 0 : 1;
+}

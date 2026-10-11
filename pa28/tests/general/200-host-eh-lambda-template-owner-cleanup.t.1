@@ -1,0 +1,43 @@
+template <class T>
+T &&move_ref(T &value)
+{
+  return static_cast<T &&>(value);
+}
+
+int observed = 0;
+
+struct Fail {};
+
+template <class Fn>
+struct Guard {
+  Fn fn;
+  explicit Guard(Fn f) : fn(move_ref(f)) {}
+  ~Guard() { observed = fn(); }
+};
+
+template <class Fn>
+Guard<Fn> make_guard(Fn fn)
+{
+  return Guard<Fn>(move_ref(fn));
+}
+
+struct Holder {
+  int x;
+  int add(int y) const { return x + y; }
+  int run(int y) const
+  {
+    try {
+      auto guard = make_guard([&]() { return add(y); });
+      throw Fail();
+    } catch(Fail) {
+    }
+    return observed;
+  }
+};
+
+int main()
+{
+  Holder h;
+  h.x = 5;
+  return h.run(7) == 12 ? 0 : 1;
+}

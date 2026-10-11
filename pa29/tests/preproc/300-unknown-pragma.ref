@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/300-unknown-pragma.t
+identifier alive
+eof

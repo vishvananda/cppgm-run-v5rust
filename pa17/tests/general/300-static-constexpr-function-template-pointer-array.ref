@@ -1,0 +1,102 @@
+declare global @table_void___inv_sizes32_len : i64 [binding=weak, object=_ZN5tableIvE15inv_sizes32_lenE]
+
+global @table_void___inv_sizes32 [storage=readonly, binding=weak, object=_ZN5tableIvE11inv_sizes32E] = {
+  i64 1
+  i64 2
+}
+global @table_void___sizes [storage=readonly, binding=weak, object=_ZN5tableIvE5sizesE] = {
+  i64 13
+  i64 29
+  i64 53
+}
+global @table_void___positions [storage=readonly, binding=weak, object=_ZN5tableIvE9positionsE] = {
+  ptr addr @table_void___position
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = call i64 @table_void___call(42, 1)
+    %t2 = cmp eq i64 %t1, 15
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = call i64 @table_void___call(42, 2)
+    %t4 = cmp eq i64 %t3, 42
+    %t5 = cmp ne i64 %t4, 0
+    store typed i64 %t5, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t6 = load typed i64 $land__2
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @table_void___call(%hash : i64, %index : i64) -> i64 [binding=weak, object=_ZN5tableIvE4callEmm, inline_hint=yes] {
+  slot $hash : i64
+  slot $index : i64
+  slot $sizes_under_32bit : i64
+
+  block ^entry:
+    store typed i64 %hash, $hash
+    store typed i64 %index, $index
+    store typed i64 2, $sizes_under_32bit
+    %t1 = load typed i64 $index
+    %t2 = load typed i64 $sizes_under_32bit
+    %t3 = cmp ult i64 %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t4 = load typed i64 $hash
+    %t5 = addr @table_void___inv_sizes32
+    %t6 = load typed i64 $index
+    %t7 = index i64 [projection=array_element] %t5, %t6
+    %t8 = load typed i64 %t7
+    %t9 = binary add i64 %t4, %t8
+    %t10 = addr @table_void___sizes
+    %t11 = load typed i64 $index
+    %t12 = index i64 [projection=array_element] %t10, %t11
+    %t13 = load typed i64 %t12
+    %t14 = binary umod i64 %t9, %t13
+    return i64 %t14
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t15 = load typed i64 $hash
+    %t16 = addr @table_void___positions
+    %t17 = load typed i64 $index
+    %t18 = load typed i64 $sizes_under_32bit
+    %t19 = binary sub i64 %t17, %t18
+    %t20 = index ptr [projection=array_element] %t16, %t19
+    %t21 = load typed ptr %t20
+    %t22 = call i64 %t21(%t15) as (%arg0 : i64) -> i64
+    return i64 %t22
+}
+function @table_void___position(%hash : i64) -> i64 [binding=weak, object=_ZN5tableIvE8positionILm2ELm53EEEmm, inline_hint=yes] {
+  slot $hash : i64
+
+  block ^entry:
+    store typed i64 %hash, $hash
+    %t1 = load typed i64 $hash
+    %t2 = binary umod i64 %t1, 53
+    return i64 %t2
+}

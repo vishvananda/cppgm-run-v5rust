@@ -1,0 +1,39 @@
+global @holder_callable___value : ptr [storage=readonly, binding=weak, object=_ZN6holderI8callableE5valueE] = addr @member_callable___wrap
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @holder_callable___value
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @member_callable___wrap(%__param0 : ptr, %__param1 : i64) -> void [binding=weak, object=_ZN6memberI8callableE4wrapIXadL_ZNKS0_1fIlEEvT_EElEEvPvT0_, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i64 %__param1, $__param1
+    return void
+}
+function @callable__f(%this : ptr [object_bytes=1], %__param1 : i64) -> void [binding=weak, object=_ZNK8callable1fIlEEvT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %__param1, $__param1
+    return void
+}

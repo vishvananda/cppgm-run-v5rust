@@ -1,0 +1,57 @@
+global @dynamic_extent : i64 [storage=readonly, binding=internal, object=_ZL14dynamic_extent] = -1
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i8 104
+  i8 101
+  i8 108
+  i8 108
+  i8 111
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $text : obj<6x1>
+  slot $value : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $text
+    copyobj 6x1 @__constexpr_template__1, %t1
+    %t2 = addr $value
+    %t3 = addr $text
+    %t4 = convert sext i64 i32 5
+    call void @span_constchar_18446744073709551615___span(%t2, %t3, %t4)
+    %t5 = addr $value
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i64 %t6
+    %t8 = convert sext i64 i32 5
+    %t9 = cmp eq i64 %t7, %t8
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @span_constchar_18446744073709551615___span(%this : ptr [object_bytes=8], %__param1 : ptr, %count : i64) -> void [binding=weak, object=_ZN4spanIKcLm18446744073709551615EEC1IS0_TnN9enable_ifIXaaeqLm18446744073709551615EL_ZL14dynamic_extentEsr14is_convertibleIT_S0_EE5valueEiE4typeELi0EEEPS4_m, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed i64 %count, $count
+    %t1 = load typed i64 $count
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    return void
+}
+alias object _ZN4spanIKcLm18446744073709551615EEC2IS0_TnN9enable_ifIXaaeqLm18446744073709551615EL_ZL14dynamic_extentEsr14is_convertibleIT_S0_EE5valueEiE4typeELi0EEEPS4_m = @span_constchar_18446744073709551615___span

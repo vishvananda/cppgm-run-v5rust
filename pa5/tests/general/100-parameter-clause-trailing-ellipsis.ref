@@ -1,0 +1,90 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier g
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_CHAR:char
+              declarator
+                identifier value
+            parameter-pack ...
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier h
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                nested-declarator
+                  declarator
+                    ptr-operator OP_STAR:*
+                    identifier callback
+                parameter-clause
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier KW_INT:int
+            parameter-pack ...
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier k
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier count
+              default-argument
+                initializer
+                  literal 1
+            parameter-pack ...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier forward
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  parameter-pack ...
+                  identifier values
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier unnamed
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                parameter-pack ...
+end translation unit

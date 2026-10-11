@@ -1,0 +1,111 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @left
+  storage scalar f80
+  init f80 1.0L
+
+global @right
+  storage scalar f80
+  init f80 1.0L
+
+global @observed
+  storage scalar u8
+  init u8 0
+
+global @g1
+  storage scalar i64
+  init i64 1
+
+global @g2
+  storage scalar i64
+  init i64 2
+
+global @g3
+  storage scalar i64
+  init i64 3
+
+global @g4
+  storage scalar i64
+  init i64 4
+
+global @g5
+  storage scalar i64
+  init i64 5
+
+global @g6
+  storage scalar i64
+  init i64 6
+
+global @g7
+  storage scalar i64
+  init i64 7
+
+function @reduced
+  abi
+    param %first -> rdi : ptr
+    param %second -> rsi : ptr
+    return void -> void
+  frame
+    stack_size 112
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    temp %v6 -> [rbp-8] : i64
+    temp %v7 -> [rbp-16] : i64
+    temp %left -> [rbp-32] : f80
+    temp %right -> [rbp-48] : f80
+
+  block ^entry
+    load.i64 r8, @g1
+    load.i64 r9, @g2
+    load.i64 rdx, @g3
+    load.i64 rcx, @g4
+    load.i64 rax, @g5
+    load.i64 rbx, @g6
+    store.i64 [rbp-8], rbx
+    load.i64 rbx, @g7
+    store.i64 [rbp-16], rbx
+    jmp ^compare
+
+  block ^compare
+    fmov.f80 [rbp-32], @left
+    fmov.f80 [rbp-48], @right
+    feq.f80 r8, [rbp-32], [rbp-48]
+    store.u8 @observed, r8
+    ret
+
+  block ^use_live_values
+    add r8, r9
+    add r8, rdx
+    add r8, rcx
+    add r8, rax
+    add r8, [rbp-8]
+    add r8, [rbp-16]
+    store.i64 [rdi], r8
+    store.i64 [rsi], r8
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @g1
+    mov rsi, rdi
+    call @reduced [args=(rsi,rdi)]
+    mov rdx, 1
+    cmp.u8 @observed, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

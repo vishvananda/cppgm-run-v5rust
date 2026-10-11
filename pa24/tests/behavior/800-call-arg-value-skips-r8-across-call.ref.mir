@@ -1,0 +1,133 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @good
+  storage scalar i64
+  init i64 0
+
+global @finish
+  storage scalar i64
+  init i64 0
+
+global @tmp
+  storage scalar i64
+  init i64 0
+
+global @bad
+  storage scalar i64
+  init i64 0
+
+function @intervene
+  abi
+    param %scratch -> rdi : ptr
+    param %a -> rsi : i64
+    param %b -> rdx : i64
+    param %c -> rcx : i64
+    param %wrong -> r8 : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @relocate
+  abi
+    param %start -> rdi : ptr
+    param %finish -> rsi : ptr
+    param %tmp -> rdx : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 [rdi], 77
+    store.i64 [rsi], 88
+    store.i64 [rdx], 99
+    ret
+
+function @run
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    return void -> void
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+    slot $scratch -> [rbp-40] : obj<40x8>
+
+  block ^entry
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    jmp ^loaded
+
+  block ^loaded
+    lea rdi, [rbp-40]
+    mov r8, @bad
+    mov rsi, 1
+    mov rdx, 2
+    mov rcx, 3
+    call @intervene [args=(rcx,rdx,rsi,rdi,r8)]
+    mov rdi, rbx
+    mov rsi, r12
+    mov rdx, r13
+    call @relocate [args=(rdx,rsi,rdi)]
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @good
+    mov rsi, @finish
+    mov rdx, @tmp
+    call @run [args=(rdx,rsi,rdi)]
+    load.i64 r8, @good
+    load.i64 r9, @finish
+    load.i64 rdi, @tmp
+    load.i64 rsi, @bad
+    mov rdx, 77
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    mov rdx, 88
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    mov rdx, 99
+    cmp.i64 rdi, rdx
+    sete rdi
+    movzx rdi, rdi
+    mov rdx, 0
+    cmp.i64 rsi, rdx
+    sete rsi
+    movzx rsi, rsi
+    and r8, r9
+    and rdi, rsi
+    and r8, rdi
+    mov rdx, 0
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    ret r8

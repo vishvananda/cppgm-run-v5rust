@@ -1,0 +1,6 @@
+#include "100-inline-local-static-header-coalesces.helper.h"
+
+void touch_other_translation_unit()
+{
+  (void) shared_value();
+}

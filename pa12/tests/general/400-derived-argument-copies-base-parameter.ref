@@ -1,0 +1,148 @@
+global @moves : i32 [binding=strong] = zero
+global @copies : i32 [binding=strong] = zero
+
+function @take(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z4take4Base] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $derived : obj<8x4>
+  slot $arg__1 : obj<4x4>
+  slot $arg__2 : obj<4x4>
+  slot $arg__3 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $derived
+    call void @Derived__Derived(%t1)
+    %t2 = addr $arg__1
+    %t3 = addr $derived
+    %t4 = index i8 %t3, 0
+    call void @Base__Base__ov2(%t2, %t4)
+    %t5 = call i32 @take(%t2)
+    %t6 = cmp ne i32 %t5, 4
+    branch %t6, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t7 = addr $derived
+    %t8 = index i8 %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp ne i32 %t10, 4
+    branch %t11, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t12 = load typed i32 @copies
+    %t13 = cmp ne i32 %t12, 1
+    branch %t13, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t14 = load typed i32 @moves
+    %t15 = cmp ne i32 %t14, 0
+    branch %t15, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    %t16 = addr $arg__2
+    %t17 = addr $arg__3
+    call void @Derived__Derived(%t17)
+    %t18 = index i8 %t17, 0
+    call void @Base__Base__ov3(%t16, %t18)
+    %t19 = call i32 @take(%t16)
+    %t20 = cmp ne i32 %t19, 4
+    branch %t20, ^if_then_9, ^lor_rhs_11
+
+  block ^lor_rhs_11:
+    %t21 = load typed i32 @moves
+    %t22 = cmp ne i32 %t21, 1
+    branch %t22, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    return i32 3
+
+  block ^if_else_10:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    return i32 0
+}
+function @Derived__Derived(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    store typed i32 5, %t4
+    return void
+}
+function @Base__Base__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed i32 @copies
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, @copies
+    return void
+}
+function @Base__Base__ov3(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = unary neg i32 1
+    %t7 = load typed ptr $other
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed i32 %t6, %t8
+    %t9 = load typed i32 @moves
+    %t10 = binary add nowrap i32 %t9, 1
+    store typed i32 %t10, @moves
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 4, %t2
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN4BaseC2ERKS_ = @Base__Base__ov2
+alias object _ZN4BaseC2EOS_ = @Base__Base__ov3

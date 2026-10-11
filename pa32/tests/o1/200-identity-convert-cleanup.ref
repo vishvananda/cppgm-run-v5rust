@@ -1,0 +1,5 @@
+function @main(%x : i64, %b : i1) -> i64 [role=entry] {
+  block ^entry:
+    %d = binary add i64 %x, 1
+    return i64 %d
+}

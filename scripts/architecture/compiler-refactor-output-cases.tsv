@@ -1,0 +1,15 @@
+name	tool	input	stdin	args	output
+pptoken	pptoken	pa1/tests/100-raw-string-literal-nested-delimiter.t	yes		none
+posttoken	posttoken	pa2/tests/200-unicode-character-literals.t	yes		none
+ppexpr	ppexpr	pa3/tests/200-operator-precedence.t	yes		none
+preproc	preproc	pa4/tests/directives/200-conditional-exclusion.t	no	-o {output} {input}	file
+syntax	cppgm++	pa5/tests/general/100-value-and-call-condition.t	no	--emit-ast -o {output} {input}	file
+types	cppgm++	pa6/tests/general/200-qualified-scoped-enum-definition-lookup.t	no	--emit-types -o {output} {input}	file
+semantics	cppgm++	pa7/tests/general/100-conditional-const-enum-preserves-type.t	no	--emit-semantics -o {output} {input}	file
+abi-mangle	abimangle	pa9/tests/abi/100-global-function.t	no	-o {output} {input}	file
+source-lowir	cppgm++	pa10/tests/general/100-canonical-comparison-result.t	no	--emit-lowir -O0 -o {output} {input}	file
+optimized-lowir	lowiropt	pa8/tests/spec/100-ret0.t	no	-O1 -o {output} {input}	file
+lowir-roundtrip	lowir	pa8/tests/spec/100-ret0.t	no	-o {output} {input}	file
+lowir-native	lowir2native	pa8/tests/spec/100-ret0.t	no	-O0 -o {output} {input}	file
+source-object	cppgm++	pa10/tests/general/100-canonical-comparison-result.t	no	-O0 -c -o {output} {input}	file
+

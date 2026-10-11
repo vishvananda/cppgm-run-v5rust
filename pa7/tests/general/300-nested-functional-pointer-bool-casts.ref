@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 0
+      simple-declaration
+        variable p pointer to int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int x
+      return-statement
+        conditional-expression prvalue int
+          binary-expression prvalue bool OP_EQ:==
+            cast-expression prvalue int
+              cast-expression prvalue bool
+                id-expression lvalue pointer to int p
+            literal prvalue int 1
+          literal prvalue int 0
+          cast-expression prvalue int
+            cast-expression prvalue bool
+              id-expression lvalue pointer to int p
+end translation unit

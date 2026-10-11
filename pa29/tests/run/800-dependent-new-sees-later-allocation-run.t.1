@@ -1,0 +1,10 @@
+// N3485 5.3.4p9, 14.6.4: the allocation function of a new-expression whose
+// type or placement arguments are dependent is looked up in the global scope
+// when the template is instantiated, so it finds one declared after the
+// template
+#include <cstddef>
+int calls;
+template<class T> void* by_type() { return new (5) T; }
+template<class T> void* by_placement(T k) { return new (k) int; }
+void* operator new(std::size_t n, int) { ++calls; return ::operator new(n); }
+int main() { by_type<int>(); by_placement(5); return calls; }

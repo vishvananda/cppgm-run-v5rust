@@ -1,0 +1,7 @@
+// PA29 README ([[no_unique_address]] layout) + Itanium ABI 2.4 (a
+// potentially-overlapping non-POD member occupies only its dsize): P has dsize
+// 5, so S1 places d at 5 and is 8 bytes; expect exit 0
+#include <cstddef>
+struct P { int x; char c; P() : x(1), c(2) {} };
+struct S1 { [[no_unique_address]] P p; char d; };
+int main() { return sizeof(S1) == 8 && offsetof(S1, d) == 5 ? 0 : 1; }

@@ -1,0 +1,6 @@
+weak_symbol 1 alias
+weak_symbol 2 alias
+weak_symbol 3 pointer_alias
+weak_symbol 3 const_alias
+relocation_class_canonical 1 data_any alias
+relocation_class_canonical 2 data_any alias

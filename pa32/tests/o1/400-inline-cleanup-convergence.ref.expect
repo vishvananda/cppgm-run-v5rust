@@ -1,0 +1,29 @@
+# budget from 400-inline-cleanup-convergence.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 14
+blocks <= 14
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @main
+instructions <= 4 in @other
+instructions <= 4 in @wrap7
+instructions <= 4 in @wrap6
+instructions <= 4 in @wrap5
+instructions <= 4 in @wrap4
+instructions <= 4 in @wrap3
+instructions <= 4 in @wrap2
+instructions <= 4 in @wrap1
+instructions <= 4 in @wrap0
+instructions <= 4 in @leaf
+
+# outcomes from 400-inline-cleanup-convergence.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @leaf)
+none(call @wrap0)
+none(call @wrap1)
+none(call @wrap2)
+none(call @wrap3)
+none(call @wrap4)
+none(call @wrap5)
+none(call @wrap6)
+none(call @wrap7)

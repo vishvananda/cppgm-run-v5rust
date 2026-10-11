@@ -1,0 +1,19 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $a
+    %t3 = call ptr @get(%t2)
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @get(%a : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z3getILi0EJiEERiR1AIJDpT0_EE] {
+  slot $a : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $box : obj<8x8>
+
+  block ^entry:
+    store typed i32 7, $x
+    %t1 = addr $box
+    %t2 = addr $x
+    call void @RefBox_int____RefBox(%t1, %t2)
+    %t3 = addr $box
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = load typed i32 %t5
+    return i32 %t6
+}
+function @RefBox_int____RefBox(%this : ptr [object_bytes=8], %input : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6RefBoxIRiEC1IS0_EEOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %input, $input
+    %t1 = load typed ptr $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN6RefBoxIRiEC2IS0_EEOT_ = @RefBox_int____RefBox

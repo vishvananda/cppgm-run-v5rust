@@ -1,0 +1,42 @@
+function @choose(%condition : u8, %left : ptr [pass=by_address, object_bytes=4], %right : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_Z6choosebRiS_] {
+  slot $condition : u8
+  slot $left : ptr
+  slot $right : ptr
+  slot $condaddr__1 : ptr
+
+  block ^entry:
+    store u8 %condition, $condition
+    store typed ptr %left, $left
+    store typed ptr %right, $right
+    %t1 = load u8 $condition
+    branch %t1, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t2 = load typed ptr $left
+    store typed ptr %t2, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t3 = load typed ptr $right
+    store typed ptr %t3, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t4 = load typed ptr $condaddr__1
+    return ptr %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $left : i32
+  slot $right : i32
+
+  block ^entry:
+    store typed i32 1, $left
+    store typed i32 2, $right
+    %t1 = addr $left
+    %t2 = addr $right
+    %t3 = call ptr @choose(0, %t1, %t2)
+    store typed i32 3, %t3
+    %t4 = load typed i32 $right
+    %t5 = binary sub nowrap i32 %t4, 3
+    return i32 %t5
+}

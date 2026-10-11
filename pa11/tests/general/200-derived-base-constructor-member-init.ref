@@ -1,0 +1,50 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $d
+    call void @Derived__Derived(%t1, 4, 5)
+    %t2 = addr $d
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = addr $d
+    %t7 = index i8 [projection=field] %t6, 4
+    %t8 = load typed i32 %t7
+    %t9 = binary add nowrap i32 %t5, %t8
+    %t10 = binary sub nowrap i32 %t9, 9
+    return i32 %t10
+}
+function @Derived__Derived(%this : ptr [object_bytes=8], %a : i32, %b : i32) -> void [binding=weak, object=_ZN7DerivedC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $a
+    call void @Base__Base__base_entry(%t2, %t3)
+    %t4 = load typed i32 $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN4BaseC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN7DerivedC2Eii = @Derived__Derived

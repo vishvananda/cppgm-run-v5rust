@@ -1,0 +1,10 @@
+// N3485 15.2p2/8.5.4p5: when the 2nd backing-array element's member b throws,
+// its constructed member a (and element 1) are destroyed; expect exit 0
+#include <initializer_list>
+static int made, fail_at = 3, live;
+struct E { E(int) { if (made++ == fail_at) throw 1; ++live; } E(const E&) { ++live; } ~E() { --live; } };
+struct T { E a; E b; };
+int main() {
+  try { std::initializer_list<T> il = {{1, 2}, {3, 4}}; } catch (int) {}
+  return live;
+}

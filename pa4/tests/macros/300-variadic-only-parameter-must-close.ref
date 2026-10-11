@@ -1,0 +1,2 @@
+preproc 1
+sof tests/macros/300-variadic-only-parameter-must-close.t

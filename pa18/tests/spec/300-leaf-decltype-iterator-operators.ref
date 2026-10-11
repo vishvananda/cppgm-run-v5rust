@@ -1,0 +1,6 @@
+declare global @is_range_range_void___value : u8 [binding=weak, object=_ZN8is_rangeI5rangevE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

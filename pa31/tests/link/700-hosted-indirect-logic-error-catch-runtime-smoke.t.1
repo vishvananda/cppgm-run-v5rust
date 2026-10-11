@@ -1,0 +1,21 @@
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+
+struct Soft : std::logic_error {
+  using std::logic_error::logic_error;
+};
+
+struct Hard : Soft {
+  using Soft::Soft;
+};
+
+int main() {
+  try {
+    throw Hard(std::string("logic"));
+  } catch(const std::logic_error & e) {
+    std::printf("%s\n", e.what());
+    return 0;
+  }
+  return 1;
+}

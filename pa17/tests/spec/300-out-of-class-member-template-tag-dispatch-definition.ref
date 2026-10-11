@@ -1,0 +1,43 @@
+declare function @source() -> ptr [binding=strong, object=_Z6sourcev]
+declare function @make_forward_tag() -> obj<1x1> [result_classes=none, binding=strong, object=_Z16make_forward_tagv]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : ptr
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    store typed ptr 0, $b
+    %t1 = load typed ptr $b
+    %t2 = call ptr @source()
+    %t3 = call ptr @source()
+    %t4 = addr $argobj__2
+    %t5 = call obj<1x1> @make_forward_tag()
+    %t6 = call i32 @box_int___pick(%t1, %t2, %t3, $argobj__2)
+    %t7 = cmp eq i32 %t6, 2
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @box_int___pick(%this : ptr [object_bytes=1], %__param1 : ptr, %__param2 : ptr, %__param3 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_ZN3boxIiE4pickIPcEEiT_S3_11forward_tag] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+  slot $__param3 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return i32 2
+}

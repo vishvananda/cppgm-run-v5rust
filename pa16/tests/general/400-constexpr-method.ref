@@ -1,0 +1,33 @@
+global @v [storage=readonly, binding=internal, object=_ZL1v] = {
+  i32 3
+  i32 4
+}
+global @w [storage=readonly, binding=internal, object=_ZL1w] = {
+  i32 1
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @Vec2__Vec2(%this : ptr [object_bytes=8], %a : i32, %b : i32) -> void [binding=weak, object=_ZN4Vec2C1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN4Vec2C2Eii = @Vec2__Vec2

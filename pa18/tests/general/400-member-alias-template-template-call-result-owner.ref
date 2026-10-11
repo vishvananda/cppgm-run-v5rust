@@ -1,0 +1,28 @@
+declare function @extractor_requested_feature___operator__(%arg0 : ptr [object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZNK9extractorI17requested_featureEclIN9parameter3aux18flat_like_arg_listIJNS4_19flat_like_arg_tupleI9other_tagNS4_15tagged_argumentIS7_KdEEN4mp117mp_trueEEENS6_I13requested_tagNS8_ISE_14requested_typeEESC_EEEEEEEN16extractor_resultIT_S0_E4typeERKSK_]
+
+global @extract [storage=readonly, binding=internal, object=_ZL7extract] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $args : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $args
+    %t2 = addr $args
+    call void @use(%t2)
+    return i32 0
+}
+function @use(%args : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_Z3useIN9parameter3aux18flat_like_arg_listIJNS1_19flat_like_arg_tupleI9other_tagNS1_15tagged_argumentIS4_KdEEN4mp117mp_trueEEENS3_I13requested_tagNS5_ISB_14requested_typeEES9_EEEEEEvRKT_] {
+  slot $args : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %args, $args
+    %t1 = addr @extract
+    %t2 = load typed ptr $args
+    %t3 = call i32 @extractor_requested_feature___operator__(%t1, %t2)
+    store typed i32 %t3, $value
+    %t4 = load typed i32 $value
+    return void
+}

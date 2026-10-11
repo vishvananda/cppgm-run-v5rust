@@ -1,0 +1,54 @@
+// N3485 15.2p1: when an exception leaves the initializer of a declared object,
+// every automatic object constructed since the try block was entered is
+// destroyed exactly once, whichever path the initializer took: GNU statement
+// expressions in a conditional's or a logical operator's operand, a
+// delete-expression whose destructor throws, a new-expression whose allocation
+// function returns null; a countdown throws at each step in turn and the trace
+// records the order
+#include "200-host-eh-construction-branch-regions.helper.h"
+typedef decltype(sizeof(0)) size_type;
+static unsigned long long trace;
+static int c, cd, steps;
+static void note(int v) { trace = trace * 31 + (unsigned long long)v; }
+static void tick(int w) { ++steps; if (cd > 0 && --cd == 0) throw w; }
+static int g(int x) { tick(x); return x; }
+struct T { int id; T(int i) : id(i) { tick(i); note(i); } T(bool b) : id(b ? 2 : 3) { tick(id); note(id); } ~T() { note(-id); } };
+struct TN { int id; TN(int i) noexcept : id(i) { note(i); } TN(bool b) noexcept : id(b ? 4 : 5) { note(id); } ~TN() { note(-id); } };
+struct DD { int id; explicit DD(int i) : id(i) {} ~DD() noexcept(false) { note(-id); tick(id); } };
+static DD* pd;
+struct N { int id; explicit N(int i) : id(i) { tick(i); note(i); } ~N() { note(-id); }
+  static void* operator new(size_type s) { note(1000); return ::operator new(s); }
+  static void* operator new(size_type s, int h) noexcept { note(1000 + h); return h != 0 ? ::operator new(s) : 0; }
+  static void operator delete(void* p) { note(2000); ::operator delete(p); }
+  static void operator delete(void* p, int h) noexcept { note(2000 + h); ::operator delete(p); } };
+static int keep(N* n) { int v = n != 0 ? n->id : 0; delete n; return v; }
+static void s1() { T v(1); T x(c ? ({ T p(40); g(41); }) : g(42)); }
+static void s2() { T v(1); T x(c ? 43 : ({ T p(44); g(45); })); }
+static void s3() { T v(1); T x(c && ({ T p(46); g(47) > 0; })); }
+static void s4() { T v(1); T x(c || ({ T p(48); g(49) > 0; })); }
+static void s5() { T v(1); T x(g(50) + (c ? ({ T p(51); 1; }) : 2)); }
+static void s6() { T v(1); T x((c ? ({ g(52); }) : 2) + g(53)); }
+static void s7() { T v(1); pd = new DD(54); T x((delete pd, g(55))); }
+static void s8() { T v(1); pd = c ? new DD(56) : 0; T x(c ? (delete pd, 57) : g(58)); }
+static void s9() { T v(1); T x(keep(new (c) N(59))); }
+static void s10() { T v(1); TN x(c ? keep(new N(60)) != 0 : false); }
+static void s11() { T v(1); for (T x(c ? ({ g(61); }) : 62); ; ) { note(63); break; } }
+static void s12() { T v(1); try { T x(c ? ({ T p(64); g(65); }) : 66); } catch (int e) { note(500 + e); } }
+static void s13() { T v(1); try { throw 0; } catch (int) { T x(c ? 67 : ({ T p(68); g(69); })); } }
+static void s14() { T v(1); T x = c ? ({ T p(70); g(71); }) : 72; }
+static void s15() { T v(1); T x(c ? (c ? ({ T p(73); g(74); }) : 75) : 76); }
+int main()
+{
+  void (*fs[])() = { s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15 };
+  for (int f = 0; f < 15; ++f)
+    for (c = 0; c < 2; ++c)
+      for (int k = 0; k < 12; ++k)
+      {
+        trace = 0; steps = 0; cd = k;
+        try { fs[f](); } catch (int e) { note(7000 + e); }
+        out_line("f", trace);
+        if (k > steps)
+          break;
+      }
+  return 0;
+}

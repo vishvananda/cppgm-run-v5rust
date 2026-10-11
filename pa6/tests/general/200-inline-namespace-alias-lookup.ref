@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable a int
+    variable c char
+    variable d char
+    variable e int
+    scope namespace I0
+      scope namespace I1
+        type-alias TI int
+        variable v int
+        scope namespace Deep
+          type-alias DC char
+end translation unit

@@ -1,0 +1,22 @@
+function @main() -> i64 {
+  slot $tmpobj__1 : i64
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @P__P(%t1)
+    %t2 = index i8 %t1, 4
+    %t3 = load i32 %t2
+    return i64 %t3
+}
+function @P__P(%this : ptr) -> void {
+  slot $this : ptr
+
+  block ^entry:
+    store ptr %this, $this
+    %t1 = load ptr $this
+    store i32 1, %t1
+    %t2 = load ptr $this
+    %t3 = index i8 %t2, 4
+    store i32 9, %t3
+    return void
+}

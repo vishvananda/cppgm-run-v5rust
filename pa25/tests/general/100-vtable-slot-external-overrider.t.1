@@ -1,0 +1,10 @@
+// Itanium ABI 2.5/2.6: F's vtables (and construction vtables for D-in-F)
+// reference M::f, declared here and defined in u2, through thunks/vcall
+// entries; this TU must compile and link; expect exit 0
+struct V { virtual ~V(); virtual int f(); };
+struct M : virtual V { ~M(); int f(); };
+struct N : virtual V { ~N(); };
+struct D : M, N { D(); ~D(); };
+struct F : D { F(); };
+F::F() {}
+int main() { F x; N* n = &x; V* v = n; return v->f() == 2 ? 0 : 1; }

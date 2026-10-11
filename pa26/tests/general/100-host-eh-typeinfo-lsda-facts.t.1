@@ -1,0 +1,18 @@
+struct Mark
+{
+  int value;
+};
+
+int main()
+{
+  try
+  {
+    Mark m;
+    m.value = 5;
+    throw m;
+  }
+  catch (Mark &m)
+  {
+    return m.value - 5;
+  }
+}

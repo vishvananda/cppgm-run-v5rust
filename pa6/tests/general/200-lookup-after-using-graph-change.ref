@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias T long int
+    scope namespace A
+      type-alias T long int
+    scope namespace B
+    scope namespace C
+      variable before_target_extension long int
+      type-alias T char
+      variable after_target_extension char
+    scope namespace D
+      variable before_local_edge long int
+      type-alias T char
+      variable after_local_edge char
+end translation unit

@@ -1,0 +1,9 @@
+function @ttp_pack__test() -> i32 [binding=strong, object=_ZN8ttp_pack4testEv] {
+  block ^entry:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @ttp_pack__test()
+    return i32 %t1
+}

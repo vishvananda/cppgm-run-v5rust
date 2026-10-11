@@ -1,0 +1,39 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition api
+    function-definition api::transform function of (int) returning int
+      parameter value int
+      compound-statement
+        return-statement
+          binary-expression prvalue int OP_PLUS:+
+            id-expression lvalue int value
+            literal prvalue int 1
+    function-definition api::transform function of (long int) returning long int
+      parameter value long int
+      compound-statement
+        return-statement
+          binary-expression prvalue long int OP_PLUS:+
+            id-expression lvalue long int value
+            literal prvalue int 2
+  function-definition apply function of (pointer to function of (int) returning int, int) returning int
+    parameter function pointer to function of (int) returning int
+    parameter value int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          id-expression lvalue pointer to function of (int) returning int function
+          id-expression lvalue int value
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        conditional-expression prvalue int
+          binary-expression prvalue bool OP_EQ:==
+            call-expression prvalue int
+              callee apply function of (pointer to function of (int) returning int, int) returning int
+              id-expression lvalue function of (int) returning int api::transform
+              literal prvalue int 4
+            literal prvalue int 5
+          literal prvalue int 0
+          literal prvalue int 1
+end translation unit

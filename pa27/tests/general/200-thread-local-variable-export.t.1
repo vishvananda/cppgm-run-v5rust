@@ -1,0 +1,7 @@
+thread_local int extv = 7;
+extern int read_extv();
+
+int main()
+{
+  return read_extv() - 7;
+}

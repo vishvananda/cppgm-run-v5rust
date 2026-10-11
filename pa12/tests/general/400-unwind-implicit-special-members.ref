@@ -1,0 +1,253 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<8x8>
+  slot $b : obj<8x8>
+  slot $c : obj<8x8>
+  slot $d : obj<8x8>
+  slot $e : obj<8x8>
+  slot $f : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    call void @HoldsSafe__HoldsSafe(%t1)
+    %t2 = addr $b
+    %t3 = addr $a
+    call void @HoldsSafe__HoldsSafe__2(%t2, %t3)
+    %t4 = addr $c
+    call void @HoldsRisky__HoldsRisky(%t4)
+    %t5 = addr $d
+    %t6 = addr $c
+    call void @HoldsRisky__HoldsRisky__2(%t5, %t6)
+    %t7 = addr $e
+    call void @DefaultedSafe__DefaultedSafe(%t7)
+    %t8 = addr $f
+    %t9 = addr $e
+    call void @DefaultedSafe__DefaultedSafe__ov2(%t8, %t9)
+    %t10 = addr $b
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i64 %t12
+    %t14 = addr $d
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = load typed i64 %t16
+    %t18 = binary add nowrap i64 %t13, %t17
+    %t19 = addr $f
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load typed i64 %t21
+    %t23 = binary add nowrap i64 %t18, %t22
+    %t24 = cmp eq i64 %t23, 4
+    branch %t24, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t25 = load typed i32 $cond__1
+    return i32 %t25
+}
+function @HoldsSafe__HoldsSafe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN9HoldsSafeC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Safe__Safe(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Safe___Safe(%t4)
+    eh_end
+    resume
+}
+function @HoldsSafe__HoldsSafe__2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN9HoldsSafeC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Safe__Safe__ov2(%t2, %t4)
+    return void
+}
+function @HoldsRisky__HoldsRisky(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN10HoldsRiskyC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Risky__Risky(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Risky___Risky(%t4)
+    eh_end
+    resume
+}
+function @HoldsRisky__HoldsRisky__2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN10HoldsRiskyC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Risky__Risky__ov2(%t2, %t4)
+    return void
+}
+function @DefaultedSafe__DefaultedSafe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN13DefaultedSafeC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Safe__Safe(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Safe___Safe(%t4)
+    eh_end
+    resume
+}
+function @DefaultedSafe__DefaultedSafe__ov2(%this : ptr [alias=noalias, object_bytes=8], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN13DefaultedSafeC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $__param1
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Safe__Safe__ov2(%t2, %t4)
+    return void
+}
+function @Safe__Safe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4SafeC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i64 1, %t2
+    return void
+}
+function @Safe__Safe__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4SafeC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i64 %t3, %t5
+    return void
+}
+function @Risky__Risky(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN5RiskyC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i64 2, %t2
+    return void
+}
+function @Risky__Risky__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN5RiskyC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i64 %t3, %t5
+    return void
+}
+function @HoldsSafe___HoldsSafe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN9HoldsSafeD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @HoldsRisky___HoldsRisky(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN10HoldsRiskyD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @DefaultedSafe___DefaultedSafe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN13DefaultedSafeD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Safe___Safe(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN4SafeD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Risky___Risky(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5RiskyD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN9HoldsSafeC2Ev = @HoldsSafe__HoldsSafe
+alias object _ZN9HoldsSafeD2Ev = @HoldsSafe___HoldsSafe
+alias object _ZN9HoldsSafeC2ERKS_ = @HoldsSafe__HoldsSafe__2
+alias object _ZN10HoldsRiskyC2Ev = @HoldsRisky__HoldsRisky
+alias object _ZN10HoldsRiskyD2Ev = @HoldsRisky___HoldsRisky
+alias object _ZN10HoldsRiskyC2ERKS_ = @HoldsRisky__HoldsRisky__2
+alias object _ZN13DefaultedSafeC2Ev = @DefaultedSafe__DefaultedSafe
+alias object _ZN13DefaultedSafeD2Ev = @DefaultedSafe___DefaultedSafe
+alias object _ZN13DefaultedSafeC2ERKS_ = @DefaultedSafe__DefaultedSafe__ov2
+alias object _ZN4SafeC2Ev = @Safe__Safe
+alias object _ZN4SafeD2Ev = @Safe___Safe
+alias object _ZN4SafeC2ERKS_ = @Safe__Safe__ov2
+alias object _ZN5RiskyC2Ev = @Risky__Risky
+alias object _ZN5RiskyD2Ev = @Risky___Risky
+alias object _ZN5RiskyC2ERKS_ = @Risky__Risky__ov2

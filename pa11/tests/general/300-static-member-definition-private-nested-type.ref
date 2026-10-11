@@ -1,0 +1,27 @@
+global @holder__value : i32 [binding=strong, object=_ZN6holder5valueE] = 7
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @holder__get()
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @holder__get() -> i32 [binding=weak, object=_ZN6holder3getEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @holder__value
+    return i32 %t1
+}

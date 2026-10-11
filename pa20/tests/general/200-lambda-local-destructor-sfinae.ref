@@ -1,0 +1,21 @@
+function @semantic_expression__f() -> i32 [binding=strong, object=_ZN19semantic_expression1fEv] {
+  slot $fn : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $fn
+    %t2 = addr $fn
+    %t3 = call i32 @semantic_expression____lambda_semantic_expression__f_t122_124__operator__(%t2)
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @semantic_expression__f()
+    return i32 %t1
+}
+function @semantic_expression____lambda_semantic_expression__f_t122_124__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZN19semantic_expression1fEvENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 0
+}

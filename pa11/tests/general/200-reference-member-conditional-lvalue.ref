@@ -1,0 +1,71 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<4x4>
+  slot $r : obj<8x8>
+  slot $candidate : ptr
+  slot $decl_scope : ptr
+  slot $condaddr__1 : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr $r
+    %t5 = addr $s
+    call void @R__R(%t4, %t5)
+    %t6 = copy ptr 0
+    store typed ptr %t6, $candidate
+    %t7 = load typed ptr $candidate
+    branch %t7, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t8 = load typed ptr $candidate
+    store typed ptr %t8, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t9 = addr $r
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed ptr %t10
+    store typed ptr %t11, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t12 = load typed ptr $condaddr__1
+    store typed ptr %t12, $decl_scope
+    %t13 = load typed ptr $decl_scope
+    %t14 = index i8 [projection=field] %t13, 0
+    store typed i32 9, %t14
+    %t15 = addr $s
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = load typed i32 %t16
+    %t18 = cmp eq i32 %t17, 9
+    branch %t18, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t19 = load typed i32 $cond__2
+    return i32 %t19
+}
+function @R__R(%this : ptr [object_bytes=8], %x : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1RC1ER1S, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN1RC2ER1S = @R__R

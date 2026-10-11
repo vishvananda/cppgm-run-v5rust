@@ -1,0 +1,27 @@
+declare global @bool_constant_true___value : u8 [binding=weak, object=_ZN13bool_constantILb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $captured : i32
+  slot $fn : obj<8x8>
+
+  block ^entry:
+    store typed i32 7, $captured
+    %t1 = addr $fn
+    %t2 = addr $captured
+    store typed ptr %t2, %t1
+    %t3 = addr $fn
+    %t4 = call i32 @__lambda_main_t367_369__operator__(%t3)
+    %t5 = binary sub nowrap i32 %t4, 7
+    return i32 %t5
+}
+function @__lambda_main_t367_369__operator__(%this : ptr [object_bytes=8]) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}

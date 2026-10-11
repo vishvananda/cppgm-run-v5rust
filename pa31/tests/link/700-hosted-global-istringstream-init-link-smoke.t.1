@@ -1,0 +1,9 @@
+#include <sstream>
+
+int main()
+{
+  std::istringstream in("x\n");
+  char c = 0;
+  in.get(c);
+  return c == 'x' ? 0 : 1;
+}

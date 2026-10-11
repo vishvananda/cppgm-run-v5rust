@@ -1,0 +1,35 @@
+template<class T>
+struct Source
+{
+  T value;
+
+  explicit Source(T input)
+    : value(input)
+  {
+  }
+};
+
+template<class T>
+struct Sink
+{
+  int doubled;
+
+  explicit Sink(Source<T> source);
+};
+
+template<class T>
+Sink<T>::Sink(Source<T> source)
+  : doubled(source.value + source.value)
+{
+}
+
+Sink<int> make_sink(int input)
+{
+  return Sink<int>(Source<int>(input));
+}
+
+int main()
+{
+  Sink<int> value = make_sink(21);
+  return value.doubled == 42 ? 0 : 1;
+}

@@ -1,0 +1,9 @@
+# budget from 300-truncate-noreturn-continuation.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 16
+blocks <= 10
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 9 in @select
+instructions <= 10 in @keeps_reachable_tail

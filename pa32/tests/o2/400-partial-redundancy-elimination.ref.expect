@@ -1,0 +1,14 @@
+# budget from 400-partial-redundancy-elimination.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 40
+blocks <= 15
+count(call) <= 6
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 7
+instructions <= 11 in @full_redundancy
+instructions <= 12 in @partial_redundancy
+instructions <= 9 in @keep_critical_edge
+instructions <= 12 in @main
+
+# outcomes from 400-partial-redundancy-elimination.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)

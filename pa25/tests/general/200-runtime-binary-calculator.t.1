@@ -1,0 +1,65 @@
+#include "pa24-runtime-support.inc"
+
+int main()
+{
+  if(cppgm_test_init_io() != 0)
+  {
+    return 1;
+  }
+
+  cppgm_u64 count = cppgm_test_take_count_line();
+  while(count != 0)
+  {
+    char op = cppgm_test_take_char();
+    int bytes = cppgm_test_take_char() - '0';
+    cppgm_test_take_char();
+
+    cppgm_u64 lhs = cppgm_test_take_hex_be(bytes);
+    cppgm_u64 rhs = 0;
+    if(op != '~')
+    {
+      cppgm_test_take_char();
+      rhs = cppgm_test_take_hex_be(
+          (op == 'L' || op == 'S' || op == 'U' || op == 'R') ? 1 : bytes);
+    }
+    cppgm_test_take_char();
+
+    cppgm_u64 result = 0;
+    unsigned shift = (unsigned)(rhs & 0xFFU);
+
+    if(op == '~')
+    {
+      result = cppgm_test_wrap_to_bytes(~lhs, bytes);
+    }
+    else if(op == '&')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs & rhs, bytes);
+    }
+    else if(op == '|')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs | rhs, bytes);
+    }
+    else if(op == '^')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs ^ rhs, bytes);
+    }
+    else if(op == 'L')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs << shift, bytes);
+    }
+    else if(op == 'S')
+    {
+      result = cppgm_test_signed_rshift(lhs, shift, bytes);
+    }
+    else
+    {
+      result = cppgm_test_wrap_to_bytes(lhs >> shift, bytes);
+    }
+
+    cppgm_test_out_hex_be(result, bytes);
+    cppgm_test_out_char('\n');
+    --count;
+  }
+
+  return cppgm_test_flush_output();
+}

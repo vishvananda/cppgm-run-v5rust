@@ -1,0 +1,18 @@
+function @convert(%__param0 : u32, %__param1 : ptr) -> i64 [binding=strong, object=_Z7convertIi6traitsIiEElNT0_7carrierEPT_] {
+  slot $__param0 : u32
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed u32 %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i64 1
+}
+function @use(%pointer : ptr) -> i64 [binding=strong, object=_Z3usePi] {
+  slot $pointer : ptr
+
+  block ^entry:
+    store typed ptr %pointer, $pointer
+    %t1 = load typed ptr $pointer
+    %t2 = call i64 @convert(1, %t1)
+    return i64 %t2
+}

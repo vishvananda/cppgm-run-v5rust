@@ -1,0 +1,77 @@
+global @destroyed : i32 [binding=strong] = 0
+
+function @use(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [unwind=no, binding=strong, object=_Z3useRK5Probe] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $arg__1 : obj<1x1>
+  slot $call__2 : i32
+  slot $cond__3 : i32
+
+  block ^entry:
+    eh_try ^cleanup_resume_3
+    %t1 = addr $arg__1
+    zeroinit 1x1 %t1
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_resume_3:
+    resume
+
+  block ^call_unwind_end_4:
+    eh_try ^cleanup_action_5
+    %t2 = call i32 @use(%t1)
+    store typed i32 %t2, $call__2
+    %t3 = load typed i32 $call__2
+    %t4 = cmp ne i64 %t3, 0
+    call void @Probe___Probe(%t1)
+    eh_end
+    jump ^call_unwind_end_6
+
+  block ^cleanup_action_5:
+    call void @Probe___Probe(%t1)
+    jump ^cleanup_resume_3
+
+  block ^call_unwind_end_6:
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t5 = load typed i32 @destroyed
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__3
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    %t7 = load typed i32 @destroyed
+    %t8 = binary add nowrap i32 %t7, 10
+    store typed i32 %t8, $cond__3
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t9 = load typed i32 $cond__3
+    return i32 %t9
+
+  block ^if_else_2:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    return i32 20
+}
+function @Probe___Probe(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5ProbeD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN5ProbeD2Ev = @Probe___Probe

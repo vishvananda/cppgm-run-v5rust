@@ -1,0 +1,24 @@
+#include "200-host-data-member-pointer-static-data.helper.h"
+
+namespace member_data {
+Member student_null;
+Member student_c = &S::c;
+Entry student_unset;
+Entry student_entries[4] = { { &S::a, 1 }, { 0, 2 }, { &S::c, 3 } };
+Table student_table = { 2, { { &S::b, 4 } } };
+
+static bool unset(const Entry& entry) { return !entry.member && entry.tag == 0; }
+}
+
+int main()
+{
+  using namespace member_data;
+  int status = 0;
+  if (host_null || host_b != &S::b) status |= 16;
+  if (!unset(host_unset)) status |= 32;
+  if (host_entries[0].member != &S::a || host_entries[1].member ||
+      host_entries[2].member != &S::c || !unset(host_entries[3])) status |= 64;
+  if (host_table.count != 2 || host_table.entries[0].member != &S::b ||
+      !unset(host_table.entries[1]) || host_table.extra) status |= 128;
+  return status | host_check_student();
+}

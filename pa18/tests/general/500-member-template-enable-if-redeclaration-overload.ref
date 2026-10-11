@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $b : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = addr $value
+    %t4 = addr $value
+    %t5 = call i32 @box_int____run(%t2, %t3, %t4)
+    %t6 = cmp eq i32 %t5, 2
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @box_int____run(%this : ptr [object_bytes=1], %first : ptr, %last : ptr) -> i32 [binding=weak, object=_ZN3boxIPiE3runES0_S0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $first : ptr
+  slot $last : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $first
+    %t3 = load typed ptr $last
+    %t4 = call i32 @box_int____pick(%t1, %t2, %t3)
+    return i32 %t4
+}
+function @box_int____pick(%this : ptr [object_bytes=1], %__param1 : ptr, %__param2 : ptr) -> i32 [binding=weak, object=_ZN3boxIPiE4pickIS0_TnN9enable_ifIXsr6is_ptrIT_EE5valueEiE4typeELi0EEEiS4_S4_] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return i32 2
+}

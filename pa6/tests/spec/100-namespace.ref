@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace N
+      type-alias Y array of 3 int
+      variable x array of 3 int
+      function f function of (array of 3 int) returning int
+      scope function f
+        parameter y array of 3 int
+        scope block
+          variable z array of 3 int
+end translation unit

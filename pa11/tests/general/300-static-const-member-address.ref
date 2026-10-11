@@ -1,0 +1,14 @@
+global @static_const_member_address_holder__null : i8 [storage=readonly, binding=strong, object=_ZN34static_const_member_address_holder4nullE] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call ptr @static_const_member_address_holder__get()
+    %t2 = load i8 %t1
+    %t3 = convert sext i32 i8 %t2
+    return i32 %t3
+}
+function @static_const_member_address_holder__get() -> ptr [binding=weak, object=_ZN34static_const_member_address_holder3getEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @static_const_member_address_holder__null
+    return ptr %t1
+}

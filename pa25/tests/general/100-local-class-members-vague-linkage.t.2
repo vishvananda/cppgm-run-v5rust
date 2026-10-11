@@ -1,0 +1,4 @@
+// second TU using the same inline function
+struct I { virtual int i() { return 7; } virtual ~I() {} };
+inline I* mklocal(int k) { struct Loc : I { int n; Loc(int n) : n(n) {} int i() { return 70 + n; } ~Loc() {} }; return new Loc(k); }
+int other() { I* p = mklocal(2); int r = p->i(); delete p; return r; }

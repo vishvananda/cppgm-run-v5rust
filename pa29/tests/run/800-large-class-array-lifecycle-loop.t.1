@@ -1,0 +1,45 @@
+int live = 0;
+int constructed = 0;
+int throw_at = 8;
+int destroyed = 0;
+int destructor_throw_at = -1;
+
+struct failure {};
+
+struct element
+{
+  element()
+  {
+    if(constructed == throw_at) throw failure();
+    ++constructed;
+    ++live;
+  }
+
+  ~element() noexcept(false)
+  {
+    --live;
+    if(destroyed++ == destructor_throw_at) throw failure();
+  }
+};
+
+struct holder { element values[17]; };
+
+int main()
+{
+  try {
+    holder partial;
+    return 1;
+  } catch(failure &) {
+  }
+  if(live != 0 || constructed != 8) return 2;
+
+  throw_at = -1;
+  destroyed = 0;
+  try {
+    holder complete;
+    if(live != 17) return 3;
+    destructor_throw_at = 4;
+  } catch(failure &) {
+  }
+  return live == 0 && destroyed == 17 ? 0 : 4;
+}

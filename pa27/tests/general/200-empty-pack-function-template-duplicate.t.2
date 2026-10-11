@@ -1,0 +1,9 @@
+#include "200-empty-pack-function-template-duplicate.helper.h"
+
+int one();
+
+int main()
+{
+  int storage = 0;
+  return one() + handle(&storage, 4) + handle(&storage, 4, 2) - 4;
+}

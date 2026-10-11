@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace std
+      scope namespace __1
+        function abs function of (int) returning int
+        scope namespace __math
+          function abs function of (int) returning int
+end translation unit

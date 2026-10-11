@@ -1,0 +1,18 @@
+# budget from 100-callee-saved-prune.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 14
+blocks <= 6
+count(call) <= 5
+mem <= 10
+instructions <= 11 in @main
+stack_size <= 50 in @main
+instructions <= 4 in @Box_int___Box
+stack_size <= 48 in @Box_int___Box
+instructions <= 4 in @Box_int____Box
+stack_size <= 48 in @Box_int____Box
+
+# contract from 100-callee-saved-prune.ref.mir: the exception regions, calls, callee-saved registers and memory accesses the fixture requires
+count(call @Box_int___Box) == 1 in @main
+count(call @Box_int____Box) == 1 in @main
+preserve <= 1 in @main
+preserve <= 0 in @Box_int___Box
+preserve <= 0 in @Box_int____Box

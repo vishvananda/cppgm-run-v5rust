@@ -1,0 +1,4 @@
+preproc 1
+sof tests/macros/250-stringized-argument-not-expanded.t
+literal "max(0)" array of 7 char 6D617828302900
+eof

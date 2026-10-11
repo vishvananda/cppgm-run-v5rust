@@ -1,0 +1,26 @@
+// A virtual member that overrides a virtual base's virtual but is not the
+// first vtable slot (it is declared after the destructor) must still be
+// dispatchable -- it lives in the virtual-base section of the derived class's
+// vtable.  Dispatching it must reach the override, not fail to find a vtable
+// view.
+
+namespace {
+
+struct V
+{
+  virtual ~V() noexcept {}
+  virtual int id() noexcept { return 0; }
+};
+
+struct A : virtual V
+{
+  int id() noexcept override { return 1; }
+};
+
+}  // namespace
+
+int main()
+{
+  A a;
+  return a.id() == 1 ? 0 : 1;
+}

@@ -1,0 +1,19 @@
+#define CPPGM_PA29_LABEL_PREFIX
+#define CPPGM_PA29_STRINGIZE_IMPL(x) #x
+#define CPPGM_PA29_STRINGIZE(x) CPPGM_PA29_STRINGIZE_IMPL(x)
+
+extern "C++" char *asm_label_probe(char *s)
+    __asm(CPPGM_PA29_STRINGIZE(CPPGM_PA29_LABEL_PREFIX)
+          "cppgm_pa29_asm_label_probe");
+extern "C++" const char *asm_label_probe(const char *s)
+    __asm(CPPGM_PA29_STRINGIZE(CPPGM_PA29_LABEL_PREFIX)
+          "cppgm_pa29_asm_label_probe");
+
+extern "C" int puts(const char *);
+
+int main()
+{
+  const char * result = asm_label_probe("OK");
+  puts(result);
+  return result[0] == 'K' && result[1] == '\0' ? 0 : 1;
+}

@@ -1,0 +1,36 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = addr $value
+    %t4 = call u8 @outer_int_longint___inner__operator__(%t2, %t3)
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @outer_int_longint___inner__operator__(%this : ptr [object_bytes=1], %other : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=weak, object=_ZNK5outerIJilEE5innereqERKS1_] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    %t3 = cmp eq ptr %t1, %t2
+    %t4 = convert trunc u8 i64 %t3
+    return u8 %t4
+}

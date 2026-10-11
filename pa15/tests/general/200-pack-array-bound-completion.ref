@@ -1,0 +1,160 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 9
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+  i32 0
+}
+global @__constexpr_template__3 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+  i32 9
+}
+global @__constexpr_template__4 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @check()
+    %t2 = call i32 @check__2()
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}
+function @check() -> i32 [binding=weak, object=_Z5checkITpTniJEEiv] {
+  slot $inferred : obj<4x4>
+  slot $fixed : obj<12x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr $inferred
+    copyobj 4x4 @__constexpr_template__1, %t1
+    %t2 = addr $fixed
+    copyobj 12x4 @__constexpr_template__2, %t2
+    %t3 = const i64 4
+    %t4 = const i64 4
+    %t5 = binary udiv i64 %t3, %t4
+    %t6 = const i64 0
+    %t7 = binary add i64 %t6, 1
+    %t8 = cmp eq i64 %t5, %t7
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $inferred
+    %t10 = const i64 0
+    %t11 = index i32 [projection=array_element] %t9, %t10
+    %t12 = load typed i32 %t11
+    %t13 = cmp eq i32 %t12, 9
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t16 = addr $fixed
+    %t17 = index i32 [projection=array_element] %t16, 2
+    %t18 = load typed i32 %t17
+    %t19 = cmp eq i32 %t18, 0
+    %t20 = cmp ne i64 %t19, 0
+    store typed i64 %t20, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t21 = load typed i64 $land__3
+    branch %t21, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t22 = load typed i32 $cond__1
+    return i32 %t22
+}
+function @check__2() -> i32 [binding=weak, object=_Z5checkIJLi1ELi2EEEiv] {
+  slot $inferred : obj<12x4>
+  slot $fixed : obj<12x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr $inferred
+    copyobj 12x4 @__constexpr_template__3, %t1
+    %t2 = addr $fixed
+    copyobj 12x4 @__constexpr_template__4, %t2
+    %t3 = const i64 12
+    %t4 = const i64 4
+    %t5 = binary udiv i64 %t3, %t4
+    %t6 = const i64 2
+    %t7 = binary add i64 %t6, 1
+    %t8 = cmp eq i64 %t5, %t7
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $inferred
+    %t10 = const i64 2
+    %t11 = index i32 [projection=array_element] %t9, %t10
+    %t12 = load typed i32 %t11
+    %t13 = cmp eq i32 %t12, 9
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t16 = addr $fixed
+    %t17 = index i32 [projection=array_element] %t16, 2
+    %t18 = load typed i32 %t17
+    %t19 = cmp eq i32 %t18, 0
+    %t20 = cmp ne i64 %t19, 0
+    store typed i64 %t20, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t21 = load typed i64 $land__3
+    branch %t21, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t22 = load typed i32 $cond__1
+    return i32 %t22
+}

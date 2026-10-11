@@ -1,0 +1,48 @@
+int destroyed = 0;
+int destroyed_before_catch = -1;
+int caught_in_ctor = 0;
+int caught_in_main = 0;
+
+struct Guard {
+  Guard() {}
+  ~Guard() { ++destroyed; }
+};
+
+int boom()
+{
+  throw 7;
+}
+
+struct Box {
+  Guard a;
+  Guard b;
+  int value;
+
+  Box();
+};
+
+Box::Box()
+try
+: value(boom())
+{
+}
+catch (int)
+{
+  caught_in_ctor = 1;
+  destroyed_before_catch = destroyed;
+}
+
+int main()
+{
+  try {
+    Box box;
+  }
+  catch (...) {
+    caught_in_main = 1;
+  }
+
+  return caught_in_ctor == 1 &&
+         destroyed_before_catch == 2 &&
+         destroyed == 2 &&
+         caught_in_main == 1 ? 0 : 1;
+}

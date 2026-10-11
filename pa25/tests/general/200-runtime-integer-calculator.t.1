@@ -1,0 +1,132 @@
+#include "pa24-runtime-support.inc"
+
+int main()
+{
+  if(cppgm_test_init_io() != 0)
+  {
+    return 1;
+  }
+
+  cppgm_u64 count = cppgm_test_take_count_line();
+  while(count != 0)
+  {
+    int signed_mode = cppgm_test_take_char() == 's';
+    int bytes = cppgm_test_take_char() - '0';
+    cppgm_test_take_char();
+
+    cppgm_u64 lhs = signed_mode ? cppgm_test_take_signed_decimal_raw(bytes)
+                                : cppgm_test_wrap_to_bytes(
+                                      cppgm_test_take_unsigned_decimal(), bytes);
+    cppgm_test_take_char();
+
+    char op0 = cppgm_test_take_char();
+    char op1 = ' ';
+    if(cppgm_test_peek_char() != ' ')
+    {
+      op1 = cppgm_test_take_char();
+    }
+    cppgm_test_take_char();
+
+    cppgm_u64 rhs = signed_mode ? cppgm_test_take_signed_decimal_raw(bytes)
+                                : cppgm_test_wrap_to_bytes(
+                                      cppgm_test_take_unsigned_decimal(), bytes);
+    cppgm_test_take_char();
+
+    int comparison = 0;
+    cppgm_u64 result = 0;
+
+    if(op0 == '+' && op1 == ' ')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs + rhs, bytes);
+    }
+    else if(op0 == '-' && op1 == ' ')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs - rhs, bytes);
+    }
+    else if(op0 == '*' && op1 == ' ')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs * rhs, bytes);
+    }
+    else if(op0 == '/' && op1 == ' ')
+    {
+      result = signed_mode ? cppgm_test_signed_div(lhs, rhs, bytes)
+                           : cppgm_test_wrap_to_bytes(lhs / rhs, bytes);
+    }
+    else if(op0 == '%' && op1 == ' ')
+    {
+      result = signed_mode ? cppgm_test_signed_mod(lhs, rhs, bytes)
+                           : cppgm_test_wrap_to_bytes(lhs % rhs, bytes);
+    }
+    else if(op0 == '=' && op1 == '=')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs, bytes) ==
+                       cppgm_test_wrap_to_bytes(rhs, bytes)
+                   ? 1ULL
+                   : 0ULL;
+      comparison = 1;
+    }
+    else if(op0 == '!' && op1 == '=')
+    {
+      result = cppgm_test_wrap_to_bytes(lhs, bytes) !=
+                       cppgm_test_wrap_to_bytes(rhs, bytes)
+                   ? 1ULL
+                   : 0ULL;
+      comparison = 1;
+    }
+    else if(op0 == '<' && op1 == ' ')
+    {
+      result = signed_mode ? (cppgm_test_signed_less(lhs, rhs, bytes) ? 1ULL : 0ULL)
+                           : (cppgm_test_wrap_to_bytes(lhs, bytes) <
+                                      cppgm_test_wrap_to_bytes(rhs, bytes)
+                                  ? 1ULL
+                                  : 0ULL);
+      comparison = 1;
+    }
+    else if(op0 == '>' && op1 == ' ')
+    {
+      result = signed_mode ? (cppgm_test_signed_less(rhs, lhs, bytes) ? 1ULL : 0ULL)
+                           : (cppgm_test_wrap_to_bytes(lhs, bytes) >
+                                      cppgm_test_wrap_to_bytes(rhs, bytes)
+                                  ? 1ULL
+                                  : 0ULL);
+      comparison = 1;
+    }
+    else if(op0 == '<' && op1 == '=')
+    {
+      result = signed_mode
+                   ? (!cppgm_test_signed_less(rhs, lhs, bytes) ? 1ULL : 0ULL)
+                   : (cppgm_test_wrap_to_bytes(lhs, bytes) <=
+                                      cppgm_test_wrap_to_bytes(rhs, bytes)
+                                  ? 1ULL
+                                  : 0ULL);
+      comparison = 1;
+    }
+    else
+    {
+      result = signed_mode
+                   ? (!cppgm_test_signed_less(lhs, rhs, bytes) ? 1ULL : 0ULL)
+                   : (cppgm_test_wrap_to_bytes(lhs, bytes) >=
+                                      cppgm_test_wrap_to_bytes(rhs, bytes)
+                                  ? 1ULL
+                                  : 0ULL);
+      comparison = 1;
+    }
+
+    if(comparison)
+    {
+      cppgm_test_out_unsigned_decimal(result);
+    }
+    else if(signed_mode)
+    {
+      cppgm_test_out_signed_decimal_raw(result, bytes);
+    }
+    else
+    {
+      cppgm_test_out_unsigned_decimal(cppgm_test_wrap_to_bytes(result, bytes));
+    }
+    cppgm_test_out_char('\n');
+    --count;
+  }
+
+  return cppgm_test_flush_output();
+}

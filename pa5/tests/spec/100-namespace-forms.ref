@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    inline
+    namespace-definition <unnamed>
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier x
+    using-directive
+      target M
+    using-declaration
+      target M::f
+    alias-declaration A
+      type-id
+        type-specifier-seq
+          type-name B
+end translation unit

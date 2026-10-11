@@ -1,0 +1,92 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @good
+  storage scalar i64
+  init i64 42
+
+global @wrong
+  storage data
+  item i64 13
+  item i64 99
+
+function @capture
+  abi
+    param %p -> rdi : ptr
+    param %addr -> rsi : ptr
+    param %b -> rdx : i64
+    param %c -> rcx : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rax, [rdi]
+    ret rax
+
+function @run
+  abi
+    param %p -> rdi : ptr
+    param %q -> rsi : i64
+    param %r -> rdx : i64
+    param %s -> rcx : i64
+    param %t -> r8 : i64
+    param %u -> r9 : i64
+    param %v -> [rbp+16] : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    jmp ^call
+
+  block ^call
+    mov rsi, @wrong+8
+    mov rdi, rbx
+    mov rdx, 2
+    mov rcx, 3
+    call @capture [args=(rcx,rdx,rsi,rdi)]
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @good
+    sub rsp, 16
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    mov r9, 6
+    mov r11, 7
+    store.i64 [rsp], r11
+    call @run [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    mov rdx, 42
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    mov rdx, 0
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    ret rax

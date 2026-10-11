@@ -1,0 +1,9 @@
+# budget from 900-slot-address-stack-call-argument.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 45
+blocks <= 5
+count(call) <= 4
+mem <= 19
+instructions <= 11 in @write_seventh
+stack_size <= 352 in @write_seventh
+instructions <= 35 in @main
+stack_size <= 352 in @main

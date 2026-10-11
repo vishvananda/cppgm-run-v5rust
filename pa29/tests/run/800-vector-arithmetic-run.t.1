@@ -1,0 +1,36 @@
+// GNU vector extensions (vector_size): arithmetic, bitwise, shift and compound
+// assignment operators apply lane by lane, with a scalar operand splat to
+// every lane, for 8- and 16-byte vectors of integer and floating lanes
+#include <cstdio>
+typedef int v4si __attribute__((vector_size(16)));
+typedef unsigned char v8qu __attribute__((vector_size(8)));
+typedef signed char v8qs __attribute__((vector_size(8)));
+typedef short v4hi __attribute__((vector_size(8)));
+typedef unsigned short v4hu __attribute__((vector_size(8)));
+typedef long long v2di __attribute__((vector_size(16)));
+typedef float v4sf __attribute__((vector_size(16)));
+typedef double v2df __attribute__((vector_size(16)));
+template <class V, int N> void show(const char* n, V v) { std::printf("%s:", n); for (int i = 0; i < N; ++i) std::printf(" %lld", (long long)v[i]); std::printf("\n"); }
+template <class V, int N> void showf(const char* n, V v) { std::printf("%s:", n); for (int i = 0; i < N; ++i) std::printf(" %g", (double)v[i]); std::printf("\n"); }
+volatile int k = 3;
+int main() {
+  v4si a = {1, -2, 300000, 7}, b = {5, 6, -7, 8};
+  show<v4si,4>("add", a + b); show<v4si,4>("sub", a - b); show<v4si,4>("mul", a * b); show<v4si,4>("div", a / b); show<v4si,4>("mod", a % b);
+  show<v4si,4>("and", a & b); show<v4si,4>("or", a | b); show<v4si,4>("xor", a ^ b); show<v4si,4>("shl", a << 2); show<v4si,4>("shr", a >> 1);
+  show<v4si,4>("shlv", a << (v4si){1,2,3,4}); show<v4si,4>("neg", -a); show<v4si,4>("not", ~a); show<v4si,4>("pos", +a);
+  show<v4si,4>("splat", a + 10); show<v4si,4>("splat2", 100 - a); show<v4si,4>("splatk", a * k);
+  v8qu c = {250, 251, 252, 253, 254, 255, 0, 1}, d = {10, 10, 10, 10, 10, 10, 10, 10};
+  show<v8qu,8>("u8add", c + d); show<v8qu,8>("u8sub", d - c); show<v8qu,8>("u8shr", c >> 3); show<v8qu,8>("u8div", c / d);
+  v8qs e = {-128, -1, 0, 1, 127, 100, -100, 50};
+  show<v8qs,8>("s8add", e + e); show<v8qs,8>("s8shr", e >> 2); show<v8qs,8>("s8neg", -e); show<v8qs,8>("s8mul", e * (v8qs){3,3,3,3,3,3,3,3});
+  v4hi f = {-32768, 32767, 1000, -1000}; v4hu g = {65535, 1, 32768, 7};
+  show<v4hi,4>("s16", f + f); show<v4hu,4>("u16", g * g); show<v4hu,4>("u16shr", g >> 1); show<v4hi,4>("s16shr", f >> 1);
+  v2di h = {1LL << 40, -5}; show<v2di,2>("s64", h * 3 - h);
+  v4sf x = {1.5f, -2.25f, 3.0f, 0.1f}; v2df y = {1e10, -0.5};
+  showf<v4sf,4>("f32", x * x + x / 2.0f); showf<v4sf,4>("f32neg", -x); showf<v2df,2>("f64", y - y * 2.0);
+  v4si m = a; m = m + b; show<v4si,4>("assign", m);
+  m += a; m *= 3; m -= 1; m <<= 1; m |= (v4si){1, 0, 1, 0}; m >>= 1; m ^= 5; m %= 7; show<v4si,4>("compound", m);
+  v8qu q = c; q += 10; q *= q; q &= 0xf0; show<v8qu,8>("u8compound", q);
+  v4sf z = x; z *= 2; z -= z / 4; showf<v4sf,4>("f32compound", z);
+  return 0;
+}

@@ -1,0 +1,38 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @check()
+    return i32 0
+}
+function @check() -> void [binding=weak, object=_Z5checkIiEvv] {
+  slot $values : obj<8x4>
+  slot $flat_values : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $values
+    %t2 = addr $values
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i32 [projection=array_element] %t3, 0
+    store typed i32 3, %t4
+    %t5 = addr $values
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i32 [projection=array_element] %t6, 1
+    store typed i32 5, %t7
+    %t8 = addr $flat_values
+    %t9 = addr $flat_values
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = index i32 [projection=array_element] %t10, 0
+    store typed i32 7, %t11
+    %t12 = addr $flat_values
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = index i32 [projection=array_element] %t13, 1
+    store typed i32 11, %t14
+    %t15 = addr $flat_values
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = index i32 [projection=array_element] %t16, 2
+    store typed i32 13, %t17
+    %t18 = addr $flat_values
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = index i32 [projection=array_element] %t19, 3
+    store typed i32 17, %t20
+    return void
+}

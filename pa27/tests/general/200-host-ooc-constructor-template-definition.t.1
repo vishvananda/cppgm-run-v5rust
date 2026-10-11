@@ -1,0 +1,17 @@
+template<typename T>
+struct Box {
+  int value;
+
+  template<typename U>
+  __attribute__((noinline)) Box(U u);
+};
+
+template<typename T>
+template<typename U>
+Box<T>::Box(U u) : value((int)u) {}
+
+int main()
+{
+  Box<int> box(7);
+  return box.value == 7 ? 0 : 1;
+}

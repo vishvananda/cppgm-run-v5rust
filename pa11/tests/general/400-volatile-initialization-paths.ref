@@ -1,0 +1,176 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $holder : obj<12x4>
+  slot $aggregate : obj<4x4>
+  slot $lor__1 : i64
+  slot $lor__2 : i64
+  slot $lor__3 : i64
+  slot $lor__4 : i64
+  slot $lor__5 : i64
+
+  block ^entry:
+    %t1 = addr $holder
+    call void @Holder__Holder(%t1)
+    %t2 = addr $aggregate
+    %t3 = addr $aggregate
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = binary and u32 7, 2
+    store volatile u32 %t5, %t4
+    %t6 = addr $aggregate
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = binary and u32 7, 5
+    %t9 = binary shl u32 %t8, 3
+    %t10 = load u32 %t7
+    %t11 = binary and u32 %t10, 4294967239
+    %t12 = binary or u32 %t11, %t9
+    store u32 %t12, %t7
+    %t13 = addr $aggregate
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load volatile i32 %t14
+    %t16 = binary and i32 %t15, 7
+    %t17 = copy u32 %t16
+    %t18 = copy i32 %t17
+    %t19 = binary add nowrap i32 %t18, 1
+    %t20 = addr $aggregate
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = binary and i32 %t19, 7
+    %t23 = copy u32 %t22
+    %t24 = load volatile i32 %t21
+    %t25 = binary and i32 %t24, -8
+    %t26 = binary or i32 %t25, %t22
+    store volatile i32 %t26, %t21
+    %t27 = addr $holder
+    %t28 = index i8 [projection=field] %t27, 0
+    %t29 = index i32 [projection=array_element] %t28, 0
+    %t30 = load volatile i32 %t29
+    %t31 = cmp ne i32 %t30, 5
+    branch %t31, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t32 = addr $holder
+    %t33 = index i8 [projection=field] %t32, 0
+    %t34 = index i32 [projection=array_element] %t33, 1
+    %t35 = load volatile i32 %t34
+    %t36 = cmp ne i32 %t35, 6
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t38 = load typed i64 $lor__1
+    branch %t38, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t39 = addr $holder
+    %t40 = index i8 [projection=field] %t39, 8
+    %t41 = load volatile u8 %t40
+    %t42 = binary and u8 %t41, 7
+    %t43 = convert zext u32 u8 %t42
+    %t44 = copy i32 %t43
+    %t45 = cmp ne i32 %t44, 3
+    %t46 = cmp ne i64 %t45, 0
+    store typed i64 %t46, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t47 = load typed i64 $lor__2
+    branch %t47, ^lor_short_8, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t48 = addr $holder
+    %t49 = index i8 [projection=field] %t48, 8
+    %t50 = load u8 %t49
+    %t51 = binary ushr u8 %t50, 3
+    %t52 = binary and u8 %t51, 7
+    %t53 = convert zext u32 u8 %t52
+    %t54 = copy i32 %t53
+    %t55 = cmp ne i32 %t54, 4
+    %t56 = cmp ne i64 %t55, 0
+    store typed i64 %t56, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_short_8:
+    store typed i64 1, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_end_9:
+    %t57 = load typed i64 $lor__3
+    branch %t57, ^lor_short_11, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t58 = addr $aggregate
+    %t59 = index i8 [projection=field] %t58, 0
+    %t60 = load volatile i32 %t59
+    %t61 = binary and i32 %t60, 7
+    %t62 = copy u32 %t61
+    %t63 = copy i32 %t62
+    %t64 = cmp ne i32 %t63, 3
+    %t65 = cmp ne i64 %t64, 0
+    store typed i64 %t65, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_short_11:
+    store typed i64 1, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_end_12:
+    %t66 = load typed i64 $lor__4
+    branch %t66, ^lor_short_14, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t67 = addr $aggregate
+    %t68 = index i8 [projection=field] %t67, 0
+    %t69 = load i32 %t68
+    %t70 = binary shr i32 %t69, 3
+    %t71 = binary and i32 %t70, 7
+    %t72 = copy u32 %t71
+    %t73 = copy i32 %t72
+    %t74 = cmp ne i32 %t73, 5
+    %t75 = cmp ne i64 %t74, 0
+    store typed i64 %t75, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_short_14:
+    store typed i64 1, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_end_15:
+    %t76 = load typed i64 $lor__5
+    %t77 = convert trunc i32 i64 %t76
+    return i32 %t77
+}
+function @Holder__Holder(%this : ptr [object_bytes=12]) -> void [binding=weak, object=_ZN6HolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i32 [projection=array_element] %t2, 0
+    store volatile i32 5, %t3
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i32 [projection=array_element] %t5, 1
+    store volatile i32 6, %t6
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 8
+    %t9 = binary and u8 7, 3
+    store volatile u8 %t9, %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 8
+    %t12 = binary and u8 7, 4
+    %t13 = binary shl u8 %t12, 3
+    %t14 = load u8 %t11
+    %t15 = binary and u8 %t14, 199
+    %t16 = binary or u8 %t15, %t13
+    store u8 %t16, %t11
+    return void
+}
+alias object _ZN6HolderC2Ev = @Holder__Holder

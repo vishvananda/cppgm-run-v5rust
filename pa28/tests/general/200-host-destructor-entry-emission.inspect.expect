@@ -1,0 +1,5 @@
+defined_symbol_canonical 1 _ZN7DerivedD0Ev
+defined_symbol_canonical 1 _ZThn16_N7DerivedD0Ev
+defined_symbol_canonical 1 _ZTv0_n24_N8VDerivedD0Ev
+undefined_symbol_canonical 1 _ZN8HDerivedD0Ev
+absent_defined_symbol_canonical 1 _ZN8HDerivedD0Ev

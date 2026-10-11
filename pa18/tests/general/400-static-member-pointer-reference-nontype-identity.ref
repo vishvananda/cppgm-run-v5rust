@@ -1,0 +1,93 @@
+global @left_owner__value : i32 [binding=strong, object=_ZN10left_owner5valueE] = 3
+global @right_owner__value : i32 [binding=strong, object=_ZN11right_owner5valueE] = 5
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = call i32 @pointer_holder__left_owner__value___read()
+    %t2 = cmp eq i32 %t1, 3
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = call i32 @pointer_holder__right_owner__value___read()
+    %t4 = cmp eq i32 %t3, 5
+    %t5 = cmp ne i64 %t4, 0
+    store typed i64 %t5, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t6 = load typed i64 $land__2
+    branch %t6, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t7 = call i32 @reference_holder_left_owner__value___read()
+    %t8 = cmp eq i32 %t7, 3
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t10 = load typed i64 $land__3
+    branch %t10, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t11 = call i32 @reference_holder_right_owner__value___read()
+    %t12 = cmp eq i32 %t11, 5
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t14 = load typed i64 $land__4
+    branch %t14, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t15 = load typed i32 $cond__1
+    return i32 %t15
+}
+function @pointer_holder__left_owner__value___read() -> i32 [binding=weak, object=_ZN14pointer_holderIXadL_ZN10left_owner5valueEEEE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @left_owner__value
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @pointer_holder__right_owner__value___read() -> i32 [binding=weak, object=_ZN14pointer_holderIXadL_ZN11right_owner5valueEEEE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @right_owner__value
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @reference_holder_left_owner__value___read() -> i32 [binding=weak, object=_ZN16reference_holderIL_ZN10left_owner5valueEEE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @left_owner__value
+    return i32 %t1
+}
+function @reference_holder_right_owner__value___read() -> i32 [binding=weak, object=_ZN16reference_holderIL_ZN11right_owner5valueEEE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @right_owner__value
+    return i32 %t1
+}

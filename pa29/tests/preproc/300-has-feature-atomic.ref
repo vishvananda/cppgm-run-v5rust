@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/300-has-feature-atomic.t
+identifier good
+eof

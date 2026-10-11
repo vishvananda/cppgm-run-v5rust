@@ -1,0 +1,749 @@
+global @case_1__alive : i32 [binding=strong, object=_ZN6case_15aliveE] = zero
+global @case_2__alive : i32 [binding=strong, object=_ZN6case_25aliveE] = zero
+global @case_3__alive : i32 [binding=strong, object=_ZN6case_35aliveE] = zero
+global @case_3__pick : i32 [binding=strong, object=_ZN6case_34pickE] = zero
+global @case_5__calls : i32 [binding=strong, object=_ZN6case_55callsE] = zero
+global @case_6__calls : i32 [binding=strong, object=_ZN6case_65callsE] = zero
+global @case_6__s : ptr [binding=strong, object=_ZN6case_61sE] = zero
+global @__cppgm_ref_temporary__case_6__s_0 [binding=internal, object=_ZGRN6case_61sE_] = {
+  zero 4
+}
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 98
+  i8 0
+}
+global @case_9__calls : i32 [binding=strong, object=_ZN6case_95callsE] = zero
+global @case_11__calls : i32 [binding=strong, object=_ZN7case_115callsE] = zero
+global @__local_static__case_11__get__s__tokens713_720 : ptr [binding=internal, object=_ZZN7case_113getEvE1s] = zero
+global @__local_static__case_11__get__s__tokens713_720__guard : i64 [binding=internal, object=_ZGVZN7case_113getEvE1s] = zero
+global @__cppgm_ref_temporary____local_static__case_11__get__s__tokens713_720_0 [binding=internal, object=_ZGRZN7case_113getEvE1s_] = {
+  zero 4
+}
+
+function @case_0__check_case() -> i32 [binding=strong, object=_ZN6case_010check_caseEv] {
+  slot $s : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @case_0__S__S__aggregate(%t1, 3)
+    store typed ptr %t1, $s
+    %t2 = load typed ptr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 3
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}
+function @case_1__borrow(%v : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=strong, object=_ZN6case_16borrowERNS_1SE] {
+  slot $v : ptr
+
+  block ^entry:
+    store typed ptr %v, $v
+    %t1 = load typed ptr $v
+    return ptr %t1
+}
+function @case_1__check_case() -> i32 [binding=strong, object=_ZN6case_110check_caseEv] {
+  slot $value : obj<4x4>
+  slot $s : ptr
+  slot $cleanup_return__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @case_1__S__S(%t1, 3)
+    %t2 = addr $value
+    %t3 = call ptr @case_1__borrow(%t2)
+    store typed ptr %t3, $s
+    %t4 = load typed ptr $s
+    %t5 = addr $value
+    %t6 = cmp ne ptr %t4, %t5
+    branch %t6, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t7 = load typed i32 @case_1__alive
+    %t8 = cmp ne i32 %t7, 1
+    branch %t8, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    store typed i32 1, $cleanup_return__1
+    jump ^return_cleanup_action_5
+
+  block ^return_cleanup_terminal_4:
+    return i32 $cleanup_return__1
+
+  block ^return_cleanup_action_5:
+    %t9 = addr $value
+    call void @case_1__S___S(%t9)
+    jump ^return_cleanup_terminal_4
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t10 = load typed i32 @case_1__alive
+    %t11 = cmp ne i32 %t10, 1
+    %t12 = convert trunc i32 i64 %t11
+    store typed i32 %t12, $cleanup_return__1
+    jump ^return_cleanup_action_5
+}
+function @case_2__get(%ret : ptr [pass=indirect_result, object_bytes=4]) -> void [unwind=no, binding=strong, object=_ZN6case_23getEv] {
+  block ^entry:
+    call void @case_2__S__S(%ret, 3)
+    return void
+}
+function @case_2__check_case() -> i32 [binding=strong, object=_ZN6case_210check_caseEv] {
+  slot $s : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @case_2__get(%t1)
+    store typed ptr %t1, $s
+    %t2 = load typed i32 @case_2__alive
+    %t3 = cmp ne i32 %t2, 1
+    branch %t3, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t4 = load typed ptr $s
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp ne i32 %t6, 3
+    branch %t7, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    call void @case_2__S___S(%t1)
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    call void @case_2__S___S(%t1)
+    %t8 = load typed i32 @case_2__alive
+    %t9 = cmp ne i32 %t8, 0
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @case_3__check_case() -> i32 [binding=strong, object=_ZN6case_310check_caseEv] {
+  slot $p : i32
+  slot $s : ptr
+  slot $tmpobj__1 : obj<4x4>
+  slot $cond__2 : i32
+
+  block ^entry:
+    store typed i32 0, $p
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $p
+    %t2 = cmp lt i32 %t1, 2
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t3 = load typed i32 $p
+    store typed i32 %t3, @case_3__pick
+    %t4 = addr $tmpobj__1
+    %t5 = load typed i32 @case_3__pick
+    branch %t5, ^condobj_then_5, ^condobj_else_6
+
+  block ^condobj_then_5:
+    call void @case_3__S__S(%t4, 3)
+    jump ^condobj_end_7
+
+  block ^condobj_else_6:
+    call void @case_3__S__S(%t4, 4)
+    jump ^condobj_end_7
+
+  block ^condobj_end_7:
+    store typed ptr %t4, $s
+    %t6 = load typed i32 @case_3__alive
+    %t7 = cmp ne i32 %t6, 1
+    branch %t7, ^if_then_8, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t8 = load typed ptr $s
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = load typed i32 @case_3__pick
+    branch %t11, ^cond_then_11, ^cond_else_12
+
+  block ^cond_then_11:
+    store typed i32 3, $cond__2
+    jump ^cond_end_13
+
+  block ^cond_else_12:
+    store typed i32 4, $cond__2
+    jump ^cond_end_13
+
+  block ^cond_end_13:
+    %t12 = load typed i32 $cond__2
+    %t13 = cmp ne i32 %t10, %t12
+    branch %t13, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    call void @case_3__S___S(%t4)
+    return i32 1
+
+  block ^if_else_9:
+    jump ^if_end_14
+
+  block ^if_end_14:
+    call void @case_3__S___S(%t4)
+    %t14 = load typed i32 @case_3__alive
+    branch %t14, ^if_then_15, ^if_else_16
+
+  block ^if_then_15:
+    return i32 2
+
+  block ^if_else_16:
+    jump ^if_end_17
+
+  block ^if_end_17:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t15 = load typed i32 $p
+    %t16 = binary add nowrap i32 %t15, 1
+    store typed i32 %t16, $p
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return i32 0
+}
+function @case_4__get() -> obj<4x4> [binding=strong, object=_ZN6case_43getEv] {
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    call void @case_4__S__S__aggregate(%t1, 3)
+    return obj<4x4> $retobj__1
+}
+function @case_4__check_case() -> i32 [binding=strong, object=_ZN6case_410check_caseEv] {
+  slot $s : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = call obj<4x4> @case_4__get()
+    copyobj 4x4 %t2, %t1
+    store typed ptr %t1, $s
+    %t3 = load typed ptr $s
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp ne i32 %t5, 3
+    %t7 = convert trunc i32 i64 %t6
+    return i32 %t7
+}
+function @case_5__check_case() -> i32 [binding=strong, object=_ZN6case_510check_caseEv] {
+  slot $s : ptr
+  slot $tmpobj__1 : obj<4x4>
+  slot $lor__2 : i64
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @case_5__S__S(%t1, 3)
+    store typed ptr %t1, $s
+    %t2 = load typed ptr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 3
+    branch %t5, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t6 = load typed i32 @case_5__calls
+    %t7 = cmp ne i32 %t6, 1
+    %t8 = cmp ne i64 %t7, 0
+    store typed i64 %t8, $lor__2
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__2
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t9 = load typed i64 $lor__2
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @case_6__check_case() -> i32 [binding=strong, object=_ZN6case_610check_caseEv] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = load typed ptr @case_6__s
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 3
+    branch %t4, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t5 = load typed i32 @case_6__calls
+    %t6 = cmp ne i32 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    store typed i64 %t7, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t8 = load typed i64 $lor__1
+    %t9 = convert trunc i32 i64 %t8
+    return i32 %t9
+}
+function @case_7__check_case() -> i32 [binding=strong, object=_ZN6case_710check_caseEv] {
+  slot $text : ptr
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    store typed ptr %t1, $text
+    %t2 = const i64 3
+    %t3 = convert sext i64 i32 3
+    %t4 = cmp ne i64 %t2, %t3
+    branch %t4, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t5 = load typed ptr $text
+    %t6 = index i8 [projection=array_element] %t5, 1
+    %t7 = load i8 %t6
+    %t8 = convert sext i32 i8 %t7
+    %t9 = cmp ne i32 %t8, 98
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t11 = load typed i64 $lor__1
+    %t12 = convert trunc i32 i64 %t11
+    return i32 %t12
+}
+function @case_8__f() -> i32 [binding=strong, object=_ZN6case_81fEv] {
+  block ^entry:
+    return i32 3
+}
+function @case_8__check_case() -> i32 [binding=strong, object=_ZN6case_810check_caseEv] {
+  slot $function : ptr
+
+  block ^entry:
+    %t1 = addr @case_8__f
+    store typed ptr %t1, $function
+    %t2 = load typed ptr $function
+    %t3 = call i32 %t2() as () -> i32
+    %t4 = cmp ne i32 %t3, 3
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @case_9__get() -> i32 [binding=strong, object=_ZN6case_93getEv] {
+  block ^entry:
+    %t1 = load typed i32 @case_9__calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @case_9__calls
+    return i32 3
+}
+function @case_9__check_case() -> i32 [binding=strong, object=_ZN6case_910check_caseEv] {
+  slot $x : ptr
+  slot $tmpref__1 : i32
+  slot $lor__2 : i64
+
+  block ^entry:
+    %t1 = call i32 @case_9__get()
+    store typed i32 %t1, $tmpref__1
+    %t2 = addr $tmpref__1
+    store typed ptr %t2, $x
+    %t3 = load typed ptr $x
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 3
+    branch %t5, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t6 = load typed i32 @case_9__calls
+    %t7 = cmp ne i32 %t6, 1
+    %t8 = cmp ne i64 %t7, 0
+    store typed i64 %t8, $lor__2
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__2
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t9 = load typed i64 $lor__2
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @case_10__check_case() -> i32 [binding=strong, object=_ZN7case_1010check_caseEv] {
+  slot $x : ptr
+  slot $tmpref__1 : i32
+
+  block ^entry:
+    store typed i32 3, $tmpref__1
+    %t1 = addr $tmpref__1
+    store typed ptr %t1, $x
+    %t2 = load typed ptr $x
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 3
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @case_11__get() -> ptr [binding=strong, object=_ZN7case_113getEv] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__case_11__get__s__tokens713_720__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__case_11__get__s__tokens713_720
+    %t4 = addr @__cppgm_ref_temporary____local_static__case_11__get__s__tokens713_720_0
+    call void @case_11__S__S(%t4, 3)
+    store typed ptr %t4, %t3
+    store typed i64 1, @__local_static__case_11__get__s__tokens713_720__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = load typed ptr @__local_static__case_11__get__s__tokens713_720
+    return ptr %t5
+}
+function @case_11__check_case() -> i32 [binding=strong, object=_ZN7case_1110check_caseEv] {
+  slot $s : ptr
+  slot $lor__1 : i64
+  slot $lor__2 : i64
+
+  block ^entry:
+    %t1 = call ptr @case_11__get()
+    store typed ptr %t1, $s
+    %t2 = load typed ptr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 3
+    branch %t5, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t6 = load typed i32 @case_11__calls
+    %t7 = cmp ne i32 %t6, 1
+    %t8 = cmp ne i64 %t7, 0
+    store typed i64 %t8, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t9 = load typed i64 $lor__1
+    branch %t9, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t10 = load typed ptr $s
+    %t11 = call ptr @case_11__get()
+    %t12 = cmp ne ptr %t10, %t11
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t14 = load typed i64 $lor__2
+    %t15 = convert trunc i32 i64 %t14
+    return i32 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @case_0__check_case()
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t2 = call i32 @case_1__check_case()
+    branch %t2, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t3 = call i32 @case_2__check_case()
+    branch %t3, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t4 = call i32 @case_3__check_case()
+    branch %t4, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 4
+
+  block ^if_else_11:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    %t5 = call i32 @case_4__check_case()
+    branch %t5, ^if_then_13, ^if_else_14
+
+  block ^if_then_13:
+    return i32 5
+
+  block ^if_else_14:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    %t6 = call i32 @case_5__check_case()
+    branch %t6, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 6
+
+  block ^if_else_17:
+    jump ^if_end_18
+
+  block ^if_end_18:
+    %t7 = call i32 @case_6__check_case()
+    branch %t7, ^if_then_19, ^if_else_20
+
+  block ^if_then_19:
+    return i32 7
+
+  block ^if_else_20:
+    jump ^if_end_21
+
+  block ^if_end_21:
+    %t8 = call i32 @case_7__check_case()
+    branch %t8, ^if_then_22, ^if_else_23
+
+  block ^if_then_22:
+    return i32 8
+
+  block ^if_else_23:
+    jump ^if_end_24
+
+  block ^if_end_24:
+    %t9 = call i32 @case_8__check_case()
+    branch %t9, ^if_then_25, ^if_else_26
+
+  block ^if_then_25:
+    return i32 9
+
+  block ^if_else_26:
+    jump ^if_end_27
+
+  block ^if_end_27:
+    %t10 = call i32 @case_9__check_case()
+    branch %t10, ^if_then_28, ^if_else_29
+
+  block ^if_then_28:
+    return i32 10
+
+  block ^if_else_29:
+    jump ^if_end_30
+
+  block ^if_end_30:
+    %t11 = call i32 @case_10__check_case()
+    branch %t11, ^if_then_31, ^if_else_32
+
+  block ^if_then_31:
+    return i32 11
+
+  block ^if_else_32:
+    jump ^if_end_33
+
+  block ^if_end_33:
+    %t12 = call i32 @case_11__check_case()
+    branch %t12, ^if_then_34, ^if_else_35
+
+  block ^if_then_34:
+    return i32 12
+
+  block ^if_else_35:
+    jump ^if_end_36
+
+  block ^if_end_36:
+    return i32 0
+}
+function @case_0__S__S__aggregate(%this : ptr [object_bytes=4], %x : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case_4__S__S__aggregate(%this : ptr [object_bytes=4], %x : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case_6__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN6case_61SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_6__calls
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_6__calls
+    return void
+}
+function @case_1__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [unwind=no, binding=weak, object=_ZN6case_11SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_1__alive
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_1__alive
+    return void
+}
+function @case_1__S___S(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6case_11SD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @case_1__alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @case_1__alive
+    return void
+}
+function @case_2__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [unwind=no, binding=weak, object=_ZN6case_21SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_2__alive
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_2__alive
+    return void
+}
+function @case_2__S___S(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6case_21SD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @case_2__alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @case_2__alive
+    return void
+}
+function @case_3__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [unwind=no, binding=weak, object=_ZN6case_31SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_3__alive
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_3__alive
+    return void
+}
+function @case_3__S___S(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6case_31SD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @case_3__alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @case_3__alive
+    return void
+}
+function @case_5__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN6case_51SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_5__calls
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_5__calls
+    return void
+}
+function @case_11__S__S(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN7case_111SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @case_11__calls
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @case_11__calls
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @__cppgm_ref_temporary__case_6__s_0
+    call void @case_6__S__S(%t1, 3)
+    store typed ptr %t1, @case_6__s
+    return void
+}
+alias object _ZN6case_61SC2Ei = @case_6__S__S
+alias object _ZN6case_11SC2Ei = @case_1__S__S
+alias object _ZN6case_11SD2Ev = @case_1__S___S
+alias object _ZN6case_21SC2Ei = @case_2__S__S
+alias object _ZN6case_21SD2Ev = @case_2__S___S
+alias object _ZN6case_31SC2Ei = @case_3__S__S
+alias object _ZN6case_31SD2Ev = @case_3__S___S
+alias object _ZN6case_51SC2Ei = @case_5__S__S
+alias object _ZN7case_111SC2Ei = @case_11__S__S

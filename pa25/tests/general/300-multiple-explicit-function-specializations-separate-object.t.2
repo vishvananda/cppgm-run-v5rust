@@ -1,0 +1,15 @@
+#include "300-multiple-explicit-function-specializations-separate-object.shared.h"
+
+int main()
+{
+  context ctx;
+  first a;
+  const first ca = first();
+  second b;
+  const second cb = second();
+  return specialized(ctx, a, 0) +
+             specialized(ctx, ca, 0) +
+             specialized(ctx, b, 0) +
+             specialized(ctx, cb, 0) == 15 ?
+      0 : 1;
+}

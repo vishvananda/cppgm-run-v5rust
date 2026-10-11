@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  enum-specifier E
+    enum-key KW_CLASS:class
+    enumerator A
+    enumerator B
+      literal 2
+end translation unit

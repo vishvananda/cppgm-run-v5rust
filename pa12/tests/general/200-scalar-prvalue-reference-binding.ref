@@ -1,0 +1,278 @@
+global @counter : i32 [binding=strong] = 40
+global @global_bound : ptr [binding=strong] = zero
+global @__cppgm_ref_temporary__global_bound_0 : i32 [binding=internal, object=_ZGR12global_bound_] = zero
+
+function @next() -> i32 [binding=strong, object=_Z4nextv] {
+  block ^entry:
+    %t1 = load typed i32 @counter
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @counter
+    return i32 %t2
+}
+function @make(%value : i32) -> obj<4x4> [binding=strong, object=_Z4makei] {
+  slot $value : i32
+  slot $result : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr $result
+    %t2 = load typed i32 $value
+    %t3 = addr $result
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $result
+    copyobj 4x4 %t6, %t5
+    return obj<4x4> $retobj__1
+}
+function @literal() -> i32 [binding=strong, object=_Z7literalv] {
+  slot $bound : ptr
+  slot $tmpref__1 : i32
+
+  block ^entry:
+    store typed i32 5, $tmpref__1
+    %t1 = addr $tmpref__1
+    store typed ptr %t1, $bound
+    %t2 = load typed ptr $bound
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @call() -> i32 [binding=strong, object=_Z4callv] {
+  slot $bound : ptr
+  slot $tmpref__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @next()
+    store typed i32 %t1, $tmpref__1
+    %t2 = addr $tmpref__1
+    store typed ptr %t2, $bound
+    %t3 = load typed ptr $bound
+    %t4 = load typed i32 %t3
+    %t5 = call i32 @next()
+    %t6 = binary add nowrap i32 %t4, %t5
+    %t7 = binary sub nowrap i32 %t6, 42
+    return i32 %t7
+}
+function @converting() -> i64 [binding=strong, object=_Z10convertingv] {
+  slot $bound : ptr
+  slot $tmpref__1 : i64
+
+  block ^entry:
+    %t1 = call i32 @next()
+    %t2 = convert sext i64 i32 %t1
+    store typed i64 %t2, $tmpref__1
+    %t3 = addr $tmpref__1
+    store typed ptr %t3, $bound
+    %t4 = load typed ptr $bound
+    %t5 = load typed i64 %t4
+    return i64 %t5
+}
+function @arithmetic() -> i32 [binding=strong, object=_Z10arithmeticv] {
+  slot $bound : ptr
+  slot $tmpref__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @next()
+    %t2 = binary add nowrap i32 1, %t1
+    store typed i32 %t2, $tmpref__1
+    %t3 = addr $tmpref__1
+    store typed ptr %t3, $bound
+    %t4 = load typed ptr $bound
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}
+function @conditional(%select : i32) -> i32 [binding=strong, object=_Z11conditionali] {
+  slot $select : i32
+  slot $bound : ptr
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %select, $select
+    %t1 = load typed i32 $select
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t2 = addr $tmpobj__2
+    %t3 = call obj<4x4> @make(7)
+    copyobj 4x4 %t3, %t2
+    %t4 = index i8 [projection=field] %t2, 0
+    %t5 = load typed i32 %t4
+    store typed i32 %t5, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    store typed i32 %t6, $cond__1
+    %t7 = addr $cond__1
+    store typed ptr %t7, $bound
+    %t8 = load typed ptr $bound
+    %t9 = load typed i32 %t8
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $clobber : i32
+  slot $before : i32
+
+  block ^entry:
+    store volatile i32 99, $clobber
+    %t1 = load typed i32 @counter
+    %t2 = cmp ne i32 %t1, 41
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = load typed ptr @global_bound
+    %t4 = load typed i32 %t3
+    %t5 = load typed i32 @counter
+    %t6 = cmp ne i32 %t4, %t5
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 8
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t7 = call i32 @literal()
+    %t8 = cmp ne i32 %t7, 5
+    branch %t8, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 1
+
+  block ^if_else_6:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    %t9 = load typed i32 @counter
+    store typed i32 %t9, $before
+    %t10 = call i32 @call()
+    %t11 = load typed i32 $before
+    %t12 = binary add nowrap i32 %t11, 1
+    %t13 = load typed i32 $before
+    %t14 = binary add nowrap i32 %t13, 2
+    %t15 = binary add nowrap i32 %t12, %t14
+    %t16 = binary sub nowrap i32 %t15, 42
+    %t17 = cmp ne i32 %t10, %t16
+    branch %t17, ^if_then_8, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t18 = load typed i32 @counter
+    %t19 = load typed i32 $before
+    %t20 = binary add nowrap i32 %t19, 2
+    %t21 = cmp ne i32 %t18, %t20
+    branch %t21, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    return i32 2
+
+  block ^if_else_9:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    %t22 = load typed i32 @counter
+    store typed i32 %t22, $before
+    %t23 = call i64 @converting()
+    %t24 = load typed i32 $before
+    %t25 = binary add nowrap i32 %t24, 1
+    %t26 = convert sext i64 i32 %t25
+    %t27 = cmp ne i64 %t23, %t26
+    branch %t27, ^if_then_12, ^lor_rhs_14
+
+  block ^lor_rhs_14:
+    %t28 = load typed i32 @counter
+    %t29 = load typed i32 $before
+    %t30 = binary add nowrap i32 %t29, 1
+    %t31 = cmp ne i32 %t28, %t30
+    branch %t31, ^if_then_12, ^if_else_13
+
+  block ^if_then_12:
+    return i32 3
+
+  block ^if_else_13:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    %t32 = load typed i32 @counter
+    store typed i32 %t32, $before
+    %t33 = call i32 @arithmetic()
+    %t34 = load typed i32 $before
+    %t35 = binary add nowrap i32 %t34, 2
+    %t36 = cmp ne i32 %t33, %t35
+    branch %t36, ^if_then_16, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t37 = load typed i32 @counter
+    %t38 = load typed i32 $before
+    %t39 = binary add nowrap i32 %t38, 1
+    %t40 = cmp ne i32 %t37, %t39
+    branch %t40, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 4
+
+  block ^if_else_17:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    %t41 = call i32 @conditional(1)
+    %t42 = cmp ne i32 %t41, 7
+    branch %t42, ^if_then_20, ^if_else_21
+
+  block ^if_then_20:
+    return i32 5
+
+  block ^if_else_21:
+    jump ^if_end_22
+
+  block ^if_end_22:
+    %t43 = call i32 @conditional(0)
+    %t44 = cmp ne i32 %t43, 0
+    branch %t44, ^if_then_23, ^if_else_24
+
+  block ^if_then_23:
+    return i32 6
+
+  block ^if_else_24:
+    jump ^if_end_25
+
+  block ^if_end_25:
+    %t45 = load typed ptr @global_bound
+    %t46 = load typed i32 %t45
+    %t47 = cmp ne i32 %t46, 41
+    branch %t47, ^if_then_26, ^if_else_27
+
+  block ^if_then_26:
+    return i32 7
+
+  block ^if_else_27:
+    jump ^if_end_28
+
+  block ^if_end_28:
+    %t48 = load volatile i32 $clobber
+    %t49 = cmp ne i32 %t48, 99
+    branch %t49, ^if_then_29, ^if_else_30
+
+  block ^if_then_29:
+    return i32 9
+
+  block ^if_else_30:
+    jump ^if_end_31
+
+  block ^if_end_31:
+    return i32 0
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call i32 @next()
+    store typed i32 %t1, @__cppgm_ref_temporary__global_bound_0
+    %t2 = addr @__cppgm_ref_temporary__global_bound_0
+    store typed ptr %t2, @global_bound
+    return void
+}

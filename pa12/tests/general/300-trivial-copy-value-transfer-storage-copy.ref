@@ -1,0 +1,92 @@
+function @forward(%ret : ptr [pass=indirect_result, object_bytes=24], %it : obj<24x8>) -> void [binding=strong, object=_Z7forward8PairIter] {
+  slot $it : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $it
+    copyobj 24x8 %it, %t1
+    %t2 = addr $it
+    copyobj 24x8 %t2, %ret
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $a : obj<24x8>
+  slot $b : obj<24x8>
+  slot $argobj__1 : obj<24x8>
+  slot $cond__2 : i32
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $a
+    %t2 = addr $x
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $x
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed ptr %t5, %t7
+    %t8 = addr $a
+    %t9 = index i8 [projection=field] %t8, 16
+    store typed i64 7, %t9
+    %t10 = addr $b
+    %t11 = addr $argobj__1
+    %t12 = addr $a
+    copyobj 24x8 %t12, %t11
+    call void @forward(%t10, $argobj__1)
+    %t13 = addr $b
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed ptr %t14
+    %t16 = addr $x
+    %t17 = cmp eq ptr %t15, %t16
+    branch %t17, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t18 = addr $b
+    %t19 = index i8 [projection=field] %t18, 8
+    %t20 = load typed ptr %t19
+    %t21 = addr $x
+    %t22 = cmp eq ptr %t20, %t21
+    %t23 = cmp ne i64 %t22, 0
+    store typed i64 %t23, $land__3
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__3
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t24 = load typed i64 $land__3
+    branch %t24, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t25 = addr $b
+    %t26 = index i8 [projection=field] %t25, 16
+    %t27 = load typed i64 %t26
+    %t28 = cmp eq i64 %t27, 7
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $land__4
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__4
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t30 = load typed i64 $land__4
+    branch %t30, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t31 = load typed i32 $cond__2
+    return i32 %t31
+}

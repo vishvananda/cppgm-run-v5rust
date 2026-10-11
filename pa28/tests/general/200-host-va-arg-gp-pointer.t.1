@@ -1,0 +1,18 @@
+extern "C" int puts(const char *);
+
+const char *select_arg(int marker, ...)
+{
+  __builtin_va_list args;
+  __builtin_va_start(args, marker);
+  const char *first = __builtin_va_arg(args, const char *);
+  const char *second = __builtin_va_arg(args, const char *);
+  __builtin_va_end(args);
+  return marker ? first : second;
+}
+
+int main()
+{
+  const char *picked = select_arg(0, "bad", "ok");
+  puts(picked);
+  return picked[0] == 'o' && picked[1] == 'k' && picked[2] == 0 ? 0 : 1;
+}

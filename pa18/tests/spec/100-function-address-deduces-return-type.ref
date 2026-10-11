@@ -1,0 +1,12 @@
+global @selected : ptr [binding=strong] = addr @make_value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed ptr @selected
+    %t2 = call i32 %t1() as () -> i32
+    return i32 %t2
+}
+function @make_value() -> i32 [binding=weak, object=_Z10make_valueIiET_v] {
+  block ^entry:
+    return i32 0
+}

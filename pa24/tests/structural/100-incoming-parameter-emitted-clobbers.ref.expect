@@ -1,0 +1,9 @@
+# budget from 100-incoming-parameter-emitted-clobbers.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 33
+blocks <= 5
+count(call) <= 4
+mem <= 13
+instructions <= 9 in @write_fields
+stack_size <= 320 in @write_fields
+instructions <= 25 in @main
+stack_size <= 448 in @main

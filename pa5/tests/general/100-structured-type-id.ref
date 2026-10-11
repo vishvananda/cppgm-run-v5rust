@@ -1,0 +1,50 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration A
+    type-id
+      type-specifier-seq
+        cv-qualifier KW_CONST:const
+        type-name C
+      abstract-declarator
+        ptr-operator OP_STAR:*
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      expression-statement
+        cast-expression KW_STATIC_CAST:static_cast
+          type-id
+            type-specifier-seq
+              cv-qualifier KW_CONST:const
+              type-name C
+            abstract-declarator
+              ptr-operator OP_STAR:*
+          id-expression x
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              cv-qualifier KW_CONST:const
+              type-name C
+            abstract-declarator
+              ptr-operator OP_STAR:*
+      expression-statement
+        type-trait-expression KW_TYPEID:typeid
+          type-id
+            type-specifier-seq
+              type-name C
+            abstract-declarator
+              ptr-operator OP_AMP:&
+      expression-statement
+        type-trait-expression KW_ALIGNOF:alignof
+          type-id
+            type-specifier-seq
+              cv-qualifier KW_CONST:const
+              type-name C
+            abstract-declarator
+              ptr-operator OP_STAR:*
+end translation unit

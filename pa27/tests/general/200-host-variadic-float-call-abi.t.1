@@ -1,0 +1,22 @@
+extern "C" int snprintf(char *, unsigned long, const char *, ...);
+
+int same(const char *a, const char *b)
+{
+  for (int i = 0;; ++i)
+  {
+    if (a[i] != b[i])
+      return 0;
+    if (a[i] == 0)
+      return 1;
+  }
+}
+
+int main()
+{
+  char buffer[64];
+  float value = 3.57347986e18F;
+  int n = snprintf(buffer, 64, "%.9g", value);
+  if (n != 14)
+    return 1;
+  return same(buffer, "3.57347986e+18") ? 0 : 2;
+}

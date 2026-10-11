@@ -1,0 +1,6 @@
+// Itanium ABI 5.1.6 + N3485 7.1.2/4: a static local of an inline function is
+// one object program-wide, named _ZZ7countervE1n; when this TU inlines counter
+// (always_inline) and u2 is built by g++, both must share n; expect exit 0
+__attribute__((always_inline)) inline int counter() { static int n = 0; return ++n; }
+int other();
+int main() { counter(); counter(); return other() == 3 ? 0 : 1; }

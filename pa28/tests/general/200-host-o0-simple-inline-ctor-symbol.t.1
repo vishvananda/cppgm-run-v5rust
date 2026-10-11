@@ -1,0 +1,10 @@
+struct HostSimpleCtor {
+  int value;
+  __attribute__((noinline)) HostSimpleCtor() : value(3) {}
+};
+
+int main()
+{
+  HostSimpleCtor value;
+  return value.value == 3 ? 0 : 1;
+}

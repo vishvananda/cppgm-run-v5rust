@@ -1,0 +1,6 @@
+// N3485 3.9p10: an aggregate is a literal type only if all its non-static data
+// members are literal; W has a non-literal member NC; expect exit 0
+struct NC { NC() {} int v; };
+struct W { NC t; int z; };
+static_assert(!__is_literal_type(W), "W is not a literal type");
+int main() { return 0; }

@@ -1,0 +1,9 @@
+# budget from 400-source-landing-cleanup-inline.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 55
+blocks <= 17
+count(call) <= 9
+count(load) <= 7
+count(store) <= 6
+count(phi) <= 4
+instructions <= 8 in @fail
+instructions <= 50 in @main

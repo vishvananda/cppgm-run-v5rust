@@ -1,0 +1,8 @@
+namespace host_names {
+extern int shared_value;
+}
+
+int main()
+{
+  return host_names::shared_value == 7 ? 0 : 1;
+}

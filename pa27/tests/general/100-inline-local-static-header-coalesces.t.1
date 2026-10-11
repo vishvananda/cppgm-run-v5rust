@@ -1,0 +1,12 @@
+#include "100-inline-local-static-header-coalesces.helper.h"
+
+int initializations;
+int destructions;
+void touch_other_translation_unit();
+
+int main()
+{
+  shared_value().value = 7;
+  touch_other_translation_unit();
+  return initializations == 1 && shared_value().value == 7 ? 0 : 1;
+}

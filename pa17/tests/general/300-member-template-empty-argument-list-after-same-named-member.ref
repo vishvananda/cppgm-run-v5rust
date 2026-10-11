@@ -1,0 +1,69 @@
+declare global @is_default_constructible_int___value : u8 [binding=weak, object=_ZN24is_default_constructibleIiE5valueE]
+declare global @is_default_constructible_longint___value : u8 [binding=weak, object=_ZN24is_default_constructibleIlE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call u8 @pair_like_int_longint___check_args__enable_explicit_default()
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t2 = call u8 @pair_like_int_longint___check_args__enable_implicit_default()
+    %t3 = cmp eq u8 %t2, 0
+    branch %t3, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t4 = call u8 @other_detector__enable_implicit_default()
+    branch %t4, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}
+function @pair_like_int_longint___check_args__enable_explicit_default() -> u8 [binding=weak, object=_ZN9pair_likeIilE10check_args23enable_explicit_defaultIJEEEbv, inline_hint=yes] {
+  slot $land__1 : i64
+
+  block ^entry:
+    %t1 = cmp ne i64 1, 0
+    branch %t1, ^land_rhs_1, ^land_short_2
+
+  block ^land_rhs_1:
+    %t2 = call u8 @pair_like_int_longint___check_args__enable_implicit_default()
+    %t3 = cmp eq u8 %t2, 0
+    %t4 = cmp ne i64 %t3, 0
+    store typed i64 %t4, $land__1
+    jump ^land_end_3
+
+  block ^land_short_2:
+    store typed i64 0, $land__1
+    jump ^land_end_3
+
+  block ^land_end_3:
+    %t5 = load typed i64 $land__1
+    %t6 = convert trunc u8 i64 %t5
+    return u8 %t6
+}
+function @pair_like_int_longint___check_args__enable_implicit_default() -> u8 [binding=weak, object=_ZN9pair_likeIilE10check_args23enable_implicit_defaultIJEEEbv, inline_hint=yes] {
+  block ^entry:
+    return u8 1
+}
+function @other_detector__enable_implicit_default() -> u8 [binding=weak, object=_ZN14other_detector23enable_implicit_defaultEv, inline_hint=yes] {
+  block ^entry:
+    return u8 0
+}

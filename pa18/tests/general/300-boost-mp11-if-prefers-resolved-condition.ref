@@ -1,0 +1,6 @@
+declare global @boost__mp11__list___cppgm_class_template_identity_1___size : i32 [binding=weak, object=_ZN5boost4mp114listIJNS1_IJciEEEEE4sizeE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

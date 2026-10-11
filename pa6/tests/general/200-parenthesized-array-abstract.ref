@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias A array of 3 int
+    type-alias B array of 2 array of 4 const char
+    variable a array of 3 int
+    variable b array of 2 array of 4 const char
+    function f function of (array of 5 int, array of 6 array of 7 int) returning void
+end translation unit

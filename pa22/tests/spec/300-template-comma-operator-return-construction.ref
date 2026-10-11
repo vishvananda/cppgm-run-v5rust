@@ -1,0 +1,108 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<4x4>
+  slot $second : obj<4x4>
+  slot $combined : obj<8x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $second
+    %t3 = addr $first
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 3, %t4
+    %t5 = addr $second
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 7, %t6
+    %t7 = addr $combined
+    %t8 = addr $first
+    %t9 = addr $second
+    %t10 = call obj<8x4> @append(%t8, %t9)
+    copyobj 8x4 %t10, %t7
+    %t11 = addr $combined
+    %t12 = index i8 %t11, 0
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 3
+    branch %t15, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t16 = addr $combined
+    %t17 = index i8 [projection=field] %t16, 4
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = load typed i32 %t18
+    %t20 = cmp eq i32 %t19, 7
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t22 = load typed i64 $land__2
+    branch %t22, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t23 = load typed i32 $cond__1
+    return i32 %t23
+}
+function @append(%params : ptr [pass=by_address, object_bytes=4], %np : ptr [pass=by_address, object_bytes=4]) -> obj<8x4> [binding=weak, object=_Z6appendI15named_parameterIi8first_idES0_Ii9second_idEE23named_parameter_combineIT0_T_ERKS7_RKS6_] {
+  slot $params : ptr
+  slot $np : ptr
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    store typed ptr %params, $params
+    store typed ptr %np, $np
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $params
+    %t3 = index i8 %t2, 0
+    %t4 = load typed ptr $np
+    %t5 = call obj<8x4> @named_parameter_base___cppgm_class_template_identity_1___operator_(%t3, %t4)
+    copyobj 8x4 %t5, %t1
+    return obj<8x4> $retobj__1
+}
+function @named_parameter_base___cppgm_class_template_identity_1___operator_(%this : ptr [object_bytes=1], %np : ptr [pass=by_address, object_bytes=4]) -> obj<8x4> [binding=weak, object=_ZNK20named_parameter_baseI15named_parameterIi8first_idEEcmIS0_Ii9second_idEEE23named_parameter_combineIT_S2_ERKS8_, inline_hint=yes] {
+  slot $this : ptr
+  slot $np : ptr
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %np, $np
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $np
+    %t3 = load typed ptr $this
+    call void @named_parameter_combine___cppgm_class_template_identity_2___cppgm_class_template_identity_1___named_parameter_combine(%t1, %t2, %t3)
+    return obj<8x4> $retobj__1
+}
+function @named_parameter_combine___cppgm_class_template_identity_2___cppgm_class_template_identity_1___named_parameter_combine(%this : ptr [object_bytes=8], %np : ptr [pass=by_address, object_bytes=4], %rest : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN23named_parameter_combineI15named_parameterIi9second_idES0_Ii8first_idEEC1ERKS2_RKS4_, inline_hint=yes] {
+  slot $this : ptr
+  slot $np : ptr
+  slot $rest : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %np, $np
+    store typed ptr %rest, $rest
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $rest
+    copyobj 4x4 %t3, %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    %t6 = load typed ptr $np
+    copyobj 4x4 %t6, %t5
+    return void
+}
+alias object _ZN23named_parameter_combineI15named_parameterIi9second_idES0_Ii8first_idEEC2ERKS2_RKS4_ = @named_parameter_combine___cppgm_class_template_identity_2___cppgm_class_template_identity_1___named_parameter_combine

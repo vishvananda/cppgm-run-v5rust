@@ -1,0 +1,22 @@
+// lowir.md effects: effects=readnone when any declaration carries GNU const,
+// effects=readonly when one carries GNU pure and none const: a later
+// declaration adds it, a definition without it keeps it, a function template's
+// specializations take the template's, an explicit specialization only its
+// own, a lambda-declarator's is its call operator's.
+#include <cstdio>
+int counter = 0;
+int later(int x);
+int later(int x) __attribute__((const));
+int later(int x) { return x + 1; }
+int earlier(int x) __attribute__((pure));
+int earlier(int x) { return x + counter; }
+template<class T> T doubled(T x) __attribute__((const));
+template<class T> T doubled(T x) { return x + x; }
+template<> int doubled<int>(int x) { ++counter; return x + x; }
+int main()
+{
+  auto plus = [](int x) __attribute__((const)) { return x + 3; };
+  int a = later(1) + earlier(1) + doubled(2.0) + doubled(3) + plus(1);
+  std::printf("%d %d\n", a, counter);
+  return a == 2 + 1 + 4 + 6 + 4 ? 0 : 1;
+}

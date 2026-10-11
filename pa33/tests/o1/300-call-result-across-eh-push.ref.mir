@@ -1,0 +1,61 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar i64
+  init i64 0
+
+function @address
+  abi
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, @value
+    ret rax
+
+function @read
+  abi
+    param %p -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    load.i64 rax, [rdi]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    call @address [args=(), unwind=no]
+    eh_push ^handler, 0
+    mov rdi, rax
+    call @read [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 rax, 0
+    setne rax
+    movzx rax, rax
+    ret rax
+
+  block ^handler
+    mov rax, 2
+    ret rax

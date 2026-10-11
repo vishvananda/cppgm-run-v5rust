@@ -1,0 +1,5 @@
+// second TU instantiating Holder<int>::n
+struct Noisy { int id; Noisy(int i); };
+template<class T> struct Holder { static Noisy n; };
+template<class T> Noisy Holder<T>::n(4);
+int use_b() { return Holder<int>::n.id; }

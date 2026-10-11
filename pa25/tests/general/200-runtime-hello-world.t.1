@@ -1,0 +1,7 @@
+extern "C" long cppgm_test_write_stdout(const char * buf, unsigned long count);
+
+int main()
+{
+  static const char msg[] = "Hello, World!\n";
+  return cppgm_test_write_stdout(msg, sizeof(msg)) < 0 ? 1 : 0;
+}

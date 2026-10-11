@@ -1,0 +1,19 @@
+declare global @same___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN4sameI12function_refIFiR6targetEES4_E5valueE]
+declare global @same___cppgm_class_template_identity_2___cppgm_class_template_identity_2___value : u8 [binding=weak, object=_ZN4sameI12function_refIFRiR6targetEES5_E5valueE]
+declare global @same___cppgm_class_template_identity_3___cppgm_class_template_identity_3___value : u8 [binding=weak, object=_ZN4sameI14forwarded_typeIM6targetFivEES4_E5valueE]
+declare global @same___cppgm_class_template_identity_4___cppgm_class_template_identity_4___value : u8 [binding=weak, object=_ZN4sameI14forwarded_typeIM6targetiES3_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @target__method(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN6target6methodEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

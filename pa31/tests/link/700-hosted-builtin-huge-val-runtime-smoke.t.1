@@ -1,0 +1,9 @@
+int main()
+{
+  double double_value = __builtin_huge_val();
+  float float_value = __builtin_huge_valf();
+  long double long_double_value = __builtin_huge_vall();
+  return double_value > 1.0 &&
+         float_value > 1.0f &&
+         long_double_value > 1.0L ? 0 : 1;
+}

@@ -1,0 +1,22 @@
+struct BaseError {
+  int payload;
+
+  BaseError(int value) : payload(value) {}
+  virtual ~BaseError() {}
+};
+
+struct DerivedError : BaseError {
+  DerivedError(int value) : BaseError(value) {}
+};
+
+int main()
+{
+  try
+  {
+    throw DerivedError(11);
+  }
+  catch (BaseError & error)
+  {
+    return error.payload == 11 ? 0 : 1;
+  }
+}

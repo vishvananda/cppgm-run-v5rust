@@ -1,0 +1,7 @@
+declare global @sfinae_primary_trait_sfinae_primary_type_void___value : i32 [binding=weak, object=_ZN20sfinae_primary_traitI19sfinae_primary_typevE5valueE]
+declare global @sfinae_primary_result___cppgm_class_template_identity_1___value : i32 [binding=weak, object=_ZN21sfinae_primary_resultI20sfinae_primary_traitI19sfinae_primary_typevEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

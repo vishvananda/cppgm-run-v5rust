@@ -1,0 +1,11 @@
+# budget from 700-nonadjacent-object-result-frame-placement.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 59
+blocks <= 7
+count(call) <= 5
+mem <= 31
+instructions <= 11 in @make_pair
+stack_size <= 352 in @make_pair
+instructions <= 15 in @forward_pair
+stack_size <= 384 in @forward_pair
+instructions <= 35 in @main
+stack_size <= 352 in @main

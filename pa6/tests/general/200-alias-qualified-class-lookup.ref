@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    type-alias A struct C
+    variable x int
+    scope class C
+      type-alias Y int
+end translation unit

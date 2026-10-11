@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of () returning float
+    compound-statement
+      return-statement
+        literal prvalue float 1.17549435e-38F
+  function-definition g function of () returning long int
+    compound-statement
+      return-statement
+        literal prvalue long int 0xfeedL
+end translation unit

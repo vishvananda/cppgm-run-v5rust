@@ -1,0 +1,42 @@
+function @flags__operator_(%__param0 : i32, %__param1 : i32) -> i32 [binding=strong, object=_ZN5flagsorENS_3FmtES0_] {
+  slot $__param0 : i32
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return i32 1
+}
+function @flags__operator___ov2(%__param0 : i32, %__param1 : i32) -> i32 [binding=strong, object=_ZN5flagsorENS_4ModeES0_] {
+  slot $__param0 : i32
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return i32 2
+}
+function @accept(%__param0 : i32) -> i32 [binding=strong, object=_Z6acceptN5flags4ModeE] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 0
+}
+function @accept__ov2(%__param0 : i32) -> i32 [binding=strong, object=_Z6accepti] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $mode : i32
+
+  block ^entry:
+    store typed i32 1, $mode
+    %t1 = load typed i32 $mode
+    %t2 = call i32 @flags__operator___ov2(%t1, 2)
+    %t3 = call i32 @accept(%t2)
+    return i32 %t3
+}

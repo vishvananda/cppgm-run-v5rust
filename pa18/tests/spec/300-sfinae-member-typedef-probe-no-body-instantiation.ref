@@ -1,0 +1,7 @@
+declare global @bool_constant_true___value : u8 [binding=weak, object=_ZN13bool_constantILb1EE5valueE]
+declare global @has_cat___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN7has_catI4WrapIiEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

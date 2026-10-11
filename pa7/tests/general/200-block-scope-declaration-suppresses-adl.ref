@@ -1,0 +1,28 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    function-definition N::f function of (enum E) returning int
+      parameter  enum E
+      compound-statement
+        return-statement
+          literal prvalue int 1
+  function-definition f function of (double) returning int
+    parameter  double
+    compound-statement
+      return-statement
+        literal prvalue int 2
+  function-definition local function of () returning int
+    compound-statement
+      simple-declaration
+        function-declaration f function of (double) returning int
+      return-statement
+        call-expression prvalue int
+          callee f function of (double) returning int
+          literal prvalue enum E 0
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee local function of () returning int
+end translation unit

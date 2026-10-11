@@ -1,0 +1,34 @@
+template<class Value>
+struct Layout
+{
+  typedef Value value_type;
+};
+
+template<class T>
+struct Split : Layout<T>
+{
+  typedef Layout<T> base_type;
+  using typename base_type::value_type;
+
+  template<class Arg>
+  int emplace_back(Arg & arg);
+};
+
+template<class T>
+template<class Arg>
+int Split<T>::emplace_back(Arg & arg)
+{
+  (void)arg;
+  Split<value_type> tmp;
+  (void)tmp;
+  return 1;
+}
+
+int main()
+{
+  Split<int> split;
+  int value = 0;
+  int first = split.emplace_back(value);
+  int second = split.emplace_back(value);
+  return first + second - 2;
+}

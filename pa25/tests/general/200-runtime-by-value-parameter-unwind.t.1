@@ -1,0 +1,34 @@
+int live = 0;
+int destroyed = 0;
+struct T {
+  int id;
+  T(int v) : id(v) { ++live; }
+  T(const T& o) : id(o.id) { if (o.id < 0) throw 1; ++live; }
+  ~T() { --live; ++destroyed; }
+};
+int callee_throws(T t) { if (t.id == 7) throw 2; return t.id; }
+int two(T a, T b) { return a.id + b.id; }
+int thrower() { throw 3; }
+int with_int(T a, int b) { return a.id + b; }
+int main() {
+  int status = 0;
+  {
+    T x(7);
+    try { callee_throws(x); status |= 1; } catch (int e) { if (e != 2) status |= 2; }
+    if (live != 1 || destroyed != 1) status |= 4;
+  }
+  live = 0; destroyed = 0;
+  {
+    T good(1), bad(-1);
+    try { two(good, bad); status |= 8; } catch (int e) { if (e != 1) status |= 16; }
+    // Whichever argument was copied first is destroyed; the failed copy is not.
+    if (live != 2) status |= 32;
+  }
+  live = 0; destroyed = 0;
+  {
+    T a(5);
+    try { with_int(a, thrower()); status |= 64; } catch (int e) { if (e != 3) status |= 128; }
+    if (live != 1) status |= 256;
+  }
+  return status;
+}

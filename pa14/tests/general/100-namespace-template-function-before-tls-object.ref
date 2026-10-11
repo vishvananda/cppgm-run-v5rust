@@ -1,0 +1,53 @@
+global @ns__helper [storage=thread_local, binding=strong, object=_ZN2ns6helperE] = {
+  zero 1
+}
+global @__cppgm_tls_guard__ns__helper : i64 [storage=thread_local, binding=internal] = zero
+
+function @ns__anchor() -> i32 [binding=strong, object=_ZN2ns6anchorEv] {
+  block ^entry:
+    %t1 = call i32 @ns__force(1)
+    return i32 %t1
+}
+function @__cppgm_tls_init__ns__helper() -> void [binding=internal] {
+  block ^entry:
+    %t1 = addr @__cppgm_tls_guard__ns__helper
+    %t2 = load typed i64 %t1
+    %t3 = cmp ne i64 %t2, 0
+    branch %t3, ^local_static_ctor_done_2, ^local_static_ctor_run_1
+
+  block ^local_static_ctor_run_1:
+    %t4 = addr @ns__helper
+    call void @ns__Helper_int___Helper(%t4)
+    store typed i64 1, @__cppgm_tls_guard__ns__helper
+    jump ^local_static_ctor_done_2
+
+  block ^local_static_ctor_done_2:
+    return void
+}
+function @__cppgm_tls_wrapper__ns__helper() -> ptr [binding=weak, object=_ZTWN2ns6helperE, tls_for=@ns__helper] {
+  block ^entry:
+    call void @__cppgm_tls_init__ns__helper()
+    %t1 = addr @ns__helper
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @ns__anchor()
+    return i32 %t1
+}
+function @ns__force(%value : i32) -> i32 [binding=weak, object=_ZN2ns5forceIiEEiT_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+function @ns__Helper_int___Helper(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN2ns6HelperIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN2ns6HelperIiEC2Ev = @ns__Helper_int___Helper

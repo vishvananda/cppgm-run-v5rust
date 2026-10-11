@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (enum State) returning int
+    parameter state enum State
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_AMP:&
+              unary-expression prvalue int OP_COMPL:~
+                id-expression lvalue enum State state
+              literal prvalue enum State 4
+            binary-expression prvalue int OP_LSHIFT:<<
+              id-expression lvalue enum State state
+              literal prvalue int 1
+          binary-expression prvalue int OP_PLUS:+
+            id-expression lvalue enum State state
+            literal prvalue int 1
+  function-definition g function of (unsigned int) returning bool
+    parameter state unsigned int
+    compound-statement
+      return-statement
+        binary-expression prvalue bool OP_NE:!=
+          binary-expression prvalue unsigned int OP_AMP:&
+            id-expression lvalue unsigned int state
+            literal prvalue enum State 1
+          literal prvalue int 0
+end translation unit

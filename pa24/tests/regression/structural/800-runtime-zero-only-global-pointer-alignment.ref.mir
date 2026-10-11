@@ -1,0 +1,42 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @byte
+  storage scalar u8
+  init u8 0
+
+global @table
+  storage data
+  item zero 16
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @table
+    mov r9, r8
+    or r9, 15
+    mov rdi, 15
+    not rdi
+    and r9, rdi
+    cmp.i64 r9, r8
+    je ^ok
+    jmp ^bad
+
+  block ^bad
+    mov rax, 1
+    ret rax
+
+  block ^ok
+    mov rax, 0
+    ret rax

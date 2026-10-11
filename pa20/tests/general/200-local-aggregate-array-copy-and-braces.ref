@@ -1,0 +1,24 @@
+function @copied_nested() -> i32 [binding=strong, object=_Z13copied_nestedv] {
+  slot $source : obj<8x4>
+  slot $values : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $source
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    %t4 = addr $source
+    %t5 = index i8 [projection=field] %t4, 4
+    %t6 = index i32 [projection=array_element] %t5, 0
+    store typed i32 2, %t6
+    %t7 = addr $values
+    %t8 = addr $source
+    copyobj 8x4 %t8, %t7
+    %t9 = addr $values
+    %t10 = binary mul i64 0, 8
+    %t11 = index i8 [projection=array_element] %t9, %t10
+    %t12 = index i8 [projection=field] %t11, 4
+    %t13 = index i32 [projection=array_element] %t12, 0
+    %t14 = load typed i32 %t13
+    return i32 %t14
+}

@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type EY enum EY
+    enumerator A enum EY 0
+    enumerator B enum EY 4
+    enumerator C enum EY 5
+    variable e enum EY
+    variable arr array of 5 int
+end translation unit

@@ -1,0 +1,45 @@
+declare function @operatornew__ov2(%arg0 : i64, %arg1 : ptr) -> ptr [binding=strong, object=_ZnwmPv]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $src : ptr
+  slot $dst : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr 0, $src
+    store typed ptr 0, $dst
+    %t1 = addr $dst
+    %t2 = addr $src
+    %t3 = call ptr @construct_at(%t1, %t2)
+    %t4 = load typed ptr $dst
+    %t5 = load typed ptr $src
+    %t6 = cmp eq ptr %t4, %t5
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @construct_at(%ptr : ptr, %args : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z12construct_atIP4ItemJRS1_EPS1_EPT_S5_DpOT0_] {
+  slot $ptr : ptr
+  slot $args : ptr
+
+  block ^entry:
+    store typed ptr %ptr, $ptr
+    store typed ptr %args, $args
+    %t1 = convert sext i64 i32 8
+    %t2 = load typed ptr $ptr
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    %t4 = load typed ptr $args
+    %t5 = load typed ptr %t4
+    store typed ptr %t5, %t3
+    return ptr %t3
+}

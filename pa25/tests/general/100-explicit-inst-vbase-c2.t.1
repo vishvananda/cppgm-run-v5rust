@@ -1,0 +1,11 @@
+// N3485 14.7.2p8,p10 + Itanium 5.1.4.3: an explicit instantiation definition
+// (u2) of a class template with a virtual base defines the base-object
+// ctor/dtor C2/D2 used by derived classes in other TUs;
+// expect link ok and exit 0
+struct V { int v; V() : v(1) {} };
+template<class T> struct A : virtual V { int a; A(); ~A(); };
+template<class T> A<T>::A() : a(10) {}
+template<class T> A<T>::~A() {}
+extern template struct A<int>;
+struct B : A<int> { int b; B() : b(20) {} };
+int main() { B b; return b.a + b.b + b.v == 31 ? 0 : 1; }

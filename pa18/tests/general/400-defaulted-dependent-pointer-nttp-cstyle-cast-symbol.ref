@@ -1,0 +1,13 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call u8 @f(0)
+    %t2 = convert zext i32 u8 %t1
+    return i32 %t2
+}
+function @f(%__param0 : i32) -> u8 [binding=weak, object=_Z1fIiTnPN1VIDTcvPT_Li0EEE1tELPv0EEbi] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return u8 0
+}

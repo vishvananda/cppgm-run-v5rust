@@ -1,0 +1,8 @@
+extern const char* const p;
+const char* defined_pointer();
+
+int main()
+{
+  return p == defined_pointer() && p[0] == 'a' && p[1] == 'b' &&
+    p[2] == 'c' && p[3] == 0 ? 0 : 1;
+}

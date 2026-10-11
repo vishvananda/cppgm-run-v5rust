@@ -1,0 +1,7 @@
+#define _GLIBCXX_NO_ASSERTIONS 1
+#include <string>
+
+int main()
+{
+  return std::to_string(17) == "17" && std::to_string(-17) == "-17" ? 0 : 1;
+}

@@ -1,0 +1,79 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<32x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = addr $value
+    zeroinit 32x8 %t1
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = cmp eq ptr %t4, 0
+    branch %t5, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t6 = addr $value
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed u32 %t7
+    %t9 = cmp eq u32 %t8, 0
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t12 = addr $value
+    %t13 = index i8 [projection=field] %t12, 16
+    %t14 = load typed ptr %t13
+    %t15 = cmp eq ptr %t14, 0
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t17 = load typed i64 $land__3
+    branch %t17, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t18 = addr $value
+    %t19 = index i8 [projection=field] %t18, 24
+    %t20 = load typed i32 %t19
+    %t21 = cmp eq i32 %t20, 0
+    %t22 = cmp ne i64 %t21, 0
+    store typed i64 %t22, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t23 = load typed i64 $land__4
+    branch %t23, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t24 = load typed i32 $cond__1
+    return i32 %t24
+}

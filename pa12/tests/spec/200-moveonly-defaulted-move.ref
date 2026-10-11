@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $dest : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    call void @MoveOnly__MoveOnly(%t1)
+    %t2 = addr $dest
+    %t3 = addr $source
+    call void @MoveOnly__MoveOnly__ov3(%t2, %t3)
+    %t4 = addr $dest
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 5
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @MoveOnly__MoveOnly(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN8MoveOnlyC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 5, %t2
+    return void
+}
+function @MoveOnly__MoveOnly__ov3(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN8MoveOnlyC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $__param1
+    copyobj 4x4 %t2, %t1
+    return void
+}
+alias object _ZN8MoveOnlyC2Ev = @MoveOnly__MoveOnly
+alias object _ZN8MoveOnlyC2EOS_ = @MoveOnly__MoveOnly__ov3

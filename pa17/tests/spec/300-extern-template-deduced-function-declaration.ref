@@ -1,0 +1,7 @@
+declare function @plus_one(%arg0 : i32) -> i32 [binding=weak, object=_Z8plus_oneIiEiT_]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @plus_one(0)
+    return i32 %t1
+}

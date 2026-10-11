@@ -1,0 +1,24 @@
+// Variadic template-template parameters use an open-ended arity sentinel; host
+// symbol spelling must not treat it as an exact parameter count.
+template <typename... Ts>
+struct box {
+  box(const Ts &...) {}
+};
+
+template <template <typename...> class Tuple>
+struct tuple_maker {
+  template <typename... Ts>
+  static Tuple<Ts...> create(const Ts &... args)
+  {
+    return Tuple<Ts...>{args...};
+  }
+};
+
+using box_maker = tuple_maker<box>;
+
+int main()
+{
+  auto t = box_maker::create(0, 0, 0);
+  (void)t;
+  return 0;
+}

@@ -1,0 +1,38 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $holder : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $holder
+    call void @Holder__Holder(%t1)
+    return i32 0
+}
+function @Holder__Holder(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6HolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 4
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = call obj<4x4> @Range__begin(%t4)
+    copyobj 4x4 %t5, %t2
+    return void
+}
+function @Range__begin(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK5Range5beginEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $it : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $it
+    %t2 = addr $it
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $it
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+alias object _ZN6HolderC2Ev = @Holder__Holder

@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable i int
+    variable x double
+    variable j char
+    scope namespace <unnamed>
+      type-alias I int
+      variable reopened int
+    scope namespace A
+      variable i double
+      scope namespace <unnamed>
+        type-alias I double
+        type-alias J char
+end translation unit

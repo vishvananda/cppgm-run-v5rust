@@ -1,0 +1,14 @@
+#include <vector>
+
+int main()
+{
+  std::vector<char> v;
+  v.assign({'f', 'u', 'n', '\0'});
+  return v.size() == 4 &&
+                 v[0] == 'f' &&
+                 v[1] == 'u' &&
+                 v[2] == 'n' &&
+                 v[3] == '\0' ?
+             0 :
+             1;
+}

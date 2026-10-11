@@ -1,0 +1,95 @@
+function @N__operator_(%a : obj<4x4>, %b : obj<4x4>) -> obj<4x4> [binding=strong, object=_ZN1NmiENS_1DES0_] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $r : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 4x4 %a, %t1
+    %t2 = addr $b
+    copyobj 4x4 %b, %t2
+    %t3 = addr $r
+    %t4 = addr $a
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = addr $b
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = binary sub nowrap i32 %t6, %t9
+    %t11 = addr $r
+    %t12 = index i8 [projection=field] %t11, 0
+    store typed i32 %t10, %t12
+    %t13 = addr $retobj__1
+    %t14 = addr $r
+    copyobj 4x4 %t14, %t13
+    return obj<4x4> $retobj__1
+}
+function @N__operator___2(%a : obj<4x4>, %b : obj<4x4>) -> u8 [binding=strong, object=_ZN1NgtENS_1DES0_] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 4x4 %a, %t1
+    %t2 = addr $b
+    copyobj 4x4 %b, %t2
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = addr $b
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp gt i32 %t5, %t8
+    %t10 = convert trunc u8 i64 %t9
+    return u8 %t10
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $d : obj<4x4>
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+  slot $cond__3 : i32
+  slot $argobj__4 : obj<4x4>
+  slot $argobj__5 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 9, %t4
+    %t5 = addr $b
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 4, %t6
+    %t7 = addr $d
+    %t8 = addr $argobj__1
+    %t9 = addr $a
+    copyobj 4x4 %t9, %t8
+    %t10 = addr $argobj__2
+    %t11 = addr $b
+    copyobj 4x4 %t11, %t10
+    %t12 = call obj<4x4> @N__operator_($argobj__1, $argobj__2)
+    copyobj 4x4 %t12, %t7
+    %t13 = addr $argobj__4
+    %t14 = addr $d
+    copyobj 4x4 %t14, %t13
+    %t15 = addr $argobj__5
+    %t16 = addr $b
+    copyobj 4x4 %t16, %t15
+    %t17 = call u8 @N__operator___2($argobj__4, $argobj__5)
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__3
+    return i32 %t18
+}

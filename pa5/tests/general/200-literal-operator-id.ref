@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_LONG:long
+      decl-specifier KW_DOUBLE:double
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier operator""_scale
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_LONG:long
+                decl-specifier KW_DOUBLE:double
+end translation unit

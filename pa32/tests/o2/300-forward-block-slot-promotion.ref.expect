@@ -1,0 +1,13 @@
+# budget from 300-forward-block-slot-promotion.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 16
+blocks <= 8
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 15 in @probe
+instructions <= 4 in @main
+
+# outcomes from 300-forward-block-slot-promotion.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(load)
+none(store)

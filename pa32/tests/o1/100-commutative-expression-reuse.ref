@@ -1,0 +1,19 @@
+function @ping() -> i64 {
+  block ^entry:
+    return i64 1
+}
+function @pong() -> i64 {
+  block ^entry:
+    return i64 2
+}
+function @local(%x : i64, %y : i64) -> i64 {
+  block ^entry:
+    %a = binary add i64 %x, %y
+    %c = binary mul i64 %a, %a
+    return i64 %c
+}
+function @cfg(%x : i64, %y : i64, %cond : i64) -> i64 {
+  block ^entry:
+    %a = binary add i64 %x, %y
+    return i64 %a
+}

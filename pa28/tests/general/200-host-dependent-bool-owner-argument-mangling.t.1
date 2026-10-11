@@ -1,0 +1,46 @@
+namespace ns {
+
+template<class C>
+struct size_traits {
+  typedef int difference_type;
+  typedef unsigned size_type;
+};
+
+template<class C, bool B, typename C::storage_type = 0>
+class bit_iterator {
+public:
+  typedef typename size_traits<C>::difference_type difference_type;
+  bit_iterator() {}
+};
+
+template<class Iter>
+struct iterator_traits {
+  typedef typename Iter::difference_type difference_type;
+};
+
+template<class Iter>
+using iterator_difference_type = typename iterator_traits<Iter>::difference_type;
+
+template<class, class C, bool B, class T, class Proj, int = 0>
+iterator_difference_type<bit_iterator<C, B> > count_bits(bit_iterator<C, B> first,
+                                                         bit_iterator<C, B> last,
+                                                         const T & value,
+                                                         Proj & proj) {
+  (void)first;
+  (void)last;
+  (void)value;
+  (void)proj;
+  return 0;
+}
+
+}
+
+struct owner { typedef int storage_type; };
+
+int main() {
+  ns::bit_iterator<owner, false> first;
+  ns::bit_iterator<owner, false> last;
+  int value = 0;
+  int proj = 0;
+  return ns::count_bits<void, owner, false, int, int>(first, last, value, proj);
+}

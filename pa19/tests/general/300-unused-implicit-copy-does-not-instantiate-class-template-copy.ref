@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @holder__holder(%t1)
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @holder__holder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6holderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @deferred_copy_noncopyable___deferred_copy(%t2)
+    return void
+}
+function @deferred_copy_noncopyable___deferred_copy(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN13deferred_copyI11noncopyableEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @noncopyable__noncopyable(%t2)
+    return void
+}
+function @noncopyable__noncopyable(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11noncopyableC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN6holderC2Ev = @holder__holder
+alias object _ZN13deferred_copyI11noncopyableEC2Ev = @deferred_copy_noncopyable___deferred_copy
+alias object _ZN11noncopyableC2Ev = @noncopyable__noncopyable

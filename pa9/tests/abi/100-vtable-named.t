@@ -1,0 +1,1 @@
+vtable named:ns::C

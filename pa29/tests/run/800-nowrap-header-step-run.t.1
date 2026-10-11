@@ -1,0 +1,30 @@
+// N3485 5.2.6p1, 4.7p2-p3: a narrow loop counter stepped in the loop's
+// condition (`while (i++ < n)`) is stepped once more on the pass that leaves
+// the loop: with n its type's maximum the unsigned char wraps to 0 and the
+// signed char becomes -128 (the conversion GCC and Clang define)
+#include <cstdio>
+
+__attribute__((noinline)) unsigned leave_unsigned(unsigned char n)
+{
+	unsigned char i = 0;
+	while (i++ < n)
+	{
+	}
+	return i;
+}
+
+__attribute__((noinline)) int leave_signed(signed char n)
+{
+	signed char i = 0;
+	while (i++ < n)
+	{
+	}
+	return i;
+}
+
+int main()
+{
+	const int total = leave_signed(127) + leave_signed(5);
+	std::printf("%u %u %d\n", leave_unsigned(255), leave_unsigned(3), total);
+	return 0;
+}

@@ -1,0 +1,18 @@
+template<class T>
+struct CtorBox {
+  int value;
+
+  CtorBox(int v = 3);
+  int read() const { return value; }
+};
+
+template<class T>
+CtorBox<T>::CtorBox(int v) : value(v + 4) {}
+
+extern template struct CtorBox<int>;
+
+int main()
+{
+  CtorBox<int> value(5);
+  return value.read() == 15 ? 0 : 1;
+}

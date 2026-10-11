@@ -1,0 +1,17 @@
+function @fold_false_edge(%condition : i64) -> i64 {
+  block ^entry:
+    branch %condition, ^entry, ^selected
+
+  block ^selected:
+    return i64 7
+}
+function @retain_removed_phi_edge(%condition : i64) -> i64 {
+  block ^entry:
+    branch %condition, ^phi_target, ^selected
+
+  block ^phi_target:
+    return i64 11
+
+  block ^selected:
+    return i64 3
+}

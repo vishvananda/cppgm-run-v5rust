@@ -1,0 +1,20 @@
+function @g(%box : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=strong, object=_Z1gRK3mapIi3vecI4pairIiP4nodeE5allocIS4_EEiS5_IS1_IiS7_EEE] {
+  slot $box : ptr
+
+  block ^entry:
+    store typed ptr %box, $box
+    %t1 = load typed ptr $box
+    %t2 = call ptr @lookup(%t1)
+    return ptr %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @lookup(%box : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z6lookupI4nodeEPT_RK3mapIi3vecI4pairIiS2_E5allocIS6_EEiS7_IS5_IiS9_EEE] {
+  slot $box : ptr
+
+  block ^entry:
+    store typed ptr %box, $box
+    return ptr 0
+}

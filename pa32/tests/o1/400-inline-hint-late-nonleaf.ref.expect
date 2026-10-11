@@ -1,0 +1,2 @@
+# outcomes from 400-inline-hint-late-nonleaf.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @preferred)

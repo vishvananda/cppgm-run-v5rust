@@ -1,0 +1,14 @@
+# budget from 400-eh-edge-placement-barrier.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 16
+blocks <= 7
+count(call) <= 4
+mem <= 6
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 15 in @main
+stack_size <= 64 in @main
+
+# contract from 400-eh-edge-placement-barrier.ref.mir: the exception regions, calls, callee-saved registers and memory accesses the fixture requires
+count(eh_push) == 1 in @main
+count(eh_pop) == 1 in @main
+count(call @identity) == 1 in @main

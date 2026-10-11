@@ -1,0 +1,50 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call u8 @boost__container__test__test_emplace()
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @boost__container__test__test_emplace() -> u8 [binding=weak, object=_ZN5boost9container4test12test_emplaceI1VEEbv] {
+  block ^entry:
+    %t1 = call u8 @boost__container__test__test_emplace_back()
+    return u8 %t1
+}
+function @boost__container__test__test_emplace_back() -> u8 [binding=weak, object=_ZN5boost9container4test17test_emplace_backI1VEEbv] {
+  slot $c : obj<1x1>
+  slot $expected : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $c
+    %t2 = addr $c
+    %t3 = addr $expected
+    %t4 = binary mul i64 0, 4
+    %t5 = index i8 [projection=array_element] %t3, %t4
+    %t6 = call u8 @boost__container__test__test_expected_container(%t2, %t5, 1, 0)
+    return u8 %t6
+}
+function @boost__container__test__test_expected_container(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr, %__param2 : u32, %__param3 : u32) -> u8 [binding=weak, object=_ZN5boost9container4test23test_expected_containerI1VEENS0_3dtl11enable_if_cIXntsr5boost9container3dtl7is_pairINT_10value_typeEEE5valueEbE4typeERKS6_PKNS1_10EmplaceIntEjj] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+  slot $__param2 : u32
+  slot $__param3 : u32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    store typed u32 %__param2, $__param2
+    store typed u32 %__param3, $__param3
+    return u8 1
+}

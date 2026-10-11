@@ -1,0 +1,78 @@
+global @width : i32 [binding=weak, object=_Z5widthIiE] = 4
+global @width__2 : i32 [binding=weak, object=_Z5widthIcE] = 1
+global @store__count : i32 [binding=weak, object=_ZN5store5countIiEE] = 0
+global @store__count__2 : i32 [binding=weak, object=_ZN5store5countIcEE] = 0
+
+function @address_int() -> ptr [binding=strong, object=_Z11address_intv] {
+  block ^entry:
+    %t1 = addr @width
+    return ptr %t1
+}
+function @address_char() -> ptr [binding=strong, object=_Z12address_charv] {
+  block ^entry:
+    %t1 = addr @width__2
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = call ptr @address_int()
+    %t2 = call ptr @address_char()
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 10
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    store typed i32 3, @store__count
+    store typed i32 4, @store__count__2
+    %t4 = load typed i32 @store__count
+    %t5 = cmp ne i32 %t4, 3
+    branch %t5, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 11
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t6 = call ptr @address_int()
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 4
+    branch %t8, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t9 = call ptr @address_char()
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 1
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__2
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__2
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t13 = load typed i64 $land__2
+    branch %t13, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 12, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}

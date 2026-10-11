@@ -1,0 +1,46 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base : obj<4x4>
+  slot $derived : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $base
+    zeroinit 4x4 %t1
+    call void @X__X(%t1)
+    %t2 = addr $derived
+    zeroinit 4x4 %t2
+    call void @Y__Y(%t2)
+    return i32 0
+}
+function @X__X__base_entry(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN1XC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = unary neg i32 1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Y__Y(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN1YC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @X__X__base_entry(%t2)
+    return void
+}
+function @X__X(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN1XC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = unary neg i32 1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN1YC2Ev = @Y__Y

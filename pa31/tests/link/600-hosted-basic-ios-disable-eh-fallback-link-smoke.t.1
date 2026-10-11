@@ -1,0 +1,6 @@
+#include <fstream>
+
+int main() {
+  std::ifstream in("/dev/null");
+  return in.fail() || !in;
+}

@@ -1,0 +1,115 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier A
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier B
+    class-specifier pair
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:A
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier first
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:B
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier second
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _T1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _T2
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _U1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _U2
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INLINE:inline
+        decl-specifier KW_BOOL:bool
+      declarator
+        identifier operator<
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier pair<_T1,_T2>
+            declarator
+              ptr-operator OP_AMP:&
+              identifier __x
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier pair<_U1,_U2>
+            declarator
+              ptr-operator OP_AMP:&
+              identifier __y
+      compound-statement
+        return-statement
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression __x
+              identifier first
+            member-expression OP_DOT:.
+              id-expression __y
+              identifier first
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _T1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _T2
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _U1
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _U2
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INLINE:inline
+        decl-specifier KW_BOOL:bool
+      declarator
+        identifier operator>
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier pair<_T1,_T2>
+            declarator
+              ptr-operator OP_AMP:&
+              identifier __x
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier pair<_U1,_U2>
+            declarator
+              ptr-operator OP_AMP:&
+              identifier __y
+      compound-statement
+        return-statement
+          binary-expression OP_LT:<
+            id-expression __y
+            id-expression __x
+end translation unit

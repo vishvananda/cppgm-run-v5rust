@@ -1,0 +1,8 @@
+declare function @pure() -> i64 [effects=readnone, unwind=no]
+declare function @sink() -> i64 [unwind=no]
+
+function @main(%fn : ptr) -> i64 [role=entry] {
+  block ^entry:
+    %2 = call i64 @sink()
+    return i64 0
+}

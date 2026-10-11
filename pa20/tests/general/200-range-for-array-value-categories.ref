@@ -1,0 +1,116 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 3
+  i32 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $prvalue_sum : i32
+  slot $__range1 : ptr
+  slot $arraytmp__1 : obj<8x4>
+  slot $__idx2 : i32
+  slot $value : i32
+  slot $values : obj<8x4>
+  slot $xvalue_sum : i32
+  slot $__range3 : ptr
+  slot $__idx4 : i32
+  slot $value__shadow2 : ptr
+  slot $cond__2 : i32
+  slot $land__3 : i64
+
+  block ^entry:
+    store typed i32 0, $prvalue_sum
+    %t1 = addr $arraytmp__1
+    store typed i32 1, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    store typed i32 2, %t2
+    store typed ptr %t1, $__range1
+    store typed i32 0, $__idx2
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t3 = load typed i32 $__idx2
+    %t4 = cmp lt i32 %t3, 2
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = load typed ptr $__range1
+    %t6 = load typed i32 $__idx2
+    %t7 = index i32 [projection=array_element] %t5, %t6
+    %t8 = load typed i32 %t7
+    store typed i32 %t8, $value
+    %t9 = load typed i32 $prvalue_sum
+    %t10 = load typed i32 $value
+    %t11 = binary add nowrap i32 %t9, %t10
+    store typed i32 %t11, $prvalue_sum
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t12 = load typed i32 $__idx2
+    %t13 = binary add nowrap i32 %t12, 1
+    store typed i32 %t13, $__idx2
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t14 = addr $values
+    copyobj 8x4 @__constexpr_template__1, %t14
+    store typed i32 0, $xvalue_sum
+    %t15 = addr $values
+    store typed ptr %t15, $__range3
+    store typed i32 0, $__idx4
+    jump ^for_cond_5
+
+  block ^for_cond_5:
+    %t16 = load typed i32 $__idx4
+    %t17 = cmp lt i32 %t16, 2
+    branch %t17, ^for_body_6, ^for_end_8
+
+  block ^for_body_6:
+    %t18 = load typed ptr $__range3
+    %t19 = load typed i32 $__idx4
+    %t20 = index i32 [projection=array_element] %t18, %t19
+    store typed ptr %t20, $value__shadow2
+    %t21 = load typed i32 $xvalue_sum
+    %t22 = load typed ptr $value__shadow2
+    %t23 = load typed i32 %t22
+    %t24 = binary add nowrap i32 %t21, %t23
+    store typed i32 %t24, $xvalue_sum
+    jump ^for_iter_7
+
+  block ^for_iter_7:
+    %t25 = load typed i32 $__idx4
+    %t26 = binary add nowrap i32 %t25, 1
+    store typed i32 %t26, $__idx4
+    jump ^for_cond_5
+
+  block ^for_end_8:
+    %t27 = load typed i32 $prvalue_sum
+    %t28 = cmp eq i32 %t27, 3
+    branch %t28, ^land_rhs_12, ^land_short_13
+
+  block ^land_rhs_12:
+    %t29 = load typed i32 $xvalue_sum
+    %t30 = cmp eq i32 %t29, 7
+    %t31 = cmp ne i64 %t30, 0
+    store typed i64 %t31, $land__3
+    jump ^land_end_14
+
+  block ^land_short_13:
+    store typed i64 0, $land__3
+    jump ^land_end_14
+
+  block ^land_end_14:
+    %t32 = load typed i64 $land__3
+    branch %t32, ^cond_then_9, ^cond_else_10
+
+  block ^cond_then_9:
+    store typed i32 0, $cond__2
+    jump ^cond_end_11
+
+  block ^cond_else_10:
+    store typed i32 1, $cond__2
+    jump ^cond_end_11
+
+  block ^cond_end_11:
+    %t33 = load typed i32 $cond__2
+    return i32 %t33
+}

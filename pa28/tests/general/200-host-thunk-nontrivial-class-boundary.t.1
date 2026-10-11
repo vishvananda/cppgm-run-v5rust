@@ -1,0 +1,21 @@
+#include "200-host-thunk-nontrivial-class-boundary.helper.h"
+
+namespace {
+struct Local : First, Second {
+  Value first(Value value) { return Value(value.self == &value ? value.n + 1 : -1); }
+  Value second(Value value) { return Value(value.self == &value ? value.n + 2 : -1); }
+};
+}
+
+Second* student_second() { static Local local; return &local; }
+
+int main()
+{
+  Value argument(10);
+  Value result = host_second()->second(argument);
+  int status = result.n == 12 && result.self == &result ? 0 : 1;
+  Value local_argument(20);
+  Value local_result = student_second()->second(local_argument);
+  if (local_result.n != 22 || local_result.self != &local_result) status |= 2;
+  return status | host_calls_student(student_second());
+}

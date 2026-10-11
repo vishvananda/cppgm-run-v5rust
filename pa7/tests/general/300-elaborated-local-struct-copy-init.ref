@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration g function of (float) returning struct S
+  function-definition f function of (float) returning void
+    parameter x float
+    compound-statement
+      simple-declaration
+        variable s const struct S
+          call-expression prvalue struct S
+            callee g function of (float) returning struct S
+            id-expression lvalue float x
+      expression-statement
+        cast-expression prvalue void OP_LPAREN:
+          member-expression lvalue const float OP_DOT:x
+            id-expression lvalue const struct S s
+end translation unit

@@ -1,0 +1,27 @@
+function @f() -> obj<8x4> [binding=strong, object=_Z1fv] {
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    call void @S__S__aggregate(%t1, 1, 2)
+    return obj<8x4> $retobj__1
+}
+function @S__S__aggregate(%this : ptr [object_bytes=8], %a : i32, %b : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}

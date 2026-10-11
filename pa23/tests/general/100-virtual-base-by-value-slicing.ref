@@ -1,0 +1,237 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Derived [storage=readonly, binding=weak, object=_ZTS7Derived] = {
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Base [storage=readonly, binding=weak, object=_ZTS4Base] = {
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__typeinfo_name__struct_Root [storage=readonly, binding=weak, object=_ZTS4Root] = {
+  i8 52
+  i8 82
+  i8 111
+  i8 111
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Root [storage=readonly, binding=weak, object=_ZTI4Root] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Root
+}
+global @__rtti_struct_Base [storage=readonly, binding=weak, object=_ZTI4Base] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Base
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Root
+  i64 -6141
+}
+global @__rtti_struct_Derived [storage=readonly, binding=weak, object=_ZTI7Derived] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived
+  ptr addr @__rtti_struct_Base
+}
+global @Derived__vtable [storage=readonly, binding=weak, object=_ZTV7Derived] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Derived
+}
+global @Derived____construction__Base__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC7Derived0_4Base] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Base
+}
+global @Derived____vtt [storage=readonly, binding=weak, object=_ZTT7Derived, object_root=yes] = {
+  ptr addr @Derived__vtable + 24
+  ptr addr @Derived____construction__Base__0__s0__vtable + 24
+}
+global @Base__vtable [storage=readonly, binding=weak, object=_ZTV4Base] = {
+  i64 12
+  i64 0
+  ptr addr @__rtti_struct_Base
+}
+global @Base____vtt [storage=readonly, binding=weak, object=_ZTT4Base, object_root=yes] = {
+  ptr addr @Base__vtable + 24
+}
+
+function @take(%value : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z4take4Base] {
+  slot $value : obj<16x8>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 8
+    %t2 = load typed i32 %t1
+    %t3 = binary mul nowrap i32 %t2, 10
+    %t4 = index i8 %value, 12
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $derived : obj<24x8>
+  slot $arg__1 : obj<16x8>
+  slot $sliced : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $derived
+    call void @Derived__Derived(%t1)
+    %t2 = addr $derived
+    %t3 = index i8 %t2, 16
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $arg__1
+    %t6 = addr $derived
+    %t7 = index i8 %t6, 0
+    call void @Base__Base(%t5, %t7)
+    %t8 = call i32 @take(%t5)
+    %t9 = cmp ne i32 %t8, 47
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t10 = addr $sliced
+    %t11 = addr $derived
+    %t12 = index i8 %t11, 0
+    call void @Base__Base(%t10, %t12)
+    %t13 = addr $sliced
+    %t14 = index i8 %t13, 12
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i32 %t15
+    %t17 = cmp ne i32 %t16, 7
+    branch %t17, ^if_then_4, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t18 = addr $sliced
+    %t19 = index i8 [projection=field] %t18, 8
+    %t20 = load typed i32 %t19
+    %t21 = cmp ne i32 %t20, 4
+    branch %t21, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    return i32 0
+}
+function @Derived__Derived(%this : ptr [object_bytes=24]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 16
+    call void @Root__Root__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    %t5 = addr @Derived____vtt
+    %t6 = index i8 %t5, 8
+    call void @Base__Base__base_entry(%t4, %t6)
+    %t7 = load typed ptr $this
+    %t8 = addr @Derived__vtable
+    %t9 = index i8 %t8, 24
+    store typed ptr %t9, %t7
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 12
+    store typed i32 5, %t11
+    return void
+}
+function @Base__Base(%this : ptr [alias=noalias, object_bytes=16], %other : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4BaseC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 12
+    %t3 = load typed ptr $other
+    %t4 = load typed ptr %t3
+    %t5 = index i8 %t4, -24
+    %t6 = load typed i64 %t5
+    %t7 = index i8 %t3, %t6
+    copyobj 4x4 %t7, %t2
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = load typed ptr $other
+    %t11 = index i8 [projection=field] %t10, 8
+    %t12 = load typed i32 %t11
+    store typed i32 %t12, %t9
+    %t13 = load typed ptr $this
+    %t14 = addr @Base__vtable
+    %t15 = index i8 %t14, 24
+    store typed ptr %t15, %t13
+    return void
+}
+function @Root__Root__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4RootC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 3, %t2
+    return void
+}
+function @Root__Root(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4RootC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 3, %t2
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed i32 4, %t4
+    return void
+}
+function @Base__Base__2(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN4BaseC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 12
+    call void @Root__Root__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Base__vtable
+    %t5 = index i8 %t4, 24
+    store typed ptr %t5, %t3
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i32 4, %t7
+    return void
+}

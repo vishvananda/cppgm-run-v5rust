@@ -1,0 +1,10 @@
+# budget from 300-negated-boolean-compare.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 12
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 7 in @negated_trunc
+instructions <= 7 in @negated_direct
+instructions <= 9 in @keeps_float

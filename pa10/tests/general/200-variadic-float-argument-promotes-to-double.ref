@@ -1,0 +1,17 @@
+declare function @sink(%arg0 : ptr) -> i32 [arity=variadic, linkage=c, binding=strong]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : f32
+
+  block ^entry:
+    store typed f32 1.25f, $value
+    %t1 = addr @__strlit__1
+    %t2 = load typed f32 $value
+    %t3 = convert fpext f64 f32 %t2
+    %t4 = call i32 @sink(%t1, %t3)
+    return i32 %t4
+}

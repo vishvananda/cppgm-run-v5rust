@@ -1,0 +1,6 @@
+declare global @boost__proto__detail__common_domain2_default_domain_default_domain_4___value : i32 [binding=weak, object=_ZN5boost5proto6detail14common_domain2INS1_14default_domainES3_Li4EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

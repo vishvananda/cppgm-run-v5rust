@@ -1,0 +1,16 @@
+#include "700-hosted-inline-header-odr-link-smoke.shared.h"
+
+bool main_probe()
+{
+  std::map<std::string, unsigned short> mapping;
+  mapping["one"] = 1;
+  std::deque<int> values;
+  values.push_back(3);
+  values.push_back(7);
+  return duplicate_symbol_probe(mapping, values);
+}
+
+int main()
+{
+  return 0;
+}

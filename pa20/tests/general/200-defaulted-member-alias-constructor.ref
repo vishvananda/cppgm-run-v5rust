@@ -1,0 +1,36 @@
+function @deleter(%__param0 : ptr) -> void [binding=strong, object=_Z7deleterPv] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @f() -> void [binding=strong, object=_Z1fv] {
+  slot $s : obj<1x1>
+  slot $refarg__1 : ptr
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr @deleter
+    store typed ptr %t2, $refarg__1
+    %t3 = addr $refarg__1
+    call void @S_void_void______S(%t1, 0, %t3)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f()
+    return i32 0
+}
+function @S_void_void______S(%this : ptr [object_bytes=1], %__param1 : i32, %__param2 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN1SIPFvPvEEC1ILb1EiEEiOS2_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return void
+}
+alias object _ZN1SIPFvPvEEC2ILb1EiEEiOS2_ = @S_void_void______S

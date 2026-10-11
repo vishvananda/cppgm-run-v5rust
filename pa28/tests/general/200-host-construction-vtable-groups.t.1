@@ -1,0 +1,63 @@
+#include "200-host-construction-vtable-groups.helper.h"
+
+static int values[32];
+static int count;
+int note_value(int value)
+{
+  if (count < 32) values[count] = value;
+  return ++count;
+}
+
+D::D() : d(40)
+{
+  note_value(static_cast<A*>(this)->f());
+  note_value(static_cast<A*>(this)->g());
+}
+int D::f() { return d + 1; }
+
+int HA::f() { return 1; }
+int HA::g() { return 2; }
+HX::HX() : x(10) { note_value(static_cast<HA*>(this)->g()); }
+HY::HY() : y(20) { note_value(static_cast<HA*>(this)->g()); note_value(h()); }
+int HY::h() { return 3; }
+HZ::HZ() : z(30)
+{
+  note_value(static_cast<HA*>(this)->g());
+  note_value(static_cast<HA*>(this)->f());
+  note_value(static_cast<HY*>(this)->y + x);
+}
+int HZ::g() { return z + static_cast<HY*>(this)->y; }
+
+static const int expected[] = { 2, 3, 2, 50, 1, 30, 2, 41, 50 };
+
+static int check(int first)
+{
+  if (count != 9) return first;
+  for (int i = 0; i < 9; ++i)
+    if (values[i] != expected[i]) return first + 1 + i;
+  return 0;
+}
+
+// A construction table's base type reuses the complete type's
+// substitutions (Itanium 5.1.4.1, as g++ and clang name it):
+// `_ZTC4WrapI1XE0_S0_`, used by the host-built X constructor.
+template<class T> struct Wrap : T { Wrap() {} };
+
+int main()
+{
+  D* d = new D;
+  int result = check(10);
+  if (result) return result;
+  A& a = *d;
+  if (a.f() != 41 || a.g() != 50) return 30;
+  count = 0;
+  HD* hd = host_make_hd();
+  result = check(40);
+  if (result) return result;
+  HA& ha = *hd;
+  if (ha.f() != 41 || ha.g() != 50) return 60;
+  count = 0;
+  Wrap<X> wrapped;
+  if (count != 1 || values[0] != 2 || wrapped.x != 10) return 70;
+  return 0;
+}

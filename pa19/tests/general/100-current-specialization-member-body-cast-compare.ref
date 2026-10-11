@@ -1,0 +1,72 @@
+declare global @holder_unsignedint_int___digits : i32 [binding=weak, object=_ZN6holderIjiE6digitsE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $h
+    call void @holder_unsignedint_int___holder(%t1)
+    %t2 = addr $h
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed u32 %t3
+    %t5 = copy i32 %t4
+    return i32 %t5
+}
+function @holder_unsignedint_int___holder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6holderIjiEC1Ev] {
+  slot $this : ptr
+  slot $mask : u32
+  slot $cond__1 : u32
+  slot $cond__2 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed u32 %t2
+    %t4 = binary sub nowrap i32 8, 1
+    %t5 = copy u32 %t4
+    %t6 = cmp ult u32 %t3, %t5
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t7 = unary bitnot i32 0
+    %t8 = copy u32 %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed u32 %t10
+    %t12 = binary add u32 %t11, 1
+    %t13 = binary sub u32 8, %t12
+    %t14 = binary ushr u32 %t8, %t13
+    store typed u32 %t14, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t15 = unary bitnot i32 0
+    %t16 = copy u32 %t15
+    store typed u32 %t16, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed u32 $cond__1
+    store typed u32 %t17, $mask
+    %t18 = load typed u32 $mask
+    %t19 = cmp ne u32 %t18, 0
+    branch %t19, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t20 = load typed i32 $cond__2
+    %t21 = copy u32 %t20
+    %t22 = load typed ptr $this
+    %t23 = index i8 [projection=field] %t22, 0
+    store typed u32 %t21, %t23
+    return void
+}
+alias object _ZN6holderIjiEC2Ev = @holder_unsignedint_int___holder

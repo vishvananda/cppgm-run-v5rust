@@ -1,0 +1,8 @@
+function @f() -> f64 [binding=strong, object=_Z1fv] {
+  block ^entry:
+    return f64 inf
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

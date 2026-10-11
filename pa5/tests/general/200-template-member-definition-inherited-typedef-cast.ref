@@ -1,0 +1,121 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier locale
+    class-key KW_STRUCT:struct
+    class-specifier facet
+      class-key KW_STRUCT:struct
+    class-specifier id
+      class-key KW_STRUCT:struct
+  class-specifier messages_base
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_LONG:long
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier catalog
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier basic_string
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier messages
+      class-key KW_CLASS:class
+      base-clause
+        base-specifier
+          access-specifier KW_PUBLIC:public
+          base-name locale::facet
+        base-specifier
+          access-specifier KW_PUBLIC:public
+          base-name messages_base
+      access-specifier KW_PUBLIC:public
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier locale::id
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier id
+      access-specifier KW_PROTECTED:protected
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VIRTUAL:virtual
+          decl-specifier TT_IDENTIFIER:catalog
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier do_open
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_CONST:const
+                    decl-specifier basic_string<char>
+                  declarator
+                    ptr-operator OP_AMP:&
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_CONST:const
+                    decl-specifier TT_IDENTIFIER:locale
+                  declarator
+                    ptr-operator OP_AMP:&
+              cv-qualifier KW_CONST:const
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier locale::id
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier messages<T>::id
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier messages<T>::catalog
+      declarator
+        identifier messages<T>::do_open
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier basic_string<char>
+            declarator
+              ptr-operator OP_AMP:&
+              identifier nm
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier TT_IDENTIFIER:locale
+            declarator
+              ptr-operator OP_AMP:&
+        cv-qualifier KW_CONST:const
+      compound-statement
+        return-statement
+          cast-expression OP_LPAREN:
+            type-id
+              type-specifier-seq
+                type-name catalog
+            literal 0
+end translation unit

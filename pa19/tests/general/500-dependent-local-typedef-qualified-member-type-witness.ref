@@ -1,0 +1,11 @@
+declare global @is_same___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN7is_sameI6traitsIiES1_E5valueE]
+
+global @value [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @value
+    return i32 0
+}

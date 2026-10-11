@@ -1,0 +1,17 @@
+global @b [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @b
+    call void @box_int_int___f(%t1)
+    return i32 0
+}
+function @box_int_int___f(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN3boxIiiE1fEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

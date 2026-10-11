@@ -1,0 +1,23 @@
+int* aligned(int* p) {
+  return static_cast<int*>(__builtin_assume_aligned(p, __alignof__(int)));
+}
+
+using aligned_int __attribute__((aligned(16))) = int;
+aligned_int zero;
+aligned_int initialized = 7;
+aligned_int make_value() { return 5; }
+aligned_int dynamic = make_value();
+
+int main() {
+  int values[4] = {0};
+  aligned_int local = 3;
+  static aligned_int local_static = 9;
+  return aligned(values) - values ||
+    reinterpret_cast<unsigned long>(&zero) % 16 ||
+    reinterpret_cast<unsigned long>(&initialized) % 16 ||
+    reinterpret_cast<unsigned long>(&dynamic) % 16 ||
+    reinterpret_cast<unsigned long>(&local) % 16 ||
+    reinterpret_cast<unsigned long>(&local_static) % 16 ||
+    zero != 0 || initialized != 7 || dynamic != 5 ||
+    local != 3 || local_static != 9;
+}

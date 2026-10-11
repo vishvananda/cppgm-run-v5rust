@@ -1,0 +1,209 @@
+function @invoke(%object : ptr, %member : i128) -> i32 [binding=strong, object=_Z6invokeP4BaseMS_FivE] {
+  slot $object : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i128 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i128 $member
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i32 %t14(%t8) as (%arg0 : ptr [object_bytes=4]) -> i32
+    return i32 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base_ptr : i128
+  slot $derived_ptr : i128
+  slot $d : obj<8x4>
+  slot $inverse : i128
+  slot $original : i128
+  slot $converted : i128
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $member_pointer_callee__3 : ptr
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    %t1 = addr @Base__f
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    store typed i128 %t3, $base_ptr
+    %t4 = load typed i128 $base_ptr
+    %t5 = convert trunc i64 i128 %t4
+    %t6 = cmp ne i64 %t5, 0
+    %t7 = binary mul i64 %t6, 4
+    %t8 = convert sext i128 i64 %t7
+    %t9 = binary shl i128 %t8, 64
+    %t10 = binary add i128 %t4, %t9
+    store typed i128 %t10, $derived_ptr
+    %t11 = addr $d
+    %t12 = addr $d
+    %t13 = index i8 %t12, 4
+    %t14 = index i8 [projection=field] %t13, 0
+    store typed i32 5, %t14
+    %t15 = addr $d
+    %t16 = index i8 %t15, 0
+    %t17 = index i8 [projection=field] %t16, 0
+    store typed i32 7, %t17
+    %t18 = addr @Derived__read
+    %t19 = copy i64 %t18
+    %t20 = convert zext i128 i64 %t19
+    %t21 = convert trunc i64 i128 %t20
+    %t22 = cmp ne i64 %t21, 0
+    %t23 = binary mul i64 %t22, -4
+    %t24 = convert sext i128 i64 %t23
+    %t25 = binary shl i128 %t24, 64
+    %t26 = binary add i128 %t20, %t25
+    store typed i128 %t26, $inverse
+    %t27 = addr @Derived__read
+    %t28 = copy i64 %t27
+    %t29 = convert zext i128 i64 %t28
+    store typed i128 %t29, $original
+    %t30 = load typed i128 $original
+    %t31 = convert trunc i64 i128 %t30
+    %t32 = cmp ne i64 %t31, 0
+    %t33 = binary mul i64 %t32, -4
+    %t34 = convert sext i128 i64 %t33
+    %t35 = binary shl i128 %t34, 64
+    %t36 = binary add i128 %t30, %t35
+    store typed i128 %t36, $converted
+    %t37 = addr $d
+    %t38 = load typed i128 $derived_ptr
+    %t39 = binary shr i128 %t38, 64
+    %t40 = convert trunc i64 i128 %t39
+    %t41 = convert trunc i64 i128 %t38
+    %t42 = binary and i64 %t41, 1
+    %t43 = cmp ne i64 %t42, 0
+    %t44 = index i8 %t37, %t40
+    branch %t43, ^member_pointer_virtual_7, ^member_pointer_direct_8
+
+  block ^member_pointer_virtual_7:
+    %t45 = load typed ptr %t44
+    %t46 = binary sub i64 %t41, 1
+    %t47 = index i8 %t45, %t46
+    %t48 = load typed ptr %t47
+    store typed ptr %t48, $member_pointer_callee__3
+    jump ^member_pointer_end_9
+
+  block ^member_pointer_direct_8:
+    %t49 = copy ptr %t41
+    store typed ptr %t49, $member_pointer_callee__3
+    jump ^member_pointer_end_9
+
+  block ^member_pointer_end_9:
+    %t50 = load typed ptr $member_pointer_callee__3
+    %t51 = call i32 %t50(%t44) as (%arg0 : ptr) -> i32
+    %t52 = cmp eq i32 %t51, 5
+    branch %t52, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t53 = addr $d
+    %t54 = index i8 %t53, 4
+    %t55 = load typed i128 $base_ptr
+    %t56 = call i32 @invoke(%t54, %t55)
+    %t57 = cmp eq i32 %t56, 5
+    %t58 = cmp ne i64 %t57, 0
+    store typed i64 %t58, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t59 = load typed i64 $land__2
+    branch %t59, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t60 = addr $d
+    %t61 = index i8 %t60, 4
+    %t62 = load typed i128 $inverse
+    %t63 = call i32 @invoke(%t61, %t62)
+    %t64 = cmp eq i32 %t63, 7
+    %t65 = cmp ne i64 %t64, 0
+    store typed i64 %t65, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t66 = load typed i64 $land__4
+    branch %t66, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t67 = addr $d
+    %t68 = index i8 %t67, 4
+    %t69 = load typed i128 $converted
+    %t70 = call i32 @invoke(%t68, %t69)
+    %t71 = cmp eq i32 %t70, 7
+    %t72 = cmp ne i64 %t71, 0
+    store typed i64 %t72, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t73 = load typed i64 $land__5
+    branch %t73, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t74 = load typed i32 $cond__1
+    return i32 %t74
+}
+function @Base__f(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN4Base1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @Derived__read(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZN7Derived4readEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}

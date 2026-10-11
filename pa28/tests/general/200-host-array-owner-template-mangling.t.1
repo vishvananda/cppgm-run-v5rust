@@ -1,0 +1,14 @@
+template<class T>
+struct owner {
+  owner() {}
+  __attribute__((noinline)) int marker() const {
+    return sizeof(T *) > 0 ? 9 : 1;
+  }
+};
+
+int touch(owner<int *[]> & value) { return value.marker(); }
+
+int main() {
+  owner<int *[]> value;
+  return touch(value) == 9 ? 0 : 1;
+}

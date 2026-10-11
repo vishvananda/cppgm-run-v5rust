@@ -1,0 +1,64 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $target : obj<4x4>
+  slot $arg__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    call void @shared_ptr_X_int___cppgm_class_template_identity_1___shared_ptr(%t1)
+    %t2 = addr $target
+    %t3 = addr $arg__1
+    %t4 = addr $source
+    %t5 = call obj<4x4> @dynamic_pointer_cast(%t4)
+    copyobj 4x4 %t5, %t3
+    call void @weak_ptr_Y_int___cppgm_class_template_identity_1___weak_ptr(%t2, %t3)
+    return i32 0
+}
+function @shared_ptr_X_int___cppgm_class_template_identity_1___shared_ptr(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN10shared_ptrI1Xi7deleterI1YEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @dynamic_pointer_cast(%__param0 : ptr [pass=by_address, object_bytes=4]) -> obj<4x4> [binding=weak, object=_Z20dynamic_pointer_castI1Yi7deleterIS0_E1XE10shared_ptrIT_T0_T1_ERKS4_IT2_S6_S7_E] {
+  slot $__param0 : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr $retobj__1
+    call void @shared_ptr_Y_int___cppgm_class_template_identity_1___shared_ptr(%t1)
+    return obj<4x4> $retobj__1
+}
+function @weak_ptr_Y_int___cppgm_class_template_identity_1___weak_ptr(%this : ptr [object_bytes=4], %r : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN8weak_ptrI1Yi7deleterIS0_EEC1IS0_EERK10shared_ptrIT_iS2_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %r, $r
+    %t1 = load typed ptr $r
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @shared_ptr_Y_int___cppgm_class_template_identity_1___shared_ptr(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN10shared_ptrI1Yi7deleterIS0_EEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN10shared_ptrI1Xi7deleterI1YEEC2Ev = @shared_ptr_X_int___cppgm_class_template_identity_1___shared_ptr
+alias object _ZN8weak_ptrI1Yi7deleterIS0_EEC2IS0_EERK10shared_ptrIT_iS2_E = @weak_ptr_Y_int___cppgm_class_template_identity_1___weak_ptr
+alias object _ZN10shared_ptrI1Yi7deleterIS0_EEC2Ev = @shared_ptr_Y_int___cppgm_class_template_identity_1___shared_ptr

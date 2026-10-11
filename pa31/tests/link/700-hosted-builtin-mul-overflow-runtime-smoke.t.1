@@ -1,0 +1,5 @@
+int main()
+{
+  long long out = 0;
+  return __builtin_mul_overflow(3LL, 4LL, &out) ? 1 : (out != 12);
+}

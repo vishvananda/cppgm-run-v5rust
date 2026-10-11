@@ -1,0 +1,20 @@
+declare global @declared_0___cmp2 : i32 [binding=weak, object=_ZN8declaredILi0EE4cmp2E]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $local_args : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $local_args
+    %t2 = addr $local_args
+    call void @operator_(0, %t2)
+    return i32 0
+}
+function @operator_(%__param0 : i32, %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZgtiRK8declaredILi0EE, inline_hint=yes] {
+  slot $__param0 : i32
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}

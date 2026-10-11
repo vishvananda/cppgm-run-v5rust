@@ -1,0 +1,19 @@
+declare function @first(%arg0 : f64) -> f64 [binding=weak, object=_Z5firstIdET_S0_]
+declare function @second(%arg0 : f64) -> f64 [binding=strong, object=_Z6secondd]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @first
+    %t2 = addr @second
+    call void @pick(%t1, %t2)
+    return i32 0
+}
+function @pick(%__param0 : ptr, %__param1 : ptr) -> void [binding=weak, object=_Z4pickIdEvPFT_S0_ES2_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}

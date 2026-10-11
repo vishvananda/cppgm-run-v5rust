@@ -1,0 +1,83 @@
+global @identity [binding=strong] = {
+  zero 1
+}
+global @paired_address : ptr [binding=strong] = addr @paired
+global @pointed_address : ptr [binding=strong] = addr @pointed
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+  slot $arg__2 : obj<1x1>
+  slot $arg__3 : obj<1x1>
+  slot $arg__4 : obj<1x1>
+  slot $arg__5 : obj<1x1>
+  slot $lor__6 : i64
+  slot $arg__7 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $arg__2
+    zeroinit 1x1 %t1
+    %t2 = addr $arg__3
+    zeroinit 1x1 %t2
+    %t3 = call i32 @paired(%t1, %t2)
+    %t4 = cmp ne i32 %t3, 3
+    branch %t4, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t5 = addr $arg__4
+    zeroinit 1x1 %t5
+    %t6 = addr $arg__5
+    zeroinit 1x1 %t6
+    %t7 = load typed ptr @paired_address
+    %t8 = call i32 %t7(%t5, %t6) as (%arg0 : ptr [pass=by_address, object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=1]) -> i32
+    %t9 = cmp ne i32 %t8, 3
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t11 = load typed i64 $lor__1
+    branch %t11, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t12 = addr $arg__7
+    zeroinit 1x1 %t12
+    %t13 = load typed ptr @pointed_address
+    %t14 = call i32 %t13(%t12) as (%arg0 : ptr [pass=by_address, object_bytes=1]) -> i32
+    %t15 = cmp ne i32 %t14, 3
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $lor__6
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__6
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t17 = load typed i64 $lor__6
+    %t18 = convert trunc i32 i64 %t17
+    return i32 %t18
+}
+function @paired(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z6pairedIiJ6markerS0_S0_EEiRK3boxIT_DpT0_ES7_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    %t1 = const i64 3
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @pointed(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z7pointedIiJclsEEiRK3boxIPT_DpPT0_E] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = const i64 3
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

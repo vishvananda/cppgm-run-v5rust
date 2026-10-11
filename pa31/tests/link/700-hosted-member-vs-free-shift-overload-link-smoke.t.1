@@ -1,0 +1,19 @@
+#include <cstdio>
+
+struct Base {
+  Base& operator<<(const void *p) {
+    std::printf("%p", p);
+    return *this;
+  }
+};
+
+Base& operator<<(Base &b, const char *s) {
+  std::fputs(s, stdout);
+  return b;
+}
+
+int main() {
+  Base b;
+  b << "x";
+  return 0;
+}

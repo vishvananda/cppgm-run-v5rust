@@ -1,0 +1,23 @@
+#include <iostream>
+#include <iterator>
+#include <locale>
+
+class decimal_num_put : public std::num_put<char>
+{
+protected:
+  iter_type do_put(iter_type out,
+                   std::ios_base & ios,
+                   char fill,
+                   long value) const override
+  {
+    return std::num_put<char>::do_put(out, ios, fill, value);
+  }
+};
+
+int main()
+{
+  std::locale locale(std::cout.getloc(), new decimal_num_put);
+  std::cout.imbue(locale);
+  std::cout << 60L << '\n';
+  return 0;
+}

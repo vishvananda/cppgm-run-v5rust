@@ -1,0 +1,179 @@
+function @take_empty(%__param0 : obj<1x1> [classes=none]) -> i32 [binding=strong, object=_Z10take_empty5Empty] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    return i32 1
+}
+function @make_empty() -> obj<1x1> [result_classes=none, binding=strong, object=_Z10make_emptyv] {
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    return obj<1x1> $retobj__1
+}
+function @take_double_empty(%p : obj<16x8> [classes=sse_none]) -> f64 [binding=strong, object=_Z17take_double_empty11DoubleEmpty] {
+  slot $p : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 16x8 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f64 %t3
+    return f64 %t4
+}
+function @make_double_empty(%x : f64) -> obj<16x8> [result_classes=sse_none, binding=strong, object=_Z17make_double_emptyd] {
+  slot $x : f64
+  slot $r : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed f64 %x, $x
+    %t1 = addr $r
+    %t2 = load typed f64 $x
+    %t3 = addr $r
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed f64 %t2, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $r
+    copyobj 16x8 %t6, %t5
+    return obj<16x8> $retobj__1
+}
+function @take_float_empty(%p : obj<8x4> [classes=sse]) -> f32 [binding=strong, object=_Z16take_float_empty10FloatEmpty] {
+  slot $p : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 8x4 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f32 %t3
+    return f32 %t4
+}
+function @take_extended(%p : obj<16x16> [classes=memory]) -> f80 [binding=strong, object=_Z13take_extended8Extended] {
+  slot $p : obj<16x16>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 16x16 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f80 %t3
+    return f80 %t4
+}
+function @make_extended(%x : f80) -> obj<16x16> [binding=strong, object=_Z13make_extendede] {
+  slot $x : f80
+  slot $r : obj<16x16>
+  slot $retobj__1 : obj<16x16>
+
+  block ^entry:
+    store typed f80 %x, $x
+    %t1 = addr $r
+    %t2 = load typed f80 $x
+    %t3 = addr $r
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed f80 %t2, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $r
+    copyobj 16x16 %t6, %t5
+    return obj<16x16> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $e : obj<1x1>
+  slot $de : obj<16x8>
+  slot $fe : obj<8x4>
+  slot $x : obj<16x16>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $argobj__3 : obj<1x1>
+  slot $argobj__4 : obj<16x8>
+  slot $land__5 : i64
+  slot $argobj__6 : obj<8x4>
+  slot $land__7 : i64
+  slot $argobj__8 : obj<16x16>
+
+  block ^entry:
+    %t1 = addr $e
+    %t2 = call obj<1x1> @make_empty()
+    %t3 = addr $de
+    %t4 = call obj<16x8> @make_double_empty(2.0)
+    copyobj 16x8 %t4, %t3
+    %t5 = addr $fe
+    %t6 = addr $fe
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed f32 3f, %t7
+    %t8 = addr $x
+    %t9 = call obj<16x16> @make_extended(4L)
+    copyobj 16x16 %t9, %t8
+    %t10 = addr $argobj__3
+    %t11 = addr $e
+    %t12 = call i32 @take_empty($argobj__3)
+    %t13 = cmp eq i32 %t12, 1
+    branch %t13, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t14 = addr $argobj__4
+    %t15 = addr $de
+    copyobj 16x8 %t15, %t14
+    %t16 = call f64 @take_double_empty($argobj__4)
+    %t17 = cmp eq f64 %t16, 2
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t19 = load typed i64 $land__2
+    branch %t19, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t20 = addr $argobj__6
+    %t21 = addr $fe
+    copyobj 8x4 %t21, %t20
+    %t22 = call f32 @take_float_empty($argobj__6)
+    %t23 = cmp eq f32 %t22, 3f
+    %t24 = cmp ne i64 %t23, 0
+    store typed i64 %t24, $land__5
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__5
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t25 = load typed i64 $land__5
+    branch %t25, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t26 = addr $argobj__8
+    %t27 = addr $x
+    copyobj 16x16 %t27, %t26
+    %t28 = call f80 @take_extended($argobj__8)
+    %t29 = cmp eq f80 %t28, 4L
+    %t30 = cmp ne i64 %t29, 0
+    store typed i64 %t30, $land__7
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__7
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t31 = load typed i64 $land__7
+    branch %t31, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t32 = load typed i32 $cond__1
+    return i32 %t32
+}

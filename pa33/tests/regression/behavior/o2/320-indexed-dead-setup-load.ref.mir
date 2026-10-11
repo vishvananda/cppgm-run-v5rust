@@ -1,0 +1,44 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @values
+  storage data
+  item i64 11
+  item i64 22
+  item i64 33
+
+function @read_value
+  abi
+    param %element -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r8, @values
+    load.i64 rax, [r8+rdi*8]
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 2
+    call @read_value [args=(rdi)]
+    cmp.i64 rax, 33
+    setne rax
+    movzx rax, rax
+    ret rax

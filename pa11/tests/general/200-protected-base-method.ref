@@ -1,0 +1,26 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $p
+    %t3 = call i32 @YB__g(%t2)
+    return i32 %t3
+}
+function @YB__g(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN2YB1gEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call i32 @YA__f(%t2)
+    return i32 %t3
+}
+function @YA__f(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN2YA1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 4
+}

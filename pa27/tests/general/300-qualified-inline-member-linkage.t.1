@@ -1,0 +1,60 @@
+int cleanup_count;
+
+struct Unused
+{
+  ~Unused();
+  operator int() const;
+};
+
+inline Unused::~Unused()
+{
+  cleanup_count += 100;
+}
+
+inline Unused::operator int() const
+{
+  return 100;
+}
+
+struct Used
+{
+  ~Used();
+  operator int() const;
+};
+
+__attribute__((noinline)) inline Used::~Used()
+{
+  cleanup_count += 1;
+}
+
+__attribute__((noinline)) inline Used::operator int() const
+{
+  return 5;
+}
+
+struct Strong
+{
+  ~Strong();
+  operator int() const;
+};
+
+Strong::~Strong()
+{
+  cleanup_count += 2;
+}
+
+Strong::operator int() const
+{
+  return 7;
+}
+
+int main()
+{
+  {
+    Used used;
+    Strong strong;
+    if(static_cast<int>(used) != 5 || static_cast<int>(strong) != 7)
+      return 1;
+  }
+  return cleanup_count == 3 ? 0 : 2;
+}

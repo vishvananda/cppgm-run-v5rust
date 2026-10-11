@@ -1,0 +1,8 @@
+// PA29 README (typed retention of a GNU vector_size byte width for layout
+// queries) / GCC manual: [[gnu::vector_size(16)]] on a typedef and a leading
+// __attribute__((vector_size(16))) on a variable or member make 16-byte vector
+// types; expect exit 0
+typedef int v4si [[gnu::vector_size(16)]];
+__attribute__((vector_size(16))) int g;
+struct S { __attribute__((vector_size(16))) int m; int k; };
+int main() { return sizeof(v4si) == 16 && sizeof(g) == 16 && sizeof(S) == 32 ? 0 : 1; }

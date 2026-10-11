@@ -1,0 +1,9 @@
+# budget from 300-duplicate-block-loads.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 13
+blocks <= 5
+count(call) <= 4
+count(load) <= 6
+count(store) <= 4
+count(phi) <= 3
+instructions <= 9 in @repeated
+instructions <= 7 in @keeps_store

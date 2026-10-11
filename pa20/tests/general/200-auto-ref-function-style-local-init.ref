@@ -1,0 +1,41 @@
+global @global : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @use_facet() -> ptr [binding=strong, object=_Z9use_facetv] {
+  block ^entry:
+    %t1 = addr @global
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $f : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @global
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 5, %t2
+    %t3 = call ptr @use_facet()
+    store typed ptr %t3, $f
+    %t4 = load typed ptr $f
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 5
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

@@ -1,0 +1,5 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] !dbg(tests/debuginfo/driver/o1/100-cppgm-emit-lowir-o1-debug.t, 1, 1) {
+  block ^entry:
+    %t1 = binary add nowrap i32 %x, 1 !dbg(tests/debuginfo/driver/o1/100-cppgm-emit-lowir-o1-debug.t, 2, 11)
+    return i32 %t1 !dbg(tests/debuginfo/driver/o1/100-cppgm-emit-lowir-o1-debug.t, 3, 3)
+}

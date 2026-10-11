@@ -1,0 +1,6 @@
+preproc 1
+sof tests/preproc/300-scoped-attribute-probe.t
+identifier scoped_off
+identifier vendor_off
+identifier plain_off
+eof

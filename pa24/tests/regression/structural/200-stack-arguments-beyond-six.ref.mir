@@ -1,0 +1,68 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @sum8
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    param %g -> [rbp+16] : i64
+    param %h -> [rbp+24] : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %g -> [rbp-8] : i64
+    param-slot %h -> [rbp-16] : i64
+
+  block ^entry
+    load.i64 rax, [rbp+16]
+    store.i64 [rbp-8], rax
+    load.i64 rax, [rbp+24]
+    store.i64 [rbp-16], rax
+    add rdi, rsi
+    add rdi, rdx
+    add rdi, rcx
+    add rdi, r8
+    add rdi, r9
+    add rdi, [rbp-8]
+    add rdi, [rbp-16]
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %r -> [rbp-8] : i64
+
+  block ^entry
+    sub rsp, 16
+    mov rdi, 1
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    mov r9, 6
+    mov r11, 7
+    store.i64 [rsp], r11
+    mov r11, 8
+    store.i64 [rsp+8], r11
+    call @sum8 [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    store.i64 [rbp-8], rax
+    load.i64 r8, [rbp-8]
+    sub r8, 36
+    ret r8

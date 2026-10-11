@@ -1,0 +1,49 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $x
+    call void @YB__YB(%t1)
+    %t2 = addr $x
+    %t3 = call i32 @YB__sum(%t2)
+    return i32 %t3
+}
+function @YB__YB(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN2YBC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @YA__YA__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    store typed i32 2, %t4
+    return void
+}
+function @YB__sum(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZN2YB3sumEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    return i32 %t8
+}
+function @YA__YA__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN2YAC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+alias object _ZN2YBC2Ev = @YB__YB

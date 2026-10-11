@@ -1,0 +1,8 @@
+namespace abi_link {
+int cpp_variadic_probe(const char *, ...);
+}
+
+int main()
+{
+  return abi_link::cpp_variadic_probe("tag", 1, 2) - 7;
+}

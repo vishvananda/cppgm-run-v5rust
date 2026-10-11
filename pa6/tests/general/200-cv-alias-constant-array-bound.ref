@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias CI const int
+    variable x const int
+    variable a array of 5 int
+end translation unit

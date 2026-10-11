@@ -1,0 +1,15 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i64
+
+  block ^entry:
+    %t1 = addr $x
+    call void @O_longint___I__f(%t1)
+    return i32 0
+}
+function @O_longint___I__f(%__param0 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN1OIlE1I1fERl, inline_hint=yes] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}

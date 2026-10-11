@@ -1,0 +1,26 @@
+// VALIDATION: compile-pass
+
+struct V
+{
+  V() : value(0) {}
+  virtual int anchor() { return value; }
+  int value;
+};
+
+struct A : virtual V
+{
+  A() { value = 7; }
+  virtual int anchor() { return value; }
+};
+
+int read(A *& p)
+{
+  if (!p) return 0;
+  return p->value;
+}
+
+int main()
+{
+  A * p = 0;
+  return read(p);
+}

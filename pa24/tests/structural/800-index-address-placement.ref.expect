@@ -1,0 +1,11 @@
+# budget from 800-index-address-placement.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 47
+blocks <= 7
+count(call) <= 5
+mem <= 13
+instructions <= 5 in @variable_address
+stack_size <= 320 in @variable_address
+instructions <= 5 in @constant_address
+stack_size <= 320 in @constant_address
+instructions <= 39 in @main
+stack_size <= 352 in @main

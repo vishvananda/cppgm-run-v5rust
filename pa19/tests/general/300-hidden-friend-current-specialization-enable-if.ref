@@ -1,0 +1,31 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ex : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $ex
+    %t2 = addr $ex
+    %t3 = call u8 @operator__(%t2, 0)
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @operator__(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : i32) -> u8 [binding=weak, object=_ZeqI12any_executorIiEEN9enable_ifIXsr7is_sameIT_S1_EE5valueEbE4typeERKS3_i, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return u8 1
+}

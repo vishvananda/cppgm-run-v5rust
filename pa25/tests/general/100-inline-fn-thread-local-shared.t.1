@@ -1,0 +1,7 @@
+// N3485 7.1.2p4 + 3.7.2 + Itanium 5.1.2 (vague linkage, _ZGV guard): a
+// block-scope thread_local of an inline function is one object (per thread) in
+// every TU; expect exit 0
+int seed;
+inline int tl() { thread_local int t = ++seed * 1000; return ++t; }
+int unit2();
+int main() { int a = tl(); int b = unit2(); int c = tl(); return a == 1001 && b == 1002 && c == 1003 ? 0 : 1; }

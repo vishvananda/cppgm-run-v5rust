@@ -1,0 +1,173 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_D [storage=readonly, binding=weak, object=_ZTS1D] = {
+  i8 49
+  i8 68
+  i8 0
+}
+global @__typeinfo_name__struct_B [storage=readonly, binding=weak, object=_ZTS1B] = {
+  i8 49
+  i8 66
+  i8 0
+}
+global @__typeinfo_name__struct_A [storage=readonly, binding=weak, object=_ZTS1A] = {
+  i8 49
+  i8 65
+  i8 0
+}
+global @__rtti_struct_A [storage=readonly, binding=weak, object=_ZTI1A] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_A
+}
+global @__rtti_struct_B [storage=readonly, binding=weak, object=_ZTI1B] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_B
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_A
+  i64 -6141
+}
+global @__typeinfo_name__struct_C [storage=readonly, binding=weak, object=_ZTS1C] = {
+  i8 49
+  i8 67
+  i8 0
+}
+global @__rtti_struct_C [storage=readonly, binding=weak, object=_ZTI1C] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_C
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_A
+  i64 -6141
+}
+global @__rtti_struct_D [storage=readonly, binding=weak, object=_ZTI1D] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_D
+  i32 2
+  i32 2
+  ptr addr @__rtti_struct_B
+  i64 2
+  ptr addr @__rtti_struct_C
+  i64 2050
+}
+global @D__vtable [storage=readonly, binding=weak, object=_ZTV1D] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_D
+}
+global @D____view__C__8__vtable [storage=readonly, binding=internal] = {
+  i64 8
+  i64 -8
+  ptr addr @__rtti_struct_D
+}
+global @D____construction__B__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC1D0_1B] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_B
+}
+global @D____construction__C__8__s0__vtable [storage=readonly, binding=internal, object=_ZTC1D8_1C] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_C
+}
+global @D____vtt [storage=readonly, binding=weak, object=_ZTT1D, object_root=yes] = {
+  ptr addr @D__vtable + 24
+  ptr addr @D____construction__B__0__s0__vtable + 24
+  ptr addr @D____construction__C__8__s0__vtable + 24
+  ptr addr @D____view__C__8__vtable + 24
+}
+global @B__vtable [storage=readonly, binding=weak, object=_ZTV1B] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_B
+}
+global @B____vtt [storage=readonly, binding=weak, object=_ZTT1B, object_root=yes] = {
+  ptr addr @B__vtable + 24
+}
+global @C__vtable [storage=readonly, binding=weak, object=_ZTV1C] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_C
+}
+global @C____vtt [storage=readonly, binding=weak, object=_ZTT1C, object_root=yes] = {
+  ptr addr @C__vtable + 24
+}
+
+function @read_b(%b : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z6read_bR1B] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    %t2 = load typed ptr %t1
+    %t3 = index i8 %t2, -24
+    %t4 = load typed i64 %t3
+    %t5 = index i8 %t1, %t4
+    %t6 = index i8 %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $d
+    call void @D__D(%t1)
+    %t2 = addr $d
+    %t3 = index i8 %t2, 16
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $d
+    %t6 = index i8 %t5, 0
+    %t7 = call i32 @read_b(%t6)
+    %t8 = binary sub nowrap i32 %t7, 7
+    return i32 %t8
+}
+function @D__D(%this : ptr [object_bytes=24]) -> void [unwind=no, binding=weak, object=_ZN1DC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr @D____vtt
+    %t4 = index i8 %t3, 8
+    call void @B__B__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 8
+    %t7 = addr @D____vtt
+    %t8 = index i8 %t7, 16
+    call void @C__C__base_entry(%t6, %t8)
+    %t9 = load typed ptr $this
+    %t10 = addr @D__vtable
+    %t11 = index i8 %t10, 24
+    store typed ptr %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 8
+    %t14 = addr @D____view__C__8__vtable
+    %t15 = index i8 %t14, 24
+    store typed ptr %t15, %t13
+    return void
+}
+function @B__B__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN1BC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}
+function @C__C__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN1CC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}

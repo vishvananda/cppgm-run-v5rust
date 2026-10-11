@@ -1,0 +1,49 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $accumulator : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $accumulator
+    call void @Accumulator__Accumulator(%t1)
+    %t2 = addr $accumulator
+    %t3 = call i32 @Accumulator__add(%t2, 4)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @Accumulator__Accumulator(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11AccumulatorC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 3, %t2
+    return void
+}
+function @Accumulator__add(%this : ptr [object_bytes=4], %value : i32) -> i32 [binding=weak, object=_ZNK11Accumulator3addEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 $value
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}
+alias object _ZN11AccumulatorC2Ev = @Accumulator__Accumulator

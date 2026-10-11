@@ -1,0 +1,128 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @global_value
+  storage scalar i64
+  init i64 11
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @frame_storage_after_call
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $value -> [rbp-<off0>] : i64
+
+  block ^entry
+    store.i64 [rbp-<off0>], 19
+    mov rdi, 3
+    call @identity [args=(rdi), unwind=no]
+    load.i64 rax, [rbp-<off0>]
+    ret rax
+
+function @global_storage_after_call
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 5
+    call @identity [args=(rdi), unwind=no]
+    load.i64 rax, @global_value
+    ret rax
+
+function @constant_field_after_call
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $object -> [rbp-<off1>] : obj<24x8>
+
+  block ^entry
+    store.i64 [rbp-<off2>], 23
+    mov rdi, 7
+    call @identity [args=(rdi), unwind=no]
+    load.i64 rax, [rbp-<off2>]
+    ret rax
+
+function @variable_index_after_call
+  abi
+    param %index -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+    slot $object -> [rbp-<off1>] : obj<24x8>
+
+  block ^entry
+    mov <gpr0>, rdi
+    store.i64 [rbp+<gpr0>*8-<off0>], 29
+    mov rdi, 9
+    call @identity [args=(rdi), unwind=no]
+    load.i64 rax, [rbp+<gpr0>*8-<off0>]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2>
+
+  block ^entry
+    call @frame_storage_after_call [args=(), unwind=no]
+    mov <gpr0>, rax
+    call @global_storage_after_call [args=(), unwind=no]
+    mov <gpr1>, rax
+    call @constant_field_after_call [args=(), unwind=no]
+    mov <gpr2>, rax
+    mov rdi, 1
+    call @variable_index_after_call [args=(rdi), unwind=no]
+    cmp.i64 <gpr0>, 19
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    cmp.i64 <gpr1>, 11
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    cmp.i64 <gpr2>, 23
+    setne <gpr2>
+    movzx <gpr2>, <gpr2>
+    cmp.i64 rax, 29
+    setne rax
+    movzx rax, rax
+    or <gpr0>, <gpr1>
+    or <gpr2>, rax
+    or <gpr0>, <gpr2>
+    ret <gpr0>

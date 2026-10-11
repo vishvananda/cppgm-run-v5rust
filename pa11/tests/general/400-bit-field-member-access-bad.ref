@@ -1,0 +1,13 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load i32 %t3
+    %t5 = binary and i32 %t4, 1
+    %t6 = copy u32 %t5
+    %t7 = copy i32 %t6
+    return i32 %t7
+}

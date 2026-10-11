@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type FY enum class FY
+    type-alias GY enum class FY
+    variable f enum class FY
+    variable fx enum class FY
+    scope enum FY
+      enumerator X enum class FY 0
+      enumerator Y enum class FY 3
+end translation unit

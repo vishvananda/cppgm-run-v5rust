@@ -1,0 +1,19 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i64 @distance_like(0, 0)
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @distance_like(%first : i32, %last : i32) -> i64 [binding=weak, object=_Z13distance_likeIiTnN9enable_ifIXsr12has_iter_catIT_iEE5valueEiE4typeELi0EEN15iterator_traitsIS1_E15difference_typeES1_S1_, inline_hint=yes] {
+  slot $first : i32
+  slot $last : i32
+
+  block ^entry:
+    store typed i32 %first, $first
+    store typed i32 %last, $last
+    %t1 = load typed i32 $last
+    %t2 = load typed i32 $first
+    %t3 = binary sub nowrap i32 %t1, %t2
+    %t4 = convert sext i64 i32 %t3
+    return i64 %t4
+}

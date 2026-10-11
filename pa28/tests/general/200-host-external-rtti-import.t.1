@@ -1,0 +1,8 @@
+#include "200-host-external-rtti-import.helper.h"
+
+int main()
+{
+  HostBase * base = make_host_base();
+  HostDerived * derived = dynamic_cast<HostDerived *>(base);
+  return (derived != 0 && derived->value() == 9) ? 0 : 1;
+}

@@ -1,0 +1,11 @@
+// N3485 3.7.2p2 (initialized before first odr-use; if constructed, destroyed
+// on thread exit) + 3.6.2p2 (static initialization of d in every thread): a
+// thread that uses z destroys its constant-initialized d too, as g++ and clang
+// do; expect exit 0
+extern "C" { typedef unsigned long pthread_t; int pthread_create(pthread_t*, const void*, void* (*)(void*), void*); int pthread_join(pthread_t, void**); }
+static int d_dtors;
+struct D { int v; ~D() { if (v == 6) ++d_dtors; } };
+thread_local D d = { 6 };
+thread_local D z;
+static void* other(void*) { z.v = 7; return 0; }
+int main() { pthread_t t; pthread_create(&t, 0, other, 0); pthread_join(t, 0); return d_dtors == 1 ? 0 : 1; }

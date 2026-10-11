@@ -1,0 +1,51 @@
+declare global @is_lvalue_reference_shortint___value : u8 [binding=weak, object=_ZN19is_lvalue_referenceIsE5valueE]
+
+function @consume(%value : ptr [pass=by_address, object_bytes=2]) -> i16 [binding=strong, object=_Z7consumeOs] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed i16 %t1
+    return i16 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : i32
+  slot $result : i16
+  slot $refarg__1 : i16
+  slot $cond__2 : i32
+
+  block ^entry:
+    store typed i32 5, $source
+    %t1 = load typed i32 $source
+    %t2 = convert trunc i16 i32 %t1
+    store typed i16 %t2, $refarg__1
+    %t3 = addr $refarg__1
+    %t4 = call ptr @forward(%t3)
+    %t5 = call i16 @consume(%t4)
+    store typed i16 %t5, $result
+    %t6 = load typed i16 $result
+    %t7 = convert sext i32 i16 %t6
+    %t8 = cmp eq i32 %t7, 5
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__2
+    return i32 %t9
+}
+function @forward(%value : ptr [pass=by_address, object_bytes=2]) -> ptr [binding=weak, object=_Z7forwardIsEOT_ON16remove_referenceIS0_E4typeE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}

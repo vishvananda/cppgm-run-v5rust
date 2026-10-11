@@ -1,0 +1,1 @@
+typeinfo named:ns::C

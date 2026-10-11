@@ -1,0 +1,43 @@
+int handler_value;
+int outer_value;
+int cleanup_trace;
+int created;
+
+struct body_guard
+{
+  int id;
+  body_guard() : id(++created) {}
+  ~body_guard() noexcept(false)
+  {
+    cleanup_trace = cleanup_trace * 10 + id;
+    if (id == 2) throw 7;
+  }
+};
+
+struct guarded
+{
+  ~guarded() noexcept(false);
+};
+
+guarded::~guarded() noexcept(false)
+try
+{
+  body_guard values[3];
+}
+catch (int value)
+{
+  if (cleanup_trace == 321) handler_value = value;
+}
+
+int main()
+{
+  try
+  {
+    guarded value;
+  }
+  catch (int value)
+  {
+    outer_value = value;
+  }
+  return handler_value == 7 && outer_value == 7 && cleanup_trace == 321 ? 0 : 1;
+}

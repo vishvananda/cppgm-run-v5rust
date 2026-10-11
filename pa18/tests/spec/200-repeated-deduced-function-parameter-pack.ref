@@ -1,0 +1,26 @@
+function @convert(%__param0 : ptr, %__param1 : i32) -> i64 [binding=strong, object=_Z7convertPci] {
+  slot $__param0 : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i32 %__param1, $__param1
+    return i64 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @convert
+    %t2 = call i32 @call(%t1, 0, 1)
+    return i32 %t2
+}
+function @call(%__param0 : ptr, %__param1 : ptr, %__param2 : i32) -> i32 [binding=weak, object=_Z4callIlcJiEEiPFT_PT0_DpT1_ES2_S4_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+  slot $__param2 : i32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    return i32 0
+}

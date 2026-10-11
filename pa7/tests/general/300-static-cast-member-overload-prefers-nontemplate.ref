@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        type-alias pointer member-pointer of struct A to function of (pointer to struct V) returning void
+      simple-declaration
+        variable selected member-pointer of struct A to function of (pointer to struct V) returning void
+          unary-expression prvalue member-pointer of struct A to function of (pointer to struct V) returning void OP_AMP:&
+            id-expression lvalue function of (pointer to struct A, pointer to struct V) returning void A::f
+      expression-statement
+        cast-expression prvalue void OP_LPAREN:
+          id-expression lvalue member-pointer of struct A to function of (pointer to struct V) returning void selected
+  function-definition A::f function of (pointer to struct A, pointer to struct V) returning void
+    parameter this pointer to struct A
+    parameter  pointer to struct V
+    compound-statement
+end translation unit

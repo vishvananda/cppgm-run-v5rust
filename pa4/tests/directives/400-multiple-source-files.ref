@@ -1,0 +1,7 @@
+preproc 2
+sof tests/directives/400-multiple-source-files.t
+identifier file1
+eof
+sof tests/directives/400-multiple-source-files.t2
+identifier file2
+eof

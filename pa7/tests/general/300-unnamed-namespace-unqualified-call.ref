@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition <unnamed>
+    function-definition g function of (int) returning int
+      parameter x int
+      compound-statement
+        return-statement
+          id-expression lvalue int x
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee g function of (int) returning int
+          literal prvalue int 0
+end translation unit

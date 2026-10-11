@@ -1,0 +1,11 @@
+#include <string>
+
+int main()
+{
+  std::size_t position = 0;
+  int value = std::stoi(std::string("7b"), &position, 16);
+  if(value != 123) {
+    return 1;
+  }
+  return position == 2 ? 0 : 2;
+}

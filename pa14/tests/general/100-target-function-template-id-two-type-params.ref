@@ -1,0 +1,26 @@
+function @call(%f : ptr) -> void [binding=strong, object=_Z4callPFR6StreamI4Char6TraitsES3_E] {
+  slot $f : ptr
+  slot $s : obj<1x1>
+
+  block ^entry:
+    store typed ptr %f, $f
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = load typed ptr $f
+    %t4 = call ptr %t3(%t2) as (%arg0 : ptr [pass=by_address, object_bytes=1]) -> ptr
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @manip
+    call void @call(%t1)
+    return i32 0
+}
+function @manip(%s : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z5manipI4Char6TraitsER6StreamIT_T0_ES6_] {
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    return ptr %t1
+}

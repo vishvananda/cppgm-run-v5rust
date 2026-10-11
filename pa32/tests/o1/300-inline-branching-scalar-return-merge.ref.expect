@@ -1,0 +1,12 @@
+# budget from 300-inline-branching-scalar-return-merge.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 15
+blocks <= 11
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 7 in @pick
+instructions <= 10 in @caller
+
+# outcomes from 300-inline-branching-scalar-return-merge.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @pick)

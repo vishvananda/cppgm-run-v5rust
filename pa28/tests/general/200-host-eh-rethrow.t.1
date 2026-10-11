@@ -1,0 +1,19 @@
+int main()
+{
+  try
+  {
+    try
+    {
+      throw 23;
+    }
+    catch (int)
+    {
+      throw;
+    }
+    return 1;
+  }
+  catch (int value)
+  {
+    return value == 23 ? 0 : 1;
+  }
+}

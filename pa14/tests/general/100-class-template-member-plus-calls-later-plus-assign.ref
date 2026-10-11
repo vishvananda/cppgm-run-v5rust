@@ -1,0 +1,86 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<32x4>
+  slot $b : obj<8x8>
+  slot $tmpobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 32x4 @__constexpr_template__1, %t1
+    %t2 = addr $b
+    %t3 = addr $values
+    call void @Box_int___Box(%t2, %t3)
+    %t4 = addr $tmpobj__1
+    %t5 = addr $b
+    %t6 = call obj<8x8> @Box_int___operator_(%t5, 4)
+    copyobj 8x8 %t6, %t4
+    %t7 = index i8 [projection=field] %t4, 0
+    %t8 = load typed ptr %t7
+    %t9 = addr $values
+    %t10 = binary sub ptr %t8, %t9
+    %t11 = binary shr exact i64 %t10, 2
+    %t12 = binary sub nowrap i64 %t11, 4
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}
+function @Box_int___Box(%this : ptr [object_bytes=8], %x : ptr) -> void [binding=weak, object=_ZN3BoxIiEC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Box_int___operator_(%this : ptr [object_bytes=8], %n : i64) -> obj<8x8> [binding=weak, object=_ZNK3BoxIiEplEl, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i64
+  slot $w : obj<8x8>
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %n, $n
+    %t1 = addr $w
+    %t2 = load typed ptr $this
+    copyobj 8x8 %t2, %t1
+    %t3 = addr $w
+    %t4 = load typed i64 $n
+    %t5 = call ptr @Box_int___operator__(%t3, %t4)
+    %t6 = addr $retobj__1
+    %t7 = addr $w
+    copyobj 8x8 %t7, %t6
+    return obj<8x8> $retobj__1
+}
+function @Box_int___operator__(%this : ptr [object_bytes=8], %n : i64) -> ptr [binding=weak, object=_ZN3BoxIiEpLEl, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %n, $n
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i64 $n
+    %t5 = binary mul i64 %t4, 4
+    %t6 = index i8 %t3, %t5
+    store typed ptr %t6, %t2
+    %t7 = load typed ptr $this
+    return ptr %t7
+}
+alias object _ZN3BoxIiEC2EPi = @Box_int___Box

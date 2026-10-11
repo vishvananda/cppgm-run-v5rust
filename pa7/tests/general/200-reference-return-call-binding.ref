@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration id function of (lvalue-reference to int) returning lvalue-reference to int
+  function-declaration keep function of (lvalue-reference to int) returning void
+  function-definition f function of (lvalue-reference to int) returning void
+    parameter x lvalue-reference to int
+    compound-statement
+      expression-statement
+        call-expression prvalue void
+          callee keep function of (lvalue-reference to int) returning void
+          call-expression lvalue lvalue-reference to int
+            callee id function of (lvalue-reference to int) returning lvalue-reference to int
+            id-expression lvalue int x
+end translation unit

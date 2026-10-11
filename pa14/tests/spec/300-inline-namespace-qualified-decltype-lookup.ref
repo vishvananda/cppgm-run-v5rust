@@ -1,0 +1,14 @@
+function @f() -> ptr [binding=strong, object=_Z1fv] {
+  slot $retref__1 : i32
+
+  block ^entry:
+    store typed i32 0, $retref__1
+    %t1 = addr $retref__1
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call ptr @f()
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}

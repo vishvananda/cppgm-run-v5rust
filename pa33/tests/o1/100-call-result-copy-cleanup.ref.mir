@@ -1,0 +1,41 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @zero
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    call @zero [args=()]
+    cmp.i64 rax, 0
+    je ^true
+
+  block ^false
+    mov rax, 1
+    ret rax
+
+  block ^true
+    mov rax, 0
+    ret rax

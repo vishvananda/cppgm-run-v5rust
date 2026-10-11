@@ -1,0 +1,36 @@
+function @operator_(%lhs : i32, %rhs : i32) -> i32 [binding=strong, object=_Zan1FS_] {
+  slot $lhs : i32
+  slot $rhs : i32
+
+  block ^entry:
+    store typed i32 %lhs, $lhs
+    store typed i32 %rhs, $rhs
+    %t1 = load typed i32 $lhs
+    %t2 = load typed i32 $rhs
+    return i32 3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = load typed i32 $value
+    %t2 = call i32 @operator_(%t1, 2)
+    store typed i32 %t2, $value
+    %t3 = load typed i32 $value
+    %t4 = cmp eq i32 %t3, 3
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

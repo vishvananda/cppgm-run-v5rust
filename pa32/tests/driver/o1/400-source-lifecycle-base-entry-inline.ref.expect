@@ -1,0 +1,11 @@
+# budget from 400-source-lifecycle-base-entry-inline.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 12
+blocks <= 7
+count(call) <= 3
+count(load) <= 3
+count(store) <= 4
+count(phi) <= 3
+instructions <= 7 in @use_derived
+instructions <= 4 in @Derived___Derived__base_entry
+instructions <= 5 in @VirtualBase__VirtualBase__base_entry
+instructions <= 4 in @Derived___Derived

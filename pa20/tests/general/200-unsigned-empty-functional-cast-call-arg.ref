@@ -1,0 +1,31 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 117
+  i8 110
+  i8 115
+  i8 105
+  i8 103
+  i8 110
+  i8 101
+  i8 100
+  i8 40
+  i8 41
+  i8 0
+}
+
+function @unsigned_empty_functional_cast_call_arg__take(%value : u32, %__param1 : ptr) -> u32 [binding=strong, object=_ZN39unsigned_empty_functional_cast_call_arg4takeEjPKc] {
+  slot $value : u32
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed u32 %value, $value
+    store typed ptr %__param1, $__param1
+    %t1 = load typed u32 $value
+    return u32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call u32 @unsigned_empty_functional_cast_call_arg__take(0, %t1)
+    %t3 = copy i32 %t2
+    return i32 %t3
+}

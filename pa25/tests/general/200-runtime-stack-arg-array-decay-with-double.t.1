@@ -1,0 +1,5 @@
+// SysV x86-64 ABI 3.2.3 / N3485 4.2: a decayed local array passed as a stack
+// (7th integer-class) argument in a call that also passes a double gets the
+// right address; expect exit 0
+int f(double d, long a, long b, long c, long e, long g, long h, long* s) { return s[1] == 7 && d == 1.0 ? 0 : 1; }
+int main() { long arr[2] = {6, 7}; return f(1.0, 1, 2, 3, 4, 5, 6, arr); }

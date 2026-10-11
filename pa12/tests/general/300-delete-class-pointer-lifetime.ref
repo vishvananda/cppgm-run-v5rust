@@ -1,0 +1,48 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @c : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : ptr
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @operatornew(%t1)
+    call void @A__A(%t2)
+    store typed ptr %t2, $a
+    %t3 = load typed ptr $a
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    call void @A___A(%t3)
+    call void @operatordelete(%t3)
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    %t5 = load typed i32 @c
+    return i32 %t5
+}
+function @A__A(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1AC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @c
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @c
+    return void
+}
+function @A___A(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1AD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @c
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @c
+    return void
+}
+alias object _ZN1AC2Ev = @A__A
+alias object _ZN1AD2Ev = @A___A

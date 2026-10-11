@@ -1,0 +1,41 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @add
+  abi
+    param %a -> xmm0 : f64
+    param %b -> xmm1 : f64
+    return f64 -> xmm0
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    param-slot %a -> [rbp-8] : f64
+    param-slot %b -> [rbp-16] : f64
+
+  block ^entry
+    fmov.f64 [rbp-8], xmm0
+    fmov.f64 [rbp-16], xmm1
+    fadd.f64 xmm0, [rbp-8], [rbp-16]
+    ret xmm0
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fmov.f64 xmm0, 1.5
+    fmov.f64 xmm1, 2.25
+    call @add [args=(xmm0,xmm1)]
+    feq.f64 rax, xmm0, 3.75
+    ret rax

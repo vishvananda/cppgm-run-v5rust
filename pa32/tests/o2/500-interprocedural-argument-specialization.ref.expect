@@ -1,0 +1,19 @@
+# budget from 500-interprocedural-argument-specialization.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 42
+blocks <= 13
+count(call) <= 13
+count(load) <= 4
+count(store) <= 4
+count(phi) <= 3
+instructions <= 4 in @__o2spec0
+instructions <= 7 in @effect
+instructions <= 5 in @internal_target
+instructions <= 5 in @read_constant
+instructions <= 6 in @differing
+instructions <= 5 in @addressed
+instructions <= 5 in @rooted
+instructions <= 25 in @main
+
+# outcomes from 500-interprocedural-argument-specialization.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @weak_target)
+absent(@weak_target)

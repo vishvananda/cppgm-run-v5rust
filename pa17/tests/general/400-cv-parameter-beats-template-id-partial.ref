@@ -1,0 +1,6 @@
+declare global @holder_const__cppgm_class_template_identity_1___value : i32 [binding=weak, object=_ZN6holderIK3boxIiEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

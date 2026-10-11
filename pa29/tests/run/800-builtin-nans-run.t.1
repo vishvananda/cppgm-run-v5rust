@@ -1,0 +1,76 @@
+unsigned int float_bits(float value)
+{
+  unsigned int bits = 0;
+  __builtin_memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+unsigned long long double_bits(double value)
+{
+  unsigned long long bits = 0;
+  __builtin_memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+bool x87_nan_bytes(long double value, unsigned char mantissa_top,
+                   unsigned char sign_exponent_top)
+{
+#if __LDBL_MANT_DIG__ == 64 && __LDBL_MAX_EXP__ == 16384
+  unsigned char bits[sizeof(long double)] = {};
+  __builtin_memcpy(bits, &value, sizeof(value));
+  return bits[0] == 0x00 &&
+         bits[1] == 0x00 &&
+         bits[2] == 0x00 &&
+         bits[3] == 0x00 &&
+         bits[4] == 0x00 &&
+         bits[5] == 0x00 &&
+         bits[6] == 0x00 &&
+         bits[7] == mantissa_top &&
+         bits[8] == 0xFF &&
+         bits[9] == sign_exponent_top;
+#else
+  (void)value;
+  (void)mantissa_top;
+  (void)sign_exponent_top;
+  return true;
+#endif
+}
+
+int main()
+{
+  double quiet_double = __builtin_nan("");
+  float quiet_float = __builtin_nanf("");
+  long double quiet_long_double = __builtin_nanl("");
+  double signaling_double = __builtin_nans("");
+  float signaling_float = __builtin_nansf("");
+  long double signaling_long_double = __builtin_nansl("");
+  double negative_signaling_double = -__builtin_nans("");
+  float negative_signaling_float = -__builtin_nansf("");
+  long double negative_signaling_long_double = -__builtin_nansl("");
+
+  if (quiet_double == quiet_double ||
+      double_bits(quiet_double) != 0x7FF8000000000000ULL)
+    return 1;
+  if (quiet_float == quiet_float ||
+      float_bits(quiet_float) != 0x7FC00000U)
+    return 2;
+  if (quiet_long_double == quiet_long_double ||
+      !x87_nan_bytes(quiet_long_double, 0xC0, 0x7F))
+    return 3;
+  if (signaling_double == signaling_double ||
+      double_bits(signaling_double) != 0x7FF4000000000000ULL)
+    return 4;
+  if (signaling_float == signaling_float ||
+      float_bits(signaling_float) != 0x7FA00000U)
+    return 5;
+  if (signaling_long_double == signaling_long_double ||
+      !x87_nan_bytes(signaling_long_double, 0xA0, 0x7F))
+    return 6;
+  if (double_bits(negative_signaling_double) != 0xFFF4000000000000ULL)
+    return 7;
+  if (float_bits(negative_signaling_float) != 0xFFA00000U)
+    return 8;
+  if (!x87_nan_bytes(negative_signaling_long_double, 0xA0, 0xFF))
+    return 9;
+  return 0;
+}

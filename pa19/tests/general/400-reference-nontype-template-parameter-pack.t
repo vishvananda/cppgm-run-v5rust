@@ -1,0 +1,6 @@
+template<int&...>
+struct X {};
+
+int main() {
+  return 0;
+}

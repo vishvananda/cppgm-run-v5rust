@@ -1,0 +1,5 @@
+function @main(%base : ptr, %flag : i64) -> ptr [role=entry] {
+  block ^entry:
+    %p = index i8 %base, 8
+    return ptr %p
+}

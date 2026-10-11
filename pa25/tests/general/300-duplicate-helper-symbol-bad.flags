@@ -1,0 +1,1 @@
+-L __LIBDIR__ -lduplicate_a -lduplicate_b

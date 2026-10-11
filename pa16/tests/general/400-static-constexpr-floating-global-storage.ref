@@ -1,0 +1,32 @@
+global @ns__mlf : f32 [storage=readonly, binding=internal, object=_ZN2nsL3mlfE] = 0.875f
+
+function @use_mlf(%x : f32) -> f32 [binding=strong, object=_Z7use_mlff] {
+  slot $x : f32
+
+  block ^entry:
+    store typed f32 %x, $x
+    %t1 = load typed f32 $x
+    %t2 = load typed f32 @ns__mlf
+    %t3 = binary div f32 %t1, %t2
+    return f32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call f32 @use_mlf(1f)
+    %t2 = cmp gt f32 %t1, 1f
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

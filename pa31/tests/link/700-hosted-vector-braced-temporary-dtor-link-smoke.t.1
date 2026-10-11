@@ -1,0 +1,19 @@
+#include <vector>
+
+template<class T>
+struct edge_info {
+  unsigned int x;
+  unsigned int y;
+  T w;
+};
+
+template<class T>
+int use_edges(unsigned int n, const std::vector<edge_info<T> >& edges, T expected)
+{
+  return n == 4 && edges.size() == 1 && edges[0].w == expected ? 0 : 1;
+}
+
+int main()
+{
+  return use_edges(4, {{0, 1, 2.0}}, 2.0);
+}

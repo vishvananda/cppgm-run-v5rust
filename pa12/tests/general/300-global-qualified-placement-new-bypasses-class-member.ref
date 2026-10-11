@@ -1,0 +1,56 @@
+global @storage [binding=strong] = {
+  zero 128
+}
+
+function @operatornew__ov2(%__param0 : i64, %address : ptr) -> ptr [binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $address : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %address, $address
+    %t1 = load typed ptr $address
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    %t2 = addr @storage
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    call void @Holder__Holder(%t3, 7)
+    store typed ptr %t3, $p
+    %t4 = load typed ptr $p
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @Holder__Holder(%this : ptr [object_bytes=4], %initial : i32) -> void [binding=weak, object=_ZN6HolderC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $initial : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %initial, $initial
+    %t1 = load typed i32 $initial
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN6HolderC2Ei = @Holder__Holder

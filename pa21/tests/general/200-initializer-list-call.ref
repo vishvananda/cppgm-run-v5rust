@@ -1,0 +1,64 @@
+function @sum(%xs : obj<16x8>) -> i32 [binding=strong, object=_Z3sumSt16initializer_listIiE] {
+  slot $xs : obj<16x8>
+  slot $s : i32
+  slot $__idx1 : i32
+  slot $x : i32
+
+  block ^entry:
+    %t1 = addr $xs
+    copyobj 16x8 %xs, %t1
+    store typed i32 0, $s
+    store typed i32 0, $__idx1
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i32 $__idx1
+    %t3 = addr $xs
+    %t4 = index i8 [projection=field] %t3, 8
+    %t5 = load typed i64 %t4
+    %t6 = convert sext i64 i32 %t2
+    %t7 = cmp lt i64 %t6, %t5
+    branch %t7, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t8 = addr $xs
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed ptr %t9
+    %t11 = load typed i32 $__idx1
+    %t12 = index i32 [projection=array_element] %t10, %t11
+    %t13 = load typed i32 %t12
+    store typed i32 %t13, $x
+    %t14 = load typed i32 $s
+    %t15 = load typed i32 $x
+    %t16 = binary add nowrap i32 %t14, %t15
+    store typed i32 %t16, $s
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t17 = load typed i32 $__idx1
+    %t18 = binary add nowrap i32 %t17, 1
+    store typed i32 %t18, $__idx1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t19 = load typed i32 $s
+    return i32 %t19
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $argobj__1 : obj<16x8>
+  slot $initlist__2 : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    %t2 = addr $initlist__2
+    store typed i32 1, %t2
+    %t3 = index i8 [projection=array_element] %t2, 4
+    store typed i32 2, %t3
+    %t4 = index i8 [projection=array_element] %t2, 8
+    store typed i32 3, %t4
+    store typed ptr %t2, %t1
+    %t5 = index i8 %t1, 8
+    store typed i64 3, %t5
+    %t6 = call i32 @sum($argobj__1)
+    return i32 %t6
+}

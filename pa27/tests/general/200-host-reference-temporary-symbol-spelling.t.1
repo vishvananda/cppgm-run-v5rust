@@ -1,0 +1,44 @@
+#include "200-host-reference-temporary-symbol-spelling.helper.h"
+
+namespace std
+{
+template<class E> class initializer_list
+{
+  const E* first;
+  unsigned long count;
+  initializer_list(const E* p, unsigned long n) : first(p), count(n) {}
+public:
+  initializer_list() : first(0), count(0) {}
+  unsigned long size() const { return count; }
+  const E* begin() const { return first; }
+};
+}
+
+// `_ZGR1g_`, `_ZGRL2sg_`, `_ZGRN2ns2nrE_`, `_ZGR2gi_` and `_ZGR8constant_`.
+const S& g = S(3);
+static const S& sg = S(4);
+namespace ns { const S& nr = S(10); }
+const int& gi = 12;
+constexpr const int& constant = 5;
+
+// `_ZGRZ5wholevE4held_` and `_ZGRN1XIiE1rE_`.
+int whole() { static const S& held = S(6); return held.v; }
+template<class T> struct X { static const S& r; };
+template<class T> const S& X<T>::r = S(13);
+
+// A reference's temporaries are numbered in a pre-order walk of its
+// initializer: the list object `_ZGR4list_`, then its array `_ZGR4list0_`.
+// An initializer_list variable's array is its first temporary, `_ZGR6values_`.
+const std::initializer_list<S>& list = { S(7), S(8) };
+std::initializer_list<int> values = { 1, 2, 3 };
+
+int host_reads();
+
+int main()
+{
+  return g.v == 3 && sg.v == 4 && ns::nr.v == 10 && gi == 12 &&
+    constant == 5 && whole() == 6 && X<int>::r.v == 13 &&
+    list.size() == 2 && list.begin()[1].v == 8 && values.size() == 3 &&
+    values.begin()[2] == 3 && shared() == 14 &&
+    host_reads() == 3 + 10 + 12 + 14 ? 0 : 1;
+}

@@ -1,0 +1,5 @@
+struct V { virtual ~V() {} };
+struct L : virtual V {};
+struct D : L { virtual int id() { return 1; } };
+int main() { D *d = new D; int result = d->id(); delete d;
+  return result == 1 ? 0 : 1; }

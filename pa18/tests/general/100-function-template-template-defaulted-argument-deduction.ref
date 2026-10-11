@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @test()
+    return i32 0
+}
+function @test() -> void [binding=weak, object=_Z4testIiiiN15ttp_default_arg12interval_mapEEvv] {
+  slot $seq : i32
+  slot $map : obj<1x1>
+
+  block ^entry:
+    store typed i32 0, $seq
+    %t1 = addr $map
+    %t2 = addr $seq
+    %t3 = addr $map
+    call void @ttp_default_arg__pass(%t2, %t3)
+    return void
+}
+function @ttp_default_arg__pass(%__param0 : ptr [pass=by_address, object_bytes=4], %destination : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN15ttp_default_arg4passIiiiNS_12interval_mapEiEEvRKT3_RT2_IT_T0_T1_NS_4lessIS6_EENS_4plusIS7_EENS_7sectionIS7_EENS_8intervalIS6_SA_EENS_9allocatorEE] {
+  slot $__param0 : ptr
+  slot $destination : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %destination, $destination
+    %t1 = load typed ptr $destination
+    call void @ttp_default_arg__interval_map___cppgm_class_template_identity_3___clear(%t1)
+    return void
+}
+function @ttp_default_arg__interval_map___cppgm_class_template_identity_3___clear(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN15ttp_default_arg12interval_mapIiiiNS_4lessIiEENS_4plusIiEENS_7sectionIiEENS_8intervalIiS2_EENS_9allocatorEE5clearEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

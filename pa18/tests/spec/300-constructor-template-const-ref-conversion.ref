@@ -1,0 +1,67 @@
+function @accept(%d : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z6acceptRK8durationIl3tagILi1EEE] {
+  slot $d : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %d, $d
+    %t1 = load typed ptr $d
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = cmp eq i64 %t3, 8
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $arg__1 : obj<8x8>
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $arg__1
+    %t2 = addr $arg__2
+    call void @duration_int___cppgm_class_template_identity_1___duration(%t2, 8)
+    call void @duration_longint___cppgm_class_template_identity_2___duration(%t1, %t2)
+    %t3 = call i32 @accept(%t1)
+    return i32 %t3
+}
+function @duration_int___cppgm_class_template_identity_1___duration(%this : ptr [object_bytes=4], %r : i32) -> void [binding=weak, object=_ZN8durationIi3tagILi2EEEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $r : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %r, $r
+    %t1 = load typed i32 $r
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @duration_longint___cppgm_class_template_identity_2___duration(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN8durationIl3tagILi1EEEC1IiS0_ILi2EEEERKS_IT_T0_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = convert sext i64 i32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t4, %t6
+    return void
+}
+alias object _ZN8durationIi3tagILi2EEEC2Ei = @duration_int___cppgm_class_template_identity_1___duration
+alias object _ZN8durationIl3tagILi1EEEC2IiS0_ILi2EEEERKS_IT_T0_E = @duration_longint___cppgm_class_template_identity_2___duration

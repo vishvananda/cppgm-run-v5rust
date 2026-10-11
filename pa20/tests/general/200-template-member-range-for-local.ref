@@ -1,0 +1,56 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = call i32 @Box_int___f(%t2)
+    return i32 %t3
+}
+function @Box_int___f(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN3BoxIiE1fEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $xs : obj<8x4>
+  slot $total : i32
+  slot $__idx1 : i32
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $xs
+    copyobj 8x4 @__constexpr_template__1, %t1
+    store typed i32 0, $total
+    store typed i32 0, $__idx1
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i32 $__idx1
+    %t3 = cmp lt i32 %t2, 2
+    branch %t3, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t4 = addr $xs
+    %t5 = load typed i32 $__idx1
+    %t6 = index i32 [projection=array_element] %t4, %t5
+    %t7 = load typed i32 %t6
+    store typed i32 %t7, $x
+    %t8 = load typed i32 $total
+    %t9 = load typed i32 $x
+    %t10 = binary add nowrap i32 %t8, %t9
+    store typed i32 %t10, $total
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t11 = load typed i32 $__idx1
+    %t12 = binary add nowrap i32 %t11, 1
+    store typed i32 %t12, $__idx1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t13 = load typed i32 $total
+    return i32 %t13
+}

@@ -1,0 +1,10 @@
+#include "200-host-virtual-base-return-condition.helper.h"
+
+int main()
+{
+  HostStringExtCtor in;
+  if(host_getline_extctor(in)) {
+    return 0;
+  }
+  return 1;
+}

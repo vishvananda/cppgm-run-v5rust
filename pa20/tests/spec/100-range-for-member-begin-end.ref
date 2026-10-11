@@ -1,0 +1,91 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $r : obj<12x4>
+  slot $sum : i32
+  slot $__begin1 : ptr
+  slot $__end2 : ptr
+  slot $x : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $r
+    %t2 = addr $r
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i32 [projection=array_element] %t3, 0
+    store typed i32 1, %t4
+    %t5 = addr $r
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i32 [projection=array_element] %t6, 1
+    store typed i32 2, %t7
+    %t8 = addr $r
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = index i32 [projection=array_element] %t9, 2
+    store typed i32 3, %t10
+    store typed i32 0, $sum
+    %t11 = addr $r
+    %t12 = call ptr @Range__begin(%t11)
+    store typed ptr %t12, $__begin1
+    %t13 = addr $r
+    %t14 = call ptr @Range__end(%t13)
+    store typed ptr %t14, $__end2
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t15 = load typed ptr $__begin1
+    %t16 = load typed ptr $__end2
+    %t17 = cmp ne ptr %t15, %t16
+    branch %t17, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t18 = load typed ptr $__begin1
+    %t19 = load typed i32 %t18
+    store typed i32 %t19, $x
+    %t20 = load typed i32 $sum
+    %t21 = load typed i32 $x
+    %t22 = binary add nowrap i32 %t20, %t21
+    store typed i32 %t22, $sum
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t23 = load typed ptr $__begin1
+    %t24 = binary mul i64 1, 4
+    %t25 = index i8 %t23, %t24
+    store typed ptr %t25, $__begin1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t26 = load typed i32 $sum
+    %t27 = cmp eq i32 %t26, 6
+    branch %t27, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t28 = load typed i32 $cond__1
+    return i32 %t28
+}
+function @Range__begin(%this : ptr [object_bytes=12]) -> ptr [binding=weak, object=_ZN5Range5beginEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @Range__end(%this : ptr [object_bytes=12]) -> ptr [binding=weak, object=_ZN5Range3endEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary mul i64 3, 4
+    %t4 = index i8 %t2, %t3
+    return ptr %t4
+}

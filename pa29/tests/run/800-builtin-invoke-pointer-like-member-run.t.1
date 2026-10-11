@@ -1,0 +1,133 @@
+template<class Type>
+Type && declval();
+
+template<class...>
+using void_t = void;
+
+template<class Type>
+class pointer
+{
+  Type * value_;
+
+public:
+  explicit pointer(Type * value)
+    : value_(value)
+  {
+  }
+
+  Type & operator*() const
+  {
+    return *value_;
+  }
+};
+
+namespace generic
+{
+
+template<class, class... Arguments>
+struct invoke_result_impl
+{
+};
+
+template<class... Arguments>
+struct invoke_result_impl<
+    void_t<decltype(__builtin_invoke(declval<Arguments>()...))>,
+    Arguments...>
+{
+  typedef decltype(__builtin_invoke(declval<Arguments>()...)) type;
+};
+
+template<class... Arguments>
+using invoke_result_t =
+    typename invoke_result_impl<void, Arguments...>::type;
+
+template<class Function, class... Arguments>
+invoke_result_t<Function const &, Arguments...>
+invoke(Function const & function, Arguments&&... arguments)
+{
+  return __builtin_invoke(function, arguments...);
+}
+
+}
+
+namespace std
+{
+
+template<class, class... Arguments>
+struct __invoke_result_impl
+{
+};
+
+template<class... Arguments>
+struct __invoke_result_impl<
+    void_t<decltype(__builtin_invoke(declval<Arguments>()...))>,
+    Arguments...>
+{
+  typedef decltype(__builtin_invoke(declval<Arguments>()...)) type;
+};
+
+template<class... Arguments>
+using __invoke_result = __invoke_result_impl<void, Arguments...>;
+
+template<class... Arguments>
+using __invoke_result_t = typename __invoke_result<Arguments...>::type;
+
+template<class Function>
+class __mem_fn
+{
+  Function function_;
+
+public:
+  explicit __mem_fn(Function function)
+    : function_(function)
+  {
+  }
+
+  template<class... Arguments>
+  __invoke_result_t<Function const &, Arguments...>
+  operator()(Arguments&&... arguments) const
+  {
+    return __builtin_invoke(function_, arguments...);
+  }
+};
+
+}
+
+struct error_code
+{
+  int value;
+};
+
+struct session
+{
+  int value;
+
+  int finish(error_code const & error)
+  {
+    return value + error.value;
+  }
+};
+
+int main()
+{
+  session object = {4};
+  error_code const error = {3};
+  typedef int (session::*function_type)(error_code const &);
+  function_type function = &session::finish;
+
+  int generic_result =
+      generic::invoke(function, pointer<session>(&object), error);
+  std::__mem_fn<function_type> call(function);
+  int standard_result = call(pointer<session>(&object), error);
+
+  int & member =
+      __builtin_invoke(&session::value, pointer<session>(&object));
+  member = 5;
+  int direct_result =
+      __builtin_invoke(function, pointer<session>(&object), error);
+
+  return generic_result == 7 &&
+         standard_result == 7 &&
+         direct_result == 8 &&
+         object.value == 5 ? 0 : 1;
+}

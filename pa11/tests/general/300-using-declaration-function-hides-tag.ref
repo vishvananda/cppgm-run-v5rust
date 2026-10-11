@@ -1,0 +1,10 @@
+function @n__f() -> i32 [binding=strong, object=_ZN1n1fEv] {
+  block ^entry:
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @n__f()
+    %t2 = binary sub nowrap i32 %t1, 1
+    return i32 %t2
+}

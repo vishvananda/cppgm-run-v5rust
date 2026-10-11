@@ -1,0 +1,11 @@
+// N3485 12.6.2p10, 15.2p2: F() : E("e", 5), M("y") constructs the virtual base
+// V, then the other bases from temporaries with destructors; when a later
+// base's construction throws, the virtual base already constructed is
+// destroyed
+static int dtors;
+struct Str { const char* s; Str(const char* p) : s(p) {} ~Str() { ++dtors; } };
+struct V { int v; V() : v(7) {} virtual ~V() {} };
+struct M : virtual V { int m; M(const Str& s) : m(s.s[0]) {} };
+struct E : virtual V { E(const Str& a, int b) {} };
+struct F : E, M { F() : E("e", 5), M("y") {} };
+int main() { { F f; if (f.m != 'y') return 2; } return dtors == 2 ? 0 : 1; }

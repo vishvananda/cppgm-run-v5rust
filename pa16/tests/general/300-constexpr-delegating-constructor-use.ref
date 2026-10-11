@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @value__value__ov2(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN5valueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    call void @value__value(%t1)
+    return void
+}
+function @value__value(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5valueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN5valueC2Ei = @value__value__ov2
+alias object _ZN5valueC2Ev = @value__value

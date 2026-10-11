@@ -1,0 +1,51 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier S
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier x
+    special-member-definition S
+      declarator
+        identifier S
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id x
+          braced-init-list
+      compound-statement
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier x
+            initializer
+              braced-init-list
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:S
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier s
+      return-statement
+        binary-expression OP_PLUS:+
+          id-expression x
+          member-expression OP_DOT:.
+            id-expression s
+            identifier x
+end translation unit

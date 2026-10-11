@@ -1,0 +1,24 @@
+function @pick__ov2(%x : i32) -> i32 [binding=strong, object=_Z4picki] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $x
+    %t2 = call i32 @pick(%t1)
+    %t3 = binary sub nowrap i32 %t2, 1
+    return i32 %t3
+}
+function @pick(%p : ptr) -> i32 [binding=weak, object=_Z4pickIiEiPT_] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    return i32 1
+}

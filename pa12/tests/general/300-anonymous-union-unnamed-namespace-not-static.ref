@@ -1,0 +1,33 @@
+global @_GLOBAL__N_1____anonymous_union_object : obj<4x4> [binding=internal, object=_ZN12_GLOBAL__N_15wholeE] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @_GLOBAL__N_1____anonymous_union_object
+    %t2 = index i8 [projection=field] %t1, 0
+    store i32 0, %t2
+    %t3 = addr @_GLOBAL__N_1____anonymous_union_object
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=array_element] %t4, 0
+    store i8 7, %t5
+    %t6 = addr @_GLOBAL__N_1____anonymous_union_object
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load i32 %t7
+    %t9 = cmp ne i32 %t8, 0
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}

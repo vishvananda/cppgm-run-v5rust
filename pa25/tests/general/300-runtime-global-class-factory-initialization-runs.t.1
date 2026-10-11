@@ -1,0 +1,23 @@
+struct S {
+  int x;
+  S() : x(5) {}
+};
+
+S make_s()
+{
+  S s;
+  return s;
+}
+
+S g = make_s();
+namespace {
+S h = make_s();
+}
+
+int main()
+{
+  int bad = 0;
+  if(g.x != 5) bad |= 1;
+  if(h.x != 5) bad |= 2;
+  return bad;
+}

@@ -1,0 +1,90 @@
+function @shared_loop(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    jump ^loop
+
+  block ^loop:
+    %index = phi i64 [^entry: 0, ^body: %next]
+    %more = cmp ult i64 %index, %limit
+    branch %more, ^body, ^done
+
+  block ^body:
+    %next = binary add i64 %index, 1
+    jump ^loop
+
+  block ^done:
+    return i64 %index
+}
+function @shared_a(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    %result = call i64 @shared_loop(%limit)
+    return i64 %result
+}
+function @shared_b(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    %result = call i64 @shared_loop(%limit)
+    return i64 %result
+}
+function @single_caller(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    jump ^loop_1
+
+  block ^loop_1:
+    %index_1 = phi i64 [^body_2: %next_3, ^entry: 0]
+    %more_2 = cmp ult i64 %index_1, %limit
+    branch %more_2, ^body_2, ^done_3
+
+  block ^body_2:
+    %next_3 = binary add i64 %index_1, 1
+    jump ^loop_1
+
+  block ^done_3:
+    return i64 %index_1
+}
+function @hinted_loop(%limit : i64) -> i64 [binding=strong, inline_hint=yes] {
+  block ^entry:
+    jump ^loop
+
+  block ^loop:
+    %index = phi i64 [^entry: 0, ^body: %next]
+    %more = cmp ult i64 %index, %limit
+    branch %more, ^body, ^done
+
+  block ^body:
+    %next = binary add i64 %index, 1
+    jump ^loop
+
+  block ^done:
+    return i64 %index
+}
+function @hinted_a(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    jump ^loop_1
+
+  block ^loop_1:
+    %index_1 = phi i64 [^body_2: %next_3, ^entry: 0]
+    %more_2 = cmp ult i64 %index_1, %limit
+    branch %more_2, ^body_2, ^done_3
+
+  block ^body_2:
+    %next_3 = binary add i64 %index_1, 1
+    jump ^loop_1
+
+  block ^done_3:
+    return i64 %index_1
+}
+function @hinted_b(%limit : i64) -> i64 [binding=strong] {
+  block ^entry:
+    jump ^loop_1
+
+  block ^loop_1:
+    %index_1 = phi i64 [^body_2: %next_3, ^entry: 0]
+    %more_2 = cmp ult i64 %index_1, %limit
+    branch %more_2, ^body_2, ^done_3
+
+  block ^body_2:
+    %next_3 = binary add i64 %index_1, 1
+    jump ^loop_1
+
+  block ^done_3:
+    return i64 %index_1
+}

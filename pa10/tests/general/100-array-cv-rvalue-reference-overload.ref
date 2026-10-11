@@ -1,0 +1,54 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+  i32 3
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i32 4
+  i32 5
+  i32 6
+}
+
+function @select_array(%__param0 : ptr [pass=by_address, object_bytes=12]) -> i32 [binding=strong, object=_Z12select_arrayRA3_Ki] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}
+function @select_array__ov2(%__param0 : ptr [pass=by_address, object_bytes=12]) -> i32 [binding=strong, object=_Z12select_arrayOA3_Ki] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<12x4>
+  slot $const_values : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 12x4 @__constexpr_template__1, %t1
+    %t2 = addr $const_values
+    copyobj 12x4 @__constexpr_template__2, %t2
+    %t3 = addr $values
+    %t4 = call i32 @select_array(%t3)
+    %t5 = cmp ne i32 %t4, 1
+    branch %t5, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t6 = addr $const_values
+    %t7 = call i32 @select_array(%t6)
+    %t8 = cmp ne i32 %t7, 1
+    branch %t8, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    return i32 0
+}

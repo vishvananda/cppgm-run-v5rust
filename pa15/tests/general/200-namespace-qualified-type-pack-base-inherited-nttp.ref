@@ -1,0 +1,25 @@
+declare global @bool_constant_true___value : u8 [binding=weak, object=_ZN13bool_constantILb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @check_policy_holder()
+    return i32 %t1
+}
+function @check_policy_holder() -> i32 [binding=weak, object=_Z19check_policy_holderIN11policy_impl11sign_policyEEiv] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}

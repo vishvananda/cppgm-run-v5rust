@@ -1,0 +1,10 @@
+namespace shared_const_scalar {
+const int value = 7;
+}
+
+int other_value();
+
+int main()
+{
+  return shared_const_scalar::value + other_value() - 14;
+}

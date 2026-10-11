@@ -1,0 +1,47 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    class-specifier Tag
+      class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_CHAR:char
+      init-declarator-list
+        init-declarator
+          declarator
+            nested-declarator
+              declarator
+                ptr-operator OP_AMP:&
+                identifier Yes
+            array-suffix
+              literal 1
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:Yes
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier probe
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:Tag
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      return-statement
+        sizeof-expression
+          call-expression
+            id-expression N::probe
+            argument-list
+              parenthesized-expression
+                call-expression
+                  id-expression N::Tag
+                  argument-list
+end translation unit

@@ -1,0 +1,26 @@
+global @destroyed : i32 [binding=strong] = zero
+
+function @destroy_const(%p : ptr) -> void [binding=strong, object=_Z13destroy_constPK5value] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    call void @value___value(%t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @value___value(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5valueD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 3
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN5valueD2Ev = @value___value

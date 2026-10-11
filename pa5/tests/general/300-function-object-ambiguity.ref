@@ -1,0 +1,79 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    special-member-declaration C
+      declarator
+        identifier C
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier ambiguity
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier a
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier w
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+                  declarator
+                    nested-declarator
+                      declarator
+                        identifier a
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier x
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+                  abstract-declarator
+                    parameter-clause
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier y
+            initializer
+              paren-initializer
+                cast-expression OP_LPAREN:
+                  type-id
+                    type-specifier-seq
+                      type-specifier KW_INT:int
+                  id-expression a
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier z
+            initializer
+              call-expression
+                id-expression int
+                paren-argument-list
+                  id-expression a
+end translation unit

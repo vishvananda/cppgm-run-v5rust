@@ -1,0 +1,188 @@
+function @offset_of(%base : ptr, %object : ptr) -> i64 [binding=strong, object=_Z9offset_ofPKvS0_] {
+  slot $base : ptr
+  slot $object : ptr
+
+  block ^entry:
+    store typed ptr %base, $base
+    store typed ptr %object, $object
+    %t1 = load typed ptr $base
+    %t2 = load typed ptr $object
+    %t3 = binary sub ptr %t1, %t2
+    return i64 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $shared : obj<8x4>
+  slot $moved : obj<2x1>
+  slot $direct_e1 : ptr
+  slot $nested_e1 : ptr
+  slot $direct_e2 : ptr
+  slot $nested_e2 : ptr
+
+  block ^entry:
+    %t1 = addr $shared
+    call void @Shared__Shared(%t1)
+    %t2 = addr $shared
+    %t3 = index i8 [projection=field] %t2, 6
+    store i8 4, %t3
+    %t4 = const i64 8
+    %t5 = convert sext i64 i32 8
+    %t6 = cmp ne i64 %t4, %t5
+    branch %t6, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t7 = addr $shared
+    %t8 = index i8 %t7, 5
+    %t9 = addr $shared
+    %t10 = call i64 @offset_of(%t8, %t9)
+    %t11 = cmp ne i64 %t10, 5
+    branch %t11, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t12 = addr $shared
+    %t13 = index i8 [projection=field] %t12, 6
+    %t14 = addr $shared
+    %t15 = call i64 @offset_of(%t13, %t14)
+    %t16 = cmp ne i64 %t15, 6
+    branch %t16, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    %t17 = addr $shared
+    %t18 = index i8 %t17, 5
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = load i8 %t19
+    %t21 = convert sext i32 i8 %t20
+    %t22 = cmp ne i32 %t21, 3
+    branch %t22, ^if_then_6, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t23 = addr $shared
+    %t24 = index i8 %t23, 0
+    %t25 = index i8 [projection=field] %t24, 4
+    %t26 = load i8 %t25
+    %t27 = convert sext i32 i8 %t26
+    %t28 = cmp ne i32 %t27, 2
+    branch %t28, ^if_then_6, ^lor_rhs_8
+
+  block ^lor_rhs_8:
+    %t29 = addr $shared
+    %t30 = index i8 [projection=field] %t29, 6
+    %t31 = load i8 %t30
+    %t32 = convert sext i32 i8 %t31
+    %t33 = cmp ne i32 %t32, 4
+    branch %t33, ^if_then_6, ^if_else_7
+
+  block ^if_then_6:
+    return i32 2
+
+  block ^if_else_7:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    %t34 = addr $moved
+    %t35 = addr $moved
+    %t36 = index i8 %t35, 0
+    %t37 = index i8 %t36, 0
+    store typed ptr %t37, $direct_e1
+    %t38 = addr $moved
+    %t39 = index i8 %t38, 1
+    %t40 = index i8 %t39, 0
+    store typed ptr %t40, $nested_e1
+    %t41 = addr $moved
+    %t42 = index i8 %t41, 0
+    %t43 = index i8 %t42, 0
+    store typed ptr %t43, $direct_e2
+    %t44 = addr $moved
+    %t45 = index i8 %t44, 1
+    %t46 = index i8 %t45, 0
+    store typed ptr %t46, $nested_e2
+    %t47 = const i64 2
+    %t48 = convert sext i64 i32 2
+    %t49 = cmp ne i64 %t47, %t48
+    branch %t49, ^if_then_11, ^lor_rhs_14
+
+  block ^lor_rhs_14:
+    %t50 = load typed ptr $direct_e1
+    %t51 = load typed ptr $nested_e1
+    %t52 = cmp eq ptr %t50, %t51
+    branch %t52, ^if_then_11, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t53 = load typed ptr $direct_e2
+    %t54 = load typed ptr $nested_e2
+    %t55 = cmp eq ptr %t53, %t54
+    branch %t55, ^if_then_11, ^if_else_12
+
+  block ^if_then_11:
+    return i32 3
+
+  block ^if_else_12:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    %t56 = addr $moved
+    %t57 = index i8 %t56, 1
+    %t58 = addr $moved
+    %t59 = call i64 @offset_of(%t57, %t58)
+    %t60 = cmp ne i64 %t59, 1
+    branch %t60, ^if_then_16, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t61 = addr $moved
+    %t62 = index i8 %t61, 1
+    %t63 = addr $moved
+    %t64 = call i64 @offset_of(%t62, %t63)
+    %t65 = cmp ne i64 %t64, 1
+    branch %t65, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 4
+
+  block ^if_else_17:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    return i32 0
+}
+function @Shared__Shared(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6SharedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Packed__Packed__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 5
+    call void @Small__Small__base_entry(%t4)
+    return void
+}
+function @Packed__Packed__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6PackedC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    store i8 2, %t4
+    return void
+}
+function @Small__Small__base_entry(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5SmallC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store i8 3, %t2
+    return void
+}
+alias object _ZN6SharedC2Ev = @Shared__Shared

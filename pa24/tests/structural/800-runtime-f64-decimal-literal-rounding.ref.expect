@@ -1,0 +1,7 @@
+# budget from 800-runtime-f64-decimal-literal-rounding.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 7
+count(call) <= 3
+mem <= 3
+instructions <= 17 in @main
+stack_size <= 416 in @main

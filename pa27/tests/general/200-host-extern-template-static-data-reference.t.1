@@ -1,0 +1,20 @@
+template<class T>
+struct Facet
+{
+  static int id;
+};
+
+template<class T>
+int Facet<T>::id = 7;
+
+int read_id()
+{
+  return Facet<int>::id;
+}
+
+extern template struct Facet<int>;
+
+int main()
+{
+  return read_id() == 7 ? 0 : 1;
+}

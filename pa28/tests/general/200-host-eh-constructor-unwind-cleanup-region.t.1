@@ -1,0 +1,35 @@
+bool fail, base_destroyed;
+
+struct X
+{
+  ~X() noexcept(false)
+  {
+    if (fail) { fail = false; throw 0; }
+  }
+};
+
+struct B
+{
+  B() {}
+  ~B() { base_destroyed = true; }
+};
+
+void f() { fail = true; }
+
+struct D : B
+{
+  D();
+};
+
+D::D()
+{
+  X a, b;
+  f();
+}
+
+int main()
+{
+  try { D d; }
+  catch(int) { return base_destroyed ? 0 : 1; }
+  return 2;
+}

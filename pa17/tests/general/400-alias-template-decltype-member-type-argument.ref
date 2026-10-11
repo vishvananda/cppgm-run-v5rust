@@ -1,0 +1,8 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}

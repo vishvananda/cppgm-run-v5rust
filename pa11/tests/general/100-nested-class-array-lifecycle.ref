@@ -1,0 +1,48 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<4x1>
+
+  block ^entry:
+    %t1 = addr $values
+    %t2 = index i8 [projection=array_element] %t1, 0
+    call void @Y__Y(%t2)
+    %t3 = addr $values
+    %t4 = index i8 [projection=array_element] %t3, 1
+    call void @Y__Y(%t4)
+    %t5 = addr $values
+    %t6 = index i8 [projection=array_element] %t5, 2
+    call void @Y__Y(%t6)
+    %t7 = addr $values
+    %t8 = index i8 [projection=array_element] %t7, 3
+    call void @Y__Y(%t8)
+    %t9 = addr $values
+    %t10 = binary mul i64 1, 2
+    %t11 = index i8 [projection=array_element] %t9, %t10
+    %t12 = index i8 [projection=array_element] %t11, 1
+    call void @Y___Y(%t12)
+    %t13 = index i8 [projection=array_element] %t11, 0
+    call void @Y___Y(%t13)
+    %t14 = addr $values
+    %t15 = binary mul i64 0, 2
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    %t17 = index i8 [projection=array_element] %t16, 1
+    call void @Y___Y(%t17)
+    %t18 = index i8 [projection=array_element] %t16, 0
+    call void @Y___Y(%t18)
+    return i32 0
+}
+function @Y__Y(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1YC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Y___Y(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1YD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN1YC2Ev = @Y__Y
+alias object _ZN1YD2Ev = @Y___Y

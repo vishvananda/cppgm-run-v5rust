@@ -1,0 +1,17 @@
+static void thrower()
+{
+  throw 5;
+}
+
+int main()
+{
+  try
+  {
+    thrower();
+  }
+  catch (int value)
+  {
+    return value == 5 ? 0 : 1;
+  }
+  return 2;
+}

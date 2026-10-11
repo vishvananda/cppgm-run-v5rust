@@ -1,0 +1,8 @@
+# budget from 500-definition-order-after-fold.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 13
+blocks <= 6
+count(call) <= 4
+count(load) <= 5
+count(store) <= 3
+count(phi) <= 4
+instructions <= 13 in @late_block_becomes_dominator

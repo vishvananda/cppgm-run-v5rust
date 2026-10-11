@@ -1,0 +1,4 @@
+preproc 1
+sof tests/macros/600-pasted-helper-macro-rescans.t
+literal 1 int 01000000
+eof

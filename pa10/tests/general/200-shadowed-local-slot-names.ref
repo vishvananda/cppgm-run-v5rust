@@ -1,0 +1,20 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+  slot $__a : i32
+  slot $__a__shadow2 : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    store typed i32 %t1, $__a
+    store typed i32 2, $__a__shadow2
+    %t2 = load typed i32 $__a__shadow2
+    %t3 = binary add nowrap i32 %t2, 1
+    store typed i32 %t3, $__a__shadow2
+    %t4 = load typed i32 $__a
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

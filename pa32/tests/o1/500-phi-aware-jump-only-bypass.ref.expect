@@ -1,0 +1,11 @@
+# budget from 500-phi-aware-jump-only-bypass.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 28
+blocks <= 16
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 7
+instructions <= 12 in @empty_diamond_in_loop
+instructions <= 8 in @distinct_arm_values_stay
+instructions <= 4 in @one_arm_same_value
+instructions <= 10 in @jump_chain_into_phi

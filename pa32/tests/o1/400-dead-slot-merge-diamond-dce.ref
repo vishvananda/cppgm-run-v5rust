@@ -1,0 +1,4 @@
+function @main(%cond : i1) -> void [role=entry] {
+  block ^entry:
+    return void
+}

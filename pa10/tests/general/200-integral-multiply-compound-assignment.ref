@@ -1,0 +1,17 @@
+function @scale(%value : i32) -> i32 [binding=strong, object=_Z5scalei] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary mul nowrap i32 %t1, 3
+    store typed i32 %t2, $value
+    %t3 = load typed i32 $value
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @scale(4)
+    %t2 = binary sub nowrap i32 %t1, 12
+    return i32 %t2
+}

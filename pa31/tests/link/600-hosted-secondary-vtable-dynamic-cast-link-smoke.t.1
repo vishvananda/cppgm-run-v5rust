@@ -1,0 +1,24 @@
+#include <exception>
+#include <cstdio>
+
+struct HostedRttiBase
+{
+  virtual ~HostedRttiBase() {}
+};
+
+struct HostedRttiException : HostedRttiBase, std::exception
+{
+  const char *what() const noexcept override { return "hosted-rtti"; }
+};
+
+HostedRttiBase const *as_hosted_base(std::exception const &value)
+{
+  return dynamic_cast<HostedRttiBase const *>(&value);
+}
+
+int main()
+{
+  HostedRttiException value;
+  std::printf("%d\n", as_hosted_base(value) != 0);
+  return 0;
+}

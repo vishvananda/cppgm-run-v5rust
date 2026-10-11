@@ -1,0 +1,48 @@
+function @make_result(%__param0 : i32) -> obj<4x4> [binding=strong, object=_Z11make_resultIlE6resultIT_Ei] {
+  slot $__param0 : i32
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    %t1 = addr $retobj__1
+    call void @result__result__aggregate(%t1, 22)
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__2
+    %t2 = call obj<4x4> @make_result(0)
+    copyobj 4x4 %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 0
+    %t4 = load typed i32 %t3
+    %t5 = cmp eq i32 %t4, 22
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @result__result__aggregate(%this : ptr [object_bytes=4], %value : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}

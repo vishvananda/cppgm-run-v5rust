@@ -1,0 +1,39 @@
+thread_local const void* g_ptr = 0;
+
+struct Bag {
+  int count;
+  int values[4];
+
+  Bag() : count(0) {}
+  ~Bag() {}
+
+  void push_back(int value)
+  {
+    values[count] = value;
+    ++count;
+  }
+
+  int size() const
+  {
+    return count;
+  }
+};
+
+thread_local Bag g_a;
+
+struct Guard {
+  const void* saved;
+  Guard(const void* p) : saved(g_ptr) { g_ptr = p; }
+  ~Guard() { g_ptr = saved; }
+};
+
+int main()
+{
+  Guard g(reinterpret_cast<const void*>(1));
+  g_a.push_back(7);
+  int out = 0;
+  if(g_ptr != reinterpret_cast<const void*>(1)) out |= 1;
+  if(g_a.size() != 1) out |= 2;
+  if(g_a.values[0] != 7) out |= 4;
+  return out;
+}

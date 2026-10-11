@@ -1,0 +1,38 @@
+// N3485 15.1p2, 6.6p2, 15.2p1: when a return, goto, break or continue leaves a
+// try block, the objects whose scope it leaves are destroyed, and an exception
+// a destructor throws then is caught not by the handlers of the try block
+// already left but by an enclosing one; each function runs without a throw,
+// with the throw on the jump and on the normal path
+#include "200-host-eh-jump-out-of-try-destructor.helper.h"
+static int r, mode;
+struct T { int k; T(int i) : k(i) {} ~T() { r += k; } };
+struct DT { int k; DT(int i) : k(i) {} ~DT() noexcept(false) { r += k; if (mode) throw 7; } };
+static void f0() { T a(1); DT b(10); try { if (mode != 2) return; } catch (int) { r += 1000; } r += 100; }
+static void f1() { T a(1); T b(5); DT c(20); try { if (mode != 2) return; } catch (int) { r += 1000; } r += 100; }
+static void f2() { T a(1); { DT b(10); try { if (mode != 2) goto out; } catch (int) { r += 1000; } r += 100; } out: r += 3; }
+static void f3() { T a(1); for (int i = 0; i < 2; ++i) { DT b(10); try { if (mode != 2) break; } catch (int) { r += 1000; } r += 100; } }
+static void f4() { T a(1); for (int i = 0; i < 2; ++i) { DT b(10); try { if (mode != 2) continue; } catch (int) { r += 1000; } r += 100; } }
+static void f5() { T a(1); DT b(10); try { throw 1; } catch (int) { if (mode != 2) return; r += 1000; } r += 100; }
+static void f6() { try { T a(1); DT b(10); try { if (mode != 2) return; } catch (long) { r += 1000; } } catch (int) { r += 5000; } r += 100; }
+static void f7() { T a(1); DT b(10); try { try { if (mode != 2) return; } catch (long) { r += 1000; } } catch (int) { r += 5000; } r += 100; }
+static int f8() { T a(1); DT b(10); try { T c(2); if (mode != 2) return 4; } catch (int) { r += 1000; } return 5; }
+static void f9() { T a(1); try { DT b(10); try { if (mode != 2) goto out; } catch (int) { r += 1000; } } catch (int) { r += 7000; } out: r += 3; }
+int main()
+{
+  void (*fs[])() = { f0, f1, f2, f3, f4, f5, f6, f7, f9 };
+  for (int f = 0; f < 9; ++f)
+    for (mode = 0; mode < 3; ++mode)
+    {
+      r = 0;
+      try { fs[f](); } catch (int e) { r += 10000 * e; }
+      out_line("f", (unsigned long long)(f * 10000000 + mode * 1000000 + r));
+    }
+  for (mode = 0; mode < 3; ++mode)
+  {
+    r = 0;
+    int got = 0;
+    try { got = f8(); } catch (int e) { r += 10000 * e; }
+    out_line("f8", (unsigned long long)(got * 1000000 + r));
+  }
+  return 0;
+}

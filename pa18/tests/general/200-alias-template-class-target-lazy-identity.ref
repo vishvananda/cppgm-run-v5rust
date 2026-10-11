@@ -1,0 +1,6 @@
+declare global @same_type___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN9same_typeI5tupleIA_iES2_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

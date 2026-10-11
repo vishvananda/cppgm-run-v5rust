@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition model
+  namespace-definition internal
+  function-definition select function of (enum role) returning int
+    parameter value enum role
+    compound-statement
+      switch-statement
+        condition
+          id-expression lvalue enum role value
+        compound-statement
+          case-statement
+            literal prvalue enum role 0
+            return-statement
+              literal prvalue int 1
+      return-statement
+        literal prvalue int 0
+end translation unit

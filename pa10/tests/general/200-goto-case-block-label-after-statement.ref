@@ -1,0 +1,52 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+  slot $y : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    store typed i32 0, $y
+    %t1 = load typed i32 $x
+    jump ^switch_dispatch_1
+
+  block ^switch_dispatch_1:
+    switch %t1, ^switch_end_2, 0:^switch_case_3, 1:^switch_case_4
+
+  block ^switch_case_3:
+    %t2 = load typed i32 $x
+    %t3 = binary add nowrap i32 %t2, 4
+    store typed i32 %t3, $y
+    jump ^goto_5
+
+  block ^goto_5:
+    %t4 = load typed i32 $y
+    return i32 %t4
+
+  block ^switch_case_4:
+    %t5 = load typed i32 $x
+    %t6 = binary add nowrap i32 %t5, 4
+    store typed i32 %t6, $y
+    jump ^goto_5
+
+  block ^switch_end_2:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @f(1)
+    %t2 = cmp eq i32 %t1, 5
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

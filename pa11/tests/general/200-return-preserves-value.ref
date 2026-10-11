@@ -1,0 +1,20 @@
+global @gx : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $p
+    call void @YP___YP(%t2)
+    return i32 3
+}
+function @YP___YP(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN2YPD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 9, @gx
+    return void
+}
+alias object _ZN2YPD2Ev = @YP___YP

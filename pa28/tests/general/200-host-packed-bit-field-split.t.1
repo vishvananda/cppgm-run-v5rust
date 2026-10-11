@@ -1,0 +1,21 @@
+#include "200-host-packed-bit-field-split.helper.h"
+
+int main()
+{
+  if (sizeof(Packed) != 6 || sizeof(Tail) != 10) return 1;
+  Packed packed;
+  packed.low = 2;
+  packed.after = 5;
+  packed.wide = -1234567;
+  if (host_read_wide(packed) != -1234567 + 2000 + 5) return 2;
+  host_write_wide(&packed, 33554431);
+  if (packed.wide != 33554431 || packed.low != 2 || packed.after != 5) return 3;
+  Tail tail;
+  tail.first = 1;
+  tail.last = 2;
+  tail.value = 0x05bcdef012345678L;
+  if (host_read_value(tail) != 0x05bcdef012345678L + 3) return 4;
+  host_write_value(&tail, -77);
+  if (tail.value != -77 || tail.first != 1 || tail.last != 2) return 5;
+  return 0;
+}

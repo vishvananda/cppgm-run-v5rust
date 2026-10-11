@@ -1,0 +1,10 @@
+function @select(%x : i32) -> i32 {
+  block ^entry:
+    switch %x, ^fallback, -1:^hit
+
+  block ^fallback:
+    return i32 0
+
+  block ^hit:
+    return i32 1
+}

@@ -1,0 +1,43 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 118
+  i8 97
+  i8 108
+  i8 117
+  i8 101
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr @__strlit__1
+    %t3 = addr $value
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $value
+    %t6 = call i32 @probe(%t5)
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @probe(%__param0 : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_Z5probeIN13serialization7wrappedEEN9enable_ifIXeqstT_stDtdtcl7declvalIRKS3_EE5valueEEiE4typeES5_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 7
+}

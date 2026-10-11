@@ -1,0 +1,40 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @text
+  storage data
+  item i64 8680820740569200760
+  item i64 8680820740569200760
+  item i64 8680820740569200760
+  item i8 0
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+
+  block ^entry
+    mov rbx, @text
+    mov rdi, rbx
+    call @length [args=(rdi), unwind=no]
+    mov r12, rax
+    mov r8, @length
+    lea rdi, [rbx+24]
+    call *r8 [args=(rdi)]
+    mov r13, rax
+    store.i8 [rbx], 0
+    mov rdi, rbx
+    call @length [args=(rdi), unwind=no]
+    sub r12, 24
+    or r12, r13
+    or r12, rax
+    ret r12

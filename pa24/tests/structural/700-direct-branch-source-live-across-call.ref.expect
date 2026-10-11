@@ -1,0 +1,11 @@
+# budget from 700-direct-branch-source-live-across-call.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 41
+blocks <= 11
+count(call) <= 5
+mem <= 5
+instructions <= 5 in @one
+stack_size <= 320 in @one
+instructions <= 5 in @clobber
+stack_size <= 320 in @clobber
+instructions <= 33 in @main
+stack_size <= 352 in @main

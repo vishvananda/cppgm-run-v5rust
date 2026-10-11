@@ -1,0 +1,12 @@
+declare function @B__f(%arg0 : ptr [object_bytes=1]) -> void [binding=strong, object=_ZNK1B1fEv]
+
+function @D__g(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1D1gEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @B__f(%t2)
+    return void
+}

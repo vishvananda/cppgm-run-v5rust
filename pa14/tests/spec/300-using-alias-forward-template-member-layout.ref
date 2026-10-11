@@ -1,0 +1,24 @@
+function @make_holder() -> obj<16x8> [binding=strong, object=_Z11make_holderv] {
+  slot $h : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = addr $retobj__1
+    %t3 = addr $h
+    copyobj 16x8 %t3, %t2
+    return obj<16x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = call obj<16x8> @make_holder()
+    copyobj 16x8 %t2, %t1
+    %t3 = addr $h
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 8
+    %t6 = load typed i32 %t5
+    return i32 %t6
+}

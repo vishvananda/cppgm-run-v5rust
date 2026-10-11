@@ -1,0 +1,40 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $arr : obj<8x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $arr
+    call void @C__C(%t1)
+    %t2 = index i8 %t1, 4
+    call void @C__C(%t2)
+    %t3 = addr $arr
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 [projection=array_element] %t3, %t4
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @C__C(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1CC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN1CC2Ev = @C__C

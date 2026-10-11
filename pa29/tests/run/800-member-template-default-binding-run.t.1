@@ -1,0 +1,52 @@
+// A member template's default template argument that names no template
+// parameter is bound where it appears (14.6p10): it is no complete-class
+// context (9.2p2), so a member its class declares later is not found
+// (3.4.1p7): decltype(h(0)) is char, not the later h(int)'s long, for a
+// member function template, a member class template and a class
+// template's member template (each instance binding its own).
+#include <cstdio>
+struct A
+{
+	static char h(long);
+	template<class T = decltype(h(0))>
+	static int f()
+	{
+		return sizeof(T);
+	}
+	template<class T = decltype(h(0))>
+	struct B
+	{
+		static const int v = sizeof(T);
+	};
+	static long h(int);
+};
+template<class X>
+struct C
+{
+	static char h(long);
+	template<class T = decltype(h(0))>
+	static int f()
+	{
+		return sizeof(T);
+	}
+	static long h(int);
+};
+// A class template's instances each bind their member template's default
+// (the instance's own argument, not the first instance's).
+template<class X>
+struct D
+{
+	template<class T = X>
+	static int size()
+	{
+		return sizeof(T);
+	}
+};
+int main()
+{
+	// (Both instances defined before either default is used.)
+	if (sizeof(D<char>) + sizeof(D<double>) != 2 || D<char>::size() != 1 || D<double>::size() != 8)
+		return 1;
+	std::printf("%d %d %d %d\n", A::f(), A::B<>::v, C<int>::f(), (int)sizeof(A::h(0)));
+	return 0;
+}

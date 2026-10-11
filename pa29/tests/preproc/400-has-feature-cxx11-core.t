@@ -1,0 +1,120 @@
+#if __has_feature(cxx_alias_templates)
+alias_templates_feature_on
+#else
+bad_alias_templates_feature
+#endif
+#if __has_extension(cxx_alias_templates)
+alias_templates_extension_on
+#else
+bad_alias_templates_extension
+#endif
+#if __has_feature(cxx_default_function_template_args)
+default_function_template_args_feature_on
+#else
+bad_default_function_template_args_feature
+#endif
+#if __has_extension(cxx_default_function_template_args)
+default_function_template_args_extension_on
+#else
+bad_default_function_template_args_extension
+#endif
+#if __has_feature(cxx_explicit_conversions)
+explicit_conversions_feature_on
+#else
+bad_explicit_conversions_feature
+#endif
+#if __has_extension(cxx_explicit_conversions)
+explicit_conversions_extension_on
+#else
+bad_explicit_conversions_extension
+#endif
+#if __has_feature(cxx_generalized_initializers)
+generalized_initializers_feature_on
+#else
+bad_generalized_initializers_feature
+#endif
+#if __has_extension(cxx_generalized_initializers)
+generalized_initializers_extension_on
+#else
+bad_generalized_initializers_extension
+#endif
+#if __has_feature(cxx_lambdas)
+lambdas_feature_on
+#else
+bad_lambdas_feature
+#endif
+#if __has_extension(cxx_lambdas)
+lambdas_extension_on
+#else
+bad_lambdas_extension
+#endif
+#if __has_feature(cxx_local_type_template_args)
+local_type_template_args_feature_on
+#else
+bad_local_type_template_args_feature
+#endif
+#if __has_extension(cxx_local_type_template_args)
+local_type_template_args_extension_on
+#else
+bad_local_type_template_args_extension
+#endif
+#if __has_feature(cxx_noexcept)
+noexcept_feature_on
+#else
+bad_noexcept_feature
+#endif
+#if __has_extension(cxx_noexcept)
+noexcept_extension_on
+#else
+bad_noexcept_extension
+#endif
+#if __has_feature(cxx_nullptr)
+nullptr_feature_on
+#else
+bad_nullptr_feature
+#endif
+#if __has_extension(cxx_nullptr)
+nullptr_extension_on
+#else
+bad_nullptr_extension
+#endif
+#if __has_feature(cxx_range_for)
+range_for_feature_on
+#else
+bad_range_for_feature
+#endif
+#if __has_extension(cxx_range_for)
+range_for_extension_on
+#else
+bad_range_for_extension
+#endif
+#if __has_feature(cxx_raw_string_literals)
+raw_string_literals_feature_on
+#else
+bad_raw_string_literals_feature
+#endif
+#if __has_extension(cxx_raw_string_literals)
+raw_string_literals_extension_on
+#else
+bad_raw_string_literals_extension
+#endif
+#if __has_feature(cxx_strong_enums)
+strong_enums_feature_on
+#else
+bad_strong_enums_feature
+#endif
+#if __has_extension(cxx_strong_enums)
+strong_enums_extension_on
+#else
+bad_strong_enums_extension
+#endif
+#if __has_feature(cxx_unicode_literals)
+unicode_literals_feature_on
+#else
+bad_unicode_literals_feature
+#endif
+#if __has_extension(cxx_unicode_literals)
+unicode_literals_extension_on
+#else
+bad_unicode_literals_extension
+#endif

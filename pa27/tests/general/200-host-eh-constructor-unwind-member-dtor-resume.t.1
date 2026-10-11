@@ -1,0 +1,51 @@
+// A constructor body that throws must unwind its already-constructed members,
+// run their (noexcept) destructors, then resume unwinding to the caller's catch.
+// The member destructor and the trailing _Unwind_Resume live in a cleanup
+// landing pad that is emitted before the throwing call site, so the resume
+// continuation lands in the function head preceding the first call-site region.
+// That head must be covered by the host EH call-site table; otherwise the
+// Itanium personality treats the resume IP as "not in table" and calls
+// std::terminate instead of continuing the unwind.
+
+namespace {
+
+int live = 0;
+
+struct Member
+{
+  Member() noexcept;
+  ~Member() noexcept;
+};
+
+struct Holder
+{
+  Member member;
+
+  Holder()
+  {
+    throw 1;
+  }
+};
+
+Member::Member() noexcept
+{
+  ++live;
+}
+
+Member::~Member() noexcept
+{
+  --live;
+}
+
+}  // namespace
+
+int main()
+{
+  try {
+    Holder value;
+    return 10;  // unreachable: the constructor always throws
+  } catch(int) {
+    // The member must have been constructed and then destroyed during unwind.
+    return live == 0 ? 0 : 1;
+  }
+}

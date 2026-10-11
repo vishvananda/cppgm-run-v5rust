@@ -1,0 +1,42 @@
+int c;
+
+struct A {
+  A()
+  {
+    ++c;
+  }
+
+  ~A()
+  {
+    --c;
+  }
+};
+
+struct T {
+  T(int n)
+  {
+    if(n < 0) {
+      throw n;
+    }
+  }
+};
+
+struct M {
+  A a;
+  T t;
+
+  M(int n)
+    : t(n)
+  {}
+};
+
+int main()
+{
+  try {
+    M(-1);
+    return 111;
+  }
+  catch(...) {
+  }
+  return c;
+}

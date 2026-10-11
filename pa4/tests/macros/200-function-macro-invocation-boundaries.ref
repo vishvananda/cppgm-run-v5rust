@@ -1,0 +1,12 @@
+preproc 1
+sof tests/macros/200-function-macro-invocation-boundaries.t
+identifier A
+identifier B
+identifier B
+identifier B
+identifier B
+identifier D
+identifier D
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+eof

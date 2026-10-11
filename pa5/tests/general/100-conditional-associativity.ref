@@ -1,0 +1,53 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier conditionals
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier y
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier z
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier w
+    compound-statement
+      expression-statement
+        conditional-expression
+          binary-expression OP_LOR:||
+            id-expression x
+            id-expression y
+          binary-expression OP_PLUS:+
+            id-expression z
+            literal 2
+          assignment-expression OP_ASS:=
+            id-expression w
+            literal 3
+      expression-statement
+        conditional-expression
+          literal 1
+          conditional-expression
+            literal 2
+            literal 3
+            literal 4
+          conditional-expression
+            literal 5
+            literal 6
+            literal 7
+end translation unit

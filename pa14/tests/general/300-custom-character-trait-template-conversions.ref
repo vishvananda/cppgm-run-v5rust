@@ -1,0 +1,98 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ch : obj<4x4>
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $ch
+    %t2 = call obj<4x4> @probe_UChar___to_char(7)
+    copyobj 4x4 %t2, %t1
+    %t3 = addr $argobj__2
+    %t4 = addr $ch
+    copyobj 4x4 %t4, %t3
+    %t5 = call u32 @probe_UChar___to_int($argobj__2)
+    %t6 = cmp eq u32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @probe_UChar___to_char(%value : u32) -> obj<4x4> [binding=weak, object=_ZN5probeI5UCharE7to_charEj, inline_hint=yes] {
+  slot $value : u32
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed u32 %value, $value
+    %t1 = addr $retobj__1
+    %t2 = load typed u32 $value
+    %t3 = call obj<4x4> @std__char_traits_UChar___to_char_type(%t2)
+    copyobj 4x4 %t3, %t1
+    return obj<4x4> $retobj__1
+}
+function @probe_UChar___to_int(%value : obj<4x4>) -> u32 [binding=weak, object=_ZN5probeI5UCharE6to_intES0_, inline_hint=yes] {
+  slot $value : obj<4x4>
+  slot $argobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    copyobj 4x4 %value, %t1
+    %t2 = addr $argobj__1
+    %t3 = addr $value
+    copyobj 4x4 %t3, %t2
+    %t4 = call u32 @std__char_traits_UChar___to_int_type($argobj__1)
+    return u32 %t4
+}
+function @std__char_traits_UChar___to_char_type(%value : u32) -> obj<4x4> [binding=weak, object=_ZNSt11char_traitsI5UCharE12to_char_typeEj, inline_hint=yes] {
+  slot $value : u32
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed u32 %value, $value
+    %t1 = addr $retobj__1
+    %t2 = load typed u32 $value
+    call void @UChar__UChar(%t1, %t2)
+    return obj<4x4> $retobj__1
+}
+function @std__char_traits_UChar___to_int_type(%value : obj<4x4>) -> u32 [binding=weak, object=_ZNSt11char_traitsI5UCharE11to_int_typeES0_, inline_hint=yes] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    copyobj 4x4 %value, %t1
+    %t2 = addr $value
+    %t3 = call u32 @UChar__operatorunsignedint(%t2)
+    return u32 %t3
+}
+function @UChar__UChar(%this : ptr [object_bytes=4], %code : u32) -> void [binding=weak, object=_ZN5UCharC1Ej, inline_hint=yes] {
+  slot $this : ptr
+  slot $code : u32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed u32 %code, $code
+    %t1 = load typed u32 $code
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed u32 %t1, %t3
+    return void
+}
+function @UChar__operatorunsignedint(%this : ptr [object_bytes=4]) -> u32 [binding=weak, object=_ZNK5UCharcvjEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed u32 %t2
+    return u32 %t3
+}
+alias object _ZN5UCharC2Ej = @UChar__UChar

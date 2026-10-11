@@ -1,0 +1,50 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_EXTERN:extern
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier ex
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_STATIC:static
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier internal
+        initializer
+          literal 1
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_THREAD_LOCAL:thread_local
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier tls
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_CONSTEXPR:constexpr
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier cx
+        initializer
+          literal 2
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INLINE:inline
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      return-statement
+        id-expression internal
+end translation unit

@@ -1,0 +1,13 @@
+namespace std {
+template<class T>
+struct allocator {};
+
+void ping(allocator<int> const &) {}
+}
+
+int main()
+{
+  std::allocator<int> alloc;
+  std::ping(alloc);
+  return 0;
+}

@@ -1,0 +1,6 @@
+// N3485 15.3p3/p16 + Itanium 2.5: a handler of type T*& binds to the caught
+// pointer (value from __cxa_begin_catch), not to the pointer's value;
+// expect exit 0
+struct A { int a; };
+static A obj = { 11 };
+int main() { try { throw &obj; } catch (A*& h) { return h->a == 11 ? 0 : 1; } return 2; }

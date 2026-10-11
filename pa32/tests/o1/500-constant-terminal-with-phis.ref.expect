@@ -1,0 +1,9 @@
+# budget from 500-constant-terminal-with-phis.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 15
+blocks <= 8
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 5
+instructions <= 13 in @constant_branch_drops_phi_input
+instructions <= 5 in @constant_switch_erases_region

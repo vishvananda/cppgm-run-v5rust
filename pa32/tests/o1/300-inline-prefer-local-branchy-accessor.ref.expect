@@ -1,0 +1,13 @@
+# budget from 300-inline-prefer-local-branchy-accessor.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 36
+blocks <= 11
+count(call) <= 3
+count(load) <= 8
+count(store) <= 3
+count(phi) <= 5
+instructions <= 18 in @accessor
+instructions <= 19 in @caller
+
+# outcomes from 300-inline-prefer-local-branchy-accessor.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @accessor)
+none(store)

@@ -1,0 +1,10 @@
+# budget from 400-region-strip-publishes-no-unwind.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 6
+count(call) <= 6
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 5 in @outer
+instructions <= 5 in @inner
+instructions <= 5 in @main

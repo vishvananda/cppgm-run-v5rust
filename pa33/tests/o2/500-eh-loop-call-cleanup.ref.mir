@@ -1,0 +1,96 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @eh_loop
+  abi
+    param %n -> rdi : i64
+    param %cleanups -> rsi : ptr
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx r12 r13 r14
+
+  block ^entry
+    mov r14, rdi
+    mov r13, rsi
+    mov r12, 0
+    mov rbx, 0
+
+  block ^for_cond_1
+    cmp.i64 rbx, r14
+    jl ^for_body_2
+
+  block ^for_end_4
+    ret r12
+
+  block ^for_body_2
+    mov rdi, rbx
+    call @work [args=(rdi)]
+    shl rax, 1
+    add rax, rbx
+    add r12, rax
+    add [r13], 1
+    add rbx, 1
+    cmp.i64 rbx, r14
+    jl ^for_body_2
+    jmp ^for_end_4
+
+function @work
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    add rdi, 3
+    ret rdi
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+    slot $cleanups -> [rbp-8] : i64
+
+  block ^entry
+    store.i64 [rbp-8], 0
+    mov rdi, 4
+    lea rsi, [rbp-8]
+    call @eh_loop [args=(rsi,rdi)]
+    cmp.i64 rax, 42
+    je ^land_rhs_4
+
+  block ^land_short_5
+    mov r8, 0
+
+  block ^cond_else_2
+    mov rax, 1
+
+  block ^cond_end_3
+    ret rax
+
+  block ^land_rhs_4
+    cmp.i64 [rbp-8], 4
+    sete r8
+
+  block ^land_end_6
+    cmp.u8 r8, 0
+    je ^cond_else_2
+
+  block ^cond_then_1
+    mov rax, 0
+    jmp ^cond_end_3

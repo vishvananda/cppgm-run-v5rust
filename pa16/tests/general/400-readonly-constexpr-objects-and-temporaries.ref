@@ -1,0 +1,86 @@
+global @origin [storage=readonly, binding=internal, object=_ZL6origin] = {
+  i32 0
+  i32 1
+}
+global @squares [storage=readonly, binding=internal, object=_ZL7squares] = {
+  i32 1
+  i32 4
+  i32 9
+}
+global @__ref_tmp__constant_reference : i32 [storage=readonly, binding=internal, object=_ZGR18constant_reference_] = 3
+global @constant_reference : ptr [binding=strong] = addr @__ref_tmp__constant_reference
+global @__ref_tmp__const_reference : i32 [storage=readonly, binding=internal, object=_ZGR15const_reference_] = 4
+global @const_reference : ptr [binding=strong] = addr @__ref_tmp__const_reference
+global @__ref_tmp__rvalue_reference : i32 [binding=internal, object=_ZGR16rvalue_reference_] = 5
+global @rvalue_reference : ptr [binding=strong] = addr @__ref_tmp__rvalue_reference
+global @__ref_tmp__1 [binding=internal, object=_ZGR15class_reference_] = {
+  i32 6
+  i32 7
+}
+global @class_reference : ptr [binding=strong] = addr @__ref_tmp__1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @rvalue_reference
+    store typed i32 8, %t1
+    %t2 = addr @origin
+    %t3 = index i8 [projection=field] %t2, 4
+    %t4 = load typed i32 %t3
+    %t5 = addr @squares
+    %t6 = index i32 [projection=array_element] %t5, 2
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    %t9 = load typed i32 @__ref_tmp__constant_reference
+    %t10 = binary add nowrap i32 %t8, %t9
+    %t11 = load typed ptr @const_reference
+    %t12 = load typed i32 %t11
+    %t13 = binary add nowrap i32 %t10, %t12
+    %t14 = load typed ptr @rvalue_reference
+    %t15 = load typed i32 %t14
+    %t16 = binary add nowrap i32 %t13, %t15
+    %t17 = load typed ptr @class_reference
+    %t18 = index i8 [projection=field] %t17, 4
+    %t19 = load typed i32 %t18
+    %t20 = binary add nowrap i32 %t16, %t19
+    %t21 = binary add nowrap i32 1, 9
+    %t22 = binary add nowrap i32 %t21, 3
+    %t23 = binary add nowrap i32 %t22, 4
+    %t24 = binary add nowrap i32 %t23, 8
+    %t25 = binary add nowrap i32 %t24, 7
+    %t26 = cmp eq i32 %t20, %t25
+    branch %t26, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t27 = load typed i32 $cond__1
+    return i32 %t27
+}
+function @Point__Point(%this : ptr [object_bytes=8], %a : i32, %b : i32) -> void [binding=weak, object=_ZN5PointC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN5PointC2Eii = @Point__Point

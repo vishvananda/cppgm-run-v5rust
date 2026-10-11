@@ -1,0 +1,38 @@
+global @free1 [storage=readonly, binding=internal, object=_ZL5free1] = {
+  zero 1
+}
+global @_1 : ptr [binding=strong] = addr @free1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $refarg__2 : i8
+
+  block ^entry:
+    %t1 = load typed ptr @_1
+    store i8 32, $refarg__2
+    %t2 = addr $refarg__2
+    %t3 = call i32 @operator__(%t1, %t2)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @operator__(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZpLI11placeholderILi1EEcEiRK14lambda_functorIT_ERKT0_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 7
+}

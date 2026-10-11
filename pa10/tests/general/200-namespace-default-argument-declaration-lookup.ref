@@ -1,0 +1,18 @@
+global @library__default_value : i32 [binding=strong, object=_ZN7library13default_valueE] = 7
+global @default_value : i32 [binding=strong] = 99
+
+function @library__read(%value : i32) -> i32 [binding=strong, object=_ZN7library4readEi] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @library__default_value
+    %t2 = call i32 @library__read(%t1)
+    %t3 = binary sub nowrap i32 %t2, 7
+    return i32 %t3
+}

@@ -1,0 +1,7 @@
+n=0 d0=1.5 d1=2.5 m0=7 s0=x nulls=0
+n=1 d0=1.5 d1=2.5 m0=7 s0=x nulls=1
+n=3 d0=1.5 d1=2.5 m0=7 s0=x nulls=3
+n=17 d0=1.5 d1=2.5 m0=7 s0=x nulls=17
+n=4096 d0=1.5 d1=2.5 m0=7 s0=x nulls=4096
+n=1048576 d0=1.5 d1=2.5 m0=7 s0=x nulls=1048576
+nonzero bytes 0

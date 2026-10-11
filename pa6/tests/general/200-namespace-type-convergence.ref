@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable unqualified_scalar int
+    variable scalar int
+    variable array array of 2 int
+    variable object struct C
+    variable shared_namespace int
+    variable transitive_array array of 2 int
+    function local function of () returning void
+    scope namespace origin
+      type C struct C
+      type-alias T int
+      scope class C
+    scope namespace left
+      type-alias T int
+      type-alias A array of 2 int
+      type-alias C struct C
+    scope namespace right
+      type-alias T int
+      type-alias A array of 2 int
+      type-alias C struct C
+    scope namespace combined
+    scope namespace cycle_left
+    scope namespace cycle_right
+    scope function local
+      scope block
+        variable block_value int
+end translation unit

@@ -1,0 +1,1139 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti__pointer_to_char [role=rtti_data, binding=strong, object=_ZTIPc]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+declare global @__external_rtti_vtable____pointer_type_info [role=rtti_pointer, binding=strong, object=_ZTVN10__cxxabiv119__pointer_type_infoE]
+declare global @__external_rtti__pointer_to_const_char [role=rtti_data, binding=strong, object=_ZTIPKc]
+declare global @__external_rtti__nullptr_t [role=rtti_data, binding=strong, object=_ZTIDn]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_Base [storage=readonly, binding=weak, object=_ZTS4Base] = {
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Base [storage=readonly, binding=weak, object=_ZTI4Base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Base
+}
+global @Base__vtable [storage=readonly, binding=weak, object=_ZTV4Base] = {
+  i64 0
+  ptr addr @__rtti_struct_Base
+  ptr addr @Base___Base
+  ptr addr @Base___Base__deleting_entry
+}
+global @__typeinfo_name__struct_Derived [storage=readonly, binding=weak, object=_ZTS7Derived] = {
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__rtti_struct_Derived [storage=readonly, binding=weak, object=_ZTI7Derived] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived
+  ptr addr @__rtti_struct_Base
+}
+global @Derived__vtable [storage=readonly, binding=weak, object=_ZTV7Derived] = {
+  i64 0
+  ptr addr @__rtti_struct_Derived
+  ptr addr @Derived___Derived
+  ptr addr @Derived___Derived__deleting_entry
+}
+global @derived : obj<16x8> [binding=internal, object=_ZL7derived] = {
+  zero 16
+}
+global @__typeinfo_name__struct_Private [storage=readonly, binding=weak, object=_ZTS7Private] = {
+  i8 55
+  i8 80
+  i8 114
+  i8 105
+  i8 118
+  i8 97
+  i8 116
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Private [storage=readonly, binding=weak, object=_ZTI7Private] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Private
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Base
+  i64 0
+}
+global @Private__vtable [storage=readonly, binding=weak, object=_ZTV7Private] = {
+  i64 0
+  ptr addr @__rtti_struct_Private
+  ptr addr @Private___Private
+  ptr addr @Private___Private__deleting_entry
+}
+global @privately [binding=internal, object=_ZL9privately] = {
+  ptr addr @Private__vtable + 16
+  i32 1
+  zero 4
+}
+global @text [binding=internal, object=_ZL4text] = {
+  i8 120
+  i8 0
+}
+global @__typeinfo_name__char [storage=readonly, binding=weak, object=_ZTSc] = {
+  i8 99
+  i8 0
+}
+global @__rtti_char [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__char
+}
+global @__typeinfo_name_type_Pc [storage=readonly, binding=weak, object=_ZTSPc] = {
+  i8 80
+  i8 99
+  i8 0
+}
+global @__rtti_type_Pc [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_Pc
+  i32 0
+  ptr addr @__rtti_char
+}
+global @__ehobj_type_Pc [binding=internal] = {
+  zero 8
+}
+global @__typeinfo_name_type_PKc [storage=readonly, binding=weak, object=_ZTSPKc] = {
+  i8 80
+  i8 75
+  i8 99
+  i8 0
+}
+global @__rtti_type_PKc [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PKc
+  i32 1
+  ptr addr @__rtti_char
+}
+global @__typeinfo_name_type_PPc [storage=readonly, binding=weak, object=_ZTSPPc] = {
+  i8 80
+  i8 80
+  i8 99
+  i8 0
+}
+global @__rtti_type_PPc [storage=readonly, binding=weak, object=_ZTIPPc] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PPc
+  i32 0
+  ptr addr @__rtti_type_Pc
+}
+global @__ehobj_type_PPc [binding=internal] = {
+  zero 8
+}
+global @__typeinfo_name_type_PKPKc [storage=readonly, binding=weak, object=_ZTSPKPKc] = {
+  i8 80
+  i8 75
+  i8 80
+  i8 75
+  i8 99
+  i8 0
+}
+global @__rtti_type_PKPKc [storage=readonly, binding=weak, object=_ZTIPKPKc] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PKPKc
+  i32 1
+  ptr addr @__rtti_type_PKc
+}
+global @__typeinfo_name_type_PPKc [storage=readonly, binding=weak, object=_ZTSPPKc] = {
+  i8 80
+  i8 80
+  i8 75
+  i8 99
+  i8 0
+}
+global @__rtti_type_PPKc [storage=readonly, binding=weak, object=_ZTIPPKc] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PPKc
+  i32 0
+  ptr addr @__rtti_type_PKc
+}
+global @__typeinfo_name_type_P7Derived [storage=readonly, binding=weak, object=_ZTSP7Derived] = {
+  i8 80
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__rtti_type_P7Derived [storage=readonly, binding=weak, object=_ZTIP7Derived] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_P7Derived
+  i32 0
+  ptr addr @__rtti_struct_Derived
+}
+global @__ehobj_type_P7Derived [binding=internal] = {
+  zero 8
+}
+global @__typeinfo_name_type_PK4Base [storage=readonly, binding=weak, object=_ZTSPK4Base] = {
+  i8 80
+  i8 75
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_type_PK4Base [storage=readonly, binding=weak, object=_ZTIPK4Base] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PK4Base
+  i32 1
+  ptr addr @__rtti_struct_Base
+}
+global @__typeinfo_name_type_P4Base [storage=readonly, binding=weak, object=_ZTSP4Base] = {
+  i8 80
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_type_P4Base [storage=readonly, binding=weak, object=_ZTIP4Base] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_P4Base
+  i32 0
+  ptr addr @__rtti_struct_Base
+}
+global @__typeinfo_name_type_P7Private [storage=readonly, binding=weak, object=_ZTSP7Private] = {
+  i8 80
+  i8 55
+  i8 80
+  i8 114
+  i8 105
+  i8 118
+  i8 97
+  i8 116
+  i8 101
+  i8 0
+}
+global @__rtti_type_P7Private [storage=readonly, binding=weak, object=_ZTIP7Private] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_P7Private
+  i32 0
+  ptr addr @__rtti_struct_Private
+}
+global @__ehobj_type_P7Private [binding=internal] = {
+  zero 8
+}
+global @__typeinfo_name_type_PP7Derived [storage=readonly, binding=weak, object=_ZTSPP7Derived] = {
+  i8 80
+  i8 80
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__rtti_type_PP7Derived [storage=readonly, binding=weak, object=_ZTIPP7Derived] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PP7Derived
+  i32 0
+  ptr addr @__rtti_type_P7Derived
+}
+global @__ehobj_type_PP7Derived [binding=internal] = {
+  zero 8
+}
+global @__typeinfo_name_type_PP4Base [storage=readonly, binding=weak, object=_ZTSPP4Base] = {
+  i8 80
+  i8 80
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_type_PP4Base [storage=readonly, binding=weak, object=_ZTIPP4Base] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_PP4Base
+  i32 0
+  ptr addr @__rtti_type_P4Base
+}
+global @__typeinfo_name__nullptr_t [storage=readonly, binding=weak, object=_ZTSDn] = {
+  i8 68
+  i8 110
+  i8 0
+}
+global @__rtti_nullptr_t [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__nullptr_t
+}
+global @__ehobj_nullptr_t [binding=internal] = {
+  zero 8
+}
+
+function @qualification() -> i32 [binding=strong, object=_Z13qualificationv] {
+  slot $catch__1 : ptr
+  slot $p : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t2 = addr @text
+    %t3 = index i8 %t2, 0
+    store typed ptr %t3, %t1
+    %t4 = addr @__external_rtti__pointer_to_char
+    call void @__external_runtime____cxa_throw(%t1, %t4, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__pointer_to_const_char, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    store typed ptr %t8, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t8, $p
+    %t9 = load typed ptr $p
+    %t10 = addr @text
+    %t11 = cmp eq ptr %t9, %t10
+    branch %t11, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t12 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t12
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @multilevel() -> i32 [binding=strong, object=_Z10multilevelv] {
+  slot $p : ptr
+  slot $catch__1 : ptr
+  slot $q : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr @text
+    store typed ptr %t1, $p
+    eh_try ^catch_dispatch_1
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t3 = addr $p
+    store typed ptr %t3, %t2
+    %t4 = addr @__rtti_type_PPc
+    call void @__external_runtime____cxa_throw(%t2, %t4, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_PKPKc, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    store typed ptr %t8, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t8, $q
+    %t9 = load typed ptr $q
+    %t10 = load typed ptr %t9
+    %t11 = addr @text
+    %t12 = cmp eq ptr %t10, %t11
+    branch %t12, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t13 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t13
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @unsafe_multilevel() -> i32 [binding=strong, object=_Z17unsafe_multilevelv] {
+  slot $p : ptr
+  slot $catch__1 : ptr
+  slot $q : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr @text
+    store typed ptr %t1, $p
+    eh_try ^catch_dispatch_1
+    eh_try ^catch_dispatch_4
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t3 = addr $p
+    store typed ptr %t3, %t2
+    %t4 = addr @__rtti_type_PPc
+    call void @__external_runtime____cxa_throw(%t2, %t4, 0)
+    eh_end
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_4:
+    eh_catch @__rtti_type_PPKc, 1
+    eh_catch @__rtti_type_PPc, 2
+    jump ^catch_entry_5
+
+  block ^catch_entry_5:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_7, ^catch_next_8
+
+  block ^catch_body_7:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    eh_cleanup ^catch_cleanup_9
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    return i32 1
+
+  block ^catch_cleanup_9:
+    eh_catch @__rtti_type_PPc, 2
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_next_8:
+    eh_end
+    jump ^catch_entry_2
+
+  block ^try_end_6:
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_PPc, 2
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t9 = exception ptr
+    %t10 = exception_selector i32
+    %t11 = cmp eq i32 %t10, 2
+    branch %t11, ^catch_body_10, ^catch_next_11
+
+  block ^catch_body_10:
+    %t12 = call ptr @__external_runtime____cxa_begin_catch(%t9)
+    store typed ptr %t12, $catch__1
+    eh_cleanup ^catch_cleanup_12
+    store typed ptr %t12, $q
+    %t13 = load typed ptr $q
+    %t14 = load typed ptr %t13
+    %t15 = addr @text
+    %t16 = cmp eq ptr %t14, %t15
+    branch %t16, ^cond_then_13, ^cond_else_14
+
+  block ^cond_then_13:
+    store typed i32 0, $cond__2
+    jump ^cond_end_15
+
+  block ^cond_else_14:
+    store typed i32 1, $cond__2
+    jump ^cond_end_15
+
+  block ^cond_end_15:
+    %t17 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t17
+
+  block ^catch_cleanup_12:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_11:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @to_base() -> i32 [binding=strong, object=_Z7to_basev] {
+  slot $catch__1 : ptr
+  slot $p : ptr
+  slot $cond__2 : i32
+  slot $land__3 : i64
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t2 = addr @derived
+    store typed ptr %t2, %t1
+    %t3 = addr @__rtti_type_P7Derived
+    call void @__external_runtime____cxa_throw(%t1, %t3, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_PK4Base, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t4 = exception ptr
+    %t5 = exception_selector i32
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t7 = call ptr @__external_runtime____cxa_begin_catch(%t4)
+    store typed ptr %t7, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t7, $p
+    %t8 = load typed ptr $p
+    %t9 = addr @derived
+    %t10 = index i8 %t9, 0
+    %t11 = cmp eq ptr %t8, %t10
+    branch %t11, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t12 = load typed ptr $p
+    %t13 = index i8 [projection=field] %t12, 8
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 1
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $land__3
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__3
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t17 = load typed i64 $land__3
+    branch %t17, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t18 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t18
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @null_to_base() -> i32 [binding=strong, object=_Z12null_to_basev] {
+  slot $none : ptr
+  slot $catch__1 : ptr
+  slot $p : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    store typed ptr 0, $none
+    eh_try ^catch_dispatch_1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t2 = load typed ptr $none
+    store typed ptr %t2, %t1
+    %t3 = addr @__rtti_type_P7Derived
+    call void @__external_runtime____cxa_throw(%t1, %t3, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_P4Base, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t4 = exception ptr
+    %t5 = exception_selector i32
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t7 = call ptr @__external_runtime____cxa_begin_catch(%t4)
+    store typed ptr %t7, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t7, $p
+    %t8 = load typed ptr $p
+    %t9 = cmp eq ptr %t8, 0
+    branch %t9, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t10 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t10
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @private_base() -> i32 [binding=strong, object=_Z12private_basev] {
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    eh_try ^catch_dispatch_4
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t2 = addr @privately
+    store typed ptr %t2, %t1
+    %t3 = addr @__rtti_type_P7Private
+    call void @__external_runtime____cxa_throw(%t1, %t3, 0)
+    eh_end
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_4:
+    eh_catch @__rtti_type_P4Base, 1
+    eh_catch @__rtti_type_P7Private, 2
+    jump ^catch_entry_5
+
+  block ^catch_entry_5:
+    %t4 = exception ptr
+    %t5 = exception_selector i32
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^catch_body_7, ^catch_next_8
+
+  block ^catch_body_7:
+    %t7 = call ptr @__external_runtime____cxa_begin_catch(%t4)
+    eh_cleanup ^catch_cleanup_9
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    return i32 1
+
+  block ^catch_cleanup_9:
+    eh_catch @__rtti_type_P7Private, 2
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_next_8:
+    eh_end
+    jump ^catch_entry_2
+
+  block ^try_end_6:
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_P7Private, 2
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t8 = exception ptr
+    %t9 = exception_selector i32
+    %t10 = cmp eq i32 %t9, 2
+    branch %t10, ^catch_body_10, ^catch_next_11
+
+  block ^catch_body_10:
+    %t11 = call ptr @__external_runtime____cxa_begin_catch(%t8)
+    eh_cleanup ^catch_cleanup_12
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 0
+
+  block ^catch_cleanup_12:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_11:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @no_base_at_second_level() -> i32 [binding=strong, object=_Z23no_base_at_second_levelv] {
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = addr @derived
+    store typed ptr %t1, $p
+    eh_try ^catch_dispatch_1
+    eh_try ^catch_dispatch_4
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    %t3 = addr $p
+    store typed ptr %t3, %t2
+    %t4 = addr @__rtti_type_PP7Derived
+    call void @__external_runtime____cxa_throw(%t2, %t4, 0)
+    eh_end
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_4:
+    eh_catch @__rtti_type_PP4Base, 1
+    eh_catch @__rtti_type_PP7Derived, 2
+    jump ^catch_entry_5
+
+  block ^catch_entry_5:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_7, ^catch_next_8
+
+  block ^catch_body_7:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    eh_cleanup ^catch_cleanup_9
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    return i32 1
+
+  block ^catch_cleanup_9:
+    eh_catch @__rtti_type_PP7Derived, 2
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_next_8:
+    eh_end
+    jump ^catch_entry_2
+
+  block ^try_end_6:
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_PP7Derived, 2
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t9 = exception ptr
+    %t10 = exception_selector i32
+    %t11 = cmp eq i32 %t10, 2
+    branch %t11, ^catch_body_10, ^catch_next_11
+
+  block ^catch_body_10:
+    %t12 = call ptr @__external_runtime____cxa_begin_catch(%t9)
+    eh_cleanup ^catch_cleanup_12
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 0
+
+  block ^catch_cleanup_12:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_11:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @null_pointer() -> i32 [binding=strong, object=_Z12null_pointerv] {
+  slot $catch__1 : ptr
+  slot $p : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    store typed i64 0, %t1
+    %t2 = addr @__external_rtti__nullptr_t
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_P4Base, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t3 = exception ptr
+    %t4 = exception_selector i32
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t6 = call ptr @__external_runtime____cxa_begin_catch(%t3)
+    store typed ptr %t6, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t6, $p
+    %t7 = load typed ptr $p
+    %t8 = cmp eq ptr %t7, 0
+    branch %t8, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t9 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t9
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @qualification()
+    %t2 = call i32 @multilevel()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @unsafe_multilevel()
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @to_base()
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = call i32 @null_to_base()
+    %t9 = binary add nowrap i32 %t7, %t8
+    %t10 = call i32 @private_base()
+    %t11 = binary add nowrap i32 %t9, %t10
+    %t12 = call i32 @no_base_at_second_level()
+    %t13 = binary add nowrap i32 %t11, %t12
+    %t14 = call i32 @null_pointer()
+    %t15 = binary add nowrap i32 %t13, %t14
+    return i32 %t15
+}
+function @Base___Base__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4BaseD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Base___Base__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4BaseD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Derived___Derived__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7DerivedD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @Base___Base__base_entry(%t5)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t6 = load typed ptr $this
+    call void @operatordelete(%t6)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t7 = load typed ptr $this
+    call void @operatordelete(%t7)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 0
+    call void @Base___Base__base_entry(%t9)
+    %t10 = load typed ptr $this
+    call void @operatordelete(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Derived___Derived(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7DerivedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @Base___Base__base_entry(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @Base___Base__base_entry(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Derived__Derived(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    %t3 = load typed ptr $this
+    %t4 = addr @Derived__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 12
+    store typed i32 3, %t7
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 0
+    call void @Base___Base__base_entry(%t9)
+    eh_end
+    resume
+}
+function @Private___Private__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7PrivateD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Private__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @Base___Base__base_entry(%t5)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t6 = load typed ptr $this
+    call void @operatordelete(%t6)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t7 = load typed ptr $this
+    call void @operatordelete(%t7)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 0
+    call void @Base___Base__base_entry(%t9)
+    %t10 = load typed ptr $this
+    call void @operatordelete(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Private___Private(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7PrivateD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Private__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @Base___Base__base_entry(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @Base___Base__base_entry(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Base___Base(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4BaseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i32 1, %t5
+    return void
+}
+function @Base__Base(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN4BaseC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i32 1, %t5
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @derived
+    call void @Derived__Derived(%t1)
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @privately
+    call void @Private___Private(%t1)
+    %t2 = addr @derived
+    call void @Derived___Derived(%t2)
+    return void
+}
+alias object _ZN7DerivedD2Ev = @Derived___Derived
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN7PrivateD2Ev = @Private___Private

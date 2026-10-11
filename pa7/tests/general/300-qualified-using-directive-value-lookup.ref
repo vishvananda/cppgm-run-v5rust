@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition base
+    variable f int
+      literal prvalue int 1
+    variable g int
+      literal prvalue int 2
+  namespace-definition wrap
+  function-definition h function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          id-expression lvalue int ::f
+          id-expression lvalue int wrap::g
+end translation unit

@@ -1,0 +1,26 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call i32 @call_touch(%t2)
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @call_touch(%value : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z10call_touchIiEiR3boxIT_E] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call i32 @box_int___touch(%t1)
+    return i32 %t2
+}
+function @box_int___touch(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN3boxIiE5touchEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}

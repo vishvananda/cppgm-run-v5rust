@@ -1,0 +1,17 @@
+# budget from 100-startup-shutdown-hooks.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 67
+blocks <= 25
+count(call) <= 7
+mem <= 13
+instructions <= 5 in @__cppgm_init
+stack_size <= 320 in @__cppgm_init
+instructions <= 15 in @__cppgm_fini
+stack_size <= 320 in @__cppgm_fini
+instructions <= 15 in @first
+stack_size <= 320 in @first
+instructions <= 15 in @third
+stack_size <= 320 in @third
+instructions <= 9 in @second
+stack_size <= 320 in @second
+instructions <= 13 in @main
+stack_size <= 320 in @main

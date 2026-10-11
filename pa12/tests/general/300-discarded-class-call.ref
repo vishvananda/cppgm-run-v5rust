@@ -1,0 +1,11 @@
+declare function @make() -> obj<4x4> [binding=strong, object=_Z4makev]
+
+function @f() -> void [binding=strong, object=_Z1fv] {
+  slot $discard__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $discard__1
+    %t2 = call obj<4x4> @make()
+    copyobj 4x4 %t2, %t1
+    return void
+}

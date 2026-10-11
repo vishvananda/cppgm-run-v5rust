@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition n
+  function-definition main function of (int, pointer to pointer to char) returning int
+    parameter argc int
+    parameter argv pointer to pointer to char
+    compound-statement
+      simple-declaration
+        function-declaration make function of (int, pointer to pointer to char) returning pointer to struct n::S
+      simple-declaration
+        variable p pointer to function of (int, pointer to pointer to char) returning pointer to struct n::S
+          unary-expression prvalue pointer to function of (int, pointer to pointer to char) returning pointer to struct n::S OP_AMP:&
+            id-expression lvalue function of (int, pointer to pointer to char) returning pointer to struct n::S make
+      return-statement
+        binary-expression prvalue bool OP_EQ:==
+          call-expression prvalue pointer to struct n::S
+            id-expression lvalue pointer to function of (int, pointer to pointer to char) returning pointer to struct n::S p
+            id-expression lvalue int argc
+            id-expression lvalue pointer to pointer to char argv
+          literal prvalue int 0
+end translation unit

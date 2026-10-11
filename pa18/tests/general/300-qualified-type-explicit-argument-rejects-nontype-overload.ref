@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @n__op__g(0)
+    return i32 0
+}
+function @n__op__g(%a : i32) -> void [binding=weak, object=_ZN1n2op1gIiEEvT_] {
+  slot $a : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    %t1 = load typed i32 $a
+    call void @n__f(%t1)
+    return void
+}
+function @n__f(%__param0 : i32) -> void [binding=weak, object=_ZN1n1fIiNS_1OEEEvT_] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return void
+}

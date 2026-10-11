@@ -1,0 +1,100 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier item
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:item
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_STAR:*
+            identifier child
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier take_pointer
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:item
+              declarator
+                ptr-operator OP_STAR:*
+                ptr-operator OP_STAR:*
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier take_reference
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:item
+              declarator
+                ptr-operator OP_AMP:&
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier test_reference
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:item
+              declarator
+                ptr-operator OP_AMP:&
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier use
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:item
+          declarator
+            ptr-operator OP_STAR:*
+            ptr-operator OP_STAR:*
+            identifier value
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:item
+          declarator
+            identifier holder
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression take_pointer
+          argument-list
+            unary-expression OP_AMP:&
+              parenthesized-expression
+                unary-expression OP_STAR:*
+                  id-expression value
+      expression-statement
+        call-expression
+          id-expression take_reference
+          argument-list
+            unary-expression OP_STAR:*
+              member-expression OP_DOT:.
+                id-expression holder
+                identifier child
+      if-statement
+        condition
+          call-expression
+            id-expression test_reference
+            argument-list
+              unary-expression OP_STAR:*
+                parenthesized-expression
+                  unary-expression OP_STAR:*
+                    id-expression value
+        then
+          compound-statement
+end translation unit

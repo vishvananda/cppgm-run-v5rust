@@ -1,0 +1,68 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier B
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_BOOL:bool
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              keyword-literal KW_TRUE:true
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier B<T>
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier X
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_BOOL:bool
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              id-expression decltype(f<T>())::value
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        conditional-expression
+          id-expression X<int>::value
+          literal 0
+          literal 1
+end translation unit

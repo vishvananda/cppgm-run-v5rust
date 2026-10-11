@@ -1,0 +1,6 @@
+# AUDIT-ID: BACKEND
+# Native runtime route, reusing the existing source cleanup test.
+kind standalone
+input pa21/tests/general/200-inner-handler-construction-boundaries.t
+expected run
+optimization O0 O2

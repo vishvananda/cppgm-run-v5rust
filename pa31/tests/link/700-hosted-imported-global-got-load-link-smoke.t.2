@@ -1,0 +1,9 @@
+#include "700-hosted-imported-global-got-load-link-smoke.shared.h"
+
+int read_g() {
+  return g + 1;
+}
+
+int main() {
+  return read_g() == 8 ? 0 : 1;
+}

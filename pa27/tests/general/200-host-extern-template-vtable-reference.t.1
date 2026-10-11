@@ -1,0 +1,7 @@
+#include "200-host-extern-template-vtable-reference.helper.h"
+
+int main()
+{
+  Facet<int> base(5);
+  return host_read(&base) == 7 ? 0 : 1;
+}

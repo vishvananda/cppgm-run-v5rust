@@ -1,0 +1,21 @@
+#include <sstream>
+#include <string>
+
+struct Result {
+  int value;
+};
+
+static Result load(std::istream &in)
+{
+  std::string line;
+  std::getline(in, line);
+  Result out;
+  out.value = line == "a" ? 0 : 1;
+  return out;
+}
+
+int main()
+{
+  std::istringstream in("a\n");
+  return load(in).value;
+}

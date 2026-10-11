@@ -1,0 +1,6 @@
+function @destruct_at_end(%buffer : ptr, %new_last : ptr) -> void {
+  block ^entry:
+    %end_slot = index i8 %buffer, 8
+    store ptr %new_last, %end_slot
+    return void
+}

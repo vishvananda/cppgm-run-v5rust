@@ -1,0 +1,10 @@
+// The unit's only `$_` name, so its number does not depend on the order in
+// which the unit mangles its entities.
+int outer(int (*f)() = [] { return 4; }) { return f(); }
+
+int twice() { return outer() + outer(); }
+
+int main()
+{
+  return outer() + twice() == 12 ? 0 : 1;
+}

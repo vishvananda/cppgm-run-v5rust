@@ -1,0 +1,5 @@
+preproc 1
+sof tests/macros/500-hello-world.t
+identifier hello
+identifier world
+eof

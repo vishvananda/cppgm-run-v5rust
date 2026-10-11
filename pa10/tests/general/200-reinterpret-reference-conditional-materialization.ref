@@ -1,0 +1,26 @@
+function @f(%p : ptr [pass=by_address, object_bytes=4]) -> f32 [binding=strong, object=_Z1fRKi] {
+  slot $p : ptr
+  slot $cond__1 : f32
+
+  block ^entry:
+    store typed ptr %p, $p
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t1 = load typed ptr $p
+    %t2 = load typed f32 %t1
+    store typed f32 %t2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed f32 0f, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed f32 $cond__1
+    return f32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

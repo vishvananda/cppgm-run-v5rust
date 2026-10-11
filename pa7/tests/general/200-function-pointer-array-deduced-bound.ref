@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration first function of (lvalue-reference to int) returning void
+  function-declaration second function of (lvalue-reference to int) returning void
+  variable functions array of 2 pointer to function of (lvalue-reference to int) returning void
+    braced-init-list lvalue array of 2 pointer to function of (lvalue-reference to int) returning void
+      id-expression lvalue function of (lvalue-reference to int) returning void first
+      id-expression lvalue function of (lvalue-reference to int) returning void second
+end translation unit

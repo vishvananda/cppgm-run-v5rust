@@ -1,0 +1,152 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @expected_receiver
+  storage scalar ptr
+  init ptr 0
+
+global @expected_syntax
+  storage scalar ptr
+  init ptr 0
+
+global @expected_scope
+  storage scalar ptr
+  init ptr 0
+
+global @expected_specifiers
+  storage scalar ptr
+  init ptr 0
+
+function @check_forwarded
+  abi
+    param %ret -> rdi : ptr
+    param %receiver -> rsi : ptr
+    param %syntax -> rdx : ptr
+    param %scope -> rcx : ptr
+    param %specifiers -> r8 : ptr
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    load.ptr r9, @expected_receiver
+    load.ptr rax, @expected_syntax
+    load.ptr rbx, @expected_scope
+    load.ptr r12, @expected_specifiers
+    cmp.ptr rsi, r9
+    sete rsi
+    movzx rsi, rsi
+    cmp.ptr rdx, rax
+    sete rdx
+    movzx rdx, rdx
+    cmp.ptr rcx, rbx
+    sete rcx
+    movzx rcx, rcx
+    cmp.ptr r8, r12
+    sete r8
+    movzx r8, r8
+    and rsi, rdx
+    and rcx, r8
+    and rsi, rcx
+    mov rdx, 0
+    cmp.i64 rsi, rdx
+    sete rsi
+    movzx rsi, rsi
+    store.i32 [rdi], rsi
+    ret
+
+function @forward_after_compare
+  abi
+    param %ret -> rdi : ptr
+    param %receiver -> rsi : ptr
+    param %syntax -> rdx : ptr
+    param %scope -> rcx : ptr
+    param %specifiers -> r8 : ptr
+    param %defer -> r9 : u8
+    return void -> void
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+    slot $selected -> [rbp-8] : i64
+    param-slot %ret -> [rbp-16] : ptr
+    param-slot %receiver -> [rbp-24] : ptr
+    param-slot %syntax -> [rbp-32] : ptr
+    param-slot %scope -> [rbp-40] : ptr
+    param-slot %specifiers -> [rbp-48] : ptr
+
+  block ^entry
+    store.ptr [rbp-16], rdi
+    store.ptr [rbp-24], rsi
+    store.ptr [rbp-32], rdx
+    store.ptr [rbp-40], rcx
+    store.ptr [rbp-48], r8
+    lea rbx, [rsi+136]
+    load.u8 r12, [rbx]
+    cmp.u8 r12, 0
+    jne ^short
+    jmp ^rhs
+
+  block ^rhs
+    mov rdx, 0
+    cmp.i64 r9, rdx
+    setne r8
+    movzx r8, r8
+    store.i64 [rbp-8], r8
+    jmp ^merge
+
+  block ^short
+    store.i64 [rbp-8], 1
+    jmp ^merge
+
+  block ^merge
+    load.i64 r8, [rbp-8]
+    store.u8 [rbx], r8
+    load.ptr rsi, [rbp-24]
+    load.ptr rdx, [rbp-32]
+    load.ptr r8, [rbp-48]
+    call @check_forwarded [args=(rcx,rdx,rsi,rdi,r8)]
+    store.u8 [rbx], r12
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 192
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $result -> [rbp-8] : obj<4x4>
+    slot $object -> [rbp-152] : obj<144x8>
+    slot $syntax -> [rbp-160] : obj<8x8>
+    slot $scope -> [rbp-168] : obj<8x8>
+    slot $specifiers -> [rbp-176] : obj<8x8>
+
+  block ^entry
+    lea rbx, [rbp-8]
+    lea rsi, [rbp-152]
+    lea rdx, [rbp-160]
+    lea rcx, [rbp-168]
+    lea r8, [rbp-176]
+    store.u8 [rsi+136], 0
+    store.ptr @expected_receiver, rsi
+    store.ptr @expected_syntax, rdx
+    store.ptr @expected_scope, rcx
+    store.ptr @expected_specifiers, r8
+    mov rdi, rbx
+    mov r9, 1
+    call @forward_after_compare [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    load.i32 rax, [rbx]
+    ret rax

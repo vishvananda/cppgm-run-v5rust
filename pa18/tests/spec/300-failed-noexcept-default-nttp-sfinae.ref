@@ -1,0 +1,1 @@
+declare global @constant_false___value : u8 [binding=weak, object=_ZN8constantILb0EE5valueE]

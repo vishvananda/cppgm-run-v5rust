@@ -1,0 +1,7 @@
+# budget from 800-runtime-i64-large-alu-immediate.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 33
+blocks <= 11
+count(call) <= 3
+mem <= 3
+instructions <= 33 in @main
+stack_size <= 320 in @main

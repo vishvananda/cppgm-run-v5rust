@@ -1,0 +1,94 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $active : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $active
+    %t2 = addr $active
+    %t3 = call i32 @call_erase(%t2, 0)
+    return i32 %t3
+}
+function @call_erase(%active : ptr [pass=by_address, object_bytes=1], %ai : i32) -> i32 [binding=internal, object=_Z10call_eraseIZ4mainE5localEiR8mini_vecIT_Ei] {
+  slot $active : ptr
+  slot $ai : i32
+  slot $argobj__1 : obj<8x8>
+  slot $arg__2 : obj<8x8>
+  slot $argobj__3 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %active, $active
+    store typed i32 %ai, $ai
+    %t1 = load typed ptr $active
+    %t2 = addr $argobj__1
+    %t3 = addr $arg__2
+    %t4 = addr $argobj__3
+    %t5 = load typed ptr $active
+    %t6 = call obj<8x8> @mini_vec_local___begin(%t5)
+    copyobj 8x8 %t6, %t4
+    %t7 = load typed i32 $ai
+    %t8 = call obj<8x8> @operator_($argobj__3, %t7)
+    copyobj 8x8 %t8, %t3
+    call void @wrap_constlocal____wrap(%t2, %t3)
+    %t9 = call i32 @mini_vec_local___erase(%t1, $argobj__1)
+    return i32 %t9
+}
+function @mini_vec_local___begin(%this : ptr [object_bytes=1]) -> obj<8x8> [binding=internal, object=_ZN8mini_vecIZ4mainE5localE5beginEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @wrap_local____wrap(%t1)
+    return obj<8x8> $retobj__1
+}
+function @operator_(%it : obj<8x8>, %__param1 : i32) -> obj<8x8> [binding=internal, object=_ZplIPZ4mainE5localE4wrapIT_ES4_i] {
+  slot $it : obj<8x8>
+  slot $__param1 : i32
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $it
+    copyobj 8x8 %it, %t1
+    store typed i32 %__param1, $__param1
+    %t2 = addr $retobj__1
+    %t3 = addr $it
+    copyobj 8x8 %t3, %t2
+    return obj<8x8> $retobj__1
+}
+function @wrap_constlocal____wrap(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> void [binding=internal, object=_ZN4wrapIPKZ4mainE5localEC1IPS0_EERKS_IT_E, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    return void
+}
+function @mini_vec_local___erase(%this : ptr [object_bytes=1], %__param1 : obj<8x8>) -> i32 [binding=internal, object=_ZN8mini_vecIZ4mainE5localE5eraseE4wrapIPKS0_E, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $__param1
+    copyobj 8x8 %__param1, %t1
+    return i32 0
+}
+function @wrap_local____wrap(%this : ptr [object_bytes=8]) -> void [binding=internal, object=_ZN4wrapIPZ4mainE5localEC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    return void
+}
+alias object _ZN4wrapIPKZ4mainE5localEC2IPS0_EERKS_IT_E = @wrap_constlocal____wrap
+alias object _ZN4wrapIPZ4mainE5localEC2Ev = @wrap_local____wrap

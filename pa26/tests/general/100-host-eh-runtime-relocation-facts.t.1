@@ -1,0 +1,27 @@
+int touched = 0;
+
+struct Guard
+{
+  ~Guard()
+  {
+    ++touched;
+  }
+};
+
+int f()
+{
+  Guard g;
+  throw 6;
+}
+
+int main()
+{
+  try
+  {
+    return f();
+  }
+  catch (int x)
+  {
+    return (x == 6 && touched == 1) ? 0 : 2;
+  }
+}

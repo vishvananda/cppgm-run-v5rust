@@ -1,0 +1,184 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @global_value
+  storage scalar i64
+  init i64 11
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @copy_and_store_address
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1>
+    slot $value -> [rbp-<off0>] : i64
+    slot $saved -> [rbp-<off1>] : ptr
+
+  block ^entry
+    mov <gpr1>, rdi
+    lea <gpr0>, [rbp-<off0>]
+    mov rdi, 7
+    call @identity [args=(rdi), unwind=no]
+    cmp.i64 <gpr1>, 0
+    je ^direct
+
+  block ^copy
+
+  block ^done
+    cmp.ptr <gpr0>, 0
+    sete rax
+    movzx rax, rax
+    ret rax
+
+  block ^direct
+    jmp ^done
+
+function @return_slot_address
+  abi
+    return ptr -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+    slot $value -> [rbp-<off0>] : i64
+
+  block ^entry
+    lea <gpr0>, [rbp-<off0>]
+    mov rdi, 9
+    call @identity [args=(rdi), unwind=no]
+    ret <gpr0>
+
+function @integer_copy_arithmetic
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $value -> [rbp-<off0>] : i64
+
+  block ^entry
+    lea r8, [rbp-<off0>]
+    lea r9, [r8+<off0>]
+    sub r9, 1
+    cmp.i64 r9, r8
+    setne r9
+    movzx r9, r9
+    ret r9
+
+function @copy_and_store_global_address
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+
+  block ^entry
+    mov <gpr0>, @global_value
+    mov rdi, 13
+    call @identity [args=(rdi), unwind=no]
+    cmp.ptr <gpr0>, 0
+    sete <gpr0>
+    movzx <gpr0>, <gpr0>
+    ret <gpr0>
+
+function @return_global_address
+  abi
+    return ptr -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+
+  block ^entry
+    mov <gpr0>, @global_value
+    mov rdi, 15
+    call @identity [args=(rdi), unwind=no]
+    ret <gpr0>
+
+function @global_integer_arithmetic
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r8, @global_value
+    lea r9, [r8+<off0>]
+    sub r9, 1
+    cmp.i64 r9, r8
+    setne r9
+    movzx r9, r9
+    ret r9
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2> <gpr3> <gpr4>
+    temp %global_return_bad -> [rbp-<off0>] : i64
+
+  block ^entry
+    mov rdi, 1
+    call @copy_and_store_address [args=(rdi), unwind=no]
+    mov <gpr0>, rax
+    mov rdi, 0
+    call @copy_and_store_address [args=(rdi), unwind=no]
+    mov <gpr1>, rax
+    call @return_slot_address [args=(), unwind=no]
+    cmp.ptr rax, 0
+    sete <gpr2>
+    movzx <gpr2>, <gpr2>
+    call @integer_copy_arithmetic [args=(), unwind=no]
+    mov <gpr3>, rax
+    call @copy_and_store_global_address [args=(), unwind=no]
+    mov <gpr4>, rax
+    call @return_global_address [args=(), unwind=no]
+    cmp.ptr rax, 0
+    sete <gpr5>
+    movzx <gpr5>, <gpr5>
+    store.i64 [rbp-<off0>], <gpr5>
+    call @global_integer_arithmetic [args=(), unwind=no]
+    or <gpr0>, <gpr1>
+    or <gpr0>, <gpr2>
+    or <gpr0>, <gpr3>
+    or <gpr0>, <gpr4>
+    or <gpr0>, [rbp-<off0>]
+    or <gpr0>, rax
+    ret <gpr0>

@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition classify function of (int) returning int
+    parameter value int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          literal prvalue int 0
+          literal prvalue int 1
+end translation unit

@@ -1,0 +1,12 @@
+// Itanium ABI 2.9.5 (__pointer_type_info to an incomplete class is local, with
+// __incomplete_mask; the class's own _ZTI belongs to TUs where it is
+// complete): this TU, linked first, takes typeid(Derived*) with Derived
+// incomplete; a throw of Derived* from u2 must still be caught as Base*;
+// expect exit 0
+namespace std { class type_info; }
+struct Base { virtual ~Base(); };
+struct Derived;
+const std::type_info* mine_ti() { return &typeid(Derived*); }
+int catcher(void (*thrower)()) { try { thrower(); } catch (Base*) { return 1; } catch (...) { return 2; } return 0; }
+void thr();
+int main() { return catcher(thr) == 1 && mine_ti() != 0 ? 0 : 1; }

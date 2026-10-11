@@ -1,0 +1,11 @@
+# budget from 800-forwarded-parameter-extended-call-placement.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 31
+blocks <= 7
+count(call) <= 5
+mem <= 11
+instructions <= 7 in @observe
+stack_size <= 320 in @observe
+instructions <= 13 in @forward
+stack_size <= 352 in @forward
+instructions <= 15 in @main
+stack_size <= 416 in @main

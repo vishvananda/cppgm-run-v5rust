@@ -1,0 +1,194 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> i32 [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_KeyFunctionDerived [storage=readonly, binding=weak, object=_ZTS18KeyFunctionDerived] = {
+  i8 49
+  i8 56
+  i8 75
+  i8 101
+  i8 121
+  i8 70
+  i8 117
+  i8 110
+  i8 99
+  i8 116
+  i8 105
+  i8 111
+  i8 110
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_KeyFunctionBase [storage=readonly, binding=weak, object=_ZTS15KeyFunctionBase] = {
+  i8 49
+  i8 53
+  i8 75
+  i8 101
+  i8 121
+  i8 70
+  i8 117
+  i8 110
+  i8 99
+  i8 116
+  i8 105
+  i8 111
+  i8 110
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_KeyFunctionBase [storage=readonly, binding=weak, object=_ZTI15KeyFunctionBase] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_KeyFunctionBase
+}
+global @__rtti_struct_KeyFunctionDerived [storage=readonly, binding=weak, object=_ZTI18KeyFunctionDerived] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_KeyFunctionDerived
+  ptr addr @__rtti_struct_KeyFunctionBase
+}
+global @KeyFunctionDerived__vtable [storage=readonly, binding=strong, object=_ZTV18KeyFunctionDerived] = {
+  i64 0
+  ptr addr @__rtti_struct_KeyFunctionDerived
+  ptr addr @KeyFunctionDerived___KeyFunctionDerived
+  ptr addr @KeyFunctionDerived___KeyFunctionDerived__deleting_entry
+  ptr addr @KeyFunctionDerived__value
+}
+global @KeyFunctionBase__vtable [storage=readonly, binding=weak, object=_ZTV15KeyFunctionBase] = {
+  i64 0
+  ptr addr @__rtti_struct_KeyFunctionBase
+  ptr addr @KeyFunctionBase___KeyFunctionBase
+  ptr addr @KeyFunctionBase___KeyFunctionBase__deleting_entry
+  ptr addr @__cxa_pure_virtual
+}
+
+function @KeyFunctionDerived__value(%this : ptr [object_bytes=8]) -> i32 [binding=strong, object=_ZN18KeyFunctionDerived5valueEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 11
+}
+function @KeyFunctionDerived___KeyFunctionDerived__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN18KeyFunctionDerivedD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @KeyFunctionDerived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @KeyFunctionBase___KeyFunctionBase__base_entry(%t5)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t6 = load typed ptr $this
+    call void @operatordelete(%t6)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t7 = load typed ptr $this
+    call void @operatordelete(%t7)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 0
+    call void @KeyFunctionBase___KeyFunctionBase__base_entry(%t9)
+    %t10 = load typed ptr $this
+    call void @operatordelete(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @KeyFunctionDerived___KeyFunctionDerived(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN18KeyFunctionDerivedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @KeyFunctionDerived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @KeyFunctionBase___KeyFunctionBase__base_entry(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @KeyFunctionBase___KeyFunctionBase__base_entry(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @KeyFunctionBase___KeyFunctionBase__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN15KeyFunctionBaseD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @KeyFunctionBase__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @KeyFunctionBase___KeyFunctionBase__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN15KeyFunctionBaseD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @KeyFunctionBase__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @KeyFunctionBase___KeyFunctionBase(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN15KeyFunctionBaseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @KeyFunctionBase__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN18KeyFunctionDerivedD2Ev = @KeyFunctionDerived___KeyFunctionDerived

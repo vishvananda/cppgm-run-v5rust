@@ -1,0 +1,33 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type holder struct holder
+    function main function of () returning int
+    scope class holder
+      function from_typedef function of () returning int
+      function from_alias function of () returning int
+      function from_nested function of () returning int
+      function from_second_declarator function of () returning int
+      type-alias later int
+      type-alias second int
+      type-alias aliased int
+      type nested struct nested
+      scope class nested
+        variable field int
+      scope function from_typedef
+        scope block
+          variable value int
+      scope function from_alias
+        scope block
+          variable value int
+      scope function from_nested
+        scope block
+          variable value struct nested
+      scope function from_second_declarator
+        scope block
+          variable value int
+      scope function holder
+    scope function main
+      scope block
+end translation unit

@@ -1,0 +1,36 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 9, %t3
+    %t4 = addr $x
+    %t5 = call ptr @get(%t4)
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 9
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @get(%x : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_Z3getILm0EiERN13tuple_elementIXT_E5tupleIXT_ET0_EE4typeERS3_] {
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

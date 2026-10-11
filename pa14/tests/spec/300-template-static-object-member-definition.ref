@@ -1,0 +1,32 @@
+global @static_constant_keyword___value : obj<4x4> [binding=weak, object=_ZN15static_constantI7keywordE5valueE] = {
+  zero 4
+}
+
+function @use_value() -> ptr [binding=strong, object=_Z9use_valuev] {
+  block ^entry:
+    %t1 = addr @static_constant_keyword___value
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call ptr @use_value()
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

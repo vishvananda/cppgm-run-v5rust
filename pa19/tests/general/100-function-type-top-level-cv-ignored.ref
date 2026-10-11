@@ -1,0 +1,9 @@
+declare global @is_top_const_constint___value : i32 [binding=weak, object=_ZN12is_top_constIKiE5valueE]
+declare global @check_int___value : i32 [binding=weak, object=_ZN5checkIiE5valueE]
+declare global @is_top_const_int_____value : i32 [binding=weak, object=_ZN12is_top_constIFivEE5valueE]
+declare global @check_int_____value : i32 [binding=weak, object=_ZN5checkIFivEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

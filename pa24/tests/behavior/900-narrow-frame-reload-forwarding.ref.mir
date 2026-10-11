@@ -1,0 +1,106 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @return_i8
+  abi
+    return i8 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, -1
+    sext.i8 rax
+    ret rax
+
+function @extend_i8
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, -1
+    sext.i8 r8
+    zext.i8 r8
+    ret r8
+
+function @extend_u16
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 48879
+    zext.i16 rax
+    ret rax
+
+function @extend_i32
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, -1
+    sext.i32 r8
+    zext.i32 r8
+    ret r8
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 80
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+
+  block ^entry
+    call @return_i8 [args=()]
+    sext.i8 rax
+    mov rbx, rax
+    zext.i8 rbx
+    call @extend_i8 [args=()]
+    mov r12, rax
+    call @extend_u16 [args=()]
+    mov r13, rax
+    call @extend_i32 [args=()]
+    mov rdx, 255
+    cmp.i64 rbx, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov rdx, 255
+    cmp.i64 r12, rdx
+    setne r12
+    movzx r12, r12
+    mov rdx, 48879
+    cmp.i64 r13, rdx
+    setne r13
+    movzx r13, r13
+    mov rdx, 4294967295
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or rbx, r12
+    or r13, rax
+    or rbx, r13
+    sext.i32 rbx
+    ret rbx

@@ -1,0 +1,30 @@
+#include "200-host-data-member-pointer-values.helper.h"
+
+namespace member_values {
+int S::* student_member(int which)
+{
+  if (which == 0) return &S::a;
+  if (which == 1) return &S::b;
+  if (which == 2) return &S::c;
+  return 0;
+}
+
+bool student_is_null(int S::* pointer) { return !pointer; }
+int student_read(const S& object, int S::* pointer) { return object.*pointer; }
+int D::* student_widen(int B2::* pointer) { return pointer; }
+}
+
+int main()
+{
+  using namespace member_values;
+  int status = 0;
+  S object = { 1, 2, 3 };
+  if (host_member(0) != &S::a || host_member(1) != &S::b ||
+      object.*host_member(2) != 3) status |= 16;
+  if (host_member(3) || !host_is_null(0) || host_is_null(&S::a)) status |= 32;
+  if (host_read(object, &S::a) != 1 || host_read(object, &S::b) != 2) status |= 64;
+  D derived;
+  derived.z = 5;
+  if (derived.*host_widen(&B2::z) != 5 || host_widen(0)) status |= 128;
+  return status | host_check_student();
+}

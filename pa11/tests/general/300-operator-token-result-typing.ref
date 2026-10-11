@@ -1,0 +1,207 @@
+function @operator_(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=strong, object=_ZorRK4FlagS1_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+  slot $land__1 : i64
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 1
+    branch %t4, ^land_rhs_1, ^land_short_2
+
+  block ^land_rhs_1:
+    %t5 = load typed ptr $rhs
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 2
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $land__1
+    jump ^land_end_3
+
+  block ^land_short_2:
+    store typed i64 0, $land__1
+    jump ^land_end_3
+
+  block ^land_end_3:
+    %t10 = load typed i64 $land__1
+    %t11 = convert trunc u8 i64 %t10
+    return u8 %t11
+}
+function @operator___2(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=strong, object=_ZeoRK4FlagS1_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+  slot $land__1 : i64
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 1
+    branch %t4, ^land_rhs_1, ^land_short_2
+
+  block ^land_rhs_1:
+    %t5 = load typed ptr $rhs
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 2
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $land__1
+    jump ^land_end_3
+
+  block ^land_short_2:
+    store typed i64 0, $land__1
+    jump ^land_end_3
+
+  block ^land_end_3:
+    %t10 = load typed i64 $land__1
+    %t11 = convert trunc u8 i64 %t10
+    return u8 %t11
+}
+function @operator__(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_ZaNR4FlagRKS_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $rhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = load typed ptr $lhs
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 %t7, %t9
+    %t10 = load typed ptr $lhs
+    return ptr %t10
+}
+function @operator____2(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_ZoRR4FlagRKS_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $rhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = binary add nowrap i32 %t7, 1
+    %t9 = load typed ptr $lhs
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 %t8, %t10
+    %t11 = load typed ptr $lhs
+    return ptr %t11
+}
+function @operator____3(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_ZeOR4FlagRKS_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $rhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = binary add nowrap i32 %t7, 2
+    %t9 = load typed ptr $lhs
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 %t8, %t10
+    %t11 = load typed ptr $lhs
+    return ptr %t11
+}
+function @pick_bool(%__param0 : u8) -> i32 [binding=strong, object=_Z9pick_boolb] {
+  slot $__param0 : u8
+
+  block ^entry:
+    store u8 %__param0, $__param0
+    return i32 0
+}
+function @pick_bool__ov2(%__param0 : i32) -> i32 [binding=strong, object=_Z9pick_booli] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 10
+}
+function @pick_flag(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z9pick_flagR4Flag] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}
+function @pick_flag__ov2(%__param0 : i32) -> i32 [binding=strong, object=_Z9pick_flagi] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 100
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $result : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 1, %t4
+    %t5 = addr $b
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 2, %t6
+    store typed i32 0, $result
+    %t7 = load typed i32 $result
+    %t8 = addr $a
+    %t9 = addr $b
+    %t10 = call u8 @operator_(%t8, %t9)
+    %t11 = call i32 @pick_bool(%t10)
+    %t12 = binary add nowrap i32 %t7, %t11
+    store typed i32 %t12, $result
+    %t13 = load typed i32 $result
+    %t14 = addr $a
+    %t15 = addr $b
+    %t16 = call u8 @operator___2(%t14, %t15)
+    %t17 = call i32 @pick_bool(%t16)
+    %t18 = binary add nowrap i32 %t13, %t17
+    store typed i32 %t18, $result
+    %t19 = load typed i32 $result
+    %t20 = addr $a
+    %t21 = addr $b
+    %t22 = call ptr @operator__(%t20, %t21)
+    %t23 = call i32 @pick_flag(%t22)
+    %t24 = binary add nowrap i32 %t19, %t23
+    store typed i32 %t24, $result
+    %t25 = load typed i32 $result
+    %t26 = addr $a
+    %t27 = addr $b
+    %t28 = call ptr @operator____2(%t26, %t27)
+    %t29 = call i32 @pick_flag(%t28)
+    %t30 = binary add nowrap i32 %t25, %t29
+    store typed i32 %t30, $result
+    %t31 = load typed i32 $result
+    %t32 = addr $a
+    %t33 = addr $b
+    %t34 = call ptr @operator____3(%t32, %t33)
+    %t35 = call i32 @pick_flag(%t34)
+    %t36 = binary add nowrap i32 %t31, %t35
+    store typed i32 %t36, $result
+    %t37 = load typed i32 $result
+    return i32 %t37
+}

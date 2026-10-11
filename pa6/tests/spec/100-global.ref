@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable x int
+    variable fp pointer to function of (int) returning int
+end translation unit

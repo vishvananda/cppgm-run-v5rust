@@ -1,0 +1,41 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Types
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier unary
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier x
+      compound-statement
+        expression-statement
+          unary-expression OP_DEC:--
+            id-expression x
+        expression-statement
+          unary-expression OP_PLUS:+
+            id-expression x
+        expression-statement
+          unary-expression OP_MINUS:-
+            id-expression x
+        expression-statement
+          unary-expression OP_LNOT:!
+            id-expression x
+        expression-statement
+          sizeof-expression
+            unary-expression OP_LNOT:!
+              id-expression x
+        expression-statement
+          sizeof-pack-expression Types
+end translation unit

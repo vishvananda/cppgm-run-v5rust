@@ -1,0 +1,38 @@
+declare global @traits_int___name : ptr [binding=weak, object=_ZN6traitsIiE4nameE]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @read(%value : ptr) -> i32 [binding=strong, object=_Z4readPKc] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load i8 %t1
+    %t3 = convert sext i32 i8 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call i32 @read(%t1)
+    %t3 = cmp eq i32 %t2, 120
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

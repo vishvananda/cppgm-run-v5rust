@@ -1,0 +1,6 @@
+#include "300-explicit-function-specialization-defined-in-separate-object.shared.h"
+
+int main()
+{
+  return explicit_function_specialization<payload>(5) == 12 ? 0 : 1;
+}

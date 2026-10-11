@@ -1,0 +1,34 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<4x4>
+  slot $f : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr $f
+    %t5 = addr $b
+    copyobj 4x4 %t5, %t4
+    %t6 = addr $b
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 9, %t7
+    %t8 = addr $f
+    %t9 = call i32 @__lambda_main_t30_36__operator__(%t8, 4)
+    return i32 %t9
+}
+function @__lambda_main_t30_36__operator__(%this : ptr [object_bytes=4], %y : i32) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $y : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %y, $y
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = load typed i32 $y
+    %t6 = binary add nowrap i32 %t4, %t5
+    return i32 %t6
+}

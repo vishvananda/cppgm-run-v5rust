@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type record struct record
+    function record function of (pointer to const char) returning int
+    variable result pointer to struct record
+    scope class record
+      variable value int
+end translation unit

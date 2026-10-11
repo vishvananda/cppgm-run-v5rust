@@ -1,0 +1,43 @@
+#include <exception>
+#include <cstdio>
+#include <cstdlib>
+
+static int g_mode = 0;
+
+static void unexpected_handler()
+{
+  if(g_mode == 0) {
+    std::puts("unexpected-double");
+    throw 1.0;
+  }
+  std::puts("unexpected-int");
+  throw 1;
+}
+
+static void terminate_handler()
+{
+  std::puts("terminate");
+  std::exit(0);
+}
+
+void f() throw(double)
+{
+  throw 1;
+}
+
+int main()
+{
+  std::set_terminate(terminate_handler);
+  std::set_unexpected(unexpected_handler);
+
+  try {
+    g_mode = 0;
+    f();
+  } catch(double) {
+    std::puts("caught-double");
+  }
+
+  g_mode = 1;
+  f();
+  return 1;
+}

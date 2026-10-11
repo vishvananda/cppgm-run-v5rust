@@ -1,0 +1,17 @@
+struct Base {
+  virtual ~Base() {}
+};
+
+struct Derived : Base {
+  int value;
+
+  Derived() : value(7) {}
+};
+
+int main()
+{
+  Derived d;
+  Base * base = &d;
+  Derived * derived = dynamic_cast<Derived *>(base);
+  return (derived != 0 && derived->value == 7) ? 0 : 1;
+}

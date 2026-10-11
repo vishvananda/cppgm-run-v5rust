@@ -1,0 +1,12 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @check(0)
+    return i32 0
+}
+function @check(%__param0 : ptr) -> void [binding=weak, object=_Z5checkI1FIiiEEvPT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}

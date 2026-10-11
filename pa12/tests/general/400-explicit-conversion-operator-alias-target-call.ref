@@ -1,0 +1,59 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @test_traits__make_runtime()
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @test_traits__make_runtime() -> i32 [binding=weak, object=_ZN11test_traits12make_runtimeEv, inline_hint=yes] {
+  slot $tmpobj__1 : obj<4x4>
+  slot $tmpobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = addr $tmpobj__2
+    zeroinit 1x1 %t2
+    %t3 = call obj<4x4> @compile_traits__operatoradaptor_type(%t2)
+    copyobj 4x4 %t3, %t1
+    %t4 = call i32 @runtime_traits__make(%t1)
+    return i32 %t4
+}
+function @compile_traits__operatoradaptor_type(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK14compile_traitscv14runtime_traitsEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $result : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $result
+    %t2 = addr $result
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $result
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+function @runtime_traits__make(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK14runtime_traits4makeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

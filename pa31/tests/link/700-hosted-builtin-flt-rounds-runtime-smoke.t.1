@@ -1,0 +1,11 @@
+template <class T>
+void print_expression(const char*, T)
+{
+}
+
+int main()
+{
+  int rounds = __builtin_flt_rounds();
+  print_expression("FLT_ROUNDS", rounds);
+  return rounds == 1 ? 0 : 1;
+}

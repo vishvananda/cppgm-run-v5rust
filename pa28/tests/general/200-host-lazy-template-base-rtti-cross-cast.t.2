@@ -1,0 +1,12 @@
+#include "200-host-lazy-template-base-rtti-cross-cast.helper.h"
+
+template<class T> Common<T>::~Common() {}
+template<class T> Layer<T>::~Layer() {}
+template class Common<Leaf>;
+template class Layer<Leaf>;
+
+int main()
+{
+  Root *root = make_object();
+  return dynamic_cast<Side *>(root) ? 0 : 1;
+}

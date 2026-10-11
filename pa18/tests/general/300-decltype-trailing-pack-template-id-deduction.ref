@@ -1,0 +1,6 @@
+declare global @is_same___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN7is_sameI4listIJ1A1BEES3_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

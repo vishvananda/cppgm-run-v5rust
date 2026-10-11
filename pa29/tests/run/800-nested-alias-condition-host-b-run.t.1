@@ -1,0 +1,32 @@
+// N3485 14.5.6.1p5-p6, 14.5.7, Itanium C++ ABI 5.1.5: two units define
+// distinct function templates f whose return types differ in a condition
+// reached through a nested member alias template (an alias of an alias with a
+// defaulted parameter); each specialization's mangled name keeps its own
+// condition (Xsr2geIiT_EE5valueE, as Clang mangles it), so the units' f<int>
+// stay distinct
+#include "800-nested-alias-condition-host-b-run.helper.h"
+template<class A, class B>
+struct ge
+{
+	static const bool value = sizeof(A) >= sizeof(B);
+};
+template<class T>
+struct TraitsA
+{
+	template<class U, class R = void>
+	using compat = typename enable_if<ge<T, U>::value, R>::type;
+	template<class U>
+	using assign = compat<U, int>;
+};
+template<class U>
+typename TraitsA<int>::template assign<U> f(U)
+{
+	return 1;
+}
+int main()
+{
+	int x = f(1);
+	int z = from_b();
+	std::printf("%d %d\n", x, z);
+	return 0;
+}

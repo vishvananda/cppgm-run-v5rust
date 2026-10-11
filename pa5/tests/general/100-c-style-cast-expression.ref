@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_DOUBLE:double
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+    compound-statement
+      return-statement
+        cast-expression OP_LPAREN:
+          type-id
+            type-specifier-seq
+              type-specifier KW_DOUBLE:double
+          id-expression x
+end translation unit

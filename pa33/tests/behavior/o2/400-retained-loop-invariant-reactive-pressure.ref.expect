@@ -1,0 +1,17 @@
+# budget from 400-retained-loop-invariant-reactive-pressure.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 139
+blocks <= 19
+count(call) <= 14
+mem <= 73
+instructions <= 7 in @edge_at
+stack_size <= 48 in @edge_at
+instructions <= 5 in @node_at
+stack_size <= 48 in @node_at
+instructions <= 4 in @payload
+stack_size <= 48 in @payload
+instructions <= 4 in @append
+stack_size <= 48 in @append
+instructions <= 113 in @walk
+stack_size <= 128 in @walk
+instructions <= 19 in @main
+stack_size <= 32 in @main

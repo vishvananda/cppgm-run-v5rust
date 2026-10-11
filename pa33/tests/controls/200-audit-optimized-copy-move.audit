@@ -1,0 +1,6 @@
+# AUDIT-ID: BACKEND-ARRAY-OPT
+# Reuse the combined O0 construction-prefix fixture at the optimized owner.
+kind source
+input pa21/tests/general/200-synthesized-copy-move-construction-prefix.t
+expected run
+optimization O2

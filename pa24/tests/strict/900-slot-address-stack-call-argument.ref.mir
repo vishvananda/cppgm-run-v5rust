@@ -1,0 +1,59 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @write_seventh
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    param %created -> [rbp+16] : ptr
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %created -> [rbp-8] : ptr
+
+  block ^entry
+    load.ptr rax, [rbp+16]
+    store.ptr [rbp-8], rax
+    load.ptr r10, [rbp-8]
+    store.u8 [r10], 1
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $created -> [rbp-8] : u8
+
+  block ^entry
+    store.u8 [rbp-8], 0
+    lea r8, [rbp-8]
+    sub rsp, 16
+    store.ptr [rsp], r8
+    mov rdi, 1
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    mov r9, 6
+    call @write_seventh [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    load.u8 r8, [rbp-8]
+    cmp.i64 r8, 1
+    setne r8
+    movzx r8, r8
+    ret r8

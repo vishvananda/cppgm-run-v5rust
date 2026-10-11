@@ -1,0 +1,14 @@
+# budget from 500-small-object-scalar-replacement.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 15
+blocks <= 7
+count(call) <= 4
+count(load) <= 4
+count(store) <= 5
+count(phi) <= 3
+instructions <= 4 in @copy_complete_scalar_object
+instructions <= 5 in @copy_scalar_object_to_external
+instructions <= 8 in @keep_escaped_object
+instructions <= 6 in @keep_partial_object
+
+# outcomes from 500-small-object-scalar-replacement.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(copyobj)

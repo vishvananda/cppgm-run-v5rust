@@ -1,0 +1,27 @@
+struct Base {
+  int seen;
+
+  Base() : seen(value())
+  {
+  }
+
+  virtual ~Base() {}
+
+  virtual int value()
+  {
+    return 3;
+  }
+};
+
+struct Derived : Base {
+  int value()
+  {
+    return 7;
+  }
+};
+
+int main()
+{
+  Derived derived;
+  return derived.seen == 3 ? 0 : 1;
+}

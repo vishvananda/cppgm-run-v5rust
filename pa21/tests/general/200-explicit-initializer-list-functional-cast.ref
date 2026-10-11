@@ -1,0 +1,53 @@
+function @take(%values : obj<16x8>) -> i32 [binding=strong, object=_Z4takeSt16initializer_listIiE] {
+  slot $values : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 16x8 %values, %t1
+    %t2 = addr $values
+    %t3 = call i64 @std__initializer_list_int___size(%t2)
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<16x8>
+  slot $initlist__3 : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $argobj__2
+    %t2 = addr $initlist__3
+    store typed i32 1, %t2
+    %t3 = index i8 [projection=array_element] %t2, 4
+    store typed i32 2, %t3
+    %t4 = index i8 [projection=array_element] %t2, 8
+    store typed i32 3, %t4
+    store typed ptr %t2, %t1
+    %t5 = index i8 %t1, 8
+    store typed i64 3, %t5
+    %t6 = call i32 @take($argobj__2)
+    %t7 = cmp eq i32 %t6, 3
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @std__initializer_list_int___size(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNKSt16initializer_listIiE4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}

@@ -1,0 +1,6 @@
+global @box_char___value : i32 [binding=strong, object=_ZN3boxIcE5valueE] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

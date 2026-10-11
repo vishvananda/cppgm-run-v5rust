@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace A
+      type-alias TA int
+      type-alias TA2 char
+    scope namespace B
+    scope namespace C
+      variable x1 int
+      variable x2 char
+end translation unit

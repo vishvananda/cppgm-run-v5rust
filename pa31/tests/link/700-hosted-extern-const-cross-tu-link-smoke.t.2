@@ -1,0 +1,13 @@
+#include <cstdio>
+
+#include "700-hosted-extern-const-cross-tu-link-smoke.shared.h"
+
+int main()
+{
+  const char direct =
+      hosted_extern_const_cross_tu_link_smoke::kMessage[0];
+  const char via_function =
+      static_cast<char>(hosted_extern_const_cross_tu_link_smoke::first_char());
+  std::printf("%c%c\n", direct, via_function);
+  return 0;
+}

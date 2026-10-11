@@ -1,0 +1,14 @@
+# budget from 400-inline-no-unwind-landing-helper.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 18
+blocks <= 8
+count(call) <= 7
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @first
+instructions <= 9 in @second
+instructions <= 6 in @main
+
+# outcomes from 400-inline-no-unwind-landing-helper.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @cleanup_helper)
+absent(@cleanup_helper)

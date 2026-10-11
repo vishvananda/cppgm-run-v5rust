@@ -1,0 +1,188 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @bytes
+  storage data
+  item zero 128
+
+function @length_of
+  abi
+    param %value -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 3
+    ret rax
+
+function @observe
+  abi
+    param %p1 -> rdi : ptr
+    param %p2 -> rsi : ptr
+    param %p3 -> rdx : ptr
+    param %p4 -> rcx : ptr
+    param %p5 -> r8 : ptr
+    param %p6 -> r9 : ptr
+    param %p7 -> [rbp+16] : ptr
+    param %p8 -> [rbp+24] : ptr
+    param %p9 -> [rbp+32] : ptr
+    param %q1 -> [rbp+40] : i64
+    param %q2 -> [rbp+48] : i64
+    param %q3 -> [rbp+56] : i64
+    param %q4 -> [rbp+64] : i64
+    param %q5 -> [rbp+72] : i64
+    param %q6 -> [rbp+80] : i64
+    param %q7 -> [rbp+88] : i64
+    param %q8 -> [rbp+96] : i64
+    param %q9 -> [rbp+104] : i64
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %p7 -> [rbp-8] : ptr
+    param-slot %p8 -> [rbp-16] : ptr
+    param-slot %p9 -> [rbp-24] : ptr
+    param-slot %q9 -> [rbp-32] : i64
+
+  block ^entry
+    load.ptr rax, [rbp+16]
+    store.ptr [rbp-8], rax
+    load.ptr rax, [rbp+24]
+    store.ptr [rbp-16], rax
+    load.ptr rax, [rbp+32]
+    store.ptr [rbp-24], rax
+    load.i64 rax, [rbp+104]
+    store.i64 [rbp-32], rax
+    mov r8, @bytes+48
+    cmp.ptr r9, r8
+    sete r9
+    movzx r9, r9
+    mov r8, @bytes+56
+    cmp.ptr [rbp-8], r8
+    sete r8
+    movzx r8, r8
+    mov rdi, @bytes+64
+    cmp.ptr [rbp-16], rdi
+    sete rdi
+    movzx rdi, rdi
+    mov rsi, @bytes+72
+    cmp.ptr [rbp-24], rsi
+    sete rsi
+    movzx rsi, rsi
+    mov rdx, 12
+    cmp.i64 [rbp-32], rdx
+    sete rdx
+    movzx rdx, rdx
+    and r9, r8
+    and rdi, rsi
+    and r9, rdi
+    and r9, rdx
+    imul r9, 100
+    ret r9
+
+function @exercise
+  abi
+    param %base -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 96
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    temp %p6 -> [rbp-8] : ptr
+    temp %p7 -> [rbp-16] : ptr
+    temp %p8 -> [rbp-24] : ptr
+    temp %p9 -> [rbp-32] : ptr
+    temp %q7 -> [rbp-40] : i64
+    temp %q8 -> [rbp-48] : i64
+
+  block ^entry
+    lea rbx, [rdi+8]
+    lea r12, [rdi+16]
+    lea r13, [rdi+24]
+    lea r14, [rdi+32]
+    lea r15, [rdi+40]
+    lea r10, [rdi+48]
+    store.ptr [rbp-8], r10
+    lea r10, [rdi+56]
+    store.ptr [rbp-16], r10
+    lea r10, [rdi+64]
+    store.ptr [rbp-24], r10
+    lea r10, [rdi+72]
+    store.ptr [rbp-32], r10
+    call @length_of [args=(rdi)]
+    mov r8, rax
+    add r8, 1
+    mov r9, rax
+    add r9, 2
+    mov rdi, rax
+    add rdi, 3
+    mov rsi, rax
+    add rsi, 4
+    mov rdx, rax
+    add rdx, 5
+    mov rcx, rax
+    add rcx, 6
+    mov r10, rax
+    add r10, 7
+    store.i64 [rbp-40], r10
+    mov r10, rax
+    add r10, 8
+    store.i64 [rbp-48], r10
+    add rax, 9
+    sub rsp, 96
+    load.ptr r11, [rbp-16]
+    store.ptr [rsp], r11
+    load.ptr r11, [rbp-24]
+    store.ptr [rsp+8], r11
+    load.ptr r11, [rbp-32]
+    store.ptr [rsp+16], r11
+    store.i64 [rsp+24], r8
+    store.i64 [rsp+32], r9
+    store.i64 [rsp+40], rdi
+    store.i64 [rsp+48], rsi
+    store.i64 [rsp+56], rdx
+    store.i64 [rsp+64], rcx
+    load.i64 r11, [rbp-40]
+    store.i64 [rsp+72], r11
+    load.i64 r11, [rbp-48]
+    store.i64 [rsp+80], r11
+    store.i64 [rsp+88], rax
+    mov rdi, rbx
+    mov rsi, r12
+    mov rdx, r13
+    mov rcx, r14
+    mov r8, r15
+    load.ptr r9, [rbp-8]
+    call @observe [args=(rcx,rdx,rsi,rdi,r8,r9), stack=96]
+    add rsp, 96
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @bytes
+    call @exercise [args=(rdi)]
+    mov rdx, 100
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

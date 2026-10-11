@@ -1,0 +1,42 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<4x4>
+  slot $ref : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = addr $box
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = addr $box
+    %t5 = call ptr @Box__operator_(%t4)
+    store typed ptr %t5, $ref
+    %t6 = load typed ptr $ref
+    store typed i32 9, %t6
+    %t7 = addr $box
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 9
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @Box__operator_(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN3BoxdeIRiS1_EET0_v, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

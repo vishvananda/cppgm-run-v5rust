@@ -1,0 +1,63 @@
+global @seen : i32 [binding=strong] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $p
+    call void @parser__parser(%t1)
+    %t2 = load typed i32 @seen
+    %t3 = cmp eq i32 %t2, 7
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @parser__parser(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN6parserC1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $argobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr $argobj__1
+    call void @storage_ptr__storage_ptr(%t2)
+    call void @parser__reset(%t1, $argobj__1)
+    return void
+}
+function @storage_ptr__storage_ptr(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11storage_ptrC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @parser__reset(%this : ptr [object_bytes=1], %sp : obj<4x4>) -> void [binding=weak, object=_ZN6parser5resetE11storage_ptr, inline_hint=yes] {
+  slot $this : ptr
+  slot $sp : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $sp
+    copyobj 4x4 %sp, %t1
+    %t2 = addr $sp
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    store typed i32 %t4, @seen
+    return void
+}
+alias object _ZN6parserC2Ev = @parser__parser
+alias object _ZN11storage_ptrC2Ev = @storage_ptr__storage_ptr

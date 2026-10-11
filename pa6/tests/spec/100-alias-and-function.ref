@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias Y pointer to const int
+    function f function of (pointer to const int) returning pointer to const int
+    scope function f
+      parameter x pointer to const int
+      scope block
+        variable y pointer to const int
+        scope block
+          variable z pointer to const int
+end translation unit

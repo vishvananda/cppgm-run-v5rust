@@ -1,0 +1,166 @@
+function @call_both(%object : ptr [pass=by_address, object_bytes=24], %member : i128) -> i64 [binding=strong, object=_Z9call_bothRK4BothMS_KFlvE] {
+  slot $object : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i128 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i128 $member
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i64 %t14(%t8) as (%arg0 : ptr) -> i64
+    return i64 %t15
+}
+function @call_alone(%object : ptr [pass=by_address, object_bytes=8], %member : i128) -> i64 [binding=strong, object=_Z10call_aloneRK5AloneMS_KFlvE] {
+  slot $object : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i128 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i128 $member
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i64 %t14(%t8) as (%arg0 : ptr [object_bytes=8]) -> i64 [unwind=no]
+    return i64 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $both : obj<24x8>
+  slot $alone : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $both
+    %t2 = convert sext i64 i32 1
+    %t3 = addr $both
+    %t4 = index i8 %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i64 %t2, %t5
+    %t6 = convert sext i64 i32 2
+    %t7 = addr $both
+    %t8 = index i8 %t7, 8
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i64 %t6, %t9
+    %t10 = convert sext i64 i32 3
+    %t11 = addr $both
+    %t12 = index i8 [projection=field] %t11, 16
+    store typed i64 %t10, %t12
+    %t13 = addr $alone
+    %t14 = convert sext i64 i32 4
+    %t15 = addr $alone
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed i64 %t14, %t16
+    %t17 = addr $both
+    %t18 = addr @Left__get_left
+    %t19 = copy i64 %t18
+    %t20 = convert zext i128 i64 %t19
+    %t21 = call i64 @call_both(%t17, %t20)
+    %t22 = addr $both
+    %t23 = addr @Right__get_right
+    %t24 = copy i64 %t23
+    %t25 = convert zext i128 i64 %t24
+    %t26 = convert trunc i64 i128 %t25
+    %t27 = cmp ne i64 %t26, 0
+    %t28 = binary mul i64 %t27, 8
+    %t29 = convert sext i128 i64 %t28
+    %t30 = binary shl i128 %t29, 64
+    %t31 = binary add i128 %t25, %t30
+    %t32 = call i64 @call_both(%t22, %t31)
+    %t33 = binary add nowrap i64 %t21, %t32
+    %t34 = addr $alone
+    %t35 = addr @Alone__get
+    %t36 = copy i64 %t35
+    %t37 = convert zext i128 i64 %t36
+    %t38 = call i64 @call_alone(%t34, %t37)
+    %t39 = binary add nowrap i64 %t33, %t38
+    %t40 = cmp eq i64 %t39, 7
+    branch %t40, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t41 = load typed i32 $cond__1
+    return i32 %t41
+}
+function @Left__get_left(%this : ptr [object_bytes=8]) -> i64 [binding=weak, object=_ZNK4Left8get_leftEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+function @Right__get_right(%this : ptr [object_bytes=8]) -> i64 [binding=weak, object=_ZNK5Right9get_rightEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+function @Alone__get(%this : ptr [object_bytes=8]) -> i64 [unwind=no, binding=weak, object=_ZNK5Alone3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}

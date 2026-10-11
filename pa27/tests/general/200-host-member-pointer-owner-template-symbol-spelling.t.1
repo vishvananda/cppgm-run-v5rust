@@ -1,0 +1,25 @@
+enum E { A };
+
+struct C {
+  C &f(const C &);
+};
+
+C &C::f(const C &)
+{
+  return *this;
+}
+
+typedef C &(C::*Op)(const C &);
+
+template<class T1, class T2>
+struct Check {
+  template<class U1, class U2>
+  __attribute__((noinline)) static int ok(U1, U2) { return 7; }
+};
+
+int main()
+{
+  typedef int (*Fn)(const E &, const Op &);
+  Fn p = &Check<const E, Op>::ok<const E &, const Op &>;
+  return p(A, &C::f) == 7 ? 0 : 1;
+}

@@ -1,0 +1,15 @@
+#include <ostream>
+#include <sstream>
+#include <string>
+
+static void append_ok(std::ostream& os)
+{
+  os << "ok";
+}
+
+int main()
+{
+  std::ostringstream out;
+  append_ok(out);
+  return out.str() == "ok" ? 0 : 1;
+}

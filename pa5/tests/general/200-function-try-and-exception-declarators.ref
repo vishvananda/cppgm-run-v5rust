@@ -1,0 +1,70 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier Failure
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier body
+          parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    function-try-block
+      compound-statement
+        expression-statement
+          call-expression
+            id-expression body
+            argument-list
+        throw-statement
+          call-expression
+            id-expression Failure
+            argument-list
+      handler
+        exception-declaration
+          decl-specifier-seq
+            decl-specifier KW_CONST:const
+            decl-specifier TT_IDENTIFIER:Failure
+          declarator
+            ptr-operator OP_AMP:&
+        compound-statement
+          throw-statement
+      handler
+        exception-declaration
+          ellipsis ...
+        compound-statement
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier fp
+          parameter-clause
+          function-qualifier throw(int)
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier h
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_VOID:void
+              declarator
+                identifier pfa
+                parameter-clause
+                function-qualifier throw(int)
+end translation unit

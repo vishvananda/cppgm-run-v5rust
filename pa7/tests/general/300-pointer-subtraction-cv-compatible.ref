@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of () returning long int
+    compound-statement
+      simple-declaration
+        variable a array of 3 int
+      simple-declaration
+        variable q pointer to int
+          id-expression lvalue array of 3 int a
+      simple-declaration
+        variable p pointer to const int
+          binary-expression prvalue pointer to int OP_PLUS:+
+            id-expression lvalue array of 3 int a
+            literal prvalue int 2
+      return-statement
+        binary-expression prvalue long int OP_MINUS:-
+          id-expression lvalue pointer to const int p
+          id-expression lvalue pointer to int q
+end translation unit

@@ -1,0 +1,16 @@
+#include "200-host-nontrivial-copy-class-result.helper.h"
+
+namespace result_abi {
+DerivedCopy student_derived(int v) { return DerivedCopy(v); }
+CopyTrivialMove student_mixed(const CopyTrivialMove& source) { return source; }
+}
+
+int main() {
+    int status = 0;
+    result_abi::DerivedCopy a = result_abi::host_derived(11);
+    if (a.n != 11 || a.self != &a) status |= 1;
+    result_abi::CopyTrivialMove source(20);
+    result_abi::CopyTrivialMove b = result_abi::host_mixed(source);
+    if (b.n != 21) status |= 2;
+    return status | result_abi::host_calls_student();
+}

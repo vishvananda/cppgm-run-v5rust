@@ -1,0 +1,146 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @YB__vtable
+  storage data
+  item ptr addr @YB__f
+  item ptr addr @YB___YB
+
+global @YD__vtable
+  storage data
+  item ptr addr @YD__f
+  item ptr addr @YD___YD
+
+function @YB__f
+  abi
+    param %this -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 1
+    ret rax
+
+function @YB___YB
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @YB__vtable
+    store.ptr [rdi], r8
+    ret
+
+function @YB__YB
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @YB__vtable
+    store.ptr [rdi], r8
+    ret
+
+function @YD__f
+  abi
+    param %this -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 2
+    ret rax
+
+function @YD__YD
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    mov rdi, rbx
+    call @YB__YB [args=(rdi)]
+    mov r8, @YD__vtable
+    store.ptr [rbx], r8
+    ret
+
+function @YD___YD
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @YD__vtable
+    store.ptr [rdi], r8
+    call @YB___YB [args=(rdi)]
+    ret
+
+function @g
+  abi
+    param %b -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.ptr r8, [rdi]
+    load.ptr r8, [r8]
+    call *r8 [args=(rdi)]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $d__0 -> [rbp-8] : i64
+
+  block ^entry
+    lea rdi, [rbp-8]
+    call @YD__YD [args=(rdi)]
+    lea rdi, [rbp-8]
+    call @g [args=(rdi)]
+    mov rbx, rax
+    lea rdi, [rbp-8]
+    call @YD___YD [args=(rdi)]
+    ret rbx

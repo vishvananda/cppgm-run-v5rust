@@ -1,0 +1,68 @@
+typedef unsigned long size_type;
+
+int events[64];
+int event_count = 0;
+int throw_at = -1;
+int allocations = 0;
+int releases = 0;
+size_type released_size = 0;
+
+void note(int event)
+{
+  if (event_count < 64) events[event_count++] = event;
+}
+
+struct Element
+{
+  int id;
+  Element() : id(100 + event_count) { note(id); if (id == throw_at) throw id; }
+  Element(int v) : id(v) { note(v); if (v == throw_at) throw v; }
+  ~Element() { note(-id); }
+  static void* operator new[](size_type size);
+  static void operator delete[](void* storage, size_type size);
+};
+
+char storage[256];
+
+void* Element::operator new[](size_type) { ++allocations; return storage; }
+void Element::operator delete[](void*, size_type size)
+{
+  ++releases;
+  released_size = size;
+}
+
+int count(int value) { return value; }
+
+bool same(const int* expected, int length)
+{
+  if (event_count != length) return false;
+  for (int i = 0; i < length; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+
+int main()
+{
+  // A clause throws: the first element is destroyed, the storage freed.
+  throw_at = 2;
+  try { new Element[count(4)]{1, 2, 3}; return 1; }
+  catch (int thrown) { if (thrown != 2) return 2; }
+  static const int clause[] = { 1, 2, -1 };
+  if (!same(clause, 3) || allocations != 1 || releases != 1 ||
+      released_size != 4 * sizeof(Element) + 8) return 3;
+  // A default constructor past the list throws: the listed elements and the
+  // default-constructed ones are destroyed in reverse.
+  event_count = 0;
+  throw_at = 104;
+  try { new Element[count(5)]{1, 2}; return 4; }
+  catch (int thrown) { if (thrown != 104) return 5; }
+  static const int tail[] = { 1, 2, 102, 103, 104, -103, -102, -2, -1 };
+  if (!same(tail, 9) || allocations != 2 || releases != 2) return 6;
+  // Nothing throws: the elements live until delete[].
+  event_count = 0;
+  throw_at = -1;
+  Element* built = new Element[count(3)]{7};
+  delete[] built;
+  static const int whole[] = { 7, 101, 102, -102, -101, -7 };
+  return same(whole, 6) && releases == 3 ? 0 : 7;
+}

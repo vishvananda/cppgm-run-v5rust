@@ -1,0 +1,42 @@
+// N3485 15.2p2, 12.2p3: when a constructor's member initializer, or a
+// temporary it makes, throws, the members already constructed are destroyed in
+// reverse order and the full-expression's temporaries once; a countdown throws
+// at each step in turn
+#include "200-host-eh-ctor-member-temporaries.helper.h"
+static int countdown, live, steps;
+static void tick() { ++steps; if (countdown > 0 && --countdown == 0) throw 1; }
+struct T { int v; T(int x, int) noexcept : v(x) {} };
+struct D { int v; D(int x) : v(x) { tick(); ++live; } D(const D& o) : v(o.v) { tick(); ++live; } ~D() { --live; } };
+struct X { int v; X(int x) : v(x) { tick(); ++live; } ~X() { --live; } };
+static D mD(int x) { tick(); return D(x); }
+static X nX(int x) { return X(x); }
+static int ntT(const T& t) noexcept { return t.v; }
+static int tD(const D& a) { tick(); return a.v * 2; }
+struct H
+{
+  D f0;
+  X f1;
+  D f2;
+  H(int k) : f0(mD(ntT(T(7, 0)))), f1(nX(tD(D(3)) + k)), f2(mD(tD(D(k)))) { tick(); }
+};
+struct P
+{
+  D f0;
+  D f1;
+  P(D p) : f0(tD(D(1))), f1(tD(p)) { tick(); }
+};
+int main()
+{
+  for (int k = 1; k < 40; ++k)
+  {
+    countdown = k;
+    steps = 0;
+    int caught = 0;
+    try { H h(k); } catch (int) { caught = 1; }
+    try { P p(D(5)); } catch (int) { caught += 2; }
+    out_line("k", (unsigned long long)(k * 1000 + caught * 100 + live));
+    if (countdown > 0)
+      break;
+  }
+  return 0;
+}

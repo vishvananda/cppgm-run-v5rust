@@ -1,0 +1,52 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $n : i32
+  slot $a : obj<8x8>
+  slot $f : obj<8x8>
+
+  block ^entry:
+    store typed i32 0, $n
+    %t1 = addr $a
+    %t2 = addr $n
+    call void @A__A(%t1, %t2)
+    %t3 = addr $f
+    %t4 = addr $a
+    call void @A__A__ov2(%t3, %t4)
+    %t5 = load typed i32 $n
+    return i32 %t5
+}
+function @A__A(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN1AC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @A__A__ov2(%this : ptr [alias=noalias, object_bytes=8], %a : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN1AC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %a, $a
+    %t1 = load typed ptr $a
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed ptr %t7
+    %t9 = load typed i32 %t8
+    %t10 = binary add nowrap i32 %t9, 1
+    store typed i32 %t10, %t8
+    return void
+}
+alias object _ZN1AC2EPi = @A__A
+alias object _ZN1AC2ERKS_ = @A__A__ov2

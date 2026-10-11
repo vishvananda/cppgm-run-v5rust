@@ -1,0 +1,13 @@
+declare function @get(%arg0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z3getILm1EJ5First6SecondEERN13tuple_elementIXT_E5tupleIJDpT0_EEE4typeERS6_]
+declare function @consume(%arg0 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z7consumeR6Second]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $t : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $t
+    %t2 = addr $t
+    %t3 = call ptr @get(%t2)
+    call void @consume(%t3)
+    return i32 0
+}

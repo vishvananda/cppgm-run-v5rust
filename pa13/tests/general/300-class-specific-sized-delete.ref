@@ -1,0 +1,76 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @object__operatordelete(%arg0 : ptr, %arg1 : i64) -> void [unwind=no, binding=strong, object=_ZN6objectdlEPvm]
+
+global @__typeinfo_name__struct_object [storage=readonly, binding=weak, object=_ZTS6object] = {
+  i8 54
+  i8 111
+  i8 98
+  i8 106
+  i8 101
+  i8 99
+  i8 116
+  i8 0
+}
+global @__rtti_struct_object [storage=readonly, binding=weak, object=_ZTI6object] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_object
+}
+global @object__vtable [storage=readonly, binding=weak, object=_ZTV6object] = {
+  i64 0
+  ptr addr @__rtti_struct_object
+  ptr addr @object___object
+  ptr addr @object___object__deleting_entry
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = cmp ne ptr 0, 0
+    branch %t1, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    %t2 = load typed ptr 0
+    %t3 = index i8 %t2, 8
+    %t4 = load typed ptr %t3
+    call void %t4(0) as (%arg0 : ptr [object_bytes=8]) -> void [unwind=no]
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    return i32 0
+}
+function @object___object__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN6objectD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @object__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @object__operatordelete(%t4, 8)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @object__operatordelete(%t5, 8)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @object___object(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN6objectD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @object__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN6objectD2Ev = @object___object

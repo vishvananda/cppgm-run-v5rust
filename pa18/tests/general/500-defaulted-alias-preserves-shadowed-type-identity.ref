@@ -1,0 +1,40 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $arg__1 : obj<1x1>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $arg__1
+    call void @wrapper_void___wrapper(%t1, %t2)
+    %t3 = addr $value
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__2
+    return i32 %t7
+}
+function @wrapper_void___wrapper(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN7wrapperIvEC1I1RS2_TnN9enable_ifIXsr7acceptsIT0_vEE5valueEiE4typeELi0EEEOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN7wrapperIvEC2I1RS2_TnN9enable_ifIXsr7acceptsIT0_vEE5valueEiE4typeELi0EEEOT_ = @wrapper_void___wrapper

@@ -1,0 +1,22 @@
+// Both directions of the SysV SSE eightbyte contract: our caller into
+// a host-compiled receiver, and a host-compiled caller back into our
+// receiver (the callee reassembles the decomposed eightbytes).
+struct FloatPair { float a; float b; double c; };
+struct FP8 { float a; float b; };
+
+extern "C" double sse_pair_sum(FloatPair p);
+extern "C" float fp8_sum(FP8 p);
+extern "C" double our_take16(FloatPair p) { return p.a + p.b + p.c; }
+extern "C" float our_take8(FP8 p) { return p.a + p.b; }
+extern "C" int drive();
+
+int main()
+{
+	FloatPair p16;
+	p16.a = 1.0f; p16.b = 2.0f; p16.c = 39.0;
+	FP8 p8;
+	p8.a = 40.0f; p8.b = 2.0f;
+	if (sse_pair_sum(p16) != 42.0) return 1;
+	if (fp8_sum(p8) != 42.0f) return 2;
+	return drive();
+}

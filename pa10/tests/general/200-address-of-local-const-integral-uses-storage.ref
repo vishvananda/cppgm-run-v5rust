@@ -1,0 +1,12 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : i32
+  slot $q : ptr
+
+  block ^entry:
+    store typed i32 7, $p
+    %t1 = addr $p
+    store typed ptr %t1, $q
+    %t2 = load typed ptr $q
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

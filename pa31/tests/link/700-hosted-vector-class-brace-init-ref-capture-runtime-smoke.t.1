@@ -1,0 +1,19 @@
+#include <cstdio>
+#include <vector>
+
+struct Box {
+  int x;
+
+  Box(int value) : x(value) {}
+  Box(const Box& other) : x(other.x) {}
+};
+
+int main() {
+  Box b{42};
+  auto f = [&]() -> int {
+    std::vector<Box> xs{b};
+    return xs[0].x;
+  };
+  std::printf("%d\n", f());
+  return 0;
+}

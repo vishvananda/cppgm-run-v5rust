@@ -1,0 +1,36 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition target
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier duration
+  namespace-alias-definition alias
+    target target
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier alias
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier alias::duration
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier d
+end translation unit

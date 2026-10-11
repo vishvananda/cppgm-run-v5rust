@@ -1,0 +1,48 @@
+struct base
+{
+  virtual ~base() {}
+};
+
+template<class T>
+struct result
+{
+  typedef int type;
+};
+
+struct stream {};
+
+struct test
+{
+  template<class S, class H>
+  typename result<H>::type read(S& source, H&& completion)
+  {
+    struct op : base
+    {
+      S& source_;
+      H& completion_;
+
+      op(S& source, H& completion)
+        : source_(source), completion_(completion)
+      {
+      }
+    };
+
+    op value(source, completion);
+    return sizeof(value);
+  }
+
+  int run()
+  {
+    struct handler {};
+    stream source;
+    handler completion;
+    return read<stream, handler>(
+        source, static_cast<handler&&>(completion));
+  }
+};
+
+int main()
+{
+  test value;
+  return value.run() > 0 ? 0 : 1;
+}

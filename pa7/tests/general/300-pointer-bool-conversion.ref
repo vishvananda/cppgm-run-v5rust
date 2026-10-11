@@ -1,0 +1,48 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition init function of (pointer to int) returning bool
+    parameter p pointer to int
+    compound-statement
+      simple-declaration
+        variable b bool
+          id-expression lvalue pointer to int p
+      return-statement
+        id-expression lvalue bool b
+  function-definition casted function of (pointer to int) returning bool
+    parameter p pointer to int
+    compound-statement
+      return-statement
+        cast-expression prvalue bool KW_STATIC_CAST:static_cast
+          id-expression lvalue pointer to int p
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 0
+      simple-declaration
+        variable p pointer to int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int x
+      simple-declaration
+        variable q pointer to int
+          literal prvalue nullptr_t KW_NULLPTR:nullptr
+      return-statement
+        binary-expression prvalue bool OP_LOR:||
+          binary-expression prvalue bool OP_LOR:||
+            binary-expression prvalue bool OP_LOR:||
+              unary-expression prvalue bool OP_LNOT:!
+                call-expression prvalue bool
+                  callee init function of (pointer to int) returning bool
+                  id-expression lvalue pointer to int p
+              call-expression prvalue bool
+                callee init function of (pointer to int) returning bool
+                id-expression lvalue pointer to int q
+            unary-expression prvalue bool OP_LNOT:!
+              call-expression prvalue bool
+                callee casted function of (pointer to int) returning bool
+                id-expression lvalue pointer to int p
+          call-expression prvalue bool
+            callee casted function of (pointer to int) returning bool
+            id-expression lvalue pointer to int q
+end translation unit

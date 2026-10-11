@@ -1,0 +1,10 @@
+# budget from 400-source-vtt-table-load-folding.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 18
+blocks <= 6
+count(call) <= 3
+count(load) <= 6
+count(store) <= 6
+count(phi) <= 3
+instructions <= 4 in @use_leaf
+instructions <= 5 in @Base__Base__base_entry
+instructions <= 14 in @Middle__Middle__base_entry

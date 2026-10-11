@@ -1,0 +1,11 @@
+local_defined_symbol_pattern 1 ^_ZGR1g\d*_$
+local_defined_symbol_pattern 1 ^_ZGRL2sg\d*_$
+local_defined_symbol_pattern 1 ^_ZGRN2ns2nrE\d*_$
+local_defined_symbol_pattern 1 ^_ZGR2gi\d*_$
+local_defined_symbol_pattern 1 ^_ZGR8constant\d*_$
+local_defined_symbol_pattern 1 ^_ZGRZ5wholevE4held\d*_$
+local_defined_symbol_pattern 1 ^_ZGRN1XIiE1rE\d*_$
+local_defined_symbol_pattern 1 ^_ZGRZ6sharedvE2sr\d*_$
+local_defined_symbol_pattern 1 ^_ZGR4list\d*_$
+local_defined_symbol_pattern 1 ^_ZGR4list\d*_$
+local_defined_symbol_pattern 1 ^_ZGR6values\d*_$

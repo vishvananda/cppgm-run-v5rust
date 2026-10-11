@@ -1,0 +1,9 @@
+# budget from 700-f64-f80-implicit-store-return-convert.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 25
+blocks <= 5
+count(call) <= 4
+mem <= 15
+instructions <= 11 in @roundtrip
+stack_size <= 512 in @roundtrip
+instructions <= 15 in @main
+stack_size <= 416 in @main

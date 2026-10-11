@@ -1,0 +1,54 @@
+global @boost_like__mark : u8 [binding=strong, object=_ZN10boost_like4markE] = 0
+global @boost_like__instantiated [binding=strong, object=_ZN10boost_like12instantiatedE] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    store u8 0, @boost_like__mark
+    call void @writer__boost_like__mark___set()
+    %t1 = call i32 @reader__boost_like__mark___get()
+    return i32 %t1
+}
+function @boost_like__marker__boost_like__mark___marker(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN10boost_like6markerIXadL_ZNS_4markEEEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @boost_like__mark
+    store u8 1, %t1
+    return void
+}
+function @writer__boost_like__mark___set() -> void [binding=weak, object=_ZN6writerIXadL_ZN10boost_like4markEEEE3setEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @boost_like__mark
+    store u8 1, %t1
+    return void
+}
+function @reader__boost_like__mark___get() -> i32 [binding=weak, object=_ZN6readerIXadL_ZN10boost_like4markEEEE3getEv, inline_hint=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @boost_like__mark
+    %t2 = load u8 %t1
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @boost_like__instantiated
+    call void @boost_like__marker__boost_like__mark___marker(%t1)
+    return void
+}
+alias object _ZN10boost_like6markerIXadL_ZNS_4markEEEEC2Ev = @boost_like__marker__boost_like__mark___marker

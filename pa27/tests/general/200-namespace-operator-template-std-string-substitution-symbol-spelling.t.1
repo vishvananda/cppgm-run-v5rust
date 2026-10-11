@@ -1,0 +1,64 @@
+namespace ns {
+template<class T>
+struct traits {};
+
+template<class T>
+struct alloc {};
+
+template<class C, class Tr>
+struct ostream {};
+
+template<class C, class Tr, class A>
+struct string {};
+
+template<class C, class Tr, class A>
+__attribute__((noinline))
+ostream<C, Tr> & operator<<(ostream<C, Tr> & out,
+                            const string<C, Tr, A> &)
+{
+  return out;
+}
+}
+
+namespace std {
+template<class T>
+struct char_traits {};
+
+template<class T>
+struct allocator {};
+
+template<class C, class Tr>
+struct basic_ostream {};
+
+template<class C, class Tr, class A>
+struct basic_string {};
+
+template<class C, class Tr, class A>
+__attribute__((noinline))
+basic_ostream<C, Tr> & operator<<(basic_ostream<C, Tr> & out,
+                                  const basic_string<C, Tr, A> &)
+{
+  return out;
+}
+
+template<class Tr>
+__attribute__((noinline))
+basic_ostream<char, Tr> & operator<<(basic_ostream<char, Tr> & out,
+                                     const char *)
+{
+  return out;
+}
+}
+
+int main()
+{
+  ns::ostream<char, ns::traits<char> > ns_out;
+  ns::string<char, ns::traits<char>, ns::alloc<char> > ns_text;
+  ns_out << ns_text;
+
+  std::basic_ostream<char, std::char_traits<char> > std_out;
+  std::basic_string<char, std::char_traits<char>, std::allocator<char> > std_text;
+  std_out << std_text;
+  std_out << "x";
+  return 0;
+}

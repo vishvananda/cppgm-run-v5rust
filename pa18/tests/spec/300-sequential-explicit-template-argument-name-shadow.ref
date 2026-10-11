@@ -1,0 +1,24 @@
+function @g() -> void [binding=strong, object=_Z1gv] {
+  block ^entry:
+    call void @f(0, 0)
+    call void @f__2(0, 0)
+    return void
+}
+function @f(%__param0 : ptr, %__param1 : ptr) -> void [binding=weak, object=_Z1fI1D1BEvPKT_PKT0_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}
+function @f__2(%__param0 : ptr, %__param1 : ptr) -> void [binding=weak, object=_Z1fI1M1DEvPKT_PKT0_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}

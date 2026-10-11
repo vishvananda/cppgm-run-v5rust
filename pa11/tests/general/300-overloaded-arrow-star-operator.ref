@@ -1,0 +1,48 @@
+function @operator___(%ref : ptr [pass=by_address, object_bytes=4], %action : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_ZpmR3RefR6Action] {
+  slot $ref : ptr
+  slot $action : ptr
+
+  block ^entry:
+    store typed ptr %ref, $ref
+    store typed ptr %action, $action
+    %t1 = load typed ptr $ref
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $action
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ref : obj<4x4>
+  slot $action : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $ref
+    %t2 = addr $action
+    %t3 = addr $ref
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $action
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 5, %t6
+    %t7 = addr $ref
+    %t8 = addr $action
+    %t9 = call i32 @operator___(%t7, %t8)
+    %t10 = cmp eq i32 %t9, 12
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}

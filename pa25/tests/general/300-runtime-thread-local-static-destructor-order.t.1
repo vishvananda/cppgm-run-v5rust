@@ -1,0 +1,18 @@
+// N3485 3.6.3p1, 3.7.2, 6.7p4: thread_local objects of the main thread are
+// destroyed at exit before static objects, each kind in reverse order of
+// construction; the standalone runtime supplies the registration they use.
+int order, alive;
+struct Probe {
+  int tag;
+  Probe(int t) : tag(t) { ++alive; }
+  ~Probe() { --alive; order = order * 10 + tag; }
+};
+struct Verify { ~Verify() { if (alive != 0 || order != 132) __builtin_abort(); } };
+static Verify verify;
+const Probe& first() { static thread_local Probe probe(3); return probe; }
+const Probe& second() { static thread_local Probe probe(1); return probe; }
+int main() {
+  static Probe local(2);
+  if (first().tag != 3 || second().tag != 1 || &first() != &first()) return 1;
+  return alive == 3 ? 0 : 2;
+}

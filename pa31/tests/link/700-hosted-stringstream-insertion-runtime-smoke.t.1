@@ -1,0 +1,9 @@
+#include <sstream>
+#include <string>
+
+int main()
+{
+  std::stringstream stream;
+  stream << "abc";
+  return stream.str() == std::string("abc") ? 0 : 1;
+}

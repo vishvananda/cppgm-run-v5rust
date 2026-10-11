@@ -1,0 +1,6 @@
+user-defined-literal 123_e3 _e3 integer 123
+user-defined-literal 123_ae3 _ae3 integer 123
+user-defined-literal 123_xp3 _xp3 integer 123
+user-defined-literal 0x12_p3 _p3 integer 0x12
+user-defined-literal 07_e9 _e9 integer 07
+eof

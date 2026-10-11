@@ -1,0 +1,12 @@
+preproc 1
+sof tests/macros/300-paste-operator-adjacent-operators.t
+simple int KW_INT
+identifier main
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+simple { OP_LBRACE
+simple return KW_RETURN
+literal 0 int 00000000
+simple ; OP_SEMICOLON
+simple } OP_RBRACE
+eof

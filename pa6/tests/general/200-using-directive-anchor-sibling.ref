@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace P
+      scope namespace Q1
+        type-alias TQ int
+      scope namespace Q3
+        variable b int
+end translation unit

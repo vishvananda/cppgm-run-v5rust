@@ -1,0 +1,27 @@
+#include <fstream>
+#include <ostream>
+
+struct Writer {
+  std::ostream& out;
+
+  explicit Writer(std::ostream& out) : out(out) {}
+
+  void emit()
+  {
+    out << "ok\n";
+  }
+};
+
+static void run(std::ostream& out)
+{
+  out << "prefix\n";
+  Writer writer(out);
+  writer.emit();
+}
+
+int main()
+{
+  std::ofstream out("/tmp/pa31-726.out");
+  run(out);
+  return 0;
+}

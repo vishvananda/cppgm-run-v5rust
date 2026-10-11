@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $result : i32
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 0, $result
+    store typed i32 1, $value
+    %t1 = load typed i32 $value
+    jump ^switch_dispatch_1
+
+  block ^switch_dispatch_1:
+    switch %t1, ^switch_default_4, 1:^switch_case_3
+
+  block ^switch_case_3:
+    %t2 = load typed i32 $value
+    store typed i32 %t2, $result
+    jump ^switch_end_2
+
+  block ^switch_default_4:
+    store typed i32 2, $result
+    jump ^switch_end_2
+
+  block ^switch_end_2:
+    %t3 = load typed i32 $result
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}

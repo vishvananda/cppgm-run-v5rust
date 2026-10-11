@@ -1,0 +1,39 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier C
+      class-key KW_STRUCT:struct
+      special-member-declaration C
+        declarator
+          identifier C
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:C
+              declarator
+                ptr-operator OP_LAND:&&
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    special-member-definition C<T>::C
+      member-specifiers
+        specifier KW_INLINE:inline
+      declarator
+        identifier C<T>::C
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:C
+            declarator
+              ptr-operator OP_LAND:&&
+      compound-statement
+end translation unit

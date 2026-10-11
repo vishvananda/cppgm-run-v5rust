@@ -1,0 +1,27 @@
+declare global @O__n [storage=thread_local, binding=strong, object=_ZN1O1nE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $g : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $g
+    %t2 = addr $g
+    %t3 = call i32 @O__G__f(%t2)
+    return i32 %t3
+}
+function @O__G__f(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN1O1G1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @O__n
+    call void @V__clear(%t1)
+    return i32 0
+}
+function @V__clear(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1V5clearEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

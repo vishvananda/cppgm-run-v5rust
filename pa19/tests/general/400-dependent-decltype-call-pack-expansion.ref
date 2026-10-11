@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : i8
+
+  block ^entry:
+    store i8 0, $c
+    %t1 = load i8 $c
+    %t2 = convert sext i32 i8 %t1
+    return i32 %t2
+}

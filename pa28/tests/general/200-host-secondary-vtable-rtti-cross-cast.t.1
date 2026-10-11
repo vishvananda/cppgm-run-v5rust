@@ -1,0 +1,73 @@
+struct Tag
+{
+  virtual ~Tag() {}
+};
+
+struct HostError : virtual Tag
+{
+  virtual ~HostError() {}
+};
+
+struct DerivedError : HostError
+{
+  virtual ~DerivedError() {}
+};
+
+struct CloneBase
+{
+  virtual ~CloneBase() {}
+};
+
+struct EmptyBase
+{
+};
+
+template<class Error>
+struct WrappedError : CloneBase, Error, EmptyBase
+{
+  virtual ~WrappedError() {}
+};
+
+int check_secondary_catch()
+{
+  try
+  {
+    throw WrappedError<DerivedError>();
+  }
+  catch (HostError const & error)
+  {
+    return dynamic_cast<Tag const *>(&error) ? 0 : 2;
+  }
+  catch (...)
+  {
+    return 3;
+  }
+  return 1;
+}
+
+int check_base_catch()
+{
+  try
+  {
+    throw WrappedError<DerivedError>();
+  }
+  catch (HostError const & error)
+  {
+    return dynamic_cast<Tag const *>(&error) ? 0 : 4;
+  }
+  catch (...)
+  {
+    return 5;
+  }
+  return 6;
+}
+
+int main()
+{
+  int result = check_secondary_catch();
+  if(result != 0)
+  {
+    return result;
+  }
+  return check_base_catch();
+}

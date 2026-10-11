@@ -1,0 +1,52 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<1x1>
+  slot $ptr : ptr
+  slot $member : i128
+  slot $discard__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    store typed ptr %t2, $ptr
+    %t3 = addr @target__call
+    %t4 = copy i64 %t3
+    %t5 = convert zext i128 i64 %t4
+    store typed i128 %t5, $member
+    %t6 = addr $discard__1
+    %t7 = addr $ptr
+    %t8 = addr $member
+    %t9 = call obj<1x1> @other_action_member_pointer_action___apply(%t7, %t8)
+    return i32 0
+}
+function @target__call(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN6target4callEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @other_action_member_pointer_action___apply(%a : ptr [pass=by_address, object_bytes=8], %b : ptr [pass=by_address, object_bytes=16]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN12other_actionI21member_pointer_actionE5applyI6resultP6targetKMS4_FivEEET_RT0_RT1_, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $a
+    %t3 = load typed ptr $b
+    %t4 = call obj<1x1> @action_helper_false_true___apply(%t2, %t3)
+    return obj<1x1> $retobj__1
+}
+function @action_helper_false_true___apply(%__param0 : ptr [pass=by_address, object_bytes=8], %__param1 : ptr [pass=by_address, object_bytes=16]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN13action_helperILb0ELb1EE5applyI6resultP6targetKMS3_FivEEET_RT0_RT1_, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    %t1 = addr $retobj__1
+    return obj<1x1> $retobj__1
+}

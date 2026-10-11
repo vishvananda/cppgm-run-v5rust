@@ -1,0 +1,12 @@
+preproc 1
+sof tests/macros/920-deferred-helper-argument-prescan.t
+simple ( OP_LPAREN
+literal 4 int 04000000
+simple , OP_COMMA
+simple ( OP_LPAREN
+literal 1 int 01000000
+simple , OP_COMMA
+identifier NIL
+simple ) OP_RPAREN
+simple ) OP_RPAREN
+eof

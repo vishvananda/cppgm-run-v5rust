@@ -1,0 +1,39 @@
+function @Slot__clear(%this : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN4Slot5clearEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^land_rhs_3, ^if_else_2
+
+  block ^land_rhs_3:
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed ptr %t6
+    %t8 = load typed ptr %t7
+    %t9 = cmp ne ptr %t8, 0
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed ptr %t11
+    %t13 = load typed ptr %t12
+    %t14 = load typed ptr %t13
+    %t15 = load typed ptr %t14
+    %t16 = call i32 %t15(%t13) as (%arg0 : ptr [object_bytes=8]) -> i32
+    jump ^if_end_4
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

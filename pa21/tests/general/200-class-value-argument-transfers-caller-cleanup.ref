@@ -1,0 +1,162 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @Value__live : i32 [binding=strong, object=_ZN5Value4liveE] = 0
+
+function @consume(%value : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z7consume5Value] {
+  slot $value : obj<8x8>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = load typed ptr %t1
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<8x8>
+  slot $result : i32
+  slot $arg__1 : obj<8x8>
+  slot $call__2 : i32
+  slot $cond__3 : i32
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    %t1 = addr $source
+    call void @Value__Value(%t1)
+    eh_try ^cleanup_action_2
+    %t2 = addr $arg__1
+    %t3 = addr $source
+    call void @Value__Value__ov2(%t2, %t3)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t4 = addr $source
+    call void @Value___Value(%t4)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    eh_try ^cleanup_action_4
+    %t5 = call i32 @consume(%t2)
+    store typed i32 %t5, $call__2
+    %t6 = load typed i32 $call__2
+    store typed i32 %t6, $result
+    call void @Value___Value(%t2)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_action_4:
+    call void @Value___Value(%t2)
+    jump ^cleanup_action_2
+
+  block ^call_unwind_end_5:
+    %t7 = load typed i32 $result
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^land_rhs_9, ^land_short_10
+
+  block ^land_rhs_9:
+    %t9 = addr $source
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed ptr %t10
+    %t12 = load typed i32 %t11
+    %t13 = cmp eq i32 %t12, 7
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__4
+    jump ^land_end_11
+
+  block ^land_short_10:
+    store typed i64 0, $land__4
+    jump ^land_end_11
+
+  block ^land_end_11:
+    %t15 = load typed i64 $land__4
+    branch %t15, ^land_rhs_12, ^land_short_13
+
+  block ^land_rhs_12:
+    %t16 = load typed i32 @Value__live
+    %t17 = cmp eq i32 %t16, 1
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $land__5
+    jump ^land_end_14
+
+  block ^land_short_13:
+    store typed i64 0, $land__5
+    jump ^land_end_14
+
+  block ^land_end_14:
+    %t19 = load typed i64 $land__5
+    branch %t19, ^cond_then_6, ^cond_else_7
+
+  block ^cond_then_6:
+    store typed i32 0, $cond__3
+    jump ^cond_end_8
+
+  block ^cond_else_7:
+    store typed i32 1, $cond__3
+    jump ^cond_end_8
+
+  block ^cond_end_8:
+    %t20 = load typed i32 $cond__3
+    %t21 = addr $source
+    call void @Value___Value(%t21)
+    return i32 %t20
+}
+function @Value__Value(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN5ValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = convert sext i64 i32 4
+    %t2 = call ptr @operatornew(%t1)
+    store typed i32 7, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = load typed i32 @Value__live
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @Value__live
+    return void
+}
+function @Value__Value__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN5ValueC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = convert sext i64 i32 4
+    %t2 = call ptr @operatornew(%t1)
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = load typed i32 %t5
+    store typed i32 %t6, %t2
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed ptr %t2, %t8
+    %t9 = load typed i32 @Value__live
+    %t10 = binary add nowrap i32 %t9, 1
+    store typed i32 %t10, @Value__live
+    return void
+}
+function @Value___Value(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5ValueD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    call void @operatordelete(%t3)
+    %t4 = load typed i32 @Value__live
+    %t5 = binary sub nowrap i32 %t4, 1
+    store typed i32 %t5, @Value__live
+    return void
+}
+alias object _ZN5ValueC2Ev = @Value__Value
+alias object _ZN5ValueC2ERKS_ = @Value__Value__ov2
+alias object _ZN5ValueD2Ev = @Value___Value

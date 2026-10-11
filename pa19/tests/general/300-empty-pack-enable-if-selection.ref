@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $alloc : i32
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 0, $alloc
+    store typed i32 0, $value
+    %t1 = addr $alloc
+    %t2 = addr $value
+    %t3 = call i32 @traits_int___construct(%t1, %t2)
+    return i32 %t3
+}
+function @traits_int___construct(%__param0 : ptr [pass=by_address, object_bytes=4], %__param1 : ptr) -> i32 [binding=weak, object=_ZN6traitsIiE9constructIiJETnN9enable_ifIXsr13has_constructIiPT_DpT0_EE5valueEiE4typeELi0EEEiRiS4_DpOS5_, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 1
+}

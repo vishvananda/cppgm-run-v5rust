@@ -1,0 +1,428 @@
+global @constructed : i32 [binding=strong] = zero
+global @destroyed : i32 [binding=strong] = zero
+global @bad_addresses : i32 [binding=strong] = zero
+global @global : obj<56x8> [binding=strong] = {
+  zero 56
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $local : obj<56x8>
+  slot $grid : obj<64x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = load typed i32 @constructed
+    %t2 = cmp ne i32 %t1, 3
+    branch %t2, ^if_then_1, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    %t3 = load typed i32 @destroyed
+    %t4 = cmp ne i32 %t3, 0
+    branch %t4, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t5 = addr @global
+    %t6 = index i8 [projection=field] %t5, 48
+    %t7 = load typed i32 %t6
+    %t8 = cmp ne i32 %t7, 0
+    branch %t8, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t9 = addr @global
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = binary mul i64 2, 16
+    %t12 = index i8 [projection=array_element] %t10, %t11
+    %t13 = index i8 [projection=field] %t12, 8
+    %t14 = load typed i32 %t13
+    %t15 = cmp ne i32 %t14, 3
+    branch %t15, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t16 = addr $local
+    %t17 = addr $local
+    %t18 = index i8 [projection=field] %t17, 0
+    call void @Box__Box(%t18)
+    %t19 = index i8 %t18, 16
+    call void @Box__Box(%t19)
+    %t20 = index i8 %t18, 32
+    call void @Box__Box(%t20)
+    %t21 = addr $local
+    %t22 = index i8 [projection=field] %t21, 48
+    store typed i32 0, %t22
+    %t23 = load typed i32 @constructed
+    %t24 = cmp ne i32 %t23, 6
+    branch %t24, ^if_then_7, ^lor_rhs_12
+
+  block ^lor_rhs_12:
+    %t25 = addr $local
+    %t26 = index i8 [projection=field] %t25, 48
+    %t27 = load typed i32 %t26
+    %t28 = cmp ne i32 %t27, 0
+    branch %t28, ^if_then_7, ^lor_rhs_11
+
+  block ^lor_rhs_11:
+    %t29 = addr $local
+    %t30 = index i8 [projection=field] %t29, 0
+    %t31 = binary mul i64 0, 16
+    %t32 = index i8 [projection=array_element] %t30, %t31
+    %t33 = index i8 [projection=field] %t32, 8
+    %t34 = load typed i32 %t33
+    %t35 = cmp ne i32 %t34, 4
+    branch %t35, ^if_then_7, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t36 = addr $local
+    %t37 = index i8 [projection=field] %t36, 0
+    %t38 = binary mul i64 2, 16
+    %t39 = index i8 [projection=array_element] %t37, %t38
+    %t40 = index i8 [projection=field] %t39, 8
+    %t41 = load typed i32 %t40
+    %t42 = cmp ne i32 %t41, 6
+    branch %t42, ^if_then_7, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t43 = addr $local
+    %t44 = index i8 [projection=field] %t43, 0
+    %t45 = binary mul i64 1, 16
+    %t46 = index i8 [projection=array_element] %t44, %t45
+    %t47 = index i8 [projection=field] %t46, 0
+    %t48 = load typed ptr %t47
+    %t49 = addr $local
+    %t50 = index i8 [projection=field] %t49, 0
+    %t51 = binary mul i64 1, 16
+    %t52 = index i8 [projection=array_element] %t50, %t51
+    %t53 = cmp ne ptr %t48, %t52
+    branch %t53, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    %t54 = addr $local
+    call void @Ext___Ext(%t54)
+    return i32 2
+
+  block ^if_else_8:
+    jump ^if_end_13
+
+  block ^if_end_13:
+    %t55 = addr $local
+    call void @Ext___Ext(%t55)
+    %t56 = load typed i32 @destroyed
+    %t57 = cmp ne i32 %t56, 3
+    branch %t57, ^if_then_14, ^lor_rhs_16
+
+  block ^lor_rhs_16:
+    %t58 = load typed i32 @bad_addresses
+    %t59 = cmp ne i32 %t58, 0
+    branch %t59, ^if_then_14, ^if_else_15
+
+  block ^if_then_14:
+    return i32 3
+
+  block ^if_else_15:
+    jump ^if_end_17
+
+  block ^if_end_17:
+    %t60 = addr $grid
+    %t61 = addr $grid
+    %t62 = index i8 [projection=field] %t61, 0
+    call void @Box__Box(%t62)
+    %t63 = index i8 %t62, 16
+    call void @Box__Box(%t63)
+    %t64 = index i8 %t62, 32
+    call void @Box__Box(%t64)
+    %t65 = index i8 %t64, 16
+    call void @Box__Box(%t65)
+    %t66 = load typed i32 @constructed
+    %t67 = cmp ne i32 %t66, 10
+    branch %t67, ^if_then_18, ^lor_rhs_21
+
+  block ^lor_rhs_21:
+    %t68 = addr $grid
+    %t69 = index i8 [projection=field] %t68, 0
+    %t70 = binary mul i64 1, 32
+    %t71 = index i8 [projection=array_element] %t69, %t70
+    %t72 = binary mul i64 1, 16
+    %t73 = index i8 [projection=array_element] %t71, %t72
+    %t74 = index i8 [projection=field] %t73, 8
+    %t75 = load typed i32 %t74
+    %t76 = cmp ne i32 %t75, 10
+    branch %t76, ^if_then_18, ^lor_rhs_20
+
+  block ^lor_rhs_20:
+    %t77 = addr $grid
+    %t78 = index i8 [projection=field] %t77, 0
+    %t79 = binary mul i64 1, 32
+    %t80 = index i8 [projection=array_element] %t78, %t79
+    %t81 = binary mul i64 0, 16
+    %t82 = index i8 [projection=array_element] %t80, %t81
+    %t83 = index i8 [projection=field] %t82, 0
+    %t84 = load typed ptr %t83
+    %t85 = addr $grid
+    %t86 = index i8 [projection=field] %t85, 0
+    %t87 = binary mul i64 1, 32
+    %t88 = index i8 [projection=array_element] %t86, %t87
+    %t89 = binary mul i64 0, 16
+    %t90 = index i8 [projection=array_element] %t88, %t89
+    %t91 = cmp ne ptr %t84, %t90
+    branch %t91, ^if_then_18, ^if_else_19
+
+  block ^if_then_18:
+    %t92 = addr $grid
+    call void @Grid___Grid(%t92)
+    return i32 4
+
+  block ^if_else_19:
+    jump ^if_end_22
+
+  block ^if_end_22:
+    %t93 = addr $grid
+    call void @Grid___Grid(%t93)
+    %t94 = load typed i32 @destroyed
+    %t95 = cmp eq i32 %t94, 7
+    branch %t95, ^land_rhs_26, ^land_short_27
+
+  block ^land_rhs_26:
+    %t96 = load typed i32 @bad_addresses
+    %t97 = cmp eq i32 %t96, 0
+    %t98 = cmp ne i64 %t97, 0
+    store typed i64 %t98, $land__2
+    jump ^land_end_28
+
+  block ^land_short_27:
+    store typed i64 0, $land__2
+    jump ^land_end_28
+
+  block ^land_end_28:
+    %t99 = load typed i64 $land__2
+    branch %t99, ^cond_then_23, ^cond_else_24
+
+  block ^cond_then_23:
+    store typed i32 0, $cond__1
+    jump ^cond_end_25
+
+  block ^cond_else_24:
+    store typed i32 5, $cond__1
+    jump ^cond_end_25
+
+  block ^cond_end_25:
+    %t100 = load typed i32 $cond__1
+    return i32 %t100
+}
+function @Box__Box(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN3BoxC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i32 @constructed
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @constructed
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i32 %t5, %t7
+    return void
+}
+function @Ext___Ext(%this : ptr [object_bytes=56]) -> void [unwind=no, binding=weak, object=_ZN3ExtD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary mul i64 2, 16
+    %t4 = index i8 [projection=array_element] %t2, %t3
+    call void @Box___Box(%t4)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = binary mul i64 1, 16
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    call void @Box___Box(%t8)
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = binary mul i64 0, 16
+    %t12 = index i8 [projection=array_element] %t10, %t11
+    call void @Box___Box(%t12)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    eh_cleanup ^destructor_suffix_cleanup_5
+    %t13 = load typed ptr $this
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = binary mul i64 1, 16
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    call void @Box___Box(%t16)
+    eh_end
+    jump ^destructor_suffix_next_6
+
+  block ^destructor_suffix_cleanup_5:
+    %t17 = load typed ptr $this
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = binary mul i64 0, 16
+    %t20 = index i8 [projection=array_element] %t18, %t19
+    call void @Box___Box(%t20)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_6:
+    %t21 = load typed ptr $this
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = binary mul i64 0, 16
+    %t24 = index i8 [projection=array_element] %t22, %t23
+    call void @Box___Box(%t24)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t25 = load typed ptr $this
+    %t26 = index i8 [projection=field] %t25, 0
+    %t27 = binary mul i64 2, 16
+    %t28 = index i8 [projection=array_element] %t26, %t27
+    call void @Box___Box(%t28)
+    %t29 = load typed ptr $this
+    %t30 = index i8 [projection=field] %t29, 0
+    %t31 = binary mul i64 1, 16
+    %t32 = index i8 [projection=array_element] %t30, %t31
+    call void @Box___Box(%t32)
+    %t33 = load typed ptr $this
+    %t34 = index i8 [projection=field] %t33, 0
+    %t35 = binary mul i64 0, 16
+    %t36 = index i8 [projection=array_element] %t34, %t35
+    call void @Box___Box(%t36)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Grid___Grid(%this : ptr [object_bytes=64]) -> void [unwind=no, binding=weak, object=_ZN4GridD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary mul i64 1, 32
+    %t4 = index i8 [projection=array_element] %t2, %t3
+    %t5 = index i8 [projection=array_element] %t4, 16
+    call void @Box___Box(%t5)
+    %t6 = index i8 [projection=array_element] %t4, 0
+    call void @Box___Box(%t6)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = binary mul i64 0, 32
+    %t10 = index i8 [projection=array_element] %t8, %t9
+    %t11 = index i8 [projection=array_element] %t10, 16
+    call void @Box___Box(%t11)
+    %t12 = index i8 [projection=array_element] %t10, 0
+    call void @Box___Box(%t12)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t13 = load typed ptr $this
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = binary mul i64 0, 32
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    %t17 = index i8 [projection=array_element] %t16, 16
+    call void @Box___Box(%t17)
+    %t18 = index i8 [projection=array_element] %t16, 0
+    call void @Box___Box(%t18)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t19 = load typed ptr $this
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = binary mul i64 1, 32
+    %t22 = index i8 [projection=array_element] %t20, %t21
+    %t23 = index i8 [projection=array_element] %t22, 16
+    call void @Box___Box(%t23)
+    %t24 = index i8 [projection=array_element] %t22, 0
+    call void @Box___Box(%t24)
+    %t25 = load typed ptr $this
+    %t26 = index i8 [projection=field] %t25, 0
+    %t27 = binary mul i64 0, 32
+    %t28 = index i8 [projection=array_element] %t26, %t27
+    %t29 = index i8 [projection=array_element] %t28, 16
+    call void @Box___Box(%t29)
+    %t30 = index i8 [projection=array_element] %t28, 0
+    call void @Box___Box(%t30)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Box___Box(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN3BoxD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = cmp ne ptr %t3, %t4
+    branch %t5, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t6 = load typed i32 @bad_addresses
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, @bad_addresses
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t8 = load typed i32 @destroyed
+    %t9 = binary add nowrap i32 %t8, 1
+    store typed i32 %t9, @destroyed
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @global
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Box__Box(%t2)
+    %t3 = index i8 %t2, 16
+    call void @Box__Box(%t3)
+    %t4 = index i8 %t2, 32
+    call void @Box__Box(%t4)
+    %t5 = addr @global
+    %t6 = index i8 [projection=field] %t5, 48
+    store typed i32 0, %t6
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @global
+    call void @Ext___Ext(%t1)
+    return void
+}
+alias object _ZN3BoxC2Ev = @Box__Box
+alias object _ZN3ExtD2Ev = @Ext___Ext
+alias object _ZN4GridD2Ev = @Grid___Grid
+alias object _ZN3BoxD2Ev = @Box___Box

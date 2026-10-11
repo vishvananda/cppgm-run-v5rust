@@ -1,0 +1,90 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_cache_constint_ [storage=readonly, binding=weak, object=_ZTS5cacheIKiE] = {
+  i8 53
+  i8 99
+  i8 97
+  i8 99
+  i8 104
+  i8 101
+  i8 73
+  i8 75
+  i8 105
+  i8 69
+  i8 0
+}
+global @__rtti_struct_cache_constint_ [storage=readonly, binding=weak, object=_ZTI5cacheIKiE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_cache_constint_
+}
+global @cache_constint___vtable [storage=readonly, binding=weak, object=_ZTV5cacheIKiE] = {
+  i64 0
+  ptr addr @__rtti_struct_cache_constint_
+  ptr addr @cache_constint___fill
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $h
+    call void @holder_constint___holder(%t1)
+    %t2 = const i64 2
+    %t3 = const i64 2
+    %t4 = cmp eq i64 %t2, %t3
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @holder_constint___holder(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN6holderIKiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @cache_constint___cache(%t2)
+    return void
+}
+function @cache_constint___cache(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5cacheIKiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @cache_constint___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @cache_constint___fill(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZN5cacheIKiE4fillEv] {
+  slot $this : ptr
+  slot $text : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $text
+    %t2 = addr $text
+    %t3 = call i32 @text_for_constint___size(%t2)
+    return i32 %t3
+}
+function @text_for_constint___size(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN8text_forIKiE4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+alias object _ZN6holderIKiEC2Ev = @holder_constint___holder
+alias object _ZN5cacheIKiEC2Ev = @cache_constint___cache

@@ -1,0 +1,94 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    mov r11, -2
+    mov rax, 100
+    cqo
+    idiv r11
+    mov rdx, -50
+    cmp.i64 rax, rdx
+    setne r8
+    movzx r8, r8
+    mov r11, -4
+    mov rax, -99
+    cqo
+    idiv r11
+    mov rdx, 24
+    cmp.i64 rax, rdx
+    setne r9
+    movzx r9, r9
+    mov r11, -4
+    mov rax, -99
+    cqo
+    idiv r11
+    mov rdi, rdx
+    mov rdx, -3
+    cmp.i64 rdi, rdx
+    setne rdi
+    movzx rdi, rdi
+    mov r11, -9223372036854775808
+    mov rax, -9223372036854775808
+    cqo
+    idiv r11
+    mov rdx, 1
+    cmp.i64 rax, rdx
+    setne rsi
+    movzx rsi, rsi
+    mov r11, -9223372036854775808
+    mov rax, 9223372036854775807
+    cqo
+    idiv r11
+    mov rcx, rdx
+    mov rdx, 9223372036854775807
+    cmp.i64 rcx, rdx
+    setne rcx
+    movzx rcx, rcx
+    mov r11, -7
+    mov rax, -100
+    cqo
+    idiv r11
+    mov rdx, 14
+    cmp.i64 rax, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov r11, -7
+    mov rax, -100
+    cqo
+    idiv r11
+    mov rax, rdx
+    mov rdx, -2
+    cmp.i64 rax, rdx
+    setne r12
+    movzx r12, r12
+    mov r11, -1
+    mov rax, 100
+    cqo
+    idiv r11
+    mov rdx, -100
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or r8, r9
+    or rdi, rsi
+    or rcx, rbx
+    or r12, rax
+    or r8, rdi
+    or rcx, r12
+    or r8, rcx
+    sext.i32 r8
+    ret r8

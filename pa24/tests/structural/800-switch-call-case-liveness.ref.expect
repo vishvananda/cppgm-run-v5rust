@@ -1,0 +1,11 @@
+# budget from 800-switch-call-case-liveness.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 55
+blocks <= 15
+count(call) <= 7
+mem <= 7
+instructions <= 4 in @touch
+stack_size <= 320 in @touch
+instructions <= 29 in @dispatch
+stack_size <= 352 in @dispatch
+instructions <= 25 in @main
+stack_size <= 320 in @main

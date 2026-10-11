@@ -1,0 +1,117 @@
+function @sink(%value : ptr [pass=by_address, object_bytes=4], %mapped : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z4sinkRiRm] {
+  slot $value : ptr
+  slot $mapped : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    store typed ptr %mapped, $mapped
+    %t1 = load typed ptr $mapped
+    %t2 = load typed i64 %t1
+    %t3 = convert sext i64 i32 4
+    %t4 = binary add i64 %t2, %t3
+    store typed i64 %t4, %t1
+    %t5 = load typed ptr $value
+    %t6 = load typed i32 %t5
+    %t7 = load typed ptr $mapped
+    %t8 = load typed i64 %t7
+    %t9 = convert trunc i32 i64 %t8
+    %t10 = binary add nowrap i32 %t6, %t9
+    return i32 %t10
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $mapped : i64
+  slot $result : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed i32 2, $value
+    %t1 = convert sext i64 i32 3
+    store typed i64 %t1, $mapped
+    %t2 = addr $value
+    %t3 = addr $mapped
+    %t4 = call i32 @run(%t2, %t3)
+    store typed i32 %t4, $result
+    %t5 = load typed i32 $result
+    %t6 = cmp eq i32 %t5, 9
+    branch %t6, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t7 = load typed i64 $mapped
+    %t8 = convert sext i64 i32 7
+    %t9 = cmp eq i64 %t7, %t8
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @run(%args : ptr [pass=by_address, object_bytes=4], %args__pack2 : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_Z3runIJRiRmEEiDpOT_] {
+  slot $args : ptr
+  slot $args__pack2 : ptr
+  slot $lambda : obj<16x8>
+
+  block ^entry:
+    store typed ptr %args, $args
+    store typed ptr %args__pack2, $args__pack2
+    %t1 = addr $lambda
+    %t2 = load typed ptr $args
+    store typed ptr %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 8
+    %t4 = load typed ptr $args__pack2
+    store typed ptr %t4, %t3
+    %t5 = addr $lambda
+    %t6 = call i32 @__lambda_run_t166_166__operator__(%t5)
+    return i32 %t6
+}
+function @__lambda_run_t166_166__operator__(%this : ptr [object_bytes=16]) -> i32 [binding=internal, object=_ZZ3runIJRiRmEEiDpOT_ENKUlvE_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = call ptr @std__forward(%t3)
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call ptr @std__forward__2(%t7)
+    %t9 = call i32 @sink(%t4, %t8)
+    return i32 %t9
+}
+function @std__forward(%t : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZSt7forwardIRiEOT_RNSt16remove_referenceIS1_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @std__forward__2(%t : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZSt7forwardIRmEOT_RNSt16remove_referenceIS1_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}

@@ -1,0 +1,71 @@
+global @copies : i32 [binding=strong] = zero
+
+function @operatornew__ov2(%__param0 : i64, %p : ptr) -> ptr [unwind=no, binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $p : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $memory : obj<8x8>
+  slot $input : obj<1x1>
+  slot $output : ptr
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr $memory
+    %t2 = addr $input
+    %t3 = convert sext i64 i32 4
+    %t4 = addr $memory
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = call ptr @operatornew__ov2(%t3, %t5)
+    %t7 = addr $input
+    call void @source__operatorresult(%t6, %t7)
+    store typed ptr %t6, $output
+    %t8 = load typed i32 @copies
+    branch %t8, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t9 = load typed ptr $output
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp ne i32 %t11, 7
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t14 = load typed i64 $lor__1
+    %t15 = convert trunc i32 i64 %t14
+    return i32 %t15
+}
+function @source__operatorresult(%ret : ptr [pass=indirect_result, object_bytes=4], %this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN6sourcecv6resultEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    call void @result__result(%ret, 7)
+    return void
+}
+function @result__result(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN6resultC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN6resultC2Ei = @result__result

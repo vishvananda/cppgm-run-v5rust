@@ -1,0 +1,45 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @lazy_qualified_shadow__classify(120)
+    return i32 %t1
+}
+function @lazy_qualified_shadow__classify(%c : i8) -> i32 [binding=weak, object=_ZN21lazy_qualified_shadow8classifyIcEEiT_] {
+  slot $c : i8
+  slot $ctype : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store i8 %c, $c
+    %t1 = addr $ctype
+    %t2 = addr $ctype
+    %t3 = load i8 $c
+    %t4 = call u8 @lazy_qualified_shadow__api__ctype_char___is(%t2, 1, %t3)
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @lazy_qualified_shadow__api__ctype_char___is(%this : ptr [object_bytes=1], %__param1 : i32, %value : i8) -> u8 [binding=weak, object=_ZNK21lazy_qualified_shadow3api5ctypeIcE2isENS2_4maskEc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $value : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store i8 %value, $value
+    %t1 = load i8 $value
+    %t2 = convert sext i32 i8 %t1
+    %t3 = cmp ne i32 %t2, 0
+    %t4 = convert trunc u8 i64 %t3
+    return u8 %t4
+}

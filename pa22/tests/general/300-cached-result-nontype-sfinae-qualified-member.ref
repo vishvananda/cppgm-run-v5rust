@@ -1,0 +1,23 @@
+declare global @boost__intrusive__detail__internal_base_hook_bool___cppgm_class_template_identity_1___value : i64 [binding=weak, object=_ZN5boost9intrusive6detail23internal_base_hook_boolINS0_8mhtraitsI10value_typeNS0_16list_member_hookIJEEEXadL_ZNS4_4hookEEEEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert sext i64 i32 0
+    %t3 = cmp eq i64 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

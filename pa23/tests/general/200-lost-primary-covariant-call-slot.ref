@@ -1,0 +1,491 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Leaf [storage=readonly, binding=weak, object=_ZTS4Leaf] = {
+  i8 52
+  i8 76
+  i8 101
+  i8 97
+  i8 102
+  i8 0
+}
+global @__typeinfo_name__struct_Low [storage=readonly, binding=weak, object=_ZTS3Low] = {
+  i8 51
+  i8 76
+  i8 111
+  i8 119
+  i8 0
+}
+global @__rtti_struct_Low [storage=readonly, binding=weak, object=_ZTI3Low] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Low
+}
+global @__typeinfo_name__struct_Right [storage=readonly, binding=weak, object=_ZTS5Right] = {
+  i8 53
+  i8 82
+  i8 105
+  i8 103
+  i8 104
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Right [storage=readonly, binding=weak, object=_ZTI5Right] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Right
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Low
+  i64 -8189
+}
+global @__typeinfo_name__struct_Left [storage=readonly, binding=weak, object=_ZTS4Left] = {
+  i8 52
+  i8 76
+  i8 101
+  i8 102
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Left [storage=readonly, binding=weak, object=_ZTI4Left] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Left
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Low
+  i64 -8189
+}
+global @__rtti_struct_Leaf [storage=readonly, binding=weak, object=_ZTI4Leaf] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Leaf
+  i32 2
+  i32 3
+  ptr addr @__rtti_struct_Low
+  i64 -8189
+  ptr addr @__rtti_struct_Right
+  i64 -10237
+  ptr addr @__rtti_struct_Left
+  i64 2
+}
+global @Leaf__vtable [storage=readonly, binding=weak, object=_ZTV4Leaf] = {
+  i64 16
+  i64 16
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_Leaf
+  ptr 0
+  ptr addr @Leaf__self
+}
+global @Leaf____view__Right__16__vtable [storage=readonly, binding=internal] = {
+  i64 0
+  i64 -16
+  i64 -16
+  ptr addr @__rtti_struct_Leaf
+  ptr addr @_Leaf__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+  ptr addr @_Leaf__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n40
+}
+global @Leaf____construction__Left__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC4Leaf0_4Left] = {
+  i64 16
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_Left
+  ptr addr @_Left__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+  ptr addr @Left__self
+}
+global @Leaf____construction__Left__0__s1__vtable [storage=readonly, binding=internal] = {
+  i64 -16
+  i64 -16
+  ptr addr @__rtti_struct_Left
+  ptr addr @_Left__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+}
+global @Leaf____construction__Right__16__s0__vtable [storage=readonly, binding=internal, object=_ZTC4Leaf16_5Right] = {
+  i64 0
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_Right
+  ptr addr @_Right__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+  ptr addr @Right__self
+}
+global @Leaf____vtt [storage=readonly, binding=weak, object=_ZTT4Leaf, object_root=yes] = {
+  ptr addr @Leaf__vtable + 40
+  ptr addr @Leaf____construction__Left__0__s0__vtable + 32
+  ptr addr @Leaf____construction__Left__0__s1__vtable + 24
+  ptr addr @Leaf____view__Right__16__vtable + 32
+  ptr addr @Leaf____view__Right__16__vtable + 32
+  ptr addr @Leaf____construction__Right__16__s0__vtable + 32
+  ptr addr @Leaf____construction__Right__16__s0__vtable + 32
+}
+global @Low__vtable [storage=readonly, binding=weak, object=_ZTV3Low] = {
+  i64 0
+  ptr addr @__rtti_struct_Low
+  ptr addr @Low__self
+}
+global @Right__vtable [storage=readonly, binding=weak, object=_ZTV5Right] = {
+  i64 0
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_Right
+  ptr addr @_Right__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+  ptr addr @Right__self
+}
+global @Right____vtt [storage=readonly, binding=weak, object=_ZTT5Right, object_root=yes] = {
+  ptr addr @Right__vtable + 32
+  ptr addr @Right__vtable + 32
+}
+global @Left__vtable [storage=readonly, binding=weak, object=_ZTV4Left] = {
+  i64 0
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_Left
+  ptr addr @_Left__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32
+  ptr addr @Left__self
+}
+global @Left____vtt [storage=readonly, binding=weak, object=_ZTT4Left, object_root=yes] = {
+  ptr addr @Left__vtable + 32
+  ptr addr @Left__vtable + 32
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $leaf : obj<32x8>
+  slot $pointer : ptr
+  slot $p : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+  slot $left : ptr
+  slot $right : ptr
+  slot $basecast__2 : ptr
+  slot $basecast__3 : ptr
+  slot $low : ptr
+  slot $basecast__4 : ptr
+  slot $basecast__5 : ptr
+
+  block ^entry:
+    %t1 = addr $leaf
+    call void @Leaf__Leaf(%t1)
+    %t2 = addr $leaf
+    store volatile ptr %t2, $pointer
+    %t3 = load volatile ptr $pointer
+    store typed ptr %t3, $p
+    %t4 = load typed ptr $p
+    %t5 = load typed ptr %t4
+    %t6 = index i8 %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call ptr %t7(%t4) as (%arg0 : ptr [object_bytes=32]) -> ptr
+    %t9 = addr $leaf
+    %t10 = cmp ne ptr %t8, %t9
+    branch %t10, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t11 = convert zext i128 i64 9
+    store typed i128 %t11, $member
+    %t12 = load typed ptr $p
+    %t13 = load typed i128 $member
+    %t14 = binary shr i128 %t13, 64
+    %t15 = convert trunc i64 i128 %t14
+    %t16 = convert trunc i64 i128 %t13
+    %t17 = binary and i64 %t16, 1
+    %t18 = cmp ne i64 %t17, 0
+    %t19 = index i8 %t12, %t15
+    branch %t18, ^member_pointer_virtual_6, ^member_pointer_direct_7
+
+  block ^member_pointer_virtual_6:
+    %t20 = load typed ptr %t19
+    %t21 = binary sub i64 %t16, 1
+    %t22 = index i8 %t20, %t21
+    %t23 = load typed ptr %t22
+    store typed ptr %t23, $member_pointer_callee__1
+    jump ^member_pointer_end_8
+
+  block ^member_pointer_direct_7:
+    %t24 = copy ptr %t16
+    store typed ptr %t24, $member_pointer_callee__1
+    jump ^member_pointer_end_8
+
+  block ^member_pointer_end_8:
+    %t25 = load typed ptr $member_pointer_callee__1
+    %t26 = call ptr %t25(%t19) as (%arg0 : ptr) -> ptr
+    %t27 = addr $leaf
+    %t28 = cmp ne ptr %t26, %t27
+    branch %t28, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t29 = load typed ptr $p
+    %t30 = index i8 %t29, 0
+    store typed ptr %t30, $left
+    %t31 = load typed ptr $p
+    %t32 = cmp eq ptr %t31, 0
+    branch %t32, ^basecast_null_10, ^basecast_adjust_11
+
+  block ^basecast_null_10:
+    store typed ptr 0, $basecast__3
+    jump ^basecast_end_12
+
+  block ^basecast_adjust_11:
+    %t33 = load typed ptr %t31
+    %t34 = index i8 %t33, -40
+    %t35 = load typed i64 %t34
+    %t36 = index i8 %t31, %t35
+    %t37 = index i8 %t36, 0
+    store typed ptr %t37, $basecast__3
+    jump ^basecast_end_12
+
+  block ^basecast_end_12:
+    %t38 = load typed ptr $basecast__3
+    store typed ptr %t38, $right
+    %t39 = load typed ptr $p
+    %t40 = cmp eq ptr %t39, 0
+    branch %t40, ^basecast_null_13, ^basecast_adjust_14
+
+  block ^basecast_null_13:
+    store typed ptr 0, $basecast__5
+    jump ^basecast_end_15
+
+  block ^basecast_adjust_14:
+    %t41 = load typed ptr %t39
+    %t42 = index i8 %t41, -32
+    %t43 = load typed i64 %t42
+    %t44 = index i8 %t39, %t43
+    %t45 = index i8 %t44, 0
+    store typed ptr %t45, $basecast__5
+    jump ^basecast_end_15
+
+  block ^basecast_end_15:
+    %t46 = load typed ptr $basecast__5
+    store typed ptr %t46, $low
+    %t47 = load typed ptr $left
+    %t48 = load typed ptr %t47
+    %t49 = index i8 %t48, 8
+    %t50 = load typed ptr %t49
+    %t51 = call ptr %t50(%t47) as (%arg0 : ptr [object_bytes=16]) -> ptr
+    %t52 = load typed ptr $left
+    %t53 = cmp ne ptr %t51, %t52
+    branch %t53, ^if_then_16, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t54 = load typed ptr $right
+    %t55 = load typed ptr %t54
+    %t56 = index i8 %t55, 8
+    %t57 = load typed ptr %t56
+    %t58 = call ptr %t57(%t54) as (%arg0 : ptr [object_bytes=16]) -> ptr
+    %t59 = load typed ptr $right
+    %t60 = cmp ne ptr %t58, %t59
+    branch %t60, ^if_then_16, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t61 = load typed ptr $low
+    %t62 = load typed ptr %t61
+    %t63 = load typed ptr %t62
+    %t64 = call ptr %t63(%t61) as (%arg0 : ptr [object_bytes=8]) -> ptr
+    %t65 = load typed ptr $low
+    %t66 = cmp ne ptr %t64, %t65
+    branch %t66, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 3
+
+  block ^if_else_17:
+    jump ^if_end_20
+
+  block ^if_end_20:
+    return i32 0
+}
+function @Leaf__Leaf(%this : ptr [object_bytes=32]) -> void [unwind=no, binding=weak, object=_ZN4LeafC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 16
+    call void @Low__Low__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 16
+    %t5 = addr @Leaf____vtt
+    %t6 = index i8 %t5, 40
+    call void @Right__Right__base_entry(%t4, %t6)
+    %t7 = load typed ptr $this
+    %t8 = index i8 %t7, 0
+    %t9 = addr @Leaf____vtt
+    %t10 = index i8 %t9, 8
+    call void @Left__Left__base_entry(%t8, %t10)
+    %t11 = load typed ptr $this
+    %t12 = addr @Leaf__vtable
+    %t13 = index i8 %t12, 40
+    store typed ptr %t13, %t11
+    %t14 = load typed ptr $this
+    %t15 = load typed ptr %t14
+    %t16 = index i8 %t15, -40
+    %t17 = load typed i64 %t16
+    %t18 = index i8 %t14, %t17
+    %t19 = index i8 %t18, 0
+    %t20 = addr @Leaf____view__Right__16__vtable
+    %t21 = index i8 %t20, 32
+    store typed ptr %t21, %t19
+    return void
+}
+function @Leaf__self(%this : ptr [object_bytes=32]) -> ptr [binding=weak, object=_ZN4Leaf4selfEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Left__self(%this : ptr [object_bytes=16]) -> ptr [binding=weak, object=_ZN4Left4selfEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Right__self(%this : ptr [object_bytes=16]) -> ptr [binding=weak, object=_ZN5Right4selfEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Low__self(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN3Low4selfEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @Low__Low__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3LowC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Low__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Right__Right__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN5RightC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t2, -32
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t3, %t5
+    %t7 = index i8 %__vtt, 8
+    %t8 = load typed ptr %t7
+    store typed ptr %t8, %t6
+    return void
+}
+function @Left__Left__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN4LeftC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t2, -32
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t3, %t5
+    %t7 = index i8 %__vtt, 8
+    %t8 = load typed ptr %t7
+    store typed ptr %t8, %t6
+    return void
+}
+function @_Leaf__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32(%arg0 : ptr) -> ptr [binding=weak, object=_ZTcv0_n24_v0_n32_N4Leaf4selfEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call ptr @Leaf__self(%t4)
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^return_null_1, ^adjust_return_2
+
+  block ^return_null_1:
+    return ptr %t5
+
+  block ^adjust_return_2:
+    %t7 = load typed ptr %t5
+    %t8 = index i8 %t7, -32
+    %t9 = load typed i64 %t8
+    %t10 = index i8 %t5, %t9
+    return ptr %t10
+}
+function @_Leaf__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n40(%arg0 : ptr) -> ptr [binding=weak, object=_ZTcv0_n24_v0_n40_N4Leaf4selfEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call ptr @Leaf__self(%t4)
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^return_null_1, ^adjust_return_2
+
+  block ^return_null_1:
+    return ptr %t5
+
+  block ^adjust_return_2:
+    %t7 = load typed ptr %t5
+    %t8 = index i8 %t7, -40
+    %t9 = load typed i64 %t8
+    %t10 = index i8 %t5, %t9
+    return ptr %t10
+}
+function @_Left__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32(%arg0 : ptr) -> ptr [binding=weak, object=_ZTcv0_n24_v0_n32_N4Left4selfEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call ptr @Left__self(%t4)
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^return_null_1, ^adjust_return_2
+
+  block ^return_null_1:
+    return ptr %t5
+
+  block ^adjust_return_2:
+    %t7 = load typed ptr %t5
+    %t8 = index i8 %t7, -32
+    %t9 = load typed i64 %t8
+    %t10 = index i8 %t5, %t9
+    return ptr %t10
+}
+function @_Right__self__vtable_return_adjust__this_pos0__return_pos0__vcall_n24__virtual_n32(%arg0 : ptr) -> ptr [binding=weak, object=_ZTcv0_n24_v0_n32_N5Right4selfEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call ptr @Right__self(%t4)
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^return_null_1, ^adjust_return_2
+
+  block ^return_null_1:
+    return ptr %t5
+
+  block ^adjust_return_2:
+    %t7 = load typed ptr %t5
+    %t8 = index i8 %t7, -32
+    %t9 = load typed i64 %t8
+    %t10 = index i8 %t5, %t9
+    return ptr %t10
+}

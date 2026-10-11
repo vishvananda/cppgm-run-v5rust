@@ -1,0 +1,18 @@
+global @pool_int___data : i32 [binding=weak, object=_ZN4poolIiE4dataE] = 7
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @pool_int___nested__run()
+    %t2 = binary sub nowrap i32 %t1, 7
+    return i32 %t2
+}
+function @pool_int___nested__run() -> i32 [binding=weak, object=_ZN4poolIiE6nested3runEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @pool_int___get()
+    return i32 %t1
+}
+function @pool_int___get() -> i32 [binding=weak, object=_ZN4poolIiE3getEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @pool_int___data
+    return i32 %t1
+}

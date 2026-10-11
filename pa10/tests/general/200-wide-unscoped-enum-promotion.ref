@@ -1,0 +1,19 @@
+function @which(%__param0 : i32) -> i32 [binding=strong, object=_Z5whichi] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 1
+}
+function @which__ov2(%__param0 : u32) -> i32 [binding=strong, object=_Z5whichj] {
+  slot $__param0 : u32
+
+  block ^entry:
+    store typed u32 %__param0, $__param0
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @which__ov2(4294967295)
+    return i32 %t1
+}

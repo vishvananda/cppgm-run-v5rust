@@ -1,0 +1,7 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    return i32 0
+}

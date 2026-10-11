@@ -1,0 +1,101 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier box
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier operator+
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier box<T>
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier box<T>
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier compare
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier box<int>
+          declarator
+            identifier a
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier y
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier z
+    compound-statement
+      return-statement
+        binary-expression OP_GT:>
+          binary-expression OP_LT:<
+            call-expression
+              id-expression operator+<int>
+              argument-list
+                id-expression a
+                id-expression a
+            id-expression y
+          id-expression z
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_CHAR:char
+          parameter-pack ...
+          declarator
+            identifier Cs
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_UNSIGNED:unsigned
+        decl-specifier KW_LONG:long
+        decl-specifier KW_LONG:long
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier operator""_size
+            parameter-clause
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_AUTO:auto
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier size
+        initializer
+          call-expression
+            id-expression operator""_size<'1','2'>
+            argument-list
+end translation unit

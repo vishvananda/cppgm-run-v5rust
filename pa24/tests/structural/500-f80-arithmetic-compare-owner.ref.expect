@@ -1,0 +1,7 @@
+# budget from 500-f80-arithmetic-compare-owner.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 7
+blocks <= 4
+count(call) <= 3
+mem <= 8
+instructions <= 7 in @main
+stack_size <= 448 in @main

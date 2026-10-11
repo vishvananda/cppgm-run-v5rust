@@ -1,0 +1,14 @@
+// N3485 15.4p3 as GCC and Clang apply it to the C library: a function a system
+// header declares non-throwing (glibc's posix_memalign) may be redeclared
+// without an exception-specification, as clang's mm_malloc.h does; both
+// declarations name the library's function
+#include <stdlib.h>
+extern "C" int posix_memalign(void** memptr, size_t alignment, size_t size);
+int main()
+{
+	void* p = 0;
+	if (posix_memalign(&p, 64, 128) != 0)
+		return 1;
+	free(p);
+	return 0;
+}

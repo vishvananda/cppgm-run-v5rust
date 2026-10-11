@@ -1,0 +1,10 @@
+# budget from 300-sink-cold-only-definitions.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 31
+blocks <= 14
+count(call) <= 8
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 10 in @single_cold_use
+instructions <= 15 in @shared_cold_uses
+instructions <= 11 in @keeps_hot_use

@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias I int
+  function-definition f function of () returning int
+    compound-statement
+      simple-declaration
+        variable x const int
+          literal prvalue int 1
+      return-statement
+        id-expression lvalue const int x
+end translation unit

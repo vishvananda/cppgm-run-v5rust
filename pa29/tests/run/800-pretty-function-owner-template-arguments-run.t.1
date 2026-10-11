@@ -1,0 +1,36 @@
+bool contains(const char *text, const char *needle)
+{
+  for(; *text; ++text) {
+    const char *left = text;
+    const char *right = needle;
+    while(*left && *right && *left == *right) {
+      ++left;
+      ++right;
+    }
+    if(!*right) {
+      return true;
+    }
+  }
+  return false;
+}
+
+template<class T>
+struct owner {
+  template<unsigned Depth = 0>
+  static const char *text()
+  {
+    return __PRETTY_FUNCTION__;
+  }
+};
+
+int main()
+{
+  const char *value = owner<int>::text<>();
+  if(!contains(value, "T = int")) {
+    return 1;
+  }
+  if(!contains(value, "Depth = 0")) {
+    return 2;
+  }
+  return 0;
+}

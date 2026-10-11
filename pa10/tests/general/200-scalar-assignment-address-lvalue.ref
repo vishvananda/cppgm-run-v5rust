@@ -1,0 +1,40 @@
+function @assign_address(%value : ptr [pass=by_address, object_bytes=4], %next : i32) -> ptr [binding=strong, object=_Z14assign_addressRii] {
+  slot $value : ptr
+  slot $next : i32
+
+  block ^entry:
+    store typed ptr %value, $value
+    store typed i32 %next, $next
+    %t1 = load typed i32 $next
+    %t2 = load typed ptr $value
+    store typed i32 %t1, %t2
+    return ptr %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = addr $value
+    %t2 = call ptr @assign_address(%t1, 2)
+    store typed ptr %t2, $p
+    %t3 = load typed ptr $p
+    store typed i32 3, %t3
+    %t4 = load typed i32 $value
+    %t5 = cmp eq i32 %t4, 3
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

@@ -1,0 +1,2 @@
+// N3485 8.5, 13.3.1.4: select the conversion, then validate final construction.
+struct X; struct A { int value; A(int n):value(n){} A(X &); A(X &, int = 0); }; struct X { operator A()const { return A(2); } }; A::A(X &):value(1){} A::A(X &,int):value(3){} A pass(A a){return a;} int main(){X x; A a=pass(x); return a.value;}

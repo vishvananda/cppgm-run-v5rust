@@ -1,0 +1,71 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  u16 120
+  u16 0
+}
+
+function @g(%s : ptr, %n : i64, %a : ptr [pass=by_address, object_bytes=2]) -> ptr [binding=strong, object=_Z1gPKDsmRS_] {
+  slot $s : ptr
+  slot $n : i64
+  slot $a : ptr
+  slot $proj : obj<1x1>
+
+  block ^entry:
+    store typed ptr %s, $s
+    store typed i64 %n, $n
+    store typed ptr %a, $a
+    %t1 = addr $proj
+    %t2 = load typed ptr $s
+    %t3 = load typed ptr $s
+    %t4 = load typed i64 $n
+    %t5 = copy i64 %t4
+    %t6 = binary mul i64 %t5, 2
+    %t7 = index i8 %t3, %t6
+    %t8 = load typed ptr $a
+    %t9 = addr $proj
+    %t10 = call ptr @std____find(%t2, %t7, %t8, %t9)
+    return ptr %t10
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $text : obj<4x2>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $text
+    copyobj 4x2 @__constexpr_template__1, %t1
+    %t2 = addr $text
+    %t3 = convert sext i64 i32 1
+    %t4 = addr $text
+    %t5 = index u16 [projection=array_element] %t4, 0
+    %t6 = call ptr @g(%t2, %t3, %t5)
+    %t7 = addr $text
+    %t8 = binary mul i64 1, 2
+    %t9 = index i8 %t7, %t8
+    %t10 = cmp eq ptr %t6, %t9
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @std____find(%first : ptr, %last : ptr, %__param2 : ptr [pass=by_address, object_bytes=2], %__param3 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_ZSt6__findIDsSt8identityLi0EEPKT_S3_S3_RS2_RT0_] {
+  slot $first : ptr
+  slot $last : ptr
+  slot $__param2 : ptr
+  slot $__param3 : ptr
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    store typed ptr %__param2, $__param2
+    store typed ptr %__param3, $__param3
+    %t1 = load typed ptr $last
+    return ptr %t1
+}

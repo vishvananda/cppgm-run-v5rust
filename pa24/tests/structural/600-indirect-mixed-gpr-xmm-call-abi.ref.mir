@@ -1,0 +1,58 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @table
+  storage data
+  item ptr addr @mix
+
+function @mix
+  abi
+    param %a -> rdi : i64
+    param %b -> xmm0 : f64
+    param %c -> rsi : i64
+    param %d -> xmm1 : f64
+    return i64 -> rax
+  frame
+    stack_size 80
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+    param-slot %b -> [rbp-8] : f64
+    param-slot %d -> [rbp-16] : f64
+
+  block ^entry
+    fmov.f64 [rbp-8], xmm0
+    fmov.f64 [rbp-16], xmm1
+    fptosi.f64.i64 r9, [rbp-8]
+    fptosi.f64.i64 rbx, [rbp-16]
+    mov r12, rdi
+    add r12, rsi
+    add r9, rbx
+    add r12, r9
+    ret r12
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.ptr r8, @table
+    mov rdi, 10
+    mov rsi, 20
+    fmov.f64 xmm0, 1.5
+    fmov.f64 xmm1, 2.5
+    call *r8 [args=(rsi,rdi,xmm0,xmm1)]
+    cmp.i64 rax, 33
+    sete rax
+    movzx rax, rax
+    ret rax

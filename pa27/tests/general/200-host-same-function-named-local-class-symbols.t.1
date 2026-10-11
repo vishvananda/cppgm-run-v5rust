@@ -1,0 +1,27 @@
+int select_value(bool first)
+{
+  if(first) {
+    struct Local
+    {
+      int value;
+
+      Local(int initial) : value(initial) {}
+      int read() const { return value; }
+    };
+    return Local(3).read();
+  }
+
+  struct Local
+  {
+    int value;
+
+    Local(int initial) : value(initial) {}
+    int read() const { return value; }
+  };
+  return Local(4).read();
+}
+
+int main()
+{
+  return select_value(true) + select_value(false) == 7 ? 0 : 1;
+}

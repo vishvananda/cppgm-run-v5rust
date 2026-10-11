@@ -1,0 +1,24 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $p : ptr
+  slot $y : ptr
+  slot $z : ptr
+
+  block ^entry:
+    store typed i32 3, $x
+    %t1 = addr $x
+    store typed ptr %t1, $p
+    %t2 = addr $x
+    store typed ptr %t2, $y
+    %t3 = addr $x
+    store typed ptr %t3, $z
+    %t4 = load typed ptr $y
+    store typed i32 5, %t4
+    %t5 = load typed ptr $p
+    %t6 = load typed i32 %t5
+    %t7 = load typed ptr $z
+    %t8 = load typed i32 %t7
+    %t9 = binary add nowrap i32 %t6, %t8
+    %t10 = binary sub nowrap i32 %t9, 10
+    return i32 %t10
+}

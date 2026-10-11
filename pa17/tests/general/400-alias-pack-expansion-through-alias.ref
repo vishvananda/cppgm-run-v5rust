@@ -1,0 +1,41 @@
+declare global @Same_int_signedchar___value : u8 [binding=weak, object=_ZN4SameIiaE5valueE]
+declare global @Same_int_shortint___value : u8 [binding=weak, object=_ZN4SameIisE5valueE]
+declare global @Same_int_int___value : u8 [binding=weak, object=_ZN4SameIiiE5valueE]
+declare global @Same_int_longint___value : u8 [binding=weak, object=_ZN4SameIilE5valueE]
+declare global @Same_int_longlongint___value : u8 [binding=weak, object=_ZN4SameIixE5valueE]
+declare global @Or___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN2OrIJ4SameIixEEE5valueE]
+declare global @Or___cppgm_class_template_identity_2___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN2OrIJ4SameIilES0_IixEEE5valueE]
+declare global @Or___cppgm_class_template_identity_4___value : u8 [binding=weak, object=_ZN2OrIJ4SameIiiES0_IilES0_IixEEE5valueE]
+declare global @Or___cppgm_class_template_identity_6___value : u8 [binding=weak, object=_ZN2OrIJ4SameIisES0_IiiES0_IilES0_IixEEE5valueE]
+declare global @Or___cppgm_class_template_identity_8___value : u8 [binding=weak, object=_ZN2OrIJ4SameIiaES0_IisES0_IiiES0_IilES0_IixEEE5valueE]
+declare global @Same_int_unsignedchar___value : u8 [binding=weak, object=_ZN4SameIihE5valueE]
+declare global @Same_int_unsignedshortint___value : u8 [binding=weak, object=_ZN4SameIitE5valueE]
+declare global @Same_int_unsignedint___value : u8 [binding=weak, object=_ZN4SameIijE5valueE]
+declare global @Same_int_unsignedlongint___value : u8 [binding=weak, object=_ZN4SameIimE5valueE]
+declare global @Same_int_unsignedlonglongint___value : u8 [binding=weak, object=_ZN4SameIiyE5valueE]
+declare global @Or___cppgm_class_template_identity_9___value : u8 [binding=weak, object=_ZN2OrIJ4SameIiyEEE5valueE]
+declare global @Or___cppgm_class_template_identity_10___cppgm_class_template_identity_9___value : u8 [binding=weak, object=_ZN2OrIJ4SameIimES0_IiyEEE5valueE]
+declare global @Or___cppgm_class_template_identity_12___value : u8 [binding=weak, object=_ZN2OrIJ4SameIijES0_IimES0_IiyEEE5valueE]
+declare global @Or___cppgm_class_template_identity_14___value : u8 [binding=weak, object=_ZN2OrIJ4SameIitES0_IijES0_IimES0_IiyEEE5valueE]
+declare global @Or___cppgm_class_template_identity_16___value : u8 [binding=weak, object=_ZN2OrIJ4SameIihES0_IitES0_IijES0_IimES0_IiyEEE5valueE]
+declare global @Or___cppgm_class_template_identity_16___value__2 : u8 [binding=weak, object=_ZN2OrIJS_IJ4SameIihES0_IitES0_IijES0_IimES0_IiyEEEEE5valueE]
+declare global @Or___cppgm_class_template_identity_8___cppgm_class_template_identity_16___value : u8 [binding=weak, object=_ZN2OrIJS_IJ4SameIiaES0_IisES0_IiiES0_IilES0_IixEEES_IJS0_IihES0_IitES0_IijES0_IimES0_IiyEEEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}

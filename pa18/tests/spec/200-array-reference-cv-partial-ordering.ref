@@ -1,0 +1,84 @@
+global @ns__selected : i32 [binding=strong, object=_ZN2ns8selectedE] = 0
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 0
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data : obj<12x4>
+  slot $const_data : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $data
+    copyobj 12x4 @__constexpr_template__1, %t1
+    %t2 = addr $const_data
+    copyobj 12x4 @__constexpr_template__1, %t2
+    %t3 = addr $data
+    %t4 = call ptr @ns__detail__range_begin(%t3)
+    %t5 = load typed i32 @ns__selected
+    %t6 = cmp ne i32 %t5, 3
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = addr $data
+    %t8 = call ptr @ns__begin(%t7)
+    %t9 = load typed i32 @ns__selected
+    %t10 = cmp ne i32 %t9, 2
+    branch %t10, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t11 = addr $const_data
+    %t12 = call ptr @ns__detail__range_begin__2(%t11)
+    %t13 = load typed i32 @ns__selected
+    %t14 = cmp ne i32 %t13, 2
+    branch %t14, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}
+function @ns__detail__range_begin(%a : ptr [pass=by_address, object_bytes=12]) -> ptr [binding=weak, object=_ZN2ns6detail11range_beginIiLm3EEEPKiRAT0__T_] {
+  slot $a : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed i32 3, @ns__selected
+    %t1 = load typed ptr $a
+    return ptr %t1
+}
+function @ns__begin(%r : ptr [pass=by_address, object_bytes=12]) -> ptr [binding=weak, object=_ZN2ns5beginIA3_iEEPKiRKT_] {
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %r, $r
+    %t1 = load typed ptr $r
+    %t2 = call ptr @ns__detail__range_begin__2(%t1)
+    return ptr %t2
+}
+function @ns__detail__range_begin__2(%a : ptr [pass=by_address, object_bytes=12]) -> ptr [binding=weak, object=_ZN2ns6detail11range_beginIiLm3EEEPKiRAT0__KT_] {
+  slot $a : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed i32 2, @ns__selected
+    %t1 = load typed ptr $a
+    return ptr %t1
+}

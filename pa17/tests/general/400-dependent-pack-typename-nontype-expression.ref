@@ -1,0 +1,13 @@
+declare global @sizeof_typelist___cppgm_class_template_identity_1___value : i64 [binding=weak, object=_ZN15sizeof_typelistI8typelistIJiclEEE5valueE]
+
+declare function @expect(%arg0 : ptr) -> i32 [binding=strong, object=_Z6expectP8typelistIJlciEE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr 0, $p
+    %t1 = load typed ptr $p
+    %t2 = call i32 @expect(%t1)
+    return i32 %t2
+}

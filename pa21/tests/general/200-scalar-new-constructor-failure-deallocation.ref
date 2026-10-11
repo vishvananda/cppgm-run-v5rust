@@ -1,0 +1,417 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+
+global @storage : obj<64x8> [binding=strong] = {
+  zero 64
+}
+global @allocations : i32 [binding=strong] = zero
+global @cleanup_order : i32 [binding=strong] = zero
+global @arguments_alive : i32 [binding=strong] = zero
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @operatornew(%__param0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new] {
+  slot $__param0 : i64
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    %t1 = load typed i32 @allocations
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @allocations
+    %t3 = addr @storage
+    return ptr %t3
+}
+function @operatordelete(%__param0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = load typed i32 @allocations
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @allocations
+    %t3 = load typed i32 @cleanup_order
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @cleanup_order
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $call__1 : ptr
+  slot $arg__2 : obj<1x1>
+  slot $catch__3 : ptr
+  slot $value : i32
+  slot $skipped : ptr
+  slot $arg__4 : obj<1x1>
+  slot $lifetime__5 : u8
+  slot $lor__6 : i64
+  slot $lor__7 : i64
+  slot $lor__8 : i64
+  slot $land__9 : i64
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    eh_try ^call_unwind_dispatch_5
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @operatornew(%t1)
+    store typed ptr %t2, $call__1
+    %t3 = load typed ptr $call__1
+    eh_end
+    jump ^call_unwind_end_6
+
+  block ^cleanup_resume_4:
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^call_unwind_dispatch_5:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_end_6:
+    %t4 = addr $arg__2
+    eh_try ^call_unwind_dispatch_8
+    call void @argument__argument(%t4)
+    eh_end
+    jump ^call_unwind_end_9
+
+  block ^construction_cleanup_7:
+    call void @operatordelete(%t3)
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_dispatch_8:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    jump ^construction_cleanup_7
+
+  block ^call_unwind_end_9:
+    eh_try ^call_unwind_dispatch_11
+    call void @item__item(%t3, %t4)
+    eh_end
+    jump ^call_unwind_end_12
+
+  block ^cleanup_action_10:
+    call void @argument___argument(%t4)
+    jump ^construction_cleanup_7
+
+  block ^call_unwind_dispatch_11:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    jump ^cleanup_action_10
+
+  block ^call_unwind_end_12:
+    eh_try ^call_unwind_dispatch_5
+    call void @argument___argument(%t4)
+    eh_end
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_13, ^catch_next_14
+
+  block ^catch_body_13:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    store typed ptr %t8, $catch__3
+    eh_cleanup ^catch_cleanup_15
+    %t9 = load typed i32 %t8
+    store typed i32 %t9, $value
+    %t10 = load typed i32 $value
+    %t11 = cmp ne i32 %t10, 7
+    branch %t11, ^if_then_16, ^lor_rhs_20
+
+  block ^lor_rhs_20:
+    %t12 = load typed i32 @allocations
+    %t13 = cmp ne i32 %t12, 0
+    branch %t13, ^if_then_16, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t14 = load typed i32 @arguments_alive
+    %t15 = cmp ne i32 %t14, 0
+    branch %t15, ^if_then_16, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t16 = load typed i32 @cleanup_order
+    %t17 = cmp ne i32 %t16, 21
+    branch %t17, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 1
+
+  block ^if_else_17:
+    jump ^if_end_21
+
+  block ^if_end_21:
+    store u8 0, $lifetime__5
+    %t18 = convert sext i64 i32 1
+    eh_try ^call_unwind_dispatch_38
+    %t19 = call ptr @nullable_item__operatornew(%t18)
+    eh_end
+    %t20 = cmp ne ptr %t19, 0
+    branch %t20, ^new_init_23, ^new_end_24
+
+  block ^call_unwind_dispatch_38:
+    jump ^conditional_cleanup_dispatch_37
+
+  block ^cleanup_resume_35:
+    resume
+
+  block ^cleanup_action_36:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    jump ^cleanup_resume_35
+
+  block ^conditional_cleanup_dispatch_37:
+    %t24 = load u8 $lifetime__5
+    branch %t24, ^conditional_temporary_destroy_39, ^conditional_temporary_done_40
+
+  block ^conditional_temporary_destroy_39:
+    store u8 0, $lifetime__5
+    %t25 = addr $arg__4
+    call void @argument___argument(%t25)
+    jump ^conditional_temporary_done_40
+
+  block ^conditional_temporary_done_40:
+    jump ^cleanup_action_36
+
+  block ^new_init_23:
+    %t21 = addr $arg__4
+    eh_try ^call_unwind_dispatch_28
+    call void @argument__argument(%t21)
+    store u8 1, $lifetime__5
+    eh_end
+    jump ^call_unwind_end_29
+
+  block ^cleanup_resume_25:
+    resume
+
+  block ^cleanup_action_26:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    jump ^cleanup_resume_25
+
+  block ^construction_cleanup_27:
+    call void @nullable_item__operatordelete(%t19)
+    jump ^cleanup_action_26
+
+  block ^call_unwind_dispatch_28:
+    jump ^construction_cleanup_27
+
+  block ^call_unwind_end_29:
+    eh_try ^call_unwind_dispatch_31
+    call void @nullable_item__nullable_item(%t19, %t21)
+    eh_end
+    jump ^call_unwind_end_32
+
+  block ^conditional_cleanup_dispatch_30:
+    %t22 = load u8 $lifetime__5
+    branch %t22, ^conditional_temporary_destroy_33, ^conditional_temporary_done_34
+
+  block ^conditional_temporary_destroy_33:
+    store u8 0, $lifetime__5
+    %t23 = addr $arg__4
+    call void @argument___argument(%t23)
+    jump ^conditional_temporary_done_34
+
+  block ^conditional_temporary_done_34:
+    jump ^construction_cleanup_27
+
+  block ^call_unwind_dispatch_31:
+    jump ^conditional_cleanup_dispatch_30
+
+  block ^call_unwind_end_32:
+    jump ^new_end_24
+
+  block ^new_end_24:
+    store typed ptr %t19, $skipped
+    eh_try ^call_unwind_dispatch_41
+    %t26 = load u8 $lifetime__5
+    branch %t26, ^conditional_temporary_destroy_42, ^conditional_temporary_done_43
+
+  block ^conditional_temporary_destroy_42:
+    store u8 0, $lifetime__5
+    %t27 = addr $arg__4
+    call void @argument___argument(%t27)
+    jump ^conditional_temporary_done_43
+
+  block ^conditional_temporary_done_43:
+    eh_end
+    jump ^call_unwind_end_44
+
+  block ^call_unwind_dispatch_41:
+    jump ^cleanup_action_26
+
+  block ^call_unwind_end_44:
+    %t28 = load typed ptr $skipped
+    %t29 = copy ptr 0
+    %t30 = cmp ne ptr %t28, %t29
+    branch %t30, ^lor_short_46, ^lor_rhs_45
+
+  block ^lor_rhs_45:
+    %t31 = load typed i32 @allocations
+    %t32 = cmp ne i32 %t31, 0
+    %t33 = cmp ne i64 %t32, 0
+    store typed i64 %t33, $lor__6
+    jump ^lor_end_47
+
+  block ^lor_short_46:
+    store typed i64 1, $lor__6
+    jump ^lor_end_47
+
+  block ^lor_end_47:
+    %t34 = load typed i64 $lor__6
+    branch %t34, ^lor_short_49, ^lor_rhs_48
+
+  block ^lor_rhs_48:
+    %t35 = load typed i32 @arguments_alive
+    %t36 = cmp ne i32 %t35, 0
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $lor__7
+    jump ^lor_end_50
+
+  block ^lor_short_49:
+    store typed i64 1, $lor__7
+    jump ^lor_end_50
+
+  block ^lor_end_50:
+    %t38 = load typed i64 $lor__7
+    branch %t38, ^lor_short_52, ^lor_rhs_51
+
+  block ^lor_rhs_51:
+    %t39 = load typed i32 @cleanup_order
+    %t40 = cmp ne i32 %t39, 21
+    branch %t40, ^land_rhs_54, ^land_short_55
+
+  block ^land_rhs_54:
+    %t41 = load typed i32 @cleanup_order
+    %t42 = cmp ne i32 %t41, 212
+    %t43 = cmp ne i64 %t42, 0
+    store typed i64 %t43, $land__9
+    jump ^land_end_56
+
+  block ^land_short_55:
+    store typed i64 0, $land__9
+    jump ^land_end_56
+
+  block ^land_end_56:
+    %t44 = load typed i64 $land__9
+    %t45 = cmp ne i64 %t44, 0
+    store typed i64 %t45, $lor__8
+    jump ^lor_end_53
+
+  block ^lor_short_52:
+    store typed i64 1, $lor__8
+    jump ^lor_end_53
+
+  block ^lor_end_53:
+    %t46 = load typed i64 $lor__8
+    %t47 = convert trunc i32 i64 %t46
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t47
+
+  block ^catch_cleanup_15:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_14:
+    resume
+
+  block ^try_end_3:
+    return i32 2
+}
+function @argument__argument(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN8argumentC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @arguments_alive
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @arguments_alive
+    return void
+}
+function @item__item(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN4itemC1ERK8argument, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t1
+    %t2 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    return void
+}
+function @argument___argument(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN8argumentD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @arguments_alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @arguments_alive
+    %t3 = load typed i32 @cleanup_order
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 2
+    store typed i32 %t5, @cleanup_order
+    return void
+}
+function @nullable_item__operatornew(%__param0 : i64) -> ptr [unwind=no, binding=weak, object=_ZN13nullable_itemnwEm, inline_hint=yes] {
+  slot $__param0 : i64
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    %t1 = copy ptr 0
+    return ptr %t1
+}
+function @nullable_item__operatordelete(%__param0 : ptr) -> void [unwind=no, binding=weak, object=_ZN13nullable_itemdlEPv, inline_hint=yes] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i32 99, @cleanup_order
+    return void
+}
+function @nullable_item__nullable_item(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN13nullable_itemC1ERK8argument, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 8, %t1
+    %t2 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    return void
+}
+alias object _ZN8argumentC2Ev = @argument__argument
+alias object _ZN4itemC2ERK8argument = @item__item
+alias object _ZN8argumentD2Ev = @argument___argument
+alias object _ZN13nullable_itemC2ERK8argument = @nullable_item__nullable_item

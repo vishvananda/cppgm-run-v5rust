@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function function function of () returning int
+    variable pointer const pointer to int
+    scope function function
+      scope block
+end translation unit

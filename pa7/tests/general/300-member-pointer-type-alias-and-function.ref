@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias member_ptr member-pointer of struct C to int
+  function-definition f function of (member-pointer of struct C to int) returning member-pointer of struct C to int
+    parameter p member-pointer of struct C to int
+    compound-statement
+      return-statement
+        id-expression lvalue member-pointer of struct C to int p
+end translation unit

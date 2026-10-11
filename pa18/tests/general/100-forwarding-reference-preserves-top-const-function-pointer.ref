@@ -1,0 +1,67 @@
+function @forwarding_top_const__target() -> i32 [binding=strong, object=_ZN20forwarding_top_const6targetEv] {
+  block ^entry:
+    return i32 1
+}
+function @forwarding_top_const__run(%slot : ptr) -> i32 [binding=strong, object=_ZN20forwarding_top_const3runEPPFivE] {
+  slot $slot : ptr
+  slot $out : obj<1x1>
+
+  block ^entry:
+    store typed ptr %slot, $slot
+    %t1 = addr $out
+    %t2 = addr @forwarding_top_const__target
+    %t3 = load typed ptr $slot
+    store typed ptr %t2, %t3
+    %t4 = addr $out
+    %t5 = load typed ptr $slot
+    %t6 = call i32 @forwarding_top_const__manager_int______clone(%t4, %t5)
+    return i32 %t6
+}
+function @forwarding_top_const__manager_int______clone(%out : ptr [pass=by_address, object_bytes=1], %slot : ptr) -> i32 [binding=weak, object=_ZN20forwarding_top_const7managerIPFivEE5cloneERNS_7storageEPS2_, inline_hint=yes] {
+  slot $out : ptr
+  slot $slot : ptr
+
+  block ^entry:
+    store typed ptr %out, $out
+    store typed ptr %slot, $slot
+    %t1 = load typed ptr $out
+    %t2 = load typed ptr $slot
+    %t3 = call i32 @forwarding_top_const__manager_int______init(%t1, %t2)
+    return i32 %t3
+}
+function @forwarding_top_const__manager_int______init(%out : ptr [pass=by_address, object_bytes=1], %value : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_ZN20forwarding_top_const7managerIPFivEE4initIRKS2_EEiRNS_7storageEOT_, inline_hint=yes] {
+  slot $out : ptr
+  slot $value : ptr
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %out, $out
+    store typed ptr %value, $value
+    %t1 = load typed ptr $out
+    %t2 = load typed ptr $value
+    %t3 = call ptr @forwarding_top_const__forward(%t2)
+    %t4 = addr $argobj__1
+    %t5 = call i32 @forwarding_top_const__manager_int______create(%t1, %t3, $argobj__1)
+    return i32 %t5
+}
+function @forwarding_top_const__forward(%value : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN20forwarding_top_const7forwardIRKPFivEEEOT_RNS_16remove_referenceIS5_E4typeE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+function @forwarding_top_const__manager_int______create(%__param0 : ptr [pass=by_address, object_bytes=1], %value : ptr [pass=by_address, object_bytes=8], %__param2 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_ZN20forwarding_top_const7managerIPFivEE6createIRKS2_EEiRNS_7storageEOT_NS_9true_typeE, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $value : ptr
+  slot $__param2 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr %t1
+    %t3 = call i32 %t2() as () -> i32
+    return i32 %t3
+}

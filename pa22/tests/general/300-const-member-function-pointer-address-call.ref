@@ -1,0 +1,184 @@
+function @call0(%p : i128, %s : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z5call0M1SKFivERKS_] {
+  slot $p : i128
+  slot $s : ptr
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed i128 %p, $p
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = load typed i128 $p
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i32 %t14(%t8) as (%arg0 : ptr [object_bytes=4]) -> i32
+    return i32 %t15
+}
+function @call1(%p : i128, %s : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z5call1M1SKFiiERKS_] {
+  slot $p : i128
+  slot $s : ptr
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed i128 %p, $p
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = load typed i128 $p
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i32 %t14(%t8, 5) as (%arg0 : ptr [object_bytes=4], %arg1 : i32) -> i32
+    return i32 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<4x4>
+  slot $p0 : i128
+  slot $p1 : i128
+  slot $member_pointer_callee__1 : ptr
+  slot $member_pointer_callee__2 : ptr
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr @S__get
+    %t5 = copy i64 %t4
+    %t6 = convert zext i128 i64 %t5
+    store typed i128 %t6, $p0
+    %t7 = addr @S__add
+    %t8 = copy i64 %t7
+    %t9 = convert zext i128 i64 %t8
+    store typed i128 %t9, $p1
+    %t10 = addr @S__get
+    %t11 = copy i64 %t10
+    %t12 = convert zext i128 i64 %t11
+    %t13 = addr $s
+    %t14 = call i32 @call0(%t12, %t13)
+    %t15 = addr @S__add
+    %t16 = copy i64 %t15
+    %t17 = convert zext i128 i64 %t16
+    %t18 = addr $s
+    %t19 = call i32 @call1(%t17, %t18)
+    %t20 = binary add nowrap i32 %t14, %t19
+    %t21 = addr $s
+    %t22 = load typed i128 $p0
+    %t23 = binary shr i128 %t22, 64
+    %t24 = convert trunc i64 i128 %t23
+    %t25 = convert trunc i64 i128 %t22
+    %t26 = binary and i64 %t25, 1
+    %t27 = cmp ne i64 %t26, 0
+    %t28 = index i8 %t21, %t24
+    branch %t27, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t29 = load typed ptr %t28
+    %t30 = binary sub i64 %t25, 1
+    %t31 = index i8 %t29, %t30
+    %t32 = load typed ptr %t31
+    store typed ptr %t32, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t33 = copy ptr %t25
+    store typed ptr %t33, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t34 = load typed ptr $member_pointer_callee__1
+    %t35 = call i32 %t34(%t28) as (%arg0 : ptr [object_bytes=4]) -> i32
+    %t36 = binary add nowrap i32 %t20, %t35
+    %t37 = addr $s
+    %t38 = load typed i128 $p1
+    %t39 = binary shr i128 %t38, 64
+    %t40 = convert trunc i64 i128 %t39
+    %t41 = convert trunc i64 i128 %t38
+    %t42 = binary and i64 %t41, 1
+    %t43 = cmp ne i64 %t42, 0
+    %t44 = index i8 %t37, %t40
+    branch %t43, ^member_pointer_virtual_4, ^member_pointer_direct_5
+
+  block ^member_pointer_virtual_4:
+    %t45 = load typed ptr %t44
+    %t46 = binary sub i64 %t41, 1
+    %t47 = index i8 %t45, %t46
+    %t48 = load typed ptr %t47
+    store typed ptr %t48, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_direct_5:
+    %t49 = copy ptr %t41
+    store typed ptr %t49, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_end_6:
+    %t50 = load typed ptr $member_pointer_callee__2
+    %t51 = call i32 %t50(%t44, 2) as (%arg0 : ptr [object_bytes=4], %arg1 : i32) -> i32
+    %t52 = binary add nowrap i32 %t36, %t51
+    %t53 = binary sub nowrap i32 %t52, 35
+    return i32 %t53
+}
+function @S__get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK1S3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @S__add(%this : ptr [object_bytes=4], %x : i32) -> i32 [binding=weak, object=_ZNK1S3addEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 $x
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}

@@ -1,0 +1,45 @@
+struct Hooks {
+  struct Thunk {
+    int * value;
+
+    Thunk() : value(0) {}
+    Thunk(int & input) : value(&input) {}
+    Thunk(const Thunk & other) : value(other.value) {}
+    ~Thunk() {}
+
+    Thunk & operator=(const Thunk & other)
+    {
+      value = other.value;
+      return *this;
+    }
+
+    int operator()() const
+    {
+      return *value;
+    }
+  };
+
+  Thunk thunk;
+  long long padding[3];
+};
+
+Hooks build_hooks(int & value)
+{
+  Hooks hooks;
+  hooks.thunk = Hooks::Thunk(value);
+  hooks.padding[0] = 1;
+  hooks.padding[1] = 2;
+  hooks.padding[2] = 3;
+  return hooks;
+}
+
+int consume(Hooks hooks)
+{
+  return hooks.thunk();
+}
+
+int main()
+{
+  int value = 7;
+  return consume(build_hooks(value)) == 7 ? 0 : 1;
+}

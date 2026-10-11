@@ -1,0 +1,12 @@
+preproc 1
+sof tests/macros/600-tail-helper-macro-rescans.t
+simple ( OP_LPAREN
+identifier a
+simple ) OP_RPAREN
+simple ( OP_LPAREN
+identifier b
+simple ) OP_RPAREN
+simple ( OP_LPAREN
+identifier c
+simple ) OP_RPAREN
+eof

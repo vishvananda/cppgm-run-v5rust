@@ -1,0 +1,81 @@
+function @make(%ec : obj<4x4>) -> obj<4x4> [binding=strong, object=_Z4make10error_code] {
+  slot $ec : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $ec
+    copyobj 4x4 %ec, %t1
+    %t2 = addr $retobj__1
+    %t3 = addr $arg__2
+    %t4 = addr $ec
+    call void @completion_message_void_error_code____completion_message(%t3, 0, %t4)
+    call void @completion_payload_void_error_code____completion_payload(%t2, %t3)
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ec : obj<4x4>
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<4x4>
+  slot $argobj__3 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $ec
+    %t2 = addr $ec
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $tmpobj__2
+    %t5 = addr $argobj__3
+    %t6 = addr $ec
+    copyobj 4x4 %t6, %t5
+    %t7 = call obj<4x4> @make($argobj__3)
+    copyobj 4x4 %t7, %t4
+    %t8 = index i8 [projection=field] %t4, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 7
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @completion_message_void_error_code____completion_message(%this : ptr [object_bytes=4], %__param1 : i32, %arg : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN18completion_messageIFv10error_codeEEC1IRS0_EEiOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $arg : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed ptr %arg, $arg
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $arg
+    copyobj 4x4 %t3, %t2
+    return void
+}
+function @completion_payload_void_error_code____completion_payload(%this : ptr [object_bytes=4], %msg : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN18completion_payloadIFv10error_codeEEC1EO18completion_messageIS1_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $msg : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %msg, $msg
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $msg
+    %t4 = index i8 [projection=field] %t3, 0
+    copyobj 4x4 %t4, %t2
+    return void
+}
+alias object _ZN18completion_messageIFv10error_codeEEC2IRS0_EEiOT_ = @completion_message_void_error_code____completion_message
+alias object _ZN18completion_payloadIFv10error_codeEEC2EO18completion_messageIS1_E = @completion_payload_void_error_code____completion_payload

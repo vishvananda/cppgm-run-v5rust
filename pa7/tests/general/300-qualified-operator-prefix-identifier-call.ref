@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition detail
+    function-definition detail::operator_arrow_dispatch_ function of (int) returning int
+      parameter x int
+      compound-statement
+        return-statement
+          binary-expression prvalue int OP_PLUS:+
+            id-expression lvalue int x
+            literal prvalue int 2
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee detail::operator_arrow_dispatch_ function of (int) returning int
+          literal prvalue int 5
+end translation unit

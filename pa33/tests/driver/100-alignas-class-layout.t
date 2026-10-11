@@ -1,0 +1,1 @@
+../../../pa11/tests/general/300-alignas-class-layout.t

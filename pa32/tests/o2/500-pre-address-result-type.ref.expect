@@ -1,0 +1,14 @@
+# budget from 500-pre-address-result-type.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 12
+blocks <= 10
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 7 in @select_address
+instructions <= 7 in @select_partial_address
+
+# outcomes from 500-pre-address-result-type.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(load)
+none(store)
+none(zeroinit)

@@ -1,0 +1,5 @@
+preproc 1
+sof tests/preproc/300-has-include.t
+identifier present
+identifier absent
+eof

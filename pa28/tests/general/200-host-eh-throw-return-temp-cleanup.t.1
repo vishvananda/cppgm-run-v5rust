@@ -1,0 +1,50 @@
+struct tracked
+{
+  int &count;
+
+  explicit tracked(int &c) : count(c)
+  {
+    ++count;
+  }
+
+  tracked(const tracked &other) : count(other.count)
+  {
+    ++count;
+  }
+
+  ~tracked()
+  {
+    --count;
+  }
+};
+
+struct wrapper : tracked
+{
+  explicit wrapper(const tracked &value) : tracked(value)
+  {
+  }
+
+  wrapper(const wrapper &other) : tracked(other)
+  {
+  }
+};
+
+wrapper make_wrapper(const tracked &value)
+{
+  return wrapper(value);
+}
+
+int main()
+{
+  int count = 0;
+  int during_catch = 0;
+  try {
+    throw make_wrapper(tracked(count));
+  } catch(wrapper &) {
+    during_catch = count;
+  }
+  if(during_catch != 1) {
+    return 10 + during_catch;
+  }
+  return count;
+}

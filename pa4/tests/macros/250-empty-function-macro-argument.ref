@@ -1,0 +1,5 @@
+preproc 1
+sof tests/macros/250-empty-function-macro-argument.t
+identifier a
+identifier b
+eof

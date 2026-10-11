@@ -1,0 +1,29 @@
+function @make_iterator() -> obj<8x8> [binding=strong, object=_Z13make_iteratorv] {
+  slot $x : obj<8x8>
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $x
+    call void @iterator_int___iterator(%t1)
+    %t2 = addr $retobj__1
+    %t3 = addr $x
+    copyobj 8x8 %t3, %t2
+    return obj<8x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $discard__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $discard__1
+    %t2 = call obj<8x8> @make_iterator()
+    copyobj 8x8 %t2, %t1
+    return i32 0
+}
+function @iterator_int___iterator(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8iteratorIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN8iteratorIiEC2Ev = @iterator_int___iterator

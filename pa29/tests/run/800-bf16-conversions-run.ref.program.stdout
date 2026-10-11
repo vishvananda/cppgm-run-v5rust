@@ -1,0 +1,63 @@
+0000: f 00000000 d 0000000000000000 ld 0 i 0 u 0 ll 0 i128 0:0 b 0 neg 8000 inc 3f80 dec bf80
+8000: f 80000000 d 8000000000000000 ld -0 i 0 u 0 ll 0 i128 0:0 b 0 neg 0000 inc 3f80 dec bf80
+3f80: f 3f800000 d 3ff0000000000000 ld 1 i 1 u 1 ll 1 i128 0:1 b 1 neg bf80 inc 4000 dec 0000
+bf80: f bf800000 d bff0000000000000 ld -1 i -1 ll -1 i128 ffffffffffffffff:ffffffffffffffff b 1 neg 3f80 inc 0000 dec c000
+3f81: f 3f810000 d 3ff0200000000000 ld 1.00781 i 1 u 1 ll 1 i128 0:1 b 1 neg bf81 inc 4000 dec 3c00
+4049: f 40490000 d 4009200000000000 ld 3.14062 i 3 u 3 ll 3 i128 0:3 b 1 neg c049 inc 4084 dec 4009
+7f7f: f 7f7f0000 d 47efe00000000000 ld 3.38953e+38 b 1 neg ff7f inc 7f7f dec 7f7f
+ff7f: f ff7f0000 d c7efe00000000000 ld -3.38953e+38 b 1 neg 7f7f inc ff7f dec ff7f
+0001: f 00010000 d 37a0000000000000 ld 9.18355e-41 i 0 u 0 ll 0 i128 0:0 b 1 neg 8001 inc 3f80 dec bf80
+8001: f 80010000 d b7a0000000000000 ld -9.18355e-41 i 0 ll 0 i128 0:0 b 1 neg 0001 inc 3f80 dec bf80
+007f: f 007f0000 d 380fc00000000000 ld 1.16631e-38 i 0 u 0 ll 0 i128 0:0 b 1 neg 807f inc 3f80 dec bf80
+0080: f 00800000 d 3810000000000000 ld 1.17549e-38 i 0 u 0 ll 0 i128 0:0 b 1 neg 8080 inc 3f80 dec bf80
+7f80: f 7f800000 d 7ff0000000000000 ld inf b 1 neg ff80 inc 7f80 dec 7f80
+ff80: f ff800000 d fff0000000000000 ld -inf b 1 neg 7f80 inc ff80 dec ff80
+7fc0: f 7fc00000 d 7ff8000000000000 ld nan b 1 neg ffc0 inc 7fc0 dec 7fc0
+4300: f 43000000 d 4060000000000000 ld 128 i 128 u 128 ll 128 i128 0:80 b 1 neg c300 inc 4301 dec 42fe
+4f00: f 4f000000 d 41e0000000000000 ld 2.14748e+09 u 2147483648 ll 2147483648 i128 0:80000000 b 1 neg cf00 inc 4f00 dec 4f00
+5f00: f 5f000000 d 43e0000000000000 ld 9.22337e+18 i128 0:8000000000000000 b 1 neg df00 inc 5f00 dec 5f00
+cf00: f cf000000 d c1e0000000000000 ld -2.14748e+09 ll -2147483648 i128 ffffffffffffffff:ffffffff80000000 b 1 neg 4f00 inc cf00 dec cf00
+3f00: f 3f000000 d 3fe0000000000000 ld 0.5 i 0 u 0 ll 0 i128 0:0 b 1 neg bf00 inc 3fc0 dec bf00
+3eff: f 3eff0000 d 3fdfe00000000000 ld 0.498047 i 0 u 0 ll 0 i128 0:0 b 1 neg beff inc 3fc0 dec bf00
+4b80: f 4b800000 d 4170000000000000 ld 1.67772e+07 i 16777216 u 16777216 ll 16777216 i128 0:1000000 b 1 neg cb80 inc 4b80 dec 4b80
+c6ff: f c6ff0000 d c0dfe00000000000 ld -32640 i -32640 ll -32640 i128 ffffffffffffffff:ffffffffffff8080 b 1 neg 46ff inc c6ff dec c6ff
+46fe: f 46fe0000 d 40dfc00000000000 ld 32512 i 32512 u 32512 ll 32512 i128 0:7f00 b 1 neg c6fe inc 46fe dec 46fe
+7e00: f 7e000000 d 47c0000000000000 ld 4.25353e+37 i128 2000000000000000:0 b 1 neg fe00 inc 7e00 dec 7e00
+0000000000000000: 0000, float 00000000: 0000, long double: 0000
+8000000000000000: 8000, float 80000000: 8000, long double: 8000
+3ff0000000000000: 3f80, float 3f800000: 3f80, long double: 3f80
+3ff0100000000000: 3f80, float 3f808000: 3f80, long double: 3f80
+3ff01000000001c2: 3f81, float 3f808000: 3f80, long double: 3f81
+3ff02ffffff920c8: 3f81, float 3f818000: 3f82, long double: 3f81
+400921f9f01b866e: 4049, float 40490fd0: 4049, long double: 4049
+b7b5c72fb1552d83: 8003, float 8002b8e6: 8003, long double: 8003
+3696d601ad376ab9: 0000, float 00000001: 0000, long double: 0000
+47eff933c78cdfad: 7f80, float 7f7fc99e: 7f80, long double: 7f80
+47eff00000000043: 7f80, float 7f7f8000: 7f80, long double: 7f80
+47efe120cdbd668c: 7f7f, float 7f7f0906: 7f7f, long double: 7f7f
+fe37e43c8800759c: ff80, float ff800000: ff80, long double: ff80
+01a56e1fc2f8f359: 0000, float 00000000: 0000, long double: 0000
+40effc0000000000: 4780, float 477fe000: 4780, long double: 4780
+419d6f3454000000: 4ceb, float 4ceb79a3: 4ceb, long double: 4ceb
+3fb999999999999a: 3dcd, float 3dcccccd: 3dcd, long double: 3dcd
+3fd5555555555555: 3eab, float 3eaaaaab: 3eab, long double: 3eab
+0: 0000 int 0000 unsigned 0000 ull 0000 short 0000 schar 0000 i128 0000
+1: 3f80 int 3f80 unsigned 3f80 ull 3f80 short 3f80 schar 3f80 i128 3f80
+-1: bf80 int bf80 unsigned 4f80 ull 5f80 short bf80 schar bf80 i128 bf80
+255: 437f int 437f unsigned 437f ull 437f short 437f schar bf80 i128 437f
+256: 4380 int 4380 unsigned 4380 ull 4380 short 4380 schar 0000 i128 4380
+257: 4380 int 4380 unsigned 4380 ull 4380 short 4380 schar 3f80 i128 4380
+16777217: 4b80 int 4b80 unsigned 4b80 ull 4b80 short 3f80 schar 3f80 i128 4b80
+-16777219: cb80 int cb80 unsigned 4f7f ull 5f80 short c040 schar c040 i128 cb80
+2147483647: 4f00 int 4f00 unsigned 4f00 ull 4f00 short bf80 schar bf80 i128 4f00
+-2147483648: cf00 int cf00 unsigned 4f00 ull 5f80 short 0000 schar 0000 i128 cf00
+9007199254740993: 5a00 int 3f80 unsigned 3f80 ull 5a00 short 3f80 schar 3f80 i128 5a00
+9223372036854775807: 5f00 int bf80 unsigned 4f80 ull 5f00 short bf80 schar bf80 i128 5f00
+-9223372036854775808: df00 int 0000 unsigned 0000 ull 5f00 short 0000 schar 0000 i128 df00
+1000: 447a int 447a unsigned 447a ull 447a short 447a schar c1c0 i128 447a
+1001: 447a int 447a unsigned 447a ull 447a short 447a schar c1b8 i128 447a
+129: 4301 int 4301 unsigned 4301 ull 4301 short 4301 schar c2fe i128 4301
+131: 4303 int 4303 unsigned 4303 ull 4303 short 4303 schar c2fa i128 4303
+263: 4384 int 4384 unsigned 4384 ull 4384 short 4384 schar 40e0 i128 4384
+65793: 4781 int 4781 unsigned 4781 ull 4781 short 4380 schar 3f80 i128 4781
+pairs 9a3bb85dc4a82922

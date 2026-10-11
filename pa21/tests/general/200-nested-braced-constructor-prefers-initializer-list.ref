@@ -1,0 +1,69 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<4x4>
+  slot $argobj__1 : obj<16x8>
+  slot $initlist__2 : obj<16x4>
+  slot $cond__3 : i32
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = addr $argobj__1
+    %t3 = addr $initlist__2
+    call void @item__item(%t3, 1, 2)
+    %t4 = index i8 [projection=array_element] %t3, 8
+    call void @item__item(%t4, 3, 4)
+    store typed ptr %t3, %t2
+    %t5 = index i8 %t2, 8
+    store typed i64 2, %t5
+    call void @Box__Box__ov3(%t1, $argobj__1)
+    %t6 = addr $box
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 1
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__3
+    return i32 %t10
+}
+function @item__item(%this : ptr [object_bytes=8], %k : i32, %v : i32) -> void [binding=weak, object=_ZN4itemC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $k : i32
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %k, $k
+    store typed i32 %v, $v
+    %t1 = load typed i32 $k
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $v
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+function @Box__Box__ov3(%this : ptr [object_bytes=4], %__param1 : obj<16x8>) -> void [binding=weak, object=_ZN3BoxC1ESt16initializer_listI4itemE, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $__param1
+    copyobj 16x8 %__param1, %t1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    return void
+}
+alias object _ZN4itemC2Eii = @item__item
+alias object _ZN3BoxC2ESt16initializer_listI4itemE = @Box__Box__ov3

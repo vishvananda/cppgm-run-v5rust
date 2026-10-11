@@ -1,0 +1,24 @@
+#include <map>
+#include <set>
+
+int main()
+{
+  std::map<int, int> values;
+  values[1] = 2;
+  std::map<int, int>::iterator found = values.find(1);
+  if(found == values.end()) {
+    return 1;
+  }
+  values.erase(found);
+  if(!values.empty()) {
+    return 2;
+  }
+
+  int value = 0;
+  std::set<int *> pointers;
+  pointers.insert(&value);
+  if(pointers.erase(&value) != 1) {
+    return 3;
+  }
+  return pointers.empty() ? 0 : 4;
+}

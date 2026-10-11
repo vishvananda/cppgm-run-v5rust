@@ -1,0 +1,46 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $object
+    call void @holder__holder(%t1)
+    %t2 = addr $object
+    %t3 = call i32 @holder__read(%t2)
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}
+function @holder__holder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6holderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @holder__read(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN6holder4readEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $get : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $get
+    %t2 = addr $get
+    %t3 = load typed ptr $this
+    %t4 = call i32 @holder____lambda_holder__read_t30_35__operator__(%t2, %t3)
+    return i32 %t4
+}
+function @holder____lambda_holder__read_t30_35__operator__(%this : ptr [object_bytes=1], %object : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZZN6holder4readEvENKUlRS_E_clES0_, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $object : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %object, $object
+    %t1 = load typed ptr $object
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+alias object _ZN6holderC2Ev = @holder__holder

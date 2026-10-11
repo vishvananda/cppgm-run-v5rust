@@ -1,0 +1,18 @@
+// N3485 14.5.5, 14.5.2: a member class template of a class template instance
+// with partial specializations for arrays whose bound is the member template's
+// own parameter (libc++'s shared_ptr) selects them by that bound
+#include <cstdio>
+typedef unsigned long size_t;
+// An instance's member template with partial specializations for arrays of
+// a bound of the member template's own depth (libc++'s shared_ptr).
+template <class T> struct S {
+	template <class, class Y> struct D { enum { v = 0 }; };
+	template <class Y, class U, size_t N> struct D<Y[N], U> { enum { v = (int)N }; };
+	template <class Y, class U> struct D<Y[], U> { enum { v = 2 }; };
+	template <class Y, class U> struct D<Y*, U> { enum { v = 3 }; };
+};
+int main() {
+	std::printf("%d %d %d %d\n", S<int>::D<int, int>::v, S<int>::D<int[7], int>::v, S<char>::D<int[], int>::v,
+		S<long>::D<int*, int>::v);
+	return 0;
+}

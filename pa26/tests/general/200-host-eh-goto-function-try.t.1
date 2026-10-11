@@ -1,0 +1,42 @@
+// N3485 15p2, 6.6p2: a goto to a label inside a function-try-block's compound
+// statement or handler stays inside the try block; leaving a scope by the goto
+// destroys the objects declared in it, and an exception after the jump reaches
+// the function-try-block's handler: free functions, handlers, nested try
+// blocks, constructors and destructors
+#include "200-host-eh-goto-function-try.helper.h"
+static int mode, r;
+static void g() { throw 1; }
+struct D { int id; D(int i) : id(i) {} ~D() { r += id; } };
+static void f0() try { if (mode) goto L1; r += 1; L1: g(); } catch (...) { r += 10; }
+static void f1() try { D d(1000); if (mode) goto L1; r += 1; L1: g(); } catch (...) { r += 10; }
+static void f2() try { if (mode) goto L1; { D d(2000); r += 1; } L1: g(); } catch (...) { r += 10; }
+static void f3() try { g(); } catch (int) { if (mode) goto L2; r += 3; L2: r += 30; }
+static void f4() try { g(); } catch (...) { D d(4000); if (mode) goto L2; r += 4; L2: r += 40; }
+static void f5() try { for (int i = 0; i < 3; ++i) { D d(50000); if (i == 1) goto L3; } L3: g(); } catch (int) { r += 5; }
+static void f6() try { try { if (mode) goto L4; r += 1; L4: g(); } catch (long) { r += 99; } } catch (int) { r += 6; }
+struct C
+{
+  D m;
+  C(int x) try : m(x) { if (mode) goto L5; r += 1; L5: g(); } catch (...) { r += 7; }
+};
+struct E
+{
+  ~E() try { if (mode) goto L6; r += 1; L6: g(); } catch (...) { r += 8; return; }
+};
+static void f7() { E e; }
+int main()
+{
+  for (mode = 0; mode < 2; ++mode)
+  {
+    try { f0(); } catch (...) { r += 100; } out_line("f0", r);
+    try { f1(); } catch (...) { r += 100; } out_line("f1", r);
+    try { f2(); } catch (...) { r += 100; } out_line("f2", r);
+    try { f3(); } catch (...) { r += 100; } out_line("f3", r);
+    try { f4(); } catch (...) { r += 100; } out_line("f4", r);
+    try { f5(); } catch (...) { r += 100; } out_line("f5", r);
+    try { f6(); } catch (...) { r += 100; } out_line("f6", r);
+    try { C c(70000); } catch (...) { r += 200; } out_line("C", r);
+    try { f7(); } catch (...) { r += 300; } out_line("E", r);
+  }
+  return 0;
+}

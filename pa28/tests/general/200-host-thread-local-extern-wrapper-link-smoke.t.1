@@ -1,0 +1,16 @@
+extern "C" int puts(const char *);
+
+thread_local int tls_value = 5;
+
+int read_a();
+int read_b();
+
+int main()
+{
+  int sum = read_a() + read_b();
+  if(sum != 13) {
+    return 1;
+  }
+  puts("tls wrapper ok");
+  return 0;
+}

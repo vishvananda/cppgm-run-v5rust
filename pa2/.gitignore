@@ -1,0 +1,11 @@
+.cproject
+.project
+tests/*.my*
+posttoken
+posttoken-fast
+posttoken-self-fast
+posttoken-debug
+*.dSYM
+testin
+testout
+.test_failed

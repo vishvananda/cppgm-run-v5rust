@@ -1,0 +1,9 @@
+# budget from 200-call-argument-register-copy.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 5
+count(call) <= 4
+mem <= 4
+instructions <= 4 in @sink
+stack_size <= 48 in @sink
+instructions <= 8 in @main
+stack_size <= 32 in @main

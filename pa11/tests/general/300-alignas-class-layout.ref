@@ -1,0 +1,172 @@
+function @aligned_call(%a : i32, %b : i32, %c : i32, %d : i32, %e : i32, %f : i32, %g : i32) -> i32 [binding=strong, object=_Z12aligned_calliiiiiii] {
+  slot $a : i32
+  slot $b : i32
+  slot $c : i32
+  slot $d : i32
+  slot $e : i32
+  slot $f : i32
+  slot $g : i32
+  slot $local : obj<32x32>
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    store typed i32 %c, $c
+    store typed i32 %d, $d
+    store typed i32 %e, $e
+    store typed i32 %f, $f
+    store typed i32 %g, $g
+    %t1 = addr $local
+    %t2 = addr $local
+    %t3 = index i8 [projection=field] %t2, 0
+    store i8 7, %t3
+    %t4 = addr $local
+    %t5 = copy i64 %t4
+    %t6 = convert sext i64 i32 32
+    %t7 = binary umod i64 %t5, %t6
+    %t8 = convert sext i64 i32 0
+    %t9 = cmp ne i64 %t7, %t8
+    branch %t9, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t10 = addr $local
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load i8 %t11
+    %t13 = convert sext i32 i8 %t12
+    %t14 = cmp ne i32 %t13, 7
+    branch %t14, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 0
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t15 = load typed i32 $a
+    %t16 = load typed i32 $b
+    %t17 = binary add nowrap i32 %t15, %t16
+    %t18 = load typed i32 $c
+    %t19 = binary add nowrap i32 %t17, %t18
+    %t20 = load typed i32 $d
+    %t21 = binary add nowrap i32 %t19, %t20
+    %t22 = load typed i32 $e
+    %t23 = binary add nowrap i32 %t21, %t22
+    %t24 = load typed i32 $f
+    %t25 = binary add nowrap i32 %t23, %t24
+    %t26 = load typed i32 $g
+    %t27 = binary add nowrap i32 %t25, %t26
+    return i32 %t27
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $local : obj<32x32>
+
+  block ^entry:
+    %t1 = const i64 16
+    %t2 = convert sext i64 i32 16
+    %t3 = cmp ne i64 %t1, %t2
+    branch %t3, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t4 = const i64 16
+    %t5 = convert sext i64 i32 16
+    %t6 = cmp ne i64 %t4, %t5
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t7 = const i64 32
+    %t8 = convert sext i64 i32 32
+    %t9 = cmp ne i64 %t7, %t8
+    branch %t9, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t10 = const i64 32
+    %t11 = convert sext i64 i32 32
+    %t12 = cmp ne i64 %t10, %t11
+    branch %t12, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    %t13 = const i64 16
+    %t14 = const i64 16
+    %t15 = cmp ne i64 %t13, %t14
+    branch %t15, ^if_then_9, ^lor_rhs_11
+
+  block ^lor_rhs_11:
+    %t16 = const i64 16
+    %t17 = const i64 16
+    %t18 = cmp ne i64 %t16, %t17
+    branch %t18, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    return i32 3
+
+  block ^if_else_10:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    %t19 = addr $local
+    %t20 = addr $local
+    %t21 = index i8 [projection=field] %t20, 0
+    store i8 9, %t21
+    %t22 = addr $local
+    %t23 = copy i64 %t22
+    %t24 = convert sext i64 i32 32
+    %t25 = binary umod i64 %t23, %t24
+    %t26 = convert sext i64 i32 0
+    %t27 = cmp ne i64 %t25, %t26
+    branch %t27, ^if_then_13, ^lor_rhs_15
+
+  block ^lor_rhs_15:
+    %t28 = addr $local
+    %t29 = index i8 [projection=field] %t28, 0
+    %t30 = load i8 %t29
+    %t31 = convert sext i32 i8 %t30
+    %t32 = cmp ne i32 %t31, 9
+    branch %t32, ^if_then_13, ^if_else_14
+
+  block ^if_then_13:
+    return i32 4
+
+  block ^if_else_14:
+    jump ^if_end_16
+
+  block ^if_end_16:
+    %t33 = call i32 @aligned_call(1, 2, 3, 4, 5, 6, 7)
+    %t34 = cmp ne i32 %t33, 28
+    branch %t34, ^if_then_17, ^if_else_18
+
+  block ^if_then_17:
+    return i32 5
+
+  block ^if_else_18:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    %t35 = addr $local
+    %t36 = index i8 [projection=field] %t35, 0
+    %t37 = load i8 %t36
+    %t38 = convert sext i32 i8 %t37
+    %t39 = cmp ne i32 %t38, 9
+    branch %t39, ^if_then_20, ^if_else_21
+
+  block ^if_then_20:
+    return i32 6
+
+  block ^if_else_21:
+    jump ^if_end_22
+
+  block ^if_end_22:
+    return i32 0
+}

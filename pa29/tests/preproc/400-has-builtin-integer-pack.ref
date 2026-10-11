@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/400-has-builtin-integer-pack.t
+identifier good
+eof

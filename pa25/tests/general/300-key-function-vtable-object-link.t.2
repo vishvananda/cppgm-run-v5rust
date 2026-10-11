@@ -1,0 +1,17 @@
+struct KeyFunctionBase
+{
+  virtual ~KeyFunctionBase() {}
+  virtual int value() = 0;
+};
+
+struct KeyFunctionDerived : KeyFunctionBase
+{
+  int value();
+};
+
+int main()
+{
+  KeyFunctionDerived derived;
+  KeyFunctionBase * base = &derived;
+  return base->value() == 11 ? 0 : 1;
+}

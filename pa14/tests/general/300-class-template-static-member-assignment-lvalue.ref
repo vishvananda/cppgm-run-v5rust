@@ -1,0 +1,24 @@
+global @Box_int___value : u8 [binding=weak, object=_ZN3BoxIiE5valueE] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @Box_int___reset(3)
+    %t1 = call u8 @Box_int___read()
+    %t2 = convert zext i32 u8 %t1
+    %t3 = binary sub nowrap i32 %t2, 3
+    return i32 %t3
+}
+function @Box_int___reset(%v : u8) -> void [binding=weak, object=_ZN3BoxIiE5resetEh, inline_hint=yes] {
+  slot $v : u8
+
+  block ^entry:
+    store u8 %v, $v
+    %t1 = load u8 $v
+    store u8 %t1, @Box_int___value
+    return void
+}
+function @Box_int___read() -> u8 [binding=weak, object=_ZN3BoxIiE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load u8 @Box_int___value
+    return u8 %t1
+}

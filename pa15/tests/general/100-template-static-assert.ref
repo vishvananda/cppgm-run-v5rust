@@ -1,0 +1,20 @@
+global @K : i32 [storage=readonly, binding=internal, object=_ZL1K] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = call i32 @Box_4___get(%t2)
+    return i32 %t3
+}
+function @Box_4___get(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN3BoxILi4EE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 16
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

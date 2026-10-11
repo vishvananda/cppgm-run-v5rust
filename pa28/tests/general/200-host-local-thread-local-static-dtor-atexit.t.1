@@ -1,0 +1,43 @@
+extern "C" int atexit(void (*)(void));
+extern "C" void _Exit(int);
+
+int constructed = 0;
+int destroyed = 0;
+
+struct Probe {
+  Probe() { ++constructed; }
+  ~Probe() { ++destroyed; }
+};
+
+int touch_probe()
+{
+  static thread_local Probe probe;
+  return constructed + destroyed;
+}
+
+void check_probe()
+{
+  if(constructed != 1) {
+    _Exit(70 + constructed);
+  }
+  if(destroyed != 1) {
+    _Exit(80 + destroyed);
+  }
+}
+
+int main()
+{
+  if(atexit(check_probe) != 0) {
+    return 10;
+  }
+  if(touch_probe() != 1) {
+    return 20;
+  }
+  if(touch_probe() != 1) {
+    return 30;
+  }
+  if(constructed != 1 || destroyed != 0) {
+    return 40;
+  }
+  return 0;
+}

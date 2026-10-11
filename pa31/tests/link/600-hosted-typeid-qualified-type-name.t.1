@@ -1,0 +1,5 @@
+// N3485 5.2.8/4 + 8.2/2: typeid(ns::C) and typeid(ns::D<int>) have type-id
+// operands (qualified names of classes), not expressions; expect exit 0
+#include <typeinfo>
+namespace ns { struct C {}; template<class T> struct D {}; }
+int main() { const std::type_info* p = &typeid(ns::C); const std::type_info* q = &typeid(ns::D<int>); return *p != *q && *p != typeid(int) ? 0 : 1; }

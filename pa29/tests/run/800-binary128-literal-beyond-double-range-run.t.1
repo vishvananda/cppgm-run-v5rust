@@ -1,0 +1,4 @@
+// PA29 README (_Float128 type specifier and GNU literal forms): a binary128
+// literal takes its value in binary128 (range ~1e-4966..1.19e4932), not in
+// double; expect exit 0
+int main() { _Float128 tiny = 1e-4940f128; _Float128 big = 1e4000f128; return tiny > 0 && big > 1e300f128 ? 0 : 1; }

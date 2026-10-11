@@ -1,0 +1,62 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $object : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $value
+    store typed i32 0, $object
+    %t2 = addr $value
+    %t3 = addr $object
+    %t4 = call i32 @selector_void___select(%t2, %t3)
+    %t5 = cmp eq i32 %t4, 11
+    branch %t5, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t6 = addr $value
+    %t7 = load typed i32 $object
+    %t8 = call i64 @selector_void___select__2(%t6, %t7)
+    %t9 = cmp eq i64 %t8, 22
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @selector_void___select(%this : ptr [object_bytes=1], %__param1 : ptr) -> i32 [binding=weak, object=_ZN8selectorIvE6selectIPiEEN9enable_ifIXsr10is_pointerIT_EE5valueEiE4typeES4_] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return i32 11
+}
+function @selector_void___select__2(%this : ptr [object_bytes=1], %__param1 : i32) -> i64 [binding=weak, object=_ZN8selectorIvE6selectIiEEN9enable_ifIXntsr10is_pointerIT_EE5valueElE4typeES3_] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return i64 22
+}

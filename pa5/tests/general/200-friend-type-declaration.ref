@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier X
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_FRIEND:friend
+        class-forward-declaration Y
+          class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_FRIEND:friend
+        class-forward-declaration Z
+          class-key KW_CLASS:class
+end translation unit

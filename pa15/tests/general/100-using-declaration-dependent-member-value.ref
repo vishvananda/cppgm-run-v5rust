@@ -1,0 +1,6 @@
+declare global @std____is_integer_longint_____value : u8 [binding=weak, object=_ZNSt12__is_integerIlE7__valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

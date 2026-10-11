@@ -1,0 +1,58 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @box
+  storage scalar i64
+  init i64 7
+
+function @id
+  abi
+    param %x -> rdi : ptr
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rdi
+
+function @wrap
+  abi
+    param %this -> rdi : ptr
+    param %pf -> rsi : ptr
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call *rsi [args=(rdi)]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, @box
+    mov rsi, @id
+    mov rdi, rbx
+    call @wrap [args=(rsi,rdi)]
+    cmp.ptr rax, rbx
+    sete rax
+    movzx rax, rax
+    ret rax

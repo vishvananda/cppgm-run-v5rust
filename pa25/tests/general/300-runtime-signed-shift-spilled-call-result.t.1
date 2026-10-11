@@ -1,0 +1,3 @@
+int copy(int const &value) { return value; }
+int shift(int const &value, unsigned count) { return copy(value) >> count; }
+int main() { return shift(int(0xcd000000u), 24) != -51; }

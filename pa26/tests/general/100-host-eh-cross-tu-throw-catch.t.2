@@ -1,0 +1,14 @@
+void boom();
+
+int main()
+{
+  try
+  {
+    boom();
+    return 1;
+  }
+  catch (int x)
+  {
+    return x - 9;
+  }
+}

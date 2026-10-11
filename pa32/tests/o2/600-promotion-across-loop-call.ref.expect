@@ -1,0 +1,11 @@
+# budget from 600-promotion-across-loop-call.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 7
+count(call) <= 4
+count(load) <= 4
+count(store) <= 3
+count(phi) <= 5
+instructions <= 17 in @call_in_loop
+
+# outcomes from 600-promotion-across-loop-call.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(store)

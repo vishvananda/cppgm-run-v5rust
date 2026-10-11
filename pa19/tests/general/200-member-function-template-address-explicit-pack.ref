@@ -1,0 +1,57 @@
+global @global_service [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ctx : obj<1x1>
+  slot $registry : obj<1x1>
+  slot $factory : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $ctx
+    %t2 = addr $registry
+    %t3 = addr $registry
+    %t4 = call ptr @service_registry__get(%t3)
+    store typed ptr %t4, $factory
+    %t5 = addr $ctx
+    %t6 = addr $ctx
+    %t7 = load typed ptr $factory
+    %t8 = call ptr %t7(%t5, %t6) as (%arg0 : ptr [pass=by_address, object_bytes=1], %arg1 : ptr) -> ptr
+    %t9 = addr @global_service
+    %t10 = cmp eq ptr %t8, %t9
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @service_registry__get(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN16service_registry3getI7serviceEEPFPS1_R7contextPvEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $factory : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @service_registry__create
+    store typed ptr %t1, $factory
+    %t2 = load typed ptr $factory
+    return ptr %t2
+}
+function @service_registry__create(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr) -> ptr [binding=weak, object=_ZN16service_registry6createI7service7contextJEEEPS1_RS2_PvDpOT1_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    %t1 = addr @global_service
+    return ptr %t1
+}

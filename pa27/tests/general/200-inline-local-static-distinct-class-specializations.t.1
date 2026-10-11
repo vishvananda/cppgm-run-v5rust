@@ -1,0 +1,5 @@
+#include "200-inline-local-static-distinct-class-specializations.helper.h"
+
+struct first_tag {};
+template struct slot<map<first_tag> >;
+int * first_slot() { return slot<map<first_tag> >::get(); }

@@ -1,0 +1,8 @@
+global @N__late__lower [storage=readonly, binding=internal, object=_ZN1N4lateL5lowerE] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

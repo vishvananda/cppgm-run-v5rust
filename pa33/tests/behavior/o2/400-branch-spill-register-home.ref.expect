@@ -1,0 +1,11 @@
+# budget from 400-branch-spill-register-home.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 34
+blocks <= 9
+count(call) <= 6
+mem <= 9
+instructions <= 5 in @fallback
+stack_size <= 32 in @fallback
+instructions <= 16 in @accumulate
+stack_size <= 50 in @accumulate
+instructions <= 18 in @main
+stack_size <= 50 in @main

@@ -1,0 +1,28 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = call ptr @get(%t1)
+    %t3 = addr $value
+    %t4 = cmp ne ptr %t2, %t3
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @get(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z3getIiiEDTcl10unsafe_getIT_Efp_EERT0_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call ptr @unsafe_get(%t1)
+    return ptr %t2
+}
+function @unsafe_get(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z10unsafe_getIiiERT_RT0_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}

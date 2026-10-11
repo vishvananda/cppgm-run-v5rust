@@ -1,0 +1,44 @@
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+declare global @__external_rtti_vtable____pointer_type_info [role=rtti_pointer, binding=strong, object=_ZTVN10__cxxabiv119__pointer_type_infoE]
+
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=weak, object=_ZTIi] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__typeinfo_name_type_Pi [storage=readonly, binding=weak, object=_ZTSPi] = {
+  i8 80
+  i8 105
+  i8 0
+}
+global @__rtti_type_Pi [storage=readonly, binding=weak, object=_ZTIPi] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_Pi
+  i32 0
+  ptr addr @__rtti_int
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__rtti_type_Pi
+    %t2 = addr @__rtti_type_Pi
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

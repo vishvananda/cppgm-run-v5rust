@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition stop function of (bool) returning void
+    parameter condition bool
+    compound-statement
+      if-statement
+        condition
+          id-expression lvalue bool condition
+        then
+          expression-statement
+            call-expression prvalue void
+              callee __builtin_abort function of () returning void
+end translation unit

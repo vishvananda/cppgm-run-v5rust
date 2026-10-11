@@ -1,0 +1,11 @@
+#include "700-hosted-shared-ptr-inline-odr-link-smoke.shared.h"
+
+#include <iostream>
+
+int other_probe();
+
+int main()
+{
+  std::cout << (shared_ptr_inline_probe() + other_probe()) << '\n';
+  return 0;
+}

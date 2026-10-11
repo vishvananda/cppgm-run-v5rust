@@ -1,0 +1,104 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 74
+  i8 97
+  i8 110
+  i8 0
+}
+global @names [storage=readonly, binding=internal, object=_ZL5names] = {
+  ptr addr @__strlit__1
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 77
+  i8 97
+  i8 114
+  i8 0
+}
+global @months [storage=readonly, binding=internal, object=_ZL6months] = {
+  ptr addr @__strlit__2
+}
+global @__strlit__3 [storage=readonly, binding=internal] = {
+  i8 77
+  i8 97
+  i8 121
+  i8 0
+}
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  ptr addr @__strlit__3
+}
+
+function @first_local() -> ptr [binding=strong, object=_Z11first_localv] {
+  slot $local : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $local
+    copyobj 8x8 @__constexpr_template__1, %t1
+    %t2 = addr $local
+    %t3 = index ptr [projection=array_element] %t2, 0
+    %t4 = load typed ptr %t3
+    return ptr %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr @names
+    %t2 = index ptr [projection=array_element] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=array_element] %t3, 0
+    %t5 = load i8 %t4
+    %t6 = convert sext i32 i8 %t5
+    %t7 = cmp eq i32 %t6, 74
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = addr @months
+    %t9 = index ptr [projection=array_element] %t8, 0
+    %t10 = load typed ptr %t9
+    %t11 = index i8 [projection=array_element] %t10, 1
+    %t12 = load i8 %t11
+    %t13 = convert sext i32 i8 %t12
+    %t14 = cmp eq i32 %t13, 97
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t16 = load typed i64 $land__2
+    branch %t16, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t17 = call ptr @first_local()
+    %t18 = index i8 [projection=array_element] %t17, 2
+    %t19 = load i8 %t18
+    %t20 = convert sext i32 i8 %t19
+    %t21 = cmp eq i32 %t20, 121
+    %t22 = cmp ne i64 %t21, 0
+    store typed i64 %t22, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t23 = load typed i64 $land__3
+    branch %t23, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t24 = load typed i32 $cond__1
+    return i32 %t24
+}

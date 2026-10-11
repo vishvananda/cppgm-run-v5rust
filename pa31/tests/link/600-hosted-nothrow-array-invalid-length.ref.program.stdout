@@ -1,0 +1,5 @@
+S[-1]: null
+S[big]: null
+bad_alloc
+S() S() S[2]: nonnull
+~S ~S 

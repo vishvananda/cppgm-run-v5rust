@@ -1,0 +1,73 @@
+[workspace]
+members = ["."]
+resolver = "3"
+
+[package]
+name = "cppgm-rust"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+unfulfilled_lint_expectations = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+exit = "deny"
+mem_forget = "deny"
+large_stack_arrays = "warn"
+large_stack_frames = "warn"
+too_many_lines = "warn"
+excessive_nesting = "warn"
+
+[[bin]]
+name = "pptoken"
+path = "bin/pptoken.rs"
+
+[[bin]]
+name = "posttoken"
+path = "bin/posttoken.rs"
+
+[[bin]]
+name = "ppexpr"
+path = "bin/ppexpr.rs"
+
+[[bin]]
+name = "preproc"
+path = "bin/preproc.rs"
+
+[[bin]]
+name = "cppgm"
+path = "bin/cppgm.rs"
+
+[[bin]]
+name = "abimangle"
+path = "bin/abimangle.rs"
+
+[[bin]]
+name = "lowir"
+path = "bin/lowir.rs"
+
+[[bin]]
+name = "lowiropt"
+path = "bin/lowiropt.rs"
+
+[[bin]]
+name = "lowir2native"
+path = "bin/lowir2native.rs"

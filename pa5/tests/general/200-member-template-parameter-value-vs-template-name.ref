@@ -1,0 +1,92 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration size_t
+    type-id
+      type-specifier-seq
+        decltype-specifier decltype(sizeof(0))
+          sizeof-expression
+            literal 0
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier __count
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier B
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+    alias-declaration __enable_if_t
+      type-id
+        type-specifier-seq
+          type-name T
+  class-specifier S
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_STATIC:static
+        decl-specifier KW_CONST:const
+        decl-specifier TT_IDENTIFIER:size_t
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier _Dt
+          initializer
+            literal 8
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:size_t
+            declarator
+              identifier __count
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier __enable_if_t<__count<_Dt,int>
+            default-template-argument
+              literal 0
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_INT:int
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier x
+        compound-statement
+          return-statement
+            binary-expression OP_LSHIFT:<<
+              id-expression x
+              id-expression __count
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        call-expression
+          id-expression S::f<1>
+          argument-list
+            literal 3
+end translation unit

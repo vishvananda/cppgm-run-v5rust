@@ -1,0 +1,42 @@
+extern "C" void* __cxa_get_globals() throw();
+
+struct Ex {};
+
+unsigned int uncaught_count()
+{
+  unsigned int count = 0;
+  const unsigned char* globals =
+      reinterpret_cast<const unsigned char*>(__cxa_get_globals());
+  const unsigned char* source = globals + sizeof(void*);
+  for(unsigned long i = 0; i < sizeof(count); ++i) {
+    reinterpret_cast<unsigned char*>(&count)[i] = source[i];
+  }
+  return count;
+}
+
+struct Watcher
+{
+  unsigned int& count;
+
+  explicit Watcher(unsigned int& c)
+    : count(c)
+  {
+  }
+
+  ~Watcher()
+  {
+    count = uncaught_count();
+  }
+};
+
+int main()
+{
+  unsigned int before = uncaught_count();
+  unsigned int during = before;
+  try {
+    Watcher watcher(during);
+    throw Ex();
+  } catch(...) {
+  }
+  return during != before ? 0 : 1;
+}

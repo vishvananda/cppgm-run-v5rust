@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function pthread_once function of (pointer to int, pointer to function of () returning void) returning int
+    function init function of () returning void
+    function call function of (pointer to int) returning void
+    scope function init
+      scope block
+    scope function call
+      parameter x pointer to int
+      scope block
+end translation unit

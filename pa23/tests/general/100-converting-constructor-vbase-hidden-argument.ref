@@ -1,0 +1,138 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Stream [storage=readonly, binding=weak, object=_ZTS6Stream] = {
+  i8 54
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__typeinfo_name__struct_IOS [storage=readonly, binding=weak, object=_ZTS3IOS] = {
+  i8 51
+  i8 73
+  i8 79
+  i8 83
+  i8 0
+}
+global @__rtti_struct_IOS [storage=readonly, binding=weak, object=_ZTI3IOS] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_IOS
+}
+global @__rtti_struct_Stream [storage=readonly, binding=weak, object=_ZTI6Stream] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Stream
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_IOS
+  i64 -6141
+}
+global @Stream__vtable [storage=readonly, binding=weak, object=_ZTV6Stream] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_Stream
+}
+global @Stream____vtt [storage=readonly, binding=weak, object=_ZTT6Stream, object_root=yes] = {
+  ptr addr @Stream__vtable + 24
+}
+
+function @take(%it : obj<4x4>) -> i32 [binding=strong, object=_Z4take4Iter] {
+  slot $it : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $it
+    copyobj 4x4 %it, %t1
+    %t2 = addr $it
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<16x8>
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $s
+    call void @Stream__Stream(%t1)
+    %t2 = addr $s
+    %t3 = index i8 %t2, 8
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $argobj__2
+    %t6 = addr $s
+    call void @Iter__Iter(%t5, %t6)
+    %t7 = call i32 @take($argobj__2)
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @Stream__Stream(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN6StreamC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 8
+    call void @IOS__IOS__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Stream__vtable
+    %t5 = index i8 %t4, 24
+    store typed ptr %t5, %t3
+    return void
+}
+function @Iter__Iter(%this : ptr [object_bytes=4], %s : ptr [pass=by_address, object_bytes=16]) -> void [binding=weak, object=_ZN4IterC1ER6Stream, inline_hint=yes] {
+  slot $this : ptr
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = load typed ptr %t1
+    %t3 = index i8 %t2, -24
+    %t4 = load typed i64 %t3
+    %t5 = index i8 %t1, %t4
+    %t6 = index i8 %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 %t8, %t10
+    return void
+}
+function @IOS__IOS__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3IOSC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @IOS__IOS(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3IOSC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN4IterC2ER6Stream = @Iter__Iter

@@ -1,0 +1,59 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @LazyTemplateIdUser__TemplateIdBox_int___f(3, 2)
+    %t2 = cmp eq i32 %t1, 2
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @LazyTemplateIdUser__TemplateIdBox_int___f(%a : i32, %b : i32) -> i32 [binding=weak, object=_ZN18LazyTemplateIdUser13TemplateIdBoxIiE1fEii, inline_hint=yes] {
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = call i32 @LazyTemplateIdLib__template_id_min(%t1, %t2)
+    return i32 %t3
+}
+function @LazyTemplateIdLib__template_id_min(%a : i32, %b : i32) -> i32 [binding=weak, object=_ZN17LazyTemplateIdLib15template_id_minIiEET_S1_S1_] {
+  slot $a : i32
+  slot $b : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = cmp lt i32 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t4 = load typed i32 $a
+    store typed i32 %t4, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t5 = load typed i32 $b
+    store typed i32 %t5, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

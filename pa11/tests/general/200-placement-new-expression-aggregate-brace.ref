@@ -1,0 +1,33 @@
+function @operatornew__ov2(%__param0 : i64, %p : ptr) -> ptr [unwind=no, binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $p : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $storage : u32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 4
+    %t2 = addr $storage
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    call void @table__table__aggregate(%t3, 1)
+    return i32 0
+}
+function @table__table__aggregate(%this : ptr [object_bytes=4], %size : u32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $size : u32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed u32 %size, $size
+    %t1 = load typed u32 $size
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed u32 %t1, %t3
+    return void
+}

@@ -1,0 +1,77 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $a
+    %t3 = call i32 @A__f(%t2)
+    return i32 %t3
+}
+function @A__f(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN1A1fEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $outer : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $outer
+    %t2 = load typed ptr $this
+    store typed ptr %t2, %t1
+    %t3 = addr $outer
+    %t4 = call i32 @A____lambda_A__f_t56_60__operator__(%t3)
+    return i32 %t4
+}
+function @A____lambda_A__f_t56_60__operator__(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZZN1A1fEvENKUlvE_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $inner : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $inner
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    store typed ptr %t4, %t1
+    %t5 = addr $inner
+    %t6 = call i32 @A____lambda_A__f_t56_60____lambda_nested_t67_71__operator__(%t5)
+    return i32 %t6
+}
+function @A____lambda_A__f_t56_60____lambda_nested_t67_71__operator__(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZZZN1A1fEvENKUlvE_clEvENKUlvE_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $tmpobj__1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = call obj<4x4> @A__make_e(%t4)
+    copyobj 4x4 %t5, %t1
+    %t6 = index i8 [projection=field] %t1, 0
+    %t7 = load typed i32 %t6
+    return i32 %t7
+}
+function @A__make_e(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN1A6make_eEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @E__E__ov2(%t1, 1)
+    return obj<4x4> $retobj__1
+}
+function @E__E__ov2(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN1EC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN1EC2Ei = @E__E__ov2

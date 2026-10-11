@@ -1,0 +1,81 @@
+function @misaligned(%address : ptr, %alignment : i64) -> i64 [binding=strong, object=_Z10misalignedPKvm] {
+  slot $address : ptr
+  slot $alignment : i64
+
+  block ^entry:
+    store typed ptr %address, $address
+    store typed i64 %alignment, $alignment
+    %t1 = load typed ptr $address
+    %t2 = copy i64 %t1
+    %t3 = load typed i64 $alignment
+    %t4 = convert sext i64 i32 1
+    %t5 = binary sub i64 %t3, %t4
+    %t6 = binary and i64 %t2, %t5
+    return i64 %t6
+}
+function @depth(%remaining : i32) -> i32 [binding=strong, object=_Z5depthi] {
+  slot $remaining : i32
+  slot $line : obj<64x64>
+  slot $scalar : obj<8x8>
+  slot $vector : obj<32x32>
+  slot $result : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 %remaining, $remaining
+    %t1 = addr $vector
+    %t2 = addr $vector
+    %t3 = index i8 [projection=field] %t2, 0
+    store i8 1, %t3
+    store i8 1, $scalar
+    %t4 = addr $line
+    %t5 = index i8 [projection=array_element] %t4, 0
+    store i8 1, %t5
+    %t6 = addr $line
+    %t7 = convert sext i64 i32 64
+    %t8 = call i64 @misaligned(%t6, %t7)
+    %t9 = convert sext i64 i32 0
+    %t10 = cmp ne i64 %t8, %t9
+    %t11 = addr $scalar
+    %t12 = convert sext i64 i32 8
+    %t13 = call i64 @misaligned(%t11, %t12)
+    %t14 = convert sext i64 i32 0
+    %t15 = cmp ne i64 %t13, %t14
+    %t16 = convert trunc i32 i64 %t15
+    %t17 = binary shl i32 %t16, 1
+    %t18 = convert trunc i32 i64 %t10
+    %t19 = binary or i32 %t18, %t17
+    %t20 = addr $vector
+    %t21 = convert sext i64 i32 32
+    %t22 = call i64 @misaligned(%t20, %t21)
+    %t23 = convert sext i64 i32 0
+    %t24 = cmp ne i64 %t22, %t23
+    %t25 = convert trunc i32 i64 %t24
+    %t26 = binary shl i32 %t25, 2
+    %t27 = binary or i32 %t19, %t26
+    store typed i32 %t27, $result
+    %t28 = load typed i32 $result
+    %t29 = load typed i32 $remaining
+    branch %t29, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t30 = load typed i32 $remaining
+    %t31 = binary sub nowrap i32 %t30, 1
+    %t32 = call i32 @depth(%t31)
+    store typed i32 %t32, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t33 = load typed i32 $cond__1
+    %t34 = binary or i32 %t28, %t33
+    return i32 %t34
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @depth(4)
+    return i32 %t1
+}

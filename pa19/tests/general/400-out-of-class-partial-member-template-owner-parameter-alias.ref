@@ -1,0 +1,88 @@
+global @__local_static__function_symbol_5f5a347065656b4969694550545f5254305f__decl0__value : i32 [binding=weak, object=_ZZ4peekIiiEPT_RT0_E5value] = 7
+global @__local_static__function_symbol_5f5a347065656b49696945504b545f524b54305f__decl0__value : i32 [binding=weak, object=_ZZ4peekIiiEPKT_RKT0_E5value] = 7
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $const_value : ptr
+  slot $direct : ptr
+  slot $const_direct : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $value
+    store typed ptr %t1, $const_value
+    %t2 = addr $value
+    %t3 = call ptr @traits_constint__false___check(%t2)
+    store typed ptr %t3, $direct
+    %t4 = load typed ptr $const_value
+    %t5 = call ptr @traits_constint__false___check__2(%t4)
+    store typed ptr %t5, $const_direct
+    %t6 = load typed ptr $direct
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = load typed ptr $const_direct
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 7
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t13 = load typed i64 $land__2
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @traits_constint__false___check(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN6traitsIRKiLb0EE5checkIiEEPiRT_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call ptr @peek(%t1)
+    return ptr %t2
+}
+function @traits_constint__false___check__2(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN6traitsIRKiLb0EE5checkIiEEPS0_RKT_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call ptr @peek__2(%t1)
+    return ptr %t2
+}
+function @peek(%__param0 : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z4peekIiiEPT_RT0_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr @__local_static__function_symbol_5f5a347065656b4969694550545f5254305f__decl0__value
+    return ptr %t1
+}
+function @peek__2(%__param0 : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z4peekIiiEPKT_RKT0_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr @__local_static__function_symbol_5f5a347065656b49696945504b545f524b54305f__decl0__value
+    return ptr %t1
+}

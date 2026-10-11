@@ -1,0 +1,56 @@
+// N3485 5.1.2p19, 12.8p15, 15.2p2: a closure's implicitly-defined copy
+// constructor copies its (unnamed) capture members in order; when a later
+// member's copy throws, the members already copied are destroyed. A plain
+// struct's implicit copy constructor alike.
+extern "C" int printf(const char*, ...);
+int live, made, throw_at = -1;
+struct C
+{
+	int id;
+	C(int i) : id(i) { ++live; }
+	C(const C& o) : id(o.id)
+	{
+		if (made++ == throw_at)
+			throw 8;
+		++live;
+	}
+	~C() { --live; }
+};
+struct W
+{
+	C a, b, c;
+	W() : a(1), b(2), c(3) {}
+};
+int main()
+{
+	int r = 0;
+	{
+		C a(1), b(2), c(3);
+		auto f = [a, b, c]() { return a.id + b.id + c.id; };
+		throw_at = made + 2;
+		try
+		{
+			auto g = f;
+			r = 100 + g();
+		}
+		catch (int)
+		{
+			r += live;
+		}
+	}
+	{
+		W w;
+		throw_at = made + 1;
+		try
+		{
+			W w2 = w;
+			r += 100;
+		}
+		catch (int)
+		{
+			r += 10 * live;
+		}
+	}
+	printf("%d %d\n", r, live);
+	return live == 0 ? 0 : 1;
+}

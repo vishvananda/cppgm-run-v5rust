@@ -1,0 +1,5 @@
+declare global @impl_6___value : u32 [binding=weak, object=_ZN4implILj6EE5valueE]
+
+global @align_only : u32 [storage=readonly, binding=internal, object=_ZL10align_only] = 1
+global @size_ordered : u32 [storage=readonly, binding=internal, object=_ZL12size_ordered] = 2
+global @address_ordered : u32 [storage=readonly, binding=internal, object=_ZL15address_ordered] = 4

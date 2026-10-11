@@ -1,0 +1,13 @@
+# budget from 100-split-edge-merge-phi-home.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 114
+blocks <= 15
+count(call) <= 6
+mem <= 52
+instructions <= 8 in @need_rehash
+stack_size <= 64 in @need_rehash
+instructions <= 5 in @rehash
+stack_size <= 48 in @rehash
+instructions <= 89 in @insert
+stack_size <= 96 in @insert
+instructions <= 17 in @main
+stack_size <= 32 in @main

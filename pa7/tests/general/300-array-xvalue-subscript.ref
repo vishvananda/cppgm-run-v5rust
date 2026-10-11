@@ -1,0 +1,25 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias arr_t array of 2 int
+  variable storage array of 2 int
+  function-definition get function of () returning rvalue-reference to array of 2 int
+    compound-statement
+      return-statement
+        id-expression xvalue rvalue-reference to array of 2 int storage
+  function-definition main function of () returning int
+    compound-statement
+      expression-statement
+        assignment-expression lvalue int OP_ASS:=
+          subscript-expression lvalue int
+            id-expression lvalue array of 2 int storage
+            literal prvalue int 0
+          literal prvalue int 7
+      return-statement
+        binary-expression prvalue int OP_MINUS:-
+          subscript-expression lvalue int
+            call-expression xvalue rvalue-reference to array of 2 int
+              callee get function of () returning rvalue-reference to array of 2 int
+            literal prvalue int 0
+          literal prvalue int 7
+end translation unit

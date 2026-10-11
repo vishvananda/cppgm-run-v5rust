@@ -1,0 +1,68 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @seen
+  storage scalar i32
+  init i32 0
+
+global @pair
+  storage data
+  item f64 1.0
+  item i32 2
+
+function @check
+  abi
+    param %p -> rdi : ptr
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fmov.f64 xmm0, [rdi]
+    fcmp.f64 xmm0, 0.0
+    jp ^rhs
+    jne ^rhs
+    jmp ^end
+
+  block ^rhs
+    cmp.i32 [rdi+<off0>], 0
+    jne ^then
+    jmp ^end
+
+  block ^then
+    store.i32 @seen, 1
+    jmp ^end
+
+  block ^end
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @pair
+    call @check [args=(rdi)]
+    cmp.i32 @seen, 1
+    je ^pass
+    jmp ^fail
+
+  block ^pass
+    mov rax, 0
+    ret rax
+
+  block ^fail
+    mov rax, 1
+    ret rax

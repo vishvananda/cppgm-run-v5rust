@@ -1,0 +1,84 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $t : obj<1x1>
+  slot $h : obj<1x1>
+  slot $direct : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $t
+    %t2 = addr $h
+    %t3 = addr $t
+    call void @YHolder_YTraits___YHolder(%t2, %t3)
+    %t4 = addr $direct
+    call void @DirectDerived_IntBase___DirectDerived(%t4, 7)
+    %t5 = addr $direct
+    %t6 = index i8 %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp ne i32 %t8, 7
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @YHolder_YTraits___YHolder(%this : ptr [object_bytes=1], %t : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN7YHolderI7YTraitsEC1ERKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %t, $t
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $t
+    call void @YDerived_YTraits___YDerived(%t2, %t3)
+    return void
+}
+function @DirectDerived_IntBase___DirectDerived(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN13DirectDerivedI7IntBaseEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @IntBase__IntBase__base_entry(%t2, %t3)
+    return void
+}
+function @YDerived_YTraits___YDerived(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN8YDerivedI7YTraitsEC1ERKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $__param1
+    call void @YBase_YTraits___YBase__base_entry(%t2, %t3)
+    return void
+}
+function @IntBase__IntBase__base_entry(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN7IntBaseC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @YBase_YTraits___YBase__base_entry(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN5YBaseI7YTraitsEC2ERKS0_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZN7YHolderI7YTraitsEC2ERKS0_ = @YHolder_YTraits___YHolder
+alias object _ZN13DirectDerivedI7IntBaseEC2Ei = @DirectDerived_IntBase___DirectDerived
+alias object _ZN8YDerivedI7YTraitsEC2ERKS0_ = @YDerived_YTraits___YDerived

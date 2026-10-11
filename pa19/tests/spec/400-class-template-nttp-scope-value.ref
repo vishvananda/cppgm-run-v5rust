@@ -1,0 +1,19 @@
+declare global @is_same___cppgm_class_template_identity_1___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN7is_sameI4listIJS0_IJ17integral_constantIiLi4EES1_ImLm0EEEEEES5_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    call void @local_use__run(%t2)
+    return i32 0
+}
+function @local_use__run(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN9local_use3runEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 1
+    return void
+}

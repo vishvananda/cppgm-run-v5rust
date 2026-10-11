@@ -1,0 +1,9 @@
+declare global @pick_void___void___value : i32 [binding=weak, object=_ZN4pickIFvvEvE5valueE]
+declare global @pick_void____void___value : i32 [binding=weak, object=_ZN4pickIPFvvEvE5valueE]
+declare global @pick_void______void___value : i32 [binding=weak, object=_ZN4pickIFvzEvE5valueE]
+declare global @pick_void_______void___value : i32 [binding=weak, object=_ZN4pickIPFvzEvE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

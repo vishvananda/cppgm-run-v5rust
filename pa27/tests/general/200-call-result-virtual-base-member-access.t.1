@@ -1,0 +1,31 @@
+struct Base {
+  int state;
+  Base() : state(0) {}
+  virtual ~Base() {}
+};
+
+struct Mid : virtual Base {
+  Mid() {}
+  virtual ~Mid() {}
+};
+
+struct Stream : Mid {
+  Stream(int x) { state = x; }
+  ~Stream() override {}
+};
+
+Stream& forward(Stream& s)
+{
+  return s;
+}
+
+int select(int x)
+{
+  Stream out(x);
+  return forward(out).state;
+}
+
+int main()
+{
+  return select(11) == 11 ? 0 : 1;
+}

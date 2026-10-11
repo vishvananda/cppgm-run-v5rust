@@ -1,0 +1,16 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $value
+    %t2 = call i32 @boost__fusion__remove(%t1)
+    return i32 %t2
+}
+function @boost__fusion__remove(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZN5boost6fusion6removeI1XiEENS0_9result_of6removeIKT0_T_E4typeERS6_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}

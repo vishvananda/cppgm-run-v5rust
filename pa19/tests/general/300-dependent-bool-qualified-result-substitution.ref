@@ -1,0 +1,46 @@
+function @test() -> i32 [binding=strong, object=_Z4testv] {
+  slot $p : obj<1x1>
+  slot $value : i32
+  slot $result : ptr
+
+  block ^entry:
+    %t1 = addr $p
+    store typed i32 7, $value
+    %t2 = addr $p
+    %t3 = addr $value
+    %t4 = call ptr @mu(%t2, %t3)
+    store typed ptr %t4, $result
+    %t5 = load typed ptr $result
+    %t6 = load typed i32 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @test()
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @mu(%__param0 : ptr [pass=by_address, object_bytes=1], %value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z2muI11placeholderILi1EEiEN10mu_return2IXltLi0Esr14is_placeholderIT_EE5valueES3_T0_E4typeERS3_RS4_] {
+  slot $__param0 : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}

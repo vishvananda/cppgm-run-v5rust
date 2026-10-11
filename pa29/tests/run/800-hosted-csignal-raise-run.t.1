@@ -1,0 +1,18 @@
+#include <csignal>
+
+static volatile std::sig_atomic_t got = 0;
+
+static void handler(int)
+{
+  got = 1;
+}
+
+int main()
+{
+  if (std::signal(SIGUSR1, handler) == SIG_ERR)
+    return 1;
+  // raise delivers the signal synchronously; the handler runs before it returns.
+  if (std::raise(SIGUSR1) != 0)
+    return 2;
+  return got == 1 ? 0 : 3;
+}

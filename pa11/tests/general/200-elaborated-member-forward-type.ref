@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $o : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $o
+    %t2 = addr $o
+    call void @Outer__set(%t2, 0)
+    %t3 = addr $o
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @Outer__set(%this : ptr [object_bytes=8], %q : ptr) -> void [binding=weak, object=_ZN5Outer3setEP6Hidden, inline_hint=yes] {
+  slot $this : ptr
+  slot $q : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %q, $q
+    %t1 = load typed ptr $q
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}

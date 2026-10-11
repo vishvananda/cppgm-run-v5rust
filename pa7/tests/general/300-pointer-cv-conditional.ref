@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (bool, pointer to struct S, pointer to const struct S) returning pointer to const struct S
+    parameter cond bool
+    parameter a pointer to struct S
+    parameter b pointer to const struct S
+    compound-statement
+      return-statement
+        conditional-expression prvalue pointer to const struct S
+          id-expression lvalue bool cond
+          id-expression lvalue pointer to struct S a
+          id-expression lvalue pointer to const struct S b
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+end translation unit

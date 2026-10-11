@@ -1,0 +1,186 @@
+function @Box__out_of_class(%this : ptr [object_bytes=8]) -> i32 [binding=strong, object=_ZNK3Box12out_of_classEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 4
+    return i32 %t4
+}
+function @ordinary_function(%x : i32) -> i32 [binding=strong, object=_Z17ordinary_functioni] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 7
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<8x4>
+  slot $cond__1 : i32
+  slot $call__2 : i32
+  slot $call__3 : i32
+  slot $call__4 : i32
+  slot $call__5 : i32
+  slot $call__6 : i32
+  slot $call__7 : i32
+  slot $call__8 : i32
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = addr $box
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $box
+    %t5 = index i8 [projection=field] %t4, 4
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 1, %t6
+    eh_try ^cleanup_action_5
+    %t7 = addr $box
+    %t8 = call i32 @Box__in_class(%t7)
+    store typed i32 %t8, $call__2
+    %t9 = load typed i32 $call__2
+    %t10 = call i32 @Box__static_in_class(0)
+    store typed i32 %t10, $call__3
+    %t11 = load typed i32 $call__3
+    %t12 = binary add nowrap i32 %t9, %t11
+    %t13 = addr $box
+    %t14 = call i32 @Box__out_of_class(%t13)
+    store typed i32 %t14, $call__4
+    %t15 = load typed i32 $call__4
+    %t16 = binary add nowrap i32 %t12, %t15
+    %t17 = addr $box
+    %t18 = call i32 @Box__inline_out_of_class(%t17)
+    store typed i32 %t18, $call__5
+    %t19 = load typed i32 $call__5
+    %t20 = binary add nowrap i32 %t16, %t19
+    %t21 = addr $box
+    %t22 = call i32 @friend_in_class(%t21)
+    store typed i32 %t22, $call__6
+    %t23 = load typed i32 $call__6
+    %t24 = binary add nowrap i32 %t20, %t23
+    %t25 = call i32 @inline_function(0)
+    store typed i32 %t25, $call__7
+    %t26 = load typed i32 $call__7
+    %t27 = binary add nowrap i32 %t24, %t26
+    %t28 = call i32 @ordinary_function(0)
+    store typed i32 %t28, $call__8
+    %t29 = load typed i32 $call__8
+    %t30 = binary add nowrap i32 %t27, %t29
+    %t31 = cmp eq i32 %t30, 28
+    eh_end
+    jump ^call_unwind_end_6
+
+  block ^cleanup_resume_4:
+    resume
+
+  block ^cleanup_action_5:
+    %t32 = addr $box
+    call void @Box___Box(%t32)
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_end_6:
+    branch %t31, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t33 = load typed i32 $cond__1
+    %t34 = addr $box
+    call void @Box___Box(%t34)
+    return i32 %t33
+}
+function @Box__in_class(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK3Box8in_classEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @Box__static_in_class(%x : i32) -> i32 [binding=weak, object=_ZN3Box15static_in_classEi, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 2
+    return i32 %t2
+}
+function @Box__inline_out_of_class(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK3Box19inline_out_of_classEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 5
+    return i32 %t4
+}
+function @friend_in_class(%box : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_Z15friend_in_classRK3Box, inline_hint=yes] {
+  slot $box : ptr
+
+  block ^entry:
+    store typed ptr %box, $box
+    %t1 = load typed ptr $box
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 3
+    return i32 %t4
+}
+function @inline_function(%x : i32) -> i32 [binding=weak, object=_Z15inline_functioni, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 6
+    return i32 %t2
+}
+function @Box___Box(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3BoxD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 4
+    call void @Member___Member(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    call void @Member___Member(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Member___Member(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6MemberD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN3BoxD2Ev = @Box___Box
+alias object _ZN6MemberD2Ev = @Member___Member

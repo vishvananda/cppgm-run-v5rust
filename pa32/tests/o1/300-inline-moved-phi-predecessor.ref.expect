@@ -1,0 +1,12 @@
+# budget from 300-inline-moved-phi-predecessor.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 15
+blocks <= 12
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 5
+instructions <= 6 in @choose
+instructions <= 11 in @caller
+
+# outcomes from 300-inline-moved-phi-predecessor.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @choose)

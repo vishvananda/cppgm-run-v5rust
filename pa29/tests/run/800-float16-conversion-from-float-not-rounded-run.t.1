@@ -1,0 +1,9 @@
+// PA29 README (GNU builtin float types; binary16 _Float16): converting a
+// run-time float to _Float16 rounds to binary16 (4.0f -> 0x4400, 4.001953125f
+// ties-to-even -> 4.0); expect exit 0
+int main() {
+  volatile float f = 4.0f, g = 4.001953125f;
+  _Float16 a = (_Float16)f, b = (_Float16)g;
+  unsigned short bits; __builtin_memcpy(&bits, &a, 2);
+  return bits == 0x4400 && (float)b == 4.0f ? 0 : 1;
+}

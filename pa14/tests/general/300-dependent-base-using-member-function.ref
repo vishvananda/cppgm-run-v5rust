@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = call i32 @split_int___spare(%t2)
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}
+function @split_int___spare(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK5splitIiE5spareEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call i32 @layout___cppgm_class_template_identity_1_int_____back_spare(%t2)
+    return i32 %t3
+}
+function @layout___cppgm_class_template_identity_1_int_____back_spare(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK6layoutI5splitIiEiE12__back_spareEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}

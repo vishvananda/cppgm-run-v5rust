@@ -1,0 +1,72 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $v
+    %t2 = addr $v
+    %t3 = call i64 @ns__Vec__size(%t2)
+    %t4 = convert sext i64 i32 3
+    %t5 = cmp eq i64 %t3, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @ns__Vec__size(%this : ptr [object_bytes=1]) -> i64 [binding=weak, object=_ZNK2ns3Vec4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $arg__1 : obj<1x1>
+  slot $arg__2 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $arg__1
+    %t2 = load typed ptr $this
+    %t3 = call obj<1x1> @ns__Vec__end(%t2)
+    %t4 = index i8 %t1, 0
+    %t5 = addr $arg__2
+    %t6 = load typed ptr $this
+    %t7 = call obj<1x1> @ns__Vec__begin(%t6)
+    %t8 = index i8 %t5, 0
+    %t9 = call i64 @ns__operator_(%t4, %t8)
+    %t10 = copy i64 %t9
+    return i64 %t10
+}
+function @ns__Vec__end(%this : ptr [object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZNK2ns3Vec3endEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
+    return obj<1x1> $retobj__1
+}
+function @ns__Vec__begin(%this : ptr [object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZNK2ns3Vec5beginEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
+    return obj<1x1> $retobj__1
+}
+function @ns__operator_(%x : ptr [pass=by_address, object_bytes=1], %y : ptr [pass=by_address, object_bytes=1]) -> i64 [binding=weak, object=_ZN2nsmiERKNS_4BaseES2_, inline_hint=yes] {
+  slot $x : ptr
+  slot $y : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    return i64 3
+}

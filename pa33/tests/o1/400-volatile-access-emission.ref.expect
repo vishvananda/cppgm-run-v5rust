@@ -1,0 +1,14 @@
+# budget from 400-volatile-access-emission.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 18
+blocks <= 5
+count(call) <= 4
+mem <= 8
+instructions <= 10 in @spin_flag
+stack_size <= 50 in @spin_flag
+instructions <= 10 in @main
+stack_size <= 32 in @main
+
+# contract from 400-volatile-access-emission.ref.mir: the exception regions, calls, callee-saved registers and memory accesses the fixture requires
+count(load) >= 2 in @spin_flag
+count(store) >= 2 in @spin_flag
+count(call @spin_flag) == 1 in @main

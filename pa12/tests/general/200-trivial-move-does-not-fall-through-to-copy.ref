@@ -1,0 +1,64 @@
+function @forward(%v : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_Z7forwardR5value] {
+  slot $v : ptr
+
+  block ^entry:
+    store typed ptr %v, $v
+    %t1 = load typed ptr $v
+    return ptr %t1
+}
+function @take(%__param0 : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z4take5value] {
+  slot $__param0 : obj<4x4>
+
+  block ^entry:
+    return void
+}
+function @copy(%v : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z4copyRK5value] {
+  slot $v : ptr
+  slot $copied : obj<4x4>
+
+  block ^entry:
+    store typed ptr %v, $v
+    %t1 = addr $copied
+    %t2 = load typed ptr $v
+    call void @value__value__ov2(%t1, %t2)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<4x4>
+  slot $arg__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $v
+    call void @value__value(%t1)
+    %t2 = addr $v
+    call void @copy(%t2)
+    %t3 = addr $arg__1
+    %t4 = addr $v
+    %t5 = call ptr @forward(%t4)
+    copyobj 4x4 %t5, %t3
+    call void @take(%t3)
+    return i32 0
+}
+function @value__value__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN5valueC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 %t3, 0
+    copyobj 4x4 %t4, %t2
+    return void
+}
+function @value__value(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5valueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN5valueC2ERKS_ = @value__value__ov2
+alias object _ZN5valueC2Ev = @value__value

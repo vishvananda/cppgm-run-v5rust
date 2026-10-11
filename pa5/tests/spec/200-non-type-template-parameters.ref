@@ -1,0 +1,62 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier N
+          default-template-argument
+            literal 1
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_UNSIGNED:unsigned
+            decl-specifier KW_LONG:long
+          parameter-pack ...
+          declarator
+            identifier I
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+        type-parameter
+          template-template-parameter
+          template-parameter-clause
+            template-parameter-list
+              type-parameter
+                parameter-key KW_CLASS:class
+          parameter-key KW_CLASS:class
+          identifier TT
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-name Meta
+    class-specifier Holder
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier values
+              array-suffix
+                id-expression N
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              id-expression N
+end translation unit

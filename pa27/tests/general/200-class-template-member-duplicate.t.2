@@ -1,0 +1,9 @@
+#include "200-class-template-member-duplicate.helper.h"
+
+int one();
+
+int main()
+{
+  Box<int> box;
+  return one() + box.twice(11) - 42;
+}

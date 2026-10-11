@@ -1,0 +1,12 @@
+extern int g;
+int callee();
+
+int * address_of_g()
+{
+  return &g;
+}
+
+int (*address_of_callee())()
+{
+  return &callee;
+}

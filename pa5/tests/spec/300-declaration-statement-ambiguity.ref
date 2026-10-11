@@ -1,0 +1,92 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier a
+      expression-statement
+        assignment-expression OP_ASS:=
+          id-expression a
+          literal 1
+      return-statement
+        id-expression a
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier function
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier called
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_VOID:void
+          declarator
+            ptr-operator OP_STAR:*
+    compound-statement
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier g
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier function
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_VOID:void
+                  declarator
+                    ptr-operator OP_STAR:*
+            initializer
+              id-expression called
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier spawned_thread
+      try-block
+        compound-statement
+          expression-statement
+            call-expression
+              id-expression function
+              argument-list
+                unary-expression OP_AMP:&
+                  id-expression spawned_thread
+        handler
+          exception-declaration
+            ellipsis ...
+          compound-statement
+      return-statement
+        literal 0
+end translation unit

@@ -1,0 +1,16 @@
+global @holder_int___value [storage=readonly, binding=weak, object=_ZN6holderIiE5valueE] = {
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i8 @tag__holder_int___value___get()
+    %t2 = convert sext i32 i8 %t1
+    return i32 %t2
+}
+function @tag__holder_int___value___get() -> i8 [binding=weak, object=_ZN3tagIXadL_ZN6holderIiE5valueEEEE3getEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @holder_int___value
+    %t2 = load i8 %t1
+    return i8 %t2
+}

@@ -1,0 +1,25 @@
+declare function @__builtin_strlen(%arg0 : ptr) -> i64 [effects=readonly, unwind=no, binding=strong, object=cppgm_builtin_strlen]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 121
+  i8 0
+}
+
+function @pure() -> i32 [unwind=no, binding=strong, object=_Z4purev] {
+  block ^entry:
+    return i32 7
+}
+function @trap() -> void [binding=strong, object=_Z4trapv] {
+  block ^entry:
+    unreachable
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @pure()
+    %t2 = addr @__strlit__1
+    %t3 = call i64 @__builtin_strlen(%t2)
+    %t4 = convert trunc i32 i64 %t3
+    %t5 = binary add nowrap i32 %t1, %t4
+    return i32 %t5
+}

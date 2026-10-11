@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias T unsigned long int
+  function-definition __is_type_name_unique function of (unsigned long int) returning bool
+    parameter v unsigned long int
+    compound-statement
+      return-statement
+        unary-expression prvalue bool OP_LNOT:!
+          binary-expression prvalue unsigned long int OP_AMP:&
+            id-expression lvalue unsigned long int v
+            literal prvalue int 1
+  function-definition f function of (unsigned long int) returning bool
+    parameter v unsigned long int
+    compound-statement
+      return-statement
+        call-expression prvalue bool
+          callee __is_type_name_unique function of (unsigned long int) returning bool
+          id-expression lvalue unsigned long int v
+end translation unit

@@ -1,0 +1,6 @@
+declare global @chacha_20___state_size : i64 [binding=weak, object=_ZN6chachaILm20EE10state_sizeE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,117 @@
+function @may_throw(%x : i32) -> i32 [binding=strong, object=_Z9may_throwi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $quiet : obj<1x1>
+  slot $loud : obj<1x1>
+  slot $quiet_pointer : ptr
+  slot $loud_pointer : ptr
+  slot $direct : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $quiet
+    %t2 = addr $loud
+    %t3 = addr @__lambda_main_t28_33___FUN
+    store typed ptr %t3, $quiet_pointer
+    %t4 = addr @__lambda_main_t46_50_n1___FUN
+    store typed ptr %t4, $loud_pointer
+    %t5 = addr @__lambda_main_t88_93_n2___FUN
+    %t6 = call i32 %t5(0) as (%arg0 : i32) -> i32 [unwind=no]
+    %t7 = addr @__lambda_main_t106_110_n3___FUN
+    %t8 = call i32 %t7(0) as (%arg0 : i32) -> i32
+    %t9 = binary add nowrap i32 %t6, %t8
+    store typed i32 %t9, $direct
+    %t10 = addr $quiet
+    %t11 = call i32 @__lambda_main_t28_33__operator__(%t10, 0)
+    %t12 = addr $loud
+    %t13 = call i32 @__lambda_main_t46_50_n1__operator__(%t12, 0)
+    %t14 = binary add nowrap i32 %t11, %t13
+    %t15 = load typed ptr $quiet_pointer
+    %t16 = call i32 %t15(0) as (%arg0 : i32) -> i32
+    %t17 = binary add nowrap i32 %t14, %t16
+    %t18 = load typed ptr $loud_pointer
+    %t19 = call i32 %t18(0) as (%arg0 : i32) -> i32
+    %t20 = binary add nowrap i32 %t17, %t19
+    %t21 = load typed i32 $direct
+    %t22 = binary add nowrap i32 %t20, %t21
+    %t23 = cmp eq i32 %t22, 13
+    branch %t23, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t24 = load typed i32 $cond__1
+    return i32 %t24
+}
+function @__lambda_main_t28_33___FUN(%x : i32) -> i32 [unwind=no, binding=internal, object=_ZZ4mainEN3$_08__invokeEi, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @__lambda_main_t46_50_n1___FUN(%x : i32) -> i32 [binding=internal, object=_ZZ4mainEN3$_18__invokeEi, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = call i32 @may_throw(%t1)
+    %t3 = binary add nowrap i32 %t2, 2
+    return i32 %t3
+}
+function @__lambda_main_t88_93_n2___FUN(%x : i32) -> i32 [unwind=no, binding=internal, object=_ZZ4mainEN3$_28__invokeEi, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @__lambda_main_t106_110_n3___FUN(%x : i32) -> i32 [binding=internal, object=_ZZ4mainEN3$_38__invokeEi, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}
+function @__lambda_main_t28_33__operator__(%this : ptr [object_bytes=1], %x : i32) -> i32 [unwind=no, binding=internal, object=_ZZ4mainENK3$_0clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @__lambda_main_t46_50_n1__operator__(%this : ptr [object_bytes=1], %x : i32) -> i32 [binding=internal, object=_ZZ4mainENK3$_1clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = call i32 @may_throw(%t1)
+    %t3 = binary add nowrap i32 %t2, 2
+    return i32 %t3
+}

@@ -1,0 +1,10 @@
+#include <map>
+
+int main()
+{
+  std::map<int, int> src;
+  src[7] = 3;
+  std::map<int, int> dst;
+  dst = src;
+  return dst[7] != 3;
+}

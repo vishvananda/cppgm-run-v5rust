@@ -1,0 +1,328 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Top [storage=readonly, binding=weak, object=_ZTS3Top] = {
+  i8 51
+  i8 84
+  i8 111
+  i8 112
+  i8 0
+}
+global @__typeinfo_name__struct_Side [storage=readonly, binding=weak, object=_ZTS4Side] = {
+  i8 52
+  i8 83
+  i8 105
+  i8 100
+  i8 101
+  i8 0
+}
+global @__typeinfo_name__struct_Middle [storage=readonly, binding=weak, object=_ZTS6Middle] = {
+  i8 54
+  i8 77
+  i8 105
+  i8 100
+  i8 100
+  i8 108
+  i8 101
+  i8 0
+}
+global @__typeinfo_name__struct_Root [storage=readonly, binding=weak, object=_ZTS4Root] = {
+  i8 52
+  i8 82
+  i8 111
+  i8 111
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Root [storage=readonly, binding=weak, object=_ZTI4Root] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Root
+}
+global @__rtti_struct_Middle [storage=readonly, binding=weak, object=_ZTI6Middle] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Middle
+  ptr addr @__rtti_struct_Root
+}
+global @__rtti_struct_Side [storage=readonly, binding=weak, object=_ZTI4Side] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Side
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Middle
+  i64 -6141
+}
+global @__rtti_struct_Top [storage=readonly, binding=weak, object=_ZTI3Top] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Top
+  i32 2
+  i32 2
+  ptr addr @__rtti_struct_Side
+  i64 -6141
+  ptr addr @__rtti_struct_Middle
+  i64 -8189
+}
+global @Top__vtable [storage=readonly, binding=weak, object=_ZTV3Top] = {
+  i64 32
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Top
+  ptr addr @Top__id
+}
+global @Top____view__Side__16__vtable [storage=readonly, binding=internal] = {
+  i64 16
+  i64 -16
+  ptr addr @__rtti_struct_Top
+}
+global @Top____view__Middle__32__vtable [storage=readonly, binding=internal] = {
+  i64 -32
+  i64 -32
+  ptr addr @__rtti_struct_Top
+  ptr addr @_Top__id__vtable_return_adjust__this_pos0__return_pos0__vcall_n24
+}
+global @Top____construction__Side__16__s0__vtable [storage=readonly, binding=internal, object=_ZTC3Top16_4Side] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Side
+}
+global @Top____construction__Side__16__s1__vtable [storage=readonly, binding=internal] = {
+  i64 0
+  i64 -16
+  ptr addr @__rtti_struct_Side
+  ptr addr @Root__id
+}
+global @Top____vtt [storage=readonly, binding=weak, object=_ZTT3Top, object_root=yes] = {
+  ptr addr @Top__vtable + 32
+  ptr addr @Top____view__Side__16__vtable + 24
+  ptr addr @Top____view__Middle__32__vtable + 24
+  ptr addr @Top____construction__Side__16__s0__vtable + 24
+  ptr addr @Top____construction__Side__16__s1__vtable + 24
+}
+global @Side__vtable [storage=readonly, binding=weak, object=_ZTV4Side] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Side
+}
+global @Side____view__Middle__16__vtable [storage=readonly, binding=internal] = {
+  i64 0
+  i64 -16
+  ptr addr @__rtti_struct_Side
+  ptr addr @Root__id
+}
+global @Side____vtt [storage=readonly, binding=weak, object=_ZTT4Side, object_root=yes] = {
+  ptr addr @Side__vtable + 24
+  ptr addr @Side____view__Middle__16__vtable + 24
+}
+global @Middle__vtable [storage=readonly, binding=weak, object=_ZTV6Middle] = {
+  i64 0
+  ptr addr @__rtti_struct_Middle
+  ptr addr @Root__id
+}
+global @Root__vtable [storage=readonly, binding=weak, object=_ZTV4Root] = {
+  i64 0
+  ptr addr @__rtti_struct_Root
+  ptr addr @Root__id
+}
+
+function @read(%value : ptr) -> i32 [binding=strong, object=_Z4readP4Root] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr %t1
+    %t3 = load typed ptr %t2
+    %t4 = call i32 %t3(%t1) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t5 = binary mul nowrap i32 %t4, 10
+    %t6 = load typed ptr $value
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed i32 %t7
+    %t9 = binary add nowrap i32 %t5, %t8
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $top : obj<48x8>
+  slot $root : ptr
+  slot $reference : ptr
+  slot $middle : ptr
+
+  block ^entry:
+    %t1 = addr $top
+    call void @Top__Top(%t1)
+    %t2 = addr $top
+    %t3 = load typed ptr %t2
+    %t4 = index i8 %t3, -32
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t2, %t5
+    %t7 = index i8 %t6, 0
+    store typed ptr %t7, $root
+    %t8 = addr $top
+    %t9 = index i8 %t8, 32
+    store typed ptr %t9, $reference
+    %t10 = load typed ptr $root
+    %t11 = call i32 @read(%t10)
+    %t12 = cmp ne i32 %t11, 27
+    branch %t12, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t13 = load typed ptr $reference
+    %t14 = load typed ptr $root
+    %t15 = cmp ne ptr %t13, %t14
+    branch %t15, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t16 = addr $top
+    %t17 = load typed ptr %t16
+    %t18 = index i8 %t17, -32
+    %t19 = load typed i64 %t18
+    %t20 = index i8 %t16, %t19
+    %t21 = index i8 %t20, 0
+    %t22 = load typed ptr $root
+    %t23 = cmp ne ptr %t21, %t22
+    branch %t23, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    %t24 = addr $top
+    %t25 = load typed ptr %t24
+    %t26 = index i8 %t25, -32
+    %t27 = load typed i64 %t26
+    %t28 = index i8 %t24, %t27
+    %t29 = index i8 %t28, 0
+    store typed ptr %t29, $middle
+    %t30 = load typed ptr $middle
+    %t31 = index i8 %t30, 0
+    %t32 = load typed ptr $root
+    %t33 = cmp ne ptr %t31, %t32
+    branch %t33, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    return i32 3
+
+  block ^if_else_9:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    return i32 0
+}
+function @Root__id(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN4Root2idEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @Top__Top(%this : ptr [object_bytes=48]) -> void [binding=weak, object=_ZN3TopC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 32
+    call void @Middle__Middle__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 16
+    %t5 = addr @Top____vtt
+    %t6 = index i8 %t5, 24
+    call void @Side__Side__base_entry(%t4, %t6)
+    %t7 = load typed ptr $this
+    %t8 = addr @Top__vtable
+    %t9 = index i8 %t8, 32
+    store typed ptr %t9, %t7
+    %t10 = load typed ptr $this
+    %t11 = load typed ptr %t10
+    %t12 = index i8 %t11, -24
+    %t13 = load typed i64 %t12
+    %t14 = index i8 %t10, %t13
+    %t15 = index i8 %t14, 0
+    %t16 = addr @Top____view__Side__16__vtable
+    %t17 = index i8 %t16, 24
+    store typed ptr %t17, %t15
+    %t18 = load typed ptr $this
+    %t19 = load typed ptr %t18
+    %t20 = index i8 %t19, -32
+    %t21 = load typed i64 %t20
+    %t22 = index i8 %t18, %t21
+    %t23 = index i8 %t22, 0
+    %t24 = addr @Top____view__Middle__32__vtable
+    %t25 = index i8 %t24, 24
+    store typed ptr %t25, %t23
+    %t26 = load typed ptr $this
+    %t27 = load typed ptr %t26
+    %t28 = index i8 %t27, -32
+    %t29 = load typed i64 %t28
+    %t30 = index i8 %t26, %t29
+    %t31 = index i8 %t30, 0
+    %t32 = index i8 [projection=field] %t31, 8
+    store typed i32 7, %t32
+    return void
+}
+function @Top__id(%this : ptr [object_bytes=48]) -> i32 [binding=weak, object=_ZN3Top2idEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+function @Middle__Middle__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN6MiddleC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Root__Root__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Middle__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Side__Side__base_entry(%this : ptr [object_bytes=32], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN4SideC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t2, -24
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t3, %t5
+    %t7 = index i8 %__vtt, 8
+    %t8 = load typed ptr %t7
+    store typed ptr %t8, %t6
+    return void
+}
+function @Root__Root__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4RootC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Root__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @_Top__id__vtable_return_adjust__this_pos0__return_pos0__vcall_n24(%arg0 : ptr) -> i32 [binding=weak, object=_ZTv0_n24_N3Top2idEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call i32 @Top__id(%t4)
+    return i32 %t5
+}

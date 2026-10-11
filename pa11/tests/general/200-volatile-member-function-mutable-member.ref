@@ -1,0 +1,76 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $counter : obj<8x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $counter
+    %t2 = addr $counter
+    %t3 = index i8 [projection=field] %t2, 0
+    store volatile i32 0, %t3
+    %t4 = addr $counter
+    call void @Counter__set(%t4, 4)
+    %t5 = addr $counter
+    %t6 = call i32 @Counter__get(%t5)
+    %t7 = cmp eq i32 %t6, 4
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = addr $counter
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load volatile i32 %t9
+    %t11 = cmp eq i32 %t10, 1
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t13 = load typed i64 $land__2
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @Counter__set(%this : ptr [object_bytes=8], %next : i32) -> void [binding=weak, object=_ZNV7Counter3setEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $next : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %next, $next
+    %t1 = load typed i32 $next
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 4
+    store volatile i32 %t1, %t3
+    return void
+}
+function @Counter__get(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNVK7Counter3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load volatile i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store volatile i32 %t4, %t6
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 4
+    %t9 = load volatile i32 %t8
+    return i32 %t9
+}

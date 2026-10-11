@@ -1,0 +1,231 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> void [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_Combined [storage=readonly, binding=weak, object=_ZTS8Combined] = {
+  i8 56
+  i8 67
+  i8 111
+  i8 109
+  i8 98
+  i8 105
+  i8 110
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Derived1 [storage=readonly, binding=weak, object=_ZTS8Derived1] = {
+  i8 56
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 49
+  i8 0
+}
+global @__typeinfo_name__struct_Abstract [storage=readonly, binding=weak, object=_ZTS8Abstract] = {
+  i8 56
+  i8 65
+  i8 98
+  i8 115
+  i8 116
+  i8 114
+  i8 97
+  i8 99
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Abstract [storage=readonly, binding=weak, object=_ZTI8Abstract] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Abstract
+}
+global @__rtti_struct_Derived1 [storage=readonly, binding=weak, object=_ZTI8Derived1] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived1
+  ptr addr @__rtti_struct_Abstract
+}
+global @__typeinfo_name__struct_Derived2 [storage=readonly, binding=weak, object=_ZTS8Derived2] = {
+  i8 56
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 50
+  i8 0
+}
+global @__typeinfo_name__struct_Abstract2 [storage=readonly, binding=weak, object=_ZTS9Abstract2] = {
+  i8 57
+  i8 65
+  i8 98
+  i8 115
+  i8 116
+  i8 114
+  i8 97
+  i8 99
+  i8 116
+  i8 50
+  i8 0
+}
+global @__rtti_struct_Abstract2 [storage=readonly, binding=weak, object=_ZTI9Abstract2] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Abstract2
+}
+global @__rtti_struct_Derived2 [storage=readonly, binding=weak, object=_ZTI8Derived2] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived2
+  ptr addr @__rtti_struct_Abstract2
+}
+global @__rtti_struct_Combined [storage=readonly, binding=weak, object=_ZTI8Combined] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Combined
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Derived1
+  i64 2
+  ptr addr @__rtti_struct_Derived2
+  i64 2050
+}
+global @Combined__vtable [storage=readonly, binding=weak, object=_ZTV8Combined] = {
+  i64 0
+  ptr addr @__rtti_struct_Combined
+  ptr addr @Derived1__f
+}
+global @Combined____view__Derived2__8__vtable [storage=readonly, binding=internal] = {
+  i64 -8
+  ptr addr @__rtti_struct_Combined
+  ptr addr @Derived2__f
+}
+global @Derived1__vtable [storage=readonly, binding=weak, object=_ZTV8Derived1] = {
+  i64 0
+  ptr addr @__rtti_struct_Derived1
+  ptr addr @Derived1__f
+}
+global @Derived2__vtable [storage=readonly, binding=weak, object=_ZTV8Derived2] = {
+  i64 0
+  ptr addr @__rtti_struct_Derived2
+  ptr addr @Derived2__f
+}
+global @Abstract__vtable [storage=readonly, binding=weak, object=_ZTV8Abstract] = {
+  i64 0
+  ptr addr @__rtti_struct_Abstract
+  ptr addr @__cxa_pure_virtual
+}
+global @Abstract2__vtable [storage=readonly, binding=weak, object=_ZTV9Abstract2] = {
+  i64 0
+  ptr addr @__rtti_struct_Abstract2
+  ptr addr @__cxa_pure_virtual
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $combined : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $combined
+    call void @Combined__Combined(%t1)
+    %t2 = addr $combined
+    %t3 = index i8 %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = load typed ptr %t4
+    call void %t5(%t3) as (%arg0 : ptr [object_bytes=8]) -> void
+    %t6 = addr $combined
+    %t7 = index i8 %t6, 8
+    %t8 = load typed ptr %t7
+    %t9 = load typed ptr %t8
+    call void %t9(%t7) as (%arg0 : ptr [object_bytes=8]) -> void
+    return i32 0
+}
+function @Combined__Combined(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN8CombinedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Derived1__Derived1__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 8
+    call void @Derived2__Derived2__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = addr @Combined__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 8
+    %t10 = addr @Combined____view__Derived2__8__vtable
+    %t11 = index i8 %t10, 16
+    store typed ptr %t11, %t9
+    return void
+}
+function @Derived1__f(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8Derived11fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Derived2__f(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8Derived21fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Derived1__Derived1__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN8Derived1C2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Abstract__Abstract__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Derived1__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Derived2__Derived2__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN8Derived2C2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Abstract2__Abstract2__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Derived2__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @Abstract__Abstract__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN8AbstractC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Abstract__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Abstract2__Abstract2__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN9Abstract2C2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Abstract2__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN8CombinedC2Ev = @Combined__Combined

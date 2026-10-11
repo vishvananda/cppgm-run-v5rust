@@ -1,0 +1,67 @@
+function @make() -> obj<8x8> [binding=strong, object=_Z4makev] {
+  slot $p : obj<8x8>
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    store i32 0, %t3
+    %t4 = addr $p
+    %t5 = index i8 [projection=field] %t4, 0
+    store i64 7, %t5
+    %t6 = addr $retobj__1
+    %t7 = addr $p
+    copyobj 8x8 %t7, %t6
+    return obj<8x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<8x8>
+  slot $arg__1 : obj<8x8>
+  slot $b : obj<8x8>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    store i32 0, %t3
+    %t4 = addr $a
+    %t5 = addr $arg__1
+    %t6 = call obj<8x8> @make()
+    copyobj 8x8 %t6, %t5
+    %t7 = call ptr @Payload__operator___ov2(%t4, %t5)
+    %t8 = addr $b
+    %t9 = addr $a
+    copyobj 8x8 %t9, %t8
+    %t10 = addr $b
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load i64 %t11
+    %t13 = cmp eq i64 %t12, 7
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__2
+    return i32 %t14
+}
+function @Payload__operator___ov2(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> ptr [unwind=no, binding=weak, object=_ZN7PayloadaSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 8x8 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}

@@ -1,0 +1,4 @@
+declare global @integral_constant_bool_true___value : u8 [binding=weak, object=_ZN17integral_constantIbLb1EE5valueE]
+declare global @sink_int_true___value : u8 [binding=weak, object=_ZN4sinkIiLb1EE5valueE]
+declare global @integral_constant_bool_false___value : u8 [binding=weak, object=_ZN17integral_constantIbLb0EE5valueE]
+declare global @sink_char_false___value : u8 [binding=weak, object=_ZN4sinkIcLb0EE5valueE]

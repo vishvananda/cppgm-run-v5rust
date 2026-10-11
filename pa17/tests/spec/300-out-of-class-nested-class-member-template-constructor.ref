@@ -1,0 +1,69 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<1x1>
+  slot $value : obj<1x1>
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $value
+    %t3 = addr $result
+    %t4 = addr $source
+    %t5 = addr $value
+    call void @body_longint___reader__reader(%t3, %t4, %t5)
+    %t6 = addr $result
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = const i64 8
+    %t10 = const i64 4
+    %t11 = binary add i64 %t9, %t10
+    %t12 = convert sext i64 i32 %t8
+    %t13 = cmp eq i64 %t12, %t11
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @body_longint___reader__reader(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1], %__param2 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN4bodyIlE6readerC1ILb0EiEER6headerIXT_ET0_ERNS0_10value_typeE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    %t1 = const i64 8
+    %t2 = const i64 4
+    %t3 = binary add i64 %t1, %t2
+    branch 0, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    %t5 = convert sext i64 i32 %t4
+    %t6 = binary add i64 %t3, %t5
+    %t7 = convert trunc i32 i64 %t6
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 %t7, %t9
+    return void
+}
+alias object _ZN4bodyIlE6readerC2ILb0EiEER6headerIXT_ET0_ERNS0_10value_typeE = @body_longint___reader__reader

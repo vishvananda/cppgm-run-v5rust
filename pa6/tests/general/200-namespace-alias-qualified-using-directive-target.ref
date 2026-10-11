@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable value int
+    scope namespace outer
+      scope namespace imported
+        scope namespace target
+          type-alias type int
+      scope namespace owner
+end translation unit

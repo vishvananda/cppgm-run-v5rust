@@ -1,0 +1,26 @@
+double huge_double()
+{
+  return __builtin_huge_val();
+}
+
+float huge_float()
+{
+  return __builtin_huge_valf();
+}
+
+long double huge_long_double()
+{
+  return __builtin_huge_vall();
+}
+
+int main()
+{
+  // HUGE_VAL is +infinity: larger than any finite value and equal to itself.
+  if (!(huge_double() > 1.0e308))
+    return 1;
+  if (!(huge_float() > 1.0e38f))
+    return 2;
+  if (!(huge_long_double() > (long double)1.0e308))
+    return 3;
+  return 0;
+}

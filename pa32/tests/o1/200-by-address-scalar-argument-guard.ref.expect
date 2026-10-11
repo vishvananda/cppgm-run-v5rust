@@ -1,0 +1,24 @@
+# budget from 200-by-address-scalar-argument-guard.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 71
+blocks <= 12
+count(call) <= 12
+count(load) <= 10
+count(store) <= 15
+count(phi) <= 3
+instructions <= 5 in @read_i64
+instructions <= 7 in @bump_i64
+instructions <= 5 in @read_i32
+instructions <= 5 in @read_f64
+instructions <= 7 in @difference
+instructions <= 12 in @known_on_edge
+instructions <= 45 in @main
+
+# outcomes from 200-by-address-scalar-argument-guard.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @plus_one)
+absent(@plus_one)
+
+# A scalar temporary passed to a by_address parameter stands for storage
+# holding its value: the call passes that storage's address, never the
+# value as a literal, and no load reads through a literal address.
+none(/\bcall\b.*[(,] *-?[0-9]/)
+none(/\bload\b \S+ -?[0-9]/)

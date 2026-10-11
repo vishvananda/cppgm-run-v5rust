@@ -1,0 +1,37 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $node : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @Value__Value(%t1, 1)
+    %t2 = addr $node
+    %t3 = addr $value
+    call void @Node_Value___Node(%t2, %t3)
+    %t4 = addr $node
+    return i32 0
+}
+function @Value__Value(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN5ValueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Node_Value___Node(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4NodeI5ValueEC1IS0_EERT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZN5ValueC2Ei = @Value__Value
+alias object _ZN4NodeI5ValueEC2IS0_EERT_ = @Node_Value___Node

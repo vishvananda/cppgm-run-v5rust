@@ -1,0 +1,84 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<8x4>
+  slot $it : obj<8x8>
+  slot $i : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $it
+    %t3 = addr $values
+    call void @Iter__Iter(%t2, %t3)
+    store typed i32 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t4 = load typed i32 $i
+    %t5 = cmp ne i32 %t4, 1
+    branch %t5, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t6 = load typed i32 $i
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, $i
+    %t8 = addr $it
+    %t9 = call ptr @Iter__operator__(%t8)
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t10 = addr $it
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed ptr %t11
+    %t13 = load typed i32 %t12
+    %t14 = cmp eq i32 %t13, 2
+    branch %t14, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t15 = load typed i32 $cond__1
+    return i32 %t15
+}
+function @Iter__Iter(%this : ptr [object_bytes=8], %value : ptr) -> void [binding=weak, object=_ZN4IterC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Iter__operator__(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN4IterppEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 %t3, %t4
+    store typed ptr %t5, %t2
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+alias object _ZN4IterC2EPi = @Iter__Iter

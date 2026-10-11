@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $arg__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $arg__2
+    zeroinit 1x1 %t1
+    %t2 = call i32 @read(%t1)
+    %t3 = cmp eq i32 %t2, 7
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @read(%input : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z4readIivET_O6resultIS0_T0_E] {
+  slot $input : ptr
+
+  block ^entry:
+    store typed ptr %input, $input
+    %t1 = load typed ptr $input
+    %t2 = call i32 @result_int_void___value(%t1)
+    return i32 %t2
+}
+function @result_int_void___value(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNO6resultIivE5valueIiEEN9enable_ifIXsr10is_movableIT_EE5valueEiE4typeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}

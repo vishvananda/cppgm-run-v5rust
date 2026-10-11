@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (bool, float) returning float
+    parameter sign bool
+    parameter x float
+    compound-statement
+      return-statement
+        conditional-expression prvalue long double
+          id-expression lvalue bool sign
+          unary-expression prvalue float OP_MINUS:-
+            id-expression lvalue float x
+          literal prvalue long double 1.0L
+end translation unit

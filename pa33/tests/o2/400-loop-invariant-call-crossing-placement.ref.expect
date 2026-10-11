@@ -1,0 +1,11 @@
+# budget from 400-loop-invariant-call-crossing-placement.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 25
+blocks <= 10
+count(call) <= 5
+mem <= 5
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 8 in @float_loop
+stack_size <= 85 in @float_loop
+instructions <= 17 in @main
+stack_size <= 50 in @main

@@ -1,0 +1,20 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 3
+  i32 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<8x4>
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $a
+    store typed ptr %t2, $p
+    %t3 = load typed ptr $p
+    %t4 = index i32 [projection=array_element] %t3, 1
+    %t5 = load typed i32 %t4
+    %t6 = binary sub nowrap i32 %t5, 4
+    return i32 %t6
+}

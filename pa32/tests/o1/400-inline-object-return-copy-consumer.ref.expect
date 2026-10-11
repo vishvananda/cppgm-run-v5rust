@@ -1,0 +1,16 @@
+# budget from 400-inline-object-return-copy-consumer.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 12
+blocks <= 6
+count(call) <= 3
+count(load) <= 3
+count(store) <= 6
+count(phi) <= 3
+instructions <= 6 in @leaf
+instructions <= 7 in @wrap
+instructions <= 5 in @caller
+
+# outcomes from 400-inline-object-return-copy-consumer.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @leaf)
+none(call @wrap)
+none(load)
+none(copyobj)

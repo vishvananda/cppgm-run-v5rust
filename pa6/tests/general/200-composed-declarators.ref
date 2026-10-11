@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable pc pointer to const int
+    variable ppc pointer to pointer to const int
+    variable i int
+    variable p pointer to int
+    type-alias A array of 5 int
+    type-alias AA array of 2 array of 3 int
+    variable pi pointer to int
+    function f function of () returning int
+    function fpi function of (int) returning pointer to int
+    variable pif pointer to function of (pointer to const char, pointer to const char) returning int
+    function fpif function of (int) returning pointer to function of (int) returning int
+end translation unit

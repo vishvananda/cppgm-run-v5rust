@@ -1,0 +1,54 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_LONG:long
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier fpos_t
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier FILE
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:FILE
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier funopen
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_CONST:const
+                decl-specifier KW_VOID:void
+              declarator
+                ptr-operator OP_STAR:*
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:fpos_t
+              declarator
+                nested-declarator
+                  declarator
+                    ptr-operator OP_STAR:*
+                parameter-clause
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier KW_VOID:void
+                    declarator
+                      ptr-operator OP_STAR:*
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier TT_IDENTIFIER:fpos_t
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier KW_INT:int
+end translation unit

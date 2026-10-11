@@ -1,0 +1,33 @@
+function @id(%y : obj<4x4>) -> obj<4x4> [binding=strong, object=_Z2id1Y] {
+  slot $y : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $y
+    copyobj 4x4 %y, %t1
+    %t2 = addr $retobj__1
+    %t3 = addr $y
+    copyobj 4x4 %t3, %t2
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $argobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 5, %t3
+    %t4 = addr $b
+    %t5 = addr $argobj__1
+    %t6 = addr $a
+    copyobj 4x4 %t6, %t5
+    %t7 = call obj<4x4> @id($argobj__1)
+    copyobj 4x4 %t7, %t4
+    %t8 = addr $b
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    return i32 %t10
+}

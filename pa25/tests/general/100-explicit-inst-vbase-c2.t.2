@@ -1,0 +1,6 @@
+// explicit instantiation definition TU
+struct V { int v; V() : v(1) {} };
+template<class T> struct A : virtual V { int a; A(); ~A(); };
+template<class T> A<T>::A() : a(10) {}
+template<class T> A<T>::~A() {}
+template struct A<int>;

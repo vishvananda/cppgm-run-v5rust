@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 2
+      while-statement
+        condition
+          binary-expression prvalue bool OP_GT:>
+            id-expression lvalue int x
+            literal prvalue int 0
+        compound-statement
+          expression-statement
+            assignment-expression lvalue int OP_ASS:=
+              id-expression lvalue int x
+              binary-expression prvalue int OP_MINUS:-
+                id-expression lvalue int x
+                literal prvalue int 1
+          if-statement
+            condition
+              binary-expression prvalue bool OP_EQ:==
+                id-expression lvalue int x
+                literal prvalue int 1
+            then
+              break-statement
+          continue-statement
+      return-statement
+        id-expression lvalue int x
+end translation unit

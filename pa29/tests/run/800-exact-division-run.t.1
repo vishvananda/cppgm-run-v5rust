@@ -1,0 +1,24 @@
+// N3485 5.7p6: the difference of two pointers into one array is the difference
+// of their subscripts, also for element sizes that are not a power of two (12
+// and 5 bytes here), in either order
+#include <cstdio>
+struct Triple { int a, b, c; };
+struct Five { char bytes[5]; };
+__attribute__((noinline)) long span(const Triple* b, const Triple* e) { return e - b; }
+__attribute__((noinline)) long back(const Five* b, const Five* e) { return b - e; }
+__attribute__((noinline)) int sum(const Triple* b, const Triple* e)
+{
+	int s = 0;
+	for (long i = 0, n = e - b; i < n; ++i)
+		s += b[i].b;
+	return s;
+}
+int main()
+{
+	Triple t[7];
+	for (int i = 0; i < 7; ++i)
+		t[i].a = i, t[i].b = 3 * i, t[i].c = -i;
+	Five f[9];
+	std::printf("%ld %ld %d %ld\n", span(t, t + 7), span(t + 2, t + 5), sum(t, t + 7), back(f, f + 9));
+	return 0;
+}

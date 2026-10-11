@@ -1,0 +1,4 @@
+int destroyed;
+struct V { virtual ~V() { ++destroyed; } };
+struct D : virtual V {};
+int main() { V *p = new D; delete p; return destroyed != 1; }

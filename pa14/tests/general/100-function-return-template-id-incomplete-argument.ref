@@ -1,0 +1,8 @@
+global @instance [binding=strong] = {
+  zero 1
+}
+
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

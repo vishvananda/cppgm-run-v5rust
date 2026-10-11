@@ -1,0 +1,34 @@
+global @before : ptr [binding=strong] = 0
+
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $x : i8
+  slot $refarg__1 : i8
+
+  block ^entry:
+    store i8 0, $x
+    %t1 = addr $x
+    store i8 97, $refarg__1
+    %t2 = addr $refarg__1
+    call void @S_char___assign(%t1, %t2)
+    %t3 = load i8 $x
+    %t4 = convert sext i32 i8 %t3
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}
+function @S_char___assign(%a : ptr [pass=by_address, object_bytes=1], %b : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN1SIcE6assignERcRKc, inline_hint=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    %t2 = load i8 %t1
+    %t3 = load typed ptr $a
+    store i8 %t2, %t3
+    return void
+}

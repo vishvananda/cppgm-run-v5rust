@@ -1,0 +1,30 @@
+function @select() -> i32 [binding=strong, object=_Z6selectv] {
+  block ^entry:
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call i32 @outer_int___inner__run(%t2)
+    return i32 %t3
+}
+function @outer_int___inner__run(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN5outerIiE5inner3runEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call i32 @fixed_base__select(%t2)
+    return i32 %t3
+}
+function @fixed_base__select(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN10fixed_base6selectEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 0
+}

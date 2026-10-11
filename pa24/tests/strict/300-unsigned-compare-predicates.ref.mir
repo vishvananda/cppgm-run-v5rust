@@ -1,0 +1,41 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r10, 1
+    mov rdx, -1
+    cmp.i64 r10, rdx
+    setb r8
+    movzx r8, r8
+    mov r10, 5
+    mov rdx, 5
+    cmp.i64 r10, rdx
+    setbe r9
+    movzx r9, r9
+    mov r10, -1
+    mov rdx, 1
+    cmp.i64 r10, rdx
+    seta rdi
+    movzx rdi, rdi
+    mov r10, 5
+    mov rdx, 5
+    cmp.i64 r10, rdx
+    setae rsi
+    movzx rsi, rsi
+    add r8, r9
+    add r8, rdi
+    add r8, rsi
+    ret r8

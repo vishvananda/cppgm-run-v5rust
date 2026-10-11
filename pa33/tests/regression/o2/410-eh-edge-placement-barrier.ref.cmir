@@ -1,0 +1,47 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    temp %stable -> [rbp-<off0>] : i64
+
+  block ^entry
+    mov rdi, 40
+    add rdi, 2
+    store.i64 [rbp-<off0>], rdi
+    eh_push ^handler, 0
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+
+  block ^done
+    cmp.i64 [rbp-<off0>], 42
+    setne rax
+    movzx rax, rax
+    ret rax
+
+  block ^handler
+    mov rax, 2
+    ret rax

@@ -1,0 +1,42 @@
+declare global @compat____is_tuple_like_int___value : u8 [binding=weak, object=_ZN6compat15__is_tuple_likeIiE5valueE]
+declare global @compat____not____cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN6compat6__not_INS_15__is_tuple_likeIiEEE5valueE]
+declare global @compat__is_move_constructible_int___value : u8 [binding=weak, object=_ZN6compat21is_move_constructibleIiE5valueE]
+declare global @compat__is_move_assignable_int___value : u8 [binding=weak, object=_ZN6compat18is_move_assignableIiE5valueE]
+declare global @compat____and_____value : u8 [binding=weak, object=_ZN6compat6__and_IJEE5valueE]
+declare global @compat____and____cppgm_class_template_identity_2___value : u8 [binding=weak, object=_ZN6compat6__and_IJNS_18is_move_assignableIiEEEE5valueE]
+declare global @compat____and____cppgm_class_template_identity_3___cppgm_class_template_identity_2___value : u8 [binding=weak, object=_ZN6compat6__and_IJNS_21is_move_constructibleIiEENS_18is_move_assignableIiEEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $left : i32
+  slot $right : i32
+
+  block ^entry:
+    store typed i32 1, $left
+    store typed i32 2, $right
+    %t1 = addr $left
+    %t2 = addr $right
+    call void @compat__swap(%t1, %t2)
+    %t3 = load typed i32 $left
+    %t4 = binary sub nowrap i32 %t3, 2
+    return i32 %t4
+}
+function @compat__swap(%left : ptr [pass=by_address, object_bytes=4], %right : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6compat4swapIiEENS_9enable_ifIXsr6__and_INS_6__not_INS_15__is_tuple_likeIT_EEEENS_21is_move_constructibleIS4_EENS_18is_move_assignableIS4_EEEE5valueEvE4typeERS4_SD_] {
+  slot $left : ptr
+  slot $right : ptr
+  slot $tmp : i32
+
+  block ^entry:
+    store typed ptr %left, $left
+    store typed ptr %right, $right
+    %t1 = load typed ptr $left
+    %t2 = load typed i32 %t1
+    store typed i32 %t2, $tmp
+    %t3 = load typed ptr $right
+    %t4 = load typed i32 %t3
+    %t5 = load typed ptr $left
+    store typed i32 %t4, %t5
+    %t6 = load typed i32 $tmp
+    %t7 = load typed ptr $right
+    store typed i32 %t6, %t7
+    return void
+}

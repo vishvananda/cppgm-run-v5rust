@@ -1,0 +1,69 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<8x4>
+  slot $d : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $c
+    call void @YC__YC(%t1)
+    %t2 = addr $d
+    %t3 = addr $c
+    copyobj 8x4 %t3, %t2
+    %t4 = addr $d
+    %t5 = index i8 %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 4, %t6
+    %t7 = addr $c
+    %t8 = index i8 %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = addr $c
+    %t12 = index i8 %t11, 4
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = binary add nowrap i32 %t10, %t14
+    %t16 = addr $d
+    %t17 = index i8 %t16, 0
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = load typed i32 %t18
+    %t20 = binary add nowrap i32 %t15, %t19
+    %t21 = addr $d
+    %t22 = index i8 %t21, 4
+    %t23 = index i8 [projection=field] %t22, 0
+    %t24 = load typed i32 %t23
+    %t25 = binary add nowrap i32 %t20, %t24
+    return i32 %t25
+}
+function @YC__YC(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN2YCC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @YA__YA__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 4
+    call void @YB__YB__base_entry(%t4)
+    return void
+}
+function @YA__YA__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN2YAC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @YB__YB__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN2YBC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 2, %t2
+    return void
+}
+alias object _ZN2YCC2Ev = @YC__YC

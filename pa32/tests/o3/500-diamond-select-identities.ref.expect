@@ -1,0 +1,15 @@
+# budget from 500-diamond-select-identities.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 12
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @minimum_with_npos
+instructions <= 4 in @maximum_with_zero
+instructions <= 4 in @equal_choice
+instructions <= 8 in @minimum_stays
+instructions <= 8 in @length_compare
+
+# outcomes from 500-diamond-select-identities.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)

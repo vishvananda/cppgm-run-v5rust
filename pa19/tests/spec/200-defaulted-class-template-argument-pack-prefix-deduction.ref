@@ -1,0 +1,47 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @tuples__tuple___cppgm_class_template_identity_1___tuple(%t1, 0, 0, 0)
+    %t2 = addr $value
+    %t3 = call i32 @take(%t2)
+    %t4 = cmp eq i32 %t3, 9
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @tuples__tuple___cppgm_class_template_identity_1___tuple(%this : ptr [object_bytes=1], %__param1 : i32, %__param2 : i32, %__param3 : i32) -> void [binding=weak, object=_ZN6tuples5tupleIiiiNS_9null_typeES1_S1_S1_S1_S1_S1_EC1Eiii, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : i32
+  slot $__param3 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    store typed i32 %__param3, $__param3
+    return void
+}
+function @take(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z4takeIiJiiN6tuples9null_typeES1_S1_S1_S1_S1_S1_EEiRKNS0_5tupleIT_DpT0_EE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = const i64 9
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+alias object _ZN6tuples5tupleIiiiNS_9null_typeES1_S1_S1_S1_S1_S1_EC2Eiii = @tuples__tuple___cppgm_class_template_identity_1___tuple

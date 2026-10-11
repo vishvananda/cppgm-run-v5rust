@@ -1,0 +1,82 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar u32
+  init u32 4294967295
+
+function @barrier
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @return_u32
+  abi
+    return u32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 4294967295
+    ret rax
+
+function @load_frame
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call @barrier [args=()]
+    mov rax, 4294967295
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    load.u32 rbx, @value
+    call @load_frame [args=()]
+    mov r12, rax
+    call @return_u32 [args=()]
+    zext.i32 rax
+    mov rdx, 4294967295
+    cmp.i64 rbx, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov rdx, 4294967295
+    cmp.i64 r12, rdx
+    setne r12
+    movzx r12, r12
+    mov rdx, 4294967295
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or rbx, r12
+    or rbx, rax
+    sext.i32 rbx
+    ret rbx

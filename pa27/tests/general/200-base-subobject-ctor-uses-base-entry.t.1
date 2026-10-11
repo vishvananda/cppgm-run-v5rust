@@ -1,0 +1,19 @@
+struct Base {
+  int value;
+  Base();
+};
+
+Base::Base() : value(7) {}
+
+struct Derived : Base {
+  int other;
+  Derived();
+};
+
+Derived::Derived() : Base(), other(9) {}
+
+int main()
+{
+  Derived d;
+  return d.value + d.other - 16;
+}

@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $wide_minus_one : i32
+  slot $minus_one : u32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = unary neg i32 1
+    store typed i32 %t1, $wide_minus_one
+    %t2 = load typed i32 $wide_minus_one
+    %t3 = cmp lt i32 %t2, 0
+    %t4 = cmp eq i64 %t3, 0
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t5 = unary neg i32 1
+    %t6 = copy u32 %t5
+    store typed u32 %t6, $minus_one
+    %t7 = load typed u32 $minus_one
+    %t8 = cmp ugt u32 %t7, 0
+    branch %t8, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 2, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "/home/vishvananda/work/references/v5rust-cpp/dev/cppgm++" "$@"

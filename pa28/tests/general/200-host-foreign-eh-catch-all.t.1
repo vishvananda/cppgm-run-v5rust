@@ -1,0 +1,14 @@
+extern "C" void boom();
+
+int main()
+{
+  try
+  {
+    boom();
+    return 1;
+  }
+  catch (...)
+  {
+    return 0;
+  }
+}

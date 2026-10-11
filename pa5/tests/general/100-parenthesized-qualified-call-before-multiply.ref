@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+        initializer
+          binary-expression OP_STAR:*
+            parenthesized-expression
+              call-expression
+                id-expression limits::epsilon
+                argument-list
+            literal 2
+end translation unit

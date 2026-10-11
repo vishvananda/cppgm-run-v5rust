@@ -1,0 +1,44 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<16x4>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = call ptr @container__operator__(%t3, 1)
+    store typed i32 5, %t4
+    %t5 = addr $s
+    call void @sets__make_set(%t5, 1)
+    %t6 = addr $s
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = call ptr @container__operator__(%t7, 1)
+    %t9 = load typed i32 %t8
+    return i32 %t9
+}
+function @container__operator__(%this : ptr [object_bytes=16], %i : i32) -> ptr [binding=weak, object=_ZN9containerixEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %i, $i
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 $i
+    %t4 = index i32 [projection=array_element] %t2, %t3
+    return ptr %t4
+}
+function @sets__make_set(%this : ptr [object_bytes=16], %x : i32) -> void [binding=weak, object=_ZN4sets8make_setEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 $x
+    %t4 = call ptr @container__operator__(%t2, %t3)
+    store typed i32 0, %t4
+    return void
+}

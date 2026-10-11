@@ -1,0 +1,82 @@
+function @forward_box(%ret : ptr [pass=indirect_result, object_bytes=8], %value : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_Z11forward_boxRK3Box] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    call void @Box__Box__ov2(%ret, %t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $source : obj<8x8>
+  slot $copy : obj<8x8>
+
+  block ^entry:
+    store typed i32 1, $x
+    %t1 = addr $source
+    %t2 = addr $x
+    call void @Box__Box(%t1, %t2)
+    %t3 = addr $copy
+    %t4 = addr $source
+    call void @forward_box(%t3, %t4)
+    %t5 = addr $source
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed ptr %t6
+    %t8 = addr $x
+    %t9 = cmp ne ptr %t7, %t8
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t10 = addr $copy
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed ptr %t11
+    %t13 = addr $x
+    %t14 = cmp ne ptr %t12, %t13
+    branch %t14, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}
+function @Box__Box__ov2(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [binding=weak, object=_ZN3BoxC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    return void
+}
+function @Box__Box(%this : ptr [object_bytes=8], %value : ptr) -> void [binding=weak, object=_ZN3BoxC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN3BoxC2ERKS_ = @Box__Box__ov2
+alias object _ZN3BoxC2EPi = @Box__Box

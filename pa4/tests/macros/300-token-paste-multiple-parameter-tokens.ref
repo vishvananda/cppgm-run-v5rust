@@ -1,0 +1,8 @@
+preproc 1
+sof tests/macros/300-token-paste-multiple-parameter-tokens.t
+identifier aA
+simple . OP_DOT
+identifier Bb
+identifier xX
+identifier Yy
+eof

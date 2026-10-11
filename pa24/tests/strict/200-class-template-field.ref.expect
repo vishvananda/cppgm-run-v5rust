@@ -1,0 +1,11 @@
+# budget from 200-class-template-field.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 23
+blocks <= 7
+count(call) <= 5
+mem <= 13
+instructions <= 19 in @main
+stack_size <= 352 in @main
+instructions <= 4 in @Box_int___Box
+stack_size <= 320 in @Box_int___Box
+instructions <= 4 in @Box_int____Box
+stack_size <= 320 in @Box_int____Box

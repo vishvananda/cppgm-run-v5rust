@@ -1,0 +1,24 @@
+struct Text
+{
+  int value;
+
+  Text(int input = 0) : value(input) {}
+  Text(const Text& other) : value(other.value) {}
+  ~Text() {}
+};
+
+Text operator+(const Text& left, const char* right)
+{
+  return Text(left.value + (right[0] == 'y' ? 1 : 2));
+}
+
+int choose(bool first, bool second)
+{
+  Text result = Text(4) + (first && second ? "y" : "z");
+  return result.value;
+}
+
+int main()
+{
+  return choose(true, true) != 5 || choose(false, true) != 6;
+}

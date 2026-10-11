@@ -1,0 +1,32 @@
+declare global @integral_constant_bool_true___value : u8 [binding=weak, object=_ZN17integral_constantIbLb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $use : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $use
+    call void @Use__Use(%t1)
+    %t2 = addr $use
+    return i32 0
+}
+function @Use__Use(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN3UseC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @pair_like_Node__int___pair_like(%t2, 0)
+    return void
+}
+function @pair_like_Node__int___pair_like(%this : ptr [object_bytes=1], %__param1 : i32) -> void [binding=weak, object=_ZN9pair_likeIPN5Owner4NodeEiEC1ILb1ETnN9enable_ifIXclsr11constraintsIXT_ES2_iEE2okEEbE4typeELb1EEEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return void
+}
+alias object _ZN3UseC2Ev = @Use__Use
+alias object _ZN9pair_likeIPN5Owner4NodeEiEC2ILb1ETnN9enable_ifIXclsr11constraintsIXT_ES2_iEE2okEEbE4typeELb1EEEi = @pair_like_Node__int___pair_like

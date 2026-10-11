@@ -1,0 +1,11 @@
+# budget from 600-short-circuit-or-call-diamond.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 37
+blocks <= 13
+count(call) <= 5
+mem <= 5
+instructions <= 5 in @lhs_false
+stack_size <= 320 in @lhs_false
+instructions <= 5 in @rhs_true
+stack_size <= 320 in @rhs_true
+instructions <= 29 in @main
+stack_size <= 320 in @main

@@ -1,0 +1,19 @@
+#include <algorithm>
+#include <string>
+
+int main()
+{
+  int left[2] = {1, 2};
+  int right[2] = {1, 3};
+  if(!std::lexicographical_compare(left, left + 2, right, right + 2)) {
+    return 1;
+  }
+
+  std::string expected[2] = {"alpha", "beta"};
+  std::string same[2] = {"alpha", "beta"};
+  std::string different[2] = {"alpha", "gamma"};
+  if(!std::equal(expected, expected + 2, same)) {
+    return 2;
+  }
+  return std::equal(expected, expected + 2, different) ? 3 : 0;
+}

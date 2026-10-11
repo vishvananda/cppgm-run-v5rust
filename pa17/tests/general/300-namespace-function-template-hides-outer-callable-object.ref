@@ -1,0 +1,56 @@
+global @outer__static_const_printer___value [storage=readonly, binding=weak, object=_ZN5outer12static_constINS_4impl7printerEE5valueE] = {
+  zero 1
+}
+global @outer___GLOBAL__N_1__print : ptr [binding=internal, object=_ZN5outer12_GLOBAL__N_15printE] = addr @outer__static_const_printer___value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $arg__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $arg__2
+    zeroinit 1x1 %t1
+    %t2 = call i32 @outer__log(%t1)
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @outer__log(%value : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZN5outer3logI5tokenEEiRKT_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr @outer___GLOBAL__N_1__print
+    %t2 = load typed ptr $value
+    %t3 = call i32 @outer__impl__printer__operator__(%t1, %t2)
+    return i32 %t3
+}
+function @outer__impl__printer__operator__(%this : ptr [object_bytes=1], %value : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZNK5outer4impl7printerclI5tokenEEiRKT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call i32 @outer__impl__print(%t1)
+    return i32 %t2
+}
+function @outer__impl__print(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZN5outer4impl5printI5tokenEEiRKT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}

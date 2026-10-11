@@ -1,0 +1,63 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 98
+  i8 99
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $arg__1 : obj<8x8>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $stream
+    %t2 = addr $arg__1
+    %t3 = addr @__strlit__1
+    call void @String__String(%t2, %t3)
+    call void @Stream__Stream__ov2(%t1, %t2)
+    %t4 = addr $stream
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 2
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__2
+    return i32 %t8
+}
+function @String__String(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN6StringC1IPKcEET_, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Stream__Stream__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN6StreamC1ERK6String, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 2, %t2
+    return void
+}
+alias object _ZN6StringC2IPKcEET_ = @String__String
+alias object _ZN6StreamC2ERK6String = @Stream__Stream__ov2

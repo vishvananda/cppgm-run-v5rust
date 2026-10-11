@@ -1,0 +1,4 @@
+struct B { virtual void f() throw() = 0; };
+struct M : B { void f() throw() override = 0; };
+struct D : M { void f() throw() {} };
+int main() { D d; (void)d; }

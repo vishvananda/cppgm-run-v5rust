@@ -1,0 +1,11 @@
+# budget from 500-edge-known-branch-chain.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 39
+blocks <= 26
+count(call) <= 9
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 12 in @fold_through_jump_and_unrelated_branch
+instructions <= 12 in @keep_when_chain_merges
+instructions <= 17 in @keep_across_landing_pad
+instructions <= 6 in @keep_entry_back_edge

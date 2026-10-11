@@ -1,0 +1,98 @@
+global @c [binding=strong] = {
+  i8 99
+  i8 104
+  i8 97
+  i8 114
+  i8 0
+}
+global @sc [binding=strong] = {
+  i8 115
+  i8 105
+  i8 103
+  i8 110
+  i8 101
+  i8 100
+  i8 32
+  i8 99
+  i8 104
+  i8 97
+  i8 114
+  i8 0
+}
+global @uc [binding=strong] = {
+  u8 117
+  u8 110
+  u8 115
+  u8 105
+  u8 103
+  u8 110
+  u8 101
+  u8 100
+  u8 32
+  u8 99
+  u8 104
+  u8 97
+  u8 114
+  u8 0
+}
+global @c16 [binding=strong] = {
+  u16 99
+  u16 104
+  u16 97
+  u16 114
+  u16 49
+  u16 54
+  u16 95
+  u16 116
+  u16 0
+}
+global @c32 [binding=strong] = {
+  u32 99
+  u32 104
+  u32 97
+  u32 114
+  u32 51
+  u32 50
+  u32 95
+  u32 116
+  u32 0
+}
+global @w [binding=strong] = {
+  i32 119
+  i32 99
+  i32 104
+  i32 97
+  i32 114
+  i32 95
+  i32 116
+  i32 0
+}
+global @c10 [binding=strong] = {
+  i8 102
+  i8 111
+  i8 111
+  i8 0
+  i8 0
+  i8 0
+  i8 0
+  i8 0
+  i8 0
+  i8 0
+}
+global @c32_10 [binding=strong] = {
+  u32 98
+  u32 97
+  u32 114
+  u32 0
+  u32 0
+  u32 0
+  u32 0
+  u32 0
+  u32 0
+  u32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

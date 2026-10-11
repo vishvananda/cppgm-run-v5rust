@@ -1,0 +1,75 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition ns
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier destroy_at
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:T
+                  declarator
+                    ptr-operator OP_STAR:*
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier addressof
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:T
+                  declarator
+                    ptr-operator OP_AMP:&
+  class-specifier box
+    class-key KW_STRUCT:struct
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier clear
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:box
+            declarator
+              ptr-operator OP_AMP:&
+              identifier other
+      compound-statement
+        expression-statement
+          call-expression
+            id-expression ns::destroy_at
+            argument-list
+              unary-expression OP_AMP:&
+                id-expression other
+        if-statement
+          condition
+            binary-expression OP_NE:!=
+              call-expression
+                id-expression ns::addressof
+                argument-list
+                  id-expression other
+              keyword-literal KW_THIS:this
+          then
+            compound-statement
+end translation unit

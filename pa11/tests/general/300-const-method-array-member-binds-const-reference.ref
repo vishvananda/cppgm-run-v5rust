@@ -1,0 +1,40 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 109
+  i8 101
+  i8 109
+  i8 98
+  i8 101
+  i8 114
+  i8 0
+}
+
+function @const_method_array_member_reference__take(%value : ptr [pass=by_address, object_bytes=12], %__param1 : ptr) -> u32 [binding=strong, object=_ZN35const_method_array_member_reference4takeERA3_A4_KcPS0_] {
+  slot $value : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    store typed ptr %__param1, $__param1
+    return u32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<12x1>
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = addr $h
+    %t3 = call u32 @const_method_array_member_reference__holder__check(%t2)
+    %t4 = copy i32 %t3
+    return i32 %t4
+}
+function @const_method_array_member_reference__holder__check(%this : ptr [object_bytes=12]) -> u32 [binding=weak, object=_ZNK35const_method_array_member_reference6holder5checkEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = addr @__strlit__1
+    %t4 = call u32 @const_method_array_member_reference__take(%t2, %t3)
+    return u32 %t4
+}

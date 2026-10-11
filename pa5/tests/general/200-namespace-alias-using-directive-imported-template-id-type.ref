@@ -1,0 +1,53 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition ns
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier hash
+        class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier A
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier B
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier C
+      class-specifier unordered_map
+        class-key KW_STRUCT:struct
+  namespace-alias-definition alias
+    target ns
+  using-directive
+    target alias
+  enum-specifier E
+    enumerator A
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier token_op
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier unordered_map<E,token_op,hash<int>>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier m
+        initializer
+          braced-init-list
+            braced-init-list
+              id-expression A
+              literal 0
+end translation unit

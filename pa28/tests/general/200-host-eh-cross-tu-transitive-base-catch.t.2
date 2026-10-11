@@ -1,0 +1,31 @@
+struct RootError
+{
+  int code;
+
+  RootError() : code(7) {}
+};
+
+struct MiddleError : RootError
+{
+  MiddleError() : RootError() {}
+};
+
+struct LeafError : MiddleError
+{
+  LeafError() : MiddleError() {}
+};
+
+void throw_leaf_error();
+
+int main()
+{
+  try
+  {
+    throw_leaf_error();
+  }
+  catch (RootError & error)
+  {
+    return error.code == 7 ? 0 : 2;
+  }
+  return 1;
+}

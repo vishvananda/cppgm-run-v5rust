@@ -1,0 +1,81 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $refarg__2 : i32
+  slot $refarg__3 : i32
+
+  block ^entry:
+    store typed i32 1, $refarg__2
+    %t1 = addr $refarg__2
+    store typed i32 4, $refarg__3
+    %t2 = addr $refarg__3
+    %t3 = call i32 @probe(%t1, %t2)
+    %t4 = cmp eq i32 %t3, 5
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @probe(%args : ptr [pass=by_address, object_bytes=4], %args__pack2 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z5probeIJiiEEiDpOT_] {
+  slot $args : ptr
+  slot $args__pack2 : ptr
+  slot $refs : obj<16x8>
+
+  block ^entry:
+    store typed ptr %args, $args
+    store typed ptr %args__pack2, $args__pack2
+    %t1 = const i64 2
+    %t2 = convert sext i64 i32 2
+    %t3 = cmp eq i64 %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t4 = addr $refs
+    %t5 = load typed ptr $args
+    %t6 = load typed ptr $args__pack2
+    call void @pair_constint__constint____pair(%t4, %t5, %t6)
+    %t7 = addr $refs
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed ptr %t8
+    %t10 = load typed i32 %t9
+    %t11 = addr $refs
+    %t12 = index i8 [projection=field] %t11, 8
+    %t13 = load typed ptr %t12
+    %t14 = load typed i32 %t13
+    %t15 = binary add nowrap i32 %t10, %t14
+    return i32 %t15
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return i32 0
+}
+function @pair_constint__constint____pair(%this : ptr [object_bytes=16], %a : ptr [pass=by_address, object_bytes=4], %b : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4pairIRKiS1_EC1ES1_S1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed ptr $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed ptr %t4, %t6
+    return void
+}
+alias object _ZN4pairIRKiS1_EC2ES1_S1_ = @pair_constint__constint____pair

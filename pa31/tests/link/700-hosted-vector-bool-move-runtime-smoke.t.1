@@ -1,0 +1,9 @@
+#include <utility>
+#include <vector>
+
+int main() {
+  std::vector<bool> src;
+  src.push_back(true);
+  std::vector<bool> dst(std::move(src));
+  return dst.size() == 1 && dst[0] ? 0 : 1;
+}

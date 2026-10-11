@@ -1,0 +1,77 @@
+struct HostAbiBase
+{
+  virtual int first();
+  virtual int second();
+  virtual int third();
+};
+
+struct HostAbiOther
+{
+  virtual int other();
+};
+
+struct HostAbiDerived : HostAbiBase, HostAbiOther
+{
+  int first();
+  int second();
+  int third();
+  int other();
+};
+
+int HostAbiBase::first()
+{
+  return 1;
+}
+
+int HostAbiBase::second()
+{
+  return 2;
+}
+
+int HostAbiBase::third()
+{
+  return 3;
+}
+
+int HostAbiOther::other()
+{
+  return 4;
+}
+
+int HostAbiDerived::first()
+{
+  return 10;
+}
+
+int HostAbiDerived::second()
+{
+  return 20;
+}
+
+int HostAbiDerived::third()
+{
+  return 30;
+}
+
+int HostAbiDerived::other()
+{
+  return 40;
+}
+
+int main()
+{
+  HostAbiDerived derived;
+  HostAbiBase * base = &derived;
+  HostAbiOther * other = &derived;
+
+  if(base->first() != 10) {
+    return 1;
+  }
+  if(base->third() != 30) {
+    return 2;
+  }
+  if(other->other() != 40) {
+    return 3;
+  }
+  return 0;
+}

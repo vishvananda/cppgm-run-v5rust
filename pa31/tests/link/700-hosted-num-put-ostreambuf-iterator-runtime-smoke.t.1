@@ -1,0 +1,14 @@
+#include <iostream>
+#include <iterator>
+#include <locale>
+
+int main()
+{
+  std::ostreambuf_iterator<char> it(std::cout);
+  const std::num_put<char, std::ostreambuf_iterator<char> > &facet =
+      std::use_facet<std::num_put<char, std::ostreambuf_iterator<char> > >(
+          std::cout.getloc());
+  it = facet.put(it, std::cout, ' ', 60LL);
+  *it++ = '\n';
+  return 0;
+}

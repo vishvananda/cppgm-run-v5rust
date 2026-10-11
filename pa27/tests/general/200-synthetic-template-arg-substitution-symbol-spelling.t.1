@@ -1,0 +1,25 @@
+struct Traits {};
+
+template<class T>
+struct Alloc {};
+
+template<class Char, class TraitsT, class AllocT>
+struct Text {};
+
+template<class Char, class TraitsT, class AllocT>
+struct Reader {
+  __attribute__((noinline)) Reader(Text<Char, TraitsT, AllocT> const &);
+};
+
+template<class Char, class TraitsT, class AllocT>
+Reader<Char, TraitsT, AllocT>::Reader(Text<Char, TraitsT, AllocT> const &)
+{
+}
+
+int main()
+{
+  Text<char, Traits, Alloc<char> > text;
+  Reader<char, Traits, Alloc<char> > reader(text);
+  (void)reader;
+  return 0;
+}

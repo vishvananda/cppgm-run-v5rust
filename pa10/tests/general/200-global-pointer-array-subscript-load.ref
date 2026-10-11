@@ -1,0 +1,32 @@
+global @values [binding=strong] = {
+  i32 1
+  i32 2
+  i32 3
+}
+global @cursor : ptr [binding=strong] = addr @values
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @cursor
+    %t2 = index i32 [projection=array_element] %t1, 1
+    store typed i32 9, %t2
+    %t3 = addr @values
+    %t4 = index i32 [projection=array_element] %t3, 1
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 9
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

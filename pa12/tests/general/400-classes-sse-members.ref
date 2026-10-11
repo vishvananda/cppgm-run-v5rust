@@ -1,0 +1,317 @@
+function @sum_doubles(%p : obj<16x8> [classes=sse_sse]) -> f64 [binding=strong, object=_Z11sum_doubles7Doubles] {
+  slot $p : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 16x8 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f64 %t3
+    %t5 = addr $p
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed f64 %t6
+    %t8 = binary add f64 %t4, %t7
+    return f64 %t8
+}
+function @sum_mixed(%p : obj<16x8> [classes=sse_integer]) -> f64 [binding=strong, object=_Z9sum_mixed10DoubleLong] {
+  slot $p : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 16x8 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f64 %t3
+    %t5 = addr $p
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed i64 %t6
+    %t8 = convert sitofp f64 i64 %t7
+    %t9 = binary add f64 %t4, %t8
+    return f64 %t9
+}
+function @sum_reversed(%p : obj<16x8> [classes=integer_sse]) -> f64 [binding=strong, object=_Z12sum_reversed9IntDouble] {
+  slot $p : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 16x8 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = addr $p
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed f64 %t6
+    %t8 = convert sitofp f64 i32 %t4
+    %t9 = binary add f64 %t8, %t7
+    return f64 %t9
+}
+function @sum_floats(%p : obj<8x4> [classes=sse]) -> f32 [binding=strong, object=_Z10sum_floats6Floats] {
+  slot $p : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 8x4 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed f32 %t3
+    %t5 = addr $p
+    %t6 = index i8 [projection=field] %t5, 4
+    %t7 = load typed f32 %t6
+    %t8 = binary add f32 %t4, %t7
+    return f32 %t8
+}
+function @third(%p : obj<12x4> [classes=sse_sse]) -> f32 [binding=strong, object=_Z5third11ThreeFloats] {
+  slot $p : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 12x4 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 8
+    %t4 = load typed f32 %t3
+    return f32 %t4
+}
+function @sum_ints(%p : obj<8x4>) -> i32 [binding=strong, object=_Z8sum_ints4Ints] {
+  slot $p : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $p
+    copyobj 8x4 %p, %t1
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = addr $p
+    %t6 = index i8 [projection=field] %t5, 4
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    return i32 %t8
+}
+function @make_doubles(%x : f64) -> obj<16x8> [result_classes=sse_sse, binding=strong, object=_Z12make_doublesd] {
+  slot $x : f64
+  slot $r : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed f64 %x, $x
+    %t1 = addr $r
+    %t2 = load typed f64 $x
+    %t3 = addr $r
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed f64 %t2, %t4
+    %t5 = load typed f64 $x
+    %t6 = convert sitofp f64 i32 2
+    %t7 = binary mul f64 %t6, %t5
+    %t8 = addr $r
+    %t9 = index i8 [projection=field] %t8, 8
+    store typed f64 %t7, %t9
+    %t10 = addr $retobj__1
+    %t11 = addr $r
+    copyobj 16x8 %t11, %t10
+    return obj<16x8> $retobj__1
+}
+function @make_mixed(%x : f64) -> obj<16x8> [result_classes=sse_integer, binding=strong, object=_Z10make_mixedd] {
+  slot $x : f64
+  slot $r : obj<16x8>
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed f64 %x, $x
+    %t1 = addr $r
+    %t2 = load typed f64 $x
+    %t3 = addr $r
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed f64 %t2, %t4
+    %t5 = addr $r
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 3, %t6
+    %t7 = addr $retobj__1
+    %t8 = addr $r
+    copyobj 16x8 %t8, %t7
+    return obj<16x8> $retobj__1
+}
+function @make_floats(%x : f32) -> obj<8x4> [result_classes=sse, binding=strong, object=_Z11make_floatsf] {
+  slot $x : f32
+  slot $r : obj<8x4>
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    store typed f32 %x, $x
+    %t1 = addr $r
+    %t2 = load typed f32 $x
+    %t3 = addr $r
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed f32 %t2, %t4
+    %t5 = load typed f32 $x
+    %t6 = convert sitofp f32 i32 1
+    %t7 = binary add f32 %t5, %t6
+    %t8 = addr $r
+    %t9 = index i8 [projection=field] %t8, 4
+    store typed f32 %t7, %t9
+    %t10 = addr $retobj__1
+    %t11 = addr $r
+    copyobj 8x4 %t11, %t10
+    return obj<8x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<16x8>
+  slot $m : obj<16x8>
+  slot $id : obj<16x8>
+  slot $f : obj<8x4>
+  slot $t : obj<12x4>
+  slot $n : obj<8x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $argobj__3 : obj<16x8>
+  slot $argobj__4 : obj<16x8>
+  slot $land__5 : i64
+  slot $argobj__6 : obj<16x8>
+  slot $land__7 : i64
+  slot $argobj__8 : obj<8x4>
+  slot $land__9 : i64
+  slot $argobj__10 : obj<12x4>
+  slot $land__11 : i64
+  slot $argobj__12 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $d
+    %t2 = call obj<16x8> @make_doubles(1.5)
+    copyobj 16x8 %t2, %t1
+    %t3 = addr $m
+    %t4 = call obj<16x8> @make_mixed(2.5)
+    copyobj 16x8 %t4, %t3
+    %t5 = addr $id
+    %t6 = addr $id
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 1, %t7
+    %t8 = addr $id
+    %t9 = index i8 [projection=field] %t8, 8
+    store typed f64 0.5, %t9
+    %t10 = addr $f
+    %t11 = call obj<8x4> @make_floats(1f)
+    copyobj 8x4 %t11, %t10
+    %t12 = addr $t
+    %t13 = addr $t
+    %t14 = index i8 [projection=field] %t13, 0
+    store typed f32 1f, %t14
+    %t15 = addr $t
+    %t16 = index i8 [projection=field] %t15, 4
+    store typed f32 2f, %t16
+    %t17 = addr $t
+    %t18 = index i8 [projection=field] %t17, 8
+    store typed f32 3f, %t18
+    %t19 = addr $n
+    %t20 = addr $n
+    %t21 = index i8 [projection=field] %t20, 0
+    store typed i32 4, %t21
+    %t22 = addr $n
+    %t23 = index i8 [projection=field] %t22, 4
+    store typed i32 5, %t23
+    %t24 = addr $argobj__3
+    %t25 = addr $d
+    copyobj 16x8 %t25, %t24
+    %t26 = call f64 @sum_doubles($argobj__3)
+    %t27 = cmp eq f64 %t26, 4.5
+    branch %t27, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t28 = addr $argobj__4
+    %t29 = addr $m
+    copyobj 16x8 %t29, %t28
+    %t30 = call f64 @sum_mixed($argobj__4)
+    %t31 = cmp eq f64 %t30, 5.5
+    %t32 = cmp ne i64 %t31, 0
+    store typed i64 %t32, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t33 = load typed i64 $land__2
+    branch %t33, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t34 = addr $argobj__6
+    %t35 = addr $id
+    copyobj 16x8 %t35, %t34
+    %t36 = call f64 @sum_reversed($argobj__6)
+    %t37 = cmp eq f64 %t36, 1.5
+    %t38 = cmp ne i64 %t37, 0
+    store typed i64 %t38, $land__5
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__5
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t39 = load typed i64 $land__5
+    branch %t39, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t40 = addr $argobj__8
+    %t41 = addr $f
+    copyobj 8x4 %t41, %t40
+    %t42 = call f32 @sum_floats($argobj__8)
+    %t43 = cmp eq f32 %t42, 3f
+    %t44 = cmp ne i64 %t43, 0
+    store typed i64 %t44, $land__7
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__7
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t45 = load typed i64 $land__7
+    branch %t45, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t46 = addr $argobj__10
+    %t47 = addr $t
+    copyobj 12x4 %t47, %t46
+    %t48 = call f32 @third($argobj__10)
+    %t49 = cmp eq f32 %t48, 3f
+    %t50 = cmp ne i64 %t49, 0
+    store typed i64 %t50, $land__9
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__9
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t51 = load typed i64 $land__9
+    branch %t51, ^land_rhs_16, ^land_short_17
+
+  block ^land_rhs_16:
+    %t52 = addr $argobj__12
+    %t53 = addr $n
+    copyobj 8x4 %t53, %t52
+    %t54 = call i32 @sum_ints($argobj__12)
+    %t55 = cmp eq i32 %t54, 9
+    %t56 = cmp ne i64 %t55, 0
+    store typed i64 %t56, $land__11
+    jump ^land_end_18
+
+  block ^land_short_17:
+    store typed i64 0, $land__11
+    jump ^land_end_18
+
+  block ^land_end_18:
+    %t57 = load typed i64 $land__11
+    branch %t57, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t58 = load typed i32 $cond__1
+    return i32 %t58
+}

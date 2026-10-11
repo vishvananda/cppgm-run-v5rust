@@ -1,0 +1,15 @@
+struct LambdaHostMangle {
+  int apply(int base)
+  {
+    auto add = [base](int delta) __attribute__((noinline, used)) {
+      return base + delta;
+    };
+    return add(5);
+  }
+};
+
+int main()
+{
+  LambdaHostMangle value;
+  return value.apply(7) == 12 ? 0 : 1;
+}

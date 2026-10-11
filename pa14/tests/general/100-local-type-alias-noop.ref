@@ -1,0 +1,13 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f()
+    return i32 0
+}
+function @f() -> void [binding=weak, object=_Z1fIiEvv] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = load typed i32 $x
+    return void
+}

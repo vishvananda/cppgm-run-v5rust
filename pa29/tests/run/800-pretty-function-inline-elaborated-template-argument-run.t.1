@@ -1,0 +1,31 @@
+bool contains(const char *text, const char *needle)
+{
+  for(; *text; ++text) {
+    const char *left = text;
+    const char *right = needle;
+    while(*left && *right && *left == *right) {
+      ++left;
+      ++right;
+    }
+    if(!*right) {
+      return true;
+    }
+  }
+  return false;
+}
+
+template<class T, class U>
+struct wrapper {};
+
+typedef wrapper<struct inline_tag_, int> declared;
+
+template<class T>
+int probe()
+{
+  return contains(__PRETTY_FUNCTION__, "[T = inline_tag_]") ? 0 : 1;
+}
+
+int main()
+{
+  return probe<inline_tag_>();
+}

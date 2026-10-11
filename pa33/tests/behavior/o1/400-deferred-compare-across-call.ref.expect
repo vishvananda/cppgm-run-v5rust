@@ -1,0 +1,11 @@
+# budget from 400-deferred-compare-across-call.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 40
+blocks <= 8
+count(call) <= 6
+mem <= 15
+instructions <= 4 in @sink
+stack_size <= 80 in @sink
+instructions <= 17 in @probe
+stack_size <= 50 in @probe
+instructions <= 23 in @main
+stack_size <= 68 in @main

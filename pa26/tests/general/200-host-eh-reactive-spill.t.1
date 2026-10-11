@@ -1,0 +1,31 @@
+long clobber(long, long, long, long, long, long);
+
+long use_try(long a, long b, long c, long d, long e,
+             long f, long g, long h, long i, long j)
+{
+  long t1 = a + 1;
+  long t2 = b + 2;
+  long t3 = c + 3;
+  long t4 = d + 4;
+  long t5 = e + 5;
+  long t6 = f + 6;
+  long t7 = g + 7;
+  long t8 = h + 8;
+  long t9 = i + 9;
+  long t10 = j + 10;
+
+  try
+  {
+    long ignored = clobber(1, 2, 3, 4, 5, 6);
+    return t1 + t2 + t3 + t4 + t5 + t6 + t7 + t8 + t9 + t10 + ignored;
+  }
+  catch (...)
+  {
+    return 1;
+  }
+}
+
+int main()
+{
+  return use_try(1, 2, 3, 4, 5, 6, 7, 8, 9, 18) == 118 ? 0 : 1;
+}

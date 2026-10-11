@@ -1,0 +1,74 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @observe
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    param %payload -> [rbp+16] : obj<1x1>
+    param %value -> [rbp+24] : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-8] : i64
+
+  block ^entry
+    load.i64 rax, [rbp+24]
+    store.i64 [rbp-8], rax
+    load.i64 rax, [rbp-8]
+    ret rax
+
+function @forward
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $payload -> [rbp-8] : obj<1x1>
+
+  block ^entry
+    mov r8, rdi
+    sub rsp, 16
+    copy_bytes 1x8, [rsp], [rbp-8]
+    store.i64 [rsp+8], r8
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, 0
+    mov r8, 0
+    mov r9, 0
+    call @observe [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 42
+    call @forward [args=(rdi)]
+    mov rdx, 42
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

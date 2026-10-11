@@ -1,0 +1,9 @@
+.cproject
+.project
+tests/**/*.my*
+cppgm++
+cppgm++-debug
+*.dSYM
+tests/testin
+testout
+.test_failed

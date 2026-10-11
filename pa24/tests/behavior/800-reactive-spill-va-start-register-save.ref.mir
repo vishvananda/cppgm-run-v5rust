@@ -1,0 +1,111 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @sum_variadic
+  abi
+    param %tag -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 336
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    slot $ap -> [rbp-24] : obj<24x8>
+    temp %va-register-save -> [rbp-208] : obj<176x16>
+    temp %gp -> [rbp-216] : i32
+    temp %gp64 -> [rbp-224] : i64
+    temp %rsa -> [rbp-232] : ptr
+    temp %v -> [rbp-240] : i64
+
+  block ^entry
+    store.i64 [rbp-208], rdi
+    store.i64 [rbp-200], rsi
+    store.i64 [rbp-192], rdx
+    store.i64 [rbp-184], rcx
+    store.i64 [rbp-176], r8
+    store.i64 [rbp-168], r9
+    fmov.i128 [rbp-160], xmm0
+    fmov.i128 [rbp-144], xmm1
+    fmov.i128 [rbp-128], xmm2
+    fmov.i128 [rbp-112], xmm3
+    fmov.i128 [rbp-96], xmm4
+    fmov.i128 [rbp-80], xmm5
+    fmov.i128 [rbp-64], xmm6
+    fmov.i128 [rbp-48], xmm7
+    mov r8, rdi
+    add r8, 1
+    mov r9, rdi
+    add r9, 2
+    mov rsi, rdi
+    add rsi, 3
+    mov rdx, rdi
+    add rdx, 4
+    mov rcx, rdi
+    add rcx, 5
+    mov rax, rdi
+    add rax, 6
+    mov rbx, rdi
+    add rbx, 7
+    mov r12, rdi
+    add r12, 8
+    mov r13, rdi
+    add r13, 9
+    mov r14, rdi
+    add r14, 10
+    mov r15, rdi
+    add r15, 11
+    add rdi, 12
+    va_start [rbp-24], [rbp-208]
+    load.i32 r10, [rbp-24]
+    store.i32 [rbp-216], r10
+    load.i32 r10, [rbp-216]
+    zext.i32 r10
+    store.i64 [rbp-224], r10
+    load.ptr r10, [rbp-8]
+    store.ptr [rbp-232], r10
+    load.i64 r10, [rbp-224]
+    add r10, [rbp-232]
+    load.i64 r10, [r10]
+    store.i64 [rbp-240], r10
+    add r8, r9
+    add r8, rsi
+    add r8, rdx
+    add r8, rcx
+    add r8, rax
+    add r8, rbx
+    add r8, r12
+    add r8, r13
+    add r8, r14
+    add r8, r15
+    add r8, rdi
+    add r8, [rbp-240]
+    ret r8
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 0
+    mov rsi, 100
+    mov rax, 0
+    call @sum_variadic [args=(rax,rsi,rdi), variadic]
+    mov rdx, 178
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    mov rdx, 0
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    ret rax

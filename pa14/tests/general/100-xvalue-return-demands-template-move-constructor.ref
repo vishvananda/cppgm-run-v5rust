@@ -1,0 +1,49 @@
+function @move_box(%ret : ptr [pass=indirect_result, object_bytes=4], %x : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z8move_boxR3boxIiE] {
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = load typed ptr $x
+    call void @box_int___box__ov2(%ret, %t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $x
+    call void @box_int___box(%t1)
+    %t2 = addr $tmpobj__1
+    %t3 = addr $x
+    call void @move_box(%t2, %t3)
+    %t4 = index i8 [projection=field] %t2, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp ne i32 %t5, 1
+    %t7 = convert trunc i32 i64 %t6
+    return i32 %t7
+}
+function @box_int___box__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN3boxIiEC1EOS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @box_int___box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN3boxIiEC2EOS0_ = @box_int___box__ov2
+alias object _ZN3boxIiEC2Ev = @box_int___box

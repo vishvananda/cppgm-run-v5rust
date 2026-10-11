@@ -1,0 +1,14 @@
+declare function @initiate(%arg0 : ptr [pass=by_address, object_bytes=4], %arg1 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z8initiateI7partialJFviEEiEDTclsr6resultIT_DpT0_EE4callscT1_fp_scS2_fp0_EEOS5_RS2_]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    store typed i32 0, $refarg__1
+    %t2 = addr $refarg__1
+    %t3 = addr $value
+    %t4 = call i32 @initiate(%t2, %t3)
+    return i32 %t4
+}

@@ -1,0 +1,10 @@
+// PA31 README (demand-driven emission: only definitions the unit's code needs)
+// + Itanium ABI 5.2.3: dynamic_cast to M<char16_t>* needs M<char16_t>'s
+// type_info only; its vtable (naming the never-defined M<char16_t>::get) must
+// not be emitted, so the program links; expect exit 0 (N3485 3.2/3 technically
+// makes get odr-used, NDR)
+struct Facet { virtual ~Facet() {} };
+template<class T> struct M : Facet { virtual ~M(); virtual int get() const; };
+template<class T> M<T>::~M() {}
+struct F2 : Facet {};
+int main() { F2 f; const Facet* p = &f; return dynamic_cast<const M<char16_t>*>(p) == 0 ? 0 : 1; }

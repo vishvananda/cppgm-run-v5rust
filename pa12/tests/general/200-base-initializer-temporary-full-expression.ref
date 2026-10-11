@@ -1,0 +1,74 @@
+global @live : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $object
+    call void @Derived__Derived(%t1)
+    %t2 = load typed i32 @live
+    return i32 %t2
+}
+function @Derived__Derived(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $arg__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_try ^cleanup_resume_1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr $arg__1
+    call void @Value__Value(%t3)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @Base__Base__base_entry(%t2, %t3)
+    call void @Value___Value(%t3)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @Value___Value(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @Value__Value(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5ValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN4BaseC2ERK5Value, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+function @Value___Value(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5ValueD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN5ValueC2Ev = @Value__Value
+alias object _ZN5ValueD2Ev = @Value___Value

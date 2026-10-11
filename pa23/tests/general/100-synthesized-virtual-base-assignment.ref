@@ -1,0 +1,472 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Outer [storage=readonly, binding=weak, object=_ZTS5Outer] = {
+  i8 53
+  i8 79
+  i8 117
+  i8 116
+  i8 101
+  i8 114
+  i8 0
+}
+global @__typeinfo_name__struct_Pad [storage=readonly, binding=weak, object=_ZTS3Pad] = {
+  i8 51
+  i8 80
+  i8 97
+  i8 100
+  i8 0
+}
+global @__rtti_struct_Pad [storage=readonly, binding=weak, object=_ZTI3Pad] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Pad
+}
+global @__typeinfo_name__struct_Mid [storage=readonly, binding=weak, object=_ZTS3Mid] = {
+  i8 51
+  i8 77
+  i8 105
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Shared [storage=readonly, binding=weak, object=_ZTS6Shared] = {
+  i8 54
+  i8 83
+  i8 104
+  i8 97
+  i8 114
+  i8 101
+  i8 100
+  i8 0
+}
+global @__rtti_struct_Shared [storage=readonly, binding=weak, object=_ZTI6Shared] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Shared
+}
+global @__rtti_struct_Mid [storage=readonly, binding=weak, object=_ZTI3Mid] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Mid
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_Shared
+  i64 -6141
+}
+global @__rtti_struct_Outer [storage=readonly, binding=weak, object=_ZTI5Outer] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Outer
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Pad
+  i64 3074
+  ptr addr @__rtti_struct_Mid
+  i64 2
+}
+global @Outer__vtable [storage=readonly, binding=weak, object=_ZTV5Outer] = {
+  i64 44
+  i64 0
+  ptr addr @__rtti_struct_Outer
+}
+global @Outer____construction__Mid__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC5Outer0_3Mid] = {
+  i64 44
+  i64 0
+  ptr addr @__rtti_struct_Mid
+}
+global @Outer____vtt [storage=readonly, binding=weak, object=_ZTT5Outer, object_root=yes] = {
+  ptr addr @Outer__vtable + 24
+  ptr addr @Outer____construction__Mid__0__s0__vtable + 24
+}
+global @Mid__vtable [storage=readonly, binding=weak, object=_ZTV3Mid] = {
+  i64 12
+  i64 0
+  ptr addr @__rtti_struct_Mid
+}
+global @Mid____vtt [storage=readonly, binding=weak, object=_ZTT3Mid, object_root=yes] = {
+  ptr addr @Mid__vtable + 24
+}
+
+function @assign(%to : ptr [pass=by_address, object_bytes=16], %from : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z6assignR3MidRKS_] {
+  slot $to : ptr
+  slot $from : ptr
+
+  block ^entry:
+    store typed ptr %to, $to
+    store typed ptr %from, $from
+    %t1 = load typed ptr $to
+    %t2 = load typed ptr $from
+    %t3 = call ptr @Mid__operator_(%t1, %t2)
+    %t4 = load typed ptr $to
+    %t5 = load typed ptr %t4
+    %t6 = index i8 %t5, -24
+    %t7 = load typed i64 %t6
+    %t8 = index i8 %t4, %t7
+    %t9 = index i8 %t8, 0
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    return i32 %t11
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<48x8>
+  slot $second : obj<48x8>
+  slot $copied : obj<16x8>
+  slot $whole : obj<48x8>
+
+  block ^entry:
+    %t1 = addr $first
+    call void @Outer__Outer(%t1)
+    %t2 = addr $second
+    call void @Outer__Outer(%t2)
+    %t3 = addr $first
+    %t4 = index i8 %t3, 44
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 10, %t5
+    %t6 = addr $first
+    %t7 = index i8 %t6, 0
+    %t8 = index i8 [projection=field] %t7, 8
+    store typed i32 20, %t8
+    %t9 = addr $second
+    %t10 = index i8 %t9, 44
+    %t11 = index i8 [projection=field] %t10, 0
+    store typed i32 30, %t11
+    %t12 = addr $second
+    %t13 = index i8 %t12, 0
+    %t14 = index i8 [projection=field] %t13, 8
+    store typed i32 40, %t14
+    %t15 = addr $first
+    %t16 = index i8 %t15, 0
+    %t17 = addr $second
+    %t18 = index i8 %t17, 0
+    %t19 = call i32 @assign(%t16, %t18)
+    %t20 = addr $first
+    %t21 = index i8 %t20, 44
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load typed i32 %t22
+    %t24 = cmp ne i32 %t23, 30
+    branch %t24, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t25 = addr $first
+    %t26 = index i8 %t25, 0
+    %t27 = index i8 [projection=field] %t26, 8
+    %t28 = load typed i32 %t27
+    %t29 = cmp ne i32 %t28, 40
+    branch %t29, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t30 = addr $copied
+    %t31 = addr $second
+    %t32 = index i8 %t31, 0
+    call void @Mid__Mid(%t30, %t32)
+    %t33 = addr $copied
+    %t34 = index i8 %t33, 12
+    %t35 = index i8 [projection=field] %t34, 0
+    %t36 = load typed i32 %t35
+    %t37 = cmp ne i32 %t36, 30
+    branch %t37, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t38 = addr $copied
+    %t39 = index i8 [projection=field] %t38, 8
+    %t40 = load typed i32 %t39
+    %t41 = cmp ne i32 %t40, 40
+    branch %t41, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    %t42 = addr $whole
+    %t43 = addr $second
+    call void @Outer__Outer__2(%t42, %t43)
+    %t44 = addr $whole
+    %t45 = index i8 %t44, 44
+    %t46 = index i8 [projection=field] %t45, 0
+    %t47 = load typed i32 %t46
+    %t48 = cmp ne i32 %t47, 30
+    branch %t48, ^if_then_9, ^lor_rhs_11
+
+  block ^lor_rhs_11:
+    %t49 = addr $whole
+    %t50 = index i8 %t49, 0
+    %t51 = index i8 [projection=field] %t50, 8
+    %t52 = load typed i32 %t51
+    %t53 = cmp ne i32 %t52, 40
+    branch %t53, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    return i32 3
+
+  block ^if_else_10:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    return i32 0
+}
+function @Mid__operator_(%this : ptr [object_bytes=16], %other : ptr [pass=by_address, object_bytes=16]) -> ptr [unwind=no, binding=weak, object=_ZN3MidaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %t1
+    %t3 = index i8 %t2, -24
+    %t4 = load typed i64 %t3
+    %t5 = index i8 %t1, %t4
+    %t6 = load typed ptr $other
+    %t7 = load typed ptr %t6
+    %t8 = index i8 %t7, -24
+    %t9 = load typed i64 %t8
+    %t10 = index i8 %t6, %t9
+    %t11 = call ptr @Shared__operator_(%t5, %t10)
+    %t12 = load typed ptr $other
+    %t13 = index i8 [projection=field] %t12, 8
+    %t14 = load typed i32 %t13
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 8
+    store typed i32 %t14, %t16
+    %t17 = load typed ptr $this
+    return ptr %t17
+}
+function @Outer__Outer(%this : ptr [object_bytes=48]) -> void [binding=weak, object=_ZN5OuterC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 44
+    call void @Shared__Shared__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 12
+    call void @Pad__Pad__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 0
+    %t7 = addr @Outer____vtt
+    %t8 = index i8 %t7, 8
+    call void @Mid__Mid__base_entry(%t6, %t8)
+    %t9 = load typed ptr $this
+    %t10 = addr @Outer__vtable
+    %t11 = index i8 %t10, 24
+    store typed ptr %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 [projection=field] %t12, 40
+    store typed i32 3, %t13
+    return void
+}
+function @Mid__Mid__base_entry__2(%this : ptr [alias=noalias, object_bytes=16], %__vtt : ptr, %other : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN3MidC2ERKS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 8
+    %t5 = load typed i32 %t4
+    store typed i32 %t5, %t2
+    %t6 = load typed ptr $this
+    %t7 = load typed ptr %__vtt
+    store typed ptr %t7, %t6
+    return void
+}
+function @Outer__Outer__2(%this : ptr [alias=noalias, object_bytes=48], %other : ptr [pass=by_address, alias=noalias, object_bytes=48]) -> void [unwind=no, binding=weak, object=_ZN5OuterC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 44
+    %t3 = load typed ptr $other
+    %t4 = load typed ptr %t3
+    %t5 = index i8 %t4, -24
+    %t6 = load typed i64 %t5
+    %t7 = index i8 %t3, %t6
+    copyobj 4x4 %t7, %t2
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 12
+    %t10 = load typed ptr $other
+    %t11 = index i8 %t10, 12
+    copyobj 28x4 %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 0
+    %t14 = load typed ptr $other
+    %t15 = index i8 %t14, 0
+    %t16 = addr @Outer____vtt
+    %t17 = index i8 %t16, 8
+    call void @Mid__Mid__base_entry__2(%t13, %t17, %t15)
+    %t18 = load typed ptr $this
+    %t19 = index i8 [projection=field] %t18, 40
+    %t20 = load typed ptr $other
+    %t21 = index i8 [projection=field] %t20, 40
+    %t22 = load typed i32 %t21
+    store typed i32 %t22, %t19
+    %t23 = load typed ptr $this
+    %t24 = addr @Outer__vtable
+    %t25 = index i8 %t24, 24
+    store typed ptr %t25, %t23
+    return void
+}
+function @Shared__operator_(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN6SharedaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+function @Shared__Shared__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6SharedC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @Shared__Shared(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6SharedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @Pad__Pad__base_entry(%this : ptr [object_bytes=28]) -> void [binding=weak, object=_ZN3PadC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $i
+    %t2 = cmp lt i32 %t1, 7
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 $i
+    %t6 = index i32 [projection=array_element] %t4, %t5
+    store typed i32 0, %t6
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t7 = load typed i32 $i
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return void
+}
+function @Pad__Pad(%this : ptr [object_bytes=28]) -> void [binding=weak, object=_ZN3PadC1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed i32 $i
+    %t2 = cmp lt i32 %t1, 7
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 $i
+    %t6 = index i32 [projection=array_element] %t4, %t5
+    store typed i32 0, %t6
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t7 = load typed i32 $i
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return void
+}
+function @Mid__Mid__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [binding=weak, object=_ZN3MidC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed i32 2, %t4
+    return void
+}
+function @Mid__Mid__2(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN3MidC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 12
+    call void @Shared__Shared__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Mid__vtable
+    %t5 = index i8 %t4, 24
+    store typed ptr %t5, %t3
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i32 2, %t7
+    return void
+}
+function @Mid__Mid(%this : ptr [alias=noalias, object_bytes=16], %other : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN3MidC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 12
+    %t3 = load typed ptr $other
+    %t4 = load typed ptr %t3
+    %t5 = index i8 %t4, -24
+    %t6 = load typed i64 %t5
+    %t7 = index i8 %t3, %t6
+    copyobj 4x4 %t7, %t2
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = load typed ptr $other
+    %t11 = index i8 [projection=field] %t10, 8
+    %t12 = load typed i32 %t11
+    store typed i32 %t12, %t9
+    %t13 = load typed ptr $this
+    %t14 = addr @Mid__vtable
+    %t15 = index i8 %t14, 24
+    store typed ptr %t15, %t13
+    return void
+}

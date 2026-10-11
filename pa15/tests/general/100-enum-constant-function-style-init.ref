@@ -1,0 +1,6 @@
+global @error_collate : i32 [storage=readonly, binding=internal, object=_ZL13error_collate] = 1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

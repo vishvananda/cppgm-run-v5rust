@@ -1,0 +1,69 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Trait
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              literal 0
+  template-declaration
+    template-parameter-clause
+    class-specifier Trait<int>
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              literal 1
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+  template-declaration
+    template-parameter-clause
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      declarator
+        identifier f<int>
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+      compound-statement
+        return-statement
+          literal 1
+end translation unit

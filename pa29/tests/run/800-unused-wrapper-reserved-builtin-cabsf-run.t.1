@@ -1,0 +1,6 @@
+// PA29 README (builtins): an unimplemented reserved compiler builtin may defer
+// its unused inline wrapper; libstdc++ <complex> has exactly this
+// (__complex_abs -> __builtin_cabsf), so #include <complex> must compile;
+// expect exit 0
+inline float wrap(__complex__ float z) { return __builtin_cabsf(z); }
+int main() { return 0; }

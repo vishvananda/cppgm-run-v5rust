@@ -1,0 +1,14 @@
+function @run(%mask : u32) -> i32 [binding=strong, object=_Z3runj] {
+  slot $mask : u32
+
+  block ^entry:
+    store typed u32 %mask, $mask
+    %t1 = load typed u32 $mask
+    %t2 = copy i32 %t1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @run(0)
+    return i32 %t1
+}

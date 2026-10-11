@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $b : obj<1x1>
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = addr $b
+    %t2 = addr $value
+    call void @box_int___box(%t1, %t2)
+    return i32 0
+}
+function @box_int___box(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN3boxIiEC1I5checkIiETnN9enable_ifIXaaclsrT_5firstIiEEclsrS5_6secondIiEEEiE4typeELi0EEERKi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZN3boxIiEC2I5checkIiETnN9enable_ifIXaaclsrT_5firstIiEEclsrS5_6secondIiEEEiE4typeELi0EEERKi = @box_int___box

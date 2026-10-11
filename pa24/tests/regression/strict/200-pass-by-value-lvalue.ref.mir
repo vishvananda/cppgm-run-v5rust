@@ -1,0 +1,70 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @Y__Y
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @Y___Y
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @id
+  abi
+    param %y -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $y__0 -> [rbp-8] : i64
+
+  block ^entry
+    copy_bytes 4x1, [rbp-8], rdi
+    load.i32 rax, [rbp-8]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $a__0 -> [rbp-8] : i64
+
+  block ^entry
+    lea rdi, [rbp-8]
+    call @Y__Y [args=(rdi)]
+    store.i32 [rbp-8], 8
+    lea rdi, [rbp-8]
+    call @id [args=(rdi)]
+    mov rbx, rax
+    lea rdi, [rbp-8]
+    call @Y___Y [args=(rdi)]
+    ret rbx

@@ -1,0 +1,161 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 2
+  i32 3
+  i32 5
+  i32 7
+}
+
+function @read_at(%first : ptr, %n : obj<4x4>) -> i32 [binding=strong, object=_Z7read_atPi6offset] {
+  slot $first : ptr
+  slot $n : obj<4x4>
+
+  block ^entry:
+    store typed ptr %first, $first
+    %t1 = addr $n
+    copyobj 4x4 %n, %t1
+    %t2 = load typed ptr $first
+    %t3 = addr $n
+    %t4 = call i32 @offset__operatorint(%t3)
+    %t5 = convert sext i64 i32 %t4
+    %t6 = binary mul i64 %t5, 4
+    %t7 = index i8 %t2, %t6
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @read_reverse(%first : ptr, %n : obj<4x4>) -> i32 [binding=strong, object=_Z12read_reversePi6offset] {
+  slot $first : ptr
+  slot $n : obj<4x4>
+
+  block ^entry:
+    store typed ptr %first, $first
+    %t1 = addr $n
+    copyobj 4x4 %n, %t1
+    %t2 = addr $n
+    %t3 = call i32 @offset__operatorint(%t2)
+    %t4 = load typed ptr $first
+    %t5 = convert sext i64 i32 %t3
+    %t6 = binary mul i64 %t5, 4
+    %t7 = index i8 %t4, %t6
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @read_before(%last : ptr, %n : obj<4x4>) -> i32 [binding=strong, object=_Z11read_beforePi6offset] {
+  slot $last : ptr
+  slot $n : obj<4x4>
+
+  block ^entry:
+    store typed ptr %last, $last
+    %t1 = addr $n
+    copyobj 4x4 %n, %t1
+    %t2 = load typed ptr $last
+    %t3 = addr $n
+    %t4 = call i32 @offset__operatorint(%t3)
+    %t5 = convert sext i64 i32 %t4
+    %t6 = binary mul i64 %t5, 4
+    %t7 = binary sub i64 0, %t6
+    %t8 = index i8 %t2, %t7
+    %t9 = load typed i32 %t8
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<16x4>
+  slot $one : obj<4x4>
+  slot $two : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $argobj__3 : obj<4x4>
+  slot $argobj__4 : obj<4x4>
+  slot $land__5 : i64
+  slot $argobj__6 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 16x4 @__constexpr_template__1, %t1
+    %t2 = addr $one
+    call void @offset__offset(%t2, 1)
+    %t3 = addr $two
+    call void @offset__offset(%t3, 2)
+    %t4 = addr $values
+    %t5 = addr $argobj__3
+    %t6 = addr $two
+    copyobj 4x4 %t6, %t5
+    %t7 = call i32 @read_at(%t4, $argobj__3)
+    %t8 = cmp eq i32 %t7, 5
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $values
+    %t10 = addr $argobj__4
+    %t11 = addr $one
+    copyobj 4x4 %t11, %t10
+    %t12 = call i32 @read_reverse(%t9, $argobj__4)
+    %t13 = cmp eq i32 %t12, 3
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__2
+    branch %t15, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t16 = addr $values
+    %t17 = binary mul i64 3, 4
+    %t18 = index i8 %t16, %t17
+    %t19 = addr $argobj__6
+    %t20 = addr $two
+    copyobj 4x4 %t20, %t19
+    %t21 = call i32 @read_before(%t18, $argobj__6)
+    %t22 = cmp eq i32 %t21, 3
+    %t23 = cmp ne i64 %t22, 0
+    store typed i64 %t23, $land__5
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__5
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t24 = load typed i64 $land__5
+    branch %t24, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t25 = load typed i32 $cond__1
+    return i32 %t25
+}
+function @offset__operatorint(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK6offsetcviEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @offset__offset(%this : ptr [object_bytes=4], %value : i32) -> void [binding=weak, object=_ZN6offsetC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN6offsetC2Ei = @offset__offset

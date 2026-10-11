@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    namespace-definition V
+      function-definition N::V::h function of (enum E) returning int
+        parameter  enum E
+        compound-statement
+          return-statement
+            literal prvalue int 2
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee N::V::h function of (enum E) returning int
+          literal prvalue enum E 0
+end translation unit

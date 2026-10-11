@@ -1,0 +1,20 @@
+struct S {
+  int bump(int x) {
+    return x + 1;
+  }
+
+  int f(int v) {
+    int remainder = v % 10;
+    int underflow = -(v / 10);
+    int after_call = bump(underflow);
+    int result = 0;
+    if (remainder != -8) result |= 1;
+    if (after_call != 1) result |= 2;
+    return result;
+  }
+};
+
+int main() {
+  S s;
+  return s.f(-8);
+}

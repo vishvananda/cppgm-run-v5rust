@@ -1,0 +1,21 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    temp %sum -> [rbp-<off0>] : f80
+
+  block ^entry
+    fadd.f80 [rbp-<off0>], 1.25L, 2.5L
+    feq.f80 rax, [rbp-<off0>], 3.75L
+    ret rax

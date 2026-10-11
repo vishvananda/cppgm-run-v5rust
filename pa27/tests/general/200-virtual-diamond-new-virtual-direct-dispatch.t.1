@@ -1,0 +1,6 @@
+struct V { virtual ~V() {} };
+struct L : virtual V {};
+struct R : virtual V {};
+struct D : L, R { virtual int id() const { return 42; } };
+int call(D &d) { return d.id(); }
+int main() { D d; return call(d) == 42 ? 0 : 1; }

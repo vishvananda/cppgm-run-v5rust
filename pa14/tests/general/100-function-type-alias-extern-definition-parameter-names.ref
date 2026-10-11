@@ -1,0 +1,79 @@
+function @boost__atomics__detail__find_address_generic(%addr : ptr, %addrs : ptr, %size : i64) -> i64 [binding=strong, object=_ZN5boost7atomics6detail20find_address_genericEPVKvPKS3_m] {
+  slot $addr : ptr
+  slot $addrs : ptr
+  slot $size : i64
+  slot $i : i64
+
+  block ^entry:
+    store typed ptr %addr, $addr
+    store typed ptr %addrs, $addrs
+    store typed i64 %size, $size
+    %t1 = convert zext i64 u32 0
+    store typed i64 %t1, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i64 $i
+    %t3 = load typed i64 $size
+    %t4 = cmp ult i64 %t2, %t3
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = load typed ptr $addrs
+    %t6 = load typed i64 $i
+    %t7 = index ptr [projection=array_element] %t5, %t6
+    %t8 = load typed ptr %t7
+    %t9 = load typed ptr $addr
+    %t10 = cmp eq ptr %t8, %t9
+    branch %t10, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    %t11 = load typed i64 $i
+    return i64 %t11
+
+  block ^if_else_6:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t12 = load typed i64 $i
+    %t13 = binary add i64 %t12, 1
+    store typed i64 %t13, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t14 = load typed i64 $size
+    return i64 %t14
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : i32
+  slot $addrs : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $a
+    %t1 = addr $addrs
+    %t2 = addr $a
+    store typed ptr %t2, %t1
+    %t3 = addr $a
+    %t4 = addr $addrs
+    %t5 = convert zext i64 u32 1
+    %t6 = call i64 @boost__atomics__detail__find_address_generic(%t3, %t4, %t5)
+    %t7 = convert zext i64 u32 0
+    %t8 = cmp eq i64 %t6, %t7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

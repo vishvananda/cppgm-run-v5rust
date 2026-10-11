@@ -1,0 +1,56 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+function @library__run() -> i32 [binding=strong, object=_ZN7library3runEv] {
+  slot $arg__1 : obj<2x1>
+
+  block ^entry:
+    %t1 = addr $arg__1
+    %t2 = call ptr @library__make_argument()
+    %t3 = call obj<2x1> @library__detail__choose(%t2)
+    copyobj 2x1 %t3, %t1
+    %t4 = call i32 @library__classify(%t1)
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @library__make_argument() -> ptr [binding=weak, object=_ZN7library13make_argumentIiEERNS_8argumentIT_EEv] {
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @operatornew(%t1)
+    return ptr %t2
+}
+function @library__detail__choose(%__param0 : ptr [pass=by_address, object_bytes=1]) -> obj<2x1> [binding=weak, object=_ZN7library6detail6chooseINS_8argumentIiEEEENS0_8selectedERT_] {
+  slot $__param0 : ptr
+  slot $retobj__1 : obj<2x1>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr $retobj__1
+    zeroinit 2x1 %t1
+    return obj<2x1> $retobj__1
+}
+function @library__classify(%__param0 : ptr [pass=by_address, object_bytes=2]) -> i32 [binding=weak, object=_ZN7library8classifyINS_6detail8selectedEEEiRKT_] {
+  slot $__param0 : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = const i64 2
+    %t2 = const i64 2
+    %t3 = cmp eq i64 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

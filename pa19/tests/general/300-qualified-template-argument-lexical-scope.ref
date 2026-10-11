@@ -1,0 +1,13 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @choose(1)
+    return i32 0
+}
+function @choose(%value : u32) -> void [binding=weak, object=_Z6chooseIjEN4meta9enable_ifIXntsr4meta4sameINS0_8identityIT_E4typeEbEE5valueEvE4typeES3_] {
+  slot $value : u32
+
+  block ^entry:
+    store typed u32 %value, $value
+    %t1 = load typed u32 $value
+    return void
+}

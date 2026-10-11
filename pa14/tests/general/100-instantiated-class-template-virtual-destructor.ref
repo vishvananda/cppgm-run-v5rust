@@ -1,0 +1,88 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_owner_int_ [storage=readonly, binding=weak, object=_ZTS5ownerIiE] = {
+  i8 53
+  i8 111
+  i8 119
+  i8 110
+  i8 101
+  i8 114
+  i8 73
+  i8 105
+  i8 69
+  i8 0
+}
+global @__rtti_struct_owner_int_ [storage=readonly, binding=weak, object=_ZTI5ownerIiE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_owner_int_
+}
+global @owner_int___vtable [storage=readonly, binding=weak, object=_ZTV5ownerIiE] = {
+  i64 0
+  ptr addr @__rtti_struct_owner_int_
+  ptr addr @owner_int____owner
+  ptr addr @owner_int____owner__deleting_entry
+}
+global @value [binding=strong] = {
+  ptr addr @owner_int___vtable + 16
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @owner_int____owner__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5ownerIiED0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @owner_int___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @owner_int____owner(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5ownerIiED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @owner_int___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @owner_int___owner(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5ownerIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @owner_int___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @value
+    call void @owner_int____owner(%t1)
+    return void
+}
+alias object _ZN5ownerIiED2Ev = @owner_int____owner
+alias object _ZN5ownerIiEC2Ev = @owner_int___owner

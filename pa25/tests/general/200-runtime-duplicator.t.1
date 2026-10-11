@@ -1,0 +1,23 @@
+extern "C" long cppgm_test_read_stdin(char * buf, unsigned long count);
+extern "C" long cppgm_test_write_stdout(const char * buf, unsigned long count);
+
+int main()
+{
+  char buffer[256];
+  for(;;)
+  {
+    long nread = cppgm_test_read_stdin(buffer, sizeof(buffer));
+    if(nread < 0)
+    {
+      return 1;
+    }
+    if(nread == 0)
+    {
+      return 0;
+    }
+    if(cppgm_test_write_stdout(buffer, (unsigned long)nread) < 0)
+    {
+      return 1;
+    }
+  }
+}

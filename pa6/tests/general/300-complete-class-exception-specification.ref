@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type holder struct holder
+    function main function of () returning int
+    scope class holder
+      function current_size function of () returning void
+      function later_type function of () returning void
+      function permitted function of () returning void
+      function later_exception_type function of () returning void
+      function later_function function of () returning void
+      type nested struct nested
+      type-alias later int
+      function g function of () returning int
+      scope class nested
+        function outer_size function of () returning void
+    scope function main
+      scope block
+end translation unit

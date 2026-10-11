@@ -1,0 +1,96 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tok : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $tok
+    %t2 = addr $tok
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    %t4 = addr $tok
+    %t5 = index i8 [projection=field] %t4, 4
+    call void @First__First(%t5, 2)
+    %t6 = addr $tok
+    %t7 = index i8 [projection=field] %t6, 8
+    call void @Second__Second(%t7)
+    %t8 = addr $tok
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp ne i32 %t10, 1
+    branch %t11, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t12 = addr $tok
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = binary add nowrap i32 10, %t14
+    return i32 %t15
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t16 = addr $tok
+    %t17 = index i8 [projection=field] %t16, 4
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = load typed i32 %t18
+    %t20 = cmp ne i32 %t19, 2
+    branch %t20, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    %t21 = addr $tok
+    %t22 = index i8 [projection=field] %t21, 4
+    %t23 = index i8 [projection=field] %t22, 0
+    %t24 = load typed i32 %t23
+    %t25 = binary add nowrap i32 20, %t24
+    return i32 %t25
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t26 = addr $tok
+    %t27 = index i8 [projection=field] %t26, 8
+    %t28 = index i8 [projection=field] %t27, 0
+    %t29 = load typed i32 %t28
+    %t30 = cmp ne i32 %t29, 7
+    branch %t30, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    %t31 = addr $tok
+    %t32 = index i8 [projection=field] %t31, 8
+    %t33 = index i8 [projection=field] %t32, 0
+    %t34 = load typed i32 %t33
+    %t35 = binary add nowrap i32 30, %t34
+    return i32 %t35
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}
+function @First__First(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN5FirstC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Second__Second(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6SecondC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN5FirstC2Ei = @First__First
+alias object _ZN6SecondC2Ev = @Second__Second

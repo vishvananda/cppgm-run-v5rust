@@ -1,0 +1,54 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $box__0 -> [rbp-8] : i64
+
+  block ^entry
+    lea rdi, [rbp-8]
+    call @Box_int___Box [args=(rdi)]
+    store.i32 [rbp-8], 7
+    load.i32 r8, [rbp-8]
+    mov rbx, r8
+    sub rbx, 7
+    lea rdi, [rbp-8]
+    call @Box_int____Box [args=(rdi)]
+    ret rbx
+
+function @Box_int___Box
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @Box_int____Box
+  abi
+    param %this -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret

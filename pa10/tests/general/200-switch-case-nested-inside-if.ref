@@ -1,0 +1,65 @@
+function @run(%value : i32, %flag : u8) -> i32 [binding=strong, object=_Z3runib] {
+  slot $value : i32
+  slot $flag : u8
+
+  block ^entry:
+    store typed i32 %value, $value
+    store u8 %flag, $flag
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t1 = load typed i32 $value
+    branch %t1, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t2 = load typed i32 $value
+    jump ^switch_dispatch_4
+
+  block ^switch_dispatch_4:
+    switch %t2, ^switch_default_8, 1:^switch_case_6, 2:^switch_case_7
+
+  block ^switch_case_6:
+    %t3 = load u8 $flag
+    branch %t3, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    jump ^switch_case_7
+
+  block ^switch_case_7:
+    return i32 2
+
+  block ^if_else_10:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    jump ^switch_end_5
+
+  block ^switch_default_8:
+    return i32 3
+
+  block ^switch_end_5:
+    return i32 4
+
+  block ^while_end_3:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @run(2, 1)
+    %t2 = cmp eq i32 %t1, 2
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

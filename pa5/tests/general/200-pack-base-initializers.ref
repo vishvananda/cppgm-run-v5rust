@@ -1,0 +1,44 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier CMixins
+    class-specifier CX
+      class-key KW_CLASS:class
+      base-clause
+        base-specifier
+          access-specifier KW_PUBLIC:public
+          base-name CMixins
+          pack-expansion OP_DOTS:...
+      access-specifier KW_PUBLIC:public
+      special-member-definition CX
+        declarator
+          identifier CX
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_CONST:const
+                decl-specifier TT_IDENTIFIER:CMixins
+              declarator
+                ptr-operator OP_AMP:&
+                parameter-pack ...
+                identifier mixins
+        ctor-initializer
+          mem-initializer
+            mem-initializer-id CMixins
+            paren-argument-list
+              id-expression mixins
+            pack-expansion OP_DOTS:...
+        compound-statement
+      special-member-declaration ~CX
+        member-specifiers
+          specifier KW_VIRTUAL:virtual
+        declarator
+          identifier ~CX
+          parameter-clause
+end translation unit

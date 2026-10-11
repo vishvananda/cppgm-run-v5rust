@@ -1,0 +1,21 @@
+#include "200-host-array-new-class-list-unwind.helper.h"
+
+Element* student_listed(int count, int first, int second, int third)
+{
+  return new Element[count]{first, second, third};
+}
+
+int main()
+{
+  int status = host_check();
+  // Nothing throws: the elements live until delete[].
+  event_count = 0;
+  throw_at = -1;
+  Element* built = student_listed(4, 7, 8, 9);
+  delete[] built;
+  static const int whole[] = { 7, 8, 9, 103, -103, -9, -8, -7 };
+  if (event_count != 8) return status | 64;
+  for (int i = 0; i < 8; ++i)
+    if (events[i] != whole[i]) return status | 128;
+  return allocations == releases ? status : status | 256;
+}

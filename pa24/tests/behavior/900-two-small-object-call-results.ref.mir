@@ -1,0 +1,74 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @make_value
+  abi
+    param %input -> rdi : i64
+    return obj<8x8> -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $value -> [rbp-8] : obj<8x8>
+
+  block ^entry
+    store.i64 [rbp-8], rdi
+    load.i64 rax, [rbp-8]
+    ret
+
+function @combine
+  abi
+    param %left -> rdi : obj<8x8>
+    param %right -> rsi : obj<8x8>
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %left -> [rbp-8] : obj<8x8>
+    param-slot %right -> [rbp-16] : obj<8x8>
+
+  block ^entry
+    store.i64 [rbp-8], rdi
+    store.i64 [rbp-16], rsi
+    load.i64 r8, [rbp-8]
+    load.i64 r9, [rbp-16]
+    imul r8, 100
+    add r8, r9
+    ret r8
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %left -> [rbp-8] : obj<8x8>
+    temp %right -> [rbp-16] : obj<8x8>
+
+  block ^entry
+    mov rdi, 11
+    call @make_value [args=(rdi)]
+    store.i64 [rbp-8], rax
+    mov rdi, 22
+    call @make_value [args=(rdi)]
+    store.i64 [rbp-16], rax
+    load.i64 rdi, [rbp-8]
+    load.i64 rsi, [rbp-16]
+    call @combine [args=(rsi,rdi)]
+    mov rdx, 1122
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    cmp.i64 rax, 0
+    sete rax
+    movzx rax, rax
+    ret rax

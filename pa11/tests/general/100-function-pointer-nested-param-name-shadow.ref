@@ -1,0 +1,75 @@
+function @set_internal_non_blocking(%__param0 : i32, %__param1 : ptr [pass=by_address, object_bytes=1], %__param2 : u8, %ec : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z25set_internal_non_blockingiRhbR10error_code] {
+  slot $__param0 : i32
+  slot $__param1 : ptr
+  slot $__param2 : u8
+  slot $ec : ptr
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    store u8 %__param2, $__param2
+    store typed ptr %ec, $ec
+    %t1 = load typed ptr $ec
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @callback(%__param0 : ptr, %__param1 : u8) -> void [binding=strong, object=_Z8callbackP10reactor_opb] {
+  slot $__param0 : ptr
+  slot $__param1 : u8
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store u8 %__param1, $__param1
+    return void
+}
+function @do_start_op(%descriptor : i32, %state : ptr [pass=by_address, object_bytes=1], %op : ptr, %on_immediate : ptr) -> i32 [binding=strong, object=_Z11do_start_opiRhP10reactor_opPFvS1_bE] {
+  slot $descriptor : i32
+  slot $state : ptr
+  slot $op : ptr
+  slot $on_immediate : ptr
+
+  block ^entry:
+    store typed i32 %descriptor, $descriptor
+    store typed ptr %state, $state
+    store typed ptr %op, $op
+    store typed ptr %on_immediate, $on_immediate
+    %t1 = load typed ptr $on_immediate
+    %t2 = load typed i32 $descriptor
+    %t3 = load typed ptr $state
+    %t4 = load typed ptr $op
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = call i32 @set_internal_non_blocking(%t2, %t3, 1, %t5)
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $state : u8
+  slot $op : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store u8 0, $state
+    %t1 = addr $op
+    %t2 = addr $op
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $state
+    %t6 = addr $op
+    %t7 = addr @callback
+    %t8 = call i32 @do_start_op(1, %t5, %t6, %t7)
+    %t9 = cmp eq i32 %t8, 7
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}

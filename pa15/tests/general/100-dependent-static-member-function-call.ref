@@ -1,0 +1,10 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @duration_values_int___max()
+    %t2 = binary sub nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @duration_values_int___max() -> i32 [binding=weak, object=_ZN15duration_valuesIiE3maxEv, inline_hint=yes] {
+  block ^entry:
+    return i32 1
+}

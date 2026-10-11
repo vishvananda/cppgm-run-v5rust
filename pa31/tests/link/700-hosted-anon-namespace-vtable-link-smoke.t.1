@@ -1,0 +1,39 @@
+#include <cstdio>
+
+namespace {
+
+struct LocalBase
+{
+  virtual int value() const = 0;
+  virtual int next() const = 0;
+  virtual ~LocalBase() {}
+};
+
+struct LocalVirtual : LocalBase
+{
+  int value() const override
+  {
+    return 7;
+  }
+
+  int next() const override
+  {
+    return value() + 1;
+  }
+
+  ~LocalVirtual() override {}
+};
+
+int call_next(const LocalBase & base)
+{
+  return base.next();
+}
+
+}  // namespace
+
+int main()
+{
+  LocalVirtual value;
+  std::printf("%d\n", call_next(value));
+  return 0;
+}

@@ -1,0 +1,17 @@
+#include "200-host-virtual-thunk-derived-class.helper.h"
+
+Root::Root() : root(1) {}
+int Root::value() { return root; }
+Side::Side() : side(2) {}
+int Side::other() { return side; }
+Mid::Mid() : mid(3) {}
+int Mid::value() { return 30 + mid; }
+
+int main()
+{
+  Mid mid;
+  if (host_value(mid) != 33) return 1;
+  Root& root = mid;
+  if (root.value() != 33) return 2;
+  return host_check() == 0 ? 0 : 3;
+}

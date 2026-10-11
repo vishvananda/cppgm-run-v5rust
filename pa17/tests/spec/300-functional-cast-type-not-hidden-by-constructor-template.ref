@@ -1,0 +1,43 @@
+declare function @O_int___O(%arg0 : ptr [object_bytes=4], %arg1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1OIiEC1IiEEOT_]
+declare function @use(%arg0 : obj<1x1> [classes=none]) -> void [binding=strong, object=_Z3use1OIRKiE]
+declare function @O_constint____O__ov2(%arg0 : ptr [object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1OIRKiEC1ES1_]
+declare function @O_constint____O(%arg0 : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1OIRKiEC1Ev]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $refarg__1 : i32
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    store typed i32 0, $refarg__1
+    %t2 = addr $refarg__1
+    call void @O_int___O(%t1, %t2)
+    %t3 = addr $argobj__2
+    %t4 = addr $value
+    %t5 = call obj<1x1> @O_int___operatorO_Tconst__(%t4)
+    call void @use($argobj__2)
+    return i32 0
+}
+function @O_int___operatorO_Tconst__(%this : ptr [object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZNKR1OIiEcvS_IRKiEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    branch 1, ^condobj_then_1, ^condobj_else_2
+
+  block ^condobj_then_1:
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    call void @O_constint____O__ov2(%t1, %t3)
+    jump ^condobj_end_3
+
+  block ^condobj_else_2:
+    call void @O_constint____O(%t1)
+    jump ^condobj_end_3
+
+  block ^condobj_end_3:
+    return obj<1x1> $retobj__1
+}

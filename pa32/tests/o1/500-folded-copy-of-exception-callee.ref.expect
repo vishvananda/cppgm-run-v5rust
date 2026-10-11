@@ -1,0 +1,18 @@
+# budget from 500-folded-copy-of-exception-callee.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 63
+blocks <= 21
+count(call) <= 16
+count(load) <= 5
+count(store) <= 3
+count(phi) <= 4
+instructions <= 6 in @call_terminate
+instructions <= 25 in @equals_text
+instructions <= 18 in @at_most_four
+instructions <= 12 in @is_abc
+instructions <= 5 in @is_other
+instructions <= 6 in @third
+instructions <= 5 in @nth
+
+# outcomes from 500-folded-copy-of-exception-callee.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @equals_text) in @is_abc
+none(call @at_most_four) in @third

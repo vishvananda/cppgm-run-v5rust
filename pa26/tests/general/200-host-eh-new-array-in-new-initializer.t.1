@@ -1,0 +1,43 @@
+// N3485 5.3.4p18, 5.3.4p20, 15.2p2: when the initialization of an object a
+// new-expression creates throws, the matching deallocation function frees the
+// storage; here the initializer allocates and deletes an array of class
+// objects whose elements may throw (with no elements too): expression
+// statements, initializers, nested new-expressions, try blocks, handlers, a
+// function-try-block and loops
+#include "200-host-eh-new-array-in-new-initializer.helper.h"
+typedef decltype(sizeof(0)) size_type;
+static int r, mode, made, count;
+static void note(int v) { r = r * 7 + v; }
+struct U { U() { if (++made == mode) throw 1; } ~U() { note(1); }
+  static void* operator new[](size_type s) { note(2); return ::operator new[](s); }
+  static void operator delete[](void* p) { note(3); ::operator delete[](p); } };
+struct V { V() { if (++made == mode) throw 1; }
+  static void* operator new[](size_type s) { note(4); return ::operator new[](s); }
+  static void operator delete[](void* p) { note(5); ::operator delete[](p); } };
+struct T { T(bool) { if (mode == 9) throw 2; }
+  static void* operator new(size_type s) { note(6); return ::operator new(s); }
+  static void operator delete(void* p) { note(5); ::operator delete(p); } };
+static int dela(U* p) { delete[] p; return 1; }
+static int delv(V* p) { delete[] p; return 1; }
+static void g0() { delete new T(delv(new V[1])); }
+static void g1() { delete new T(dela(new U[2])); }
+static void g2() { T* p = new T(delv(new V[3])); delete p; }
+static void g3() { delete new T(dela(new U[count])); }
+static void g4() { delete new T(new T(dela(new U[2])) != 0); }
+static void g5() { try { delete new T(dela(new U[2])); } catch (int e) { note(10 + e); } }
+static void g6() { try { throw 0; } catch (int) { delete new T(dela(new U[2])); } }
+static void g7() try { delete new T(dela(new U[2])); } catch (int e) { note(20 + e); throw; }
+static void g8() { for (int i = 0; i < 2; ++i) delete new T(dela(new U[i + 1])); }
+int main()
+{
+  void (*gs[])() = { g0, g1, g2, g3, g4, g5, g6, g7, g8 };
+  const int modes[] = { 0, 1, 2, 3, 9 };
+  for (int g = 0; g < 9; ++g)
+    for (int m = 0; m < 5; ++m)
+    {
+      r = 0; made = 0; mode = modes[m]; count = m == 1 ? 0 : 2;
+      try { gs[g](); } catch (int e) { note(30 + e); }
+      out_line("g", (unsigned long long)(g * 100 + m) << 32 | (unsigned)r);
+    }
+  return 0;
+}

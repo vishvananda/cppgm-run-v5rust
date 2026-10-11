@@ -1,0 +1,15 @@
+declare function @get(%arg0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z3getILm0EJRK1VEERN13tuple_elementIXT_E5tupleIJDpT0_EEE4typeERS7_]
+declare function @forward(%arg0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z7forwardIRK1VEOT_RN16remove_referenceIS3_E4typeE]
+declare function @consume(%arg0 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z7consumeRK1V]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $t : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $t
+    %t2 = addr $t
+    %t3 = call ptr @get(%t2)
+    %t4 = call ptr @forward(%t3)
+    call void @consume(%t4)
+    return i32 0
+}

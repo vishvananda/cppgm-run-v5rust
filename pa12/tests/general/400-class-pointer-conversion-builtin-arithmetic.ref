@@ -1,0 +1,48 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<8x4>
+  slot $p : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $values
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $p
+    %t3 = addr $values
+    %t4 = addr $p
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = addr $p
+    %t7 = call ptr @pointer__operatorint_(%t6)
+    %t8 = binary mul i64 1, 4
+    %t9 = index i8 %t7, %t8
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 2
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @pointer__operatorint_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK7pointercvPiEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}

@@ -1,0 +1,156 @@
+global @destroyed : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    call void @outer__outer(%t1)
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = cmp ne ptr %t6, 0
+    branch %t7, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t8 = addr $value
+    call void @outer___outer(%t8)
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t9 = addr $value
+    call void @outer___outer(%t9)
+    %t10 = load typed i32 @destroyed
+    %t11 = cmp eq i32 %t10, 1
+    branch %t11, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @outer__outer(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN5outerC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @box_outer___box(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @box_outer____box(%t4)
+    eh_end
+    resume
+}
+function @outer___outer(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5outerD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @box_outer____box(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @box_outer____box(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @box_outer___box(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN3boxI5outerEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @owning_outer___owning(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @owning_outer____owning(%t4)
+    eh_end
+    resume
+}
+function @box_outer____box(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN3boxI5outerED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @owning_outer____owning(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @owning_outer____owning(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @owning_outer___owning(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6owningI5outerEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    return void
+}
+function @owning_outer____owning(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN6owningI5outerED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 8
+    %t2 = load typed i32 @destroyed
+    %t3 = binary add nowrap i32 %t2, 1
+    store typed i32 %t3, @destroyed
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr 0, %t5
+    return void
+}
+alias object _ZN5outerC2Ev = @outer__outer
+alias object _ZN5outerD2Ev = @outer___outer
+alias object _ZN3boxI5outerEC2Ev = @box_outer___box
+alias object _ZN3boxI5outerED2Ev = @box_outer____box
+alias object _ZN6owningI5outerEC2Ev = @owning_outer___owning
+alias object _ZN6owningI5outerED2Ev = @owning_outer____owning

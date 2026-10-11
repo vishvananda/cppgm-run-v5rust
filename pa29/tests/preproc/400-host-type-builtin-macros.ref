@@ -1,0 +1,7 @@
+preproc 1
+sof tests/preproc/400-host-type-builtin-macros.t
+identifier have_ptrdiff_type
+identifier have_intptr_type
+identifier have_size_type
+identifier have_uintptr_type
+eof

@@ -1,0 +1,17 @@
+# budget from 400-rematerialized-storage-addresses.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 59
+blocks <= 9
+count(call) <= 11
+mem <= 18
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 8 in @frame_storage_after_call
+stack_size <= 50 in @frame_storage_after_call
+instructions <= 7 in @global_storage_after_call
+stack_size <= 32 in @global_storage_after_call
+instructions <= 8 in @constant_field_after_call
+stack_size <= 68 in @constant_field_after_call
+instructions <= 11 in @variable_index_after_call
+stack_size <= 68 in @variable_index_after_call
+instructions <= 32 in @main
+stack_size <= 68 in @main

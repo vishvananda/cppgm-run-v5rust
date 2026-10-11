@@ -1,0 +1,37 @@
+global @K : i32 [storage=readonly, binding=internal, object=_ZL1K] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<16x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = call i32 @box_4___get(%t2)
+    %t4 = load typed i32 @K
+    %t5 = binary add nowrap i32 %t4, 1
+    %t6 = binary mul nowrap i32 4, %t5
+    %t7 = cmp eq i32 %t3, %t6
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @box_4___get(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN3boxILi4EE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 16
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

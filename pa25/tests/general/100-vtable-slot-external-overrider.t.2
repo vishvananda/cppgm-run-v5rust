@@ -1,0 +1,9 @@
+// definitions of V, M, N, D
+struct V { virtual ~V(); virtual int f(); };
+struct M : virtual V { ~M(); int f(); };
+struct N : virtual V { ~N(); };
+struct D : M, N { D(); ~D(); };
+V::~V() {} int V::f() { return 1; }
+M::~M() {} int M::f() { return 2; }
+N::~N() {}
+D::D() {} D::~D() {}

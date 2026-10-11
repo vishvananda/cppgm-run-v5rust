@@ -1,0 +1,5 @@
+// PA25 standalone link (N3485 3.2p5, 7.1.2p4): an inline virtual destructor
+// odr-used in two TUs, one being the key-function TU, must link once;
+// expect link ok and exit 0
+struct Shape { virtual long area() const; virtual ~Shape() {} long side; };
+int main() { Shape s; s.side = 3; return s.area() - 3; }

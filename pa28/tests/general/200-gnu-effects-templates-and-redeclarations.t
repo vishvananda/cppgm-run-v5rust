@@ -1,0 +1,1 @@
+# GNU pure and const reach every declaration of a function, a template's specializations and a lambda's call operator, and not a template's explicit specialization (as GCC reads them); behavior only: PA32's -O0 driver lane compares the LowIR effects they give (lowir.md "effects")

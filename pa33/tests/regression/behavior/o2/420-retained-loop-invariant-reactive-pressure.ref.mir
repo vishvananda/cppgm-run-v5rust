@@ -1,0 +1,236 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @state
+  storage data
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+
+global @arena
+  storage data
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+
+global @stats
+  storage scalar i64
+  init i64 0
+
+global @result
+  storage scalar i64
+  init i64 0
+
+global @node
+  storage data
+  item i64 0
+  item i64 0
+  item i64 0
+  item i64 0
+
+global @edges
+  storage data
+  item u32 0
+  item u32 1
+  item u32 0
+  item u32 4294967295
+
+global @no_edge
+  storage scalar u32
+  init u32 4294967295
+
+function @edge_at
+  abi
+    param %base -> rdi : ptr
+    param %index -> rsi : i64
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    imul rsi, 8
+    mov r10, @edges
+    add rsi, r10
+    ret rsi
+
+function @node_at
+  abi
+    param %base -> rdi : ptr
+    param %index -> rsi : i64
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, @node
+    ret rax
+
+function @payload
+  abi
+    param %arena_pointer -> rdi : ptr
+    param %value -> rsi : u32
+    return u32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rsi
+
+function @append
+  abi
+    param %destination -> rdi : ptr
+    param %value -> rsi : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret
+
+function @walk
+  abi
+    param %this -> rdi : ptr
+    param %declarator -> rsi : u32
+    param %fallback -> rdx : u32
+    param %names -> rcx : ptr
+    return void -> void
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx r12 r13 r14
+    slot $fallback -> [rbp-16] : u32
+    slot $payload -> [rbp-8] : u32
+
+  block ^entry
+    mov r14, rcx
+    store.u32 [rbp-16], rdx
+    lea rbx, [rdi+24]
+    load.ptr r8, [rbx]
+    lea rdi, [r8+32]
+    call @node_at [args=(rsi,rdi), unwind=no]
+    load.u32 r12, [rax+12]
+
+  block ^outer_condition
+    cmp.u32 r12, @no_edge
+    je ^outer_done
+
+  block ^outer_body
+    load.ptr r8, [rbx]
+    lea rdi, [r8+56]
+    mov rsi, r12
+    call @edge_at [args=(rsi,rdi), unwind=no]
+    load.u32 r13, [rax]
+    load.ptr r8, [rbx]
+    load.ptr r9, [r8+8]
+    cmp.ptr r9, 0
+    je ^inspect
+
+  block ^record
+    add [r9], 1
+
+  block ^inspect
+    lea rdi, [r8+32]
+    mov rsi, r13
+    call @node_at [args=(rsi,rdi), unwind=no]
+    cmp.u16 [rax+30], 121
+    sete r8
+    cmp.u8 r8, 0
+    jne ^inner_start
+
+  block ^outer_iterate
+    load.ptr r8, [rbx]
+    lea rdi, [r8+56]
+    mov rsi, r12
+    call @edge_at [args=(rsi,rdi), unwind=no]
+    load.u32 r12, [rax+4]
+    cmp.u32 r12, @no_edge
+    jne ^outer_body
+
+  block ^outer_done
+    mov rdi, r14
+    lea rsi, [rbp-16]
+    call @append [args=(rsi,rdi), unwind=no]
+    ret
+
+  block ^inner_body
+    load.ptr r13, [rbx]
+    lea rdi, [r13+56]
+    mov rsi, r12
+    call @edge_at [args=(rsi,rdi), unwind=no]
+    load.u32 rsi, [rax]
+    mov rdi, r13
+    call @payload [args=(rsi,rdi), unwind=no]
+    store.u32 [rbp-8], rax
+    mov rdi, r14
+    lea rsi, [rbp-8]
+    call @append [args=(rsi,rdi), unwind=no]
+    load.ptr r8, [rbx]
+    lea rdi, [r8+56]
+    mov rsi, r12
+    call @edge_at [args=(rsi,rdi), unwind=no]
+    load.u32 r12, [rax+4]
+    cmp.u32 r12, @no_edge
+    jne ^inner_body
+    jmp ^inner_done
+
+  block ^inner_start
+    load.ptr r8, [rbx]
+    lea rdi, [r8+32]
+    mov rsi, r13
+    call @node_at [args=(rsi,rdi), unwind=no]
+    load.u32 r12, [rax+12]
+
+  block ^inner_condition
+    cmp.u32 r12, @no_edge
+    jne ^inner_body
+
+  block ^inner_done
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r11, @arena
+    store.ptr @state+24, r11
+    mov r11, @stats
+    store.ptr @arena+8, r11
+    mov rdi, @state
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, @result
+    call @walk [args=(rcx,rdx,rsi,rdi), unwind=no]
+    cmp.i64 @stats, 2
+    setne rax
+    movzx rax, rax
+    ret rax

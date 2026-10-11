@@ -1,0 +1,4 @@
+// key-function TU
+struct K2 { virtual void d() = delete; virtual int f(); };
+int K2::f() { return 2; }
+K2* m2() { static K2 k; return &k; }

@@ -1,0 +1,5 @@
+function @count(%first : ptr, %last : ptr) -> i64 {
+  block ^entry:
+    %t1 = binary sub ptr %last, %first
+    return i64 %t1
+}

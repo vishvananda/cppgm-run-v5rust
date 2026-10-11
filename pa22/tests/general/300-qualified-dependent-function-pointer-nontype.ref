@@ -1,0 +1,3 @@
+global @global_check [binding=strong] = {
+  zero 1
+}

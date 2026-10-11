@@ -1,0 +1,13 @@
+# budget from 300-reused-frame-home-layout-lifetime.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 37
+blocks <= 14
+count(call) <= 7
+mem <= 12
+instructions <= 4 in @make_value
+stack_size <= 48 in @make_value
+instructions <= 5 in @clobber
+stack_size <= 32 in @clobber
+instructions <= 27 in @probe
+stack_size <= 64 in @probe
+instructions <= 9 in @main
+stack_size <= 85 in @main

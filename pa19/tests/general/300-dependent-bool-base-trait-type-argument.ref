@@ -1,0 +1,41 @@
+declare global @std__integral_constant_bool_true___value : u8 [binding=weak, object=_ZNSt17integral_constantIbLb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $table : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $table
+    call void @Uses_int___Uses(%t1)
+    return i32 0
+}
+function @Uses_int___Uses(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN4UsesIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @std___Hashtable_int_int_int_int____Hashtable__base_entry(%t2)
+    return void
+}
+function @std___Hashtable_int_int_int_int____Hashtable__base_entry(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZNSt10_HashtableIiiiiEC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr $argobj__1
+    call void @std___Enable_default_constructor_true__Hash_node_base____Enable_default_constructor__ov2__base_entry(%t2, $argobj__1)
+    return void
+}
+function @std___Enable_default_constructor_true__Hash_node_base____Enable_default_constructor__ov2__base_entry(%this : ptr [object_bytes=1], %__param1 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZNSt27_Enable_default_constructorILb1ENSt8__detail15_Hash_node_baseEEC2ESt31_Enable_default_constructor_tag, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN4UsesIiEC2Ev = @Uses_int___Uses

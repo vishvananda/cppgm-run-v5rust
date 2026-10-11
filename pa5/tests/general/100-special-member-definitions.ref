@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    special-member-definition C
+      declarator
+        identifier C
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id x
+          paren-argument-list
+            literal 1
+      compound-statement
+    special-member-definition ~C
+      declarator
+        identifier ~C
+        parameter-clause
+      compound-statement
+    special-member-definition operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        cv-qualifier KW_CONST:const
+      compound-statement
+        return-statement
+          literal 0
+end translation unit

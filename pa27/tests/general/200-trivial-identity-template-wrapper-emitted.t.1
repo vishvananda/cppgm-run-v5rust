@@ -1,0 +1,17 @@
+template<class T>
+__attribute__((noinline)) inline T * identity_ptr(T * p)
+{
+  return p;
+}
+
+int global_value = 41;
+
+int use_identity(int * p)
+{
+  return *identity_ptr(p) + 1;
+}
+
+int main()
+{
+  return use_identity(&global_value) == 42 ? 0 : 1;
+}

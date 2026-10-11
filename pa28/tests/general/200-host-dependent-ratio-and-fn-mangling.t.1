@@ -1,0 +1,88 @@
+template<bool B, class T>
+struct enable_if {
+};
+
+template<class T>
+struct enable_if<true, T> {
+  typedef T type;
+};
+
+template<class T, T V>
+struct integral_constant {
+  static const T value = V;
+  typedef integral_constant<T, V> type;
+};
+
+typedef integral_constant<bool, true> true_type;
+typedef integral_constant<bool, false> false_type;
+
+template<class T, class...>
+using first_t = T;
+
+template<bool B, class T = void>
+using enable_if_t = typename enable_if<B, T>::type;
+
+template<long V>
+struct static_sign
+  : integral_constant<long, (V < 0) ? -1 : 1>
+{
+};
+
+template<long V>
+struct static_abs
+  : integral_constant<long, V * static_sign<V>::value>
+{
+};
+
+template<long Num, long Den = 1>
+struct ratio {
+  static const long num = Num;
+  static const long den = static_abs<Den>::value;
+  typedef ratio<num, den> type;
+};
+
+template<class T>
+struct is_ratio
+  : false_type
+{
+};
+
+template<long Num, long Den>
+struct is_ratio<ratio<Num, Den> >
+  : true_type
+{
+};
+
+namespace detail {
+
+template<class... B>
+auto and_fn(int) -> first_t<true_type, enable_if_t<bool(B::value)>...>;
+
+template<class... B>
+auto and_fn(...) -> false_type;
+
+}
+
+template<class... B>
+struct and_values
+  : decltype(detail::and_fn<B...>(0))
+{
+};
+
+template<long Num, long Den,
+         typename enable_if<and_values<is_ratio<ratio<Num, Den> >,
+                                       is_ratio<ratio<Den, Num> > >::value,
+                            int>::type = 0>
+long check_ratio_pair()
+{
+  return ratio<Num, Den>::den;
+}
+
+typedef long (*check_ratio_pair_ptr)();
+check_ratio_pair_ptr exported_check_ratio_pair =
+    &check_ratio_pair<1, 2>;
+
+int main()
+{
+  return exported_check_ratio_pair() == 2 ? 0 : 1;
+}

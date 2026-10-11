@@ -1,0 +1,6 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function printf function of (pointer to const char, ...) returning int
+end translation unit

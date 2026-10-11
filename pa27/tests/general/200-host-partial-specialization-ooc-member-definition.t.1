@@ -1,0 +1,36 @@
+template<class Sig>
+struct function;
+
+template<class Rp, class... Args>
+struct function<Rp(Args...)> {
+  template<class Fp, class = void>
+  function(Fp);
+
+  ~function();
+  __attribute__((noinline)) Rp operator()(Args...) const;
+};
+
+template<class Rp, class... Args>
+template<class Fp, class>
+function<Rp(Args...)>::function(Fp) {}
+
+template<class Rp, class... Args>
+function<Rp(Args...)>::~function() {}
+
+template<class Rp, class... Args>
+__attribute__((noinline))
+Rp function<Rp(Args...)>::operator()(Args...) const
+{
+  return Rp();
+}
+
+int target(unsigned long)
+{
+  return 7;
+}
+
+int main()
+{
+  function<int(unsigned long)> f(target);
+  return f(0) - 0;
+}

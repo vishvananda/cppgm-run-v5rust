@@ -1,0 +1,61 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lhs : obj<4x4>
+  slot $rhs : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $lhs
+    %t2 = addr $lhs
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $rhs
+    %t5 = addr $rhs
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 3, %t6
+    %t7 = addr $lhs
+    %t8 = addr $rhs
+    %t9 = call ptr @pick_first(%t7, %t8)
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp eq i32 %t11, 7
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @pick_first(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z10pick_firstI3FooERKT_S3_S3_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+  slot $condaddr__1 : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    branch %t3, ^condaddr_then_1, ^condaddr_else_2
+
+  block ^condaddr_then_1:
+    %t4 = load typed ptr $lhs
+    store typed ptr %t4, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_else_2:
+    %t5 = load typed ptr $rhs
+    store typed ptr %t5, $condaddr__1
+    jump ^condaddr_end_3
+
+  block ^condaddr_end_3:
+    %t6 = load typed ptr $condaddr__1
+    return ptr %t6
+}

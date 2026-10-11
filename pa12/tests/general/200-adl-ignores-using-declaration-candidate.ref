@@ -1,0 +1,43 @@
+function @A__B__f(%__param0 : ptr [pass=by_address, object_bytes=1]) -> obj<4x4> [binding=strong, object=_ZN1A1B1fERK1S] {
+  slot $__param0 : ptr
+  slot $y : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr $y
+    %t2 = addr $y
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $y
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+function @A__B__g(%s : ptr [pass=by_address, object_bytes=1]) -> obj<4x4> [binding=strong, object=_ZN1A1B1gERK1S] {
+  slot $s : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %s, $s
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $s
+    %t3 = call obj<4x4> @A__B__f(%t2)
+    copyobj 4x4 %t3, %t1
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+  slot $y : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $y
+    %t3 = addr $s
+    %t4 = call obj<4x4> @A__B__g(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = addr $y
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    return i32 %t7
+}

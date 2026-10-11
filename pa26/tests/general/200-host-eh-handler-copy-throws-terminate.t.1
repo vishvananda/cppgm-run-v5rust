@@ -1,0 +1,12 @@
+// N3485 15.1p7, 15.3p7, 15.5.1p1: if copy-initializing a handler's parameter
+// exits via an exception, std::terminate is called (the outer handler must not
+// run); expect exit 0
+namespace std { typedef void (*terminate_handler)(); terminate_handler set_terminate(terminate_handler) throw(); }
+extern "C" void _exit(int);
+void on_terminate() { _exit(0); }
+struct C { C() {} C(const C&) { throw 1; } };
+int main() {
+  std::set_terminate(on_terminate);
+  try { try { throw C(); } catch (C c) { return 2; } } catch (int) { return 1; }
+  return 3;
+}

@@ -1,0 +1,14 @@
+// N3485 15.2p2, 12.6.2p10: when a member initializer throws (a GNU statement
+// expression whose local object is destroyed as it ends), the members already
+// constructed are destroyed in reverse order and each statement expression's
+// local once
+#include "200-host-eh-stmtexpr-shared-resume.helper.h"
+struct T { int v; T(int x) : v(x) {} ~T() { out_line("~T", v); } };
+void boom(int k, int at) { if (k == at) throw at; }
+struct M { T m1; T m2; M(int k) : m1(({ T in(40); boom(k, 1); in.v; })), m2(({ T in2(42); boom(k, 2); 44; })) {} };
+int main()
+{
+  for (int k = 0; k < 3; ++k)
+    try { M m(k); out_line("made", m.m2.v); } catch (int e) { out_line("caught", e); }
+  return 0;
+}

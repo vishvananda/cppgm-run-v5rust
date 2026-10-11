@@ -1,0 +1,46 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @Compiler_int___validate(1)
+    %t2 = cmp eq i32 %t1, 1
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @Compiler_int___validate(%f : i32) -> i32 [binding=weak, object=_ZN8CompilerIiE8validateEN5flags18syntax_option_typeE, inline_hint=yes] {
+  slot $f : i32
+
+  block ^entry:
+    store typed i32 %f, $f
+    %t1 = load typed i32 $f
+    %t2 = binary or i32 1, 2
+    %t3 = binary and i32 %t1, %t2
+    jump ^switch_dispatch_1
+
+  block ^switch_dispatch_1:
+    switch %t3, ^switch_default_5, 1:^switch_case_3, 2:^switch_case_4
+
+  block ^switch_case_3:
+    jump ^switch_case_4
+
+  block ^switch_case_4:
+    %t4 = load typed i32 $f
+    return i32 %t4
+
+  block ^switch_default_5:
+    return i32 1
+
+  block ^switch_end_2:
+    return i32 0
+}

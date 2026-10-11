@@ -1,0 +1,20 @@
+#include "200-host-nontrivial-copy-class-parameter.helper.h"
+
+namespace call_abi {
+int student_take(DerivedCopy a, CopyTrivialMove b, TrivialCopyMove c,
+    NoCopy d, int tail) {
+    int status = 0;
+    if (a.n != 21 || a.self != &a) status |= 16;
+    if (b.n != 22 || b.self != &b) status |= 32;
+    if (c.n != 23 || c.self != &c) status |= 64;
+    if (d.n != 24 || tail != 25) status |= 128;
+    return status;
+}
+}
+
+int main() {
+    call_abi::DerivedCopy a(11);
+    call_abi::CopyTrivialMove b(12);
+    int status = call_abi::host_take(a, b, call_abi::TrivialCopyMove(13), {14}, 15);
+    return status | call_abi::host_calls_student();
+}

@@ -1,0 +1,12 @@
+namespace std {
+enum _Ios_Iostate { goodbit = 0, badbit = 1 };
+}
+
+namespace abi_link {
+int std_enum_probe(std::_Ios_Iostate);
+}
+
+int main()
+{
+  return abi_link::std_enum_probe(std::badbit) - 5;
+}

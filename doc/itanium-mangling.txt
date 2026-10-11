@@ -1,0 +1,852 @@
+Itanium C++ ABI Mangling Specification
+Source: https://itanium-cxx-abi.github.io/cxx-abi/abi.html#mangling
+Downloaded: 2026-04-26
+5.1 External Names (a.k.a. Mangling)
+
+5.1.1 General
+This section specifies the mangling, i.e. encoding, of external names (external in the sense of being visible outside the object file where they occur). The encoding is formalized as a derivation grammar along with the explanatory text, in a modified BNF with the following conventions:
+- Alternatives are given on separate lines.
+- References to non-terminals are delimited by angle brackets <>.
+- Italicized text in references to non-terminals describes or limits what is mangled by the reference, but it does not affect the formal grammar. For example, <function name> is the same as <name>, but it means this derivation rule should be used only for the names of functions.
+- Spaces are to be ignored.
+- Text beginning with # is a comment, to be ignored until the end of the line. Comments are often used to describe in what case an alternative should be used.
+- Sequences of items in square brackets [] are optional.
+- Sequences of items in parentheses () are groups for the purposes of * and +.
+- An asterisk * allows the preceding item to repeat 0 or more times.
+- A plus sign + allows the preceding item to repeat 1 or more times.
+- All other characters are terminals, representing themselves.
+See the separate table summarizing the encoding characters used as terminals. Also see additional mangling examples in the separate ABI examples document.
+In the various explanatory examples, we use Ret? for an unknown function return type (i.e. that is not given by the mangling), or Type? for an unknown data type.
+Mangled names containing $ or . are reserved for private implementation use. Names produced using such extensions are inherently non-portable and should be given internal linkage where possible.
+
+5.1.2 General Structure
+Entities with C linkage and global namespace variables are not mangled. Mangled names have the general structure:
+    <mangled-name> ::= _Z <encoding>
+                   ::= _Z <encoding> . <vendor-specific suffix>
+    <encoding> ::= <function name> <bare-function-type>
+	       ::= <data name>
+	       ::= <special-name>
+Thus, a name is mangled by prefixing "_Z" to an encoding of its name, and in the case of functions its type (to support overloading). At this top level, function types do not have the special delimiter characters required when nested (see below). Furthermore, in the case of instances (or explicit specializations) of function templates and member function templates (but not ordinary member functions of class templates), the <bare-function-type> encoding is that of the type expressed in the template (i.e., one likely involving template parameters). The type is omitted for variables and static data members.
+A <mangled-name> containing a period represents a vendor-specific version or portion of the entity named by the <encoding> prior to the first period. There is no restriction on the characters that may be used in the suffix following the period.
+ABI mangling is designed to ensure that entities receive the same mangling if and only if they are the same entity according to the C++ standard's one-definition rule (ODR) and the various rules for declaration matching (such as [over.dcl] and [temp.over]. Those rules are quite complex, and they dictate the results of mangling, and so it should not be surprising that the mangling rules are also complex. The ABI must be closely involved with the evolution of those language rules to ensure that they remain implementable with mangling. When the rules say that an ODR violation has undefined behavior, that is often because it is impractical to ensure that the entities involved will have different manglings. Similarly, when the rules forbid certain constructs from the signature of a declaration, that is often because that construct would create unreasonable problems for mangling.
+Mangling must sometimes be able to distinguish entities that are not equivalent under the ODR and declaration-matching rules. This is true even if the entities would not be distinguishable by C++ code because, say, every name lookup which included both of them would be ambiguous. For example, different translation units might declare similar but not eqivalent function templates in the same namespace:
+// a.cpp:
+template <int> void foo() {}
+template <> void foo<0>();
+
+// b.cpp:
+template <long> void foo() {}
+template <> void foo<0>();
+The C++ standard grants implementations broad flexibility to ignore certain kinds of differences. For example, the rules in [temp.over.link] for functionally-equivalent function templates could be used to shorten manglings in certain cases where instantiation-dependence provably has no effect. This ABI generally does not take advantage of that flexibility.
+Dependent constructs in templates
+It is sometimes necessary to mangle unresolved and uninstantiated language constructs such as types and expressions that appear within templates. This accounts for a lot of the complexity of entity mangling in this ABI.
+In many places, the mangling grammar formally allows a single construct to be mangled in one of several different ways. Usually there is one production which allows a fully-resolved value or entity reference, and there is another production that allows an expression or unresolved entity reference. As an example, this can be clearly seen in the mangling for array types, which gives one mangling for a constant bound and another for an expression.
+There are two reasons for this. First, manglings using the fully-resolved case are often significantly more compact. More importantly, though, the language often treat dependent and non-dependent constructs differently. For example, [temp.over.link] gives rules for when two expressions that involve template parameters are considered equivalent, and those rules are reflected in this ABI's expression mangling rules. Conversely, expressions that don't involve template parameters but are used in constant-evaluated contexts (such an array length) are considered to be equivalent if and only if they resolve to the same value. Mangling a non-dependent expression using its expression structure could incorrectly produce different manglings for different expressions that resolve to the same value, and it could incorrectly produce the same mangling for expressions that resolve to different values but happen to be spelled the same.
+It is therefore important to use the right production given the dependence of the construct in question. The standard defines several different kinds of dependence, such as value dependence and type dependence. In general, the rule that should be used in mangling is instantiation dependence: if a construct in instantiation-dependent, it should use the general production, and otherwise it should use the narrow production. The grammar below will state clearly when certain productions are only for instantiation-dependent cases.
+Anonymous entities
+For the purposes of mangling, the name of an anonymous union is considered to be the name of the first named data member found by a pre-order, depth-first, declaration-order walk of the data members of the anonymous union. If there is no such data member (i.e., if all of the data members in the union are unnamed), then there is no way for a program to refer to the anonymous union, and there is therefore no need to mangle its name.
+All of these examples:
+union { int i; int j; };
+union { union { int : 7 }; union { int i; }; };
+union { union { int j; } i; };
+are considered to have the name i for the purposes of mangling.
+
+Names
+In general, the mangling of an entity's name depends on where it is declared. Entities declared at global scope, or in namespace std, are mangled as unscoped names. Entities declared within a function, including members of local classes, are mangled with <local-name>. Entities declared in a namespace or class scope are mangled with <nested-name>. When the actual entity is not known statically, as can occur in a dependent function template signature, the name is mangled with <unresolved-name>.
+The manglings of template specializations and non-template entities closely overlap, but they can generally be disambiguated by whether the name is followed by the I which starts a <template-args> production.
+    <name> ::= <nested-name>
+	   ::= <unscoped-name>
+	   ::= <unscoped-template-name> <template-args>
+	   ::= <local-name>	# See Scope Encoding below
+
+    <unscoped-name> ::= <unqualified-name>
+		    ::= St <unqualified-name>   # ::std::
+
+    <unscoped-template-name> ::= <unscoped-name>
+			     ::= <substitution>
+A <nested-name> recursively breaks down the enclosing scope until the global scope is reached. A <prefix> refers to a scope; confusingly, a <template-prefix> actually refers to a template name (without template arguments).
+Class and namespace members are always mangled with a <nested-name>, even if they are template specializations and there is an existing substitution for the template (and therefore the name could in principle be mangled as if it were a <unscoped-template-name>).
+When a <nested-name> refers to a non-static class member function, the CV-qualifiers and ref-qualifiers of the function are prefixed to the compound name. This prefix is required even when the member function is a specialization of a substituted template and therefore those qualifiers could be inferred from the substitution target.
+    <nested-name> ::= N [<CV-qualifiers>] [<ref-qualifier>] <prefix> <unqualified-name> E
+		  ::= N [<CV-qualifiers>] [<ref-qualifier>] <template-prefix> <template-args> E
+
+    <prefix> ::= <unqualified-name>                 # global class or namespace
+             ::= <prefix> <unqualified-name>        # nested class or namespace
+	     ::= <template-prefix> <template-args>  # class template specialization
+             ::= <closure-prefix>                   # initializer of a variable or data member
+             ::= <template-param>                   # template type parameter
+             ::= <decltype>                         # decltype qualifier
+	     ::= <substitution>
+
+    <template-prefix> ::= <template unqualified-name>           # global template
+                      ::= <prefix> <template unqualified-name>  # nested template
+                      ::= <template-param>                      # template template parameter
+                      ::= <substitution>
+
+    <unqualified-name> ::= <operator-name> [<abi-tags>]
+                       ::= <ctor-dtor-name>  
+                       ::= <source-name>   
+                       ::= <unnamed-type-name>   
+                       ::= DC <source-name>+ E      # structured binding declaration
+
+    <source-name> ::= <positive length number> <identifier>
+    <identifier> ::= <unqualified source code identifier>
+
+<identifier> is a pseudo-terminal representing the characters in the unqualified identifier for the entity in the source code. This ABI does not yet specify a mangling for identifiers containing characters outside of _A-Za-z0-9.
+Note that <source-name> in the productions for <unqualified-name> may be either a function or data object name when derived from <name>, or a class or enum name when derived from <type>.
+ABI tags
+The GNU abi_tag attribute can be applied to a variable, function, inline namespace, class, or enumeration. The <unqualified-name> for a tagged variable, function, or type includes a representation of the tags on that entity, in alphabetical order:
+    <abi-tags> ::= <abi-tag> [<abi-tags>]
+    <abi-tag> ::= B <source-name>
+For example:
+  struct [[gnu::abi_tag ("foo","bar")]] A { }; // mangles as 1AB3barB3foo
+If a name that would use a built-in <substitution> has ABI tags, the tags are appended to the substitution; the result is a substitutable component.
+  namespace std
+  {
+    template <class T> struct char_traits { /* ... */ };
+    template <class T> struct allocator { /* ... */ };
+    template <class T, class R = char_traits<T>, class A = allocator<T>>
+      struct [[gnu::abi_tag ("X")]] basic_string { /* ... */ };
+    using string = basic_string<char>;
+  }
+
+  void f(std::string, std::string) { } // mangles as _Z1fSsB1XS_
+If part of a declaration's type is not represented in the mangling, i.e. the type of a variable or a return type that is not represented in the mangling of a function, any ABI tags on that type (or components of a compound type) that are not also present in a mangled part of the type are applied to the name of the declaration. Note that there is no similar tag propagation from members or bases to a class type, as that would be impossible for incomplete types.
+Note that for member functions of a class template that are not member templates, the type in question is that of the instantiation, so tags that appear only in the template do not affect mangling:
+  struct [[gnu::abi_tag ("foo")]] A
+  {
+    template <class T> static T f();
+    template <class T> static A g();
+  };
+
+  template <class T> struct B
+  {
+    static decltype(A::f<T>()) fa(decltype(A::f<T>()));
+    static decltype(A::f<T>()) fv();
+    static decltype(A::g<T>()) ga(decltype(A::g<T>()));
+    static decltype(A::g<T>()) gv();
+  };
+
+  int main()
+  {
+    // decltype(A::f<T>()) resolves to int
+    B<int>::fa(0);   // _ZN1BIiE2faEi
+    B<int>::fv();    // _ZN1BIiE2fvEv
+    // decltype(A::g<T>()) resolves to A, which has a tag
+    B<int>::ga(A()); // _ZN1BIiE2gaE1AB3foo
+    B<int>::gv();    // _ZN1BIiE2gvB3fooEv
+  }
+If no arguments are specified for the attribute on an inline namespace, the namespace has its own name as a tag. Tags on an inline namespace are not represented in the mangled name of the namespace, but they are subject to the above tag propagation. For example:
+  inline namespace [[gnu::abi_tag]] Foo {
+    struct A {};
+    A f() { } // mangles as _ZN3Foo1fEv
+  }
+  template <class T> struct B { };
+  typedef void (*fp)(B<A>);
+  fp p;      // mangles as _Z1pB3Foo
+  A g(A) { } // mangles as _Z1gN3Foo1AE
+Numbers
+    <number> ::= [n] <non-negative decimal integer>
+<number> is a pseudo-terminal representing a decimal integer, with a leading 'n' for negative integers. It is used in <source-name> to provide the byte length of the following identifier. <number>s appearing in mangled names never have leading zeroes, except for the value zero, represented as '0'.
+Sequence numbers
+    <seq-id> ::= <0-9A-Z>+
+A <seq-id> is a sequence number in base 36, using digits and upper case letters. Generally, wherever <seq-id> appears, the first element is encoded by the absence of a number, and the remainder of the sequence is encoded starting at 0. As with <number>, a <seq-id> has a leading zero only if that is the only digit.
+For example, substitutions are mangled as S [<seq-id>] _. The first substitutable entity is encoded as S_, i.e. with no number. The second is encoded as S0_, the third as S1_, the twelfth as SA_, the thirty-eighth as S10_, etc.
+
+5.1.3 Operator Encodings
+Operators appear as function names, and in nontype template argument expressions. Unlike Cfront, unary and binary operators using the same symbol have different encodings. Most operators are encoded using exactly two letters, the first of which is lowercase.
+  <operator-name> ::= nw	# new           
+		  ::= na	# new[]
+		  ::= dl	# delete        
+		  ::= da	# delete[]      
+		  ::= aw	# co_await      
+		  ::= ps        # + (unary)
+		  ::= ng	# - (unary)     
+		  ::= ad	# & (unary)     
+		  ::= de	# * (unary)     
+		  ::= co	# ~             
+		  ::= pl	# +             
+		  ::= mi	# -             
+		  ::= ml	# *             
+		  ::= dv	# /             
+		  ::= rm	# %             
+		  ::= an	# &             
+		  ::= or	# |             
+		  ::= eo	# ^             
+		  ::= aS	# =             
+		  ::= pL	# +=            
+		  ::= mI	# -=            
+		  ::= mL	# *=            
+		  ::= dV	# /=            
+		  ::= rM	# %=            
+		  ::= aN	# &=            
+		  ::= oR	# |=            
+		  ::= eO	# ^=            
+		  ::= ls	# <<            
+		  ::= rs	# >>            
+		  ::= lS	# <<=           
+		  ::= rS	# >>=           
+		  ::= eq	# ==            
+		  ::= ne	# !=            
+		  ::= lt	# <             
+		  ::= gt	# >             
+		  ::= le	# <=            
+		  ::= ge	# >=            
+		  ::= ss	# <=>           
+		  ::= nt	# !             
+		  ::= aa	# &&            
+		  ::= oo	# ||            
+		  ::= pp	# ++ (postfix in <expression> context)
+		  ::= mm	# -- (postfix in <expression> context)           
+		  ::= cm	# ,             
+		  ::= pm	# ->*           
+		  ::= pt	# ->            
+		  ::= cl	# ()            
+		  ::= ix	# []            
+		  ::= qu	# ?             
+		  ::= cv <type>	# (cast)
+                  ::= li <source-name>          # operator ""
+		  ::= v <digit> <source-name>	# vendor extended operator
+Vendors who define builtin extended operators (e.g. __imag) shall encode them as a 'v' prefix followed by the operand count as a single decimal digit, and the name in <length,ID> form.
+ For a user-defined conversion operator the result type (i.e., the type to which the operator converts) is part of the mangled name of the function. If the conversion operator is a member template, the result type will appear before the template parameters. There may be forward references in the result type to the template parameters.
+
+5.1.4 Other Special Functions and Entities
+
+5.1.4.1 Virtual Tables and RTTI
+Associated with a virtual table are several entities with mangled external names: the virtual table itself, the VTT for construction, the typeinfo structure, and the name it references. Each has a <special-name> encoding that is a simple two-character code, prefixed to the type encoding for the class to which it applies.
+  <special-name> ::= TV <type>	# virtual table
+		 ::= TT <type>	# VTT structure (construction vtable index)
+		 ::= TI <type>	# typeinfo structure
+		 ::= TS <type>	# typeinfo name (null-terminated byte string)
+
+5.1.4.2 Virtual Override Thunks
+Virtual function override thunks come in two forms. Those overriding from a non-virtual base, with fixed this adjustments, use a "Th" prefix and encode the required adjustment offset, probably negative, indicated by a 'n' prefix, and the encoding of the target function. Those overriding from a virtual base must encode two offsets after a "Tv" prefix. The first is the constant adjustment to the nearest virtual base (of the full object), of which the defining object is a non-virtual base. It is coded like the non-virtual case, with a 'n' prefix if negative. The second offset identifies the vcall offset in the nearest virtual base, which will be used to finish adjusting this to the full object. After these two offsets comes the encoding of the target function. The target function encodings of both thunks incorporate the function type; no additional type is encoded for the thunk itself.
+  <special-name> ::= T <call-offset> <base encoding>
+		      # base is the nominal target function of thunk
+  <call-offset> ::= h <nv-offset> _
+		::= v <v-offset> _
+  <nv-offset> ::= <offset number>
+		      # non-virtual base override
+  <v-offset>  ::= <offset number> _ <virtual offset number>
+		      # virtual base override, with vcall offset
+
+Virtual function override thunks with covariant returns are twice as complex. Just as normal virtual function override thunks must adjust the this pointer before calling the base function, those with covariant returns must adjust the return pointer after they return from the base function. So the mangling must also encode a fixed offset to a non-virtual base, and possibly an offset to a vbase offset in the vtable to get to the virtual base containing the result subobject. We achieve this by encoding two <call-offset> components, either of which may be either virtual or non-virtual.
+  <special-name> ::= Tc <call-offset> <call-offset> <base encoding>
+		      # base is the nominal target function of thunk
+		      # first call-offset is 'this' adjustment
+		      # second call-offset is result adjustment
+
+
+5.1.4.3 Constructors and Destructors
+Constructors and destructors are simply special cases of <unqualified-name>, where the final <unqualified-name> of a nested name is replaced by one of the following:
+  <ctor-dtor-name> ::= C1			# complete object constructor
+		   ::= C2			# base object constructor
+		   ::= C3			# complete object allocating constructor
+		   ::= CI1 <base class type>	# complete object inheriting constructor
+		   ::= CI2 <base class type>	# base object inheriting constructor
+		   ::= D0			# deleting destructor
+		   ::= D1			# complete object destructor
+		   ::= D2			# base object destructor
+The <base class type> in an inheriting constructor mangling identifies the base class in which the inherited constructor was originally declared.
+Some of the symbols for constructor and destructor variants are optional.
+
+5.1.4.4 Guard Variables
+Initialization of certain objects with static storage duration requires a guard variable to prevent multiple initialization. The mangled name of a guard variable is the name of the guarded variable prefixed with GV.
+  <special-name> ::= GV <object name>	# Guard variable for one-time initialization
+			# No <type>
+
+
+5.1.4.5 Lifetime-Extended Temporaries
+The initializers of objects with static storage duration may introduce temporaries whose lifetime is extended to have static storage duration; this may also apply recursively to the initializers of those temporaries. If an initializer is visible to multiple translation units, those translation units must agree on the addresses of the temporaries. Therefore the temporaries must be given a consistent name and vague linkage. The mangled name of a temporary is the name of the non-temporary object in whose initializer they appear, prefixed with GR and suffixed with a sequence number mangled using the usual rules for a seq-id. Temporaries are numbered with a pre-order, depth-first, left-to-right walk of the complete initializer.
+  <special-name> ::= GR <object name> _             # First temporary
+  <special-name> ::= GR <object name> <seq-id> _    # Subsequent temporaries
+For example, consider the following code:
+struct A { const int (&x)[3]; };
+struct B { const A (&x)[2]; };
+template <typename T> B &&b = { { { { 1, 2, 3 } }, { { 4, 5, 6 } } } };
+B &temp = b<void>;
+- _ZGR1bIvE_ is the 'B' object that 'temp' would refer to.
+- _ZGR1bIvE0_ is the array of 'A' object references.
+- _ZGR1bIvE1_ is the object containing the first array of ints, {1, 2, 3}.
+- _ZGR1bIvE2_ is the object containing the second array of ints, {4, 5, 6}.
+
+5.1.4.6 Transaction-Safe Function Entry Points
+A function declared transaction-safe or [[optimize_for_synchronized]] has two entry points: the normal function mangling, used for calls from a non-transaction context, and another entry point used for calls during a transaction. The mangled name of the transaction entry point is the normal mangling prefixed with GTt.
+  <special-name> ::= GTt <encoding>
+5.1.5 Type encodings
+Types are encoded according to their compound structure: the tree of type constructors, such as const and *, that uniquely determine the type. The mangling of function template signatures necessitates the ability to encode the compound structure of dependent types.
+Simple forms of type structure, such as reference and pointer types, are encoded with a single-character prefix. More complex forms of type structure, such as qualifiers and function types, require individual discussion below.
+  <type> ::= <builtin-type>
+         ::= <qualified-type>
+         ::= <function-type>
+         ::= <class-enum-type>
+         ::= <array-type>
+         ::= <pointer-to-member-type>
+         ::= <template-param>
+         ::= <template-template-param> <template-args>
+         ::= <decltype>
+         ::= P <type>        # pointer
+         ::= R <type>        # l-value reference
+         ::= O <type>        # r-value reference (C++11)
+         ::= C <type>        # complex pair (C99)
+         ::= G <type>        # imaginary (C99)
+         ::= <substitution>  # See Compression below
+5.1.5.1 Qualified types
+  <qualified-type>     ::= <qualifiers> <type>
+
+  <qualifiers>         ::= <extended-qualifier>* <CV-qualifiers>
+  <extended-qualifier> ::= U <source-name> [<template-args>] # vendor extended type qualifier
+  <CV-qualifiers>      ::= [r] [V] [K] 	  # restrict (C99), volatile, const
+
+  <ref-qualifier>      ::= R              # & ref-qualifier
+  <ref-qualifier>      ::= O              # && ref-qualifier
+Vendors who define extended type qualifiers (e.g. _near and _far for pointers) shall encode them as a 'U' prefix, followed by the name in <length,ID> form, followed optionally by any arguments to the qualifier. It is recommended that the encoded name be the preferred name used in source code; known exceptions are listed below.
+In cases where multiple order-insensitive qualifiers are present, they should be ordered (beginning closest to the base type) 'K', 'V', 'r', and 'U' (farthest from the base type), with the 'U' qualifiers in alphabetical order by the vendor name (with alphabetically earlier names closer to the base type). For example, int* volatile const restrict _far has mangled type name U4_farrVKPi. Vendors must therefore specify which of their extended qualifiers are considered order-insensitive. This need not necessarily be resolved on the basis of whether their language translators impose an order in source code. They are encouraged to resolve questionable cases as being order-insensitive to maximize consistency in mangling.
+For purposes of substitution, given a qualified type, the base type is substitutible and the type with all the K, V, and r qualifiers plus any vendor extended types in the same order-insensitive set is substitutible; however, types with only a subset of those qualifiers are not. That is, given a type const volatile foo, the fully qualified type or foo may be substituted, but not volatile foo nor const foo.
+ The restrict qualifier is part of the C99 standard, but is strictly an extension to C++ at this time. There is no standard specification of whether the restrict attribute is part of the type for overloading purposes. An implementation should include its encoding in the mangled name if and only if it also treats it as a distinguishing attribute for overloading purposes. This ABI does not specify that choice.
+Known exceptions to the extended qualifier rules
+- The GNU address_space(N) qualifier is mangled using the name AS. For historical reasons, if the argument expression is not instantiation-dependent, its value is incorporated directly into the <source-name> of the qualifier; otherwise it is encoded as a qualifier argument. For example, int __attribute__((address_space(3))) * is encoded as PU3AS3i, but int __attribute__((address_space(K))) * (in which K is a reference to the first template parameter) is encoded as PU2ASIT_Ei. 
+5.1.5.2 Builtin types
+Builtin types are represented by single-letter codes:
+  <builtin-type> ::= v	# void
+		 ::= w	# wchar_t
+		 ::= b	# bool
+		 ::= c	# char
+		 ::= a	# signed char
+		 ::= h	# unsigned char
+		 ::= s	# short
+		 ::= t	# unsigned short
+		 ::= i	# int
+		 ::= j	# unsigned int
+		 ::= l	# long
+		 ::= m	# unsigned long
+		 ::= x	# long long, __int64
+		 ::= y	# unsigned long long, __int64
+		 ::= n	# __int128
+		 ::= o	# unsigned __int128
+		 ::= f	# float
+		 ::= d	# double
+		 ::= e	# long double, __float80
+		 ::= g	# __float128
+		 ::= z	# ellipsis
+                 ::= Dd # IEEE 754r decimal floating point (64 bits)
+                 ::= De # IEEE 754r decimal floating point (128 bits)
+                 ::= Df # IEEE 754r decimal floating point (32 bits)
+                 ::= Dh # IEEE 754r half-precision floating point (16 bits)
+                 ::= DF <number> _ # ISO/IEC TS 18661 binary floating point type _FloatN (N bits), C++23 std::floatN_t
+                 ::= DF <number> x # IEEE extended precision formats, C23 _FloatNx (N bits)
+                 ::= DF16b # C++23 std::bfloat16_t
+                 ::= DB <number> _        # C23 signed _BitInt(N)
+                 ::= DB <instantiation-dependent expression> _ # C23 signed _BitInt(N)
+                 ::= DU <number> _        # C23 unsigned _BitInt(N)
+                 ::= DU <instantiation-dependent expression> _ # C23 unsigned _BitInt(N)
+                 ::= Di # char32_t
+                 ::= Ds # char16_t
+                 ::= Du # char8_t
+                 ::= Da # auto
+                 ::= Dc # decltype(auto)
+                 ::= Dn # std::nullptr_t (i.e., decltype(nullptr))
+                 ::= [DS] DA  # N1169 fixed-point [_Sat] T _Accum
+                 ::= [DS] DR  # N1169 fixed-point [_Sat] T _Fract
+		 ::= u <source-name> [<template-args>] # vendor extended type
+
+  <fixed-point-size>
+                 ::= s # short
+                 ::= t # unsigned short
+                 ::= i # plain
+                 ::= j # unsigned
+                 ::= l # long
+                 ::= m # unsigned long
+Vendors who define builtin extended types shall encode them as a 'u' prefix followed by the name in <length,I> form, followed by any arguments to the extended type.
+5.1.5.3 Function types
+Function types are composed from their parameter types and possibly the result type. Except at the outer level type of an <encoding>, or in the <encoding> of an otherwise delimited external name in a <template-param> or <local-name> function encoding, these types are delimited by an "F..E" pair. For purposes of substitution (see Compression below), delimited and undelimited function types are considered the same.
+Whether the mangling of a function type includes the return type depends on the context and the nature of the function. The rules for deciding whether the return type is included are:
+	1	Template functions (names or types) have return types encoded, with the exceptions listed below.
+	2	Function types not appearing as part of a function name mangling, e.g. parameters, pointer types, etc., have return type encoded, with the exceptions listed below.
+	3	Non-template function names do not have return types encoded.
+The exceptions mentioned in (1) and (2) above, for which the return type is never included, are
+- Constructors.
+- Destructors.
+- Conversion operator functions, e.g. operator int.
+Empty parameter lists, whether declared as () or conventionally as (void), are encoded with a void parameter specifier (v). Therefore function types always encode at least one parameter type, and function manglings can always be distinguished from data manglings by the presence of the type. Member functions do not encode the types of implicit parameters, either this or the VTT parameter.
+The mangling of CV-qualifiers and ref-qualifiers on a function type differs according to context. When mangling the name of a non-static member function, the CV-qualifiers and ref-qualifiers of that function are encoded at the beginning of the <nested-name> as described above. Otherwise, they are encoded as part of the function type as described below.
+When an exception-specification (i.e., noexcept, noexcept(expression), or throw(type(s))) is part of the function type, it is mangled according to <exception-spec> as described below. A non-instantiation-dependent, potentially-throwing exception specification is not mangled.
+A transaction-safe function type is encoded with a "Dx" before the "F". This affects only type mangling; a transaction-safe function has the same mangling as a non-transaction-safe function.
+A "Y" prefix for the bare function type encodes extern "C" in implementations which distinguish between function types with "C" and "C++" language linkage. This affects only type mangling, since extern "C" function objects have unmangled names.
+  <function-type> ::= [<CV-qualifiers>] [<exception-spec>] [Dx] F [Y] <bare-function-type> [<ref-qualifier>] E
+  <bare-function-type> ::= <signature type>+
+	# types are possible return type, then parameter types
+  <exception-spec> ::= Do                # non-throwing exception-specification (e.g., noexcept, throw())
+                   ::= DO <expression> E # computed (instantiation-dependent) noexcept
+                   ::= Dw <type>+ E      # dynamic exception specification with instantiation-dependent types
+
+For the purposes of substitution, the CV-qualifiers and ref-qualifier of a function type are an indivisible part of the type; that is, when mangling void () const, void () is not a substitution candidate.
+When a function parameter is a C++11 function parameter pack, its type is mangled with Dp <type>, i.e., its type is a pack expansion:
+ <type>  ::= Dp <type>          # pack expansion (C++11)
+
+5.1.5.4 C++11 decltype
+The C++11 decltype type is encoded with either Dt or DT, depending on how the decltype type was parsed. (See farther below for the encoding of expressions.)
+ <decltype>  ::= Dt <expression> E  # decltype of an id-expression or class member access (C++11)
+             ::= DT <expression> E  # decltype of an expression (C++11)
+If the operand expression of decltype is not instantiation-dependent then the resulting type is encoded directly. For example:
+          int x;
+          template<class T> auto f(T p)->decltype(x);
+            // The return type in the mangling of the template signature
+            // is encoded as "i".
+          template<class T> auto f(T p)->decltype(p);
+            // The return type in the mangling of the template signature
+            // is encoded as "Dtfp_E".
+          void g(int);
+          template<class T> auto f(T p)->decltype(g(p));
+            // The return type in the mangling of the template signature
+            // is encoded as "DTcl1gfp_E".
+5.1.5.5 Class, union, and enum types
+A class, union, or enum type is simply a name. It may be a simple <unqualified-name>, with or without a template argument list, or a more complex <nested-name>. Thus, it is encoded like a function name, except that no CV-qualifiers are present in a nested name specification.
+  <class-enum-type> ::= <name>     # non-dependent type name, dependent type name, or dependent typename-specifier
+                    ::= Ts <name>  # dependent elaborated type specifier using 'struct' or 'class'
+                    ::= Tu <name>  # dependent elaborated type specifier using 'union'
+                    ::= Te <name>  # dependent elaborated type specifier using 'enum'
+An exception, however, is that class std::decimal::decimal32, std::decimal::decimal64, or std::decimal::decimal128 as defined in TR 24733 uses the same encoding as the corresponding native decimal-floating point scalar type.
+Unnamed class, union, and enum types that aren't closure types, that haven't acquired a "name for linkage purposes" (through a typedef), and that aren't anonymous union types, follow the same rule when they are defined in class scopes, with the underlying <unqualified-name> an <unnamed-type-name> of the form
+  <unnamed-type-name> ::= Ut [ <nonnegative number> ] _ 
+The number is omitted for the first unnamed type in the class; it is n-2 for the nth unnamed type (in lexical order) otherwise.
+(The mangling of such unnamed types defined in namespace scope is generally unspecified because they do not have to match across translation units. An implementation must only ensure that naming collisions are avoided. The mangling of such unnamed types in local scopes is described in Scope Encoding. The encoding of closure types is described in a Closure Types (Lambdas).)
+For example:
+	struct S { static struct {} x; };
+	typedef decltype(S::x) TX;  // Type mangled as N1SUt_E
+	TX S::x;                    // _ZN1S1xE
+	void f(TX) {}               // _Z1fN1SUt_E
+5.1.5.6 Array types
+Array types encode their array bound and element type. Note that "array" parameters to functions are encoded as pointer types. The array bound (but not the _ separator) is omitted for incomplete array types (e.g. int[]) and C99 variable-length array types.
+  <array-type> ::= A [<array bound number>] _ <element type>
+	       ::= A <instantiation-dependent array bound expression> _ <element type>
+The second rule is used when the array bound is an instantiation-dependent expression. For example:
+    template<int I> void foo (int (&)[I + 1]) { }
+
+    // Mangled as _Z3fooILi2EEvRAplT_Li1E_i
+    template void foo<2> (int (&)[3]);
+5.1.5.7 Pointer-to-member types
+Pointer-to-member types encode the class and member types:
+  <pointer-to-member-type> ::= M <class type> <member type>
+For example,
+    void f (void (A::*)() const &) {}
+produces the mangled name "_Z1fM1AKFvvRE".
+5.1.5.8 Template parameters
+A reference to a template parameter is mangled using the index of the parameter, with a special mangling for the first parameter. The sequence of parameters is therefore T_, T0_, T1_, and so on.
+  <template-param> ::= T_ # first template parameter
+                   ::= T <parameter-2 non-negative number> _
+  <template-template-param> ::= <template-param>
+                            ::= <substitution>
+For example:
+    template<class T> void f(T) {}
+
+    // Mangled as "_Z1fIiEvT_"
+    template void f(int);
+
+Note that a template parameter reference is a substitution candidate. As a substitution, it is treated as distinct from the actual template argument, including in recursive positions. For example, in the mangling of the following function template specialization, the first incidence of T* is not substituted despite being known (in this specialization) to be the same type as int*, and the second incidence is substituted with the substitution derived from the first incidence, not that from the incidence of int*.
+    template<class T> void f(int*, T*, T*) {}
+
+    // Mangled as "_Z1fIiEvPiPT_S2_"
+    template void f(int*, int*, int*);
+
+Typically, only references to function template parameters occurring within the dependent signature of the template are mangled this way. In other contexts, template instantiation replaces references to template parameters with the actual template arguments, and mangling should mangle such references exactly as if they were that template argument. For example:
+    template<class T> class A {
+      template<class U> void f(T, U) {}
+    };
+
+    // Mangled as "_ZN1AIiE1fIfEEviT_"
+    template void A<int>::f(int, float);
+
+
+5.1.5.9 Function parameter references
+Function parameters referenced in other parameter types or in late-specified return types are handled similarly to template parameters, but involve a few more subtleties.
+Let L be the number of function prototype scopes from the innermost one (in which the parameter reference occurs) up to (and including) the one containing the declaration of the referenced parameter. If the parameter declaration clause of the innermost function prototype scope has been completely seen, it is not counted (in that case -- which is perhaps the most common -- L can be zero). For example:
+          template<class T> void f(T p, decltype(p));                         // L = 1
+          template<class T> void g(T p, decltype(p) (*)());          // L = 1
+          template<class T> void h(T p, auto (*)()->decltype(p));    // L = 1
+          template<class T> void i(T p, auto (*)(T q)->decltype(q)); // L = 0
+          template<class T> void j(T p, auto (*)(decltype(p))->T);   // L = 2
+          template<class T> void k(T p, int (*(*)(T p))[sizeof(p)]); // L = 1
+
+  <function-param> ::= fp <top-level CV-qualifiers> _                                     # L == 0, first parameter
+		   ::= fp <top-level CV-qualifiers> <parameter-2 non-negative number> _   # L == 0, second and later parameters
+		   ::= fL <L-1 non-negative number> p <top-level CV-qualifiers> _         # L > 0, first parameter
+		   ::= fL <L-1 non-negative number> p <top-level CV-qualifiers>
+                                                    <parameter-2 non-negative number> _   # L > 0, second and later parameters
+		   ::= fpT                                                                # this
+Note that top-level cv-qualifiers specified on a parameter type do not affect the function type directly (i.e., int(*)(T) and int(*)(T const) are the same type), but in expression contexts (such as decltype arguments) they do matter and must therefore be encoded in <function-param>, unless the parameter is used as an rvalue of a known non-class type (in the latter case the qualifier cannot affect the semantics of the expression). For example:
+          template<typename T> void f(T const p, decltype(p)*);
+            // The specialization f<int> has type void(int, int const*)
+            // and is encoded as _Z1fIiEvT_PDtfL0pK_E
+5.1.5.10 Template Arguments
+Template argument lists appear after the unqualified template name, and are bracketed by I/E. This is used in names for specializations in particular, but also in types and scope identification. Template argument packs are bracketed by J/E to distinguish them from other arguments.
+  <template-args> ::= I <template-arg>+ E
+
+  <template-arg> ::= <type>                                             # type or template
+                 ::= X <expression> E                                   # expression
+                 ::= <expr-primary>                                     # simple expressions
+                 ::= J <template-arg>* E                                # argument pack
+Type arguments appear using their regular encoding. For example, the template class "A<char, float>" is encoded as "1AIcfE". A slightly more involved example is a dependent function parameter type "A<T2>::X" (T2 is the second template parameter) which is encoded as "N1AIT0_E1XE", where the "N...E" construct is used to describe a qualified name.
+5.1.6 Expressions
+Expressions must be mangled in several contexts.
+When mangling the name of a specialized template, non-type template arguments are mangled as expressions. These expressions are typically very simple, and they do not necessarily reflect any argument expression that was used in source. See the section on mangling template arguments for more detail.
+More generally, when mangling the signature of a function template, any instantiation-dependent expressions (e.g. in an array bound, decltype, or template argument) must be mangled in order to properly distinguish templates that are different under the ODR. See the section on dependent mangling. As a result, nearly the entire expression grammar of C++ is subject to mangling, with only a few exceptions (like lambdas) that are explicitly disallowed in function signatures.
+In general, expression manglings reflect a prefix traversal of the syntactic expression tree, with parentheses omitted. (Parentheses may be ignored because they are implicit in the prefix representation and typically do not affect semantics. However, when parentheses are used to suppress argument-dependent lookup, the call expression may need to be mangled differently.) Unless explicitly stated otherwise, the expression is mangled without constant folding or other simplification.
+Each expression mangling begins with a code (typically two letters) indicating the kind of expression, which dictates the form of the rest of the mangling. For overloadable operators, this code is the same as the <operator-name>.
+For example, if J is the third template parameter, "B<(J+1)/2>" becomes "1BI Xdv pl T1_ Li1E Li2E E E" (the blanks are present only to visualize the decomposition).
+If the operand of a sizeof or alignof operator is not instantiation-dependent, it is encoded as an integer literal reflecting the result of the operator. If the result of the operator is implicitly converted to a known integer type, that type is used for the literal; otherwise, the type of std::size_t or std::ptrdiff_t is used. For example:
+          template<class T, int N> struct S1 {};
+          template<class T, T N> struct S2 {};
+          template<class T> void f(S1<T, sizeof(long double)>);
+            // The sizeof(...) is not instantiation-dependent, and converted to int:
+            // the result is encoded as "Li16E" for 16-byte long double types.
+          template<class T> void f(S2<T, sizeof(long double)>);
+            // The sizeof(...) is not instantiation-dependent, and converted to an
+            // unknown type: the result is encoded as "Lm16E" for 16-byte long double
+            // types and std::size_t a synonym for "unsigned long".
+          template<class T> void f(S2<T, sizeof(T*)>);
+            // The sizeof(...) is instantiation-dependent (even though its value may
+            // be known if all pointers have the same size): It is encoded as "stPT_".
+
+  <expression> ::= <unary operator-name> <expression>
+               ::= <binary operator-name> <expression> <expression>
+               ::= <ternary operator-name> <expression> <expression> <expression>
+               ::= pp_ <expression>                                     # prefix ++
+               ::= mm_ <expression>                                     # prefix --
+               ::= cl <expression>+ E                                   # expression (expr-list), call
+               ::= cp <base-unresolved-name> <expression>* E            # (name) (expr-list), call that would use argument-dependent lookup but for the parentheses
+               ::= cv <type> <expression>                               # type (expression), conversion with one argument
+               ::= cv <type> _ <expression>* E                          # type (expr-list), conversion with other than one argument
+               ::= tl <type> <braced-expression>* E                     # type {expr-list}, conversion with braced-init-list argument
+               ::= il <braced-expression>* E                            # {expr-list}, braced-init-list in any other context
+               ::= [gs] nw <expression>* _ <type> E                     # new (expr-list) type
+               ::= [gs] nw <expression>* _ <type> <initializer>         # new (expr-list) type (init)
+               ::= [gs] na <expression>* _ <type> E                     # new[] (expr-list) type
+               ::= [gs] na <expression>* _ <type> <initializer>         # new[] (expr-list) type (init)
+               ::= [gs] dl <expression>                                 # delete expression
+               ::= [gs] da <expression>                                 # delete[] expression
+               ::= dc <type> <expression>                               # dynamic_cast<type> (expression)
+               ::= sc <type> <expression>                               # static_cast<type> (expression)
+               ::= cc <type> <expression>                               # const_cast<type> (expression)
+               ::= rc <type> <expression>                               # reinterpret_cast<type> (expression)
+               ::= ti <type>                                            # typeid (type)
+               ::= te <expression>                                      # typeid (expression)
+               ::= st <type>                                            # sizeof (type)
+               ::= sz <expression>                                      # sizeof (expression)
+               ::= at <type>                                            # alignof (type)
+               ::= az <expression>                                      # alignof (expression)
+               ::= nx <expression>                                      # noexcept (expression)
+               ::= <template-param>
+               ::= <function-param>
+               ::= dt <expression> <unresolved-name>                    # expr.name
+               ::= pt <expression> <unresolved-name>                    # expr->name
+               ::= ds <expression> <expression>                         # expr.*expr
+               ::= sZ <template-param>                                  # sizeof...(T), size of a template parameter pack
+               ::= sZ <function-param>                                  # sizeof...(parameter), size of a function parameter pack
+               ::= sP <template-arg>* E                                 # sizeof...(T), size of a captured template parameter pack from an alias template
+               ::= sp <expression>                                      # expression..., pack expansion
+               ::= fl <binary operator-name> <expression>               # (... operator expression), unary left fold
+               ::= fr <binary operator-name> <expression>               # (expression operator ...), unary right fold
+               ::= fL <binary operator-name> <expression> <expression>  # (expression operator ... operator expression), binary left fold
+               ::= fR <binary operator-name> <expression> <expression>  # (expression operator ... operator expression), binary right fold
+               ::= tw <expression>                                      # throw expression
+               ::= tr                                                   # throw with no operand (rethrow)
+               ::= u <source-name> <template-arg>* E                    # vendor extended expression
+               ::= <unresolved-name>                                    # f(p), N::f(p), ::f(p),
+                                                                        # freestanding dependent name (e.g., T::x),
+                                                                        # objectless nonstatic member reference
+               ::= <expr-primary>
+
+  <unresolved-name> ::= [gs] <base-unresolved-name>                     # x or (with "gs") ::x
+                    ::= sr <unresolved-type> <base-unresolved-name>     # T::x / decltype(p)::x
+                    ::= srN <unresolved-type> <unresolved-qualifier-level>+ E <base-unresolved-name>
+                                                                        # T::N::x /decltype(p)::N::x
+                    ::= [gs] sr <unresolved-qualifier-level>+ E <base-unresolved-name>  
+                                                                        # A::x, N::y, A<T>::z; "gs" means leading "::"
+
+  <unresolved-type> ::= <template-param> [ <template-args> ]            # T:: or T<X,Y>::
+                    ::= <decltype>                                      # decltype(p)::
+                    ::= <substitution>
+
+  <unresolved-qualifier-level> ::= <simple-id>
+
+  <simple-id> ::= <source-name> [ <template-args> ]
+
+  <base-unresolved-name> ::= <simple-id>                                # unresolved name
+                         ::= on <operator-name>                         # unresolved operator-function-id
+                         ::= on <operator-name> <template-args>         # unresolved operator template-id
+                         ::= dn <destructor-name>                       # destructor or pseudo-destructor;
+                                                                        # e.g. ~X or ~X<N-1>
+
+  <destructor-name> ::= <unresolved-type>                               # e.g., ~T or ~decltype(f())
+                    ::= <simple-id>                                     # e.g., ~A<2*N>
+
+  <expr-primary> ::= L <type> <value number> E                          # integer literal
+                 ::= L <type> <value float> E                           # floating literal
+                 ::= L <string type> E                                  # string literal
+                 ::= L <nullptr type> E                                 # nullptr literal (i.e., "LDnE")
+                 ::= L <pointer type> 0 E                               # null pointer template argument
+		 ::= L <type> <real-part float> _ <imag-part float> E   # complex floating point literal (C 2000)
+                 ::= L _Z <encoding> E                                  # external name
+
+  <braced-expression> ::= <expression>
+                      ::= di <field source-name> <braced-expression>    # .name = expr
+                      ::= dx <index expression> <braced-expression>     # [expr] = expr
+                      ::= dX <range begin expression> <range end expression> <braced-expression>
+                                                                        # [expr ... expr] = expr
+
+  <initializer> ::= pi <expression>* E                                  # parenthesized initialization
+A production for <expression> that directly specifies an operation code (e.g., for the -> operator) takes precedence over one that is expressed in terms of (unary/binary/ternary) <operator-name>.
+The optional "gs" prefix on some of the productions indicates that the corresponding source construct (name, new-expression, or delete-expression) includes a global-scope qualifier (e.g., ::x).
+tl is used for direct-list-initializations, where the type name is directly followed by a braced-init-list; e.g., MyArray{1,2,3} should be mangled tl7MyArrayLi1ELi2ELi3EE. If the braced-init-list is parenthesized, this is not a direct-list-initialization, and it should be mangled with cv and a nested il; for example, MyArray({1,2,3}) should be mangled cv7MyArrayilLi1ELi2ELi3EE.
+If an implementation supports the full C99 designated initializer syntax (as an extension), a designator list comprising multiple designators results in multiple nested <braced-expression>s. For example, X{.a.b[3] = 1} should be mangled tl1Xdi1adi1bdxLi3ELi1EE.
+In C++, a call expression where the callee operand is an unqualified name uses argument-dependent lookup unless unqualified lookup finds certain kinds of declarations; see C++11 [basic.lookup.argdep]p3. Because this rule does not apply when the name is parenthesized, it is sometimes necessary to distinguish parenthesized and unparenthesized calls in the mangling, despite the general rule that parentheses can be ignored. This is encoded using the choice of cl or cp for the call expression. The cp mangling is used only when the callee operand is a parenthesized unresolved name and would have used ADL if it were not parenthesized. In particular, cl is still used when unqualified lookup finds a declaration that would suppress the use of ADL, such as a class member.
+5.1.6.1 Literals
+Literal arguments, e.g. "A<42L>", are encoded with their type and value. Negative integer values are preceded with "n"; for example, "A<-42L>" becomes "1AILln42EE". The bool value false is encoded as 0, true as 1.
+Floating-point literals are encoded using a fixed-length lowercase hexadecimal string corresponding to the internal representation, high-order bytes first. For example: "Lf bf800000 E" is -1.0f on platforms conforming to IEEE 754.
+  <float> ::= <0-9a-f>+
+The encoding for a literal of an enumerated type is the encoding of the type name followed by the encoding of the numeric value of the literal in its base integral type (which deals with values that don't have names declared in the type).
+String literals are encoded using their type, but not their value. For example, L"abc" and L"123" are both encoded as "LA4_KwE" ("array [4] of const wchar_t").
+The pointer literal expression nullptr is encoded as "LDnE". In contrast, a template argument which happens to be a null pointer (an extension made standard in C++11) is mangled as if it were a literal 0 of the appropriate pointer type; for example, "LPi0E" or "LDn0E". This inconsistency is an unfortunate accident.
+5.1.6.2 References to declared entities
+A reference to an entity with external linkage is encoded with "L<mangled name>E". For example:
+          void foo(char); // mangled as _Z3fooc
+          template<void (&)(char)> struct CB;
+          // CB<foo> is mangled as "2CBIL_Z3foocEE"
+The <encoding> of an extern "C" function is treated like global-scope data, i.e. as its <source-name> without a type. For example:
+          extern "C" bool IsEmpty(char *); // (un)mangled as IsEmpty
+          template<void (&)(char *)> struct CB;
+          // CB<IsEmpty> is mangled as "2CBIL_Z7IsEmptyEE"
+
+When encoding template signatures, a name appearing in the source code cannot always be resolved to a specific entity: In such cases the <encoding> production (via <expr-primary>) does not apply, and instead the <unresolved-name> encoding is used. For example:
+          template<class T> auto f(T p)->decltype(p->x);
+            // The return type in the mangling of the template signature
+            // is encoded as "Dtptfp_1xE".
+          template<class T> auto f(T p)->decltype(T::X::y);
+            // The return type in the mangling of the template signature
+            // is encoded as "DtsrNT_1XE1yE" (note how <type> is a
+            // <nested-name> for T::X in this case).
+          template<class T> auto f(T p)->decltype(p->::A::B::x);
+            // The return type in the mangling of the template signature
+            // is encoded as "Dtptfp_gssr1A1BE1xE".
+          template<class T> auto f(T p)->decltype(p->x)::Y;
+            // The return type in the mangling of the template signature
+            // is encoded as "NDtptfp_1xE1YE".
+In the case of member selection operations, the <unresolved-name> is used even if the indicated member is actually known. Similarly, an <unresolved-qualifier-level> may encode a known class type. That production is also used for references to nonstatic members with no associated expression designating the enclosing object (a C++11 feature). For example:
+          struct Q { int x; } q;
+          template<class T> auto f(T p)->decltype(p.x + q.x);
+            // The return type in the mangling of the template signature
+            // is encoded as "DTpldtfp_1xdtL_Z1qE1xE".
+          template<class T> auto f(T p)->decltype(p.x + Q::x);
+            // The return type in the mangling of the template signature
+            // is encoded as "DTpldtfp_1xsr1QE1xE".
+          template<class T> struct X { static T x; };
+          struct B: X<int> {};
+          struct D: B {} d;
+          template<class T> auto f(T p)->decltype(p+d.B::X<T>::x);
+            // The return type in the mangling of the template signature
+            // is encoded as "DTplfp_dtL_Z1dEsr1B1XIT_EE1xE".  (The
+            // "1B" part is a <unresolved-qualifier-level> encoding
+            // a resolved type.)
+If the <unresolved-name> refers to an operator for which both unary and binary manglings are available, the mangling chosen is the mangling for the binary version. For example:
+          template<class T> auto f(T p)->decltype(&T::operator-);
+            // The return type in the mangling of the template signature
+            // is encoded as "DTadsrT_onmiE".
+
+5.1.7 Scope Encoding
+Entities declared in non-global scopes must include their scope in their mangled name. For entities declared outside of function definitions, this is dictated by the rules laid out for <name>. Entities declared within function definitions usually do not require a well-defined mangling because only one translation unit has access to the entity. However, different translation units must agree about the address of entities declared within inline functions, including template specializations. Therefore this ABI defines a mangling for even local entities.
+The mangling of a local entity is composed of three elements: the mangling of the enclosing function, the mangling of the entity relative to the function, and an optional discriminator within the function:
+  <local-name> ::= Z <function encoding> E <entity name> [<discriminator>]
+               ::= Z <function encoding> E s [<discriminator>]
+
+  <discriminator> ::= _ <non-negative number>      # when number < 10
+                  ::= __ <non-negative number> _   # when number >= 10
+The enclosing function is the closest function enclosing the entity. That is, when an entity E is declared within a function that is itself local to another function, the <encoding> beginning the mangling of E will itself be a <local-name>, perhaps recursively.
+The name of a declared local entity is mangled with the rules for <name> as if the function were the global scope. That is, an entity declared directly within the function (e.g. a local type or static local variable) is mangled using an unscoped name, whereas a member of a local type will be mangled with a <nested-name>.
+It is possible to declare multiple entities with the same name within a function if they are declared in different scopes. In this case, a discriminator must be added to the <local-name>. Entities with the same "top-level" name are numbered in lexical order within the function definition. A discriminator is added only for the second and later occurrences of the same name, and so the <number> in the discriminator is actually n-2 for the nth occurrence. "Top-level" here means the name declared directly in the local scope; e.g., if there are three classes named X in a given function g, and only the third has a member function f, the name of X::f in g will still include the discriminator _1 (because 3 - 2 == 1).
+For unnamed local types (excluding types with a name for linkage purposes), the "name" is encoded as an <unnamed-type-name> of the form
+ <unnamed-type-name> ::= Ut [<nonnegative number> ] _
+where the number is is omitted for the first unnamed type in the function, and n-2 for the nth unnamed type (in lexical order) otherwise.
+For example:
+	inline void g(int) {
+	  { struct S {}; }
+	  { struct S {}; }
+	  { struct S {}; }
+	  struct S {        // Fourth occurrence: _2
+	    void f(int) {   // _ZZ1giEN1S1fE_2i
+	      struct {} x1;
+	      struct {} x2;
+	      struct {      // Third occurrence: 1_, i.e.
+	                    // _ZZZ1giEN1S1fE_2iEUt1_
+	        int fx() {  // _ZZZ1giEN1S1fE_2iENUt1_2fxEv
+ 	          return 3;
+                }
+	      } x3;
+	      x3.fx();
+	    }
+	  } s;
+	  s.f(1);
+	}
+The second production in <local-name> is used for string literals. The discriminator is used only if there is more than one, for the second and subsequent ones. In this case again <number> is n-2 for the nth distinct string literal, in lexical order, appearing in the function. Multiple references to the same string literal produce one string object with one name in the sequence. Note that this assumes that the same string literal occurring twice in a given function in fact represents a single entity, i.e. has a unique address.
+For entities in constructors and destructors, the mangling of the complete object constructor or destructor is used as the base function name, i.e. the C1 or D1 version. This yields mangled names that are consistent across the versions.
+Example:
+	inline char const* g() {
+	  "str1";                   // First string in g()
+	  struct B {};
+	  struct S: B {
+	    S()                     // Complete object ctor: _ZZ1gvEN1SC1Ev
+	      : msg("str2") {}      // First string in g()::S::S():
+	                            //      _ZZZ1gvEN1SC1EvEs
+	    char const *msg;
+	  } s;
+	  "str3";                   // Second string in g()
+	  static char const *str4a  // _ZZ1gvE5str4a
+	     = "str4";              // Third string in g() (n-2 == 1):
+	                            //      _ZZ1gvEs_1
+	  static char const *str4b  // _ZZ1gvE5str4b
+	     = "str4";              // Still the third string (_ZZ1gvEs_1)
+	  return str4b;
+	}
+See additional examples in the ABI examples document.
+
+5.1.8 Closure Types (Lambdas)
+A lambda expression introduces a unique class type called closure type. In some contexts, such closure types are unique to the translation unit: This ABI therefore does not specify an encoding for such cases (but an implementation must ensure that any internal encoding does not conflict with this ABI).
+For example:
+namespace N {
+  int n = []{ return 1; }();  // Closure type internal to
+}                             // the translation unit.
+In the following contexts, however, the one-definition rule requires closure types in different translation units to "correspond":
+- default arguments appearing in class definitions
+- default member initializers
+- the bodies of inline or templated functions
+- the initializers of inline or templated variables
+In all these contexts, the encoding of the closure types builds on an underlying <unqualified-name> that is an <unnamed-type-name> of the form
+  <unnamed-type-name> ::= <closure-type-name>
+
+  <closure-type-name> ::= Ul <lambda-sig> E [ <nonnegative number> ] _ 
+with
+  <lambda-sig> ::= <parameter type>+  # Parameter types or "v" if the lambda has no parameters
+The number is omitted for the first closure type with a given <lambda-sig> in a given context; it is n-2 for the nth closure type (in lexical order) with that same <lambda-sig> and context.
+
+If the context is the body of a function (inline and/or template), the closure type is encoded like any other local entity (see Scope Encoding above). For example:
+	template<typename F> int algo(F fn) { return fn(); }
+	inline void g(int n) {
+	  int bef(int i = []{ return 1; }());
+	    // Default arguments of block-extern function declarations
+	    // remain in the context of the encloding function body.
+	    // The closure type is encoded as Z1giEUlvE_.
+	    // The call operator of that type is _ZZ1giENKUlvE_clEv.
+
+	  algo([=]{return n+bef();});
+	    // The captured entities do not participate in <lambda-sig>
+	    // and so this closure type has the same <lambda-sig> as
+	    // the previous one.  It encoding is therefore Z1giEUlvE0_
+	    // and the call operator is _ZZ1giENKUlvE0_clEv.  The
+	    // instance of "algo" being called is then
+	    // _Z4algoIZ1giEUlvE0_EiT_.
+	}
+If the context is a default argument (of a member function parameter) appearing in a class definition, the closure class and its members are encoded as follows:
+  <local-name> ::= Z <function encoding> Ed [ <parameter number> ] _ <entity name>
+The parameter number is omitted for the last parameter, 0 for the second-to-last parameter, 1 for the third-to-last parameter, etc. The <entity name> will of course contain a <closure-type-name>: Its numbering will be local to the particular argument in which it appears -- other default arguments do not affect its encoding. For example:
+	struct S {
+	  void f(int = []{return 1;}()
+	           // Type: ZN1S1fEiiEd0_UlvE_
+	           // Operator: _ZZN1S1fEiiEd0_NKUlvE_clEv
+	             + []{return 2;}(),
+	           // Type: ZN1S1fEiiEd0_UlvE0_
+	           // Operator: _ZZN1S1fEiiEd0_NKUlvE0_clEv
+	         int = []{return 3;}());
+	           // Type: ZN1S1fEiiEd_UlvE_
+	           // Operator: _ZZN1S1fEiiEd_NKUlvE_clEv
+	} s;
+If the context of a closure type is an initializer for a class member (static or nonstatic), inline variable, or variable template, it is encoded in a qualified name with a <prefix> of the form:
+    <closure-prefix> ::= [ <prefix> ] <variable or member unqualified-name> M
+                     ::= <variable template template-prefix> <template-args> M
+For example:
+	template<typename T> struct S {
+	  static int x;
+	};
+	template<typename T> int S<T>::x = []{return 1;}();
+	template int S<int>::x;
+	  // Type of lambda in intializer of S<int>::x: N1SIiE1xMUlvE_E
+	  // Corresponding operator(): _ZNK1SIiE1xMUlvE_clEv
+In a generic lambda, uses of auto in the parameter list are mangled as the corresponding artificial template type parameter. This is never ambiguous with a lambda parameter whose type is an enclosing template type parameter, because lambdas are never mangled in a dependent context (they are forbidden from appearing in function signatures). A <template-param> in a <lambda-sig> can only ever refer to a template parameter of a generic lambda.
+
+5.1.9 Lexical ordering
+Lexical ordering is used for numbering local entities (named and unnamed local classes and enumerations, closure types, and static local variables) when there is no other way of distinguishing them. Except as described below, all local entities are to be numbered, even if subsequent optimization makes some of them unnecessary, or no mangled name is actually required for some of them.
+The order of entities is the source order of a key token unique to the entity as if:
+- the discarded sub-statements of if constexpr within a template did not exist and
+- pack expansions were lexically expanded.
+In all cases, this is meant to imitate the numbering that would be produced by a simple implementation which numbered entities as it processed the source and recursively expanded packs. Since discarded substatements of if constexpr are still processed in non-template code, entities within them are still numbered.
+Entities may be lexically nested without being in different contexts for the purposes of mangling. For example, the lambdas in [x = []{}]{} are both part of the enclosing context. The order of such entities is determined by the source order of a key token in the entity. In general, this token is the first token past which the signature of the entity (as is necessary to mangle it) is known:
+- The key token of a class or enum is the end of the enum-head-name (enum-key if unnamed) or class-head-name (class-key if unnamed) in its first declaration.
+- The key token of a lambda is its closing brace (}).
+- The key token of a static local variable is the last token of its declarator (not its initializer).
+All entities from one expansion of a pack are considered to occur lexically before any entities from the next expansion of the same pack, but the ordering is otherwise based on the original token sequence. This is expected to match the numbering that would be established for the corresponding non-template generated by substitution into the template. As a consequence of these rules, the entity instantiated for a particular source construct can have a different mangling number in different instantiations of the same template. An entity appearing in the original source may also go entirely un-numbered if it appears in a discarded sub-statement of if constexpr or in a pack expansion of an empty pack. For example:
+void g(...);
+template<bool b, typename ...T> void f() {
+  if constexpr(b) { []{}; }
+  g(([]{}, []{ static T n; return &n; }())...);
+}
+
+// The first lambda is discarded and does not receive a number.
+// The variables passed to g are therefore mangled as
+// _ZZZ1fILb0EJiiEEvvENKUlvE0_clEvE1n and
+// _ZZZ1fILb0EJiiEEvvENKUlvE2_clEvE1n.
+template void f<false, int, int>();
+
+// The variable passed to g is mangled as
+// _ZZZ1fILb1EJiEEvvENKUlvE1_clEvE1n and
+template void f<true, int>();
+
+// Both lambdas are numbered; returns _ZZZ1hvENKUlvE0_clEvE1n.
+inline int *h() {
+  if constexpr(false) { []{}; }
+  return []{ static int n; return &n; }();
+}
+Note that the numbering of entities appearing within a mem-initializer-list reflects the order that the initializers appear in the source, which may be different from the order in which the initializers will be executed when the program runs.
+
+5.1.10 Compression
+To minimize the length of external names, we use two mechanisms, a substitution encoding to eliminate repetition of name components, and abbreviations for certain common names. Each non-terminal in the grammar above for which <substitution> appears on the right-hand side is both a source of future substitutions and a candidate for being substituted. There are two exceptions that appear to be substitution candidates from the grammar, but are explicitly excluded:
+- <builtin-type> other than vendor extended types, and
+- function and operator names other than extern "C" functions.
+All substitutions are for entities that would appear in a symbol table. In particular, we make substitutions for prefixes of qualified names, but not for arbitrary components of them. Thus, the components ::n1::foo() and ::n2:foo() appearing in the same name would not result in substituting for the second "foo." Similarly, we do not substitute for expressions, though names appearing in them might be substituted. The reason for this is to facilitate implementations that use the symbol table to keep track of components that might be substitutable.
+Note that the above exclusion of function and operator names from consideration for substitution does not exclude the full function entity, i.e. its name plus its signature encoding.
+Logically, the substitutable components of a mangled name are considered left-to-right, components before the composite structure of which they are a part. If a component has been encountered before, it is substituted as described below. This decision is independent of whether its components have been substituted, so an implementation may optimize by considering large structures for substitution before their components. If a component has not been encountered before, its mangling is identified, and it is added to a dictionary of substitution candidates. No entity is added to the dictionary twice.
+The type of a non-static member function is considered to be different, for the purposes of substitution, from the type of a namespace-scope or static member function whose type appears similar. The types of two non-static member functions are considered to be different, for the purposes of substitution, if the functions are members of different classes. In other words, for the purposes of substitution, the class of which the function is a member is considered part of the type of function.
+ Therefore, in the following example:
+typedef void T();
+struct S {};
+void f(T*, T (S::*)) {}
+the function f is mangled as _Z1fPFvvEM1SFvvE; the type of the member function pointed to by the second parameter is not considered the same as the type of the function pointed to by the first parameter. Both function types are, however, entered the substitution table; subsequent references to either variant of the function type will result in the use of substitutions.
+
+Substitutions are mangled using the usual rules for <seq-id>:
+  <substitution> ::= S <seq-id> _
+		 ::= S_
+
+Substitutable components are numbered left-to-right. A component is earlier in the substitution dictionary than the structure of which it is a part. All substitutable components are numbered, except those that have already been numbered for substitution. For example:
+   "_ZN1N1TIiiE2mfES0_IddE": Ret? N::T<int, int>::mf(N::T<double, double>)
+since the substitutions generated for this name are:
+   "S_" == N (qualifier is less recent than qualified entity)
+   "S0_" == N::T (template-id comes before template)
+	(int is builtin, and isn't considered)
+   "S1_" == N::T<int, int>
+   "S2_" == N::T<double, double>
+Note that substitutable components are the represented symbolic constructs, not their associated mangling character strings. Thus, a substituted object matches its unsubstituted form, and a delimited <function-type> matches its <bare-function-type>.
+In addition, the following catalog of abbreviations of the form "Sx" are used:
+   <substitution> ::= St # ::std::
+   <substitution> ::= Sa # ::std::allocator
+   <substitution> ::= Sb # ::std::basic_string
+   <substitution> ::= Ss # ::std::basic_string < char,
+						 ::std::char_traits<char>,
+						 ::std::allocator<char> >
+   <substitution> ::= Si # ::std::basic_istream<char,  std::char_traits<char> >
+   <substitution> ::= So # ::std::basic_ostream<char,  std::char_traits<char> >
+   <substitution> ::= Sd # ::std::basic_iostream<char, std::char_traits<char> >
+
+Note that the abbreviation St does not require N...E delimiters unless either followed by more than one additional composite name component, or preceded by CV-qualifiers or a ref-qualifier for a member function. For example:
+   "_ZSt5state": ::std::state
+   "_ZNSt3_In4wardE": ::std::_In::ward
+
+
+

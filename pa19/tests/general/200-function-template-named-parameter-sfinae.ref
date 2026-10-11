@@ -1,0 +1,21 @@
+declare global @has_size_type_constchar_5____value : u8 [binding=weak, object=_ZN13has_size_typeIA5_KcE5valueE]
+declare global @has_size_type_with_size_type___value : u8 [binding=weak, object=_ZN13has_size_typeI14with_size_typeE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 0, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}

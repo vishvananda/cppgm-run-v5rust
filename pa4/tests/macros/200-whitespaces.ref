@@ -1,0 +1,7 @@
+preproc 1
+sof tests/macros/200-whitespaces.t
+identifier a
+simple . OP_DOT
+simple . OP_DOT
+literal "A . ." array of 6 char 41202E202E00
+eof

@@ -1,0 +1,50 @@
+function @user__num_vertices(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_ZN4user12num_verticesERKNS_5graphE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $check : obj<4x4>
+  slot $g : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $check
+    %t2 = addr $g
+    %t3 = addr $check
+    %t4 = addr $g
+    call void @lib__vertex_list_graph_graph___const_constraints(%t3, %t4)
+    %t5 = addr $check
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @lib__vertex_list_graph_graph___const_constraints(%this : ptr [object_bytes=4], %cg : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN3lib17vertex_list_graphIN4user5graphEE17const_constraintsERKS2_, inline_hint=yes] {
+  slot $this : ptr
+  slot $cg : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %cg, $cg
+    %t1 = load typed ptr $cg
+    %t2 = call i32 @user__num_vertices(%t1)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}

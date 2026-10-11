@@ -1,0 +1,9 @@
+# budget from 200-f64-direct-call.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 19
+blocks <= 5
+count(call) <= 4
+mem <= 11
+instructions <= 9 in @add
+stack_size <= 448 in @add
+instructions <= 11 in @main
+stack_size <= 416 in @main

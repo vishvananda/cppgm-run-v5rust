@@ -1,0 +1,85 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @probe_result
+  storage scalar i64
+  init i64 0
+
+function @consume
+  abi
+    param %this -> rdi : ptr
+    param %position -> rsi : obj<8x8>
+    param %first -> rdx : ptr
+    param %last -> rcx : ptr
+    param %tag -> r8 : obj<1x1>
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    sub rcx, rdx
+    ret rcx
+
+function @build
+  abi
+    param %ret -> rdi : ptr
+    return void -> void
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $ident -> [rbp-16] : obj<16x1>
+    slot $argobj -> [rbp-24] : obj<8x8>
+    slot $tag -> [rbp-32] : obj<1x1>
+    slot $retobj -> [rbp-40] : obj<8x8>
+
+  block ^entry
+    mov r8, rdi
+    lea rdx, [rbp-16]
+    store.u8 [rbp-16], 127
+    store.u8 [rdx+1], 69
+    store.u8 [rdx+15], 0
+    load.ptr r9, [r8+8]
+    lea rax, [rdx+16]
+    load.ptr rdi, [r8]
+    sub r9, rdi
+    lea rdi, [rdi+r9]
+    store.ptr [rbp-40], rdi
+    copy_bytes 8x8, [rbp-24], [rbp-40]
+    mov rdi, r8
+    load.i64 rsi, [rbp-24]
+    mov rcx, rax
+    load.i64 r8, [rbp-32]
+    call @consume [args=(rcx,rdx,rsi,rdi,r8), unwind=no]
+    store.i64 @probe_result, rax
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $image -> [rbp-24] : obj<24x8>
+
+  block ^entry
+    lea rdi, [rbp-24]
+    store.ptr [rdi], 0
+    store.ptr [rdi+8], 0
+    store.ptr [rdi+16], 0
+    call @build [args=(rdi), unwind=no]
+    mov rdx, 16
+    cmp.i64 @probe_result, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

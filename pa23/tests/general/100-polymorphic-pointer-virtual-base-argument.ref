@@ -1,0 +1,130 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_D [storage=readonly, binding=weak, object=_ZTS1D] = {
+  i8 49
+  i8 68
+  i8 0
+}
+global @__typeinfo_name__struct_B [storage=readonly, binding=weak, object=_ZTS1B] = {
+  i8 49
+  i8 66
+  i8 0
+}
+global @__typeinfo_name__struct_V [storage=readonly, binding=weak, object=_ZTS1V] = {
+  i8 49
+  i8 86
+  i8 0
+}
+global @__rtti_struct_V [storage=readonly, binding=weak, object=_ZTI1V] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_V
+}
+global @__rtti_struct_B [storage=readonly, binding=weak, object=_ZTI1B] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_B
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_V
+  i64 -6141
+}
+global @__rtti_struct_D [storage=readonly, binding=weak, object=_ZTI1D] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_D
+  ptr addr @__rtti_struct_B
+}
+global @D__vtable [storage=readonly, binding=weak, object=_ZTV1D] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_D
+  ptr addr @B__anchor
+}
+global @D____construction__B__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC1D0_1B] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_B
+  ptr addr @B__anchor
+}
+global @D____vtt [storage=readonly, binding=weak, object=_ZTT1D, object_root=yes] = {
+  ptr addr @D__vtable + 24
+  ptr addr @D____construction__B__0__s0__vtable + 24
+}
+global @B__vtable [storage=readonly, binding=weak, object=_ZTV1B] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_B
+  ptr addr @B__anchor
+}
+global @B____vtt [storage=readonly, binding=weak, object=_ZTT1B, object_root=yes] = {
+  ptr addr @B__vtable + 24
+}
+
+function @read(%b : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z4readR1B] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    %t2 = load typed ptr %t1
+    %t3 = index i8 %t2, -24
+    %t4 = load typed i64 %t3
+    %t5 = index i8 %t1, %t4
+    %t6 = index i8 %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<16x8>
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = addr $d
+    call void @D__D(%t1)
+    %t2 = addr $d
+    %t3 = index i8 %t2, 8
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $d
+    %t6 = index i8 %t5, 0
+    store typed ptr %t6, $p
+    %t7 = load typed ptr $p
+    %t8 = call i32 @read(%t7)
+    %t9 = cmp ne i32 %t8, 7
+    %t10 = convert trunc i32 i64 %t9
+    return i32 %t10
+}
+function @D__D(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN1DC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr @D____vtt
+    %t4 = index i8 %t3, 8
+    call void @B__B__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = addr @D__vtable
+    %t7 = index i8 %t6, 24
+    store typed ptr %t7, %t5
+    return void
+}
+function @B__anchor(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN1B6anchorEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @B__B__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN1BC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}

@@ -1,0 +1,9 @@
+void * __builtin_memcpy(void *, const void *, unsigned long);
+unsigned long __builtin_strlen(const char *);
+
+int main()
+{
+  char dst[4];
+  __builtin_memcpy(dst, "abc", 4);
+  return __builtin_strlen(dst) == 3 ? 0 : 1;
+}

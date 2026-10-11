@@ -1,0 +1,50 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $r : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $r
+    %t2 = addr $r
+    %t3 = index i8 [projection=field] %t2, 0
+    store u8 1, %t3
+    %t4 = addr $r
+    %t5 = call i64 @result__operatorbool_type(%t4)
+    %t6 = binary add i64 %t5, 1
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @result__operatorbool_type(%this : ptr [object_bytes=1]) -> i64 [binding=weak, object=_ZNK6resultcvMNS_5dummyEiEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $cond__1 : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load u8 %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t4 = const i64 0
+    store typed i64 %t4, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i64 -1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i64 $cond__1
+    return i64 %t5
+}

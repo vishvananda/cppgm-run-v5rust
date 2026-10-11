@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier sum
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier x
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier y
+end translation unit

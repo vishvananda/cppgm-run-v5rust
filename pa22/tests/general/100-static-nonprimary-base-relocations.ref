@@ -1,0 +1,199 @@
+global @object : obj<12x4> [binding=strong] = {
+  zero 12
+}
+global @reference : ptr [binding=strong] = addr @object + 4
+global @pointer : ptr [binding=strong] = addr @object + 4
+global @explicit_pointer : ptr [binding=strong] = addr @object + 4
+global @explicit_reference : ptr [binding=strong] = addr @object + 4
+global @constant_reference : ptr [binding=strong] = addr @object + 4
+global @inverse_pointer : ptr [binding=strong] = zero
+global @null_pointer : ptr [binding=strong] = 0
+global @__local_static__local_reference__decl0__result : ptr [binding=internal, object=_ZZ15local_referencevE6result] = addr @object + 4
+global @__local_static__local_pointer__decl0__result : ptr [binding=internal, object=_ZZ13local_pointervE6result] = addr @object + 4
+
+function @local_reference() -> ptr [binding=strong, object=_Z15local_referencev] {
+  block ^entry:
+    %t1 = load typed ptr @__local_static__local_reference__decl0__result
+    return ptr %t1
+}
+function @local_pointer() -> ptr [binding=strong, object=_Z13local_pointerv] {
+  block ^entry:
+    %t1 = load typed ptr @__local_static__local_pointer__decl0__result
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $expected : ptr
+  slot $lor__1 : i64
+  slot $lor__2 : i64
+  slot $lor__3 : i64
+  slot $lor__4 : i64
+  slot $lor__5 : i64
+  slot $lor__6 : i64
+  slot $lor__7 : i64
+  slot $lor__8 : i64
+
+  block ^entry:
+    %t1 = load typed ptr @reference
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    %t3 = addr @object
+    %t4 = index i8 %t3, 4
+    store typed ptr %t4, $expected
+    %t5 = addr @object
+    %t6 = index i8 %t5, 4
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp ne i32 %t8, 7
+    branch %t9, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t10 = load typed ptr @pointer
+    %t11 = load typed ptr $expected
+    %t12 = cmp ne ptr %t10, %t11
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t14 = load typed i64 $lor__1
+    branch %t14, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t15 = load typed ptr @explicit_pointer
+    %t16 = load typed ptr $expected
+    %t17 = cmp ne ptr %t15, %t16
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t19 = load typed i64 $lor__2
+    branch %t19, ^lor_short_8, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t20 = load typed ptr @explicit_reference
+    %t21 = load typed ptr $expected
+    %t22 = cmp ne ptr %t20, %t21
+    %t23 = cmp ne i64 %t22, 0
+    store typed i64 %t23, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_short_8:
+    store typed i64 1, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_end_9:
+    %t24 = load typed i64 $lor__3
+    branch %t24, ^lor_short_11, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t25 = load typed ptr @constant_reference
+    %t26 = load typed ptr $expected
+    %t27 = cmp ne ptr %t25, %t26
+    %t28 = cmp ne i64 %t27, 0
+    store typed i64 %t28, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_short_11:
+    store typed i64 1, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_end_12:
+    %t29 = load typed i64 $lor__4
+    branch %t29, ^lor_short_14, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t30 = load typed ptr @inverse_pointer
+    %t31 = addr @object
+    %t32 = cmp ne ptr %t30, %t31
+    %t33 = cmp ne i64 %t32, 0
+    store typed i64 %t33, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_short_14:
+    store typed i64 1, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_end_15:
+    %t34 = load typed i64 $lor__5
+    branch %t34, ^lor_short_17, ^lor_rhs_16
+
+  block ^lor_rhs_16:
+    %t35 = load typed ptr @null_pointer
+    %t36 = copy ptr 0
+    %t37 = cmp ne ptr %t35, %t36
+    %t38 = cmp ne i64 %t37, 0
+    store typed i64 %t38, $lor__6
+    jump ^lor_end_18
+
+  block ^lor_short_17:
+    store typed i64 1, $lor__6
+    jump ^lor_end_18
+
+  block ^lor_end_18:
+    %t39 = load typed i64 $lor__6
+    branch %t39, ^lor_short_20, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t40 = call ptr @local_reference()
+    %t41 = load typed ptr $expected
+    %t42 = cmp ne ptr %t40, %t41
+    %t43 = cmp ne i64 %t42, 0
+    store typed i64 %t43, $lor__7
+    jump ^lor_end_21
+
+  block ^lor_short_20:
+    store typed i64 1, $lor__7
+    jump ^lor_end_21
+
+  block ^lor_end_21:
+    %t44 = load typed i64 $lor__7
+    branch %t44, ^lor_short_23, ^lor_rhs_22
+
+  block ^lor_rhs_22:
+    %t45 = call ptr @local_pointer()
+    %t46 = load typed ptr $expected
+    %t47 = cmp ne ptr %t45, %t46
+    %t48 = cmp ne i64 %t47, 0
+    store typed i64 %t48, $lor__8
+    jump ^lor_end_24
+
+  block ^lor_short_23:
+    store typed i64 1, $lor__8
+    jump ^lor_end_24
+
+  block ^lor_end_24:
+    %t49 = load typed i64 $lor__8
+    %t50 = convert trunc i32 i64 %t49
+    return i32 %t50
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  slot $basecast__1 : ptr
+
+  block ^entry:
+    %t1 = load typed ptr @pointer
+    %t2 = cmp eq ptr %t1, 0
+    branch %t2, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t3 = index i8 %t1, -4
+    store typed ptr %t3, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t4 = load typed ptr $basecast__1
+    store typed ptr %t4, @inverse_pointer
+    return void
+}

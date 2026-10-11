@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $p : ptr
+  slot $pp : ptr
+
+  block ^entry:
+    store typed i32 7, $value
+    %t1 = addr $value
+    store typed ptr %t1, $p
+    %t2 = addr $p
+    store typed ptr %t2, $pp
+    %t3 = addr $pp
+    %t4 = call ptr @Outer_int____mv(%t3)
+    %t5 = load typed ptr %t4
+    %t6 = load typed ptr %t5
+    %t7 = load typed i32 %t6
+    %t8 = binary sub nowrap i32 %t7, 7
+    return i32 %t8
+}
+function @Outer_int____mv(%t : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN5OuterIPiE2mvIRPS0_EEON10remove_refIT_E4typeEOS6_, inline_hint=yes] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}

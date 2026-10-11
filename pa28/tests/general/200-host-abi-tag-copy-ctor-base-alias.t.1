@@ -1,0 +1,19 @@
+struct Tagged {
+  int value;
+
+  Tagged() : value(0)
+  {
+  }
+
+  __attribute__((noinline))
+  Tagged(const Tagged &) __attribute__((__abi_tag__("tag"))) : value(1)
+  {
+  }
+};
+
+int main()
+{
+  Tagged first;
+  Tagged second(first);
+  return second.value == 1 ? 0 : 1;
+}

@@ -1,0 +1,29 @@
+struct Hook {
+  int value;
+};
+
+struct Value {
+  int pad;
+  Hook hook;
+};
+
+template<class T, class HookType, HookType T::* P>
+struct Traits {
+  __attribute__((noinline)) static int to_node_ptr(T & value)
+  {
+    return (value.*P).value;
+  }
+};
+
+template<class T, class HookType, HookType T::* P>
+struct Alias {
+  typedef Traits<T, HookType, P> type;
+};
+
+typedef Alias<Value, Hook, &Value::hook>::type ValueTraits;
+
+int main()
+{
+  Value value = { 1, { 6 } };
+  return ValueTraits::to_node_ptr(value) == 6 ? 0 : 1;
+}

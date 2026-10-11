@@ -1,0 +1,40 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier outer
+      class-key KW_STRUCT:struct
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier U
+        class-specifier inner
+          class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier wrap
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier holder
+      class-key KW_STRUCT:struct
+      alias-declaration type
+        type-id
+          type-specifier-seq
+            type-name wrap<typename outer<T>::template inner<long>>
+end translation unit

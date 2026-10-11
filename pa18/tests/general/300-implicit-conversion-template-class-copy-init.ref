@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<1x1>
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $result
+    %t3 = addr $source
+    %t4 = call obj<4x4> @X__operatorT(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = addr $result
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @X__operatorT(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK1XcvT_I1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @A__A(%t1, 7)
+    return obj<4x4> $retobj__1
+}
+function @A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN1AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN1AC2Ei = @A__A

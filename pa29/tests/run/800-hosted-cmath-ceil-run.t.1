@@ -1,0 +1,12 @@
+#include <cmath>
+
+int main()
+{
+  if (std::ceil(1.4) != 2.0)
+    return 1;
+  if (std::ceil(1.0f) != 1.0f)
+    return 2;
+  if (std::ceil(-1.2) != -1.0)
+    return 3;
+  return 0;
+}

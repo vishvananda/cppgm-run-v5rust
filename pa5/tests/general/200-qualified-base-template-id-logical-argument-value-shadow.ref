@@ -1,0 +1,32 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition m
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_BOOL:bool
+      class-forward-declaration x
+        class-key KW_STRUCT:struct
+  namespace-definition n
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier x
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier q
+        class-key KW_STRUCT:struct
+        base-clause
+          base-specifier
+            base-name m::x<sizeof(T)&&true>
+end translation unit

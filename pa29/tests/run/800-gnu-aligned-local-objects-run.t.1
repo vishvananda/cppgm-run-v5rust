@@ -1,0 +1,28 @@
+// The GNU aligned attribute, in the standard [[gnu::aligned]] spelling or
+// the __attribute__ spelling before the declaration or after the declarator,
+// aligns the declared object, at block scope as at namespace scope.
+[[gnu::aligned(64)]] static char global_leading[3];
+static char global_trailing[3] __attribute__((aligned(32)));
+
+unsigned long misaligned(const void* address, unsigned long alignment)
+{
+  return reinterpret_cast<unsigned long>(address) & (alignment - 1);
+}
+
+int depth(int remaining)
+{
+  [[gnu::aligned(32)]] char standard[5];
+  __attribute__((aligned(64))) char leading[7];
+  char trailing[3] __attribute__((aligned(128)));
+  standard[0] = leading[0] = trailing[0] = 1;
+  int result = (misaligned(standard, 32) != 0) | (misaligned(leading, 64) != 0) << 1 |
+    (misaligned(trailing, 128) != 0) << 2;
+  return result | (remaining ? depth(remaining - 1) : 0);
+}
+
+int main()
+{
+  global_leading[0] = global_trailing[0] = 1;
+  return depth(4) | (misaligned(global_leading, 64) != 0) << 3 |
+    (misaligned(global_trailing, 32) != 0) << 4;
+}

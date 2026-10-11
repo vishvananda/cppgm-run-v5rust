@@ -1,0 +1,25 @@
+function @operatornew__ov2(%__param0 : i64, %p : ptr) -> ptr [binding=strong, object=_ZnwmPv] {
+  slot $__param0 : i64
+  slot $p : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $f : f32
+  slot $i : i32
+
+  block ^entry:
+    store typed f32 0f, $f
+    store typed i32 7, $i
+    %t1 = convert sext i64 i32 4
+    %t2 = addr $f
+    %t3 = call ptr @operatornew__ov2(%t1, %t2)
+    %t4 = load typed i32 $i
+    %t5 = convert sitofp f32 i32 %t4
+    store typed f32 %t5, %t3
+    return i32 0
+}

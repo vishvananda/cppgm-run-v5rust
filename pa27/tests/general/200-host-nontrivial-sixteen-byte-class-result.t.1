@@ -1,0 +1,11 @@
+#include "200-host-nontrivial-sixteen-byte-class-result.helper.h"
+
+namespace result_abi {
+Value student_make(long long x) { return Value(x); }
+}
+
+int main() {
+    result_abi::Value value = result_abi::host_make(31);
+    if (value.first != 31 || value.second != 42) return 1;
+    return result_abi::host_check_student();
+}

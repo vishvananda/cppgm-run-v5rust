@@ -1,0 +1,28 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = index i8 [projection=field] %t2, 0
+    call void @value__value(%t3, 1, 2)
+    %t4 = addr $x
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 0, %t5
+    %t6 = addr $x
+    %t7 = index i8 [projection=field] %t6, 4
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @value__value(%this : ptr [object_bytes=1], %__param1 : i32, %__param2 : i32) -> void [binding=weak, object=_ZN5valueC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    return void
+}
+alias object _ZN5valueC2Eii = @value__value

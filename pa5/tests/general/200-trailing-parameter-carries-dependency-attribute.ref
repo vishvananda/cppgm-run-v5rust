@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier x
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier y
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

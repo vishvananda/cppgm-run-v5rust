@@ -1,0 +1,16 @@
+# budget from 500-source-full-unroll-debug.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 10
+blocks <= 4
+count(call) <= 3
+count(load) <= 4
+count(store) <= 6
+count(phi) <= 3
+instructions <= 10 in @main
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @main
+none(/!dbg\((?!(?:tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 3, 1|tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 6, 5|tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 7, 10|tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 7, 3)\))/) in @main
+none(/^store\b(?!.*!dbg\((?:tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 6, 5)\))/) in @main
+none(/^return\b(?!.*!dbg\((?:tests/debuginfo/driver/o3/500-source-full-unroll-debug\.t, 7, 3)\))/) in @main

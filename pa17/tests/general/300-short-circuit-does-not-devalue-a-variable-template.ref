@@ -1,0 +1,88 @@
+declare global @warm_char___ignored : u8 [binding=weak, object=_ZN4warmIcE7ignoredE]
+declare global @warm_double___ignored : u8 [binding=weak, object=_ZN4warmIdE7ignoredE]
+declare global @pick_true___value : i32 [binding=weak, object=_ZN4pickILb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $warmed_small : u8
+  slot $warmed_large : u8
+  slot $small_answer : i32
+  slot $large_answer : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    store u8 1, $warmed_small
+    store u8 1, $warmed_large
+    call void @later()
+    call void @later__2()
+    store typed i32 1, $small_answer
+    store typed i32 2, $large_answer
+    %t1 = load u8 $warmed_small
+    branch %t1, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t2 = load u8 $warmed_large
+    %t3 = cmp ne i64 %t2, 0
+    store typed i64 %t3, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t4 = load typed i64 $land__2
+    branch %t4, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t5 = load typed i32 $small_answer
+    %t6 = cmp eq i32 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    store typed i64 %t7, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t8 = load typed i64 $land__3
+    branch %t8, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t9 = load typed i32 $large_answer
+    %t10 = cmp eq i32 %t9, 2
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t12 = load typed i64 $land__4
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @later() -> void [unwind=no, binding=weak, object=_Z5laterIcEvv] {
+  block ^entry:
+    return void
+}
+function @later__2() -> void [binding=weak, object=_Z5laterIdEvv] {
+  block ^entry:
+    return void
+}

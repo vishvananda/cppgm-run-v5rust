@@ -1,0 +1,111 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @byte_value
+  storage scalar u8
+  init u8 0
+
+global @short_value
+  storage scalar u16
+  init u16 0
+
+global @wide_value
+  storage scalar i64
+  init i64 0
+
+global @words
+  storage data
+  item u32 0
+  item u32 0
+  item u32 0
+  item u32 0
+
+function @store_dereference
+  abi
+    param %address -> rdi : ptr
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.u16 [rdi], 4660
+    ret
+
+function @store_indexed
+  abi
+    param %base -> rdi : ptr
+    param %index -> rsi : i64
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.u32 [rdi+rsi*4], 305419896
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve <gpr0>
+
+  block ^entry
+    store.u8 @byte_value, 171
+    mov rdi, @short_value
+    call @store_dereference [args=(rdi)]
+    mov <gpr0>, @words
+    mov rdi, <gpr0>
+    mov rsi, 2
+    call @store_indexed [args=(rsi,rdi)]
+    store.i64 @wide_value, -2147483648
+    load.u8 r8, @byte_value
+    load.u16 r9, @short_value
+    load.u32 <gpr0>, [<gpr0>+<off0>]
+    load.i64 rdi, @wide_value
+    mov rdx, 171
+    cmp.u8 r8, rdx
+    setne r8
+    movzx r8, r8
+    mov rdx, 4660
+    cmp.u16 r9, rdx
+    setne r9
+    movzx r9, r9
+    mov rdx, 305419896
+    cmp.u32 <gpr0>, rdx
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    mov <gpr1>, 2147483647
+    mov rdx, 2147483647
+    cmp.i64 <gpr1>, rdx
+    setne rsi
+    movzx rsi, rsi
+    mov <gpr1>, 4294967296
+    mov rdx, 4294967296
+    cmp.i64 <gpr1>, rdx
+    setne rcx
+    movzx rcx, rcx
+    mov rdx, -2147483648
+    cmp.i64 rdi, rdx
+    setne rdi
+    movzx rdi, rdi
+    or r8, r9
+    or <gpr0>, rsi
+    or rcx, rdi
+    or r8, <gpr0>
+    or r8, rcx
+    sext.i32 r8
+    ret r8

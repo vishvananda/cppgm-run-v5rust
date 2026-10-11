@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $f : obj<1x1>
+  slot $tmpobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $f
+    %t2 = addr $f
+    %t3 = call i32 @F__operator__(%t2)
+    %t4 = addr $tmpobj__1
+    zeroinit 1x1 %t4
+    %t5 = call i32 @F__operator____ov2(%t4)
+    %t6 = binary add nowrap i32 %t3, %t5
+    %t7 = binary sub nowrap i32 %t6, 7
+    return i32 %t7
+}
+function @F__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNR1FclEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 3
+}
+function @F__operator____ov2(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNO1FclEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 4
+}

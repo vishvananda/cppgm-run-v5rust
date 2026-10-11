@@ -1,0 +1,41 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Val
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Box
+      class-key KW_STRUCT:struct
+      alias-declaration value_type
+        type-id
+          type-specifier-seq
+            type-name T
+      special-member-declaration operatorVal<value_type>
+        declarator
+          identifier operatorVal<value_type>
+          parameter-clause
+          cv-qualifier KW_CONST:const
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    special-member-definition Box<T>::operator Val<Box::value_type>
+      declarator
+        identifier Box<T>::operator Val<Box::value_type>
+        parameter-clause
+        cv-qualifier KW_CONST:const
+      compound-statement
+end translation unit

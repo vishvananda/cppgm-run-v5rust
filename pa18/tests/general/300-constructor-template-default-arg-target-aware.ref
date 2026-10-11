@@ -1,0 +1,134 @@
+function @make_box(%a : obj<4x4>, %b : obj<4x4>) -> obj<12x4> [binding=strong, object=_Z8make_box4iterS_] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $retobj__1 : obj<12x4>
+  slot $argobj__2 : obj<4x4>
+  slot $argobj__3 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 4x4 %a, %t1
+    %t2 = addr $b
+    copyobj 4x4 %b, %t2
+    %t3 = addr $retobj__1
+    %t4 = addr $argobj__2
+    %t5 = addr $a
+    copyobj 4x4 %t5, %t4
+    %t6 = addr $argobj__3
+    %t7 = addr $b
+    copyobj 4x4 %t7, %t6
+    call void @box__box(%t3, $argobj__2, $argobj__3, 0)
+    return obj<12x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $z : obj<12x4>
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+  slot $cond__3 : i32
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    %t4 = addr $b
+    %t5 = addr $b
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 4, %t6
+    %t7 = addr $z
+    %t8 = addr $argobj__1
+    %t9 = addr $a
+    copyobj 4x4 %t9, %t8
+    %t10 = addr $argobj__2
+    %t11 = addr $b
+    copyobj 4x4 %t11, %t10
+    %t12 = call obj<12x4> @make_box($argobj__1, $argobj__2)
+    copyobj 12x4 %t12, %t7
+    %t13 = addr $z
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed i32 %t14
+    %t16 = cmp eq i32 %t15, 1
+    branch %t16, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t17 = addr $z
+    %t18 = index i8 [projection=field] %t17, 4
+    %t19 = load typed i32 %t18
+    %t20 = cmp eq i32 %t19, 4
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $land__4
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__4
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t22 = load typed i64 $land__4
+    branch %t22, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t23 = addr $z
+    %t24 = index i8 [projection=field] %t23, 8
+    %t25 = load typed i32 %t24
+    %t26 = cmp eq i32 %t25, 0
+    %t27 = cmp ne i64 %t26, 0
+    store typed i64 %t27, $land__5
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__5
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t28 = load typed i64 $land__5
+    branch %t28, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t29 = load typed i32 $cond__3
+    return i32 %t29
+}
+function @box__box(%this : ptr [object_bytes=12], %a : obj<4x4>, %b : obj<4x4>, %x : i32) -> void [binding=weak, object=_ZN3boxC1I4iterEET_S2_i, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $a
+    copyobj 4x4 %a, %t1
+    %t2 = addr $b
+    copyobj 4x4 %b, %t2
+    store typed i32 %x, $x
+    %t3 = addr $a
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 %t5, %t7
+    %t8 = addr $b
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = load typed ptr $this
+    %t12 = index i8 [projection=field] %t11, 4
+    store typed i32 %t10, %t12
+    %t13 = load typed i32 $x
+    %t14 = load typed ptr $this
+    %t15 = index i8 [projection=field] %t14, 8
+    store typed i32 %t13, %t15
+    return void
+}
+alias object _ZN3boxC2I4iterEET_S2_i = @box__box

@@ -1,0 +1,16 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $arg__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $arg__1
+    zeroinit 1x1 %t1
+    %t2 = call i32 @T___cppgm_class_template_identity_1___f(%t1)
+    return i32 %t2
+}
+function @T___cppgm_class_template_identity_1___f(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_ZN1TI1VIiEE1fERKS1_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}

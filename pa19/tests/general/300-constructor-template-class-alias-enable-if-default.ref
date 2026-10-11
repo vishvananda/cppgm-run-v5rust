@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    store typed i32 1, $refarg__1
+    %t2 = addr $refarg__1
+    call void @duration_like_int___duration_like(%t1, %t2)
+    %t3 = addr $x
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}
+function @duration_like_int___duration_like(%this : ptr [object_bytes=4], %r : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN13duration_likeIiEC1IiTnN9enable_ifIXsr7is_sameIT_iEE5valueEiE4typeELi0EEERKS3_, inline_hint=yes] {
+  slot $this : ptr
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %r, $r
+    %t1 = load typed ptr $r
+    %t2 = load typed i32 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+alias object _ZN13duration_likeIiEC2IiTnN9enable_ifIXsr7is_sameIT_iEE5valueEiE4typeELi0EEERKS3_ = @duration_like_int___duration_like

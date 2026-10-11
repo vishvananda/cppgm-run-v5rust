@@ -1,0 +1,19 @@
+// N3485 3.4.2p2, 14.7.1p6: the associated namespaces of s::W<AS*> include s,
+// W's, and those of AS, the class template specialization s::B<char,
+// Arena<char>>; instantiating B, which overload resolution may do, looks tag
+// up by argument-dependent lookup too, and operator!= is found in s (libc++'s
+// allocator-aware containers)
+#include <cstdio>
+template <class T> struct Arena {};
+namespace s {
+template <class I> struct W { I i; };
+template <class I1, class I2> bool operator!=(const W<I1>& x, const W<I2>& y) { return x.i != y.i; }
+template <class T> int tag(W<T>, int) { return 0; }
+template <class C, class A> struct B { C* p; enum { k = sizeof(tag(W<A>(), 0)) }; };
+}
+typedef s::B<char, Arena<char> > AS;
+int main() {
+	s::W<AS*> a = { 0 }, b = { 0 };
+	std::printf("%d\n", (int)(a != b));
+	return 0;
+}

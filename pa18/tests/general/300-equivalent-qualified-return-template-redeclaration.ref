@@ -1,0 +1,16 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $refarg__1 : i32
+
+  block ^entry:
+    store typed i32 1, $refarg__1
+    %t1 = addr $refarg__1
+    %t2 = call i32 @n__make(%t1)
+    return i32 %t2
+}
+function @n__make(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZN1n4makeIiEEN9enable_ifIXgtstT_Li0EEiE4typeEOS2_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}

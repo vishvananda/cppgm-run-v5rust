@@ -1,0 +1,5 @@
+// Itanium C++ ABI 5.1.10: the special abbreviation Si (std::istream) is not a
+// substitution candidate: sentry(std::istream&, bool) mangles as
+// _ZNSi6sentryC1ERSib; expect exit 0
+#include <sstream>
+int main() { std::istringstream is("5"); std::istream::sentry s(is); return s ? 0 : 1; }

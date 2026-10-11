@@ -1,0 +1,78 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $result : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = convert sext i64 i32 2
+    %t2 = call ptr @make_pair_argument(%t1)
+    store typed ptr %t2, $result
+    %t3 = load typed ptr $result
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i64 %t4
+    %t6 = convert sext i64 i32 2
+    %t7 = cmp eq i64 %t5, %t6
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = load typed ptr $result
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 0
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t13 = load typed i64 $land__2
+    branch %t13, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @make_pair_argument(%count : i64) -> ptr [binding=weak, object=_Z18make_pair_argumentIiEP13pair_argumentIT_Em] {
+  slot $count : i64
+
+  block ^entry:
+    store typed i64 %count, $count
+    %t1 = convert sext i64 i32 16
+    %t2 = call ptr @operatornew(%t1)
+    %t3 = load typed i64 $count
+    call void @pair_argument_int___pair_argument(%t2, %t3, 0)
+    return ptr %t2
+}
+function @pair_argument_int___pair_argument(%this : ptr [object_bytes=16], %count_ : i64, %value_ : i32) -> void [unwind=no, binding=weak, object=_ZN13pair_argumentIiEC1Emi, inline_hint=yes] {
+  slot $this : ptr
+  slot $count_ : i64
+  slot $value_ : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %count_, $count_
+    store typed i32 %value_, $value_
+    %t1 = load typed i64 $count_
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    %t4 = load typed i32 $value_
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN13pair_argumentIiEC2Emi = @pair_argument_int___pair_argument

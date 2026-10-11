@@ -1,0 +1,5 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    store typed i32 1, 0
+    return i32 1
+}

@@ -1,0 +1,26 @@
+function @test(%src : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z4testRK8functionIFivEE] {
+  slot $src : ptr
+  slot $dst : obj<1x1>
+
+  block ^entry:
+    store typed ptr %src, $src
+    %t1 = addr $dst
+    %t2 = addr $dst
+    %t3 = load typed ptr $src
+    %t4 = call ptr @function_int_____operator_(%t2, %t3)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @function_int_____operator_(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_ZN8functionIFivEEaSERKS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    return ptr %t1
+}

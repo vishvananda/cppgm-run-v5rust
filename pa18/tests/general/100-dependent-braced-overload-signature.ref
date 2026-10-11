@@ -1,0 +1,24 @@
+function @probe_size() -> i32 [binding=strong, object=_Z10probe_sizev] {
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @invoke_probe() -> i32 [binding=strong, object=_Z12invoke_probev] {
+  slot $refarg__1 : i32
+
+  block ^entry:
+    store typed i32 0, $refarg__1
+    %t1 = addr $refarg__1
+    %t2 = call i32 @Probe__test(%t1, 0)
+    return i32 %t2
+}
+function @Probe__test(%__param0 : ptr [pass=by_address, object_bytes=4], %__param1 : ptr) -> i32 [binding=weak, object=_ZN5Probe4testIiEEiRKT_PDTcl6acceptIS3_EilEEE, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 1
+}

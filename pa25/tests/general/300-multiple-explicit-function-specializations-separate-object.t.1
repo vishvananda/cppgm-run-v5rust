@@ -1,0 +1,25 @@
+#include "300-multiple-explicit-function-specializations-separate-object.shared.h"
+
+template<>
+int specialized<first>(const context &, first &, int)
+{
+  return 1;
+}
+
+template<>
+int specialized<const first>(const context &, const first &, int)
+{
+  return 2;
+}
+
+template<>
+int specialized<second>(const context &, second &, int)
+{
+  return 4;
+}
+
+template<>
+int specialized<const second>(const context &, const second &, int)
+{
+  return 8;
+}

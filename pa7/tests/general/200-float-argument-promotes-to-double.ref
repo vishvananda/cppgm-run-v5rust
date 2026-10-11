@@ -1,0 +1,29 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (int) returning int
+    parameter  int
+    compound-statement
+      return-statement
+        literal prvalue int 1
+  function-definition f function of (long int) returning long int
+    parameter  long int
+    compound-statement
+      return-statement
+        literal prvalue int 2
+  function-definition f function of (double) returning double
+    parameter  double
+    compound-statement
+      return-statement
+        literal prvalue int 3
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable fl float
+          literal prvalue float 1.5f
+      return-statement
+        cast-expression prvalue char KW_STATIC_CAST:static_cast
+          call-expression prvalue double
+            callee f function of (double) returning double
+            id-expression lvalue float fl
+end translation unit

@@ -1,0 +1,9 @@
+struct Counter {
+  static thread_local int value;
+};
+
+int main()
+{
+  Counter::value += 4;
+  return Counter::value - 7;
+}

@@ -1,0 +1,54 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f(0)
+    return i32 0
+}
+function @f(%x : i32) -> void [binding=weak, object=_Z1fIiEvT_] {
+  slot $x : i32
+  slot $b : i64
+  slot $i : i64
+  slot $cond__1 : u8
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = convert sext i64 i32 %t1
+    store typed i64 %t2, $b
+    store typed i64 0, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    branch 1, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    %t3 = load typed i64 $i
+    %t4 = load typed i64 $b
+    %t5 = cmp lt i64 %t3, %t4
+    %t6 = convert trunc u8 i64 %t5
+    store u8 %t6, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    %t7 = load typed i64 $i
+    %t8 = load typed i64 $b
+    %t9 = cmp gt i64 %t7, %t8
+    %t10 = convert trunc u8 i64 %t9
+    store u8 %t10, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t11 = load u8 $cond__1
+    branch %t11, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t12 = load typed i64 $i
+    %t13 = binary add nowrap i64 %t12, 1
+    store typed i64 %t13, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return void
+}

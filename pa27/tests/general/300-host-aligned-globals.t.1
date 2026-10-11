@@ -1,0 +1,18 @@
+struct alignas(16) Block { int value; };
+typedef int wide_int __attribute__((aligned(32)));
+
+alignas(32) int table[4] = {1, 2, 3, 4};
+int __attribute__((aligned(64))) counter = 5;
+Block block = {7};
+wide_int wide = 9;
+char pad_one = 1;
+int zeros[3];
+char pad_two = 2;
+alignas(16) long cleared[2];
+
+int host_check();
+
+int main()
+{
+  return host_check() == table[1] + counter + block.value + wide + zeros[0] + (int)cleared[1] + pad_one + pad_two ? 0 : 1;
+}

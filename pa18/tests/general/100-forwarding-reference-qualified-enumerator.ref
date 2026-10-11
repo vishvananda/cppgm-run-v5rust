@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $refarg__1 : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $x
+    store typed i32 0, $refarg__1
+    %t2 = addr $refarg__1
+    %t3 = call i32 @pick(%t1, %t2)
+    return i32 %t3
+}
+function @pick(%__param0 : ptr [pass=by_address, object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z4pickIRiN1N1EEEiOT_OT0_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 0
+}

@@ -1,0 +1,52 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier casts
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_CONST:const
+              decl-specifier TT_IDENTIFIER:C
+            declarator
+              ptr-operator OP_STAR:*
+              identifier pointer
+      compound-statement
+        expression-statement
+          cast-expression KW_CONST_CAST:const_cast
+            type-id
+              type-specifier-seq
+                type-name C
+              abstract-declarator
+                ptr-operator OP_STAR:*
+            id-expression pointer
+        expression-statement
+          cast-expression KW_REINTERPET_CAST:reinterpret_cast
+            type-id
+              type-specifier-seq
+                cv-qualifier KW_CONST:const
+                type-specifier KW_CHAR:char
+              abstract-declarator
+                ptr-operator OP_STAR:*
+            id-expression pointer
+        expression-statement
+          call-expression
+            id-expression T::value
+            argument-list
+              literal 123
+        expression-statement
+          call-expression
+            id-expression C
+            braced-init-list
+end translation unit

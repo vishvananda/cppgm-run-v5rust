@@ -1,0 +1,101 @@
+global @source : i32 [binding=strong] = 7
+global @observed : i32 [binding=strong] = zero
+global @__local_static__read_constant_reference__decl0__reference : ptr [binding=internal, object=_ZZ23read_constant_referencevE9reference] = addr @source
+global @selections : i32 [binding=strong] = 0
+global @other : i32 [binding=strong] = 13
+global @__local_static__read_dynamic_reference__decl0__reference : ptr [binding=internal, object=_ZZ22read_dynamic_referencevE9reference] = zero
+global @__local_static__read_dynamic_reference__decl0__reference__guard : i64 [binding=internal, object=_ZGVZ22read_dynamic_referencevE9reference] = zero
+
+function @read_constant_reference() -> i32 [binding=strong, object=_Z23read_constant_referencev] {
+  block ^entry:
+    %t1 = load typed ptr @__local_static__read_constant_reference__decl0__reference
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @choose() -> ptr [binding=strong, object=_Z6choosev] {
+  block ^entry:
+    %t1 = load typed i32 @selections
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @selections
+    %t3 = addr @other
+    return ptr %t3
+}
+function @read_dynamic_reference() -> ptr [binding=strong, object=_Z22read_dynamic_referencev] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__read_dynamic_reference__decl0__reference__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__read_dynamic_reference__decl0__reference
+    %t4 = call ptr @choose()
+    store typed ptr %t4, %t3
+    store typed i64 1, @__local_static__read_dynamic_reference__decl0__reference__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = load typed ptr @__local_static__read_dynamic_reference__decl0__reference
+    return ptr %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = load typed i32 @observed
+    %t2 = cmp ne i32 %t1, 7
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = load typed i32 @selections
+    %t4 = cmp ne i32 %t3, 0
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t5 = call ptr @read_dynamic_reference()
+    store typed i32 17, %t5
+    %t6 = call ptr @read_dynamic_reference()
+    store typed i32 19, %t6
+    %t7 = load typed i32 @selections
+    %t8 = cmp eq i32 %t7, 1
+    branch %t8, ^land_rhs_8, ^land_short_9
+
+  block ^land_rhs_8:
+    %t9 = load typed i32 @other
+    %t10 = cmp eq i32 %t9, 19
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $land__2
+    jump ^land_end_10
+
+  block ^land_short_9:
+    store typed i64 0, $land__2
+    jump ^land_end_10
+
+  block ^land_end_10:
+    %t12 = load typed i64 $land__2
+    branch %t12, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 2, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call i32 @read_constant_reference()
+    store typed i32 %t1, @observed
+    return void
+}

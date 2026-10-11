@@ -1,0 +1,9 @@
+#include <string>
+
+int main()
+{
+  std::string destination("first");
+  std::string source("second-long-enough-to-heap-allocate");
+  destination = static_cast<std::string&&>(source);
+  return destination == "second-long-enough-to-heap-allocate" ? 0 : 1;
+}

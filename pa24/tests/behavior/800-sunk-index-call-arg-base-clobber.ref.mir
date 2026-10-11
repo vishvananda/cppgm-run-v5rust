@@ -1,0 +1,82 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @object
+  storage data
+  item i64 0
+  item i64 0
+
+global @wrong
+  storage data
+  item i64 0
+  item i64 0
+
+function @store_field
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %p -> r9 : ptr
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 [r9], 77
+    ret
+
+function @run
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r9, @object+8
+    mov rdi, 1
+    mov rsi, 2
+    mov rdx, 3
+    mov rcx, 4
+    mov r8, 5
+    call @store_field [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call @run [args=()]
+    load.i64 r8, @object+8
+    load.i64 r9, @wrong+8
+    mov rdx, 77
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    mov rdx, 0
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    and r8, r9
+    mov rdx, 0
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    ret r8

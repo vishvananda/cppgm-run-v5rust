@@ -1,0 +1,4 @@
+# outcomes from 500-shared-loop-inline-policy.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @hinted_loop)
+none(call @single_loop)
+absent(@single_loop)

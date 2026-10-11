@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition outer
+    namespace-definition detail
+      type-alias value int
+    namespace-definition inner
+      variable selected int
+        literal prvalue int 7
+      namespace-definition detail
+        type-alias later long int
+  function-definition read function of () returning int
+    compound-statement
+      return-statement
+        id-expression lvalue int outer::inner::selected
+end translation unit

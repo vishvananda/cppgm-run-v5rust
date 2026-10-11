@@ -1,0 +1,33 @@
+struct Text
+{
+  int value;
+
+  Text(int v = 0) : value(v) {}
+  Text(const Text& other) : value(other.value) {}
+  ~Text() {}
+
+  Text prefix() const
+  {
+    if (value < 0)
+      throw value;
+    return Text(value + 1);
+  }
+};
+
+Text operator+(const Text& left, const Text& right)
+{
+  return Text(left.value + right.value);
+}
+
+int choose(bool first)
+{
+  Text left(3);
+  Text right(7);
+  Text result = first ? left : left.prefix() + right;
+  return result.value;
+}
+
+int main()
+{
+  return choose(true) != 3 || choose(false) != 11;
+}

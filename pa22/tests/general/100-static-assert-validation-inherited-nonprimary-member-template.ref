@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<8x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 3, %t4
+    %t5 = addr $object
+    %t6 = index i8 %t5, 4
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 7, %t7
+    %t8 = addr $object
+    %t9 = call i32 @derived__test(%t8)
+    %t10 = cmp eq i32 %t9, 7
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @derived__test(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK7derived4testEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 4
+    %t3 = call i32 @second_base__read(%t2, 0)
+    return i32 %t3
+}
+function @second_base__read(%this : ptr [object_bytes=4], %__param1 : i32) -> i32 [binding=weak, object=_ZNK11second_base4readIiEEiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

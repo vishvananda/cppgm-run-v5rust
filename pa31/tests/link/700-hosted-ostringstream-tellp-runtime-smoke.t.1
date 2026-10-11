@@ -1,0 +1,6 @@
+#include <sstream>
+
+int main() {
+  std::ostringstream out;
+  return out.tellp() == std::streampos(0) ? 0 : 1;
+}

@@ -1,0 +1,34 @@
+1 translation units
+start translation unit 1
+translation-unit
+  enum-specifier kind
+    enum-key KW_CLASS:class
+    enumerator value
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier emit
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:kind
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier call
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression emit
+          argument-list
+            id-expression kind::value
+            literal 1
+end translation unit

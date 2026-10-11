@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias Y int
+    variable x int
+    type-alias CY const int
+    variable ci pointer to const int
+    variable i int
+    scope namespace N
+      type-alias Y int
+    scope namespace X
+      type-alias CY const int
+      type-alias Y int
+end translation unit

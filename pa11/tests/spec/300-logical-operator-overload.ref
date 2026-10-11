@@ -1,0 +1,89 @@
+function @operator__(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=strong, object=_ZaaRK5LogicS1_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $rhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = cmp eq i32 %t7, 3
+    %t9 = convert trunc u8 i64 %t8
+    return u8 %t9
+}
+function @operator____2(%lhs : ptr [pass=by_address, object_bytes=4], %rhs : ptr [pass=by_address, object_bytes=4]) -> u8 [binding=strong, object=_ZooRK5LogicS1_] {
+  slot $lhs : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $rhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = cmp eq i32 %t7, 4
+    %t9 = convert trunc u8 i64 %t8
+    return u8 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $one : obj<4x4>
+  slot $two : obj<4x4>
+  slot $three : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $one
+    %t2 = addr $two
+    %t3 = addr $three
+    %t4 = addr $one
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 1, %t5
+    %t6 = addr $two
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 2, %t7
+    %t8 = addr $three
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 3, %t9
+    %t10 = addr $one
+    %t11 = addr $two
+    %t12 = call u8 @operator__(%t10, %t11)
+    branch %t12, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t13 = addr $one
+    %t14 = addr $three
+    %t15 = call u8 @operator____2(%t13, %t14)
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t17 = load typed i64 $land__2
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__1
+    return i32 %t18
+}

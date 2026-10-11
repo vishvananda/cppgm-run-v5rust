@@ -1,0 +1,44 @@
+function @lazy_lookup_user__run() -> i32 [binding=strong, object=_ZN16lazy_lookup_user3runEv] {
+  slot $i : i32
+  slot $j : i32
+
+  block ^entry:
+    store typed i32 0, $i
+    store typed i32 2, $j
+    %t1 = load typed i32 $i
+    %t2 = load typed i32 $j
+    %t3 = call i32 @lazy_lookup_lib__min_value(%t1, %t2)
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @lazy_lookup_user__run()
+    return i32 %t1
+}
+function @lazy_lookup_lib__min_value(%a : i32, %b : i32) -> i32 [binding=weak, object=_ZN15lazy_lookup_lib9min_valueIiEET_S1_S1_] {
+  slot $a : i32
+  slot $b : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = cmp lt i32 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t4 = load typed i32 $a
+    store typed i32 %t4, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t5 = load typed i32 $b
+    store typed i32 %t5, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

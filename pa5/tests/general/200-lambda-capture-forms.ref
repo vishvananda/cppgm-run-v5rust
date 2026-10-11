@@ -1,0 +1,201 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier owner
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier member
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier parse_this
+        parameter-clause
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier f
+              initializer
+                lambda-expression
+                  lambda-introducer [this]
+                  compound-statement
+                    return-statement
+                      id-expression member
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Args
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier parse_captures
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:Args
+            declarator
+              parameter-pack ...
+              identifier args
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier x
+              initializer
+                literal 0
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier y
+              initializer
+                literal 0
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier empty
+              initializer
+                lambda-expression
+                  lambda-introducer []
+                  compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier ref_default
+              initializer
+                lambda-expression
+                  lambda-introducer [&]
+                  compound-statement
+                    return-statement
+                      id-expression x
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier copy_default
+              initializer
+                lambda-expression
+                  lambda-introducer [=]
+                  compound-statement
+                    return-statement
+                      id-expression x
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier ref
+              initializer
+                lambda-expression
+                  lambda-introducer [&x]
+                  compound-statement
+                    return-statement
+                      id-expression x
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier copy
+              initializer
+                lambda-expression
+                  lambda-introducer [x]
+                  compound-statement
+                    return-statement
+                      id-expression x
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier mixed
+              initializer
+                lambda-expression
+                  lambda-introducer [x,&y]
+                  compound-statement
+                    return-statement
+                      binary-expression OP_PLUS:+
+                        id-expression x
+                        id-expression y
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier copy_mixed
+              initializer
+                lambda-expression
+                  lambda-introducer [=,&x]
+                  compound-statement
+                    return-statement
+                      binary-expression OP_PLUS:+
+                        id-expression x
+                        id-expression y
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier ref_mixed
+              initializer
+                lambda-expression
+                  lambda-introducer [&,y]
+                  compound-statement
+                    return-statement
+                      binary-expression OP_PLUS:+
+                        id-expression x
+                        id-expression y
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier pack
+              initializer
+                lambda-expression
+                  lambda-introducer [args...]
+                  compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier default_pack
+              initializer
+                lambda-expression
+                  lambda-introducer [&,args...]
+                  compound-statement
+end translation unit

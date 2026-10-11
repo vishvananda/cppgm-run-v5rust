@@ -1,0 +1,37 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @cells
+  storage data
+  item i64 11
+  item i64 13
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @cells
+    lea r9, [r8+<off0>]
+    mov rdi, r9
+    sub rdi, r8
+    load.i64 r9, [r9]
+    mov rdx, 1
+    cmp.i64 rdi, rdx
+    sete rdi
+    movzx rdi, rdi
+    mov rdx, 13
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    and rdi, r9
+    ret rdi

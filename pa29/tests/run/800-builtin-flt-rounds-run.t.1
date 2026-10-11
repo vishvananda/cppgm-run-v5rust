@@ -1,0 +1,12 @@
+int current_rounding_mode()
+{
+  return __builtin_flt_rounds();
+}
+
+int main()
+{
+  // FLT_ROUNDS is implementation-defined but must be one of the C values
+  // -1 (indeterminate) .. 3 (toward zero). Default host mode is "to nearest" (1).
+  int mode = current_rounding_mode();
+  return (mode >= -1 && mode <= 3) ? 0 : 1;
+}

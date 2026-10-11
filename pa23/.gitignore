@@ -1,0 +1,11 @@
+cppgm++
+cppgm++-debug
+testout
+.test_failed
+tests/**/*.my
+tests/**/*.my.*
+tests/*.my
+tests/*.my.*
+tests/**/*.obj
+tests/*.obj
+*.dSYM

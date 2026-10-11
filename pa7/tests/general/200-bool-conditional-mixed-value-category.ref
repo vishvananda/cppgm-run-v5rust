@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition choose function of (bool, bool) returning bool
+    parameter condition bool
+    parameter value bool
+    compound-statement
+      return-statement
+        conditional-expression prvalue bool
+          id-expression lvalue bool condition
+          literal prvalue bool KW_FALSE:false
+          id-expression lvalue bool value
+end translation unit

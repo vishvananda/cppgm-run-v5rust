@@ -1,0 +1,70 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @one
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 1
+    ret rax
+
+function @clobber
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %e -> r8 : i64
+    param %f -> r9 : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve <gpr0>
+
+  block ^entry
+    call @one [args=()]
+    mov <gpr0>, rax
+    mov rdi, 10
+    mov rsi, 20
+    mov rdx, 30
+    mov rcx, 40
+    mov r8, 2
+    mov r9, 2
+    call @clobber [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    cmp.i64 <gpr0>, 1
+    je ^true
+    jmp ^false
+
+  block ^true
+    mov rax, 0
+    ret rax
+
+  block ^false
+    mov rax, 1
+    ret rax

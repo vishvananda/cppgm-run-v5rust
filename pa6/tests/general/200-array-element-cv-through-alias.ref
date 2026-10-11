@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias CA array of 5 char
+    type-alias CC const char
+    type-alias arr1 array of 5 const char
+    type-alias arr2 array of 5 const char
+    variable p1 pointer to array of 5 const char
+    variable p2 pointer to array of 5 const char
+end translation unit

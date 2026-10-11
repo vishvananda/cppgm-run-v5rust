@@ -1,0 +1,14 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @identity(3)
+    %t2 = binary sub nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @identity(%value : i32) -> i32 [binding=weak, object=_Z8identityIiET_S0_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}

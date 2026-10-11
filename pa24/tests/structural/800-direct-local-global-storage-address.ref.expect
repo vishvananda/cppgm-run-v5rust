@@ -1,0 +1,11 @@
+# budget from 800-direct-local-global-storage-address.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 51
+blocks <= 7
+count(call) <= 5
+mem <= 5
+instructions <= 7 in @direct_storage_use
+stack_size <= 320 in @direct_storage_use
+instructions <= 5 in @observe_address
+stack_size <= 320 in @observe_address
+instructions <= 41 in @main
+stack_size <= 352 in @main

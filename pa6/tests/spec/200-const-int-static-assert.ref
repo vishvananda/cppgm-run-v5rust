@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable N const int
+    variable arr array of 7 int
+end translation unit

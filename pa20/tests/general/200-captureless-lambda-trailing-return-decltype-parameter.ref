@@ -1,0 +1,70 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @S__S(%t1, 7)
+    %t2 = addr $b
+    %t3 = addr $a
+    call void @S__S__ov2(%t2, %t3)
+    %t4 = addr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = binary sub nowrap i32 %t7, 7
+    return i32 %t8
+}
+function @S__S(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN1SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 $x
+    call void @U__U__ov2(%t2, %t3)
+    return void
+}
+function @S__S__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN1SC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = addr @S____lambda_S__S_t68_81___FUN
+    %t5 = call ptr %t4(%t3) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> ptr
+    copyobj 4x4 %t5, %t2
+    return void
+}
+function @U__U__ov2(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN1UC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @S____lambda_S__S_t68_81___FUN(%s : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZZN1SC1EOS_ENUlRS_E_8__invokeES1_, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+alias object _ZN1SC2Ei = @S__S
+alias object _ZN1SC2EOS_ = @S__S__ov2
+alias object _ZN1UC2Ei = @U__U__ov2

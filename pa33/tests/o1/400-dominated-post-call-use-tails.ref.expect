@@ -1,0 +1,11 @@
+# budget from 400-dominated-post-call-use-tails.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 98
+blocks <= 8
+count(call) <= 14
+mem <= 54
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 92 in @post_call_tails
+stack_size <= 173 in @post_call_tails
+instructions <= 8 in @main
+stack_size <= 32 in @main

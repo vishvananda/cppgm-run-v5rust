@@ -1,0 +1,1 @@
+local_defined_symbol_pattern 1 ^_ZN.*(?:8__invokeEv|4_FUNEv)$

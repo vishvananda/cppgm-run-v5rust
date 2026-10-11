@@ -1,0 +1,26 @@
+struct Value
+{
+  int number;
+};
+
+struct Holder
+{
+  Value* ptr;
+
+  Value& operator*() const
+  {
+    return *ptr;
+  }
+};
+
+int read_member(const Holder& holder, int Value::* member)
+{
+  return ((*holder).*member);
+}
+
+int main()
+{
+  Value value = {9};
+  Holder holder = {&value};
+  return read_member(holder, &Value::number) == 9 ? 0 : 1;
+}

@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (pointer to int) returning int
+    parameter p pointer to int
+    compound-statement
+      simple-declaration
+        variable q pointer to int
+          literal prvalue nullptr_t KW_NULLPTR:nullptr
+      if-statement
+        condition
+          binary-expression prvalue bool OP_EQ:==
+            id-expression lvalue pointer to int p
+            literal prvalue nullptr_t KW_NULLPTR:nullptr
+        then
+          return-statement
+            binary-expression prvalue bool OP_EQ:==
+              id-expression lvalue pointer to int q
+              id-expression lvalue pointer to int p
+      return-statement
+        binary-expression prvalue bool OP_NE:!=
+          id-expression lvalue pointer to int q
+          id-expression lvalue pointer to int p
+end translation unit

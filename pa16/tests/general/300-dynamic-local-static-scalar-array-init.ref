@@ -1,0 +1,26 @@
+declare function @next() -> i32 [binding=strong, object=_Z4nextv]
+
+global @__local_static__read__decl0__values : obj<4x4> [binding=internal, object=_ZZ4readvE6values] = {
+  zero 4
+}
+global @__local_static__read__decl0__values__guard : i64 [binding=internal, object=_ZGVZ4readvE6values] = zero
+
+function @read() -> i32 [binding=strong, object=_Z4readv] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__read__decl0__values__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__read__decl0__values
+    %t4 = call i32 @next()
+    store typed i32 %t4, %t3
+    store typed i64 1, @__local_static__read__decl0__values__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = addr @__local_static__read__decl0__values
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = load typed i32 %t6
+    return i32 %t7
+}

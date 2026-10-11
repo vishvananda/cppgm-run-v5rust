@@ -1,0 +1,99 @@
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+declare function @operatordelete__(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete_array]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $items : ptr
+  slot $array_new_index__1 : i64
+  slot $ok : i32
+  slot $land__2 : i64
+  slot $cond__3 : i32
+
+  block ^entry:
+    %t1 = call ptr @operatornew__(8)
+    %t2 = const i64 2
+    store typed i64 0, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_cond_1:
+    %t3 = load typed i64 $array_new_index__1
+    %t4 = cmp ult i64 %t3, %t2
+    branch %t4, ^array_new_ctor_body_2, ^array_new_ctor_end_3
+
+  block ^array_new_ctor_body_2:
+    %t5 = binary mul i64 %t3, 4
+    %t6 = index i8 %t1, %t5
+    eh_try ^array_new_ctor_cleanup_4
+    call void @item__item(%t6, 7)
+    eh_end
+    %t7 = binary add i64 %t3, 1
+    store typed i64 %t7, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_end_3:
+    jump ^array_new_ctor_cont_5
+
+  block ^array_new_ctor_cleanup_4:
+    %t8 = load typed i64 $array_new_index__1
+    call void @operatordelete__(%t1)
+    resume
+
+  block ^array_new_ctor_cont_5:
+    store typed ptr %t1, $items
+    %t9 = load typed ptr $items
+    %t10 = binary mul i64 0, 4
+    %t11 = index i8 [projection=array_element] %t9, %t10
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i32 %t12
+    %t14 = cmp eq i32 %t13, 7
+    branch %t14, ^land_rhs_6, ^land_short_7
+
+  block ^land_rhs_6:
+    %t15 = load typed ptr $items
+    %t16 = binary mul i64 1, 4
+    %t17 = index i8 [projection=array_element] %t15, %t16
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = load typed i32 %t18
+    %t20 = cmp eq i32 %t19, 7
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $land__2
+    jump ^land_end_8
+
+  block ^land_short_7:
+    store typed i64 0, $land__2
+    jump ^land_end_8
+
+  block ^land_end_8:
+    %t22 = load typed i64 $land__2
+    %t23 = convert trunc i32 i64 %t22
+    store typed i32 %t23, $ok
+    %t24 = load typed ptr $items
+    call void @operatordelete__(%t24)
+    %t25 = load typed i32 $ok
+    branch %t25, ^cond_then_9, ^cond_else_10
+
+  block ^cond_then_9:
+    store typed i32 0, $cond__3
+    jump ^cond_end_11
+
+  block ^cond_else_10:
+    store typed i32 1, $cond__3
+    jump ^cond_end_11
+
+  block ^cond_end_11:
+    %t26 = load typed i32 $cond__3
+    return i32 %t26
+}
+function @item__item(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN4itemC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN4itemC2Ei = @item__item

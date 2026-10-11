@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration T
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+  class-specifier X
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier y
+    special-member-definition X
+      declarator
+        identifier X
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id y
+          paren-argument-list
+            parenthesized-expression
+              parenthesized-expression
+                call-expression
+                  id-expression T
+                  argument-list
+      compound-statement
+end translation unit

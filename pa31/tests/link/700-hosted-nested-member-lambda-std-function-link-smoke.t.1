@@ -1,0 +1,28 @@
+#include <cstdio>
+#include <functional>
+
+struct Scope {
+  int value;
+};
+
+struct Analyzer {
+  int lookup_functions(int base) {
+    int result = 0;
+    auto collect = [&]() __attribute__((noinline, used)) {
+      std::function<void(Scope &)> visit =
+        [&](Scope & current) __attribute__((noinline, used)) {
+        result = base + current.value;
+      };
+      Scope s{5};
+      visit(s);
+    };
+    collect();
+    return result;
+  }
+};
+
+int main() {
+  Analyzer a;
+  std::printf("%d\n", a.lookup_functions(7));
+  return 0;
+}

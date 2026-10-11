@@ -1,0 +1,19 @@
+# budget from 800-direct-call-result-consumers.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 69
+blocks <= 15
+count(call) <= 15
+mem <= 17
+instructions <= 4 in @produce
+stack_size <= 320 in @produce
+instructions <= 4 in @consume
+stack_size <= 320 in @consume
+instructions <= 5 in @saved_address
+stack_size <= 320 in @saved_address
+instructions <= 4 in @observe_reference
+stack_size <= 320 in @observe_reference
+instructions <= 5 in @load_saved
+stack_size <= 320 in @load_saved
+instructions <= 7 in @store_result
+stack_size <= 320 in @store_result
+instructions <= 49 in @main
+stack_size <= 448 in @main

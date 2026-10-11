@@ -1,0 +1,73 @@
+global @total : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @visit()
+    %t2 = const i64 1
+    %t3 = const i64 4
+    %t4 = binary add i64 %t2, %t3
+    %t5 = convert sext i64 i32 %t1
+    %t6 = cmp eq i64 %t5, %t4
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @visit() -> i32 [binding=weak, object=_Z5visitIJciEEiv] {
+  slot $values : obj<16x8>
+  slot $initlist__1 : obj<8x4>
+  slot $argobj__2 : obj<1x1>
+  slot $argobj__3 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $values
+    %t2 = addr $initlist__1
+    %t3 = addr $argobj__2
+    %t4 = call i32 @touch($argobj__2)
+    store typed i32 0, %t2
+    %t5 = addr $argobj__3
+    %t6 = call i32 @touch__2($argobj__3)
+    %t7 = index i8 [projection=array_element] %t2, 4
+    store typed i32 0, %t7
+    store typed ptr %t2, %t1
+    %t8 = index i8 %t1, 8
+    store typed i64 2, %t8
+    %t9 = addr $values
+    %t10 = load typed i32 @total
+    return i32 %t10
+}
+function @touch(%__param0 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_Z5touchIcEi8identityIT_E] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    %t1 = load typed i32 @total
+    %t2 = const i64 1
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    store typed i32 %t5, @total
+    return i32 0
+}
+function @touch__2(%__param0 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_Z5touchIiEi8identityIT_E] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    %t1 = load typed i32 @total
+    %t2 = const i64 4
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    store typed i32 %t5, @total
+    return i32 0
+}

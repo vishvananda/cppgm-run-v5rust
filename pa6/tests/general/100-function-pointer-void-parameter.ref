@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type H struct H
+    scope class H
+      variable routine pointer to function of (pointer to void) returning void
+end translation unit

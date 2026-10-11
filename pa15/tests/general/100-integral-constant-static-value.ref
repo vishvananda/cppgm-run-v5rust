@@ -1,0 +1,6 @@
+declare global @integral_constant_int_3___value : i32 [binding=weak, object=_ZN17integral_constantIiLi3EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

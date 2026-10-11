@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type writer struct writer
+    type writer::state enum class writer::state
+    function current function of () returning enum class state
+    scope class writer
+      type state enum class state
+      variable st enum class state
+      scope enum state
+    scope enum writer::state
+      enumerator need_more enum class writer::state 1
+      enumerator done enum class writer::state 2
+end translation unit

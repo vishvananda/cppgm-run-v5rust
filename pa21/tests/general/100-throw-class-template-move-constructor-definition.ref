@@ -1,0 +1,150 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @__typeinfo_name__struct_thrown_value_int_ [storage=readonly, binding=weak, object=_ZTS12thrown_valueIiE] = {
+  i8 49
+  i8 50
+  i8 116
+  i8 104
+  i8 114
+  i8 111
+  i8 119
+  i8 110
+  i8 95
+  i8 118
+  i8 97
+  i8 108
+  i8 117
+  i8 101
+  i8 73
+  i8 105
+  i8 69
+  i8 0
+}
+global @__rtti_struct_thrown_value_int_ [storage=readonly, binding=weak, object=_ZTI12thrown_valueIiE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_thrown_value_int_
+}
+global @__ehobj_struct_thrown_value_int_ [binding=internal] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $catch__1 : ptr
+  slot $caught : ptr
+  slot $cond__2 : i32
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr $source
+    call void @thrown_value_int___thrown_value(%t1, 7)
+    eh_try ^catch_dispatch_1
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    %t3 = addr $source
+    call void @thrown_value_int___thrown_value__ov2(%t2, %t3)
+    %t4 = addr @__rtti_struct_thrown_value_int_
+    call void @__external_runtime____cxa_throw(%t2, %t4, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_struct_thrown_value_int_, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    store typed ptr %t8, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    store typed ptr %t8, $caught
+    %t9 = load typed ptr $caught
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp eq i32 %t11, 7
+    branch %t12, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t13 = addr $source
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed i32 %t14
+    %t16 = cmp eq i32 %t15, 0
+    %t17 = cmp ne i64 %t16, 0
+    store typed i64 %t17, $land__3
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__3
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t18 = load typed i64 $land__3
+    branch %t18, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 1, $cond__2
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t19 = load typed i32 $cond__2
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t19
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 0
+}
+function @thrown_value_int___thrown_value(%this : ptr [object_bytes=4], %initial : i32) -> void [binding=weak, object=_ZN12thrown_valueIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $initial : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %initial, $initial
+    %t1 = load typed i32 $initial
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @thrown_value_int___thrown_value__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN12thrown_valueIiEC1EOS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $other
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 0, %t7
+    return void
+}
+alias object _ZN12thrown_valueIiEC2Ei = @thrown_value_int___thrown_value
+alias object _ZN12thrown_valueIiEC2EOS0_ = @thrown_value_int___thrown_value__ov2

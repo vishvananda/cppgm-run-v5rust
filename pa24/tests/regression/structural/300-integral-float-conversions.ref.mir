@@ -1,0 +1,47 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 80
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    temp %4 -> [rbp-16] : f80
+    temp %7 -> [rbp-32] : f80
+
+  block ^entry
+    fptosi.f64.i64 r8, -42.75
+    mov rdx, -42
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    fptoui.f64.i64 r9, 42.75
+    mov rdx, 42
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    mov r11, -42
+    sitofp.i64.f80 [rbp-16], r11
+    fptosi.f80.i64 rdi, [rbp-16]
+    mov rdx, -42
+    cmp.i64 rdi, rdx
+    sete rdi
+    movzx rdi, rdi
+    mov r11, -1
+    uitofp.i64.f80 [rbp-32], r11
+    fptoui.f80.i64 rsi, [rbp-32]
+    mov rdx, -1
+    cmp.i64 rsi, rdx
+    sete rsi
+    movzx rsi, rsi
+    add r8, r9
+    add r8, rdi
+    add r8, rsi
+    ret r8

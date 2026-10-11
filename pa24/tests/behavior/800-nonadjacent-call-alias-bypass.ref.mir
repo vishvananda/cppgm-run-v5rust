@@ -1,0 +1,79 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @src
+  storage data
+  item i64 77
+
+global @other
+  storage data
+  item i64 11
+
+function @g
+  abi
+    param %a -> rdi : ptr
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rdi
+
+function @f
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    param %src -> rcx : ptr
+    return ptr -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $tmp -> [rbp-8] : obj<8x8>
+
+  block ^entry
+    copy_bytes 8x8, [rbp-8], rcx
+    mov rdi, rcx
+    call @g [args=(rdi)]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rdi, @other
+    mov rbx, @src
+    mov rsi, rdi
+    mov rdx, rdi
+    mov rcx, rbx
+    call @f [args=(rcx,rdx,rsi,rdi)]
+    mov r8, rax
+    cmp.ptr r8, rbx
+    jne ^bad_ptr
+    jmp ^check_value
+
+  block ^bad_ptr
+    mov rax, 1
+    ret rax
+
+  block ^check_value
+    cmp.i64 [r8], 77
+    setne rax
+    movzx rax, rax
+    ret rax

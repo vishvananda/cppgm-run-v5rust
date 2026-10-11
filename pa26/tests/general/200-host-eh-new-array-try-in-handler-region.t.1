@@ -1,0 +1,7 @@
+// N3485 15.3/5.3.4p18: a new U[m] (element cleanup) in a try nested inside a
+// handler must compile for host -c and unwind to the outer handler;
+// expect exit 0
+static int n, r;
+struct U { U() { if (++n == 2) throw 1; } ~U() { r += 10; } };
+static void h(int m) { try { throw 1; } catch (int) { try { new U[m]; } catch (long) { r += 7; } } }
+int main() { try { h(3); } catch (int) { r += 1; } return r == 11 ? 0 : 1; }

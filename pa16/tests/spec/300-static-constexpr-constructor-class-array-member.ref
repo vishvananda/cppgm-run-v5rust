@@ -1,0 +1,52 @@
+global @cache_holder_true___cache [storage=readonly, binding=weak, object=_ZN12cache_holderILb1EE5cacheE] = {
+  i64 1
+  i64 2
+  i64 3
+  i64 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @cache_holder_true___cache
+    %t2 = binary mul i64 1, 16
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    %t4 = index i8 [projection=field] %t3, 8
+    %t5 = load typed i64 %t4
+    %t6 = convert sext i64 i32 4
+    %t7 = cmp eq i64 %t5, %t6
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @uint128__uint128__ov3(%this : ptr [object_bytes=16], %high_ : i64, %low_ : i64) -> void [binding=weak, object=_ZN7uint128C1Emm, inline_hint=yes] {
+  slot $this : ptr
+  slot $high_ : i64
+  slot $low_ : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %high_, $high_
+    store typed i64 %low_, $low_
+    %t1 = load typed i64 $high_
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    %t4 = load typed i64 $low_
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}
+alias object _ZN7uint128C2Emm = @uint128__uint128__ov3

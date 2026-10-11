@@ -1,0 +1,53 @@
+int destructor_calls = 0;
+int double_destruction = 0;
+
+struct Guard
+{
+  bool live;
+
+  Guard() : live(true) {}
+
+  ~Guard()
+  {
+    if (!live)
+      ++double_destruction;
+    live = false;
+    ++destructor_calls;
+  }
+};
+
+struct Payload
+{
+  int value;
+
+  explicit Payload(int value_) : value(value_) {}
+};
+
+int make_payload()
+{
+  return 17;
+}
+
+void probe()
+{
+  Guard guard;
+  throw Payload(make_payload());
+}
+
+int main()
+{
+  try
+  {
+    probe();
+  }
+  catch (const Payload &payload)
+  {
+    if (payload.value != 17)
+      return 1;
+  }
+  if (destructor_calls != 1)
+    return 2;
+  if (double_destruction != 0)
+    return 3;
+  return 0;
+}

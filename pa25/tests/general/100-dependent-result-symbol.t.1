@@ -1,0 +1,8 @@
+// N3485 14.5.6.1p5, Itanium 5.1.6: f(A<N>)->A<N+1> (this unit) and
+// f(A<N>)->A<N*2-1> (u2) are distinct templates; each unit must call its own
+// f<2>; expect exit 0
+template<int N> struct A {};
+int which = 0;
+template<int N> A<N + 1> f(A<N>) { which = 1; return A<N + 1>(); }
+void in_b();
+int main() { f(A<2>()); int a = which; in_b(); return (a == 1 ? 0 : 1) + (which == 2 ? 0 : 2); }

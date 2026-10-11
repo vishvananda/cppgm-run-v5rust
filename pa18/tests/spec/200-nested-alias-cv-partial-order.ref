@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $argobj__2
+    %t2 = call i8 @select($argobj__2)
+    %t3 = convert sext i32 i8 %t2
+    %t4 = cmp eq i32 %t3, 2
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @select(%__param0 : obj<1x1> [classes=none]) -> i8 [binding=weak, object=_Z6selectIiEc3boxI4itemIKT_EE] {
+  slot $__param0 : obj<1x1>
+
+  block ^entry:
+    return i8 2
+}

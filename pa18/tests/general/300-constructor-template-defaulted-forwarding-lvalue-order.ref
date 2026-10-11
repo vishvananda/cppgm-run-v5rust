@@ -1,0 +1,32 @@
+global @box__selected : i32 [binding=strong, object=_ZN3box8selectedE] = 0
+global @global_value [binding=strong] = {
+  zero 1
+}
+
+function @source() -> ptr [binding=strong, object=_Z6sourcev] {
+  block ^entry:
+    %t1 = addr @global_value
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmp : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $tmp
+    %t2 = call ptr @source()
+    call void @box__box(%t1, %t2)
+    %t3 = load typed i32 @box__selected
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @box__box(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN3boxC1I5valueEERKT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed i32 1, @box__selected
+    return void
+}
+alias object _ZN3boxC2I5valueEERKT_ = @box__box

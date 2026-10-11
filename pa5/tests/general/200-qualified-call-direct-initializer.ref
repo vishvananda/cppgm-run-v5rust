@@ -1,0 +1,187 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition Values
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier Number
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier fetch
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier value
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier forward
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:T
+                  declarator
+                    identifier value
+  class-specifier Tag
+    class-key KW_STRUCT:struct
+  class-specifier Record
+    class-key KW_STRUCT:struct
+    special-member-declaration Record
+      declarator
+        identifier Record
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:Tag
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Operations
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier fetch
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:T
+                  declarator
+                    identifier value
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier construct
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              identifier first
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              identifier last
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_CONST:const
+            decl-specifier TT_IDENTIFIER:Record
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier direct
+              initializer
+                paren-initializer
+                  call-expression
+                    id-expression Tag
+                    argument-list
+                  call-expression
+                    id-expression Values::fetch
+                    argument-list
+                      id-expression first
+                  call-expression
+                    id-expression ::Values::forward
+                    argument-list
+                      id-expression last
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_CONST:const
+            decl-specifier TT_IDENTIFIER:Record
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier qualified
+              initializer
+                paren-initializer
+                  call-expression
+                    id-expression Tag
+                    argument-list
+                  call-expression
+                    id-expression Operations<T>::fetch
+                    argument-list
+                      id-expression first
+                  call-expression
+                    id-expression Values::forward<T>
+                    argument-list
+                      id-expression last
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier named
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier Values::Number
+              declarator
+                nested-declarator
+                  declarator
+                    identifier value
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:Record
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier declaration
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:Tag
+              abstract-declarator
+                parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier Values::Number
+              abstract-declarator
+                parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              abstract-declarator
+                parameter-clause
+end translation unit

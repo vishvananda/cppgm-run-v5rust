@@ -1,0 +1,30 @@
+struct Base {
+  int state;
+  Base() : state(0) {}
+  int operator!() const { return state == 0; }
+  int id() const { return state; }
+  virtual ~Base() {}
+};
+
+struct Mid : virtual Base {
+  Mid() {}
+  virtual ~Mid() {}
+};
+
+struct Stream : Mid {
+  Stream(int x) { state = x; }
+  ~Stream() override {}
+};
+
+int select(Stream& err, int x)
+{
+  Stream out(x);
+  if (!out) return 100 + err.id();
+  return out.id();
+}
+
+int main()
+{
+  Stream err(57);
+  return select(err, 11) == 11 ? 0 : 1;
+}

@@ -1,0 +1,370 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 98
+  i8 99
+  i8 100
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<4x1>
+  slot $v : obj<16x8>
+  slot $v2 : obj<16x8>
+  slot $arg__1 : obj<16x8>
+  slot $source : obj<16x8>
+  slot $s2 : obj<4x1>
+  slot $arg__2 : obj<16x8>
+  slot $s3 : obj<4x1>
+  slot $arg__3 : obj<16x8>
+  slot $cond__4 : i32
+  slot $land__5 : i64
+  slot $land__6 : i64
+  slot $land__7 : i64
+  slot $land__8 : i64
+  slot $land__9 : i64
+
+  block ^entry:
+    %t1 = addr $s
+    call void @string_like_char_traits___string_like(%t1)
+    %t2 = addr $v
+    %t3 = addr $s
+    call void @string_like_char_traits___operatorView_CharT_Traits_(%t2, %t3)
+    %t4 = addr $v2
+    call void @view_char_traits___view(%t4)
+    %t5 = addr $v2
+    %t6 = addr $arg__1
+    %t7 = addr $s
+    call void @string_like_char_traits___operatorView_CharT_Traits_(%t6, %t7)
+    %t8 = call ptr @view_char_traits___operator_(%t5, %t6)
+    %t9 = addr $source
+    %t10 = addr @__strlit__1
+    %t11 = convert sext i64 i32 4
+    call void @view_char_traits___view__ov3(%t9, %t10, %t11)
+    %t12 = addr $s2
+    %t13 = addr $arg__2
+    %t14 = addr $source
+    call void @view_char_traits___view__ov2(%t13, %t14)
+    call void @string_like_char_traits___string_like__2(%t12, %t13)
+    %t15 = addr $s3
+    call void @string_like_char_traits___string_like(%t15)
+    %t16 = addr $s3
+    %t17 = addr $arg__3
+    %t18 = addr $source
+    call void @view_char_traits___view__ov2(%t17, %t18)
+    %t19 = call ptr @string_like_char_traits___operator_(%t16, %t17)
+    %t20 = addr $v
+    %t21 = index i8 [projection=field] %t20, 8
+    %t22 = load typed i64 %t21
+    %t23 = convert sext i64 i32 4
+    %t24 = cmp eq i64 %t22, %t23
+    branch %t24, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t25 = addr $v2
+    %t26 = index i8 [projection=field] %t25, 8
+    %t27 = load typed i64 %t26
+    %t28 = convert sext i64 i32 4
+    %t29 = cmp eq i64 %t27, %t28
+    %t30 = cmp ne i64 %t29, 0
+    store typed i64 %t30, $land__5
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__5
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t31 = load typed i64 $land__5
+    branch %t31, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t32 = addr $s2
+    %t33 = call ptr @string_like_char_traits___data(%t32)
+    %t34 = index i8 [projection=array_element] %t33, 0
+    %t35 = load i8 %t34
+    %t36 = convert sext i32 i8 %t35
+    %t37 = cmp eq i32 %t36, 97
+    %t38 = cmp ne i64 %t37, 0
+    store typed i64 %t38, $land__6
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__6
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t39 = load typed i64 $land__6
+    branch %t39, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t40 = addr $s2
+    %t41 = call ptr @string_like_char_traits___data(%t40)
+    %t42 = index i8 [projection=array_element] %t41, 3
+    %t43 = load i8 %t42
+    %t44 = convert sext i32 i8 %t43
+    %t45 = cmp eq i32 %t44, 100
+    %t46 = cmp ne i64 %t45, 0
+    store typed i64 %t46, $land__7
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__7
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t47 = load typed i64 $land__7
+    branch %t47, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t48 = addr $s3
+    %t49 = call ptr @string_like_char_traits___data(%t48)
+    %t50 = index i8 [projection=array_element] %t49, 1
+    %t51 = load i8 %t50
+    %t52 = convert sext i32 i8 %t51
+    %t53 = cmp eq i32 %t52, 98
+    %t54 = cmp ne i64 %t53, 0
+    store typed i64 %t54, $land__8
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__8
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t55 = load typed i64 $land__8
+    branch %t55, ^land_rhs_16, ^land_short_17
+
+  block ^land_rhs_16:
+    %t56 = addr $s3
+    %t57 = call ptr @string_like_char_traits___data(%t56)
+    %t58 = index i8 [projection=array_element] %t57, 2
+    %t59 = load i8 %t58
+    %t60 = convert sext i32 i8 %t59
+    %t61 = cmp eq i32 %t60, 99
+    %t62 = cmp ne i64 %t61, 0
+    store typed i64 %t62, $land__9
+    jump ^land_end_18
+
+  block ^land_short_17:
+    store typed i64 0, $land__9
+    jump ^land_end_18
+
+  block ^land_end_18:
+    %t63 = load typed i64 $land__9
+    branch %t63, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__4
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__4
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t64 = load typed i32 $cond__4
+    return i32 %t64
+}
+function @string_like_char_traits___string_like(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11string_likeIc6traitsEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 [projection=array_element] %t2, 0
+    store i8 0, %t3
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i8 [projection=array_element] %t5, 1
+    store i8 0, %t6
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = index i8 [projection=array_element] %t8, 2
+    store i8 0, %t9
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = index i8 [projection=array_element] %t11, 3
+    store i8 0, %t12
+    return void
+}
+function @string_like_char_traits___operatorView_CharT_Traits_(%ret : ptr [pass=indirect_result, object_bytes=16], %this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZNK11string_likeIc6traitsEcvT_IcS0_EI4viewEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = call ptr @string_like_char_traits___data(%t1)
+    %t3 = load typed ptr $this
+    %t4 = call i64 @string_like_char_traits___size(%t3)
+    call void @view_char_traits___view__ov3(%ret, %t2, %t4)
+    return void
+}
+function @view_char_traits___view(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN4viewIc6traitsEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    %t3 = convert sext i64 i32 0
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i64 %t3, %t5
+    return void
+}
+function @view_char_traits___operator_(%this : ptr [object_bytes=16], %other : ptr [pass=by_address, object_bytes=16]) -> ptr [unwind=no, binding=weak, object=_ZN4viewIc6traitsEaSERKS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 16x8 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+function @view_char_traits___view__ov3(%this : ptr [object_bytes=16], %ptr : ptr, %len : i64) -> void [binding=weak, object=_ZN4viewIc6traitsEC1EPKcm, inline_hint=yes] {
+  slot $this : ptr
+  slot $ptr : ptr
+  slot $len : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %ptr, $ptr
+    store typed i64 %len, $len
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $len
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}
+function @view_char_traits___view__ov2(%this : ptr [alias=noalias, object_bytes=16], %rhs : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [binding=weak, object=_ZN4viewIc6traitsEC1ERKS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $rhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = load typed ptr $rhs
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed i64 %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 8
+    store typed i64 %t8, %t10
+    return void
+}
+function @string_like_char_traits___string_like__2(%this : ptr [object_bytes=4], %v : ptr [pass=by_address, object_bytes=16]) -> void [binding=weak, object=_ZN11string_likeIc6traitsEC1I4viewEET_IcS0_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : obj<16x8>
+  slot $i : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = convert sext i64 i32 0
+    store typed i64 %t1, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i64 $i
+    %t3 = convert sext i64 i32 4
+    %t4 = cmp ult i64 %t2, %t3
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = index i8 [projection=field] %v, 0
+    %t6 = load typed ptr %t5
+    %t7 = load typed i64 $i
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    %t9 = load i8 %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i64 $i
+    %t13 = index i8 [projection=array_element] %t11, %t12
+    store i8 %t9, %t13
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t14 = load typed i64 $i
+    %t15 = binary add i64 %t14, 1
+    store typed i64 %t15, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    return void
+}
+function @string_like_char_traits___operator_(%this : ptr [object_bytes=4], %v : ptr [pass=by_address, object_bytes=16]) -> ptr [binding=weak, object=_ZN11string_likeIc6traitsEaSI4viewEERS1_T_IcS0_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : obj<16x8>
+  slot $i : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = convert sext i64 i32 0
+    store typed i64 %t1, $i
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t2 = load typed i64 $i
+    %t3 = convert sext i64 i32 4
+    %t4 = cmp ult i64 %t2, %t3
+    branch %t4, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t5 = index i8 [projection=field] %v, 0
+    %t6 = load typed ptr %t5
+    %t7 = load typed i64 $i
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    %t9 = load i8 %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i64 $i
+    %t13 = index i8 [projection=array_element] %t11, %t12
+    store i8 %t9, %t13
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t14 = load typed i64 $i
+    %t15 = binary add i64 %t14, 1
+    store typed i64 %t15, $i
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t16 = load typed ptr $this
+    return ptr %t16
+}
+function @string_like_char_traits___data(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZNK11string_likeIc6traitsE4dataEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @string_like_char_traits___size(%this : ptr [object_bytes=4]) -> i64 [binding=weak, object=_ZNK11string_likeIc6traitsE4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = convert sext i64 i32 4
+    return i64 %t1
+}
+alias object _ZN11string_likeIc6traitsEC2Ev = @string_like_char_traits___string_like
+alias object _ZN4viewIc6traitsEC2Ev = @view_char_traits___view
+alias object _ZN4viewIc6traitsEC2EPKcm = @view_char_traits___view__ov3
+alias object _ZN4viewIc6traitsEC2ERKS1_ = @view_char_traits___view__ov2
+alias object _ZN11string_likeIc6traitsEC2I4viewEET_IcS0_E = @string_like_char_traits___string_like__2

@@ -1,0 +1,13 @@
+// N3485 15.2p1, 15.3p9: when no handler of a try block matches, the exception
+// propagates out of the function, destroying the objects declared before the
+// try block on the way
+#include "200-host-eh-cleanup-before-try.helper.h"
+struct E0 { virtual ~E0() {} };
+struct G { int id; G(int i) : id(i) {} ~G() { out_line("dtor", id); } };
+static void f0(int k)
+{
+  G g1(1);
+  try { if (k) throw "x"; }
+  catch (E0&) { out_line("caught E0", 0); }
+}
+int main() { try { f0(1); } catch (...) { out_line("escaped", 0); } return 0; }

@@ -1,0 +1,15 @@
+#include <cstdio>
+#include <functional>
+
+int seven()
+{
+  return 7;
+}
+
+int main()
+{
+  std::function<int()> f = seven;
+  const int value = f();
+  std::printf("%d\n", value);
+  return value == 7 ? 0 : 1;
+}

@@ -1,0 +1,8 @@
+#include <fstream>
+
+int main()
+{
+  std::ofstream out("/dev/null");
+  out << "x";
+  return out ? 0 : 1;
+}

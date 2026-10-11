@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @check()
+    return i32 0
+}
+function @check() -> void [binding=weak, object=_Z5checkI4PairImPKcEEvv] {
+  block ^entry:
+    return void
+}

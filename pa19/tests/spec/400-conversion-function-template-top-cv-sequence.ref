@@ -1,0 +1,94 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<4x4>
+  slot $second : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = call obj<4x4> @make_result()
+    copyobj 4x4 %t2, %t1
+    %t3 = addr $second
+    %t4 = call obj<4x4> @make_result__2()
+    copyobj 4x4 %t4, %t3
+    %t5 = addr $first
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $second
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp eq i32 %t11, 7
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t14 = load typed i64 $land__2
+    branch %t14, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t15 = load typed i32 $cond__1
+    return i32 %t15
+}
+function @make_result() -> obj<4x4> [binding=weak, object=_Z11make_resultI6resultIiEET_v] {
+  slot $retobj__1 : obj<4x4>
+  slot $tmpobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = addr $tmpobj__2
+    %t3 = call obj<4x4> @source__operatorType(%t2)
+    copyobj 4x4 %t3, %t1
+    return obj<4x4> $retobj__1
+}
+function @make_result__2() -> obj<4x4> [binding=weak, object=_Z11make_resultIK6resultIiEET_v] {
+  slot $retobj__1 : obj<4x4>
+  slot $tmpobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = addr $tmpobj__2
+    %t3 = call obj<4x4> @source__operatorType(%t2)
+    copyobj 4x4 %t3, %t1
+    return obj<4x4> $retobj__1
+}
+function @source__operatorType(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK6sourcecvT_I6resultIiEEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @result_int___result(%t1, 7)
+    return obj<4x4> $retobj__1
+}
+function @result_int___result(%this : ptr [object_bytes=4], %input : i32) -> void [binding=weak, object=_ZN6resultIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %input, $input
+    %t1 = load typed i32 $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN6resultIiEC2Ei = @result_int___result

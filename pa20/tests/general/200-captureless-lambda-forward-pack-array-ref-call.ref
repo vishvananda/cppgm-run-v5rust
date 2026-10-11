@@ -1,0 +1,82 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @sink(%text : ptr [pass=by_address, object_bytes=2], %value : i32) -> i32 [binding=strong, object=_Z4sinkRA2_Kci] {
+  slot $text : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %text, $text
+    store typed i32 %value, $value
+    %t1 = load typed ptr $text
+    %t2 = index i8 [projection=array_element] %t1, 0
+    %t3 = load i8 %t2
+    %t4 = load typed i32 $value
+    %t5 = convert sext i32 i8 %t3
+    %t6 = binary add nowrap i32 %t5, %t4
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    store typed i32 1, $refarg__1
+    %t2 = addr $refarg__1
+    %t3 = call i32 @run(%t1, %t2)
+    %t4 = binary add nowrap i32 120, 1
+    %t5 = binary sub nowrap i32 %t3, %t4
+    return i32 %t5
+}
+function @run(%args : ptr [pass=by_address, object_bytes=2], %args__pack2 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z3runIJRA2_KciEEiDpOT_] {
+  slot $args : ptr
+  slot $args__pack2 : ptr
+  slot $lambda : obj<1x1>
+
+  block ^entry:
+    store typed ptr %args, $args
+    store typed ptr %args__pack2, $args__pack2
+    %t1 = addr $lambda
+    %t2 = addr $lambda
+    %t3 = load typed ptr $args
+    %t4 = call ptr @std__forward(%t3)
+    %t5 = load typed ptr $args__pack2
+    %t6 = call ptr @std__forward__2(%t5)
+    %t7 = call i32 @__lambda_run_t162_168__operator__(%t2, %t4, %t6)
+    return i32 %t7
+}
+function @std__forward(%t : ptr [pass=by_address, object_bytes=2]) -> ptr [binding=weak, object=_ZSt7forwardIRA2_KcEOT_RNSt16remove_referenceIS3_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @std__forward__2(%t : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZSt7forwardIiEOT_RNSt16remove_referenceIS0_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @__lambda_run_t162_168__operator__(%this : ptr [object_bytes=1], %args2 : ptr [pass=by_address, object_bytes=2], %args2__pack2 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=internal, object=_ZZ3runIJRA2_KciEEiDpOT_ENKUlS2_OiE_clES2_S6_, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $args2 : ptr
+  slot $args2__pack2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %args2, $args2
+    store typed ptr %args2__pack2, $args2__pack2
+    %t1 = load typed ptr $args2
+    %t2 = call ptr @std__forward(%t1)
+    %t3 = load typed ptr $args2__pack2
+    %t4 = call ptr @std__forward__2(%t3)
+    %t5 = load typed i32 %t4
+    %t6 = call i32 @sink(%t2, %t5)
+    return i32 %t6
+}

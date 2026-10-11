@@ -1,0 +1,45 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      class-specifier
+        class-key KW_STRUCT:struct
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier x
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier S
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      class-specifier
+        class-key KW_UNION:union
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier y
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier U
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

@@ -1,0 +1,68 @@
+int stage = 0;
+int live = 0;
+int bad_second_destroy = 0;
+int in_first_throw = 0;
+
+struct Ex {};
+
+struct Guard
+{
+  int id;
+
+  Guard(int value) : id(value)
+  {
+    live += id;
+  }
+
+  ~Guard()
+  {
+    if(in_first_throw && id == 2)
+      bad_second_destroy = 1;
+    live -= id;
+  }
+};
+
+void may_throw(Guard &guard)
+{
+  if(guard.id == 1) {
+    in_first_throw = 1;
+    throw Ex();
+  }
+}
+
+void may_throw2()
+{
+}
+
+void f()
+{
+  while(stage < 2) {
+    if(stage == 1) {
+      Guard first(1);
+      may_throw(first);
+      continue;
+    }
+
+    Guard second(2);
+    try {
+      may_throw(second);
+    } catch(Ex &) {
+      may_throw2();
+    }
+    ++stage;
+  }
+}
+
+int main()
+{
+  try {
+    f();
+  } catch(...) {
+  }
+
+  if(bad_second_destroy)
+    return 10;
+  if(live != 0)
+    return 20 + live;
+  return 0;
+}

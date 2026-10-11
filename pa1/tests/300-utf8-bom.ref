@@ -1,0 +1,8 @@
+whitespace-sequence 0 
+new-line 0 
+identifier 3 int
+whitespace-sequence 0 
+identifier 1 x
+preprocessing-op-or-punc 1 ;
+new-line 0 
+eof

@@ -1,0 +1,74 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name_type_Z15has_lambda_rttiIiEiT_EUlvE_ [storage=readonly, binding=internal, object=_ZTSZ15has_lambda_rttiIiEiT_EUlvE_] = {
+  i8 90
+  i8 49
+  i8 53
+  i8 104
+  i8 97
+  i8 115
+  i8 95
+  i8 108
+  i8 97
+  i8 109
+  i8 98
+  i8 100
+  i8 97
+  i8 95
+  i8 114
+  i8 116
+  i8 116
+  i8 105
+  i8 73
+  i8 105
+  i8 69
+  i8 105
+  i8 84
+  i8 95
+  i8 69
+  i8 85
+  i8 108
+  i8 118
+  i8 69
+  i8 95
+  i8 0
+}
+global @__rtti_type_Z15has_lambda_rttiIiEiT_EUlvE_ [storage=readonly, binding=internal, object=_ZTIZ15has_lambda_rttiIiEiT_EUlvE_] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name_type_Z15has_lambda_rttiIiEiT_EUlvE_
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @has_lambda_rtti(1)
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @has_lambda_rtti(%value : i32) -> i32 [binding=weak, object=_Z15has_lambda_rttiIiEiT_] {
+  slot $value : i32
+  slot $closure : obj<4x4>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr $closure
+    %t2 = load typed i32 $value
+    store typed i32 %t2, %t1
+    %t3 = addr @__rtti_type_Z15has_lambda_rttiIiEiT_EUlvE_
+    %t4 = addr @__rtti_type_Z15has_lambda_rttiIiEiT_EUlvE_
+    %t5 = cmp eq ptr %t3, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

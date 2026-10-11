@@ -1,0 +1,54 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data : i8
+  slot $alias : obj<8x8>
+  slot $direct : obj<8x8>
+  slot $alias_ptr : ptr
+  slot $direct_ptr : ptr
+
+  block ^entry:
+    store i8 0, $data
+    %t1 = addr $alias
+    %t2 = addr $data
+    %t3 = addr $alias
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $direct
+    %t6 = addr $data
+    %t7 = addr $direct
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed ptr %t6, %t8
+    %t9 = addr $alias
+    %t10 = call ptr @AliasBuffer__ptr(%t9)
+    store typed ptr %t10, $alias_ptr
+    %t11 = addr $direct
+    %t12 = call ptr @DirectBuffer__ptr(%t11)
+    store typed ptr %t12, $direct_ptr
+    %t13 = load typed ptr $alias_ptr
+    %t14 = load typed ptr %t13
+    %t15 = load i8 %t14
+    %t16 = load typed ptr $direct_ptr
+    %t17 = load typed ptr %t16
+    %t18 = load i8 %t17
+    %t19 = convert sext i32 i8 %t15
+    %t20 = convert sext i32 i8 %t18
+    %t21 = binary add nowrap i32 %t19, %t20
+    return i32 %t21
+}
+function @AliasBuffer__ptr(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK11AliasBuffer3ptrEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @DirectBuffer__ptr(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK12DirectBuffer3ptrEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias member_fn_ptr member-pointer of struct C to function of () const returning pointer to const struct D
+  function-definition f function of () returning member-pointer of struct C to function of () const returning pointer to const struct D
+    compound-statement
+      return-statement
+        unary-expression prvalue member-pointer of struct C to function of () const returning pointer to const struct D OP_AMP:&
+          id-expression lvalue function of (pointer to const struct C) returning pointer to const struct D C::get
+end translation unit

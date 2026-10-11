@@ -1,0 +1,12 @@
+function @explicit(%value : i64) -> i64 [unwind=no, binding=strong, object=_Z8expliciti] {
+  block ^entry:
+    return i64 %value
+}
+function @inferred(%value : i64) -> i64 [binding=strong, object=_Z8inferredi] {
+  block ^entry:
+    return i64 %value
+}
+function @caller(%value : i64) -> i64 [binding=strong] {
+  block ^entry:
+    return i64 %value
+}

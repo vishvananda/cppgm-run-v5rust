@@ -1,0 +1,28 @@
+function @force(%loc : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_Z5forceRK6Locale] {
+  slot $loc : ptr
+
+  block ^entry:
+    store typed ptr %loc, $loc
+    %t1 = load typed ptr $loc
+    %t2 = call ptr @try_use_facet(%t1)
+    return ptr %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @try_use_facet(%loc : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z13try_use_facetI5CtypeEPKT_RK6Locale] {
+  slot $loc : ptr
+  slot $facets : ptr
+
+  block ^entry:
+    store typed ptr %loc, $loc
+    %t1 = load typed ptr $loc
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    store typed ptr %t5, $facets
+    %t6 = load typed ptr $facets
+    return ptr 0
+}

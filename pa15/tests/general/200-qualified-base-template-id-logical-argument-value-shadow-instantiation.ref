@@ -1,0 +1,8 @@
+global @n__flag : i32 [binding=strong, object=_ZN1n4flagE] = zero
+global @value : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @value
+    return i32 %t1
+}

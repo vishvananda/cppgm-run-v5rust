@@ -1,0 +1,64 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call u8 @compare_quantities()
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @compare_quantities() -> u8 [binding=weak, object=_Z18compare_quantitiesv, inline_hint=yes] {
+  slot $argobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $argobj__1
+    call void @quantity_int___quantity(%t1, 1)
+    %t2 = addr $argobj__2
+    call void @quantity_int___quantity(%t2, 2)
+    %t3 = call u8 @operator_($argobj__1, $argobj__2)
+    return u8 %t3
+}
+function @quantity_int___quantity(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN8quantityIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @operator_(%left : obj<4x4>, %right : obj<4x4>) -> u8 [binding=weak, object=_ZltIiEb8quantityIT_ES2_, inline_hint=yes] {
+  slot $left : obj<4x4>
+  slot $right : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $left
+    copyobj 4x4 %left, %t1
+    %t2 = addr $right
+    copyobj 4x4 %right, %t2
+    %t3 = addr $left
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = addr $right
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp lt i32 %t5, %t8
+    %t10 = convert trunc u8 i64 %t9
+    return u8 %t10
+}
+alias object _ZN8quantityIiEC2Ei = @quantity_int___quantity

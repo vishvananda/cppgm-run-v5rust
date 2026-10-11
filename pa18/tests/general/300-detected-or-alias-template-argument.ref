@@ -1,0 +1,13 @@
+declare global @choice_Hidden___cppgm_class_template_identity_1_void___value : i32 [binding=weak, object=_ZN6choiceI6Hidden4packIJiEEvE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @pick(0)
+    %t2 = cmp ne i32 %t1, 2
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}
+function @pick() -> i32 [arity=variadic, binding=weak, object=_Z4pickI6HiddenEiz] {
+  block ^entry:
+    return i32 2
+}

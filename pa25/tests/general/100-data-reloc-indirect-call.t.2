@@ -1,0 +1,8 @@
+int helper();
+
+int (*table)() = helper;
+
+int main()
+{
+  return table();
+}

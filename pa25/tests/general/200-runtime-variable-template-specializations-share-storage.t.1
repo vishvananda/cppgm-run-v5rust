@@ -1,0 +1,4 @@
+// N3485 14.7p6 + PA17 variable templates: g<int> and g<char> are distinct
+// specializations with distinct storage; expect exit 0
+template<class T> int g = 0;
+int main() { g<int> = 1; g<char> = 2; return g<int> == 1 ? 0 : 1; }

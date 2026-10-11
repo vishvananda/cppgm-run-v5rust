@@ -1,0 +1,150 @@
+// A synthesized copy or move constructor of a class with virtual bases: the
+// complete object's constructor copies the virtual bases first; when a
+// later copy throws, each copied base subobject that has virtual bases is
+// destroyed by its base-object destructor, which leaves the shared virtual
+// bases to the complete object's cleanup (12.4p8, 15.2p2: each subobject
+// is destroyed once). Every copy ticks a countdown that throws at step k;
+// each shape sweeps k and checks no object stays alive or dies twice.
+int countdown, live, trace;
+void tick()
+{
+	if (countdown > 0 && --countdown == 0)
+		throw 1;
+}
+void note(int v)
+{
+	trace = trace * 7 + v;
+	trace %= 1000003;
+}
+struct V
+{
+	V() { ++live; }
+	V(const V&)
+	{
+		tick();
+		++live;
+		note(1);
+	}
+	~V()
+	{
+		--live;
+		note(2);
+	}
+};
+struct U : virtual V
+{
+	U() { ++live; }
+	U(const U& o) : V(o)
+	{
+		tick();
+		++live;
+		note(3);
+	}
+	~U()
+	{
+		--live;
+		note(4);
+	}
+};
+struct B
+{
+	B() { ++live; }
+	B(const B&)
+	{
+		tick();
+		++live;
+		note(5);
+	}
+	~B()
+	{
+		--live;
+		note(6);
+	}
+};
+struct M
+{
+	M() { ++live; }
+	M(const M&)
+	{
+		tick();
+		++live;
+		note(7);
+	}
+	~M()
+	{
+		--live;
+		note(8);
+	}
+};
+struct I1 : virtual V
+{};
+struct I2 : virtual V
+{
+	M m;
+};
+struct A5 : I1, I2, B
+{};
+struct A6 : virtual U, I1, B
+{
+	M m;
+};
+struct A7 : I2, virtual U
+{
+	A7() = default;
+	A7(A7&&) = default;
+	B b;
+};
+template<class T>
+int shape_copy()
+{
+	int bad = 0;
+	for (int k = 1;; ++k)
+	{
+		T* source = new T;
+		int before = live;
+		countdown = k;
+		try
+		{
+			T copy(*source);
+		}
+		catch (int)
+		{}
+		bool done = countdown > 0;
+		countdown = 0;
+		if (live != before)
+			++bad;
+		delete source;
+		if (done)
+			break;
+	}
+	return bad;
+}
+template<class T>
+int shape_move()
+{
+	int bad = 0;
+	for (int k = 1;; ++k)
+	{
+		T source;
+		int before = live;
+		countdown = k;
+		try
+		{
+			T moved(static_cast<T&&>(source));
+		}
+		catch (int)
+		{}
+		bool done = countdown > 0;
+		countdown = 0;
+		if (live != before)
+			++bad;
+		if (done)
+			break;
+	}
+	return bad;
+}
+int main()
+{
+	int bad = shape_copy<A5>() + shape_copy<A6>() + shape_move<A7>();
+	return (bad + live) * 10 + trace % 10;
+}

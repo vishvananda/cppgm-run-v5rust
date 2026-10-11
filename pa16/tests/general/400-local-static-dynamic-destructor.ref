@@ -1,0 +1,78 @@
+declare function @__cppgm_runtime_atexit(%arg0 : ptr) -> i32 [linkage=c, binding=strong, object=atexit]
+
+global @destroyed : i32 [binding=strong] = 0
+global @__local_static__get_value__decl0__item : obj<4x4> [binding=internal, object=_ZZ9get_valuevE4item] = {
+  zero 4
+}
+global @__local_static__get_value__decl0__item__guard : i64 [binding=internal, object=_ZGVZ9get_valuevE4item] = zero
+
+function @__cppgm_local_static_destructor____local_static__get_value__decl0__item() -> void [unwind=no, binding=internal] {
+  block ^entry:
+    %t1 = addr @__local_static__get_value__decl0__item
+    call void @value___value(%t1)
+    return void
+}
+function @get_value() -> ptr [binding=strong, object=_Z9get_valuev] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__get_value__decl0__item__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__get_value__decl0__item
+    call void @value__value(%t3, 7)
+    %t4 = call i32 @__cppgm_runtime_atexit(@__cppgm_local_static_destructor____local_static__get_value__decl0__item)
+    store typed i64 1, @__local_static__get_value__decl0__item__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = addr @__local_static__get_value__decl0__item
+    return ptr %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call ptr @get_value()
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @value__value(%this : ptr [object_bytes=4], %input : i32) -> void [binding=weak, object=_ZN5valueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %input, $input
+    %t1 = load typed i32 $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @value___value(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5valueD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN5valueC2Ei = @value__value
+alias object _ZN5valueD2Ev = @value___value

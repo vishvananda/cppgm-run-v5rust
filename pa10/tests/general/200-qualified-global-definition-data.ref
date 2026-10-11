@@ -1,0 +1,10 @@
+global @A__y : i32 [storage=readonly, binding=internal, object=_ZN1AL1yE] = 3
+global @A__x : i32 [storage=readonly, binding=strong, object=_ZN1A1xE] = 3
+global @A__arr : obj<12x4> [binding=strong, object=_ZN1A3arrE] = {
+  zero 12
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

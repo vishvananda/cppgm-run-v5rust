@@ -1,0 +1,264 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @temporary_destructions : i32 [binding=strong] = zero
+global @scope_destructions : i32 [binding=strong] = zero
+global @source : obj<4x4> [binding=strong] = {
+  zero 4
+}
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 117
+  i8 110
+  i8 117
+  i8 115
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Error [storage=readonly, binding=weak, object=_ZTS5Error] = {
+  i8 53
+  i8 69
+  i8 114
+  i8 114
+  i8 111
+  i8 114
+  i8 0
+}
+global @__rtti_struct_Error [storage=readonly, binding=weak, object=_ZTI5Error] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Error
+}
+global @__ehobj_struct_Error [binding=internal] = {
+  zero 4
+}
+
+function @operator_(%ret : ptr [pass=indirect_result, object_bytes=4], %__param1 : ptr, %right : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_ZplPKcRK4Text] {
+  slot $__param1 : ptr
+  slot $right : ptr
+
+  block ^entry:
+    store typed ptr %__param1, $__param1
+    store typed ptr %right, $right
+    %t1 = load typed ptr $right
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    call void @Text__Text(%ret, %t4)
+    return void
+}
+function @raise_later() -> void [binding=strong, object=_Z11raise_laterv] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t1
+    %t2 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    return void
+}
+function @exercise(%take_throw : u8) -> void [binding=strong, object=_Z8exerciseb] {
+  slot $take_throw : u8
+  slot $scope : obj<1x1>
+  slot $throw_alloc__1 : ptr
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    store u8 %take_throw, $take_throw
+    %t1 = addr $scope
+    %t2 = load u8 $take_throw
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    eh_try ^cleanup_action_4
+    %t3 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed ptr %t3, $throw_alloc__1
+    eh_end
+    jump ^throw_alloc_unwind_end_5
+
+  block ^cleanup_resume_3:
+    resume
+
+  block ^cleanup_action_4:
+    %t4 = addr $scope
+    call void @Scope___Scope(%t4)
+    jump ^cleanup_resume_3
+
+  block ^throw_alloc_unwind_end_5:
+    %t5 = load typed ptr $throw_alloc__1
+    eh_try ^cleanup_action_4
+    %t6 = addr $arg__2
+    %t7 = addr @__strlit__1
+    %t8 = addr @source
+    call void @operator_(%t6, %t7, %t8)
+    eh_end
+    eh_try ^cleanup_action_6
+    call void @Error__Error(%t5, %t6)
+    call void @Text___Text(%t6)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @Text___Text(%t6)
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_7:
+    eh_try ^cleanup_action_4
+    %t9 = addr @__rtti_struct_Error
+    %t10 = addr @Error___Error
+    call void @__external_runtime____cxa_throw(%t5, %t9, %t10)
+    eh_end
+    return void
+
+  block ^if_else_2:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    eh_try ^cleanup_action_4
+    call void @raise_later()
+    eh_end
+    %t11 = addr $scope
+    call void @Scope___Scope(%t11)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    call void @exercise(0)
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t1 = exception ptr
+    %t2 = exception_selector i32
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t4 = call ptr @__external_runtime____cxa_begin_catch(%t1)
+    eh_cleanup ^catch_cleanup_6
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    %t5 = load typed i32 @temporary_destructions
+    %t6 = cmp ne i32 %t5, 0
+    branch %t6, ^lor_short_8, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t7 = load typed i32 @scope_destructions
+    %t8 = cmp ne i32 %t7, 1
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__1
+    jump ^lor_end_9
+
+  block ^lor_short_8:
+    store typed i64 1, $lor__1
+    jump ^lor_end_9
+
+  block ^lor_end_9:
+    %t10 = load typed i64 $lor__1
+    %t11 = convert trunc i32 i64 %t10
+    return i32 %t11
+}
+function @Text__Text(%this : ptr [object_bytes=4], %input : i32) -> void [binding=weak, object=_ZN4TextC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %input, $input
+    %t1 = load typed i32 $input
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Text___Text(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN4TextD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @temporary_destructions
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @temporary_destructions
+    return void
+}
+function @Scope___Scope(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5ScopeD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @scope_destructions
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @scope_destructions
+    return void
+}
+function @Error__Error(%this : ptr [object_bytes=4], %text : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN5ErrorC1ERK4Text, inline_hint=yes] {
+  slot $this : ptr
+  slot $text : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %text, $text
+    %t1 = load typed ptr $text
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @Error___Error(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5ErrorD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @source
+    call void @Text__Text(%t1, 3)
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @source
+    call void @Text___Text(%t1)
+    return void
+}
+alias object _ZN4TextC2Ei = @Text__Text
+alias object _ZN4TextD2Ev = @Text___Text
+alias object _ZN5ScopeD2Ev = @Scope___Scope
+alias object _ZN5ErrorC2ERK4Text = @Error__Error
+alias object _ZN5ErrorD2Ev = @Error___Error

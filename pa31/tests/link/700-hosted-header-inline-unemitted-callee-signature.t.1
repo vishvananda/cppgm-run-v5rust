@@ -1,0 +1,11 @@
+#include "700-hosted-header-inline-unemitted-callee-signature.h"
+
+inline int HeaderInlineDerived::next()
+{
+  return buf->sbumpc();
+}
+
+int main()
+{
+  return 0;
+}

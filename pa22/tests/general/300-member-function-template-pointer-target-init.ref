@@ -1,0 +1,97 @@
+function @member_template_pointer_target__C__operatorT(%this : ptr [object_bytes=4]) -> i32 [binding=strong, object=_ZN30member_template_pointer_target1CcvT_IiEEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $setter : i128
+  slot $value : obj<4x4>
+  slot $converter : i128
+  slot $lor__1 : i64
+  slot $member_pointer_callee__2 : ptr
+
+  block ^entry:
+    %t1 = addr @member_template_pointer_target__C__set
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    store typed i128 %t3, $setter
+    %t4 = load typed i128 $setter
+    %t5 = addr $value
+    %t6 = addr $value
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 7, %t7
+    %t8 = addr @member_template_pointer_target__C__operatorT
+    %t9 = copy i64 %t8
+    %t10 = convert zext i128 i64 %t9
+    store typed i128 %t10, $converter
+    %t11 = addr $value
+    %t12 = load typed i128 $converter
+    %t13 = binary shr i128 %t12, 64
+    %t14 = convert trunc i64 i128 %t13
+    %t15 = convert trunc i64 i128 %t12
+    %t16 = binary and i64 %t15, 1
+    %t17 = cmp ne i64 %t16, 0
+    %t18 = index i8 %t11, %t14
+    branch %t17, ^member_pointer_virtual_4, ^member_pointer_direct_5
+
+  block ^member_pointer_virtual_4:
+    %t19 = load typed ptr %t18
+    %t20 = binary sub i64 %t15, 1
+    %t21 = index i8 %t19, %t20
+    %t22 = load typed ptr %t21
+    store typed ptr %t22, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_direct_5:
+    %t23 = copy ptr %t15
+    store typed ptr %t23, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_end_6:
+    %t24 = load typed ptr $member_pointer_callee__2
+    %t25 = call i32 %t24(%t18) as (%arg0 : ptr [object_bytes=4]) -> i32
+    %t26 = cmp ne i32 %t25, 8
+    branch %t26, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t27 = addr $value
+    %t28 = call i32 @member_template_pointer_target__convert(%t27)
+    %t29 = cmp ne i32 %t28, 8
+    %t30 = cmp ne i64 %t29, 0
+    store typed i64 %t30, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t31 = load typed i64 $lor__1
+    %t32 = convert trunc i32 i64 %t31
+    return i32 %t32
+}
+function @member_template_pointer_target__C__set(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN30member_template_pointer_target1C3setIiEEvT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return void
+}
+function @member_template_pointer_target__convert(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZN30member_template_pointer_target7convertIXadL_ZNS_1CcvT_IiEEvEEEEiRS1_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = addr @member_template_pointer_target__C__operatorT
+    %t3 = call i32 %t2(%t1) as (%arg0 : ptr [object_bytes=4]) -> i32
+    return i32 %t3
+}

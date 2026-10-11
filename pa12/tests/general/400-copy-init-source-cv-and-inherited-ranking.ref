@@ -1,0 +1,959 @@
+global @case10__result : obj<4x4> [binding=strong, object=_ZN6case106resultE] = {
+  zero 4
+}
+
+function @case0__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case01AC2ERKNS_1XE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case0__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case01AC1ERKNS_1XE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case0__check() -> i32 [binding=strong, object=_ZN5case05checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = call obj<4x4> @case0__X__operatorA(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = addr $a
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 2
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @case1__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case11AC2ERNS_1XE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case1__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case11AC1ERNS_1XE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case1__check() -> i32 [binding=strong, object=_ZN5case15checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    call void @case1__A__A__ov2(%t2, %t3)
+    %t4 = addr $a
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @case2__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case21AC2ERKNS_1XE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case2__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case21AC1ERKNS_1XE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case2__check() -> i32 [binding=strong, object=_ZN5case25checkEv] {
+  slot $a : obj<4x4>
+  slot $tmpobj__1 : obj<1x1>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $tmpobj__1
+    zeroinit 1x1 %t2
+    %t3 = call obj<4x4> @case2__X__operatorA(%t2)
+    copyobj 4x4 %t3, %t1
+    %t4 = addr $a
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 2
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__2
+    return i32 %t8
+}
+function @case3__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case31AC2ERKNS_1XE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case3__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case31AC1ERKNS_1XE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case3__check() -> i32 [binding=strong, object=_ZN5case35checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = call obj<4x4> @case3__X__operatorA(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = addr $a
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 2
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @case4__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case41AC2ERNS_3MidE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case4__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case41AC1ERNS_3MidE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case4__check() -> i32 [binding=strong, object=_ZN5case45checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = index i8 %t3, 0
+    %t5 = call obj<4x4> @case4__Base__operatorA(%t4)
+    copyobj 4x4 %t5, %t2
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @case5__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case51AC2ERNS_4BaseE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case5__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case51AC1ERNS_4BaseE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case5__check() -> i32 [binding=strong, object=_ZN5case55checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = index i8 %t3, 0
+    %t5 = call obj<4x4> @case5__Mid__operatorA(%t4)
+    copyobj 4x4 %t5, %t2
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @case6__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case61AC2ERNS_4BaseE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case6__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case61AC1ERNS_4BaseE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case6__check() -> i32 [binding=strong, object=_ZN5case65checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = index i8 %t3, 0
+    %t5 = call obj<4x4> @case6__Base__operatorA(%t4)
+    copyobj 4x4 %t5, %t2
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @case7__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case71AC2ERNS_4BaseE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case7__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case71AC1ERNS_4BaseE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case7__check() -> i32 [binding=strong, object=_ZN5case75checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = index i8 %t3, 0
+    %t5 = call obj<4x4> @case7__Base__operatorA(%t4)
+    copyobj 4x4 %t5, %t2
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @case8__A__A__ov2__base_entry(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case81AC2ERKNS_4BaseE, object_root=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case8__A__A__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_ZN5case81AC1ERKNS_4BaseE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @case8__check() -> i32 [binding=strong, object=_ZN5case85checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = index i8 %t3, 0
+    %t5 = call obj<4x4> @case8__Base__operatorA(%t4)
+    copyobj 4x4 %t5, %t2
+    %t6 = addr $a
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @case9__check() -> i32 [binding=strong, object=_ZN5case95checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $arg__1 : obj<4x4>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $arg__1
+    %t4 = addr $x
+    %t5 = call obj<4x4> @case9__X__operatorD__ov2(%t4)
+    copyobj 4x4 %t5, %t3
+    %t6 = addr $arg__1
+    %t7 = index i8 %t6, 0
+    copyobj 4x4 %t7, %t2
+    %t8 = addr $a
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 3
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__2
+    return i32 %t12
+}
+function @case10__check() -> i32 [binding=strong, object=_ZN6case105checkEv] {
+  slot $x : obj<1x1>
+  slot $a : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $a
+    %t3 = addr $x
+    %t4 = call ptr @case10__X__operatorA_(%t3)
+    copyobj 4x4 %t4, %t2
+    %t5 = addr $a
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 2
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+  slot $lor__2 : i64
+  slot $lor__3 : i64
+  slot $lor__4 : i64
+  slot $lor__5 : i64
+  slot $lor__6 : i64
+  slot $lor__7 : i64
+  slot $lor__8 : i64
+  slot $lor__9 : i64
+  slot $lor__10 : i64
+
+  block ^entry:
+    %t1 = call i32 @case0__check()
+    branch %t1, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t2 = call i32 @case1__check()
+    %t3 = cmp ne i64 %t2, 0
+    store typed i64 %t3, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t4 = load typed i64 $lor__1
+    branch %t4, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t5 = call i32 @case2__check()
+    %t6 = cmp ne i64 %t5, 0
+    store typed i64 %t6, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__2
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t7 = load typed i64 $lor__2
+    branch %t7, ^lor_short_8, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t8 = call i32 @case3__check()
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_short_8:
+    store typed i64 1, $lor__3
+    jump ^lor_end_9
+
+  block ^lor_end_9:
+    %t10 = load typed i64 $lor__3
+    branch %t10, ^lor_short_11, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t11 = call i32 @case4__check()
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_short_11:
+    store typed i64 1, $lor__4
+    jump ^lor_end_12
+
+  block ^lor_end_12:
+    %t13 = load typed i64 $lor__4
+    branch %t13, ^lor_short_14, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t14 = call i32 @case5__check()
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_short_14:
+    store typed i64 1, $lor__5
+    jump ^lor_end_15
+
+  block ^lor_end_15:
+    %t16 = load typed i64 $lor__5
+    branch %t16, ^lor_short_17, ^lor_rhs_16
+
+  block ^lor_rhs_16:
+    %t17 = call i32 @case6__check()
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $lor__6
+    jump ^lor_end_18
+
+  block ^lor_short_17:
+    store typed i64 1, $lor__6
+    jump ^lor_end_18
+
+  block ^lor_end_18:
+    %t19 = load typed i64 $lor__6
+    branch %t19, ^lor_short_20, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t20 = call i32 @case7__check()
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $lor__7
+    jump ^lor_end_21
+
+  block ^lor_short_20:
+    store typed i64 1, $lor__7
+    jump ^lor_end_21
+
+  block ^lor_end_21:
+    %t22 = load typed i64 $lor__7
+    branch %t22, ^lor_short_23, ^lor_rhs_22
+
+  block ^lor_rhs_22:
+    %t23 = call i32 @case8__check()
+    %t24 = cmp ne i64 %t23, 0
+    store typed i64 %t24, $lor__8
+    jump ^lor_end_24
+
+  block ^lor_short_23:
+    store typed i64 1, $lor__8
+    jump ^lor_end_24
+
+  block ^lor_end_24:
+    %t25 = load typed i64 $lor__8
+    branch %t25, ^lor_short_26, ^lor_rhs_25
+
+  block ^lor_rhs_25:
+    %t26 = call i32 @case9__check()
+    %t27 = cmp ne i64 %t26, 0
+    store typed i64 %t27, $lor__9
+    jump ^lor_end_27
+
+  block ^lor_short_26:
+    store typed i64 1, $lor__9
+    jump ^lor_end_27
+
+  block ^lor_end_27:
+    %t28 = load typed i64 $lor__9
+    branch %t28, ^lor_short_29, ^lor_rhs_28
+
+  block ^lor_rhs_28:
+    %t29 = call i32 @case10__check()
+    %t30 = cmp ne i64 %t29, 0
+    store typed i64 %t30, $lor__10
+    jump ^lor_end_30
+
+  block ^lor_short_29:
+    store typed i64 1, $lor__10
+    jump ^lor_end_30
+
+  block ^lor_end_30:
+    %t31 = load typed i64 $lor__10
+    %t32 = convert trunc i32 i64 %t31
+    return i32 %t32
+}
+function @case0__X__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case01XcvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case0__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case2__X__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case21XcvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case2__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case3__X__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNR5case31XcvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case3__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case4__Base__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case44BasecvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case4__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case5__Mid__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case53MidcvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case5__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case6__Base__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case64BasecvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case6__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case7__Base__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK5case74BasecvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case7__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case8__Base__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case84BasecvNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case8__A__A(%t1, 2)
+    return obj<4x4> $retobj__1
+}
+function @case9__X__operatorD__ov2(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZN5case91XcvNS_1DEEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @case9__D__D(%t1)
+    return obj<4x4> $retobj__1
+}
+function @case10__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN6case101AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case10__X__operatorA_(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN6case101XcvRNS_1AEEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @case10__result
+    return ptr %t1
+}
+function @case0__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case01AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case2__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case21AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case3__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case31AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case4__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case41AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case5__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case51AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case6__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case61AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case7__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case71AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case8__A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case81AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @case9__D__D(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5case91DC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @case9__A__A__base_entry(%t2, 3)
+    return void
+}
+function @case9__A__A__base_entry(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5case91AC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @case10__result
+    call void @case10__A__A(%t1, 2)
+    return void
+}
+alias object _ZN6case101AC2Ei = @case10__A__A
+alias object _ZN5case01AC2Ei = @case0__A__A
+alias object _ZN5case21AC2Ei = @case2__A__A
+alias object _ZN5case31AC2Ei = @case3__A__A
+alias object _ZN5case41AC2Ei = @case4__A__A
+alias object _ZN5case51AC2Ei = @case5__A__A
+alias object _ZN5case61AC2Ei = @case6__A__A
+alias object _ZN5case71AC2Ei = @case7__A__A
+alias object _ZN5case81AC2Ei = @case8__A__A
+alias object _ZN5case91DC2Ev = @case9__D__D

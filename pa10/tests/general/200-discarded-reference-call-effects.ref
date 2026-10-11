@@ -1,0 +1,43 @@
+global @value : i32 [binding=strong] = 7
+global @calls : i32 [binding=strong] = zero
+
+function @get_reference() -> ptr [binding=strong, object=_Z13get_referencev] {
+  block ^entry:
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    %t3 = addr @value
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $observed : i32
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = call ptr @get_reference()
+    %t2 = call ptr @get_reference()
+    %t3 = call ptr @get_reference()
+    %t4 = load volatile i32 @value
+    %t5 = call ptr @get_reference()
+    %t6 = load volatile i32 %t5
+    store typed i32 %t6, $observed
+    %t7 = load typed i32 @calls
+    %t8 = cmp ne i32 %t7, 4
+    branch %t8, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t9 = load typed i32 $observed
+    %t10 = cmp ne i32 %t9, 7
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t12 = load typed i64 $lor__1
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}

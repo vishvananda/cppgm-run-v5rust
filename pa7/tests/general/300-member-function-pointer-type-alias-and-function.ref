@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias member_fn_ptr member-pointer of struct C to function of () const returning int
+  function-definition f function of (member-pointer of struct C to function of () const returning int) returning member-pointer of struct C to function of () const returning int
+    parameter p member-pointer of struct C to function of () const returning int
+    compound-statement
+      return-statement
+        id-expression lvalue member-pointer of struct C to function of () const returning int p
+end translation unit

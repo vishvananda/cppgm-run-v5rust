@@ -1,0 +1,4 @@
+// second unit
+template<class T> int cnt() { static int n = 0; return ++n; }
+inline int f() { struct L { static int g() { static int n = 0; return n += 1; } }; return L::g() + [] { static int m = 0; return m += 10; }() + cnt<L>() * 100; }
+int other() { return f(); }

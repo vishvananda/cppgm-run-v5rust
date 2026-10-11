@@ -1,0 +1,111 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $a
+    call void @X__X(%t1)
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $b
+    %t6 = addr $a
+    call void @X__X__ov3(%t5, %t6)
+    %t7 = addr $b
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp eq i32 %t10, 7
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = addr $a
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed i32 %t14
+    %t16 = unary neg i32 1
+    %t17 = cmp eq i32 %t15, %t16
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t19 = load typed i64 $land__2
+    branch %t19, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t20 = load typed i32 $cond__1
+    return i32 %t20
+}
+function @X__X(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1XC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Member__Member(%t2)
+    return void
+}
+function @X__X__ov3(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN1XC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $__param1
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Member__Member__ov3(%t2, %t4)
+    return void
+}
+function @Member__Member(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6MemberC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @Member__Member__ov3(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN6MemberC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = unary neg i32 1
+    %t7 = load typed ptr $other
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed i32 %t6, %t8
+    return void
+}
+alias object _ZN1XC2Ev = @X__X
+alias object _ZN1XC2EOS_ = @X__X__ov3
+alias object _ZN6MemberC2Ev = @Member__Member
+alias object _ZN6MemberC2EOS_ = @Member__Member__ov3

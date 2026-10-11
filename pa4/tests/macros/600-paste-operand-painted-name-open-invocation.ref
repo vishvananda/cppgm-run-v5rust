@@ -1,0 +1,24 @@
+preproc 1
+sof tests/macros/600-paste-operand-painted-name-open-invocation.t
+simple int KW_INT
+identifier O
+simple = OP_ASS
+literal 4 int 04000000
+simple ; OP_SEMICOLON
+simple int KW_INT
+identifier x1
+simple = OP_ASS
+literal 3 int 03000000
+simple ; OP_SEMICOLON
+simple int KW_INT
+identifier main
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+simple { OP_LBRACE
+simple return KW_RETURN
+identifier x1
+simple + OP_PLUS
+identifier O
+simple ; OP_SEMICOLON
+simple } OP_RBRACE
+eof

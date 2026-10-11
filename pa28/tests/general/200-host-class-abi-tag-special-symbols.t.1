@@ -1,0 +1,12 @@
+struct __attribute__((abi_tag("tag"))) C;
+
+struct C {
+  virtual ~C() {}
+};
+
+C c;
+
+int main()
+{
+  return 0;
+}

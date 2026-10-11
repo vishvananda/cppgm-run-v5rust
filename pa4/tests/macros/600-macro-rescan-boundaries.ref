@@ -1,0 +1,15 @@
+preproc 1
+sof tests/macros/600-macro-rescan-boundaries.t
+identifier CALL
+simple ( OP_LPAREN
+simple ) OP_RPAREN
+literal 1 int 01000000
+identifier RECUR
+simple ( OP_LPAREN
+identifier x
+simple ) OP_RPAREN
+identifier g
+simple ( OP_LPAREN
+literal 3 int 03000000
+simple ) OP_RPAREN
+eof

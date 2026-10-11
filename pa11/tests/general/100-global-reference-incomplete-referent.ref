@@ -1,0 +1,33 @@
+global @forward_declared_object : ptr [binding=strong] = zero
+global @allocator_arg : ptr [binding=internal, object=_ZL13allocator_arg] = zero
+global @value : i32 [binding=strong] = 7
+global @value_ref : ptr [binding=strong] = addr @value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed ptr @value_ref
+    store typed i32 9, %t1
+    %t2 = load typed i32 @value
+    %t3 = cmp eq i32 %t2, 9
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = load typed ptr @forward_declared_object
+    store typed ptr %t1, @allocator_arg
+    return void
+}

@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    variable p pointer to struct C
+end translation unit

@@ -1,0 +1,7 @@
+#include "200-host-small-aggregate-by-value.helper.h"
+
+int main()
+{
+  Pair value = {1, 2};
+  return sum_pair(value) == 3 ? 0 : 1;
+}

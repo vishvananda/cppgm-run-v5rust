@@ -1,0 +1,7 @@
+declare global @same_intowner____intowner______value : u8 [binding=weak, object=_ZN4sameIM5owneriS1_E5valueE]
+declare global @same_int___constowner____int___constowner______value : u8 [binding=weak, object=_ZN4sameIM5ownerKPFivES4_E5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

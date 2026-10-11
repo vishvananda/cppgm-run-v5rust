@@ -1,0 +1,42 @@
+global @gx : i32 [binding=strong] = zero
+global @g [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i32 @gx
+    return i32 %t1
+}
+function @YP__YP(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN2YPC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 5, @gx
+    return void
+}
+function @YP___YP(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN2YPD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @gx
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @gx
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @g
+    call void @YP__YP(%t1)
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @g
+    call void @YP___YP(%t1)
+    return void
+}
+alias object _ZN2YPC2Ev = @YP__YP
+alias object _ZN2YPD2Ev = @YP___YP

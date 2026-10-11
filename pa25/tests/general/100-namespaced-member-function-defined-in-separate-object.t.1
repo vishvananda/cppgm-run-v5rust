@@ -1,0 +1,8 @@
+#include "100-namespaced-member-function-defined-in-separate-object.shared.h"
+
+int main()
+{
+  ns::Widget widget;
+  widget.set();
+  return widget.value == 7 ? 0 : 1;
+}

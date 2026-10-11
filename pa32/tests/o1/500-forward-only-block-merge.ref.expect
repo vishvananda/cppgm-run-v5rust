@@ -1,0 +1,8 @@
+# budget from 500-forward-only-block-merge.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 14
+blocks <= 8
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 14 in @preserve_definition_order

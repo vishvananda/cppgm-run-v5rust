@@ -1,0 +1,70 @@
+global @storage [binding=strong] = {
+  zero 128
+}
+
+function @Holder__operatornew(%bytes : i64, %extra : i64) -> ptr [binding=strong, object=_ZN6HoldernwEmm] {
+  slot $bytes : i64
+  slot $extra : i64
+
+  block ^entry:
+    store typed i64 %bytes, $bytes
+    store typed i64 %extra, $extra
+    %t1 = addr @storage
+    %t2 = load typed i64 $extra
+    %t3 = copy i64 %t2
+    %t4 = index i8 %t1, %t3
+    %t5 = load typed i64 $extra
+    %t6 = copy i64 %t5
+    %t7 = binary sub i64 0, %t6
+    %t8 = index i8 %t4, %t7
+    %t9 = load typed i64 $bytes
+    %t10 = copy i64 %t9
+    %t11 = index i8 %t8, %t10
+    %t12 = load typed i64 $bytes
+    %t13 = copy i64 %t12
+    %t14 = binary sub i64 0, %t13
+    %t15 = index i8 %t11, %t14
+    return ptr %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $extra : i64
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 5
+    store typed i64 %t1, $extra
+    %t2 = convert sext i64 i32 4
+    %t3 = load typed i64 $extra
+    %t4 = call ptr @Holder__operatornew(%t2, %t3)
+    call void @Holder__Holder(%t4)
+    store typed ptr %t4, $p
+    %t5 = load typed ptr $p
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @Holder__Holder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6HolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN6HolderC2Ev = @Holder__Holder

@@ -1,0 +1,29 @@
+// N3485 15.5.1p1, 12.2p3, 12.4p3: an exception leaving a noexcept function, or
+// a destructor, calls std::terminate; one caught inside it does not, and the
+// full-expression's temporaries are destroyed when it completes
+#include "200-host-eh-guard-forwarded-temporary.helper.h"
+static int live, loud = 1;
+struct T { int v; T(int x) : v(x) { ++live; } ~T() { --live; if (loud) out_line("~T", v); } };
+static int mode;
+void g(const T& t) { if (t.v == mode) throw t.v; out_line("g", t.v); }
+struct S { int v; ~S() { g(T(v)); } };
+void quiet() noexcept { g(T(1)); }
+void handled() noexcept
+{
+  try { g(T(2)); } catch (int e) { out_line("caught", e); }
+}
+int main()
+{
+  quiet();
+  { S s = { 3 }; }
+  mode = 2;
+  handled();
+  out_line("live", live);
+  // terminate: the destructor is noexcept (whether the temporary is
+  // destroyed first is implementation-defined, 15.5.1p2)
+  loud = 0;
+  mode = 4;
+  { S s = { 4 }; }
+  out_line("unreachable", 0);
+  return 0;
+}

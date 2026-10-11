@@ -1,0 +1,93 @@
+declare global @same___lambda1_int_int_char_____value : u8 [binding=internal, object=_ZN4sameIZ4mainE3$_0PFiicEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fn : obj<1x1>
+  slot $pointer : ptr
+  slot $plus_pointer : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = addr $fn
+    %t2 = addr @__lambda_main_t52_61___FUN
+    store typed ptr %t2, $pointer
+    %t3 = addr @__lambda_main_t52_61___FUN
+    store typed ptr %t3, $plus_pointer
+    %t4 = addr $fn
+    %t5 = call i32 @__lambda_main_t52_61__operator__(%t4, 3, 4)
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t7 = load typed ptr $pointer
+    %t8 = call i32 %t7(4, 3) as (%arg0 : i32, %arg1 : i8) -> i32
+    %t9 = cmp eq i32 %t8, 7
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t12 = load typed ptr $plus_pointer
+    %t13 = call i32 %t12(5, 2) as (%arg0 : i32, %arg1 : i8) -> i32
+    %t14 = cmp eq i32 %t13, 7
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t16 = load typed i64 $land__3
+    branch %t16, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed i32 $cond__1
+    return i32 %t17
+}
+function @__lambda_main_t52_61___FUN(%lhs : i32, %rhs : i8) -> i32 [binding=internal, object=_ZZ4mainEN3$_08__invokeEic, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $lhs : i32
+  slot $rhs : i8
+
+  block ^entry:
+    store typed i32 %lhs, $lhs
+    store i8 %rhs, $rhs
+    %t1 = load typed i32 $lhs
+    %t2 = load i8 $rhs
+    %t3 = convert sext i32 i8 %t2
+    %t4 = binary add nowrap i32 %t1, %t3
+    return i32 %t4
+}
+function @__lambda_main_t52_61__operator__(%this : ptr [object_bytes=1], %lhs : i32, %rhs : i8) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEic, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $lhs : i32
+  slot $rhs : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %lhs, $lhs
+    store i8 %rhs, $rhs
+    %t1 = load typed i32 $lhs
+    %t2 = load i8 $rhs
+    %t3 = convert sext i32 i8 %t2
+    %t4 = binary add nowrap i32 %t1, %t3
+    return i32 %t4
+}

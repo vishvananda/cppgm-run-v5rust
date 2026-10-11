@@ -1,0 +1,9 @@
+user-defined-literal "abc"_é _é string array of 4 char 61626300
+simple ; OP_SEMICOLON
+user-defined-literal 'a'_é _é character char 61
+simple ; OP_SEMICOLON
+invalid "abc"é
+simple ; OP_SEMICOLON
+invalid 'a'é
+simple ; OP_SEMICOLON
+eof

@@ -1,0 +1,5 @@
+// N3485 26.8/8 (C99 7.12.14.6) + PA29 README (<cmath>, libm/classification
+// builtins): std::isunordered from hosted <cmath> forwards to
+// __builtin_isunordered; expect exit 0
+#include <cmath>
+int main() { volatile double n = __builtin_nan(""), one = 1.0; return std::isunordered(n, one) && !std::isunordered(one, one) ? 0 : 1; }

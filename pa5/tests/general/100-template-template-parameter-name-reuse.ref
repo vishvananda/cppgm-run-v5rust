@@ -1,0 +1,128 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier U
+    class-specifier impl
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          template-template-parameter
+          template-parameter-clause
+            template-parameter-list
+              type-parameter
+                parameter-key KW_CLASS:class
+              type-parameter
+                parameter-key KW_CLASS:class
+                parameter-pack ...
+          parameter-key KW_CLASS:class
+          identifier _Sp
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Tp
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier _Args
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Up
+    class-specifier impl<_Sp<_Tp,_Args...>,_Up>
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Sp
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Tp
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Ap
+    class-specifier member_pointer_holder
+      class-key KW_CLASS:class
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:_Sp
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator _Tp::*
+                  identifier const_member
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:_Ap
+              cv-qualifier KW_CONST:const
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:_Sp
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator _Tp::*
+                  identifier plain_member
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:_Ap
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          template-template-parameter
+          template-parameter-clause
+            template-parameter-list
+              type-parameter
+                parameter-key KW_CLASS:class
+          parameter-key KW_CLASS:class
+          identifier _Op
+    class-specifier uses_template
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Op
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Cp
+    class-specifier uses_type
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:_Op
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator _Cp::*
+                  identifier member
+              parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

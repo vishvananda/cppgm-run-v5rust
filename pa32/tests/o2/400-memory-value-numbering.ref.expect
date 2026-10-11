@@ -1,0 +1,17 @@
+# budget from 400-memory-value-numbering.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 60
+blocks <= 15
+count(call) <= 7
+count(load) <= 16
+count(store) <= 7
+count(phi) <= 4
+instructions <= 7 in @same_object
+instructions <= 9 in @different_objects
+instructions <= 9 in @distinct_store
+instructions <= 8 in @same_store
+instructions <= 13 in @call_effects
+instructions <= 7 in @readonly_across_unknown_call
+instructions <= 11 in @branch_store
+instructions <= 6 in @same_unknown_pointer
+instructions <= 8 in @possibly_aliasing_pointer
+instructions <= 4 in @disjoint_typed_projections

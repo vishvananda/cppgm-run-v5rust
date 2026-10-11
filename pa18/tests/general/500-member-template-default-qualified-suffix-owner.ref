@@ -1,0 +1,8 @@
+declare global @iterator___cppgm_class_template_identity_1___defaults___cppgm_class_template_identity_2___cppgm_class_template_identity_3_2_0___first : i32 [binding=weak, object=_ZN8iteratorI4consIiS0_Ic3nilEEE8defaultsIS4_S_IS1_ELi2ELi0EE5firstE]
+declare global @iterator___cppgm_class_template_identity_1___defaults___cppgm_class_template_identity_2___cppgm_class_template_identity_3_2_0___second : i32 [binding=weak, object=_ZN8iteratorI4consIiS0_Ic3nilEEE8defaultsIS4_S_IS1_ELi2ELi0EE6secondE]
+declare global @iterator___cppgm_class_template_identity_1___equal_to___cppgm_class_template_identity_2___cppgm_class_template_identity_3_2_0___value : i32 [binding=weak, object=_ZN8iteratorI4consIiS0_Ic3nilEEE8equal_toIS4_S_IS1_ELi2ELi0EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

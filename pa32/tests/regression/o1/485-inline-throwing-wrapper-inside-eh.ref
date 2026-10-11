@@ -1,0 +1,13 @@
+declare function @may_throw(%value : i64) -> i64
+
+function @main(%value : i64) -> i64 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    eh_try ^dispatch
+    %called_1 = call i64 @may_throw(%value)
+    %result_2 = binary add i64 %called_1, 1
+    eh_end
+    return i64 %result_2
+
+  block ^dispatch:
+    resume
+}

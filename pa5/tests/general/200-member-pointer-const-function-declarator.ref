@@ -1,0 +1,34 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+            cv-qualifier KW_CONST:const
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              ptr-operator C::*
+              identifier pmf
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+          cv-qualifier KW_CONST:const
+end translation unit

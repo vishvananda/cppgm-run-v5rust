@@ -1,0 +1,70 @@
+// Itanium C++ ABI 2.3: a data member pointer is the member's byte offset,
+// and null is -1; zero-initialization stores -1. Conversions adjust only a
+// non-null value; comparisons and contextual bool test against -1.
+struct S { int a; int b; long c; };
+struct B1 { long x; };
+struct B2 { int y; int z; };
+struct D : B1, B2 { int w; };
+struct H { int S::* member; int tag; };
+struct Wide { int S::* table[24]; H pairs[2]; };
+
+typedef int S::* PM;
+
+long bits(PM pointer)
+{
+  long value = 0;
+  __builtin_memcpy(&value, &pointer, sizeof(value));
+  return value;
+}
+
+long bits_of(int D::* pointer)
+{
+  long value = 0;
+  __builtin_memcpy(&value, &pointer, sizeof(value));
+  return value;
+}
+
+H zeroed_static;
+Wide wide_static;
+
+int count(int value) { return value; }
+
+int main()
+{
+  if (bits(&S::a) != 0 || bits(&S::b) != 4) return 1;
+  PM null = 0;
+  if (bits(null) != -1 || bits(nullptr) != -1 || bits(PM()) != -1) return 2;
+  PM braced{};
+  if (bits(braced) != -1) return 3;
+  if (bits(zeroed_static.member) != -1 || zeroed_static.tag != 0) return 4;
+  for (int i = 0; i < 24; ++i)
+    if (bits(wide_static.table[i]) != -1) return 5;
+  if (bits(wide_static.pairs[1].member) != -1) return 6;
+  H local = H();
+  H partial = { &S::b };
+  if (bits(local.member) != -1 || bits(partial.member) != 4 ||
+      partial.tag != 0) return 7;
+  Wide wide_local = Wide();
+  if (bits(wide_local.table[23]) != -1 || bits(wide_local.pairs[0].member) != -1)
+    return 8;
+  H* allocated = new H[count(3)]();
+  const bool allocated_null = bits(allocated[2].member) == -1;
+  delete[] allocated;
+  if (!allocated_null) return 9;
+  // &D::y names a member of B2 at offset 0; D's B2 subobject is at 8.
+  int B2::* from_base = &B2::z;
+  int D::* widened = from_base;
+  int D::* inherited = &D::y;
+  if (bits_of(widened) != 12 || bits_of(inherited) != 8) return 10;
+  int B2::* none = 0;
+  int D::* widened_null = none;
+  if (bits_of(widened_null) != -1 || widened_null) return 11;
+  if (static_cast<int B2::*>(widened) != from_base) return 12;
+  PM first = &S::a;
+  if (!first || first == null || !(null == 0) || null) return 13;
+  S object = { 3, 5, 7 };
+  D derived;
+  derived.z = 9;
+  if (object.*first != 3 || derived.*widened != 9) return 14;
+  return 0;
+}

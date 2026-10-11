@@ -1,0 +1,23 @@
+declare global @integral_constant_bool_true___value : u8 [binding=weak, object=_ZN17integral_constantIbLb1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    call void @S__g(%t2)
+    return i32 0
+}
+function @S__g(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1S1gEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    store typed i32 %t2, $x
+    %t3 = load typed i32 $x
+    return void
+}

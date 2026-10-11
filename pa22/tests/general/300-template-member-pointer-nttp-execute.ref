@@ -1,0 +1,65 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $x
+    call void @f__f(%t1)
+    %t2 = addr $x
+    call void @machine_f___row_0_int_0__f__on___execute(%t2, 7)
+    %t3 = addr $x
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @f__f(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1fC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @machine_f___row_0_int_0__f__on___execute(%d : ptr [pass=by_address, object_bytes=4], %event : i8) -> void [binding=weak, object=_ZN7machineI1fE3rowILi0EiLi0EXadL_ZNS0_2onEcEEE7executeERS0_c, inline_hint=yes] {
+  slot $d : ptr
+  slot $event : i8
+
+  block ^entry:
+    store typed ptr %d, $d
+    store i8 %event, $event
+    %t1 = load typed ptr $d
+    %t2 = load i8 $event
+    %t3 = addr @f__on
+    call void %t3(%t1, %t2) as (%arg0 : ptr, %arg1 : i8) -> void
+    return void
+}
+function @f__on(%this : ptr [object_bytes=4], %event : i8) -> void [binding=weak, object=_ZN1f2onEc, inline_hint=yes] {
+  slot $this : ptr
+  slot $event : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store i8 %event, $event
+    %t1 = load i8 $event
+    %t2 = convert sext i32 i8 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+alias object _ZN1fC2Ev = @f__f

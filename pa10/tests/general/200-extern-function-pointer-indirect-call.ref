@@ -1,0 +1,12 @@
+declare global @target : ptr [binding=strong]
+
+function @call_target(%value : i32) -> void [binding=strong, object=_Z11call_targeti] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr @target
+    call void %t2(%t1) as (%arg0 : i32) -> void
+    return void
+}

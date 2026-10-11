@@ -1,0 +1,11 @@
+#include <unordered_set>
+
+struct X {};
+
+int main()
+{
+  X x;
+  std::unordered_set<X *> s;
+  s.insert(&x);
+  return s.count(&x) == 1 ? 0 : 1;
+}

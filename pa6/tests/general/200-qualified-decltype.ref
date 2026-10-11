@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable y int
+    variable z lvalue-reference to int
+    variable fp pointer to function of () returning int
+    scope namespace N
+      variable x int
+      function f function of () returning int
+end translation unit

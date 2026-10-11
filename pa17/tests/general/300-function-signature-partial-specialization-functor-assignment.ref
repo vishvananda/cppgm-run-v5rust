@@ -1,0 +1,100 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $functor : obj<1x1>
+  slot $fn : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $functor
+    %t2 = addr $fn
+    call void @callable_box_int_int____callable_box(%t2)
+    %t3 = addr $fn
+    %t4 = addr $functor
+    call void @callable_box_int_int____assign(%t3, %t4)
+    %t5 = addr $fn
+    %t6 = call i32 @callable_box_int_int____operator__(%t5, 4)
+    %t7 = cmp eq i32 %t6, 5
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @callable_box_int_int____callable_box(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN12callable_boxIFiiEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed ptr 0, %t4
+    return void
+}
+function @callable_box_int_int____assign(%this : ptr [object_bytes=16], %functor : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN12callable_boxIFiiEE6assignI7add_oneEEvRKT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $functor : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %functor, $functor
+    %t1 = load typed ptr $functor
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = addr @callable_box_int_int____invoke
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed ptr %t4, %t6
+    return void
+}
+function @callable_box_int_int____operator__(%this : ptr [object_bytes=16], %arg : i32) -> i32 [binding=weak, object=_ZNK12callable_boxIFiiEEclEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $arg : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %arg, $arg
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i32 $arg
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call i32 %t7(%t3, %t4) as (%arg0 : ptr, %arg1 : i32) -> i32
+    return i32 %t8
+}
+function @callable_box_int_int____invoke(%object : ptr, %arg : i32) -> i32 [binding=weak, object=_ZN12callable_boxIFiiEE6invokeI7add_oneEEiPKvi, inline_hint=yes] {
+  slot $object : ptr
+  slot $arg : i32
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i32 %arg, $arg
+    %t1 = load typed ptr $object
+    %t2 = load typed i32 $arg
+    %t3 = call i32 @add_one__operator__(%t1, %t2)
+    return i32 %t3
+}
+function @add_one__operator__(%this : ptr [object_bytes=1], %value : i32) -> i32 [binding=weak, object=_ZNK7add_oneclEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+alias object _ZN12callable_boxIFiiEEC2Ev = @callable_box_int_int____callable_box

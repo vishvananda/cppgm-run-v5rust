@@ -1,0 +1,4 @@
+#include "200-host-inline-lambda-closure-weak-link.helper.h"
+
+int (*unit_source())() { return ticket_source(); }
+int* unit_tag() { return ticket_tag(); }

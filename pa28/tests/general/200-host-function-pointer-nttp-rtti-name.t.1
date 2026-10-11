@@ -1,0 +1,6 @@
+void f() {}
+void g() {}
+template<void (*P)()> struct A { virtual ~A() {} };
+A<&f> x;
+A<&g> y;
+int main() {}

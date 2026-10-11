@@ -1,0 +1,8 @@
+extern int g;
+
+struct Startup {
+  Startup() { g = 5; }
+  ~Startup() {}
+};
+
+Startup startup;

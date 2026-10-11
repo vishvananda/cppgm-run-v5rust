@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    namespace-definition I
+      function-definition N::I::g function of (int) returning int
+        parameter  int
+        compound-statement
+          return-statement
+            literal prvalue int 1
+    function-definition N::g function of (long int) returning int
+      parameter  long int
+      compound-statement
+        return-statement
+          literal prvalue int 2
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee N::I::g function of (int) returning int
+          literal prvalue int 1
+end translation unit

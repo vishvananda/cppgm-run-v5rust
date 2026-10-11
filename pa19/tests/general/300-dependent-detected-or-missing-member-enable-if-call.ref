@@ -1,0 +1,14 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @distance_like(0, 0)
+    return i32 %t1
+}
+function @distance_like(%__param0 : ptr, %__param1 : ptr) -> i32 [binding=weak, object=_Z13distance_likeIPiTnN9enable_ifIXsr12has_iter_catIT_EE5valueEiE4typeELi0EEiS2_S2_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 0
+}

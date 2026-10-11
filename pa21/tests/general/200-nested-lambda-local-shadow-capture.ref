@@ -1,0 +1,40 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $outer : obj<8x8>
+
+  block ^entry:
+    store typed i32 1, $value
+    %t1 = addr $outer
+    %t2 = addr $value
+    store typed ptr %t2, %t1
+    %t3 = addr $outer
+    %t4 = call i32 @__lambda_main_t16_18__operator__(%t3)
+    %t5 = binary sub nowrap i32 %t4, 3
+    return i32 %t5
+}
+function @__lambda_main_t16_18__operator__(%this : ptr [object_bytes=8]) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $inner : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $inner
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = load typed i32 %t4
+    %t6 = addr $inner
+    %t7 = call i32 @__lambda_main_t16_18____lambda_nested_t25_27__operator__(%t6)
+    %t8 = binary add nowrap i32 %t5, %t7
+    return i32 %t8
+}
+function @__lambda_main_t16_18____lambda_nested_t25_27__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZZ4mainENK3$_0clEvENKUlvE_clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 2, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}

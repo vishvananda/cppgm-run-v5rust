@@ -1,0 +1,134 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_Control_int__Policy_2_ [storage=readonly, binding=weak, object=_ZTS7ControlIiL6Policy2EE] = {
+  i8 55
+  i8 67
+  i8 111
+  i8 110
+  i8 116
+  i8 114
+  i8 111
+  i8 108
+  i8 73
+  i8 105
+  i8 76
+  i8 54
+  i8 80
+  i8 111
+  i8 108
+  i8 105
+  i8 99
+  i8 121
+  i8 50
+  i8 69
+  i8 69
+  i8 0
+}
+global @__rtti_struct_Control_int__Policy_2_ [storage=readonly, binding=weak, object=_ZTI7ControlIiL6Policy2EE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Control_int__Policy_2_
+}
+global @Control_int__Policy_2___vtable [storage=readonly, binding=weak, object=_ZTV7ControlIiL6Policy2EE] = {
+  i64 0
+  ptr addr @__rtti_struct_Control_int__Policy_2_
+  ptr addr @Control_int__Policy_2____Control
+  ptr addr @Control_int__Policy_2____Control__deleting_entry
+  ptr addr @Control_int__Policy_2___value
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $control : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $control
+    call void @Control_int__Policy_2___Control(%t1)
+    %t2 = addr $control
+    %t3 = load typed ptr %t2
+    %t4 = index i8 %t3, 16
+    %t5 = load typed ptr %t4
+    %t6 = call i32 %t5(%t2) as (%arg0 : ptr [object_bytes=8]) -> i32 [unwind=no]
+    %t7 = cmp eq i32 %t6, 2
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    %t9 = addr $control
+    call void @Control_int__Policy_2____Control(%t9)
+    return i32 %t8
+}
+function @Control_int__Policy_2___Control(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN7ControlIiL6Policy2EEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Control_int__Policy_2___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Control_int__Policy_2____Control__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN7ControlIiL6Policy2EED2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Control_int__Policy_2___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Control_int__Policy_2____Control__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN7ControlIiL6Policy2EED0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Control_int__Policy_2___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Control_int__Policy_2___value(%this : ptr [object_bytes=8]) -> i32 [unwind=no, binding=weak, object=_ZN7ControlIiL6Policy2EE5valueEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+function @Control_int__Policy_2____Control(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN7ControlIiL6Policy2EED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Control_int__Policy_2___vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN7ControlIiL6Policy2EEC2Ev = @Control_int__Policy_2___Control

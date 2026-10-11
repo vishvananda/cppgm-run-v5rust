@@ -1,0 +1,37 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition std
+    class-specifier type_info
+      class-key KW_CLASS:class
+      access-specifier KW_PUBLIC:public
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_CONST:const
+          decl-specifier KW_CHAR:char
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier name
+              parameter-clause
+              cv-qualifier KW_CONST:const
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      return-statement
+        subscript-expression
+          call-expression
+            member-expression OP_DOT:.
+              type-trait-expression KW_TYPEID:typeid
+                type-id
+                  type-specifier-seq
+                    type-specifier KW_INT:int
+              identifier name
+            argument-list
+          literal 0
+end translation unit

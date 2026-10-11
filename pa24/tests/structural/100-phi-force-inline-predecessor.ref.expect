@@ -1,0 +1,9 @@
+# budget from 100-phi-force-inline-predecessor.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 21
+blocks <= 11
+count(call) <= 4
+mem <= 5
+instructions <= 4 in @touch
+stack_size <= 320 in @touch
+instructions <= 19 in @main
+stack_size <= 320 in @main

@@ -1,0 +1,8 @@
+extern "C" __attribute__((visibility("default")))
+__attribute__((weak)) const int const_alias = 7;
+
+namespace single_declaration
+{
+extern "C" __attribute__((visibility("default"))) const void *pointer_alias;
+__attribute__((weak)) const void *pointer_alias = &const_alias;
+}

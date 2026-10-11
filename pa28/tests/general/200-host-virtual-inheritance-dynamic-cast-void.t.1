@@ -1,0 +1,28 @@
+struct VirtualRoot {
+  virtual ~VirtualRoot() {}
+};
+
+struct VirtualMid : virtual VirtualRoot {
+  virtual int value()
+  {
+    return 1;
+  }
+};
+
+struct VirtualLeaf : VirtualMid {
+  int payload;
+
+  VirtualLeaf() : payload(5) {}
+
+  int value()
+  {
+    return 7;
+  }
+};
+
+int main()
+{
+  VirtualLeaf leaf;
+  VirtualMid * mid = &leaf;
+  return dynamic_cast<void *>(mid) == &leaf ? 0 : 1;
+}

@@ -1,0 +1,53 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @call(%target : ptr) -> i32 [binding=strong, object=_Z4callPFiR4SinkPKcE] {
+  slot $target : ptr
+  slot $sink : obj<4x4>
+
+  block ^entry:
+    store typed ptr %target, $target
+    %t1 = addr $sink
+    %t2 = addr $sink
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 5, %t3
+    %t4 = addr $sink
+    %t5 = addr @__strlit__1
+    %t6 = load typed ptr $target
+    %t7 = call i32 %t6(%t4, %t5) as (%arg0 : ptr [pass=by_address, object_bytes=4], %arg1 : ptr) -> i32
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @select
+    %t2 = call i32 @call(%t1)
+    return i32 %t2
+}
+function @select(%sink : ptr [pass=by_address, object_bytes=4], %__param1 : ptr) -> i32 [binding=weak, object=_Z6selectI4SinkEiRT_PKc] {
+  slot $sink : ptr
+  slot $__param1 : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %sink, $sink
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $sink
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 5
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

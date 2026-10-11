@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias size_t unsigned long int
+  function-definition f function of (pointer to char16_t, unsigned long int) returning pointer to char16_t
+    parameter s pointer to char16_t
+    parameter n unsigned long int
+    compound-statement
+      return-statement
+        binary-expression prvalue pointer to char16_t OP_PLUS:+
+          id-expression lvalue pointer to char16_t s
+          id-expression lvalue unsigned long int n
+end translation unit

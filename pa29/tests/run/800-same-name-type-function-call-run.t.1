@@ -1,0 +1,19 @@
+struct clock_info
+{
+  int value;
+};
+
+typedef clock_info clock_info_data;
+
+int clock_info(clock_info_data *info)
+{
+  info->value = 1;
+  return 0;
+}
+
+int main()
+{
+  clock_info_data info;
+  clock_info(&info);
+  return info.value == 1 ? 0 : 1;
+}

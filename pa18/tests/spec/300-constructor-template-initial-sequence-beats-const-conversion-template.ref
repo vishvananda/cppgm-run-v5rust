@@ -1,0 +1,67 @@
+function @make_error() -> obj<4x4> [binding=strong, object=_Z10make_errorv] {
+  slot $retobj__1 : obj<4x4>
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = addr $arg__2
+    call void @error_id__error_id__aggregate(%t2, 7)
+    call void @result_payload___result(%t1, %t2)
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = call obj<4x4> @make_error()
+    copyobj 4x4 %t2, %t1
+    %t3 = addr $value
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @error_id__error_id__aggregate(%this : ptr [object_bytes=4], %value : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @result_payload___result(%this : ptr [object_bytes=4], %error : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6resultI7payloadEC1I8error_idEEOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $error : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %error, $error
+    %t1 = load typed ptr $error
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 0
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN6resultI7payloadEC2I8error_idEEOT_ = @result_payload___result

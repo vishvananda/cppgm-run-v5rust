@@ -1,0 +1,33 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier box
+      class-key KW_STRUCT:struct
+  class-specifier owner
+    class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier U
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier box<box<U>>
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier operator=
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier TT_IDENTIFIER:U
+                  declarator
+                    ptr-operator OP_LAND:&&
+end translation unit

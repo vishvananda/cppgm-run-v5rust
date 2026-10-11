@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration f function of (int) returning int
+  function-definition f function of (int) returning int
+    parameter y int
+    compound-statement
+      return-statement
+        id-expression lvalue int y
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee f function of (int) returning int
+          literal prvalue int 3
+end translation unit

@@ -1,0 +1,22 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    branch 1, ^discard_cond_then_1, ^discard_cond_else_2
+
+  block ^discard_cond_then_1:
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_else_2:
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_end_3:
+    branch 0, ^discard_cond_then_4, ^discard_cond_else_5
+
+  block ^discard_cond_then_4:
+    jump ^discard_cond_end_6
+
+  block ^discard_cond_else_5:
+    jump ^discard_cond_end_6
+
+  block ^discard_cond_end_6:
+    return i32 0
+}

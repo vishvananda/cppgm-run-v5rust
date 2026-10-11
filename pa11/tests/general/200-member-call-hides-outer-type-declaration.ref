@@ -1,0 +1,77 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $db : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $db
+    call void @n__buffer__buffer(%t2)
+    %t3 = addr $value
+    %t4 = addr $db
+    call void @n__fuzz__response(%t3, %t4)
+    %t5 = addr $db
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 1
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @n__buffer__buffer(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1n6bufferC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @n__fuzz__response(%this : ptr [object_bytes=1], %db : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1n4fuzz8responseERNS_6bufferE, inline_hint=yes] {
+  slot $this : ptr
+  slot $db : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %db, $db
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $db
+    call void @n__fuzz__fields(%t1, %t2)
+    %t3 = load typed ptr $db
+    call void @n__buffer__prepare(%t3)
+    return void
+}
+function @n__fuzz__fields(%this : ptr [object_bytes=1], %db : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1n4fuzz6fieldsERNS_6bufferE, inline_hint=yes] {
+  slot $this : ptr
+  slot $db : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %db, $db
+    %t1 = load typed ptr $db
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @n__buffer__prepare(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1n6buffer7prepareEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+alias object _ZN1n6bufferC2Ev = @n__buffer__buffer

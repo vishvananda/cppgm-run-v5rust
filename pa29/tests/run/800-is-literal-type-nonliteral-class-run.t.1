@@ -1,0 +1,6 @@
+// N3485 3.9/10: a non-aggregate class with no constexpr constructor (other
+// than copy/move) is not a literal type, nor is an aggregate with such a
+// member; expect exit 0
+struct A { A(int) {} };
+struct B { A a; };
+int main() { return !__is_literal_type(A) && !__is_literal_type(B) ? 0 : 1; }

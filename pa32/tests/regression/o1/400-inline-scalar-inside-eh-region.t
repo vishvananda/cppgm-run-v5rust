@@ -1,0 +1,19 @@
+function @id(%p : ptr) -> ptr [unwind=no] {
+  slot $p : ptr
+
+  block ^entry:
+    store ptr %p, $p
+    %t1 = load ptr $p
+    return ptr %t1
+}
+
+function @caller(%p : ptr) -> ptr {
+  block ^entry:
+    eh_try ^dispatch
+    %t1 = call ptr @id(%p)
+    eh_end
+    return ptr %t1
+
+  block ^dispatch:
+    resume
+}

@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias F function of () returning void
+    function f function of () returning void
+    function f function of () returning void
+    function g function of () returning void
+    scope function f
+      scope block
+    scope function g
+      scope block
+end translation unit

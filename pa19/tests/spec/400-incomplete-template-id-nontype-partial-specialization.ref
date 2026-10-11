@@ -1,0 +1,6 @@
+declare global @throws_for_sure_phase2___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN22throws_for_sure_phase2I14lambda_functorI19lambda_functor_baseI6actionILi0E12throw_actionI14rethrow_actionEE9null_typeEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

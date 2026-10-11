@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    special-member-declaration operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        cv-qualifier KW_CONST:const
+  special-member-definition C::operator int
+    declarator
+      identifier C::operator int
+      parameter-clause
+      cv-qualifier KW_CONST:const
+    compound-statement
+      return-statement
+        literal 0
+end translation unit

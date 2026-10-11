@@ -1,0 +1,8 @@
+// N3485 15.4p15: a deallocation function declared without an
+// exception-specification is noexcept(true), compatible with the implicit
+// noexcept declaration (15.4p3; g++ -pedantic accepts, clang only ExtWarns);
+// expect exit 0
+extern "C" void free(void*);
+void operator delete(void*);
+void operator delete(void* p) { free(p); }
+int main() { int* p = new int(1); delete p; return 0; }

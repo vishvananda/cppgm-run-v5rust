@@ -1,0 +1,79 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> i32 [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_object [storage=readonly, binding=weak, object=_ZTS6object] = {
+  i8 54
+  i8 111
+  i8 98
+  i8 106
+  i8 101
+  i8 99
+  i8 116
+  i8 0
+}
+global @__typeinfo_name__struct_base [storage=readonly, binding=weak, object=_ZTS4base] = {
+  i8 52
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_base [storage=readonly, binding=weak, object=_ZTI4base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_base
+}
+global @__rtti_struct_object [storage=readonly, binding=weak, object=_ZTI6object] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_object
+  ptr addr @__rtti_struct_base
+}
+global @object__vtable [storage=readonly, binding=weak, object=_ZTV6object] = {
+  i64 0
+  ptr addr @__rtti_struct_object
+  ptr addr @object__get
+}
+global @value [binding=strong] = {
+  ptr addr @object__vtable + 16
+}
+global @base__vtable [storage=readonly, binding=weak, object=_ZTV4base] = {
+  i64 0
+  ptr addr @__rtti_struct_base
+  ptr addr @__cxa_pure_virtual
+}
+
+function @object__get(%this : ptr [object_bytes=8]) -> i32 [binding=weak, object=_ZNK6object3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @object__object(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6objectC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @base__base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @object__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @base__base__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN4baseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN6objectC2Ev = @object__object

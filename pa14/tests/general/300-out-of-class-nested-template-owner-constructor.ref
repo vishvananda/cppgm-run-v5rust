@@ -1,0 +1,20 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $v
+    call void @outer_int___inner__inner(%t1, 1, 2.0)
+    return i32 0
+}
+function @outer_int___inner__inner(%this : ptr [object_bytes=1], %x : i32, %y : f64) -> void [binding=weak, object=_ZN5outerIiE5innerC1Eid] {
+  slot $this : ptr
+  slot $x : i32
+  slot $y : f64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    store typed f64 %y, $y
+    return void
+}
+alias object _ZN5outerIiE5innerC2Eid = @outer_int___inner__inner

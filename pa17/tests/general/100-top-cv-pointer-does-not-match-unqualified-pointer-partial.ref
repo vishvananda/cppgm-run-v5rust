@@ -1,0 +1,51 @@
+declare global @holder_constB_volatile___value : i32 [binding=weak, object=_ZN6holderIVPK1BE5valueE]
+declare global @holder_constB_volatile____value : i32 [binding=weak, object=_ZN6holderIPVPK1BE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @holder_constB_volatile____render()
+    %t2 = cmp eq i32 %t1, 11
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @holder_constB_volatile____render() -> i32 [binding=weak, object=_ZN6holderIPVPK1BE6renderEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @holder_constB_volatile___render()
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}
+function @holder_constB_volatile___render() -> i32 [binding=weak, object=_ZN6holderIVPK1BE6renderEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @holder_constB____render()
+    %t2 = binary add nowrap i32 %t1, 2
+    return i32 %t2
+}
+function @holder_constB____render() -> i32 [binding=weak, object=_ZN6holderIPK1BE6renderEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @holder_constB___render()
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}
+function @holder_constB___render() -> i32 [binding=weak, object=_ZN6holderIK1BE6renderEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = call i32 @holder_B___render()
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @holder_B___render() -> i32 [binding=weak, object=_ZN6holderI1BE6renderEv, inline_hint=yes] {
+  block ^entry:
+    return i32 0
+}

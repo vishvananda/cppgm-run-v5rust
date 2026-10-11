@@ -1,0 +1,8 @@
+# AUDIT-ID: LOOP-PTR-FINITE
+# Reuse the existing loop. Its plain LowIR index is 64-bit address arithmetic.
+# Repeated subtraction of eight cannot turn a residue of one into zero.
+kind loop
+input pa32/tests/o1/500-effect-free-loop-deleted-twin-backward.t
+function destroy_backward
+expected finite-and-nonterminating-inputs
+optimization O1 O2 O3

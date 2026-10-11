@@ -1,0 +1,54 @@
+// A member class template of a class template, named in the enclosing
+// template's own definition: a default template argument naming the
+// enclosing template's parameters (sizeof(T), sizeof...(T)) stays
+// dependent there (14.6.2.3), and a specialization of the member template
+// (`M<char>`) is a dependent type whose members are instantiated with the
+// enclosing class's instances (14.6.2.1p7). g++ and clang++ accept.
+template<int N>
+struct Z
+{
+	char c[N];
+};
+template<class T>
+struct Def
+{
+	template<int K = sizeof(T)>
+	struct Q
+	{
+		static const int v = K;
+	};
+	typedef Q<> qq;
+	typedef Z<Q<>::v> t;
+};
+template<class... T>
+struct Pack
+{
+	template<int K = sizeof...(T)>
+	struct Q
+	{
+		static const int v = K;
+	};
+	static const int n = Q<>::v;
+};
+template<class T>
+struct S
+{
+	template<class U>
+	struct M
+	{
+		template<class V>
+		static constexpr int f()
+		{
+			return sizeof(V) + sizeof(U);
+		}
+		static const int w = sizeof(U) + sizeof(T) + f<T>();
+	};
+	static const int v = M<char>::w;
+};
+static_assert(Def<int>::qq::v == 4 && sizeof(Def<double>::t) == 8, "");
+static_assert(Pack<int, int>::n == 2 && Pack<>::n == 0, "");
+static_assert(S<int>::v == 1 + 4 + 5, "");
+int main()
+{
+	return 0;
+}

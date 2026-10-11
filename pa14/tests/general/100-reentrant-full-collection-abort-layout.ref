@@ -1,0 +1,16 @@
+function @pa13_reentrant_layout_force_shared_size() -> i32 [binding=strong, object=_Z39pa13_reentrant_layout_force_shared_sizev] {
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @pa13_reentrant_layout_read_tail(%node : ptr) -> i32 [binding=strong, object=_Z31pa13_reentrant_layout_read_tailPK26pa13_reentrant_layout_node] {
+  slot $node : ptr
+
+  block ^entry:
+    store typed ptr %node, $node
+    %t1 = load typed ptr $node
+    %t2 = index i8 [projection=field] %t1, 28
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

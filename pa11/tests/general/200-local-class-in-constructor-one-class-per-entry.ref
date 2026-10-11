@@ -1,0 +1,101 @@
+global @calls : i32 [binding=strong] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $whole : obj<4x4>
+  slot $part : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $whole
+    call void @counter__counter(%t1)
+    %t2 = addr $part
+    call void @derived__derived(%t2)
+    %t3 = addr $whole
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp ne i32 %t5, 6
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 10
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = addr $part
+    %t8 = index i8 %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = cmp ne i32 %t10, 7
+    branch %t11, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 11
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t12 = load typed i32 @calls
+    %t13 = cmp eq i32 %t12, 2
+    branch %t13, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 12, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @counter__counter__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7counterC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = call i32 @step__next(5)
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @derived__derived(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7derivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @counter__counter__base_entry(%t2)
+    return void
+}
+function @step__next(%v : i32) -> i32 [binding=weak, object=_ZZN7counterC1EvEN4step4nextEi, prefer_local=yes, inline_hint=yes] {
+  slot $v : i32
+
+  block ^entry:
+    store typed i32 %v, $v
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    %t3 = load typed i32 $v
+    %t4 = load typed i32 @calls
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}
+function @counter__counter(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7counterC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = call i32 @step__next(5)
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN7derivedC2Ev = @derived__derived

@@ -1,0 +1,8 @@
+// N3485 14.8.2/8 + 8.4.3/2 (20.9.4.3 is_destructible): decltype(p->~T())
+// naming a deleted destructor is a substitution failure, so
+// std::is_destructible<D> is false; expect exit 0
+#include <type_traits>
+struct D { ~D() = delete; };
+template<class T, class = decltype(static_cast<T*>(0)->~T())> char p(int);
+template<class> long p(...);
+int main() { return sizeof(p<D>(0)) == sizeof(long) && !std::is_destructible<D>::value ? 0 : 1; }

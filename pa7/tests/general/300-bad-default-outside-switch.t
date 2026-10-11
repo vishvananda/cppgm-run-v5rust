@@ -1,0 +1,5 @@
+void invalid()
+{
+  default:
+    return;
+}

@@ -1,0 +1,31 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @std____1__copy_n(0, 1, 0)
+    %t2 = cmp eq i32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @std____1__copy_n(%__param0 : ptr, %__param1 : i64, %__param2 : ptr) -> i32 [binding=weak, object=_ZNSt3__16copy_nINS_18classic_alg_policyEPKcPcEEiT0_NS_8iter_opsIT_E15difference_typeIS5_EET1_] {
+  slot $__param0 : ptr
+  slot $__param1 : i64
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i64 %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return i32 7
+}

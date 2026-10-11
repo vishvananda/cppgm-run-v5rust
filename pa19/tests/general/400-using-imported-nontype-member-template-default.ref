@@ -1,0 +1,12 @@
+declare global @destination__outer_int___box__policy_1___value : i32 [binding=weak, object=_ZN11destination5outerIiE3boxILN6source6policyE1EE5valueE]
+
+global @source__default_policy : i32 [storage=readonly, binding=internal, object=_ZN6sourceL14default_policyE] = 1
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert sext i64 i32 0
+    %t3 = cmp eq i64 %t1, %t2
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}

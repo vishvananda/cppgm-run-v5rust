@@ -1,0 +1,12 @@
+#include "200-host-variable-template-symbol-spelling.helper.h"
+
+int* host_width();
+int host_bump();
+
+int main()
+{
+  // _Z5widthIiE and _ZN5store5countIcEE are shared with the host-built unit.
+  if (host_width() != &width<int> || *host_width() != 4) return 1;
+  store::count<char> = 5;
+  return host_bump() == 6 && store::count<char> == 6 ? 0 : 2;
+}

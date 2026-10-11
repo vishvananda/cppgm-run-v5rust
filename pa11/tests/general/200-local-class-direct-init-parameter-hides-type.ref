@@ -1,0 +1,52 @@
+function @run(%M : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z3runR1M] {
+  slot $M : ptr
+  slot $lk : obj<4x4>
+
+  block ^entry:
+    store typed ptr %M, $M
+    %t1 = addr $lk
+    %t2 = load typed ptr $M
+    call void @Lock__Lock(%t1, %t2)
+    %t3 = addr $lk
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = binary sub nowrap i32 %t5, 9
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $m : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $m
+    call void @M__M(%t1)
+    %t2 = addr $m
+    %t3 = call i32 @run(%t2)
+    return i32 %t3
+}
+function @Lock__Lock(%this : ptr [object_bytes=4], %m : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4LockC1ER1M, inline_hint=yes] {
+  slot $this : ptr
+  slot $m : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %m, $m
+    %t1 = load typed ptr $m
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @M__M(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1MC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 9, %t2
+    return void
+}
+alias object _ZN4LockC2ER1M = @Lock__Lock
+alias object _ZN1MC2Ev = @M__M

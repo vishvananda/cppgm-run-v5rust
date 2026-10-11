@@ -1,0 +1,88 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @touch
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @select_width
+  abi
+    param %receiver -> rdi : i64
+    param %width -> rsi : i64
+    param %opcode -> rdx : i64
+    param %source -> rcx : i64
+    param %destination -> r8 : i64
+    param %scratch -> r9 : i64
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %receiver -> [rbp-8] : i64
+    param-slot %width -> [rbp-16] : i64
+    param-slot %opcode -> [rbp-24] : i64
+    param-slot %source -> [rbp-32] : i64
+    param-slot %destination -> [rbp-40] : i64
+    param-slot %scratch -> [rbp-48] : i64
+
+  block ^entry
+    store.i64 [rbp-8], rdi
+    store.i64 [rbp-16], rsi
+    store.i64 [rbp-24], rdx
+    store.i64 [rbp-32], rcx
+    store.i64 [rbp-40], r8
+    store.i64 [rbp-48], r9
+    cmp.i64 rsi, 16
+    je ^prefix
+    jmp ^continue
+
+  block ^prefix
+    call @touch [args=()]
+    jmp ^continue
+
+  block ^continue
+    load.i64 r8, [rbp-8]
+    add r8, [rbp-16]
+    load.i64 r9, [rbp-24]
+    add r9, [rbp-32]
+    load.i64 rdi, [rbp-40]
+    add rdi, [rbp-48]
+    add r8, r9
+    add r8, rdi
+    ret r8
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 0
+    mov rsi, 64
+    mov rdx, 40
+    mov rcx, 1
+    mov r8, 0
+    mov r9, 3
+    call @select_width [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    mov rdx, 108
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

@@ -1,0 +1,182 @@
+function @byte_at(%object : ptr, %index : i32) -> u8 [binding=strong, object=_Z7byte_atPKvi] {
+  slot $object : ptr
+  slot $index : i32
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i32 %index, $index
+    %t1 = load typed ptr $object
+    %t2 = load typed i32 $index
+    %t3 = index u8 [projection=array_element] %t1, %t2
+    %t4 = load u8 %t3
+    return u8 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $derived : obj<8x4>
+  slot $base : ptr
+  slot $pod : obj<12x4>
+
+  block ^entry:
+    %t1 = const i64 8
+    %t2 = convert sext i64 i32 8
+    %t3 = cmp ne i64 %t1, %t2
+    branch %t3, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t4 = const i64 8
+    %t5 = convert sext i64 i32 8
+    %t6 = cmp ne i64 %t4, %t5
+    branch %t6, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t7 = const i64 12
+    %t8 = convert sext i64 i32 12
+    %t9 = cmp ne i64 %t7, %t8
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    %t10 = addr $derived
+    call void @Derived__Derived(%t10)
+    %t11 = addr $derived
+    %t12 = call u8 @byte_at(%t11, 4)
+    %t13 = convert zext i32 u8 %t12
+    %t14 = cmp ne i32 %t13, 2
+    branch %t14, ^if_then_6, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t15 = addr $derived
+    %t16 = call u8 @byte_at(%t15, 5)
+    %t17 = convert zext i32 u8 %t16
+    %t18 = cmp ne i32 %t17, 3
+    branch %t18, ^if_then_6, ^lor_rhs_8
+
+  block ^lor_rhs_8:
+    %t19 = addr $derived
+    %t20 = call u8 @byte_at(%t19, 6)
+    %t21 = convert zext i32 u8 %t20
+    %t22 = cmp ne i32 %t21, 4
+    branch %t22, ^if_then_6, ^if_else_7
+
+  block ^if_then_6:
+    return i32 2
+
+  block ^if_else_7:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    %t23 = addr $derived
+    %t24 = index i8 %t23, 0
+    store typed ptr %t24, $base
+    %t25 = load typed ptr $base
+    %t26 = index i8 [projection=field] %t25, 4
+    store i8 9, %t26
+    %t27 = load typed ptr $base
+    %t28 = index i8 [projection=field] %t27, 0
+    store typed i32 10, %t28
+    %t29 = addr $derived
+    %t30 = index i8 [projection=field] %t29, 5
+    %t31 = load i8 %t30
+    %t32 = convert sext i32 i8 %t31
+    %t33 = cmp ne i32 %t32, 3
+    branch %t33, ^if_then_11, ^lor_rhs_15
+
+  block ^lor_rhs_15:
+    %t34 = addr $derived
+    %t35 = index i8 [projection=field] %t34, 6
+    %t36 = load typed i16 %t35
+    %t37 = convert sext i32 i16 %t36
+    %t38 = cmp ne i32 %t37, 4
+    branch %t38, ^if_then_11, ^lor_rhs_14
+
+  block ^lor_rhs_14:
+    %t39 = addr $derived
+    %t40 = index i8 %t39, 0
+    %t41 = index i8 [projection=field] %t40, 4
+    %t42 = load i8 %t41
+    %t43 = convert sext i32 i8 %t42
+    %t44 = cmp ne i32 %t43, 9
+    branch %t44, ^if_then_11, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t45 = addr $derived
+    %t46 = index i8 %t45, 0
+    %t47 = index i8 [projection=field] %t46, 0
+    %t48 = load typed i32 %t47
+    %t49 = cmp ne i32 %t48, 10
+    branch %t49, ^if_then_11, ^if_else_12
+
+  block ^if_then_11:
+    return i32 3
+
+  block ^if_else_12:
+    jump ^if_end_16
+
+  block ^if_end_16:
+    %t50 = addr $pod
+    %t51 = addr $pod
+    %t52 = index i8 %t51, 0
+    %t53 = index i8 [projection=field] %t52, 4
+    store i8 5, %t53
+    %t54 = addr $pod
+    %t55 = index i8 [projection=field] %t54, 8
+    store i8 6, %t55
+    %t56 = addr $pod
+    %t57 = call u8 @byte_at(%t56, 8)
+    %t58 = convert zext i32 u8 %t57
+    %t59 = cmp ne i32 %t58, 6
+    branch %t59, ^if_then_17, ^lor_rhs_19
+
+  block ^lor_rhs_19:
+    %t60 = addr $pod
+    %t61 = index i8 %t60, 0
+    %t62 = index i8 [projection=field] %t61, 4
+    %t63 = load i8 %t62
+    %t64 = convert sext i32 i8 %t63
+    %t65 = cmp ne i32 %t64, 5
+    branch %t65, ^if_then_17, ^if_else_18
+
+  block ^if_then_17:
+    return i32 4
+
+  block ^if_else_18:
+    jump ^if_end_20
+
+  block ^if_end_20:
+    return i32 0
+}
+function @Derived__Derived(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 5
+    store i8 3, %t4
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 6
+    store typed i16 4, %t6
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    store i8 2, %t4
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived

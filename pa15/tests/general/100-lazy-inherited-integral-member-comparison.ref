@@ -1,0 +1,6 @@
+declare global @bool__false___value : u8 [binding=weak, object=_ZN5bool_ILb0EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

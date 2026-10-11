@@ -1,0 +1,6 @@
+declare global @same_unsignedlongint_unsignedlongint___value : u8 [binding=weak, object=_ZN4sameImmE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

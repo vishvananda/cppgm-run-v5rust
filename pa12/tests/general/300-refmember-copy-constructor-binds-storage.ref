@@ -1,0 +1,59 @@
+function @make_wrap(%x : ptr [pass=by_address, object_bytes=4]) -> obj<8x8> [binding=strong, object=_Z9make_wrapRi] {
+  slot $x : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %x, $x
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $x
+    call void @RefWrap__RefWrap__aggregate(%t1, %t2)
+    return obj<8x8> $retobj__1
+}
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $x : i32
+  slot $sb : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $sb
+    %t2 = addr $x
+    %t3 = call obj<8x8> @make_wrap(%t2)
+    copyobj 8x8 %t3, %t1
+    %t4 = addr $sb
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = addr $x
+    %t8 = cmp eq ptr %t6, %t7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    return i32 %t1
+}
+function @RefWrap__RefWrap__aggregate(%this : ptr [object_bytes=8], %second : ptr [pass=by_address, object_bytes=4]) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $second : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %second, $second
+    %t1 = load typed ptr $second
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}

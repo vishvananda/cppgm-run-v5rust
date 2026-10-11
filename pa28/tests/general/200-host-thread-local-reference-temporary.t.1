@@ -1,0 +1,30 @@
+// N3485 12.2p5, 3.7.2: a temporary bound to a thread_local reference
+// persists for the reference's lifetime in thread storage; its accesses go
+// through the thread-local model like the reference's own.
+int alive;
+
+struct Value {
+  int tag;
+  Value(int n) : tag(n) { ++alive; }
+  ~Value() { --alive; }
+};
+
+thread_local const Value& global_value = Value(1);
+
+const Value& local_value()
+{
+  static thread_local const Value& held = Value(2);
+  return held;
+}
+
+int main()
+{
+  if(global_value.tag != 1) {
+    return 10;
+  }
+  const Value& local = local_value();
+  if(local.tag != 2 || &local != &local_value()) {
+    return 20;
+  }
+  return alive == 2 ? 0 : 30;
+}

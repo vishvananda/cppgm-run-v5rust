@@ -1,0 +1,1 @@
+enum E { value = missing };

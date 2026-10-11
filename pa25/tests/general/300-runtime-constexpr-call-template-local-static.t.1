@@ -1,0 +1,7 @@
+template<class T> constexpr T max_value() { return T(-1); }
+template<class T> int f() {
+  static T const max = max_value<T>();
+  static T const max_div = max / 10;
+  return max && max_div;
+}
+int main() { return f<unsigned long>() ? 0 : 1; }

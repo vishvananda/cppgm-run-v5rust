@@ -1,0 +1,13 @@
+# budget from 800-slot-address-rematerialization.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 31
+blocks <= 9
+count(call) <= 7
+mem <= 19
+instructions <= 4 in @mark
+stack_size <= 320 in @mark
+instructions <= 7 in @sink
+stack_size <= 320 in @sink
+instructions <= 19 in @f
+stack_size <= 384 in @f
+instructions <= 5 in @main
+stack_size <= 320 in @main

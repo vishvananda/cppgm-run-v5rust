@@ -1,0 +1,22 @@
+struct YBase
+{
+  virtual int f()
+  {
+    return 1;
+  }
+};
+
+struct YDerived : YBase
+{
+  int f()
+  {
+    return 4;
+  }
+};
+
+int main()
+{
+  YDerived d;
+  YBase * b = &d;
+  return b->f() - 4;
+}

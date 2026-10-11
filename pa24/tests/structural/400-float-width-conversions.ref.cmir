@@ -1,0 +1,28 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    temp %2 -> [rbp-<off0>] : f80
+
+  block ^entry
+    fpext.f32.f64 xmm0, 1.5f
+    feq.f64 r8, xmm0, 1.5
+    fpext.f64.f80 [rbp-<off0>], xmm0
+    fptrunc.f80.f32 xmm0, [rbp-<off0>]
+    feq.f32 r9, xmm0, 1.5f
+    fptrunc.f80.f64 xmm0, [rbp-<off0>]
+    feq.f64 rdi, xmm0, 1.5
+    add r8, r9
+    add r8, rdi
+    ret r8

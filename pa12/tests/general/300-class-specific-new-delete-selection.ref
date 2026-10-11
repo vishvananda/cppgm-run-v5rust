@@ -1,0 +1,89 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @selected : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : ptr
+  slot $global_value : ptr
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @Item__operatornew(%t1)
+    call void @Item__Item(%t2)
+    store typed ptr %t2, $value
+    %t3 = load typed ptr $value
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    call void @Item___Item(%t3)
+    call void @Item__operatordelete(%t3)
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    %t5 = load typed i32 @selected
+    %t6 = cmp ne i32 %t5, 2
+    branch %t6, ^if_then_3, ^if_else_4
+
+  block ^if_then_3:
+    return i32 1
+
+  block ^if_else_4:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    store typed i32 0, @selected
+    %t7 = convert sext i64 i32 1
+    %t8 = call ptr @operatornew(%t7)
+    call void @Item__Item(%t8)
+    store typed ptr %t8, $global_value
+    %t9 = load typed ptr $global_value
+    %t10 = cmp ne ptr %t9, 0
+    branch %t10, ^delete_nonnull_6, ^delete_end_7
+
+  block ^delete_nonnull_6:
+    call void @Item___Item(%t9)
+    call void @operatordelete(%t9)
+    jump ^delete_end_7
+
+  block ^delete_end_7:
+    %t11 = load typed i32 @selected
+    return i32 %t11
+}
+function @Item__operatornew(%size : i64) -> ptr [binding=weak, object=_ZN4ItemnwEm, inline_hint=yes] {
+  slot $size : i64
+
+  block ^entry:
+    store typed i64 %size, $size
+    store typed i32 1, @selected
+    %t1 = load typed i64 $size
+    %t2 = call ptr @operatornew(%t1)
+    return ptr %t2
+}
+function @Item__Item(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN4ItemC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Item__operatordelete(%storage : ptr) -> void [unwind=no, binding=weak, object=_ZN4ItemdlEPv, inline_hint=yes] {
+  slot $storage : ptr
+
+  block ^entry:
+    store typed ptr %storage, $storage
+    store typed i32 2, @selected
+    %t1 = load typed ptr $storage
+    call void @operatordelete(%t1)
+    return void
+}
+function @Item___Item(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN4ItemD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN4ItemC2Ev = @Item__Item
+alias object _ZN4ItemD2Ev = @Item___Item

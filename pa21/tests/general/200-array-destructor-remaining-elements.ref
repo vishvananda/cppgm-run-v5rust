@@ -1,0 +1,287 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+
+global @created : i32 [binding=strong] = zero
+global @drops : i32 [binding=strong] = zero
+global @bad : i32 [binding=strong] = zero
+global @next : i32 [binding=strong] = 3
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @f() -> void [binding=strong, object=_Z1fv] {
+  slot $objects : obj<12x4>
+  slot $destructor_array_index__1 : i64
+
+  block ^entry:
+    %t1 = addr $objects
+    %t2 = binary mul i64 0, 4
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    call void @G__G(%t3)
+    eh_try ^call_unwind_dispatch_1
+    %t4 = addr $objects
+    %t5 = binary mul i64 1, 4
+    %t6 = index i8 [projection=array_element] %t4, %t5
+    call void @G__G(%t6)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^call_unwind_dispatch_1:
+    eh_try ^lexical_cleanup_terminate_3
+    %t7 = addr $objects
+    %t8 = binary mul i64 0, 4
+    %t9 = index i8 [projection=array_element] %t7, %t8
+    call void @G___G(%t9)
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_3:
+    eh_catch_all, 1
+    %t10 = exception ptr
+    call void @cppgm_call_terminate(%t10)
+    unreachable
+
+  block ^call_unwind_end_2:
+    eh_try ^call_unwind_dispatch_4
+    %t11 = addr $objects
+    %t12 = binary mul i64 2, 4
+    %t13 = index i8 [projection=array_element] %t11, %t12
+    call void @G__G(%t13)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^call_unwind_dispatch_4:
+    eh_try ^lexical_cleanup_terminate_6
+    %t14 = addr $objects
+    %t15 = binary mul i64 1, 4
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    call void @G___G(%t16)
+    %t17 = addr $objects
+    %t18 = binary mul i64 0, 4
+    %t19 = index i8 [projection=array_element] %t17, %t18
+    call void @G___G(%t19)
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_6:
+    eh_catch_all, 2
+    %t20 = exception ptr
+    call void @cppgm_call_terminate(%t20)
+    unreachable
+
+  block ^call_unwind_end_5:
+    %t21 = addr $objects
+    store typed i64 3, $destructor_array_index__1
+    jump ^destructor_array_cond_7
+
+  block ^destructor_array_cond_7:
+    %t22 = load typed i64 $destructor_array_index__1
+    %t23 = cmp ne i64 %t22, 0
+    branch %t23, ^destructor_array_body_8, ^destructor_array_end_9
+
+  block ^destructor_array_body_8:
+    %t24 = binary sub i64 %t22, 1
+    store typed i64 %t24, $destructor_array_index__1
+    eh_cleanup ^destructor_array_cleanup_10
+    %t25 = binary mul i64 %t24, 4
+    %t26 = index i8 [projection=array_element] %t21, %t25
+    call void @G___G(%t26)
+    eh_end
+    jump ^destructor_array_cond_7
+
+  block ^destructor_array_cleanup_10:
+    %t27 = load typed i64 $destructor_array_index__1
+    %t28 = cmp ne i64 %t27, 0
+    branch %t28, ^destructor_array_cleanup_body_11, ^destructor_array_resume_12
+
+  block ^destructor_array_cleanup_body_11:
+    %t29 = binary sub i64 %t27, 1
+    store typed i64 %t29, $destructor_array_index__1
+    eh_try ^lexical_cleanup_terminate_13
+    %t30 = binary mul i64 %t29, 4
+    %t31 = index i8 [projection=array_element] %t21, %t30
+    call void @G___G(%t31)
+    eh_end
+    jump ^destructor_array_cleanup_10
+
+  block ^lexical_cleanup_terminate_13:
+    eh_catch_all, 3
+    %t32 = exception ptr
+    call void @cppgm_call_terminate(%t32)
+    unreachable
+
+  block ^destructor_array_resume_12:
+    resume
+
+  block ^destructor_array_end_9:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $catch__1 : ptr
+  slot $value : i32
+  slot $lor__2 : i64
+  slot $lor__3 : i64
+  slot $lor__4 : i64
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    call void @f()
+    eh_end
+    return i32 1
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t1 = exception ptr
+    %t2 = exception_selector i32
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t4 = call ptr @__external_runtime____cxa_begin_catch(%t1)
+    store typed ptr %t4, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    %t5 = load typed i32 %t4
+    store typed i32 %t5, $value
+    %t6 = load typed i32 $value
+    %t7 = cmp ne i32 %t6, 7
+    branch %t7, ^lor_short_8, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t8 = load typed i32 @bad
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__2
+    jump ^lor_end_9
+
+  block ^lor_short_8:
+    store typed i64 1, $lor__2
+    jump ^lor_end_9
+
+  block ^lor_end_9:
+    %t10 = load typed i64 $lor__2
+    branch %t10, ^lor_short_11, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t11 = load typed i32 @next
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__3
+    jump ^lor_end_12
+
+  block ^lor_short_11:
+    store typed i64 1, $lor__3
+    jump ^lor_end_12
+
+  block ^lor_end_12:
+    %t13 = load typed i64 $lor__3
+    branch %t13, ^lor_short_14, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t14 = load typed i32 @drops
+    %t15 = cmp ne i32 %t14, 3
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $lor__4
+    jump ^lor_end_15
+
+  block ^lor_short_14:
+    store typed i64 1, $lor__4
+    jump ^lor_end_15
+
+  block ^lor_end_15:
+    %t17 = load typed i64 $lor__4
+    %t18 = convert trunc i32 i64 %t17
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t18
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 0
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}
+function @G__G(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1GC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @created
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @created
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+function @G___G(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1GD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 @next
+    %t5 = binary sub nowrap i32 %t4, 1
+    store typed i32 %t5, @next
+    %t6 = cmp ne i32 %t3, %t4
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    store typed i32 1, @bad
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = load typed i32 @drops
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @drops
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp eq i32 %t11, 2
+    branch %t12, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    %t13 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t13
+    %t14 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t13, %t14, 0)
+    return void
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return void
+}
+alias object _ZN1GC2Ev = @G__G
+alias object _ZN1GD2Ev = @G___G

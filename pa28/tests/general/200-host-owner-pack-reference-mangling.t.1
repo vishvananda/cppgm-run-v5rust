@@ -1,0 +1,22 @@
+// N3485 focus: 14.5.3 variadic templates and Itanium ABI template argument mangling.
+// Mangling a class template instantiated as pack_box<T&...> must emit T as the
+// active template parameter inside the owner argument, not recursively expand
+// the owner argument into itself.
+template<class... T>
+struct pack_box
+{
+  pack_box() {}
+  pack_box(const pack_box &) {}
+};
+
+template<class... T>
+pack_box<T &...> bind_refs(T &... values)
+{
+  (void)sizeof...(values);
+  return pack_box<T &...>();
+}
+
+int main()
+{
+  return 0;
+}

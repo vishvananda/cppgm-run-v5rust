@@ -1,0 +1,73 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @make_pair
+  abi
+    return obj<16x8> -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $value -> [rbp-16] : obj<16x8>
+
+  block ^entry
+    store.i64 [rbp-16], 11
+    store.i64 [rbp-8], 22
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @forward_pair
+  abi
+    return obj<16x8> -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %value -> [rbp-16] : obj<16x8>
+
+  block ^entry
+    call @make_pair [args=()]
+    store.i64 [rbp-16], rax
+    store.i64 [rbp-8], rdx
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $result -> [rbp-16] : obj<16x8>
+    temp %value -> [rbp-32] : obj<16x8>
+
+  block ^entry
+    call @forward_pair [args=()]
+    store.i64 [rbp-32], rax
+    store.i64 [rbp-24], rdx
+    copy_bytes 16x8, [rbp-16], [rbp-32]
+    load.i64 r8, [rbp-16]
+    load.i64 r9, [rbp-8]
+    mov rdx, 11
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    mov rdx, 22
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    and r8, r9
+    cmp.i64 r8, 0
+    sete r8
+    movzx r8, r8
+    ret r8

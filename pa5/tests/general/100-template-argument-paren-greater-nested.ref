@@ -1,0 +1,225 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_UNSIGNED:unsigned
+            decl-specifier KW_LONG:long
+          declarator
+            identifier N
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_UNSIGNED:unsigned
+            decl-specifier KW_LONG:long
+          declarator
+            identifier D
+    class-specifier ratio
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_UNSIGNED:unsigned
+          decl-specifier KW_LONG:long
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier num
+            initializer
+              id-expression N
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier B
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier enable_if
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier enable_if<true,T>
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier type
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:T
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier declval
+            parameter-clause
+  class-specifier engine
+    class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_UNSIGNED:unsigned
+              decl-specifier KW_LONG:long
+            declarator
+              identifier N
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_UNSIGNED:unsigned
+              decl-specifier KW_LONG:long
+            declarator
+              identifier D
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier enable_if<(ratio<N,D>::num>0xFFFFFFFFFFFFFFFFull/(7-2)),int>::type
+            default-template-argument
+              literal 0
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        declarator
+          identifier eval
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier ratio<N,D>
+        compound-statement
+          return-statement
+            literal 1
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_UNSIGNED:unsigned
+              decl-specifier KW_LONG:long
+            declarator
+              identifier N
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier KW_UNSIGNED:unsigned
+              decl-specifier KW_LONG:long
+            declarator
+              identifier D
+          non-type-template-parameter
+            decl-specifier-seq
+              decl-specifier enable_if<ratio<N,D>::num<=0xFFFFFFFFFFFFFFFFull/(7-2),int>::type
+            default-template-argument
+              literal 0
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        declarator
+          identifier eval
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier ratio<N,D>
+        compound-statement
+          return-statement
+            literal 2
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier N
+    class-specifier box
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+            initializer
+              id-expression N
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier pick
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier a
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier b
+    compound-statement
+      return-statement
+        conditional-expression
+          binary-expression OP_GT:>
+            id-expression a
+            id-expression b
+          id-expression a
+          id-expression b
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier arr
+          array-suffix
+            literal 4
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:engine
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier e
+      return-statement
+        binary-expression OP_PLUS:+
+          binary-expression OP_PLUS:+
+            binary-expression OP_PLUS:+
+              call-expression
+                member-expression OP_DOT:.
+                  id-expression e
+                  identifier eval
+                argument-list
+                  call-expression
+                    id-expression ratio<1,2>
+                    argument-list
+              id-expression box<pick(3>2,1)>::value
+            id-expression box<(arr[3>2]>0)>::value
+          id-expression box<sizeof(int[2>1?4:8])>::value
+end translation unit

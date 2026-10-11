@@ -1,0 +1,33 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier A
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier B
+    class-specifier pair
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier U
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier pair<T,U>
+        decl-specifier KW_INLINE:inline
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier make_pair
+            parameter-clause
+end translation unit

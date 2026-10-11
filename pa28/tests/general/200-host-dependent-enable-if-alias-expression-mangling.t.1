@@ -1,0 +1,52 @@
+template<bool, class T>
+struct enable_if {
+};
+
+template<class T>
+struct enable_if<true, T> {
+  typedef T type;
+};
+
+template<bool B, class T>
+using enable_if_t = typename enable_if<B, T>::type;
+
+template<class T>
+struct is_reference {
+  static const bool value = false;
+};
+
+template<class T>
+struct is_reference<T&> {
+  static const bool value = true;
+};
+
+template<class T>
+T&& declval();
+
+template<class Iter>
+using deref_t = decltype(*declval<Iter&>());
+
+struct Ops {
+  template<class Iter, enable_if_t<is_reference<deref_t<Iter> >::value, int> = 0>
+  __attribute__((noinline))
+  static deref_t<Iter> iter_move(Iter&& i)
+  {
+    return *i;
+  }
+};
+
+struct Local {
+  int value;
+
+  Local() : value(0) {}
+  explicit Local(int v) : value(v) {}
+  Local(const Local& other) : value(other.value) {}
+};
+
+int main()
+{
+  Local x(7);
+  Local * p = &x;
+  Local y(Ops::iter_move(p));
+  return y.value == 7 ? 0 : 1;
+}

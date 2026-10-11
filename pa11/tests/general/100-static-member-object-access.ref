@@ -1,0 +1,8 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = binary sub nowrap i32 7, 7
+    return i32 %t2
+}

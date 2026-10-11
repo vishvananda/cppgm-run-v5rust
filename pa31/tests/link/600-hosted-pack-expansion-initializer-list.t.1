@@ -1,0 +1,7 @@
+// N3485 14.5.3p4, 8.5.4: a function parameter pack expanded in a
+// braced-init-list converting to std::initializer_list<int> (h({a...}));
+// expect exit 0
+#include <initializer_list>
+int h(std::initializer_list<int> l) { int s = 7; for (int x : l) s += x; return s; }
+template<class... T> int k(T... a) { return h({a...}); }
+int main() { return k(1, 2) == 10 ? 0 : 1; }

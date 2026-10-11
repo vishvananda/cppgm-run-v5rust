@@ -1,0 +1,41 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @zero
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, 0 !dbg(test.cpp, 1, 1)
+    ret rax !dbg(test.cpp, 1, 1)
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    call @zero [args=()] !dbg(test.cpp, 5, 1)
+    cmp.i64 rax, 0 !dbg(test.cpp, 7, 1)
+    je ^true !dbg(test.cpp, 7, 1)
+
+  block ^false
+    mov rax, 1 !dbg(test.cpp, 13, 1)
+    ret rax !dbg(test.cpp, 13, 1)
+
+  block ^true
+    mov rax, 0 !dbg(test.cpp, 10, 1)
+    ret rax !dbg(test.cpp, 10, 1)

@@ -1,0 +1,17 @@
+extern "C" int printf(const char *, ...);
+
+__attribute__((weak)) int hook() { return 1; }
+__attribute__((weak)) int fallback_hook() { return 2; }
+__attribute__((weak)) int unused_hook() { return 4; }
+__attribute__((weak)) int weak_value = 8;
+__attribute__((weak)) int weak_default = 16;
+
+int host_calls_unused();
+int host_reads_default();
+
+int main()
+{
+  printf("%d %d %d %d %d %d\n", hook(), fallback_hook(), weak_value,
+    weak_default, host_calls_unused(), host_reads_default());
+  return 0;
+}

@@ -1,0 +1,34 @@
+function @target(%__param0 : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z6targetOi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @target
+    %t2 = call i32 @accepts(%t1)
+    return i32 %t2
+}
+function @accepts(%pointer : ptr) -> i32 [binding=weak, object=_Z7acceptsIFvOiEEiPT_] {
+  slot $pointer : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %pointer, $pointer
+    %t1 = load typed ptr $pointer
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}

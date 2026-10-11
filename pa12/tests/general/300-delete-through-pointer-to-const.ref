@@ -1,0 +1,48 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @destroyed : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @operatornew(%t1)
+    store typed ptr %t2, $p
+    %t3 = load typed ptr $p
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    call void @object___object(%t3)
+    call void @operatordelete(%t3)
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    %t5 = load typed i32 @destroyed
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^cond_then_3, ^cond_else_4
+
+  block ^cond_then_3:
+    store typed i32 0, $cond__1
+    jump ^cond_end_5
+
+  block ^cond_else_4:
+    store typed i32 1, $cond__1
+    jump ^cond_end_5
+
+  block ^cond_end_5:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @object___object(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN6objectD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 1, @destroyed
+    return void
+}
+alias object _ZN6objectD2Ev = @object___object

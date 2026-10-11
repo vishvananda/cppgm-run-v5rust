@@ -1,0 +1,32 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_UNSIGNED:unsigned
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_UNSIGNED:unsigned
+          declarator
+            identifier w
+    compound-statement
+      return-statement
+        conditional-expression
+          binary-expression OP_LT:<
+            id-expression w
+            literal 64
+          binary-expression OP_RSHIFT:>>
+            call-expression
+              id-expression unsigned
+              paren-argument-list
+                unary-expression OP_COMPL:~
+                  literal 0
+            literal 1
+          call-expression
+            id-expression unsigned
+            paren-argument-list
+              literal 0
+end translation unit

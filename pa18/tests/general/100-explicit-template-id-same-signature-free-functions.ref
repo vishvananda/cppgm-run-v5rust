@@ -1,0 +1,19 @@
+function @g() -> i32 [binding=strong, object=_Z1gv] {
+  block ^entry:
+    %t1 = call i32 @f()
+    %t2 = call i32 @f__2()
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}
+function @f() -> i32 [binding=weak, object=_Z1fIcEiv] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @f__2() -> i32 [binding=weak, object=_Z1fIlEiv] {
+  block ^entry:
+    %t1 = const i64 8
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

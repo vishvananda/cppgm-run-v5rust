@@ -1,0 +1,11 @@
+# budget from 400-inline-recursive-chain-callee-blocked.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 25
+blocks <= 13
+count(call) <= 7
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @alpha
+instructions <= 9 in @beta
+instructions <= 9 in @gamma
+instructions <= 6 in @caller

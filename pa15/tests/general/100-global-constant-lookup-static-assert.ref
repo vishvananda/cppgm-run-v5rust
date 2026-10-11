@@ -1,0 +1,7 @@
+global @one : i32 [storage=readonly, binding=internal, object=_ZL3one] = 1
+global @two : i32 [storage=readonly, binding=internal, object=_ZL3two] = 2
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,12 @@
+#include "700-hosted-extern-const-cross-tu-link-smoke.shared.h"
+
+namespace hosted_extern_const_cross_tu_link_smoke {
+
+const char kMessage[] = "hello";
+
+int first_char()
+{
+  return kMessage[0];
+}
+
+}  // namespace hosted_extern_const_cross_tu_link_smoke

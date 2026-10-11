@@ -1,0 +1,11 @@
+declare function @B_H___operator__(%arg0 : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1BI1HEclIJEEEN9result_ofIFS0_DpT_EE4typeEDpOS4_]
+
+function @use(%value : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z3useR1BI1HE] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    call void @B_H___operator__(%t1)
+    return void
+}

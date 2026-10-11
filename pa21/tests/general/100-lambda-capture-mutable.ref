@@ -1,0 +1,42 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+  slot $f : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 2, $x
+    %t1 = addr $f
+    %t2 = load typed i32 $x
+    store typed i32 %t2, %t1
+    %t3 = addr $f
+    %t4 = call i32 @__lambda_main_t16_19__operator__(%t3)
+    %t5 = cmp eq i32 %t4, 5
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @__lambda_main_t16_19__operator__(%this : ptr [object_bytes=4]) -> i32 [binding=internal, object=_ZZ4mainEN3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 3
+    store typed i32 %t4, %t2
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    return i32 %t7
+}

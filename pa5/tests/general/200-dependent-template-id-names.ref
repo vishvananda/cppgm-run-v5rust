@@ -1,0 +1,137 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_BOOL:bool
+          declarator
+            identifier B
+    class-specifier box
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_CONST:const
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier b
+            initializer
+              id-expression B
+  class-specifier R1
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_STATIC:static
+        decl-specifier KW_CONST:const
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier num
+          initializer
+            literal 1
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier type
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier U
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier KW_INT:int
+        declarator
+          identifier get
+          parameter-clause
+        compound-statement
+          return-statement
+            literal 10
+  class-specifier R2
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_STATIC:static
+        decl-specifier KW_CONST:const
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier num
+          initializer
+            literal 2
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier X
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier Y
+    class-specifier cmp
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name box<int,X::num<Y::num>
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier X::type
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        declarator
+          identifier f
+          parameter-clause
+        compound-statement
+          return-statement
+            binary-expression OP_PLUS:+
+              binary-expression OP_PLUS:+
+                call-expression
+                  id-expression X::template get<int>
+                  argument-list
+                parenthesized-expression
+                  id-expression Y::num
+              literal 1
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier cmp<R1,R2>
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier c
+      return-statement
+        binary-expression OP_PLUS:+
+          call-expression
+            member-expression OP_DOT:.
+              id-expression c
+              identifier f
+            argument-list
+          id-expression cmp<R1,R2>::b
+end translation unit

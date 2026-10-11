@@ -1,0 +1,19 @@
+#include "300-shared-conditional-cleanup-resume.helper.h"
+
+int attempts, constructed, destroyed, live, fail_at;
+
+void construct()
+{
+  if (++attempts == fail_at) throw 7;
+  ++constructed;
+  ++live;
+}
+
+Value::Value(int input) : value(input) { construct(); }
+Value::Value(const Value &other) : value(other.value) { construct(); }
+Value::~Value() noexcept { ++destroyed; --live; }
+
+Value operator+(const Value &left, const Value &right)
+{
+  return Value(left.value + right.value);
+}

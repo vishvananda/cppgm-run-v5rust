@@ -1,0 +1,332 @@
+global @src [binding=strong] = {
+  i32 1
+  i32 2
+}
+global @dst : obj<8x4> [binding=strong] = {
+  zero 8
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $discard__1 : obj<16x8>
+  slot $wrapped : obj<8x8>
+  slot $argobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $discard__1
+    %t2 = addr @src
+    %t3 = addr @src
+    %t4 = binary mul i64 2, 4
+    %t5 = index i8 %t3, %t4
+    %t6 = addr @dst
+    %t7 = call obj<16x8> @lib__copy_unwrap_iters(%t2, %t5, %t6)
+    copyobj 16x8 %t7, %t1
+    %t8 = addr @src
+    %t9 = addr @src
+    %t10 = binary mul i64 2, 4
+    %t11 = index i8 %t9, %t10
+    %t12 = call ptr @lib__selected_unwrap_range(%t8, %t11)
+    %t13 = addr $wrapped
+    %t14 = addr @src
+    %t15 = addr $wrapped
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed ptr %t14, %t16
+    %t17 = addr $argobj__2
+    %t18 = addr $wrapped
+    copyobj 8x8 %t18, %t17
+    %t19 = call ptr @lib__address_unwrap_iter($argobj__2)
+    %t20 = addr @dst
+    %t21 = index i32 [projection=array_element] %t20, 1
+    %t22 = load typed i32 %t21
+    %t23 = binary sub nowrap i32 %t22, 2
+    return i32 %t23
+}
+function @lib__copy_unwrap_iters(%first : ptr, %last : ptr, %out_first : ptr) -> obj<16x8> [binding=weak, object=_ZN3lib17copy_unwrap_itersINS_9copy_implEPiS2_S2_Li0EEENS_4pairIT0_T2_EES4_T1_S5_] {
+  slot $first : ptr
+  slot $last : ptr
+  slot $out_first : ptr
+  slot $range : obj<16x8>
+  slot $result : obj<16x8>
+  slot $tmpobj__1 : obj<1x1>
+  slot $retobj__2 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    store typed ptr %out_first, $out_first
+    %t1 = addr $range
+    %t2 = load typed ptr $first
+    %t3 = addr $last
+    %t4 = call ptr @lib__move(%t3)
+    %t5 = load typed ptr %t4
+    %t6 = call obj<16x8> @lib__unwrap_range(%t2, %t5)
+    copyobj 16x8 %t6, %t1
+    %t7 = addr $result
+    %t8 = addr $tmpobj__1
+    zeroinit 1x1 %t8
+    %t9 = addr $range
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = call ptr @lib__move(%t10)
+    %t12 = load typed ptr %t11
+    %t13 = addr $range
+    %t14 = index i8 [projection=field] %t13, 8
+    %t15 = call ptr @lib__move(%t14)
+    %t16 = load typed ptr %t15
+    %t17 = load typed ptr $out_first
+    %t18 = call ptr @lib__unwrap_iter(%t17)
+    %t19 = call obj<16x8> @lib__copy_impl__operator__(%t8, %t12, %t16, %t18)
+    copyobj 16x8 %t19, %t7
+    %t20 = addr $retobj__2
+    %t21 = addr $first
+    %t22 = call ptr @lib__move(%t21)
+    %t23 = load typed ptr %t22
+    %t24 = addr $result
+    %t25 = index i8 [projection=field] %t24, 0
+    %t26 = call ptr @lib__move(%t25)
+    %t27 = load typed ptr %t26
+    %t28 = call ptr @lib__rewrap_range(%t23, %t27)
+    %t29 = addr $out_first
+    %t30 = call ptr @lib__move(%t29)
+    %t31 = load typed ptr %t30
+    %t32 = addr $result
+    %t33 = index i8 [projection=field] %t32, 8
+    %t34 = call ptr @lib__move(%t33)
+    %t35 = load typed ptr %t34
+    %t36 = call ptr @lib__rewrap_iter(%t31, %t35)
+    %t37 = call obj<16x8> @lib__make_pair(%t28, %t36)
+    copyobj 16x8 %t37, %t20
+    return obj<16x8> $retobj__2
+}
+function @lib__selected_unwrap_range(%first : ptr, %__param1 : ptr) -> ptr [binding=weak, object=_ZN3lib21selected_unwrap_rangeIPiS1_EET0_T_S3_] {
+  slot $first : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $first
+    %t2 = call ptr @lib__selected_unwrap_iter(%t1)
+    return ptr %t2
+}
+function @lib__address_unwrap_iter(%value : obj<8x8>) -> ptr [binding=weak, object=_ZN3lib19address_unwrap_iterINS_12wrapped_iterIPiEENS_19address_unwrap_implIS3_Lb1EEEEEDTclsrT0_6unwrapcl7declvalIT_EEEES7_] {
+  slot $value : obj<8x8>
+  slot $argobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $value
+    copyobj 8x8 %value, %t1
+    %t2 = addr $argobj__1
+    %t3 = addr $value
+    copyobj 8x8 %t3, %t2
+    %t4 = call ptr @lib__address_unwrap_impl___cppgm_class_template_identity_1_true___unwrap($argobj__1)
+    return ptr %t4
+}
+function @lib__move(%t : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_ZN3lib4moveIRPiEEONS_16remove_referenceIT_E4typeEOS4_] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @lib__unwrap_range(%first : ptr, %last : ptr) -> obj<16x8> [binding=weak, object=_ZN3lib12unwrap_rangeIPiS1_EENS_4pairIT0_S3_EET_S5_] {
+  slot $first : ptr
+  slot $last : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    %t1 = addr $retobj__1
+    %t2 = addr $first
+    %t3 = call ptr @lib__move(%t2)
+    %t4 = load typed ptr %t3
+    %t5 = call ptr @lib__unwrap_iter(%t4)
+    %t6 = addr $last
+    %t7 = call ptr @lib__move(%t6)
+    %t8 = load typed ptr %t7
+    %t9 = call ptr @lib__unwrap_iter(%t8)
+    %t10 = call obj<16x8> @lib__make_pair(%t5, %t9)
+    copyobj 16x8 %t10, %t1
+    return obj<16x8> $retobj__1
+}
+function @lib__unwrap_iter(%i : ptr) -> ptr [binding=weak, object=_ZN3lib11unwrap_iterIPiNS_16unwrap_iter_implIS1_EELi0EEEDTclsrT0_6unwrapcl7declvalIT_EEEES5_] {
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %i, $i
+    %t1 = load typed ptr $i
+    %t2 = call ptr @lib__unwrap_iter_impl_int____unwrap(%t1)
+    return ptr %t2
+}
+function @lib__copy_impl__operator__(%this : ptr [object_bytes=1], %first : ptr, %last : ptr, %result : ptr) -> obj<16x8> [binding=weak, object=_ZNK3lib9copy_implclIPiS2_S2_EENS_4pairIT_T1_EES4_T0_S5_, inline_hint=yes] {
+  slot $this : ptr
+  slot $first : ptr
+  slot $last : ptr
+  slot $result : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    store typed ptr %result, $result
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t1 = load typed ptr $first
+    %t2 = load typed ptr $last
+    %t3 = cmp ne ptr %t1, %t2
+    branch %t3, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t4 = load typed ptr $first
+    %t5 = load typed i32 %t4
+    %t6 = load typed ptr $result
+    store typed i32 %t5, %t6
+    %t7 = load typed ptr $first
+    %t8 = binary mul i64 1, 4
+    %t9 = index i8 %t7, %t8
+    store typed ptr %t9, $first
+    %t10 = load typed ptr $result
+    %t11 = binary mul i64 1, 4
+    %t12 = index i8 %t10, %t11
+    store typed ptr %t12, $result
+    jump ^while_cond_1
+
+  block ^while_end_3:
+    %t13 = addr $retobj__1
+    %t14 = addr $first
+    %t15 = call ptr @lib__move(%t14)
+    %t16 = load typed ptr %t15
+    %t17 = addr $result
+    %t18 = call ptr @lib__move(%t17)
+    %t19 = load typed ptr %t18
+    %t20 = call obj<16x8> @lib__make_pair(%t16, %t19)
+    copyobj 16x8 %t20, %t13
+    return obj<16x8> $retobj__1
+}
+function @lib__rewrap_range(%orig : ptr, %iter : ptr) -> ptr [binding=weak, object=_ZN3lib12rewrap_rangeIPiS1_EET_S2_T0_] {
+  slot $orig : ptr
+  slot $iter : ptr
+
+  block ^entry:
+    store typed ptr %orig, $orig
+    store typed ptr %iter, $iter
+    %t1 = addr $orig
+    %t2 = call ptr @lib__move(%t1)
+    %t3 = load typed ptr %t2
+    %t4 = addr $iter
+    %t5 = call ptr @lib__move(%t4)
+    %t6 = load typed ptr %t5
+    %t7 = call ptr @lib__rewrap_iter(%t3, %t6)
+    return ptr %t7
+}
+function @lib__rewrap_iter(%orig : ptr, %iter : ptr) -> ptr [binding=weak, object=_ZN3lib11rewrap_iterIPiS1_NS_16unwrap_iter_implIS1_EEEET_S4_T0_] {
+  slot $orig : ptr
+  slot $iter : ptr
+
+  block ^entry:
+    store typed ptr %orig, $orig
+    store typed ptr %iter, $iter
+    %t1 = addr $orig
+    %t2 = call ptr @lib__move(%t1)
+    %t3 = load typed ptr %t2
+    %t4 = addr $iter
+    %t5 = call ptr @lib__move(%t4)
+    %t6 = load typed ptr %t5
+    %t7 = call ptr @lib__unwrap_iter_impl_int____rewrap(%t3, %t6)
+    return ptr %t7
+}
+function @lib__make_pair(%a : ptr, %b : ptr) -> obj<16x8> [binding=weak, object=_ZN3lib9make_pairIPiS1_EENS_4pairIT_T0_EES3_S4_] {
+  slot $a : ptr
+  slot $b : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $a
+    %t3 = load typed ptr $b
+    call void @lib__pair_int__int____pair(%t1, %t2, %t3)
+    return obj<16x8> $retobj__1
+}
+function @lib__selected_unwrap_iter(%i : ptr) -> ptr [binding=weak, object=_ZN3lib20selected_unwrap_iterIPiNS_25selected_unwrap_iter_implIS1_Lb0EEEEEDTclsrT0_6unwrapcl7declvalIT_EEEES5_] {
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %i, $i
+    %t1 = load typed ptr $i
+    %t2 = call ptr @lib__selected_unwrap_iter_impl_int__false___unwrap(%t1)
+    return ptr %t2
+}
+function @lib__address_unwrap_impl___cppgm_class_template_identity_1_true___unwrap(%value : obj<8x8>) -> ptr [binding=weak, object=_ZN3lib19address_unwrap_implINS_12wrapped_iterIPiEELb1EE6unwrapES3_, inline_hint=yes] {
+  slot $value : obj<8x8>
+  slot $argobj__1 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $value
+    copyobj 8x8 %value, %t1
+    %t2 = addr $argobj__1
+    %t3 = addr $value
+    copyobj 8x8 %t3, %t2
+    %t4 = call ptr @lib__to_address($argobj__1)
+    return ptr %t4
+}
+function @lib__unwrap_iter_impl_int____unwrap(%i : ptr) -> ptr [binding=weak, object=_ZN3lib16unwrap_iter_implIPiE6unwrapES1_, inline_hint=yes] {
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %i, $i
+    %t1 = load typed ptr $i
+    return ptr %t1
+}
+function @lib__unwrap_iter_impl_int____rewrap(%__param0 : ptr, %iter : ptr) -> ptr [binding=weak, object=_ZN3lib16unwrap_iter_implIPiE6rewrapES1_S1_, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $iter : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %iter, $iter
+    %t1 = load typed ptr $iter
+    return ptr %t1
+}
+function @lib__pair_int__int____pair(%this : ptr [object_bytes=16], %a : ptr, %b : ptr) -> void [binding=weak, object=_ZN3lib4pairIPiS1_EC1ES1_S1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %a, $a
+    store typed ptr %b, $b
+    %t1 = load typed ptr $a
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed ptr $b
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed ptr %t4, %t6
+    return void
+}
+function @lib__selected_unwrap_iter_impl_int__false___unwrap(%i : ptr) -> ptr [binding=weak, object=_ZN3lib25selected_unwrap_iter_implIPiLb0EE6unwrapES1_, inline_hint=yes] {
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %i, $i
+    %t1 = load typed ptr $i
+    return ptr %t1
+}
+function @lib__to_address(%value : obj<8x8>) -> ptr [binding=weak, object=_ZN3lib10to_addressIPiEET_NS_12wrapped_iterIS2_EE] {
+  slot $value : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $value
+    copyobj 8x8 %value, %t1
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    return ptr %t4
+}
+alias object _ZN3lib4pairIPiS1_EC2ES1_S1_ = @lib__pair_int__int____pair

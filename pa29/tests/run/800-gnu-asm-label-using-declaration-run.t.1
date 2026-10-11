@@ -1,0 +1,12 @@
+extern "C" int raw_using_asm_probe(int)
+    __asm("cppgm_pa29_using_asm_probe");
+
+namespace abi_link
+{
+using ::raw_using_asm_probe;
+}
+
+int main()
+{
+  return abi_link::raw_using_asm_probe(4) - 9;
+}

@@ -1,0 +1,4 @@
+function @id(%p : ptr) -> ptr {
+  block ^entry:
+    return ptr %p
+}

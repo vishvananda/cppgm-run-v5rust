@@ -1,0 +1,45 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $result
+    %t2 = addr $result
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t4 = addr $result
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp lt i32 %t6, 16
+    branch %t7, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t8 = addr $result
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = binary add nowrap i32 %t10, 1
+    store typed i32 %t11, %t9
+    jump ^while_cond_1
+
+  block ^while_end_3:
+    %t12 = addr $result
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed i32 %t13
+    %t15 = cmp eq i32 %t14, 16
+    branch %t15, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t16 = load typed i32 $cond__1
+    return i32 %t16
+}

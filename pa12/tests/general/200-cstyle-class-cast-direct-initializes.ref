@@ -1,0 +1,49 @@
+function @convert(%value : i32) -> u32 [binding=strong, object=_Z7converti] {
+  slot $value : i32
+  slot $ch : obj<4x4>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr $ch
+    %t2 = load typed i32 $value
+    %t3 = copy u32 %t2
+    call void @Token__Token(%t1, %t3)
+    %t4 = addr $ch
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed u32 %t5
+    return u32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call u32 @convert(7)
+    %t2 = cmp eq u32 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @Token__Token(%this : ptr [object_bytes=4], %code : u32) -> void [binding=weak, object=_ZN5TokenC1Ej, inline_hint=yes] {
+  slot $this : ptr
+  slot $code : u32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed u32 %code, $code
+    %t1 = load typed u32 $code
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed u32 %t1, %t3
+    return void
+}
+alias object _ZN5TokenC2Ej = @Token__Token

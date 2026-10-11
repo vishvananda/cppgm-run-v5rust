@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      if-statement
+        condition
+          binary-expression OP_LT:<
+            id-expression x
+            literal 1
+        then
+          return-statement
+            literal 1
+        else
+          return-statement
+            literal 2
+end translation unit

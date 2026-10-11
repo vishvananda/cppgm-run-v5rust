@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of (int) returning int
+    parameter n int
+    compound-statement
+      do-statement
+        compound-statement
+          expression-statement
+            unary-expression lvalue int OP_DEC:--
+              id-expression lvalue int n
+        condition
+          id-expression lvalue int n
+      return-statement
+        id-expression lvalue int n
+end translation unit

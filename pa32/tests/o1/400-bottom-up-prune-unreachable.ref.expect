@@ -1,0 +1,16 @@
+# budget from 400-bottom-up-prune-unreachable.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 6
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 7 in @main
+instructions <= 4 in @addressed
+instructions <= 4 in @rooted
+
+# outcomes from 400-bottom-up-prune-unreachable.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @inner)
+none(call @outer)
+absent(@inner)
+absent(@outer)

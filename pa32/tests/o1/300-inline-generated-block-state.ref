@@ -1,0 +1,30 @@
+function @entry(%value : i64) -> i64 {
+  block ^entry:
+    %positive_1 = cmp gt i64 %value, 0
+    branch %positive_1, ^inline_entry_1, ^inline_cont_2
+
+  block ^inline_entry_1:
+    %adjusted_2 = binary add i64 %value, 1
+    jump ^inline_cont_2
+
+  block ^inline_cont_2:
+    %result = phi i64 [^inline_entry_1: %adjusted_2, ^entry: 0]
+    return i64 %result
+}
+function @branch(%value : i64) -> i64 {
+  block ^entry:
+    %positive = cmp gt i64 %value, 0
+    branch %positive, ^inline_entry_1, ^no
+
+  block ^inline_entry_1:
+    %adjusted_2 = binary add i64 %value, 1
+    return i64 %adjusted_2
+
+  block ^no:
+    return i64 0
+}
+function @leaf(%value : i64) -> i64 {
+  block ^entry:
+    %adjusted = binary add i64 %value, 1
+    return i64 %adjusted
+}

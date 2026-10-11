@@ -1,0 +1,26 @@
+global @c : i8 [binding=strong] = 97
+global @c16 : u16 [binding=strong] = 960
+global @c32 : u32 [binding=strong] = 119070
+global @cw : i32 [binding=strong] = 119070
+global @sc : i8 [binding=strong] = 1
+global @si : i16 [binding=strong] = 2
+global @i : i32 [binding=strong] = 3
+global @li : i64 [binding=strong] = 4
+global @lli : i64 [binding=strong] = 5
+global @uc : u8 [binding=strong] = 6
+global @usi : u16 [binding=strong] = 7
+global @ui : u32 [binding=strong] = 8
+global @uli : i64 [binding=strong] = 9
+global @ulli : i64 [binding=strong] = 10
+global @f : f32 [binding=strong] = 2f
+global @d : f64 [binding=strong] = 2
+global @ld : f80 [binding=strong] = zero
+global @p : ptr [binding=strong] = zero
+global @null_function : ptr [binding=strong] = zero
+global @converted : u8 [binding=strong] = 1
+global @floating_to_integral : i32 [binding=strong] = 2
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

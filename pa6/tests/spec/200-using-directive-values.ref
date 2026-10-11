@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable arr array of 2 int
+    variable pf pointer to function of () returning int
+    scope namespace N
+      variable K const int
+      function f function of () returning int
+      type EY enum EY
+      enumerator A enum EY 2
+end translation unit

@@ -1,0 +1,5 @@
+dwarf-facts 1
+object native
+debug_info absent
+debug_line absent
+debug_loc absent

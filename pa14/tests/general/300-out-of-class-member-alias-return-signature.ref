@@ -1,0 +1,42 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $t : obj<1x1>
+  slot $discard__1 : obj<16x8>
+  slot $refarg__2 : i32
+
+  block ^entry:
+    %t1 = addr $t
+    %t2 = addr $discard__1
+    %t3 = addr $t
+    store typed i32 1, $refarg__2
+    %t4 = addr $refarg__2
+    %t5 = call obj<16x8> @tree_int___call(%t3, %t4)
+    copyobj 16x8 %t5, %t2
+    return i32 0
+}
+function @tree_int___call(%this : ptr [object_bytes=1], %value : ptr [pass=by_address, object_bytes=4]) -> obj<16x8> [binding=weak, object=_ZN4treeIiE4callERKi, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $this
+    %t3 = load typed ptr $value
+    %t4 = call obj<16x8> @tree_int___get(%t2, %t3)
+    copyobj 16x8 %t4, %t1
+    return obj<16x8> $retobj__1
+}
+function @tree_int___get(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=4]) -> obj<16x8> [binding=weak, object=_ZN4treeIiE3getERKi] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = addr $retobj__1
+    zeroinit 16x8 %t1
+    return obj<16x8> $retobj__1
+}

@@ -1,0 +1,10 @@
+# budget from 500-fill-loop-word-runtime-value.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 50
+blocks <= 18
+count(call) <= 5
+count(load) <= 3
+count(store) <= 6
+count(phi) <= 6
+instructions <= 18 in @fill_words
+instructions <= 18 in @fill_halves
+instructions <= 17 in @fill_quads

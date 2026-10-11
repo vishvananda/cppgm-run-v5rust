@@ -1,0 +1,44 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    zeroinit 4x4 %t1
+    call void @Function_void_____Function(%t1)
+    %t2 = call i32 @Function_void_____get(%t1)
+    %t3 = binary sub nowrap i32 %t2, 7
+    return i32 %t3
+}
+function @Function_void_____Function(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN8FunctionIFvvEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Value_void_____Value(%t2)
+    return void
+}
+function @Function_void_____get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK8FunctionIFvvEE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @Value_void_____Value(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5ValueIFvvEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN8FunctionIFvvEEC2Ev = @Function_void_____Function
+alias object _ZN5ValueIFvvEEC2Ev = @Value_void_____Value

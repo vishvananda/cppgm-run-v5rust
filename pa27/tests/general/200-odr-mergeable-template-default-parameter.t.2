@@ -1,0 +1,9 @@
+#include "200-odr-mergeable-template-default-parameter.helper.h"
+
+int left();
+
+int main()
+{
+  Marker marker = {31};
+  return left() + as_transparent<int, Marker>(marker).value - 43;
+}

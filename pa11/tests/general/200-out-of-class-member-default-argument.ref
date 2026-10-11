@@ -1,0 +1,56 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i8 0
+  i8 0
+  i8 0
+  i8 0
+}
+
+function @Text__take(%this : ptr [object_bytes=1], %out : ptr, %n : i64, %pos : i64) -> i32 [binding=strong, object=_ZN4Text4takeEPcmm] {
+  slot $this : ptr
+  slot $out : ptr
+  slot $n : i64
+  slot $pos : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %out, $out
+    store typed i64 %n, $n
+    store typed i64 %pos, $pos
+    %t1 = load typed ptr $out
+    %t2 = index i8 [projection=array_element] %t1, 0
+    store i8 120, %t2
+    %t3 = load typed i64 $n
+    %t4 = load typed i64 $pos
+    %t5 = binary add i64 %t3, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $text : obj<1x1>
+  slot $out : obj<4x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $text
+    %t2 = addr $out
+    copyobj 4x1 @__constexpr_template__1, %t2
+    %t3 = addr $text
+    %t4 = addr $out
+    %t5 = convert sext i64 i32 3
+    %t6 = convert sext i64 i32 0
+    %t7 = call i32 @Text__take(%t3, %t4, %t5, %t6)
+    %t8 = cmp eq i32 %t7, 3
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

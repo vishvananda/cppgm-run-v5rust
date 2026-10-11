@@ -1,0 +1,106 @@
+function @read(%b : ptr [pass=by_address, object_bytes=16], %i : i32) -> i32 [binding=strong, object=_Z4readR6bufferi] {
+  slot $b : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %b, $b
+    store typed i32 %i, $i
+    %t1 = load typed ptr $b
+    %t2 = call ptr @buffer__operatoritem_(%t1)
+    %t3 = load typed i32 $i
+    %t4 = convert sext i64 i32 %t3
+    %t5 = binary mul i64 %t4, 4
+    %t6 = index i8 [projection=array_element] %t2, %t5
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @read_const(%b : ptr [pass=by_address, object_bytes=16], %i : i32) -> i32 [binding=strong, object=_Z10read_constRK6bufferi] {
+  slot $b : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %b, $b
+    store typed i32 %i, $i
+    %t1 = load typed ptr $b
+    %t2 = call ptr @buffer__operatorconstitem___ov2(%t1)
+    %t3 = load typed i32 $i
+    %t4 = convert sext i64 i32 %t3
+    %t5 = binary mul i64 %t4, 4
+    %t6 = index i8 [projection=array_element] %t2, %t5
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @write(%b : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z5writeR6buffer] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    %t2 = call ptr @buffer__operatoritem_(%t1)
+    %t3 = binary mul i64 2, 4
+    %t4 = index i8 [projection=array_element] %t2, %t3
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 11, %t5
+    %t6 = load typed ptr $b
+    %t7 = call ptr @buffer__operatoritem_(%t6)
+    %t8 = binary mul i64 2, 4
+    %t9 = index i8 [projection=array_element] %t7, %t8
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    return i32 %t11
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<16x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 [projection=array_element] %t3, %t4
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 7, %t6
+    %t7 = addr $b
+    %t8 = call i32 @read(%t7, 1)
+    %t9 = addr $b
+    %t10 = call i32 @write(%t9)
+    %t11 = binary add nowrap i32 %t8, %t10
+    %t12 = addr $b
+    %t13 = call i32 @read_const(%t12, 2)
+    %t14 = binary add nowrap i32 %t11, %t13
+    %t15 = cmp eq i32 %t14, 29
+    branch %t15, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t16 = load typed i32 $cond__1
+    return i32 %t16
+}
+function @buffer__operatoritem_(%this : ptr [object_bytes=16]) -> ptr [binding=weak, object=_ZN6buffercvP4itemEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @buffer__operatorconstitem___ov2(%this : ptr [object_bytes=16]) -> ptr [binding=weak, object=_ZNK6buffercvPK4itemEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

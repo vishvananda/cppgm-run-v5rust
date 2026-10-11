@@ -1,0 +1,5 @@
+function @n__d__f() -> void [binding=strong, object=_ZN1n1d1fEv] {
+  block ^entry:
+    %t1 = const i64 1
+    return void
+}

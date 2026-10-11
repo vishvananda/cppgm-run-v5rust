@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type entries struct entries
+    variable entries array of 2 struct entries
+    scope class entries
+      variable name pointer to const char
+      variable description pointer to const char
+end translation unit

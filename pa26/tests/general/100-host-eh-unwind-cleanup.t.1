@@ -1,0 +1,15 @@
+int destroyed = 0;
+
+struct Guard
+{
+  ~Guard()
+  {
+    ++destroyed;
+  }
+};
+
+void boom()
+{
+  Guard g;
+  throw 0;
+}

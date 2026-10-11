@@ -1,0 +1,21 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $bits : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $bits
+    call void @Bits__Bits(%t1)
+    return i32 0
+}
+function @Bits__Bits(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BitsC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary and u8 3, 2
+    %t4 = binary shl u8 %t3, 1
+    store u8 %t4, %t2
+    return void
+}
+alias object _ZN4BitsC2Ev = @Bits__Bits

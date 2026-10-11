@@ -1,0 +1,55 @@
+global @hits : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @run()
+    %t2 = cmp eq i32 %t1, 2
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @run() -> i32 [binding=weak, object=_Z3runIJciEEiv] {
+  slot $discardarr__1 : obj<12x4>
+
+  block ^entry:
+    %t1 = addr $discardarr__1
+    store typed i32 0, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    %t3 = call i32 @touch()
+    store typed i32 %t3, %t2
+    %t4 = index i8 [projection=array_element] %t1, 8
+    %t5 = call i32 @touch__2()
+    store typed i32 %t5, %t4
+    %t6 = load typed i32 @hits
+    return i32 %t6
+}
+function @touch() -> i32 [binding=weak, object=_Z5touchIcEiv] {
+  block ^entry:
+    %t1 = load typed i32 @hits
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @hits
+    %t3 = const i64 1
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}
+function @touch__2() -> i32 [binding=weak, object=_Z5touchIiEiv] {
+  block ^entry:
+    %t1 = load typed i32 @hits
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @hits
+    %t3 = const i64 4
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}

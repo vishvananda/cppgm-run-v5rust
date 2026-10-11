@@ -1,0 +1,64 @@
+function @select_member(%object : ptr [pass=by_address, object_bytes=4], %member : i64) -> ptr [binding=strong, object=_Z13select_memberO1XMS_i] {
+  slot $object : ptr
+  slot $member : i64
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i64 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i64 $member
+    %t3 = index i8 [projection=field] %t1, %t2
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $member : i64
+  slot $selected : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 42, %t3
+    %t4 = const i64 0
+    store typed i64 %t4, $member
+    %t5 = addr $value
+    %t6 = load typed i64 $member
+    %t7 = call ptr @select_member(%t5, %t6)
+    store typed ptr %t7, $selected
+    %t8 = load typed ptr $selected
+    %t9 = addr $value
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = cmp eq ptr %t8, %t10
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = load typed ptr $selected
+    %t13 = load typed i32 %t12
+    %t14 = cmp eq i32 %t13, 42
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t16 = load typed i64 $land__2
+    branch %t16, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed i32 $cond__1
+    return i32 %t17
+}

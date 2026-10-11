@@ -1,0 +1,21 @@
+struct CalcToken {
+  int x;
+
+  CalcToken() : x(0) {}
+  explicit CalcToken(int v) : x(v) {}
+
+  CalcToken& doAdd(const CalcToken& rhs) {
+    x += rhs.x;
+    return *this;
+  }
+};
+
+typedef CalcToken& (CalcToken::*token_op)(const CalcToken&);
+
+token_op g = &CalcToken::doAdd;
+
+int main() {
+  CalcToken a(40), b(2);
+  (a.*g)(b);
+  return (sizeof(token_op) == 16 && alignof(token_op) == 8 && a.x == 42) ? 0 : 1;
+}

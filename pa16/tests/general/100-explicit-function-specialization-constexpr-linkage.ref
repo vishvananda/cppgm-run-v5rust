@@ -1,0 +1,16 @@
+function @strong_primary() -> i32 [binding=strong, object=_Z14strong_primaryIiEiv] {
+  block ^entry:
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @cexpr()
+    %t2 = call i32 @strong_primary()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = binary sub nowrap i32 %t3, 3
+    return i32 %t4
+}
+function @cexpr() -> i32 [binding=weak, object=_Z5cexprIiEiv, inline_hint=yes] {
+  block ^entry:
+    return i32 1
+}

@@ -1,0 +1,7 @@
+// N3485 15.1p8, 15.3: a rethrown long, caught after a destructor run during
+// the unwinding caught a nested int exception, is caught by catch (long), not
+// by catch (char)
+struct G { ~G() { try { throw 1; } catch (int) {} } };
+static void inner() { try { throw 5L; } catch (long) { throw; } }
+static int f() { try { G g; inner(); } catch (char) { return 10; } return 0; }
+int main() { try { return f(); } catch (long e) { return (int)e == 5 ? 0 : 1; } }

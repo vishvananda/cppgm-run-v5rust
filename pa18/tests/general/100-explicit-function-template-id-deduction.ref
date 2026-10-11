@@ -1,0 +1,17 @@
+declare function @chrono__duration_cast(%arg0 : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN6chrono13duration_castINS_7secondsENS_11nanosecondsEEET_RKT0_]
+
+function @f(%ns : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=strong, object=_Z1fRKN6chrono11nanosecondsE] {
+  slot $ns : ptr
+  slot $retobj__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %ns, $ns
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $ns
+    %t3 = call obj<1x1> @chrono__duration_cast(%t2)
+    return obj<1x1> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

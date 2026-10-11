@@ -1,0 +1,11 @@
+template<class...> struct V {};
+template<class... T> struct A {
+  typedef V<T...> X;
+  __attribute__((noinline)) X f(X x) { return x; }
+};
+
+int main() {
+  A<> a;
+  A<>::X x;
+  a.f(x);
+}

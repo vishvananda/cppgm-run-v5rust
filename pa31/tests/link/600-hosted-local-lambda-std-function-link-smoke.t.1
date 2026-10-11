@@ -1,0 +1,22 @@
+#include <cstdio>
+#include <functional>
+
+struct HostedLocalLambdaStdFunctionLinkSmoke
+{
+  std::function<int(int)> callback;
+
+  void init(int base)
+  {
+    callback = [base](int value) __attribute__((noinline, used)) {
+      return base + value;
+    };
+  }
+};
+
+int main()
+{
+  HostedLocalLambdaStdFunctionLinkSmoke value;
+  value.init(7);
+  std::printf("%d\n", value.callback(5));
+  return 0;
+}

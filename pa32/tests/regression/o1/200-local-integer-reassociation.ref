@@ -1,0 +1,15 @@
+function @add_chain(%x : i64) -> i64 {
+  block ^entry:
+    %b = binary add i64 %x, 7
+    return i64 %b
+}
+function @mul_chain(%x : i64) -> i64 {
+  block ^entry:
+    %b = binary mul i64 %x, 10
+    return i64 %b
+}
+function @and_chain(%x : u32) -> u32 {
+  block ^entry:
+    %b = binary and u32 %x, 15
+    return u32 %b
+}

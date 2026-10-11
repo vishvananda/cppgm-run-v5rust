@@ -1,0 +1,24 @@
+struct Scope {
+  int value;
+  Scope(int v) : value(v) {}
+};
+
+struct Analyzer {
+  int lookup_functions(int base)
+  {
+    auto collect = [&]() __attribute__((noinline, used)) {
+      auto visit = [&](Scope &current) __attribute__((noinline, used)) {
+        return base + current.value;
+      };
+      Scope scope(5);
+      return visit(scope);
+    };
+    return collect();
+  }
+};
+
+int main()
+{
+  Analyzer analyzer;
+  return analyzer.lookup_functions(7) == 12 ? 0 : 1;
+}

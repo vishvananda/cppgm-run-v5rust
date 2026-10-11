@@ -1,0 +1,60 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier suffixes
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              ptr-operator OP_AMP:&
+              identifier object
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              ptr-operator OP_STAR:*
+              identifier pointer
+      compound-statement
+        expression-statement
+          subscript-expression
+            id-expression object
+            braced-init-list
+              literal 4
+              literal 5
+              literal 6
+        expression-statement
+          call-expression
+            member-expression OP_DOT:.
+              id-expression object
+              identifier template value<3>
+            argument-list
+        expression-statement
+          call-expression
+            member-expression OP_ARROW:->
+              id-expression pointer
+              identifier template value<3>
+            argument-list
+        expression-statement
+          call-expression
+            member-expression OP_DOT:.
+              id-expression object
+              identifier ~T
+            argument-list
+        expression-statement
+          call-expression
+            member-expression OP_ARROW:->
+              id-expression pointer
+              identifier ~T
+            argument-list
+end translation unit

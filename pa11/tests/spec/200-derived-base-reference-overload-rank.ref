@@ -1,0 +1,38 @@
+function @select(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z6selectR4Base] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}
+function @select__ov2(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z6selectR4Root] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $wrapper : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $wrapper
+    %t2 = addr $wrapper
+    %t3 = index i8 %t2, 0
+    %t4 = call i32 @select(%t3)
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

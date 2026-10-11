@@ -1,0 +1,90 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $mapped : i64
+  slot $argobj__1 : obj<1x1>
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = convert sext i64 i32 1
+    store typed i64 %t1, $mapped
+    %t2 = addr $argobj__1
+    %t3 = addr $argobj__2
+    %t4 = addr $value
+    %t5 = addr $mapped
+    %t6 = call i32 @api__v1____try_key_extraction($argobj__1, $argobj__2, %t4, %t5)
+    %t7 = binary sub nowrap i32 %t6, 1
+    return i32 %t7
+}
+function @api__v1____try_key_extraction(%__with_key : obj<1x1> [classes=none], %__without_key : obj<1x1> [classes=none], %__args : ptr [pass=by_address, object_bytes=4], %__args__pack2 : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_ZN3api2v120__try_key_extractionIi7WithKey10WithoutKeyJRiRmEEEDTclcl7declvalIT1_EEspcl7declvalIT2_EEEET0_S6_DpOS7_] {
+  slot $__with_key : obj<1x1>
+  slot $__without_key : obj<1x1>
+  slot $__args : ptr
+  slot $__args__pack2 : ptr
+  slot $argobj__1 : obj<1x1>
+  slot $argobj__2 : obj<1x1>
+  slot $argobj__3 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %__args, $__args
+    store typed ptr %__args__pack2, $__args__pack2
+    %t1 = addr $argobj__1
+    %t2 = addr $argobj__2
+    %t3 = addr $__with_key
+    %t4 = addr $argobj__3
+    %t5 = addr $__without_key
+    %t6 = load typed ptr $__args
+    %t7 = call ptr @forward(%t6)
+    %t8 = load typed ptr $__args__pack2
+    %t9 = call ptr @forward__2(%t8)
+    %t10 = call i32 @api__v1____try_key_extraction_impl($argobj__1, $argobj__2, $argobj__3, %t7, %t9)
+    return i32 %t10
+}
+function @forward(%t : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z7forwardIRiEOT_RN10remove_refIS1_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @forward__2(%t : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z7forwardIRmEOT_RN10remove_refIS1_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @api__v1____try_key_extraction_impl(%__param0 : obj<1x1> [classes=none], %__with_key : obj<1x1> [classes=none], %__param2 : obj<1x1> [classes=none], %__arg1 : ptr [pass=by_address, object_bytes=4], %__arg2 : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_ZN3api2v125__try_key_extraction_implIii7WithKey10WithoutKeyRiRmTnN9enable_ifIXsr7is_sameIT_N10remove_refIT3_E4typeEEE5valueEiE4typeELi0EEET0_12priority_tagILi1EET1_T2_OS9_OT4_] {
+  slot $__param0 : obj<1x1>
+  slot $__with_key : obj<1x1>
+  slot $__param2 : obj<1x1>
+  slot $__arg1 : ptr
+  slot $__arg2 : ptr
+
+  block ^entry:
+    store typed ptr %__arg1, $__arg1
+    store typed ptr %__arg2, $__arg2
+    %t1 = addr $__with_key
+    %t2 = load typed ptr $__arg1
+    %t3 = load typed ptr $__arg1
+    %t4 = call ptr @forward(%t3)
+    %t5 = load typed ptr $__arg2
+    %t6 = call ptr @forward__2(%t5)
+    %t7 = call i32 @WithKey__operator__(%t1, %t2, %t4, %t6)
+    return i32 %t7
+}
+function @WithKey__operator__(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=4], %__param2 : ptr [pass=by_address, object_bytes=4], %__param3 : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_ZNK7WithKeyclERKiRiRm, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+  slot $__param3 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    store typed ptr %__param3, $__param3
+    return i32 1
+}

@@ -1,0 +1,8 @@
+function @size() -> i32 [binding=strong, object=_Z4sizev] {
+  slot $path : obj<7x1>
+
+  block ^entry:
+    %t1 = const i64 7
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}

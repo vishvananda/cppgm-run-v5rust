@@ -1,0 +1,118 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 116
+  i8 101
+  i8 120
+  i8 116
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 104
+  i8 105
+  i8 0
+}
+
+function @operator__(%stream : ptr [pass=by_address, object_bytes=4], %__param1 : i8) -> ptr [binding=strong, object=_ZlsR6Streamc] {
+  slot $stream : ptr
+  slot $__param1 : i8
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store i8 %__param1, $__param1
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 3
+    %t6 = load typed ptr $stream
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 %t5, %t7
+    %t8 = load typed ptr $stream
+    return ptr %t8
+}
+function @operator____ov2(%stream : ptr [pass=by_address, object_bytes=4], %__param1 : ptr) -> ptr [binding=strong, object=_ZlsR6StreamPKc] {
+  slot $stream : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 4
+    %t6 = load typed ptr $stream
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 %t5, %t7
+    %t8 = load typed ptr $stream
+    return ptr %t8
+}
+function @manip(%stream : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_Z5manipR6Stream] {
+  slot $stream : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary mul nowrap i32 %t3, 10
+    %t5 = binary add nowrap i32 %t4, 5
+    %t6 = load typed ptr $stream
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 %t5, %t7
+    %t8 = load typed ptr $stream
+    return ptr %t8
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $ch : i8
+  slot $text : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $stream
+    store i8 120, $ch
+    %t2 = addr @__strlit__1
+    store typed ptr %t2, $text
+    %t3 = addr $stream
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $stream
+    %t6 = load i8 $ch
+    %t7 = call ptr @operator__(%t5, %t6)
+    %t8 = addr @__strlit__2
+    %t9 = call ptr @operator____ov2(%t7, %t8)
+    %t10 = load typed ptr $text
+    %t11 = call ptr @operator____ov2(%t9, %t10)
+    %t12 = addr @manip
+    %t13 = call ptr @Stream__operator____ov3(%t11, %t12)
+    %t14 = addr $stream
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i32 %t15
+    %t17 = cmp eq i32 %t16, 3445
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__1
+    return i32 %t18
+}
+function @Stream__operator____ov3(%this : ptr [object_bytes=4], %pf : ptr) -> ptr [binding=weak, object=_ZN6StreamlsEPFRS_S0_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $pf : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %pf, $pf
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $pf
+    %t3 = call ptr %t2(%t1) as (%arg0 : ptr [pass=by_address, object_bytes=4]) -> ptr
+    return ptr %t3
+}

@@ -1,0 +1,31 @@
+global @table [storage=readonly, binding=internal, object=_ZL5table] = {
+  i32 13
+  i32 1
+  i32 30
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @table
+    %t2 = binary mul i64 1, 8
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    %t4 = index i8 [projection=field] %t3, 4
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 2
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}

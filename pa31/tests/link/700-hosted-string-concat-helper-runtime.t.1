@@ -1,0 +1,12 @@
+#include <string>
+
+std::string decorate(const std::string& name)
+{
+  std::string tail = name + "-tail";
+  return "head-" + tail;
+}
+
+int main()
+{
+  return decorate("core") == "head-core-tail" ? 0 : 1;
+}

@@ -1,0 +1,6 @@
+weak_symbol 1 _ZN3BoxIiE2inEv 1
+undefined_symbol_canonical 1 _ZN3BoxIiED1Ev 1
+absent_defined_symbol_canonical 1 _ZN3BoxIiED1Ev
+absent_defined_symbol_canonical 1 _ZN3BoxIiED2Ev
+undefined_symbol_canonical 1 _ZN3BoxIiE3outEv 1
+absent_defined_symbol_canonical 1 _ZN3BoxIiE3outEv

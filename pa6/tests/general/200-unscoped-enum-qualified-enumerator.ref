@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type E enum E
+    enumerator X enum E 1
+    enumerator Y enum E 2
+    type F enum F
+    enumerator P enum F 3
+    type S struct S
+    scope namespace N
+      type G enum G
+      enumerator Q enum G 5
+    scope class S
+      type H enum H
+      enumerator R enum H 7
+end translation unit

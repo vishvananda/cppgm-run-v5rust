@@ -1,0 +1,36 @@
+function @f(%s : obj<1x1> [classes=none]) -> u8 [binding=strong, object=_Z1f1S] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = call u8 @S__operatorbool(%t1)
+    return u8 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $argobj__2
+    %t2 = call u8 @f($argobj__2)
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @S__operatorbool(%this : ptr [object_bytes=1]) -> u8 [binding=weak, object=_ZNK1ScvbEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return u8 1
+}

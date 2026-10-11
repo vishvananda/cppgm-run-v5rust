@@ -1,0 +1,37 @@
+#include "700-hosted-inline-thread-local-deque-destructor-once.helper.h"
+
+#include <cstdlib>
+
+int inline_tls_deque_constructed = 0;
+int inline_tls_deque_destroyed = 0;
+
+int touch_inline_tls_deque_a();
+int touch_inline_tls_deque_b();
+
+void check_inline_tls_deque_destructor()
+{
+  if(inline_tls_deque_constructed != 1) {
+    std::_Exit(70 + inline_tls_deque_constructed);
+  }
+  if(inline_tls_deque_destroyed != 1) {
+    std::_Exit(80 + inline_tls_deque_destroyed);
+  }
+}
+
+int main()
+{
+  if(std::atexit(check_inline_tls_deque_destructor) != 0) {
+    return 10;
+  }
+
+  int a = touch_inline_tls_deque_a();
+  int b = touch_inline_tls_deque_b();
+  int c = touch_inline_tls_deque_a();
+  if(a != 1 || b != 2 || c != 3) {
+    return 20;
+  }
+  if(inline_tls_deque_constructed != 1 || inline_tls_deque_destroyed != 0) {
+    return 30;
+  }
+  return 0;
+}

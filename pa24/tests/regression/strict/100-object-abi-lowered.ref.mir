@@ -1,0 +1,48 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @out
+  storage data
+  item i64 0
+  item i64 0
+
+function @make_pair
+  abi
+    param %ret -> rdi : ptr
+    param %a -> rsi : i64
+    param %b -> rdx : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 [rdi], rsi
+    store.i64 [rdi+8], rdx
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, @out
+    mov rdi, rbx
+    mov rsi, 4
+    mov rdx, 5
+    call @make_pair [args=(rdx,rsi,rdi)]
+    load.i64 r8, @out
+    add r8, [rbx+8]
+    ret r8

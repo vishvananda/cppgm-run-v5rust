@@ -1,0 +1,49 @@
+// VALIDATION: compile-pass
+
+struct IOSBase
+{
+  int value;
+
+  IOSBase() : value(0)
+  {
+  }
+
+  virtual ~IOSBase()
+  {
+  }
+
+  int flags()
+  {
+    return value;
+  }
+};
+
+struct BasicIOS : IOSBase
+{
+  BasicIOS()
+  {
+  }
+};
+
+struct InputStream : virtual BasicIOS
+{
+  virtual ~InputStream()
+  {
+  }
+};
+
+struct Derived : InputStream
+{
+};
+
+int read_flags(InputStream &stream)
+{
+  return stream.flags();
+}
+
+int main()
+{
+  Derived d;
+  d.value = 7;
+  return read_flags(d) == 7 ? 0 : 1;
+}

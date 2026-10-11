@@ -1,0 +1,7 @@
+declare global @is_const_match_constint___value : i32 [binding=weak, object=_ZN14is_const_matchIKiE5valueE]
+declare global @is_const_match_constint_____value : i32 [binding=weak, object=_ZN14is_const_matchIFKivEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

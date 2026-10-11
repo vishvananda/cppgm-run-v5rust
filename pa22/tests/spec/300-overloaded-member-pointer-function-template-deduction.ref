@@ -1,0 +1,129 @@
+global @unit_test_log [binding=strong] = {
+  zero 1
+}
+global @cout_stream [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr @Logger__set_stream
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    %t4 = addr @unit_test_log
+    %t5 = addr $argobj__2
+    %t6 = addr @cout_stream
+    %t7 = call obj<8x8> @boost__ref(%t6)
+    copyobj 8x8 %t7, %t5
+    %t8 = call i32 @boost__bind(%t3, %t4, $argobj__2)
+    %t9 = cmp eq i32 %t8, 7
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @Logger__set_stream(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN6Logger10set_streamER6Stream, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+function @boost__ref(%t : ptr [pass=by_address, object_bytes=1]) -> obj<8x8> [binding=weak, object=_ZN5boost3refI6StreamEENS_17reference_wrapperIT_EERS3_] {
+  slot $t : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $t
+    call void @boost__reference_wrapper_Stream___reference_wrapper(%t1, %t2)
+    return obj<8x8> $retobj__1
+}
+function @boost__bind(%f : i128, %object : ptr, %bound : obj<8x8>) -> i32 [binding=weak, object=_ZN5boost4bindIv6LoggerR6StreamPS1_NS_17reference_wrapperIS2_EEEEiMT0_FT_T1_ET2_T3_] {
+  slot $f : i128
+  slot $object : ptr
+  slot $bound : obj<8x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    store typed i128 %f, $f
+    store typed ptr %object, $object
+    %t1 = addr $bound
+    copyobj 8x8 %bound, %t1
+    %t2 = load typed ptr $object
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = load typed i128 $f
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = cmp ne i64 %t4, 0
+    store typed i64 %t5, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t6 = load typed i64 $land__2
+    branch %t6, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t7 = addr $bound
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed ptr %t8
+    %t10 = cmp ne ptr %t9, 0
+    store typed i64 %t10, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t11 = load typed i64 $land__3
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 7, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @boost__reference_wrapper_Stream___reference_wrapper(%this : ptr [object_bytes=8], %t : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN5boost17reference_wrapperI6StreamEC1ERS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN5boost17reference_wrapperI6StreamEC2ERS1_ = @boost__reference_wrapper_Stream___reference_wrapper

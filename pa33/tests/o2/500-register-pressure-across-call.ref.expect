@@ -1,0 +1,11 @@
+# budget from 500-register-pressure-across-call.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 84
+blocks <= 12
+count(call) <= 5
+mem <= 50
+instructions <= 70 in @pressure
+stack_size <= 176 in @pressure
+instructions <= 5 in @step
+stack_size <= 48 in @step
+instructions <= 14 in @main
+stack_size <= 112 in @main

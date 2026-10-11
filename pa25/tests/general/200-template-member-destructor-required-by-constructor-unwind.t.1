@@ -1,0 +1,19 @@
+int live;
+typedef decltype(sizeof(0)) size_t;
+void *operator new(size_t, void *p) { return p; }
+
+template<class> struct A {
+  A() { ++live; }
+  ~A() { --live; }
+};
+
+struct B { B() { throw 1; } };
+struct C { A<int> a; B b; C() {} };
+
+int main()
+{
+  char storage[sizeof(C)];
+  try { ::new(storage) C; }
+  catch(...) { return live; }
+  return 2;
+}

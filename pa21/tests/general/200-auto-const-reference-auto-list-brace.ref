@@ -1,0 +1,80 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $xs : ptr
+  slot $tmpobj__1 : obj<16x8>
+  slot $initlist__2 : obj<8x4>
+  slot $lor__3 : i64
+  slot $lor__4 : i64
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = addr $initlist__2
+    store typed i32 1, %t2
+    %t3 = index i8 [projection=array_element] %t2, 4
+    store typed i32 2, %t3
+    store typed ptr %t2, %t1
+    %t4 = index i8 %t1, 8
+    store typed i64 2, %t4
+    store typed ptr %t1, $xs
+    %t5 = load typed ptr $xs
+    %t6 = call i64 @std__initializer_list_int___size(%t5)
+    %t7 = convert sext i64 i32 2
+    %t8 = cmp ne i64 %t6, %t7
+    branch %t8, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t9 = load typed ptr $xs
+    %t10 = call ptr @std__initializer_list_int___begin(%t9)
+    %t11 = index i32 [projection=array_element] %t10, 0
+    %t12 = load typed i32 %t11
+    %t13 = cmp ne i32 %t12, 1
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $lor__3
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__3
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t15 = load typed i64 $lor__3
+    branch %t15, ^lor_short_5, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t16 = load typed ptr $xs
+    %t17 = call ptr @std__initializer_list_int___begin(%t16)
+    %t18 = index i32 [projection=array_element] %t17, 1
+    %t19 = load typed i32 %t18
+    %t20 = cmp ne i32 %t19, 2
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $lor__4
+    jump ^lor_end_6
+
+  block ^lor_short_5:
+    store typed i64 1, $lor__4
+    jump ^lor_end_6
+
+  block ^lor_end_6:
+    %t22 = load typed i64 $lor__4
+    %t23 = convert trunc i32 i64 %t22
+    return i32 %t23
+}
+function @std__initializer_list_int___size(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNKSt16initializer_listIiE4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+function @std__initializer_list_int___begin(%this : ptr [object_bytes=16]) -> ptr [binding=weak, object=_ZNKSt16initializer_listIiE5beginEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}

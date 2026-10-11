@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition choose function of (bool) returning int
+    parameter condition bool
+    compound-statement
+      if-statement
+        condition
+          id-expression lvalue bool condition
+        then
+          simple-declaration
+            variable value int
+        else
+          simple-declaration
+            variable value int
+      return-statement
+        literal prvalue int 0
+end translation unit

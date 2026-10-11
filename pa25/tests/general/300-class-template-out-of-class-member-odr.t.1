@@ -1,0 +1,9 @@
+#include "300-class-template-out-of-class-member-odr.shared.h"
+
+int other_value();
+
+int main()
+{
+  odr_holder<int> local(17);
+  return local.value == 17 && other_value() == 23 ? 0 : 1;
+}

@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @boost__flyweights__flyweight_int___flyweight(%t1, 7)
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t4, 7
+    return i32 %t5
+}
+function @boost__flyweights__flyweight_int___flyweight(%this : ptr [object_bytes=4], %value : i32) -> void [binding=weak, object=_ZN5boost10flyweights9flyweightIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = call i32 @boost__flyweights__detail__flyweight_core_int___insert(%t1)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+function @boost__flyweights__detail__flyweight_core_int___insert(%value : i32) -> i32 [binding=weak, object=_ZN5boost10flyweights6detail14flyweight_coreIiE6insertEi, inline_hint=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+alias object _ZN5boost10flyweights9flyweightIiEC2Ei = @boost__flyweights__flyweight_int___flyweight

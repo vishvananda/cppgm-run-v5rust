@@ -1,0 +1,23 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_TYPENAME:typename
+          identifier T
+    class-specifier S
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name B
+      access-specifier KW_PUBLIC:public
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier x
+end translation unit

@@ -1,0 +1,244 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+  slot $c : obj<8x4>
+  slot $d : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $c
+    %t4 = addr $d
+    %t5 = addr $a
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 1, %t7
+    %t8 = addr $b
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 2, %t10
+    %t11 = addr $c
+    %t12 = index i8 %t11, 0
+    %t13 = index i8 [projection=field] %t12, 0
+    store typed i32 3, %t13
+    %t14 = addr $d
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed i32 4, %t16
+    %t17 = addr $a
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = load typed i32 %t19
+    %t21 = addr $b
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = index i8 [projection=field] %t22, 0
+    %t24 = load typed i32 %t23
+    %t25 = binary add nowrap i32 %t20, %t24
+    %t26 = addr $c
+    %t27 = index i8 %t26, 0
+    %t28 = index i8 [projection=field] %t27, 0
+    %t29 = load typed i32 %t28
+    %t30 = binary add nowrap i32 %t25, %t29
+    %t31 = addr $d
+    %t32 = index i8 [projection=field] %t31, 0
+    %t33 = index i8 [projection=field] %t32, 0
+    %t34 = load typed i32 %t33
+    %t35 = binary add nowrap i32 %t30, %t34
+    %t36 = cmp eq i32 %t35, 10
+    branch %t36, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t37 = load typed i32 $cond__1
+    %t38 = addr $d
+    call void @ImplicitQuiet___ImplicitQuiet(%t38)
+    eh_try ^lexical_cleanup_dispatch_7
+    %t39 = addr $c
+    call void @FromLoud___FromLoud(%t39)
+    eh_end
+    eh_try ^lexical_cleanup_dispatch_8
+    %t40 = addr $b
+    call void @HoldsLoud___HoldsLoud(%t40)
+    eh_end
+    %t41 = addr $a
+    call void @HoldsQuiet___HoldsQuiet(%t41)
+    return i32 %t37
+
+  block ^lexical_unwind_4:
+    resume
+
+  block ^lexical_unwind_5:
+    %t42 = addr $a
+    call void @HoldsQuiet___HoldsQuiet(%t42)
+    jump ^lexical_unwind_4
+
+  block ^lexical_unwind_6:
+    eh_try ^lexical_cleanup_terminate_9
+    %t43 = addr $b
+    call void @HoldsLoud___HoldsLoud(%t43)
+    eh_end
+    jump ^lexical_unwind_5
+
+  block ^lexical_cleanup_terminate_9:
+    eh_catch_all, 1
+    %t44 = exception ptr
+    call void @cppgm_call_terminate(%t44)
+    unreachable
+
+  block ^lexical_cleanup_dispatch_7:
+    eh_cleanup
+    eh_end
+    jump ^lexical_unwind_6
+
+  block ^lexical_cleanup_dispatch_8:
+    eh_cleanup
+    eh_end
+    jump ^lexical_unwind_5
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}
+function @ImplicitQuiet___ImplicitQuiet(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN13ImplicitQuietD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Quiet___Quiet(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Quiet___Quiet(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @FromLoud___FromLoud(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8FromLoudD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Loud___Loud(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    eh_try ^lexical_cleanup_terminate_3
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Loud___Loud(%t4)
+    eh_end
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_3:
+    eh_catch_all, 1
+    %t5 = exception ptr
+    call void @cppgm_call_terminate(%t5)
+    unreachable
+
+  block ^destructor_end_2:
+    return void
+}
+function @HoldsLoud___HoldsLoud(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN9HoldsLoudD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Loud___Loud(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    eh_try ^lexical_cleanup_terminate_3
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Loud___Loud(%t4)
+    eh_end
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_3:
+    eh_catch_all, 1
+    %t5 = exception ptr
+    call void @cppgm_call_terminate(%t5)
+    unreachable
+
+  block ^destructor_end_2:
+    return void
+}
+function @HoldsQuiet___HoldsQuiet(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN10HoldsQuietD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Quiet___Quiet(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Quiet___Quiet(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Quiet___Quiet(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5QuietD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @Loud___Loud(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4LoudD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN13ImplicitQuietD2Ev = @ImplicitQuiet___ImplicitQuiet
+alias object _ZN8FromLoudD2Ev = @FromLoud___FromLoud
+alias object _ZN9HoldsLoudD2Ev = @HoldsLoud___HoldsLoud
+alias object _ZN10HoldsQuietD2Ev = @HoldsQuiet___HoldsQuiet
+alias object _ZN5QuietD2Ev = @Quiet___Quiet
+alias object _ZN4LoudD2Ev = @Loud___Loud

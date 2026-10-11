@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable pointer const pointer to int
+    literal prvalue pointer to int 0
+  variable value const int
+    literal prvalue const int 1
+  function-definition read function of () returning int
+    compound-statement
+      return-statement
+        id-expression lvalue const int value
+end translation unit

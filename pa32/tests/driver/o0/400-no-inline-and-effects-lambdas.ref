@@ -1,0 +1,80 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base : i32
+  slot $kept : obj<8x8>
+  slot $pure : obj<8x8>
+  slot $constant : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 1, $base
+    %t1 = addr $kept
+    %t2 = addr $base
+    store typed ptr %t2, %t1
+    %t3 = addr $pure
+    %t4 = addr $base
+    store typed ptr %t4, %t3
+    %t5 = addr $constant
+    %t6 = addr $kept
+    %t7 = call i32 @__lambda_main_t16_26__operator__(%t6, 0)
+    %t8 = addr $pure
+    %t9 = call i32 @__lambda_main_t40_50_n1__operator__(%t8, 0)
+    %t10 = binary add nowrap i32 %t7, %t9
+    %t11 = addr $constant
+    %t12 = call i32 @__lambda_main_t63_73_n2__operator__(%t11, 0)
+    %t13 = binary add nowrap i32 %t10, %t12
+    %t14 = cmp eq i32 %t13, 4
+    branch %t14, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t15 = load typed i32 $cond__1
+    return i32 %t15
+}
+function @__lambda_main_t16_26__operator__(%this : ptr [object_bytes=8], %x : i32) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEi, prefer_local=yes, inline_hint=yes, no_inline=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = load typed i32 %t4
+    %t6 = binary add nowrap i32 %t1, %t5
+    return i32 %t6
+}
+function @__lambda_main_t40_50_n1__operator__(%this : ptr [object_bytes=8], %x : i32) -> i32 [effects=readonly, binding=internal, object=_ZZ4mainENK3$_1clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = load typed i32 %t4
+    %t6 = binary add nowrap i32 %t1, %t5
+    return i32 %t6
+}
+function @__lambda_main_t63_73_n2__operator__(%this : ptr [object_bytes=1], %x : i32) -> i32 [effects=readnone, binding=internal, object=_ZZ4mainENK3$_2clEi, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 2
+    return i32 %t2
+}

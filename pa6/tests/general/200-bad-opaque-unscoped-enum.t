@@ -1,0 +1,2 @@
+enum FY;
+FY *p;

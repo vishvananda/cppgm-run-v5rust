@@ -1,0 +1,13 @@
+#include "300-explicit-function-specialization-defined-in-separate-object.shared.h"
+
+template<class T>
+int explicit_function_specialization(int value)
+{
+  return value + 1;
+}
+
+template<>
+int explicit_function_specialization<payload>(int value)
+{
+  return value + 7;
+}

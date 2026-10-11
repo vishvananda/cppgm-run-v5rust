@@ -1,0 +1,84 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @cell
+  storage data
+  item i64 41
+
+function @touch
+  abi
+    param %p -> rdi : ptr
+    param %n -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rsi
+
+function @load_value
+  abi
+    param %p -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rax, [rdi]
+    ret rax
+
+function @read_after_call
+  abi
+    param %this -> rdi : ptr
+    param %n -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, rdi
+    mov rdi, rbx
+    call @touch [args=(rsi,rdi)]
+    mov rdi, rbx
+    call @load_value [args=(rdi)]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @cell
+    mov rsi, 7
+    call @read_after_call [args=(rsi,rdi)]
+    mov r8, rax
+    cmp.i64 r8, 41
+    je ^good
+    jmp ^bad
+
+  block ^good
+    mov rax, 0
+    ret rax
+
+  block ^bad
+    mov rax, 1
+    ret rax

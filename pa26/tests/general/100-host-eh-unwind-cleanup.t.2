@@ -1,0 +1,15 @@
+extern int destroyed;
+void boom();
+
+int main()
+{
+  try
+  {
+    boom();
+    return 1;
+  }
+  catch (int)
+  {
+    return destroyed - 1;
+  }
+}

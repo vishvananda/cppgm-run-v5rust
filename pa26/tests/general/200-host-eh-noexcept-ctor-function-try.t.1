@@ -1,0 +1,19 @@
+// N3485 15.3p4, 15.3p15, 15.5.1p1: a member initializer that throws in a
+// noexcept constructor whose body is a function-try-block destroys the members
+// already constructed and enters the handler; reaching the handler's end
+// rethrows the exception, which leaves the noexcept function, so
+// std::terminate is called
+#include "200-host-eh-noexcept-ctor-function-try.helper.h"
+static int k, n;
+struct M { int id; M(int i) : id(i) { if (++n == k) throw 5; } ~M() { out_line("~M", id); } };
+struct C
+{
+  M a, b, c;
+  C() noexcept try : a(1), b(2), c(3) { out_line("body", 0); } catch (...) { out_line("handler", n); }
+};
+int main()
+{
+  k = 3;
+  C made;
+  return 0;
+}

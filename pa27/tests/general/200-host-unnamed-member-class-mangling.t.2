@@ -1,0 +1,5 @@
+// second unit
+struct H { struct { int a; } m; };
+template<class T> struct Box { static int s; };
+template<class T> int Box<T>::s = 0;
+int other() { H h; return ++Box<decltype(h.m)>::s; }

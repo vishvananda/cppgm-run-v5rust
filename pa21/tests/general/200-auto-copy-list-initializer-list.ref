@@ -1,0 +1,71 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fmts : obj<16x8>
+  slot $initlist__1 : obj<16x4>
+  slot $mask : i32
+  slot $__idx1 : i32
+  slot $fmt : i32
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $fmts
+    %t2 = addr $initlist__1
+    store typed i32 1, %t2
+    %t3 = index i8 [projection=array_element] %t2, 4
+    store typed i32 2, %t3
+    %t4 = index i8 [projection=array_element] %t2, 8
+    store typed i32 4, %t4
+    %t5 = index i8 [projection=array_element] %t2, 12
+    store typed i32 8, %t5
+    store typed ptr %t2, %t1
+    %t6 = index i8 %t1, 8
+    store typed i64 4, %t6
+    store typed i32 0, $mask
+    store typed i32 0, $__idx1
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t7 = load typed i32 $__idx1
+    %t8 = addr $fmts
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = load typed i64 %t9
+    %t11 = convert sext i64 i32 %t7
+    %t12 = cmp lt i64 %t11, %t10
+    branch %t12, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t13 = addr $fmts
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load typed ptr %t14
+    %t16 = load typed i32 $__idx1
+    %t17 = index i32 [projection=array_element] %t15, %t16
+    %t18 = load typed i32 %t17
+    store typed i32 %t18, $fmt
+    %t19 = load typed i32 $mask
+    %t20 = load typed i32 $fmt
+    %t21 = binary add nowrap i32 %t19, %t20
+    store typed i32 %t21, $mask
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t22 = load typed i32 $__idx1
+    %t23 = binary add nowrap i32 %t22, 1
+    store typed i32 %t23, $__idx1
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t24 = load typed i32 $mask
+    %t25 = cmp eq i32 %t24, 15
+    branch %t25, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__2
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__2
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t26 = load typed i32 $cond__2
+    return i32 %t26
+}

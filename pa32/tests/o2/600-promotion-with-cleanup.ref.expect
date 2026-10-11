@@ -1,0 +1,12 @@
+# budget from 600-promotion-with-cleanup.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 28
+blocks <= 8
+count(call) <= 4
+count(load) <= 6
+count(store) <= 5
+count(phi) <= 5
+instructions <= 28 in @with_cleanup
+
+# outcomes from 600-promotion-with-cleanup.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @Guard___Guard)
+absent(@Guard___Guard)

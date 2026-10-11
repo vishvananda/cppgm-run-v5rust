@@ -1,0 +1,50 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<1x1>
+  slot $values : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $c
+    %t2 = addr $values
+    copyobj 4x4 @__constexpr_template__1, %t2
+    %t3 = addr $c
+    %t4 = addr $values
+    %t5 = addr $values
+    %t6 = binary mul i64 1, 4
+    %t7 = index i8 %t5, %t6
+    %t8 = call i32 @C_int___f(%t3, %t4, %t7)
+    return i32 %t8
+}
+function @C_int___f(%this : ptr [object_bytes=1], %first : ptr, %last : ptr) -> i32 [binding=weak, object=_ZN1CIiE1fIPiEEiT_S3_] {
+  slot $this : ptr
+  slot $first : ptr
+  slot $last : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $first
+    %t3 = load typed ptr $last
+    %t4 = call i32 @C_int___g(%t1, %t2, %t3, 1)
+    return i32 %t4
+}
+function @C_int___g(%this : ptr [object_bytes=1], %first : ptr, %__param2 : ptr, %__param3 : i32) -> i32 [binding=weak, object=_ZN1CIiE1gIPiEEiT_S3_i] {
+  slot $this : ptr
+  slot $first : ptr
+  slot $__param2 : ptr
+  slot $__param3 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %first, $first
+    store typed ptr %__param2, $__param2
+    store typed i32 %__param3, $__param3
+    %t1 = load typed ptr $first
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}

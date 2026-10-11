@@ -1,0 +1,18 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    zeroinit 1x1 %t1
+    %t2 = call i32 @fn_int___f(%t1, 0)
+    return i32 %t2
+}
+function @fn_int___f(%this : ptr [object_bytes=1], %__param1 : i32) -> i32 [binding=weak, object=_ZNK2fnIiE1fIivEEiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return i32 0
+}

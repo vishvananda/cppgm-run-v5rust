@@ -1,0 +1,25 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition outer
+    namespace-definition <unnamed>
+      function-definition outer::g function of (int) returning int
+        parameter x int
+        compound-statement
+          return-statement
+            id-expression lvalue int x
+    namespace-definition <unnamed>
+      function-definition outer::h function of (int) returning int
+        parameter y int
+        compound-statement
+          return-statement
+            call-expression prvalue int
+              callee outer::g function of (int) returning int
+              id-expression lvalue int y
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee outer::h function of (int) returning int
+          literal prvalue int 0
+end translation unit

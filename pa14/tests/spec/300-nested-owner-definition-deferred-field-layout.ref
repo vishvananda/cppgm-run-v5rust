@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $c
+    %t2 = const i64 1
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}

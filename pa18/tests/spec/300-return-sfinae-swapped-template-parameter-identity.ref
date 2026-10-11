@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<1x1>
+  slot $s : obj<1x1>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $s
+    %t3 = addr $p
+    %t4 = addr $s
+    %t5 = call u8 @equal(%t3, %t4)
+    branch %t5, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t6 = addr $s
+    %t7 = addr $p
+    %t8 = call u8 @equal__2(%t6, %t7)
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t10 = load typed i64 $land__2
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @equal(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=weak, object=_Z5equalI4path6sourceEN9enable_ifIXaasr7is_pathIT_EE5valuesr9is_sourceIT0_EE5valueEbE4typeERKS3_RKS4_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return u8 1
+}
+function @equal__2(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=weak, object=_Z5equalI6source4pathEN9enable_ifIXaasr7is_pathIT0_EE5valuesr9is_sourceIT_EE5valueEbE4typeERKS4_RKS3_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return u8 1
+}

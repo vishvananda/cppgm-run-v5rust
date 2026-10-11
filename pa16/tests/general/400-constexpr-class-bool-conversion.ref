@@ -1,0 +1,10 @@
+declare global @integral_constant_bool_true___value : u8 [binding=weak, object=_ZN17integral_constantIbLb1EE5valueE]
+
+global @box_value : u8 [storage=readonly, binding=internal, object=_ZL9box_value] = 1
+global @and_value : u8 [storage=readonly, binding=internal, object=_ZL9and_value] = 1
+global @box_sink [binding=strong] = {
+  zero 1
+}
+global @and_sink [binding=strong] = {
+  zero 1
+}

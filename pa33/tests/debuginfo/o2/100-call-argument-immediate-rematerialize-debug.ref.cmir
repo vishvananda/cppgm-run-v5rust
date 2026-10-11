@@ -1,0 +1,33 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @id
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi !dbg(test.cpp, 1, 1)
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 20 !dbg(test.cpp, 6, 1)
+    call @id [args=(rdi)] !dbg(test.cpp, 6, 1)
+    ret rax !dbg(test.cpp, 7, 1)

@@ -1,0 +1,54 @@
+function @sink(%__param0 : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z4sinkRK7Context] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $c : obj<1x1>
+  slot $w : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $c
+    %t2 = addr $w
+    %t3 = addr $c
+    call void @Wrapper__Wrapper(%t2, %t3)
+    %t4 = addr $w
+    call void @Wrapper__call(%t4)
+    return i32 0
+}
+function @Wrapper__Wrapper(%this : ptr [object_bytes=8], %c : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN7WrapperC1ER7Context, inline_hint=yes] {
+  slot $this : ptr
+  slot $c : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %c, $c
+    %t1 = load typed ptr $c
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Wrapper__call(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN7Wrapper4callEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = call ptr @Wrapper__operatorContext_(%t1)
+    call void @sink(%t2)
+    return void
+}
+function @Wrapper__operatorContext_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN7WrappercvR7ContextEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+alias object _ZN7WrapperC2ER7Context = @Wrapper__Wrapper

@@ -1,0 +1,29 @@
+function @pick(%__param0 : ptr) -> i32 [binding=strong, object=_Z4pickPi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 1
+}
+function @pick__ov2(%__param0 : ptr) -> i32 [binding=strong, object=_Z4pickPKi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : ptr
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr 0, $a
+    store typed ptr 0, $b
+    %t1 = load typed ptr $a
+    %t2 = call i32 @pick(%t1)
+    %t3 = binary mul nowrap i32 %t2, 10
+    %t4 = load typed ptr $b
+    %t5 = call i32 @pick__ov2(%t4)
+    %t6 = binary add nowrap i32 %t3, %t5
+    return i32 %t6
+}

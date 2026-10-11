@@ -1,0 +1,11 @@
+extern "C" {
+  int extv;
+}
+
+extern "C" int read_extv();
+
+int main()
+{
+  extv = 7;
+  return read_extv() - 7;
+}

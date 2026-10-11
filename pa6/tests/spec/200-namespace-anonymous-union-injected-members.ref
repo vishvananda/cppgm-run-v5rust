@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable t int
+    variable a long int
+    function f function of (int) returning int
+    scope class __anonymous_union_type__1_10
+      variable t int
+      variable a long int
+    scope function f
+      parameter x int
+      scope block
+end translation unit

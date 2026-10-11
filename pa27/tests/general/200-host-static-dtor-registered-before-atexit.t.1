@@ -1,0 +1,10 @@
+// N3485 3.6.3p1,p3: an object whose dynamic initialization completes after a
+// call to atexit(h) is destroyed before h runs; expect exit 0
+extern "C" int atexit(void (*)());
+extern "C" void _exit(int);
+static int seq, next_id;
+struct S { int id; S() : id(next_id++) {} ~S() { if (seq != 0) _exit(10 + seq); } };
+static void h() { seq = 1; }
+int r = atexit(h);
+S one;
+int main() { return 0; }

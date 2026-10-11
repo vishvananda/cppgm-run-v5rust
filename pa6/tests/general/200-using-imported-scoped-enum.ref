@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type kind enum class kind
+    variable selected enum class kind
+    scope namespace api
+      type kind enum class kind
+      scope enum kind
+        enumerator value enum class kind 0
+end translation unit

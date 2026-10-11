@@ -1,0 +1,70 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $u : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $u
+    call void @U__U(%t1)
+    %t2 = addr $u
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @U__U(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1UC1Ev, inline_hint=yes] {
+  slot $this : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = addr $tmpobj__1
+    call void @D__D(%t3)
+    call void @H__H(%t2, %t3)
+    return void
+}
+function @D__D(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1DC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @H__H(%this : ptr [object_bytes=4], %d : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1HC1EO1D, inline_hint=yes] {
+  slot $this : ptr
+  slot $d : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %d, $d
+    %t1 = load typed ptr $d
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = load typed ptr $d
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 0, %t7
+    return void
+}
+alias object _ZN1UC2Ev = @U__U
+alias object _ZN1DC2Ev = @D__D
+alias object _ZN1HC2EO1D = @H__H

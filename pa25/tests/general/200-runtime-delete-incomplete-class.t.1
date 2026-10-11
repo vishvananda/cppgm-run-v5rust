@@ -1,0 +1,29 @@
+// N3485 5.3.5p5: deleting an object of incomplete class type is well-formed
+// (undefined only if the complete class has a non-trivial destructor or a
+// deallocation function): no destructor runs and the usual deallocation
+// function frees the storage, for delete and delete[] (also of an array of
+// arrays)
+struct I;
+void f(I* p)
+{
+	delete p;
+}
+void g(I* p)
+{
+	delete[] p;
+}
+void h(I (*p)[2])
+{
+	delete[] p;
+}
+struct I
+{
+	int x;
+};
+int main()
+{
+	f(new I);
+	g(new I[3]);
+	h(new I[4][2]);
+	return 0;
+}

@@ -1,0 +1,297 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8], %arg1 : ptr [pass=by_address, object_bytes=1], %arg2 : ptr [pass=by_address, object_bytes=1], %arg3 : i32) -> void [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_pa13_reentrant_override_derived [storage=readonly, binding=weak, object=_ZTS31pa13_reentrant_override_derived] = {
+  i8 51
+  i8 49
+  i8 112
+  i8 97
+  i8 49
+  i8 51
+  i8 95
+  i8 114
+  i8 101
+  i8 101
+  i8 110
+  i8 116
+  i8 114
+  i8 97
+  i8 110
+  i8 116
+  i8 95
+  i8 111
+  i8 118
+  i8 101
+  i8 114
+  i8 114
+  i8 105
+  i8 100
+  i8 101
+  i8 95
+  i8 100
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_pa13_reentrant_override_base [storage=readonly, binding=weak, object=_ZTS28pa13_reentrant_override_base] = {
+  i8 50
+  i8 56
+  i8 112
+  i8 97
+  i8 49
+  i8 51
+  i8 95
+  i8 114
+  i8 101
+  i8 101
+  i8 110
+  i8 116
+  i8 114
+  i8 97
+  i8 110
+  i8 116
+  i8 95
+  i8 111
+  i8 118
+  i8 101
+  i8 114
+  i8 114
+  i8 105
+  i8 100
+  i8 101
+  i8 95
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_pa13_reentrant_override_base [storage=readonly, binding=weak, object=_ZTI28pa13_reentrant_override_base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_pa13_reentrant_override_base
+}
+global @__rtti_struct_pa13_reentrant_override_derived [storage=readonly, binding=weak, object=_ZTI31pa13_reentrant_override_derived] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_pa13_reentrant_override_derived
+  ptr addr @__rtti_struct_pa13_reentrant_override_base
+}
+global @pa13_reentrant_override_derived__vtable [storage=readonly, binding=strong, object=_ZTV31pa13_reentrant_override_derived] = {
+  i64 0
+  ptr addr @__rtti_struct_pa13_reentrant_override_derived
+  ptr addr @pa13_reentrant_override_derived___pa13_reentrant_override_derived
+  ptr addr @pa13_reentrant_override_derived___pa13_reentrant_override_derived__deleting_entry
+  ptr addr @pa13_reentrant_override_derived__start
+}
+global @pa13_reentrant_override_base__vtable [storage=readonly, binding=weak, object=_ZTV28pa13_reentrant_override_base] = {
+  i64 0
+  ptr addr @__rtti_struct_pa13_reentrant_override_base
+  ptr addr @pa13_reentrant_override_base___pa13_reentrant_override_base
+  ptr addr @pa13_reentrant_override_base___pa13_reentrant_override_base__deleting_entry
+  ptr addr @__cxa_pure_virtual
+}
+
+function @pa13_reentrant_override_derived__start(%this : ptr [object_bytes=16], %__param1 : ptr [pass=by_address, object_bytes=1], %__param2 : ptr [pass=by_address, object_bytes=1], %__param3 : i32) -> void [binding=strong, object=_ZN31pa13_reentrant_override_derived5startER30pa13_reentrant_override_streamRK29pa13_reentrant_override_entryN28pa13_reentrant_override_base10entry_kindE] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+  slot $__param3 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    store typed i32 %__param3, $__param3
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $d
+    call void @pa13_reentrant_override_derived__pa13_reentrant_override_derived(%t1)
+    %t2 = addr $d
+    %t3 = addr $d
+    call void @pa13_reentrant_override_derived___pa13_reentrant_override_derived(%t3)
+    return i32 0
+}
+function @pa13_reentrant_override_derived___pa13_reentrant_override_derived__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN31pa13_reentrant_override_derivedD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @pa13_reentrant_override_derived___pa13_reentrant_override_derived__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN31pa13_reentrant_override_derivedD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t5)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t6 = load typed ptr $this
+    call void @operatordelete(%t6)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t7 = load typed ptr $this
+    call void @operatordelete(%t7)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t9)
+    %t10 = load typed ptr $this
+    call void @operatordelete(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @pa13_reentrant_override_derived__pa13_reentrant_override_derived(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN31pa13_reentrant_override_derivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @pa13_reentrant_override_base__pa13_reentrant_override_base__base_entry(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    %t3 = load typed ptr $this
+    %t4 = addr @pa13_reentrant_override_derived__vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t7)
+    eh_end
+    resume
+}
+function @pa13_reentrant_override_derived___pa13_reentrant_override_derived(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN31pa13_reentrant_override_derivedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @pa13_reentrant_override_base___pa13_reentrant_override_base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN28pa13_reentrant_override_baseD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @pa13_reentrant_override_base__pa13_reentrant_override_base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN28pa13_reentrant_override_baseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @pa13_reentrant_override_base___pa13_reentrant_override_base__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN28pa13_reentrant_override_baseD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @pa13_reentrant_override_base___pa13_reentrant_override_base(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN28pa13_reentrant_override_baseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @pa13_reentrant_override_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN31pa13_reentrant_override_derivedC2Ev = @pa13_reentrant_override_derived__pa13_reentrant_override_derived

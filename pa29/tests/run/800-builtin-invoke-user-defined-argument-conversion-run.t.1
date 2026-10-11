@@ -1,0 +1,26 @@
+struct converted {
+  int value;
+
+  operator int() const
+  {
+    return value;
+  }
+};
+
+int target(int value)
+{
+  return value + 2;
+}
+
+template<class Function, class Argument>
+auto invoke(Function function, Argument argument)
+    -> decltype(__builtin_invoke(function, argument))
+{
+  return __builtin_invoke(function, argument);
+}
+
+int main()
+{
+  converted value = {7};
+  return invoke(&target, value) == 9 ? 0 : 1;
+}

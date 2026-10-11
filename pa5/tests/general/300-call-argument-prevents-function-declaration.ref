@@ -1,0 +1,48 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier tag
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier next
+          parameter-clause
+  class-specifier holder
+    class-key KW_STRUCT:struct
+    special-member-declaration holder
+      declarator
+        identifier holder
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:tag
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier build
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:holder
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier h
+            initializer
+              paren-initializer
+                call-expression
+                  id-expression tag
+                  argument-list
+                call-expression
+                  id-expression next
+                  argument-list
+end translation unit

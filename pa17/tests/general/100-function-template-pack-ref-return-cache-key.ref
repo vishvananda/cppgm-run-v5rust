@@ -1,0 +1,23 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    store typed i32 0, $refarg__1
+    %t2 = addr $refarg__1
+    %t3 = call obj<4x4> @N__forward_as_tuple(%t2)
+    copyobj 4x4 %t3, %t1
+    %t4 = addr $value
+    return i32 0
+}
+function @N__forward_as_tuple(%__param0 : ptr [pass=by_address, object_bytes=4]) -> obj<4x4> [binding=weak, object=_ZN1N16forward_as_tupleIJiEEENS_5tupleIJDpOT_EEES4_] {
+  slot $__param0 : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr $retobj__1
+    zeroinit 4x4 %t1
+    return obj<4x4> $retobj__1
+}

@@ -1,0 +1,30 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $map : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $map
+    %t2 = addr $map
+    %t3 = call i32 @MapBase___cppgm_class_template_identity_1_enabled_tag___get(%t2)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @MapBase___cppgm_class_template_identity_1_enabled_tag___get(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN7MapBaseI4PairIicE11enabled_tagE3getEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}

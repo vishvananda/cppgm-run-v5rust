@@ -1,0 +1,54 @@
+declare global @integral_constant_bool_false___value : u8 [binding=weak, object=_ZN17integral_constantIbLb0EE5valueE]
+declare global @integral_constant_bool_true___value : u8 [binding=weak, object=_ZN17integral_constantIbLb1EE5valueE]
+
+function @S__g(%this : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN1S1gEv] {
+  slot $this : ptr
+  slot $arg__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = addr $arg__1
+    %t4 = call ptr @function_void_int____operator_(%t2, %t3)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    call void @S__S(%t1)
+    %t2 = addr $s
+    call void @S__g(%t2)
+    return i32 0
+}
+function @function_void_int____operator_(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=internal, object=_ZN8functionIFviEEaSIZN1S1gEvE1GvEERS1_OT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+function @S__S(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1SC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @function_void_int____function(%t2)
+    return void
+}
+function @function_void_int____function(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN8functionIFviEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN1SC2Ev = @S__S
+alias object _ZN8functionIFviEEC2Ev = @function_void_int____function

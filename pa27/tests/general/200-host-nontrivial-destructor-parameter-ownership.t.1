@@ -1,0 +1,28 @@
+#include "200-host-nontrivial-destructor-parameter-ownership.helper.h"
+
+namespace ownership {
+int live = 0, made = 0, destroyed = 0;
+
+Tracked::Tracked(int v) : id(v), self(this) { ++live; ++made; }
+Tracked::Tracked(const Tracked& other) : id(other.id), self(this) { ++live; ++made; }
+Tracked::~Tracked() { --live; ++destroyed; }
+
+int student_take(Tracked value) {
+    return value.self == &value && live == 2 ? value.id : -1;
+}
+}
+
+int main() {
+    using namespace ownership;
+    int status = 0;
+    {
+        Tracked original(10);
+        bool alive_after_return = host_take(original) == 10 && live == 2;
+        if (!alive_after_return) status |= 8;
+        if (live != 1 || made != 2 || destroyed != 1) status |= 16;
+        host_take(Tracked(11));
+        if (live != 1 || made != 3 || destroyed != 2) status |= 32;
+    }
+    if (live != 0 || destroyed != 3) status |= 64;
+    return status | host_calls_student();
+}

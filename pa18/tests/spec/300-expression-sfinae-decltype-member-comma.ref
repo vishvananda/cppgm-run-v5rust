@@ -1,0 +1,65 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $yes : obj<1x1>
+  slot $no : obj<1x1>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $yes
+    %t2 = addr $yes
+    %t3 = index i8 [projection=field] %t2, 0
+    store u8 1, %t3
+    %t4 = addr $no
+    %t5 = addr $yes
+    %t6 = call u8 @has_value(%t5, 0)
+    branch %t6, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t7 = addr $no
+    %t8 = call u8 @has_value__2(%t7, 0)
+    %t9 = cmp eq u8 %t8, 0
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @has_value(%value : ptr [pass=by_address, object_bytes=1], %__param1 : i32) -> u8 [binding=weak, object=_Z9has_valueI7presentEDTcmdtfp_6membercvb_EERKT_i] {
+  slot $value : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %value, $value
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $value
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load u8 %t2
+    return u8 %t3
+}
+function @has_value__2(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : i64) -> u8 [binding=weak, object=_Z9has_valueI7missingEbRKT_l] {
+  slot $__param0 : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i64 %__param1, $__param1
+    return u8 0
+}

@@ -1,0 +1,22 @@
+function @f(%x : i32) -> i64 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+  slot $u : obj<8x8>
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = addr $u
+    %t2 = load typed i32 $x
+    %t3 = addr $u
+    %t4 = index i8 [projection=field] %t3, 0
+    store i32 %t2, %t4
+    %t5 = const i64 8
+    return i64 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i64 @f(3)
+    %t2 = const i64 4
+    %t3 = binary sub i64 %t1, %t2
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}

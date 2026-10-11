@@ -1,0 +1,25 @@
+struct primary
+{
+  virtual int first() = 0;
+  virtual ~primary() {}
+};
+
+struct secondary
+{
+  virtual int second() = 0;
+  virtual ~secondary() {}
+};
+
+struct derived : primary, secondary
+{
+  int first();
+  int second() { return 2; }
+};
+
+int main()
+{
+  derived object;
+  primary* first_view = &object;
+  secondary* second_view = &object;
+  return first_view->first() == 1 && second_view->second() == 2 ? 0 : 1;
+}

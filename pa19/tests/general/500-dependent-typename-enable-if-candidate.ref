@@ -1,0 +1,38 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<8x4>
+  slot $b : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $a
+    %t4 = addr $b
+    %t5 = call i32 @outer(%t3, %t4)
+    return i32 %t5
+}
+function @outer(%p : ptr, %u : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_Z5outerIN5boost9container3dtl4pairIiiEES4_EiPT_RT0_] {
+  slot $p : ptr
+  slot $u : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    store typed ptr %u, $u
+    %t1 = load typed ptr $p
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $u
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = call i32 @helper(%t2, %t4)
+    return i32 %t5
+}
+function @helper(%p : ptr, %u : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z6helperIiEiPT_RS0_] {
+  slot $p : ptr
+  slot $u : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    store typed ptr %u, $u
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $u
+    %t3 = load typed i32 %t2
+    return i32 3
+}

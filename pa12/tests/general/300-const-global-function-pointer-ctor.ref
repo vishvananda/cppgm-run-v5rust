@@ -1,0 +1,52 @@
+global @h : obj<8x8> [binding=internal, object=_ZL1h] = {
+  zero 8
+}
+
+function @f() -> void [binding=strong, object=_Z1fv] {
+  block ^entry:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @h
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = addr @f
+    %t5 = cmp eq ptr %t3, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @H__H(%this : ptr [object_bytes=8], %p_in : ptr) -> void [binding=weak, object=_ZN1HC1EPFvvE, inline_hint=yes] {
+  slot $this : ptr
+  slot $p_in : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p_in, $p_in
+    %t1 = load typed ptr $p_in
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @h
+    %t2 = addr @f
+    call void @H__H(%t1, %t2)
+    return void
+}
+alias object _ZN1HC2EPFvvE = @H__H

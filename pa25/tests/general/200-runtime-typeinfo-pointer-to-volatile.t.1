@@ -1,0 +1,4 @@
+// Itanium ABI 2.9.4/2.9.5: typeinfo for pointer to volatile int (_ZTIPVi) is
+// not provided by the runtime library (only fundamental T, T*, const T*), so
+// the TU must emit it (weak); expect link ok and exit 0
+int main() { volatile int x = 3; try { throw &x; } catch (volatile int* p) { return *p == 3 ? 0 : 1; } return 2; }

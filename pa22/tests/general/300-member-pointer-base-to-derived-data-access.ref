@@ -1,0 +1,107 @@
+function @read(%object : ptr, %member : i64) -> i32 [binding=strong, object=_Z4readP4BaseMS_i] {
+  slot $object : ptr
+  slot $member : i64
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i64 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i64 $member
+    %t3 = index i8 [projection=field] %t1, %t2
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base_ptr : i64
+  slot $derived_ptr : i64
+  slot $d : obj<12x4>
+  slot $inverse : i64
+  slot $original : i64
+  slot $converted : i64
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = const i64 0
+    store typed i64 %t1, $base_ptr
+    %t2 = load typed i64 $base_ptr
+    %t3 = cmp ne i64 %t2, -1
+    %t4 = binary mul i64 %t3, 4
+    %t5 = binary add i64 %t2, %t4
+    store typed i64 %t5, $derived_ptr
+    %t6 = addr $d
+    %t7 = addr $d
+    %t8 = index i8 %t7, 4
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i32 5, %t9
+    %t10 = addr $d
+    %t11 = index i8 [projection=field] %t10, 8
+    store typed i32 7, %t11
+    %t12 = const i64 8
+    %t13 = cmp ne i64 %t12, -1
+    %t14 = binary mul i64 %t13, -4
+    %t15 = binary add i64 %t12, %t14
+    store typed i64 %t15, $inverse
+    %t16 = const i64 8
+    store typed i64 %t16, $original
+    %t17 = load typed i64 $original
+    %t18 = cmp ne i64 %t17, -1
+    %t19 = binary mul i64 %t18, -4
+    %t20 = binary add i64 %t17, %t19
+    store typed i64 %t20, $converted
+    %t21 = addr $d
+    %t22 = load typed i64 $derived_ptr
+    %t23 = index i8 [projection=field] %t21, %t22
+    %t24 = load typed i32 %t23
+    %t25 = cmp eq i32 %t24, 5
+    branch %t25, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t26 = addr $d
+    %t27 = index i8 %t26, 4
+    %t28 = load typed i64 $inverse
+    %t29 = call i32 @read(%t27, %t28)
+    %t30 = cmp eq i32 %t29, 7
+    %t31 = cmp ne i64 %t30, 0
+    store typed i64 %t31, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t32 = load typed i64 $land__2
+    branch %t32, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t33 = addr $d
+    %t34 = index i8 %t33, 4
+    %t35 = load typed i64 $converted
+    %t36 = call i32 @read(%t34, %t35)
+    %t37 = cmp eq i32 %t36, 7
+    %t38 = cmp ne i64 %t37, 0
+    store typed i64 %t38, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t39 = load typed i64 $land__3
+    branch %t39, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t40 = load typed i32 $cond__1
+    return i32 %t40
+}

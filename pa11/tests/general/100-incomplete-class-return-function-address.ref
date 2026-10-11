@@ -1,0 +1,3 @@
+declare function @make_result() -> void [binding=strong, object=_Z11make_resultv]
+
+global @stored : ptr [binding=strong] = addr @make_result

@@ -1,0 +1,15 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @add1(4)
+    %t2 = binary sub nowrap i32 %t1, 5
+    return i32 %t2
+}
+function @add1(%x : i32) -> i32 [binding=weak, object=_Z4add1IiET_S0_] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}

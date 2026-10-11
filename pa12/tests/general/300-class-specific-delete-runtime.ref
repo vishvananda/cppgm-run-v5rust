@@ -1,0 +1,72 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+global @calls : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $u : ptr
+  slot $s : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 1
+    %t2 = call ptr @operatornew(%t1)
+    store typed ptr %t2, $u
+    %t3 = load typed ptr $u
+    %t4 = cmp ne ptr %t3, 0
+    branch %t4, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    call void @U__operatordelete(%t3)
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    %t5 = convert sext i64 i32 1
+    %t6 = call ptr @operatornew(%t5)
+    store typed ptr %t6, $s
+    %t7 = load typed ptr $s
+    %t8 = cmp ne ptr %t7, 0
+    branch %t8, ^delete_nonnull_3, ^delete_end_4
+
+  block ^delete_nonnull_3:
+    call void @S__operatordelete(%t7, 1)
+    jump ^delete_end_4
+
+  block ^delete_end_4:
+    %t9 = load typed i32 @calls
+    %t10 = cmp eq i32 %t9, 2
+    branch %t10, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @U__operatordelete(%__param0 : ptr) -> void [unwind=no, binding=weak, object=_ZN1UdlEPv, inline_hint=yes] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    return void
+}
+function @S__operatordelete(%__param0 : ptr, %__param1 : i64) -> void [unwind=no, binding=weak, object=_ZN1SdlEPvm, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : i64
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed i64 %__param1, $__param1
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    return void
+}

@@ -1,0 +1,9 @@
+global @mutable_scalar : i32 [binding=internal, object=_ZL14mutable_scalar] = 0
+global @mutable_object [binding=internal, object=_ZL14mutable_object] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

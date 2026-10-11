@@ -1,0 +1,41 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, 0
+    add r8, 3472328296227680304
+    cmp.i64 r8, 3472328296227680304
+    jne ^bad_add
+    jmp ^check_sub
+
+  block ^bad_add
+    mov rax, 1
+    ret rax
+
+  block ^check_sub
+    mov r8, 3472328296227680304
+    sub r8, 3472328296227680304
+    cmp.i64 r8, 0
+    jne ^bad_sub
+    jmp ^ok
+
+  block ^bad_sub
+    mov rax, 2
+    ret rax
+
+  block ^ok
+    mov rax, 0
+    ret rax

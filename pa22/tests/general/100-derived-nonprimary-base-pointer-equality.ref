@@ -1,0 +1,136 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<12x4>
+  slot $derived_pointer : ptr
+  slot $base_pointer : ptr
+  slot $basecast__1 : ptr
+  slot $basecast__2 : ptr
+  slot $const_derived_pointer : ptr
+  slot $volatile_base_pointer : ptr
+  slot $basecast__3 : ptr
+  slot $cond__4 : i32
+  slot $basecast__5 : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    store typed ptr %t2, $derived_pointer
+    %t3 = addr $object
+    %t4 = index i8 %t3, 4
+    store typed ptr %t4, $base_pointer
+    %t5 = load typed ptr $derived_pointer
+    %t6 = cmp eq ptr %t5, 0
+    branch %t6, ^basecast_null_3, ^basecast_adjust_4
+
+  block ^basecast_null_3:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_5
+
+  block ^basecast_adjust_4:
+    %t7 = index i8 %t5, 4
+    store typed ptr %t7, $basecast__1
+    jump ^basecast_end_5
+
+  block ^basecast_end_5:
+    %t8 = load typed ptr $basecast__1
+    %t9 = load typed ptr $base_pointer
+    %t10 = cmp ne ptr %t8, %t9
+    branch %t10, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t11 = load typed ptr $base_pointer
+    %t12 = load typed ptr $derived_pointer
+    %t13 = cmp eq ptr %t12, 0
+    branch %t13, ^basecast_null_9, ^basecast_adjust_10
+
+  block ^basecast_null_9:
+    store typed ptr 0, $basecast__2
+    jump ^basecast_end_11
+
+  block ^basecast_adjust_10:
+    %t14 = index i8 %t12, 4
+    store typed ptr %t14, $basecast__2
+    jump ^basecast_end_11
+
+  block ^basecast_end_11:
+    %t15 = load typed ptr $basecast__2
+    %t16 = cmp ne ptr %t11, %t15
+    branch %t16, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 2
+
+  block ^if_else_8:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    %t17 = addr $object
+    store typed ptr %t17, $const_derived_pointer
+    %t18 = addr $object
+    %t19 = index i8 %t18, 4
+    store typed ptr %t19, $volatile_base_pointer
+    %t20 = load typed ptr $const_derived_pointer
+    %t21 = cmp eq ptr %t20, 0
+    branch %t21, ^basecast_null_15, ^basecast_adjust_16
+
+  block ^basecast_null_15:
+    store typed ptr 0, $basecast__3
+    jump ^basecast_end_17
+
+  block ^basecast_adjust_16:
+    %t22 = index i8 %t20, 4
+    store typed ptr %t22, $basecast__3
+    jump ^basecast_end_17
+
+  block ^basecast_end_17:
+    %t23 = load typed ptr $basecast__3
+    %t24 = load typed ptr $volatile_base_pointer
+    %t25 = cmp eq ptr %t23, %t24
+    %t26 = cmp eq i64 %t25, 0
+    branch %t26, ^if_then_13, ^if_else_14
+
+  block ^if_then_13:
+    return i32 3
+
+  block ^if_else_14:
+    jump ^if_end_18
+
+  block ^if_end_18:
+    store typed ptr 0, $derived_pointer
+    store typed ptr 0, $base_pointer
+    %t27 = load typed ptr $derived_pointer
+    %t28 = cmp eq ptr %t27, 0
+    branch %t28, ^basecast_null_22, ^basecast_adjust_23
+
+  block ^basecast_null_22:
+    store typed ptr 0, $basecast__5
+    jump ^basecast_end_24
+
+  block ^basecast_adjust_23:
+    %t29 = index i8 %t27, 4
+    store typed ptr %t29, $basecast__5
+    jump ^basecast_end_24
+
+  block ^basecast_end_24:
+    %t30 = load typed ptr $basecast__5
+    %t31 = load typed ptr $base_pointer
+    %t32 = cmp eq ptr %t30, %t31
+    branch %t32, ^cond_then_19, ^cond_else_20
+
+  block ^cond_then_19:
+    store typed i32 0, $cond__4
+    jump ^cond_end_21
+
+  block ^cond_else_20:
+    store typed i32 4, $cond__4
+    jump ^cond_end_21
+
+  block ^cond_end_21:
+    %t33 = load typed i32 $cond__4
+    return i32 %t33
+}

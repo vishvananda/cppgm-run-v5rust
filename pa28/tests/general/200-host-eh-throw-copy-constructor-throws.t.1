@@ -1,0 +1,44 @@
+struct thrown_copy_error {};
+
+struct base_with_throwing_copy
+{
+  base_with_throwing_copy() : throw_on_copy(false)
+  {
+  }
+
+  base_with_throwing_copy(const base_with_throwing_copy &other)
+      : throw_on_copy(other.throw_on_copy)
+  {
+    if(throw_on_copy) {
+      throw thrown_copy_error();
+    }
+  }
+
+  bool throw_on_copy;
+};
+
+struct derived_exception : base_with_throwing_copy
+{
+  derived_exception()
+  {
+  }
+
+  void throw_self() const
+  {
+    throw *this;
+  }
+};
+
+int main()
+{
+  derived_exception value;
+  value.throw_on_copy = true;
+  try {
+    value.throw_self();
+  } catch(thrown_copy_error &) {
+    return 0;
+  } catch(...) {
+    return 2;
+  }
+  return 1;
+}

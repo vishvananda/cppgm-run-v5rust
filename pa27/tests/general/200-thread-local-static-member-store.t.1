@@ -1,0 +1,5 @@
+struct Counter {
+  static thread_local int value;
+};
+
+thread_local int Counter::value = 3;

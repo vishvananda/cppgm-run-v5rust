@@ -1,0 +1,6 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $missing_result : ptr
+
+  block ^entry:
+    return i32 0
+}

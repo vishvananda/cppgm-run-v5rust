@@ -1,0 +1,26 @@
+#include <map>
+#include <string>
+
+namespace {
+
+struct Holder
+{
+  std::map<std::string, std::string> table;
+
+  Holder()
+  {
+    throw 1;
+  }
+};
+
+}  // namespace
+
+int main()
+{
+  try {
+    Holder value;
+  } catch(int) {
+    return 0;
+  }
+  return 1;
+}

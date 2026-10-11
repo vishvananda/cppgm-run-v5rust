@@ -1,0 +1,6 @@
+declare global @constant_unsignedlongint_1___value : i64 [binding=weak, object=_ZN8constantImLm1EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

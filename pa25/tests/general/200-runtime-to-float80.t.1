@@ -1,0 +1,67 @@
+#include "pa24-runtime-support.inc"
+
+int main()
+{
+  if(cppgm_test_init_io() != 0)
+  {
+    return 1;
+  }
+
+  cppgm_u64 count = cppgm_test_take_count_line();
+  cppgm_test_out_unsigned_decimal(count);
+  cppgm_test_out_char('\n');
+
+  while(count != 0)
+  {
+    char kind = cppgm_test_take_char();
+    char size_ch = cppgm_test_take_char();
+    int bytes = size_ch - '0';
+    cppgm_test_take_char();
+
+    cppgm_test_out_char(kind);
+    cppgm_test_out_char(size_ch);
+    cppgm_test_out_char(' ');
+
+    long double value = 0.0L;
+    if(kind == 's')
+    {
+      cppgm_u64 raw = cppgm_test_take_hex_le(bytes);
+      if(bytes == 1)
+      {
+        value = (long double)(signed char)raw;
+      }
+      else if(bytes == 2)
+      {
+        value = (long double)(short)raw;
+      }
+      else if(bytes == 4)
+      {
+        value = (long double)(int)raw;
+      }
+      else
+      {
+        value = (long double)(long long)raw;
+      }
+    }
+    else if(kind == 'u')
+    {
+      cppgm_u64 raw = cppgm_test_take_hex_le(bytes);
+      value = (long double)cppgm_test_wrap_to_bytes(raw, bytes);
+    }
+    else if(bytes == 4)
+    {
+      value = (long double)cppgm_test_take_f32();
+    }
+    else
+    {
+      value = (long double)cppgm_test_take_f64();
+    }
+
+    cppgm_test_take_char();
+    cppgm_test_out_f80(value);
+    cppgm_test_out_char('\n');
+    --count;
+  }
+
+  return cppgm_test_flush_output();
+}

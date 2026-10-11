@@ -1,0 +1,14 @@
+#include "200-host-indirect-primary-claim.helper.h"
+
+int main()
+{
+  if (signature() != host_signature()) return 1;
+  Z z;
+  z.y = 7;
+  if (host_f(z) != 1 || host_y(z) != 7) return 2;
+  Z* made = host_make();
+  A& a = *made;
+  Y& y = *made;
+  if (a.f() != 1 || host_y(y) != 5 || y.y != 5 || made->x != 4) return 3;
+  return 0;
+}

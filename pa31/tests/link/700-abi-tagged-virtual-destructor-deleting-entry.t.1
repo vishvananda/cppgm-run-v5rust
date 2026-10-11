@@ -1,0 +1,18 @@
+#include <cstdio>
+
+struct base {
+  __attribute__((__abi_tag__("v1"))) base() {}
+  __attribute__((__abi_tag__("v1"))) virtual ~base() { std::printf("~base\n"); }
+};
+
+struct derived : base {
+  __attribute__((__abi_tag__("v1"))) derived() {}
+  __attribute__((__abi_tag__("v1"))) ~derived() { std::printf("~derived\n"); }
+};
+
+int main()
+{
+  base* object = new derived;
+  delete object;
+  return 0;
+}

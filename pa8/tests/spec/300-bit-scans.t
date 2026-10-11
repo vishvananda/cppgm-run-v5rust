@@ -1,0 +1,19 @@
+function @main() -> i64 {
+  block ^entry:
+    %a = unary ctz i32 8
+    %b = unary clz i64 1
+    %c = unary ctz u32 2147483648
+    %d = unary clz i32 65535
+    %e = unary ctz i64 1099511627776
+    %ab = binary add i32 %a, 0
+    %ok1 = cmp eq i32 %ab, 3
+    %ok2 = cmp eq i64 %b, 63
+    %ok3 = cmp eq u32 %c, 31
+    %ok4 = cmp eq i32 %d, 16
+    %ok5 = cmp eq i64 %e, 40
+    %s1 = binary add i64 %ok1, %ok2
+    %s2 = binary add i64 %s1, %ok3
+    %s3 = binary add i64 %s2, %ok4
+    %s4 = binary add i64 %s3, %ok5
+    return i64 %s4
+}

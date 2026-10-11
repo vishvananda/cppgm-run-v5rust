@@ -1,0 +1,98 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<4x4>
+  slot $token : obj<1x1>
+  slot $p : ptr
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $stream
+    %t2 = addr $token
+    %t3 = addr $stream
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $stream
+    %t6 = addr $token
+    %t7 = call ptr @operator__(%t5, %t6)
+    %t8 = addr $token
+    %t9 = call ptr @operator__(%t7, %t8)
+    %t10 = addr $token
+    %t11 = call ptr @operator__(%t9, %t10)
+    %t12 = addr $token
+    %t13 = call ptr @operator__(%t11, %t12)
+    %t14 = addr $token
+    %t15 = call ptr @operator__(%t13, %t14)
+    %t16 = addr $token
+    %t17 = call ptr @operator__(%t15, %t16)
+    %t18 = addr $token
+    %t19 = call ptr @operator__(%t17, %t18)
+    %t20 = addr $token
+    %t21 = call ptr @operator__(%t19, %t20)
+    %t22 = addr $token
+    %t23 = call ptr @operator__(%t21, %t22)
+    %t24 = addr $token
+    %t25 = call ptr @operator__(%t23, %t24)
+    %t26 = addr $token
+    %t27 = call ptr @operator__(%t25, %t26)
+    %t28 = addr $token
+    %t29 = call ptr @operator__(%t27, %t28)
+    %t30 = addr $token
+    %t31 = call ptr @operator__(%t29, %t30)
+    %t32 = addr $token
+    %t33 = call ptr @operator__(%t31, %t32)
+    %t34 = addr $token
+    %t35 = call ptr @operator__(%t33, %t34)
+    %t36 = addr $token
+    %t37 = call ptr @operator__(%t35, %t36)
+    store typed ptr %t37, $p
+    %t38 = load typed ptr $p
+    %t39 = addr $stream
+    %t40 = cmp eq ptr %t38, %t39
+    branch %t40, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t41 = addr $stream
+    %t42 = index i8 [projection=field] %t41, 0
+    %t43 = load typed i32 %t42
+    %t44 = cmp eq i32 %t43, 16
+    %t45 = cmp ne i64 %t44, 0
+    store typed i64 %t45, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t46 = load typed i64 $land__2
+    branch %t46, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t47 = load typed i32 $cond__1
+    return i32 %t47
+}
+function @operator__(%stream : ptr [pass=by_address, object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_ZlsI5TokenER6StreamS2_RKT_] {
+  slot $stream : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $stream
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $stream
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    %t7 = load typed ptr $stream
+    return ptr %t7
+}

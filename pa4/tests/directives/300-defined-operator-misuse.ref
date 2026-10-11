@@ -1,0 +1,4 @@
+preproc 1
+sof tests/directives/300-defined-operator-misuse.t
+identifier RIGHT
+eof

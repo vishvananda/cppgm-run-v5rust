@@ -1,0 +1,26 @@
+function @g(%q : ptr [pass=by_address, object_bytes=1], %d : ptr [pass=by_address, object_bytes=1], %i : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z1gR1QIiERN1n1DIcEERi] {
+  slot $q : ptr
+  slot $d : ptr
+  slot $i : ptr
+
+  block ^entry:
+    store typed ptr %q, $q
+    store typed ptr %d, $d
+    store typed ptr %i, $i
+    %t1 = load typed ptr $q
+    %t2 = load typed ptr $d
+    %t3 = load typed ptr $i
+    call void @Q_int___f(%t1, %t2, %t3)
+    return void
+}
+function @Q_int___f(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1], %__param2 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN1QIiE1fIcEEvRKN1n1DIT_EERi] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return void
+}

@@ -1,0 +1,36 @@
+declare function @observe(%value : i64) -> void [unwind=no]
+
+function @fold_boolean_diamond(%choose : i64) -> void {
+  block ^entry:
+    branch %choose, ^observe, ^done
+
+  block ^observe:
+    call void @observe(1)
+    jump ^done
+
+  block ^done:
+    return void
+}
+function @retain_observable_arm(%choose : i64) -> void {
+  block ^entry:
+    branch %choose, ^selected, ^done
+
+  block ^selected:
+    call void @observe(2)
+    call void @observe(3)
+    jump ^done
+
+  block ^done:
+    return void
+}
+function @retain_shared_phi(%choose : i64) -> void {
+  block ^entry:
+    branch %choose, ^merge, ^done
+
+  block ^merge:
+    call void @observe(1)
+    jump ^done
+
+  block ^done:
+    return void
+}

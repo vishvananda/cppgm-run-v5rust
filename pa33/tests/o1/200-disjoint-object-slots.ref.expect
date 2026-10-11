@@ -1,0 +1,2 @@
+# A single live 1600-byte object plus up to 448 bytes of frame bookkeeping.
+stack_size <= 2048 in @probe

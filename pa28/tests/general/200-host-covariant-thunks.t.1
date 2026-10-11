@@ -1,0 +1,25 @@
+#include "200-host-covariant-thunks.helper.h"
+
+Root* Root::self() { return this; }
+Direct* Direct::self() { return this; }
+Below* Below::self() { return this; }
+Primary* Primary::self() { return this; }
+Near* Near::self() { return this; }
+Inner* Inner::self() { return this; }
+
+int main()
+{
+  Direct direct;
+  Root& direct_root = direct;
+  if (!host_root(direct_root, &direct_root) || direct.self() != &direct) return 1;
+  Below below;
+  Root& below_root = below;
+  if (!host_root(below_root, &below_root) || below.self() != &below) return 2;
+  Primary primary;
+  Root& primary_root = primary;
+  if (!host_root(primary_root, &primary_root) || primary.self() != &primary) return 3;
+  Inner inner;
+  Near& inner_near = inner;
+  if (!host_near(inner_near, &inner_near) || inner.self() != &inner) return 4;
+  return 0;
+}

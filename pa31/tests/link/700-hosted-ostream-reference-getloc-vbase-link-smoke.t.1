@@ -1,0 +1,19 @@
+#include "700-hosted-ostream-reference-getloc-vbase-link-smoke.shared.h"
+
+#include <iomanip>
+#include <ostream>
+#include <string>
+
+HostedOstreamLocaleProbe::HostedOstreamLocaleProbe(std::ostream & os_)
+    : os(os_),
+      archive_locale(os.getloc())
+{
+}
+
+int HostedOstreamLocaleProbe::touch()
+{
+  os << std::noboolalpha;
+  os << std::string("ok");
+  os << std::endl;
+  return 0;
+}

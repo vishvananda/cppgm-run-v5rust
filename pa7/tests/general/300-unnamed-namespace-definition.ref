@@ -1,0 +1,6 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition <unnamed>
+    variable x int
+end translation unit

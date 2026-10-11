@@ -1,0 +1,12 @@
+# budget from 400-inline-throwing-wrapper-inside-eh.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 5
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @main
+
+# outcomes from 400-inline-throwing-wrapper-inside-eh.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @wrapper)
+absent(@wrapper)

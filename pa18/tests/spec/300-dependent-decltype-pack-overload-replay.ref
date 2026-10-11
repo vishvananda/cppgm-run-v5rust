@@ -1,0 +1,47 @@
+declare function @N__B__pick(%arg0 : ptr [pass=by_address, object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN1N1B4pickIiEE1CRKT_]
+declare function @N__B__pick__2(%arg0 : ptr [pass=by_address, object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN1N1B4pickIiEE1MRT_]
+declare function @N__pair(%arg0 : ptr [pass=by_address, object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN1N4pairI1C1MEE4PairIT_T0_ERKS4_RKS5_]
+declare function @Wrap___cppgm_class_template_identity_1___Wrap(%arg0 : ptr [object_bytes=1], %arg1 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN4WrapI4PairI1C1MEEC1ES3_]
+
+function @g(%x : ptr [pass=by_address, object_bytes=4], %y : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z1gRKiRi] {
+  slot $x : ptr
+  slot $y : ptr
+  slot $discard__1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    %t1 = const i64 1
+    %t2 = addr $discard__1
+    %t3 = load typed ptr $x
+    %t4 = load typed ptr $y
+    %t5 = call obj<1x1> @f(%t3, %t4)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @f(%x : ptr [pass=by_address, object_bytes=4], %x__pack2 : ptr [pass=by_address, object_bytes=4]) -> obj<1x1> [result_classes=none, binding=weak, object=_Z1fIJRKiRiEE4WrapIDTclsr1NE4pairspclsr1NE4pickfp_EEEEDpOT_] {
+  slot $x : ptr
+  slot $x__pack2 : ptr
+  slot $retobj__1 : obj<1x1>
+  slot $argobj__2 : obj<1x1>
+  slot $arg__3 : obj<1x1>
+  slot $arg__4 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %x__pack2, $x__pack2
+    %t1 = addr $retobj__1
+    %t2 = addr $argobj__2
+    %t3 = addr $arg__3
+    %t4 = load typed ptr $x
+    %t5 = call obj<1x1> @N__B__pick(%t4)
+    %t6 = addr $arg__4
+    %t7 = load typed ptr $x__pack2
+    %t8 = call obj<1x1> @N__B__pick__2(%t7)
+    %t9 = call obj<1x1> @N__pair(%t3, %t6)
+    call void @Wrap___cppgm_class_template_identity_1___Wrap(%t1, $argobj__2)
+    return obj<1x1> $retobj__1
+}

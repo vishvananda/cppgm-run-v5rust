@@ -1,0 +1,44 @@
+global @global_node [binding=strong] = {
+  i32 7
+}
+
+function @locate() -> ptr [binding=strong, object=_Z6locatev] {
+  block ^entry:
+    %t1 = addr @global_node
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $node : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call ptr @locate()
+    store typed ptr %t1, $node
+    %t2 = load typed ptr $node
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t3 = load typed ptr $node
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_3, ^cond_else_4
+
+  block ^cond_then_3:
+    store typed i32 0, $cond__1
+    jump ^cond_end_5
+
+  block ^cond_else_4:
+    store typed i32 1, $cond__1
+    jump ^cond_end_5
+
+  block ^cond_end_5:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 2
+}

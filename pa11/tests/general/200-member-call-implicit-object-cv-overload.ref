@@ -1,0 +1,65 @@
+function @read_mutable(%cell : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z12read_mutableR4Cell] {
+  slot $cell : ptr
+
+  block ^entry:
+    store typed ptr %cell, $cell
+    %t1 = load typed ptr $cell
+    %t2 = call i32 @Cell__get__ov2(%t1)
+    return i32 %t2
+}
+function @read_const(%cell : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z10read_constRK4Cell] {
+  slot $cell : ptr
+
+  block ^entry:
+    store typed ptr %cell, $cell
+    %t1 = load typed ptr $cell
+    %t2 = call i32 @Cell__get(%t1)
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cell : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $cell
+    %t2 = addr $cell
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $cell
+    %t5 = call i32 @read_mutable(%t4)
+    %t6 = binary mul nowrap i32 %t5, 10
+    %t7 = addr $cell
+    %t8 = call i32 @read_const(%t7)
+    %t9 = binary add nowrap i32 %t6, %t8
+    %t10 = cmp eq i32 %t9, 90
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @Cell__get__ov2(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN4Cell3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @Cell__get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK4Cell3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 20
+}

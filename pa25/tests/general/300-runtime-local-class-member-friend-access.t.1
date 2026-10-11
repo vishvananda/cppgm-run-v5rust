@@ -1,0 +1,27 @@
+class secret_box
+{
+  int value;
+  friend int read_secret(secret_box& box);
+
+public:
+  secret_box() : value(23) {}
+};
+
+int read_secret(secret_box& box)
+{
+  struct local
+  {
+    static int get(secret_box& target)
+    {
+      return target.value;
+    }
+  };
+
+  return local::get(box);
+}
+
+int main()
+{
+  secret_box box;
+  return read_secret(box) == 23 ? 0 : 1;
+}

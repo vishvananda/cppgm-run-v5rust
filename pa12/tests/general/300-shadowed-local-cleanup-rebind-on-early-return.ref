@@ -1,0 +1,39 @@
+function @f(%b : u8) -> i32 [binding=strong, object=_Z1fb] {
+  slot $b : u8
+  slot $guard : obj<1x1>
+  slot $guard__shadow2 : obj<1x1>
+
+  block ^entry:
+    store u8 %b, $b
+    %t1 = addr $guard
+    call void @Guard__Guard(%t1)
+    %t2 = load u8 $b
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t3 = addr $guard__shadow2
+    call void @Guard__Guard(%t3)
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return i32 0
+}
+function @Guard__Guard(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5GuardC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Guard___Guard(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5GuardD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN5GuardC2Ev = @Guard__Guard
+alias object _ZN5GuardD2Ev = @Guard___Guard

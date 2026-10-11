@@ -1,0 +1,62 @@
+global @scalar : i32 [storage=readonly, binding=internal, object=_ZL6scalar] = 3
+global @dynamic_scalar : i32 [binding=internal, object=_ZL14dynamic_scalar] = zero
+global @dynamic_table : obj<8x4> [binding=internal, object=_ZL13dynamic_table] = {
+  zero 8
+}
+global @thread_scalar : i32 [storage=thread_local, binding=internal, object=_ZL13thread_scalar] = 11
+
+function @seed() -> i32 [binding=strong, object=_Z4seedv] {
+  block ^entry:
+    return i32 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $sum : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load typed i32 @scalar
+    %t2 = load typed i32 @dynamic_scalar
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = addr @dynamic_table
+    %t5 = index i32 [projection=array_element] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    %t8 = addr @dynamic_table
+    %t9 = index i32 [projection=array_element] %t8, 1
+    %t10 = load typed i32 %t9
+    %t11 = binary add nowrap i32 %t7, %t10
+    %t12 = addr @thread_scalar
+    %t13 = load typed i32 %t12
+    %t14 = binary add nowrap i32 %t11, %t13
+    store typed i32 %t14, $sum
+    %t15 = load typed i32 $sum
+    %t16 = binary add nowrap i32 3, 1
+    %t17 = binary add nowrap i32 %t16, 1
+    %t18 = binary add nowrap i32 %t17, 2
+    %t19 = binary add nowrap i32 %t18, 11
+    %t20 = cmp eq i32 %t15, %t19
+    branch %t20, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t21 = load typed i32 $cond__1
+    return i32 %t21
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call i32 @seed()
+    store typed i32 %t1, @dynamic_scalar
+    %t2 = addr @dynamic_table
+    %t3 = call i32 @seed()
+    store typed i32 %t3, %t2
+    %t4 = index i8 %t2, 4
+    store typed i32 2, %t4
+    return void
+}

@@ -1,0 +1,38 @@
+function @first(%p : ptr) -> ptr [binding=strong, object=_Z5firstPK1S] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = binary mul i64 0, 4
+    %t3 = index i8 [projection=array_element] %t1, %t2
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $item : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $item
+    %t2 = addr $item
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $item
+    %t5 = call ptr @first(%t4)
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = cmp eq i32 %t7, 7
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

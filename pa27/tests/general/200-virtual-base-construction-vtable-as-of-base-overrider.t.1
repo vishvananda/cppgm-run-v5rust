@@ -1,0 +1,44 @@
+// While a base subobject is under construction, a virtual call must resolve to
+// that base's own final overrider -- not the most-derived class's override --
+// via the construction vtable installed for the base.  `A` has a virtual base
+// `V`, so constructing `D` installs a construction vtable for the `A`
+// subobject; `A`'s constructor calls `id()`, which must reach `A::id` (1) even
+// though the complete object `D` overrides it (9).  If the construction vtable
+// is built from the most-derived overriders instead of the base's own, this
+// observes `D::id` and returns 9.
+
+namespace {
+
+int observed = 0;
+
+struct V
+{
+  virtual int id() noexcept { return 0; }
+  virtual ~V() noexcept {}
+};
+
+struct A : virtual V
+{
+  A() noexcept;
+  virtual int id() noexcept { return 1; }
+};
+
+struct D : A
+{
+  D() noexcept {}
+  int id() noexcept override { return 9; }
+};
+
+A::A() noexcept
+{
+  observed = id();
+}
+
+}  // namespace
+
+int main()
+{
+  D value;
+  (void)value;
+  return observed == 1 ? 0 : observed;
+}

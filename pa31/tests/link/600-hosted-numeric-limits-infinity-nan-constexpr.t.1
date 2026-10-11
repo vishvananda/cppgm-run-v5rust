@@ -1,0 +1,9 @@
+// N3485 18.3.2.3:
+// numeric_limits<double>::infinity()/quiet_NaN()/signaling_NaN() are
+// constexpr; hosted <limits> forwards to
+// __builtin_inf/__builtin_nan/__builtin_nans, which must fold; expect exit 0
+#include <limits>
+constexpr double inf = std::numeric_limits<double>::infinity();
+constexpr double qn = std::numeric_limits<double>::quiet_NaN();
+constexpr double sn = std::numeric_limits<double>::signaling_NaN();
+int main() { return inf > 1e308 && qn != qn && sn != sn ? 0 : 1; }

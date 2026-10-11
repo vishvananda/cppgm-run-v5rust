@@ -1,0 +1,23 @@
+// C++17 inline static data members, accepted in hosted compilations (libc++'s
+// integral_constant::value): inline static members of a class and of class
+// templates, constant and dynamically initialized, are defined once and may be
+// odr-used
+#include <cstdio>
+#include <string>
+// Static data members declared inline in their class (C++17, accepted in
+// hosted compilations; libc++'s integral_constant::value): odr-used,
+// constant and dynamically initialized, of class templates too.
+struct A { static inline const int k = 5; static inline int n = 7; static inline std::string s = std::string("a") + "b"; };
+template <class T, T v> struct IC { static inline constexpr const T value = v; };
+template <class T> struct TC { static inline std::string name = std::string("tc") + std::to_string(sizeof(T)); static inline int hits = 3; };
+template <class T> const T& ref(const T& x) { return x; }
+int main() {
+	const int& a = A::k;
+	A::n += 1;
+	TC<int>::hits++;
+	const bool& b = IC<bool, true>::value;
+	const int* p = &IC<int, 42>::value;
+	std::printf("%d %d %s %d %d %d %s %d\n", a, A::n, A::s.c_str(), (int)b, *p, (int)(ref(IC<long, 9>::value) == 9),
+		TC<int>::name.c_str(), TC<int>::hits);
+	return 0;
+}

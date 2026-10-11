@@ -1,0 +1,30 @@
+function @make_s() -> obj<4x4> [binding=strong, object=_Z6make_sv] {
+  slot $s : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $s
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $g : ptr
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr @make_s
+    store typed ptr %t1, $g
+    %t2 = addr $tmpobj__1
+    %t3 = load typed ptr $g
+    %t4 = call obj<4x4> %t3() as () -> obj<4x4>
+    copyobj 4x4 %t4, %t2
+    %t5 = index i8 [projection=field] %t2, 0
+    %t6 = load typed i32 %t5
+    %t7 = binary sub nowrap i32 %t6, 7
+    return i32 %t7
+}

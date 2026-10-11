@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function compatible function of () returning void
+    function compatible function of () returning void
+    function compatible function of () returning void
+end translation unit

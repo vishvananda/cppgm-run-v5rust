@@ -1,0 +1,40 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, 305419896
+    bswap.u32 r8
+    zext.i32 r8
+    mov rdx, 2018915346
+    cmp.u32 r8, rdx
+    sete r9
+    movzx r9, r9
+    sitofp.u32.f64 xmm0, r8
+    fptosi.f64.u32 r8, xmm0
+    zext.i32 r8
+    mov rdx, 2018915346
+    cmp.u32 r8, rdx
+    sete r8
+    movzx r8, r8
+    add r9, r8
+    mov rdx, 2
+    cmp.i64 r9, rdx
+    sete r9
+    movzx r9, r9
+    cmp.i64 r9, 0
+    sete r9
+    movzx r9, r9
+    ret r9

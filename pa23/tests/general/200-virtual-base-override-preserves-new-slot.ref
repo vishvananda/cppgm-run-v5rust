@@ -1,0 +1,47 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @D__tag(%arg0 : ptr [object_bytes=8]) -> i32 [binding=strong, object=_ZN1D3tagEv]
+
+global @__typeinfo_name__struct_D [storage=readonly, binding=weak, object=_ZTS1D] = {
+  i8 49
+  i8 68
+  i8 0
+}
+global @__typeinfo_name__struct_V [storage=readonly, binding=weak, object=_ZTS1V] = {
+  i8 49
+  i8 86
+  i8 0
+}
+global @__rtti_struct_V [storage=readonly, binding=weak, object=_ZTI1V] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_V
+}
+global @__rtti_struct_D [storage=readonly, binding=weak, object=_ZTI1D] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_D
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_V
+  i64 -8189
+}
+global @D__vtable [storage=readonly, binding=strong, object=_ZTV1D] = {
+  i64 0
+  i64 0
+  i64 0
+  ptr addr @__rtti_struct_D
+  ptr addr @D__tag
+  ptr addr @D__id
+}
+global @D____vtt [storage=readonly, binding=weak, object=_ZTT1D, object_root=yes] = {
+  ptr addr @D__vtable + 32
+  ptr addr @D__vtable + 32
+}
+
+function @D__id(%this : ptr [object_bytes=8]) -> i32 [binding=strong, object=_ZN1D2idEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}

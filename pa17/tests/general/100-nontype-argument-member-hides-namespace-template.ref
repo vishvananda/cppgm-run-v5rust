@@ -1,0 +1,84 @@
+declare global @compute_min_unsignedchar_8_false___value : u8 [binding=weak, object=_ZN11compute_minIhLi8ELb0EE5valueE]
+declare global @compute_min_signedchar_7_true___value : i8 [binding=weak, object=_ZN11compute_minIaLi7ELb1EE5valueE]
+declare global @is_signed_int___value : u8 [binding=weak, object=_ZN9is_signedIiE5valueE]
+declare global @limits_unsignedchar___lowest : u8 [binding=weak, object=_ZN6limitsIhE6lowestE]
+declare global @limits_unsignedchar___digits : i32 [binding=weak, object=_ZN6limitsIhE6digitsE]
+declare global @limits_signedchar___digits : i32 [binding=weak, object=_ZN6limitsIaE6digitsE]
+declare global @limits_signedchar___lowest : i8 [binding=weak, object=_ZN6limitsIaE6lowestE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call u8 @limits_unsignedchar___min()
+    %t2 = convert zext i32 u8 %t1
+    %t3 = cmp ne i32 %t2, 0
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = call i32 @limits_unsignedchar___width()
+    %t5 = cmp ne i32 %t4, 8
+    branch %t5, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t6 = call i32 @limits_signedchar___width()
+    %t7 = cmp ne i32 %t6, 7
+    branch %t7, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t8 = call i8 @limits_signedchar___min()
+    %t9 = unary neg i32 128
+    %t10 = convert sext i32 i8 %t8
+    %t11 = cmp ne i32 %t10, %t9
+    branch %t11, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 4
+
+  block ^if_else_11:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    jump ^if_else_14
+
+  block ^if_then_13:
+    return i32 5
+
+  block ^if_else_14:
+    jump ^if_end_15
+
+  block ^if_end_15:
+    return i32 0
+}
+function @limits_unsignedchar___min() -> u8 [binding=weak, object=_ZN6limitsIhE3minEv, inline_hint=yes] {
+  block ^entry:
+    return u8 0
+}
+function @limits_unsignedchar___width() -> i32 [binding=weak, object=_ZN6limitsIhE5widthEv, inline_hint=yes] {
+  block ^entry:
+    return i32 8
+}
+function @limits_signedchar___width() -> i32 [binding=weak, object=_ZN6limitsIaE5widthEv, inline_hint=yes] {
+  block ^entry:
+    return i32 7
+}
+function @limits_signedchar___min() -> i8 [binding=weak, object=_ZN6limitsIaE3minEv, inline_hint=yes] {
+  block ^entry:
+    return i8 -128
+}

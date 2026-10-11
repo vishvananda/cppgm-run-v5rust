@@ -1,0 +1,12 @@
+int main()
+{
+  auto value = []() __attribute__((noinline, used)) { return 7; };
+  try
+  {
+    throw value();
+  }
+  catch (int caught)
+  {
+    return caught - 7;
+  }
+}

@@ -1,0 +1,23 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $u : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $u
+    call void @U_X___U(%t1)
+    %t2 = addr $u
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load i32 %t4
+    return i32 %t5
+}
+function @U_X___U(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN1UI1XEC1IJEEEDpOT_, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    zeroinit 4x4 %t2
+    return void
+}
+alias object _ZN1UI1XEC2IJEEEDpOT_ = @U_X___U

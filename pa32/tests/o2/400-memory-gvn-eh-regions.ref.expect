@@ -1,0 +1,10 @@
+# budget from 400-memory-gvn-eh-regions.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 44
+blocks <= 10
+count(call) <= 7
+count(load) <= 11
+count(store) <= 3
+count(phi) <= 4
+instructions <= 22 in @region_barriers
+instructions <= 11 in @equal_protected_state
+instructions <= 14 in @conflicting_normal_and_handler_state

@@ -1,0 +1,8 @@
+*.dSYM
+*.my
+*.my.exit_status
+*.stdout
+*.stderr
+lowiropt
+lowiropt-debug
+testout/

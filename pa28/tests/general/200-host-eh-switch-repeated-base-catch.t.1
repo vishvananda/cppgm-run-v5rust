@@ -1,0 +1,51 @@
+struct BaseError
+{
+  int payload;
+
+  BaseError(int value) : payload(value) {}
+  virtual ~BaseError() {}
+};
+
+struct DerivedError : BaseError
+{
+  DerivedError(int value) : BaseError(value) {}
+};
+
+int select_case(int value)
+{
+  switch (value)
+  {
+  case 0:
+    try
+    {
+      throw DerivedError(10);
+    }
+    catch (BaseError & error)
+    {
+      return error.payload == 10 ? 0 : 11;
+    }
+  case 1:
+    try
+    {
+      throw DerivedError(20);
+    }
+    catch (BaseError & error)
+    {
+      return error.payload == 20 ? 0 : 21;
+    }
+  default:
+    try
+    {
+      throw DerivedError(30);
+    }
+    catch (BaseError & error)
+    {
+      return error.payload == 30 ? 0 : 31;
+    }
+  }
+}
+
+int main()
+{
+  return select_case(0);
+}

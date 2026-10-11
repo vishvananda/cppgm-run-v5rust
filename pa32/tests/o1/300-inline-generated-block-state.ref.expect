@@ -1,0 +1,14 @@
+# budget from 300-inline-generated-block-state.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 10
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 9 in @entry
+instructions <= 8 in @branch
+instructions <= 5 in @leaf
+
+# outcomes from 300-inline-generated-block-state.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @branch)
+none(call @leaf)

@@ -1,0 +1,3 @@
+int N;
+
+namespace N {}

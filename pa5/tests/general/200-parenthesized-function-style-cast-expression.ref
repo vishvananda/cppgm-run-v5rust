@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration T
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        parenthesized-expression
+          parenthesized-expression
+            call-expression
+              id-expression T
+              argument-list
+end translation unit

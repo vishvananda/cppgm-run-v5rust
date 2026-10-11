@@ -1,0 +1,25 @@
+#include "200-host-virtual-base-entry-arguments.helper.h"
+
+int trace[16];
+int trace_count;
+Shared::Shared() : shared(7) { trace[trace_count++] = 1; }
+Shared::~Shared() { trace[trace_count++] = -1; }
+Left::Left() : left(shared + 1) { trace[trace_count++] = 2; }
+Left::~Left() { trace[trace_count++] = shared == 7 ? -2 : 20; }
+Right::Right() : right(shared + 2) { trace[trace_count++] = 3; }
+Right::~Right() { trace[trace_count++] = shared == 7 ? -3 : 30; }
+Value::Value() : value(1) {}
+Value::Value(const Value& other) : Shared(other), value(other.value) {}
+
+int our_take(Value value) { return value.shared * 10 + value.value; }
+
+int main()
+{
+  int result = host_build();
+  if (result != 0) return result;
+  Value value;
+  value.shared = 2;
+  value.value = 3;
+  if (host_take(value) != 23 || our_take(value) != 23) return 4;
+  return host_drive_value();
+}

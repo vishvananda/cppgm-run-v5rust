@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $n : u32
+  slot $count : i32
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    store typed u32 3, $n
+    store typed i32 0, $count
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t1 = load typed u32 $n
+    %t2 = cmp ugt u32 %t1, 0
+    branch %t2, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t3 = load typed i32 $count
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, $count
+    %t5 = load typed u32 $n
+    %t6 = binary sub u32 %t5, 1
+    store typed u32 %t6, $n
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t7 = load typed i32 $count
+    %t8 = cmp eq i32 %t7, 3
+    branch %t8, ^land_rhs_8, ^land_short_9
+
+  block ^land_rhs_8:
+    %t9 = load typed u32 $n
+    %t10 = cmp eq u32 %t9, 0
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $land__2
+    jump ^land_end_10
+
+  block ^land_short_9:
+    store typed i64 0, $land__2
+    jump ^land_end_10
+
+  block ^land_end_10:
+    %t12 = load typed i64 $land__2
+    branch %t12, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    store typed i32 0, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    store typed i32 1, $cond__1
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}

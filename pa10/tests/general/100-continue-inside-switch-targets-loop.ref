@@ -1,0 +1,43 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $iteration : i32
+  slot $result : i32
+
+  block ^entry:
+    store typed i32 0, $iteration
+    store typed i32 0, $result
+    jump ^while_cond_1
+
+  block ^while_cond_1:
+    %t1 = load typed i32 $iteration
+    %t2 = cmp lt i32 %t1, 3
+    branch %t2, ^while_body_2, ^while_end_3
+
+  block ^while_body_2:
+    %t3 = load typed i32 $iteration
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, $iteration
+    %t5 = load typed i32 $iteration
+    jump ^switch_dispatch_4
+
+  block ^switch_dispatch_4:
+    switch %t5, ^switch_default_7, 1:^switch_case_6
+
+  block ^switch_case_6:
+    jump ^while_cond_1
+
+  block ^switch_default_7:
+    %t6 = load typed i32 $result
+    %t7 = binary add nowrap i32 %t6, 1
+    store typed i32 %t7, $result
+    jump ^switch_end_5
+
+  block ^switch_end_5:
+    %t8 = load typed i32 $result
+    %t9 = binary add nowrap i32 %t8, 10
+    store typed i32 %t9, $result
+    jump ^while_cond_1
+
+  block ^while_end_3:
+    %t10 = load typed i32 $result
+    return i32 %t10
+}

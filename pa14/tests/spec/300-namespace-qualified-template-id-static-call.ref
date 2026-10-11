@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 4, $value
+    %t1 = addr $value
+    %t2 = call i32 @call_pointer_to(%t1)
+    %t3 = binary sub nowrap i32 %t2, 5
+    return i32 %t3
+}
+function @call_pointer_to(%p : ptr) -> i32 [binding=weak, object=_Z15call_pointer_toIiEiPT_] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = call i32 @api__traits_int___pointer_to(%t1)
+    return i32 %t2
+}
+function @api__traits_int___pointer_to(%p : ptr) -> i32 [binding=weak, object=_ZN3api6traitsIiE10pointer_toEPi, inline_hint=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed i32 %t1
+    %t3 = binary add nowrap i32 %t2, 1
+    return i32 %t3
+}

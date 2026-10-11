@@ -1,0 +1,5 @@
+// N3485 18.10 (C99 7.15.1.2): va_copy from hosted <cstdarg> expands to
+// __builtin_va_copy; expect exit 0
+#include <cstdarg>
+static int second(int n, ...) { va_list a, b; va_start(a, n); va_copy(b, a); int x = va_arg(a, int); int y = va_arg(b, int); va_end(b); va_end(a); return x + y; }
+int main() { return second(1, 21) == 42 ? 0 : 1; }

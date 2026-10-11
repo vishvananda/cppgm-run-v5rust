@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable x int
+    variable y int
+    variable z lvalue-reference to int
+end translation unit

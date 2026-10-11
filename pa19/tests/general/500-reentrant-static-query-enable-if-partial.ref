@@ -1,0 +1,26 @@
+declare global @api__is_executor_executor___value : u8 [binding=weak, object=_ZN3api11is_executorINS_8executorEE5valueE]
+declare global @api__query_fn__call_traits_impl_executor_void___cppgm_class_template_identity_1__void_void_void_void___overload : i32 [binding=weak, object=_ZN3api8query_fn11call_traitsINS0_4implENS_8executorEFvNS_9execution6detail16outstanding_work9tracked_tILi0EEEEvvvvE8overloadE]
+declare global @api__traits__static_query_executor___cppgm_class_template_identity_2_void___is_valid : u8 [binding=weak, object=_ZN3api6traits12static_queryINS_8executorENS_9execution6detail16outstanding_work11untracked_tILi0EEEvE8is_validE]
+declare global @api__query_fn__call_traits___cppgm_class_template_identity_3___overload : i32 [binding=weak, object=_ZN3api8query_fn11call_traitsINS0_4implEKNS_8executorEFvNS_9execution6detail16outstanding_work9tracked_tILi0EEEEvvvvE8overloadE]
+declare global @api__traits__static_query_constexecutor___cppgm_class_template_identity_2_void___is_valid : u8 [binding=weak, object=_ZN3api6traits12static_queryIKNS_8executorENS_9execution6detail16outstanding_work11untracked_tILi0EEEvE8is_validE]
+declare global @api__query_fn__call_traits_impl_executor_void___cppgm_class_template_identity_2__void_void_void_void___overload : i32 [binding=weak, object=_ZN3api8query_fn11call_traitsINS0_4implENS_8executorEFvNS_9execution6detail16outstanding_work11untracked_tILi0EEEEvvvvE8overloadE]
+declare global @api__can_query_executor___cppgm_class_template_identity_2___value : u8 [binding=weak, object=_ZN3api9can_queryINS_8executorENS_9execution6detail16outstanding_work11untracked_tILi0EEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    branch 1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t1 = load typed i32 $cond__1
+    return i32 %t1
+}

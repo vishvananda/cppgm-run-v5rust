@@ -1,0 +1,13 @@
+#include <cstring>
+
+const char * other_text();
+
+const char * local_text()
+{
+  return "shared-text";
+}
+
+int main()
+{
+  return std::strcmp(local_text(), other_text());
+}

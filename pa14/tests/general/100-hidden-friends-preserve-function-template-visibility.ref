@@ -1,0 +1,135 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $left : i32
+  slot $right : i32
+  slot $first : u8
+  slot $second : u8
+  slot $reference : obj<8x8>
+  slot $argobj__1 : obj<8x8>
+  slot $cond__2 : i32
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    store typed i32 1, $left
+    store typed i32 2, $right
+    %t1 = addr $left
+    %t2 = addr $right
+    call void @lookup__exchange(%t1, %t2)
+    store u8 0, $first
+    store u8 1, $second
+    %t3 = addr $reference
+    %t4 = addr $first
+    %t5 = addr $reference
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed ptr %t4, %t6
+    %t7 = addr $argobj__1
+    %t8 = addr $reference
+    copyobj 8x8 %t8, %t7
+    %t9 = addr $second
+    call void @lookup__exchange__2($argobj__1, %t9)
+    %t10 = load typed i32 $left
+    %t11 = cmp eq i32 %t10, 2
+    branch %t11, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t12 = load typed i32 $right
+    %t13 = cmp eq i32 %t12, 1
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__3
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__3
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__3
+    branch %t15, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t16 = load u8 $first
+    %t17 = cmp ne i64 %t16, 0
+    store typed i64 %t17, $land__4
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__4
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t18 = load typed i64 $land__4
+    branch %t18, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t19 = load u8 $second
+    %t20 = cmp eq u8 %t19, 0
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $land__5
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__5
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t22 = load typed i64 $land__5
+    branch %t22, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t23 = load typed i32 $cond__2
+    return i32 %t23
+}
+function @lookup__exchange(%left : ptr [pass=by_address, object_bytes=4], %right : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN6lookup8exchangeIiEEvRT_S2_] {
+  slot $left : ptr
+  slot $right : ptr
+  slot $temporary : i32
+
+  block ^entry:
+    store typed ptr %left, $left
+    store typed ptr %right, $right
+    %t1 = load typed ptr $left
+    %t2 = load typed i32 %t1
+    store typed i32 %t2, $temporary
+    %t3 = load typed ptr $right
+    %t4 = load typed i32 %t3
+    %t5 = load typed ptr $left
+    store typed i32 %t4, %t5
+    %t6 = load typed i32 $temporary
+    %t7 = load typed ptr $right
+    store typed i32 %t6, %t7
+    return void
+}
+function @lookup__exchange__2(%left : obj<8x8>, %right : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN6lookup8exchangeENS_13bit_referenceERb, inline_hint=yes] {
+  slot $left : obj<8x8>
+  slot $right : ptr
+  slot $temporary : u8
+
+  block ^entry:
+    %t1 = addr $left
+    copyobj 8x8 %left, %t1
+    store typed ptr %right, $right
+    %t2 = addr $left
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = load u8 %t4
+    store u8 %t5, $temporary
+    %t6 = load typed ptr $right
+    %t7 = load u8 %t6
+    %t8 = addr $left
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed ptr %t9
+    store u8 %t7, %t10
+    %t11 = load u8 $temporary
+    %t12 = load typed ptr $right
+    store u8 %t11, %t12
+    return void
+}

@@ -1,0 +1,7 @@
+// N3485 15.2p1, 6.4p2: a condition declaration's contextual conversion throws
+// inside a try: a is destroyed, the handler runs, outer o lives until f
+// returns; expect exit 0
+int t;
+struct A { int k; A(int x) : k(x) {} ~A() { t = t * 10 + k; } explicit operator bool() const { if (k == 5) throw 9; return true; } };
+int f() { A o(3); try { if (A a = A(5)) { } } catch (int) { t = t * 10 + 8; } return t; }
+int main() { int r = f(); return r == 58 && t == 583 ? 0 : 1; }

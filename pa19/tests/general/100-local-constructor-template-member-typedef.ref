@@ -1,0 +1,39 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $it : obj<8x8>
+  slot $cit : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $it
+    call void @Wrap_ActiveInterval____Wrap(%t1)
+    %t2 = addr $cit
+    %t3 = addr $it
+    call void @Wrap_constActiveInterval____Wrap(%t2, %t3)
+    return i32 0
+}
+function @Wrap_ActiveInterval____Wrap(%this : ptr [object_bytes=8]) -> void [binding=internal, object=_ZN4WrapIPZ4mainE14ActiveIntervalEC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    return void
+}
+function @Wrap_constActiveInterval____Wrap(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=8]) -> void [binding=internal, object=_ZN4WrapIPKZ4mainE14ActiveIntervalEC1IPS0_EERKS_IT_E, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    return void
+}
+alias object _ZN4WrapIPZ4mainE14ActiveIntervalEC2Ev = @Wrap_ActiveInterval____Wrap
+alias object _ZN4WrapIPKZ4mainE14ActiveIntervalEC2IPS0_EERKS_IT_E = @Wrap_constActiveInterval____Wrap

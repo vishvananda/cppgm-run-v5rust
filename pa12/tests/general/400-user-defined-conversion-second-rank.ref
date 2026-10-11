@@ -1,0 +1,59 @@
+function @pick(%__param0 : u8) -> i32 [binding=strong, object=_Z4pickb] {
+  slot $__param0 : u8
+
+  block ^entry:
+    store u8 %__param0, $__param0
+    return i32 1
+}
+function @pick__ov2(%__param0 : i16) -> i32 [binding=strong, object=_Z4picks] {
+  slot $__param0 : i16
+
+  block ^entry:
+    store typed i16 %__param0, $__param0
+    return i32 2
+}
+function @pick__ov3(%__param0 : i32) -> i32 [binding=strong, object=_Z4picki] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 3
+}
+function @pick__ov4(%__param0 : i64) -> i32 [binding=strong, object=_Z4pickl] {
+  slot $__param0 : i64
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    return i32 4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call i32 @value_c__operatorint(%t2)
+    %t4 = call i32 @pick__ov3(%t3)
+    %t5 = cmp eq i32 %t4, 3
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @value_c__operatorint(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK7value_ccviEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}

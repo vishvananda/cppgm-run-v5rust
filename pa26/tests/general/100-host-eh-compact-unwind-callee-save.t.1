@@ -1,0 +1,185 @@
+enum TokType {
+  TOK_ID,
+  TOK_OP,
+  TOK_WS,
+  TOK_STR
+};
+
+struct Boom {
+};
+
+bool same_text(const char * lhs, const char * rhs)
+{
+  while(*lhs != 0 && *rhs != 0 && *lhs == *rhs) {
+    ++lhs;
+    ++rhs;
+  }
+  return *lhs == *rhs;
+}
+
+struct Tok {
+  TokType type;
+  const char * data;
+};
+
+Tok make_tok(TokType type, const char * data)
+{
+  Tok tok;
+  tok.type = type;
+  tok.data = data;
+  return tok;
+}
+
+struct TokList {
+  Tok data[12];
+  int count;
+
+  TokList() : count(0) {}
+
+  int size() const { return count; }
+  bool empty() const { return count == 0; }
+  Tok & operator[](int index) { return data[index]; }
+  const Tok & operator[](int index) const { return data[index]; }
+  Tok * begin() { return data; }
+  Tok * end() { return data + count; }
+
+  void push_back(Tok tok)
+  {
+    data[count] = tok;
+    ++count;
+  }
+
+  void pop_back()
+  {
+    --count;
+  }
+
+  Tok back() const
+  {
+    return data[count - 1];
+  }
+
+  Tok front() const
+  {
+    return data[0];
+  }
+
+  void append_from(const TokList & other, int first)
+  {
+    for(int i = first; i < other.count; ++i) {
+      push_back(other.data[i]);
+    }
+  }
+};
+
+struct Engine {
+  TokList args[1];
+
+  TokList expand_tokens(TokList toks)
+  {
+    int frame[24];
+    for(int i = 0; i < 24; ++i) {
+      frame[i] = toks.size() + i;
+    }
+    if(toks.size() == 1 && toks[0].type == TOK_ID &&
+       same_text(toks[0].data, "boom") && frame[3] == 4) {
+      throw Boom();
+    }
+    return toks;
+  }
+
+  TokList replace_param(Tok & token, bool recurse)
+  {
+    if(token.type == TOK_ID && same_text(token.data, "param")) {
+      TokList result = args[0];
+      if(recurse) {
+        result = expand_tokens(result);
+      }
+      return result;
+    }
+    TokList result;
+    result.push_back(token);
+    return result;
+  }
+
+  TokList handle_stringize(Tok *& it,
+                           Tok * end,
+                           bool recurse)
+  {
+    if(it->type != TOK_OP ||
+       (!same_text(it->data, "#") && !same_text(it->data, "%:"))) {
+      return replace_param(*it, recurse);
+    }
+    if(++it == end || (it->type == TOK_WS && ++it == end)) {
+      throw Boom();
+    }
+    TokList result;
+    result.push_back(make_tok(TOK_STR, "quoted"));
+    return result;
+  }
+
+  TokList handle_join(Tok *& it, Tok * end)
+  {
+    int frame[32];
+    for(int i = 0; i < 32; ++i) {
+      frame[i] = i * 3;
+    }
+    auto next = it;
+    bool recurse;
+    if(++next == end ||
+       (next->type == TOK_WS && ++next == end) ||
+       (next->type != TOK_OP ||
+        (!same_text(next->data, "##") && !same_text(next->data, "%:%:")))) {
+      recurse = true;
+    } else {
+      recurse = false;
+    }
+    auto result = handle_stringize(it, end, recurse);
+    next = it;
+    if(++next == end ||
+       (next->type == TOK_WS && ++next == end) ||
+       (next->type != TOK_OP ||
+        (!same_text(next->data, "##") && !same_text(next->data, "%:%:")))) {
+      return result;
+    }
+    while(next->type == TOK_OP &&
+          (same_text(next->data, "##") || same_text(next->data, "%:%:"))) {
+      if(++next == end || (next->type == TOK_WS && ++next == end)) {
+        break;
+      }
+      auto rresult = handle_stringize(next, end, false);
+      if(result.empty()) {
+        result = rresult;
+      } else if(!rresult.empty()) {
+        auto lhs = result.back();
+        result.pop_back();
+        auto rhs = rresult.front();
+        if(rhs.type == TOK_ID) {
+          result.push_back(make_tok(TOK_ID, lhs.data));
+        } else {
+          result.push_back(make_tok(TOK_STR, lhs.data));
+        }
+        result.append_from(rresult, 1);
+      }
+      it = next;
+      if(++next == end || (next->type == TOK_WS && ++next == end)) {
+        break;
+      }
+    }
+    return result;
+  }
+};
+
+int main()
+{
+  Engine e;
+  e.args[0].push_back(make_tok(TOK_ID, "boom"));
+  TokList toks;
+  toks.push_back(make_tok(TOK_ID, "param"));
+  auto it = toks.begin();
+  try {
+    return e.handle_join(it, toks.end()).size();
+  } catch(const Boom &) {
+    return 0;
+  }
+}

@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition base
+    function-definition base::f function of () returning int
+      compound-statement
+        return-statement
+          literal prvalue int 1
+    function-definition base::g function of () returning int
+      compound-statement
+        return-statement
+          literal prvalue int 2
+  namespace-definition wrap
+  function-definition h function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          call-expression prvalue int
+            callee base::f function of () returning int
+          call-expression prvalue int
+            callee base::g function of () returning int
+end translation unit

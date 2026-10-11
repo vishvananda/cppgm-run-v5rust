@@ -1,0 +1,26 @@
+function @g() -> i32 [binding=strong, object=_Z1gv] {
+  block ^entry:
+    return i32 7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fp : ptr
+
+  block ^entry:
+    %t1 = addr @g
+    store typed ptr %t1, $fp
+    %t2 = addr $fp
+    %t3 = call i32 @invoke(%t2)
+    %t4 = cmp ne i32 %t3, 7
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @invoke(%f : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=weak, object=_Z6invokeIRPFivEJEEDTclfp_spfp0_EEOT_DpOT0_] {
+  slot $f : ptr
+
+  block ^entry:
+    store typed ptr %f, $f
+    %t1 = load typed ptr $f
+    %t2 = load typed ptr %t1
+    %t3 = call i32 %t2() as () -> i32
+    return i32 %t3
+}

@@ -1,0 +1,8 @@
+# budget from 300-share-terminal-resume.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 17
+blocks <= 8
+count(call) <= 7
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 17 in @work

@@ -1,0 +1,11 @@
+#include <memory>
+
+struct Payload {
+  int value;
+};
+
+int main()
+{
+  std::shared_ptr<Payload> ptr(new Payload());
+  return ptr ? 0 : 1;
+}

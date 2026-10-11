@@ -1,0 +1,32 @@
+extern "C" void abort();
+
+struct Guard {
+  static int depth;
+  Guard() { ++depth; }
+  ~Guard() { --depth; }
+};
+
+int Guard::depth = 0;
+
+void rethrow_with_outer_guard()
+{
+  Guard outer;
+  try {
+    throw 1;
+  } catch(...) {
+    throw;
+  }
+}
+
+int main()
+{
+  try {
+    rethrow_with_outer_guard();
+  } catch(...) {
+    if(Guard::depth != 0) {
+      abort();
+    }
+    return 0;
+  }
+  abort();
+}

@@ -1,0 +1,13 @@
+# budget from 400-post-prune-called-once-cascade.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 48
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 47
+count(phi) <= 3
+instructions <= 48 in @main
+
+# outcomes from 400-post-prune-called-once-cascade.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @target)
+absent(@dead)
+absent(@target)

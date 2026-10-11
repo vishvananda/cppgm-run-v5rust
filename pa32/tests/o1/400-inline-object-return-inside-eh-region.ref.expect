@@ -1,0 +1,14 @@
+# budget from 400-inline-object-return-inside-eh-region.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 8
+blocks <= 5
+count(call) <= 3
+count(load) <= 3
+count(store) <= 5
+count(phi) <= 3
+instructions <= 6 in @leaf
+instructions <= 5 in @caller
+
+# outcomes from 400-inline-object-return-inside-eh-region.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @leaf)
+none(load)
+none(copyobj)

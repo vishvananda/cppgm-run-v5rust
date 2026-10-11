@@ -1,0 +1,38 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @add1
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    add rdi, 1
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, 7
+    add rbx, 8
+    mov rdi, 20
+    call @add1 [args=(rdi)]
+    add rbx, rax
+    ret rbx

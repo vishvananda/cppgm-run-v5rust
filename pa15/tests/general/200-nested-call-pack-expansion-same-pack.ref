@@ -1,0 +1,50 @@
+function @add(%a : i32, %b : i32) -> i32 [binding=strong, object=_Z3addii] {
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @nested(1, 2)
+    %t2 = binary sub nowrap i32 %t1, 9
+    return i32 %t2
+}
+function @nested(%t : i32, %t__pack2 : i32) -> i32 [binding=weak, object=_Z6nestedIJiiEEiDpT_] {
+  slot $t : i32
+  slot $t__pack2 : i32
+
+  block ^entry:
+    store typed i32 %t, $t
+    store typed i32 %t__pack2, $t__pack2
+    %t1 = load typed i32 $t
+    %t2 = load typed i32 $t__pack2
+    %t3 = call i32 @sum(%t1, %t2)
+    %t4 = load typed i32 $t
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = load typed i32 $t
+    %t7 = load typed i32 $t__pack2
+    %t8 = call i32 @sum(%t6, %t7)
+    %t9 = load typed i32 $t__pack2
+    %t10 = binary add nowrap i32 %t8, %t9
+    %t11 = call i32 @sum(%t5, %t10)
+    return i32 %t11
+}
+function @sum(%t : i32, %t__pack2 : i32) -> i32 [binding=weak, object=_Z3sumIJiiEEiDpT_] {
+  slot $t : i32
+  slot $t__pack2 : i32
+
+  block ^entry:
+    store typed i32 %t, $t
+    store typed i32 %t__pack2, $t__pack2
+    %t1 = load typed i32 $t
+    %t2 = load typed i32 $t__pack2
+    %t3 = call i32 @add(%t1, %t2)
+    return i32 %t3
+}

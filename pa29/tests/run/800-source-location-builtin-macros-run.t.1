@@ -1,0 +1,18 @@
+const char* current_file = __builtin_FILE();
+int current_line = __builtin_LINE();
+const char* current_function = __builtin_FUNCTION();
+int current_column = __builtin_COLUMN();
+
+int main()
+{
+  // FILE / LINE / FUNCTION must produce sane runtime values.
+  // COLUMN is exercised above but not asserted: cppgm++ does not track columns.
+  if (current_file == 0 || current_file[0] == '\0')
+    return 1;
+  if (current_function == 0)
+    return 2;
+  if (current_line <= 0)
+    return 3;
+  (void)current_column;
+  return 0;
+}

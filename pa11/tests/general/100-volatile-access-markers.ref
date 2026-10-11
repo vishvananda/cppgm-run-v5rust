@@ -1,0 +1,155 @@
+function @poll(%port : ptr, %device : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z4pollPViR6Device] {
+  slot $port : ptr
+  slot $device : ptr
+  slot $gate : i32
+  slot $sampled : i32
+  slot $indirect : ptr
+
+  block ^entry:
+    store typed ptr %port, $port
+    store typed ptr %device, $device
+    store volatile i32 0, $gate
+    store volatile i32 1, $gate
+    %t1 = load volatile i32 $gate
+    %t2 = binary add nowrap i32 %t1, 2
+    store volatile i32 %t2, $gate
+    %t3 = load volatile i32 $gate
+    %t4 = binary add nowrap i32 %t3, 1
+    store volatile i32 %t4, $gate
+    %t5 = load typed ptr $port
+    %t6 = load volatile i32 %t5
+    store typed i32 %t6, $sampled
+    %t7 = load typed i32 $sampled
+    %t8 = load typed ptr $device
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load volatile i32 %t9
+    %t11 = binary add nowrap i32 %t7, %t10
+    store typed i32 %t11, $sampled
+    %t12 = load typed i32 $sampled
+    %t13 = load typed ptr $device
+    %t14 = index i8 [projection=field] %t13, 0
+    store volatile i32 %t12, %t14
+    %t15 = load typed i32 $sampled
+    %t16 = load typed ptr $device
+    %t17 = index i8 [projection=field] %t16, 4
+    store typed i32 %t15, %t17
+    %t18 = addr $gate
+    store typed ptr %t18, $indirect
+    %t19 = load typed ptr $indirect
+    %t20 = load volatile i32 %t19
+    %t21 = load volatile i32 $gate
+    %t22 = binary add nowrap i32 %t20, %t21
+    return i32 %t22
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $device : obj<8x4>
+  slot $devices : obj<16x4>
+  slot $values : obj<16x4>
+  slot $port : i32
+
+  block ^entry:
+    %t1 = addr $device
+    %t2 = addr $device
+    %t3 = index i8 [projection=field] %t2, 0
+    store volatile i32 0, %t3
+    %t4 = addr $device
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 0, %t5
+    %t6 = addr $devices
+    call void @Device__Device__aggregate(%t6, 0, 0)
+    %t7 = index i8 %t6, 8
+    call void @Device__Device__aggregate(%t7, 1, 2)
+    %t8 = addr $values
+    store volatile i32 3, %t8
+    %t9 = index i8 [projection=array_element] %t8, 4
+    store volatile i32 0, %t9
+    %t10 = index i8 %t8, 8
+    store volatile i32 4, %t10
+    %t11 = index i8 [projection=array_element] %t10, 4
+    store volatile i32 0, %t11
+    %t12 = addr $devices
+    %t13 = binary mul i64 0, 8
+    %t14 = index i8 [projection=array_element] %t12, %t13
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load volatile i32 %t15
+    %t17 = cmp ne i32 %t16, 0
+    branch %t17, ^if_then_1, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t18 = addr $devices
+    %t19 = binary mul i64 1, 8
+    %t20 = index i8 [projection=array_element] %t18, %t19
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load volatile i32 %t21
+    %t23 = cmp ne i32 %t22, 1
+    branch %t23, ^if_then_1, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t24 = addr $values
+    %t25 = binary mul i64 0, 8
+    %t26 = index i8 [projection=array_element] %t24, %t25
+    %t27 = index i32 [projection=array_element] %t26, 0
+    %t28 = load volatile i32 %t27
+    %t29 = cmp ne i32 %t28, 3
+    branch %t29, ^if_then_1, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    %t30 = addr $values
+    %t31 = binary mul i64 0, 8
+    %t32 = index i8 [projection=array_element] %t30, %t31
+    %t33 = index i32 [projection=array_element] %t32, 1
+    %t34 = load volatile i32 %t33
+    %t35 = cmp ne i32 %t34, 0
+    branch %t35, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t36 = addr $values
+    %t37 = binary mul i64 1, 8
+    %t38 = index i8 [projection=array_element] %t36, %t37
+    %t39 = index i32 [projection=array_element] %t38, 0
+    %t40 = load volatile i32 %t39
+    %t41 = cmp ne i32 %t40, 4
+    branch %t41, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t42 = addr $values
+    %t43 = binary mul i64 1, 8
+    %t44 = index i8 [projection=array_element] %t42, %t43
+    %t45 = index i32 [projection=array_element] %t44, 1
+    %t46 = load volatile i32 %t45
+    %t47 = cmp ne i32 %t46, 0
+    branch %t47, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    store typed i32 5, $port
+    %t48 = addr $port
+    %t49 = addr $device
+    %t50 = call i32 @poll(%t48, %t49)
+    %t51 = binary sub nowrap i32 %t50, 14
+    return i32 %t51
+}
+function @Device__Device__aggregate(%this : ptr [object_bytes=8], %status : i32, %data : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $status : i32
+  slot $data : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %status, $status
+    store typed i32 %data, $data
+    %t1 = load typed i32 $status
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store volatile i32 %t1, %t3
+    %t4 = load typed i32 $data
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}

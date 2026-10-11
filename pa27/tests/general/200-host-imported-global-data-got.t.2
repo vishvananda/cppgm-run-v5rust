@@ -1,0 +1,14 @@
+int g = 7;
+
+int callee()
+{
+  return 8;
+}
+
+int * address_of_g();
+int (*address_of_callee())();
+
+int main()
+{
+  return *address_of_g() == 7 && address_of_callee()() == 8 ? 0 : 1;
+}

@@ -1,0 +1,28 @@
+function @choose(%condition : i64) -> i64 {
+  block ^entry:
+    branch %condition, ^left, ^right
+
+  block ^left:
+    return i64 11
+
+  block ^right:
+    return i64 22
+}
+function @caller(%use_call : i64, %condition : i64) -> i64 [binding=strong] {
+  block ^entry:
+    branch %use_call, ^inline_entry_1, ^join
+
+  block ^inline_entry_1:
+    branch %condition, ^inline_cont_3, ^right_2
+
+  block ^right_2:
+    jump ^inline_cont_3
+
+  block ^inline_cont_3:
+    %chosen = phi i64 [^right_2: 22, ^inline_entry_1: 11]
+    jump ^join
+
+  block ^join:
+    %result = phi i64 [^inline_cont_3: %chosen, ^entry: 33]
+    return i64 %result
+}

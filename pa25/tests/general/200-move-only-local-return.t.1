@@ -1,0 +1,39 @@
+struct Owner
+{
+  int * p;
+
+  Owner(int * q)
+    : p(q)
+  {
+  }
+
+  Owner(const Owner &) = delete;
+
+  Owner(Owner && other)
+    : p(other.p)
+  {
+    other.p = 0;
+  }
+
+  ~Owner()
+  {
+    if(p) {
+      ++*p;
+    }
+  }
+};
+
+Owner make_owner(int * p)
+{
+  Owner local(p);
+  return local;
+}
+
+int main()
+{
+  int destroyed = 0;
+  {
+    Owner owner = make_owner(&destroyed);
+  }
+  return destroyed == 1 ? 0 : destroyed;
+}

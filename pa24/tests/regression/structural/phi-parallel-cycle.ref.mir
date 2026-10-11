@@ -1,0 +1,40 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r9, 1
+    mov rdi, 2
+    mov r8, 0
+    jmp ^loop
+
+  block ^loop
+    cmp.i64 r8, 1
+    jge ^exit
+    jmp ^latch
+
+  block ^latch
+    mov rsi, r8
+    add rsi, 1
+    mov r8, rsi
+    mov r10, r9
+    mov r9, rdi
+    mov rdi, r10
+    jmp ^loop
+
+  block ^exit
+    imul r9, 10
+    add r9, rdi
+    ret r9

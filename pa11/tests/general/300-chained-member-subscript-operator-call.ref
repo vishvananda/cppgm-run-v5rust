@@ -1,0 +1,37 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $o : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $o
+    %t2 = addr $o
+    %t3 = call ptr @Outer__operator__(%t2, 0)
+    %t4 = call ptr @Inner__operator__(%t3, 1)
+    store typed i32 7, %t4
+    %t5 = addr $o
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @Outer__operator__(%this : ptr [object_bytes=4], %__param1 : i32) -> ptr [binding=weak, object=_ZN5OuterixEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @Inner__operator__(%this : ptr [object_bytes=4], %__param1 : i32) -> ptr [binding=weak, object=_ZN5InnerixEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}

@@ -1,0 +1,43 @@
+extern "C" void *malloc(unsigned long);
+extern "C" void free(void *);
+
+int copies;
+int seen;
+
+struct A
+{
+  int *p;
+
+  A()
+  {
+    p = (int *)malloc(sizeof(int));
+    *p = 7;
+  }
+
+  A(const A &other)
+  {
+    ++copies;
+    p = (int *)malloc(sizeof(int));
+    *p = *other.p;
+  }
+
+  ~A()
+  {
+    free(p);
+  }
+};
+
+int main()
+{
+  try {
+    try {
+      throw A();
+    } catch (A a) {
+      seen = *a.p;
+      throw A();
+    }
+  } catch (A b) {
+    return (copies != 2 || seen != 7 || *b.p != 7);
+  }
+  return 2;
+}

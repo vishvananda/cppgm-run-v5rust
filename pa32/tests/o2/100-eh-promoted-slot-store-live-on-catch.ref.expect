@@ -1,0 +1,12 @@
+# budget from 100-eh-promoted-slot-store-live-on-catch.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 5
+count(call) <= 5
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @f
+
+# outcomes from 100-eh-promoted-slot-store-live-on-catch.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(load)
+none(store)

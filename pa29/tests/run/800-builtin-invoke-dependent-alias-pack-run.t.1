@@ -1,0 +1,89 @@
+namespace std {
+
+template<class...>
+using __void_t = void;
+
+template<class T>
+T&& declval();
+
+template<class T>
+struct remove_reference
+{
+  typedef T type;
+};
+
+template<class T>
+struct remove_reference<T&>
+{
+  typedef T type;
+};
+
+template<class T>
+struct remove_reference<T&&>
+{
+  typedef T type;
+};
+
+template<class T>
+using remove_reference_t = typename remove_reference<T>::type;
+
+template<class T>
+T&& forward(remove_reference_t<T>& value)
+{
+  return static_cast<T&&>(value);
+}
+
+template<class, class... Args>
+struct __invoke_result_impl
+{
+};
+
+template<class... Args>
+struct __invoke_result_impl<
+    __void_t<decltype(__builtin_invoke(std::declval<Args>()...))>,
+    Args...>
+{
+  typedef decltype(__builtin_invoke(std::declval<Args>()...)) type;
+};
+
+template<class... Args>
+using __invoke_result = __invoke_result_impl<void, Args...>;
+
+template<class... Args>
+using __invoke_result_t = typename __invoke_result<Args...>::type;
+
+template<class... Args>
+__invoke_result_t<Args...> __invoke(Args&&... args)
+{
+  return __builtin_invoke(std::forward<Args>(args)...);
+}
+
+struct __identity
+{
+  template<class T>
+  T&& operator()(T&& value) const
+  {
+    return static_cast<T&&>(value);
+  }
+};
+
+}
+
+struct Item
+{
+  int x;
+};
+
+int test(Item& item)
+{
+  std::__identity project;
+  Item& out = std::__invoke(project, item);
+  return out.x;
+}
+
+int main()
+{
+  Item item;
+  item.x = 7;
+  return test(item) == 7 ? 0 : 1;
+}

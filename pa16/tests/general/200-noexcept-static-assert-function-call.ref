@@ -1,0 +1,12 @@
+function @f() -> void [unwind=no, binding=strong, object=_Z1fv] {
+  block ^entry:
+    return void
+}
+function @g() -> void [binding=strong, object=_Z1gv] {
+  block ^entry:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

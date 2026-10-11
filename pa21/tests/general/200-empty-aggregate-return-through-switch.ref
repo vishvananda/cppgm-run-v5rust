@@ -1,0 +1,48 @@
+function @make(%n : i32) -> obj<16x8> [binding=strong, object=_Z4makei] {
+  slot $n : i32
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    jump ^switch_dispatch_1
+
+  block ^switch_dispatch_1:
+    switch %t1, ^switch_default_3
+
+  block ^switch_default_3:
+    %t2 = addr $retobj__1
+    zeroinit 16x8 %t2
+    return obj<16x8> $retobj__1
+
+  block ^switch_end_2:
+    zeroinit 16x8 $retobj__1
+    return obj<16x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $v
+    %t2 = call obj<16x8> @make(1)
+    copyobj 16x8 %t2, %t1
+    %t3 = addr $v
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = copy ptr 0
+    %t7 = cmp eq ptr %t5, %t6
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}

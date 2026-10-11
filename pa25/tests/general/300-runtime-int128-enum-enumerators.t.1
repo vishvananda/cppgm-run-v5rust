@@ -1,0 +1,5 @@
+// N3485 7.2p5 with GNU __int128 as the fixed underlying type (PA25
+// wide-integer surface): enumerator values are those of __int128, so -2^63 and
+// 2^63-1 fit; expect exit 0
+enum F : __int128 { Y = -1, Y2 = 0x7fffffffffffffffLL, Y3 = -0x7fffffffffffffffLL - 1 };
+int main() { return Y3 < 0 && Y2 > 0 && Y == -1 ? 0 : 1; }

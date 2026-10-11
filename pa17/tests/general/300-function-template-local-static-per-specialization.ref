@@ -1,0 +1,100 @@
+global @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f4931316c6f675f66756e63746f72454569545f__decl0__stored [storage=readonly, binding=weak, object=_ZZN10function_nIvJEE9assign_toI11log_functorEEiT_E6stored] = {
+  ptr addr @manager_log_functor___call
+  ptr addr @invoker_log_functor___call
+}
+global @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f493132696e69745f66756e63746f72454569545f__decl0__stored [storage=readonly, binding=weak, object=_ZZN10function_nIvJEE9assign_toI12init_functorEEiT_E6stored] = {
+  ptr addr @manager_init_functor___call
+  ptr addr @invoker_init_functor___call
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fn : obj<1x1>
+  slot $a : i32
+  slot $argobj__1 : obj<1x1>
+  slot $b : i32
+  slot $argobj__2 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $fn
+    %t2 = addr $fn
+    %t3 = addr $argobj__1
+    %t4 = call i32 @function_n_void____assign_to(%t2, $argobj__1)
+    store typed i32 %t4, $a
+    %t5 = addr $fn
+    %t6 = addr $argobj__2
+    %t7 = call i32 @function_n_void____assign_to__2(%t5, $argobj__2)
+    store typed i32 %t7, $b
+    %t8 = load typed i32 $a
+    %t9 = cmp ne i32 %t8, 11
+    branch %t9, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t10 = load typed i32 $b
+    %t11 = cmp ne i32 %t10, 22
+    branch %t11, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}
+function @function_n_void____assign_to(%this : ptr [object_bytes=1], %__param1 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_ZN10function_nIvJEE9assign_toI11log_functorEEiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f4931316c6f675f66756e63746f72454569545f__decl0__stored
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = call i32 %t3() as () -> i32
+    %t5 = addr @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f4931316c6f675f66756e63746f72454569545f__decl0__stored
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call i32 %t7() as () -> i32
+    %t9 = binary add nowrap i32 %t4, %t8
+    return i32 %t9
+}
+function @function_n_void____assign_to__2(%this : ptr [object_bytes=1], %__param1 : obj<1x1> [classes=none]) -> i32 [binding=weak, object=_ZN10function_nIvJEE9assign_toI12init_functorEEiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f493132696e69745f66756e63746f72454569545f__decl0__stored
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = call i32 %t3() as () -> i32
+    %t5 = addr @__local_static__function_symbol_5f5a4e313066756e6374696f6e5f6e49764a45453961737369676e5f746f493132696e69745f66756e63746f72454569545f__decl0__stored
+    %t6 = index i8 [projection=field] %t5, 8
+    %t7 = load typed ptr %t6
+    %t8 = call i32 %t7() as () -> i32
+    %t9 = binary add nowrap i32 %t4, %t8
+    return i32 %t9
+}
+function @manager_log_functor___call() -> i32 [binding=weak, object=_ZN7managerI11log_functorE4callEv, inline_hint=yes] {
+  block ^entry:
+    return i32 10
+}
+function @invoker_log_functor___call() -> i32 [binding=weak, object=_ZN7invokerI11log_functorE4callEv, inline_hint=yes] {
+  block ^entry:
+    return i32 1
+}
+function @manager_init_functor___call() -> i32 [binding=weak, object=_ZN7managerI12init_functorE4callEv, inline_hint=yes] {
+  block ^entry:
+    return i32 20
+}
+function @invoker_init_functor___call() -> i32 [binding=weak, object=_ZN7invokerI12init_functorE4callEv, inline_hint=yes] {
+  block ^entry:
+    return i32 2
+}

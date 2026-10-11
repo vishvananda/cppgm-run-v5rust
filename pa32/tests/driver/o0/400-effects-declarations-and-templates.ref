@@ -1,0 +1,257 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__builtin_strlen(%arg0 : ptr) -> i64 [effects=readonly, unwind=no, binding=strong, object=cppgm_builtin_strlen]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @counter : i32 [binding=strong] = 0
+global @__typeinfo_name__struct_Shape [storage=readonly, binding=weak, object=_ZTS5Shape] = {
+  i8 53
+  i8 83
+  i8 104
+  i8 97
+  i8 112
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Shape [storage=readonly, binding=weak, object=_ZTI5Shape] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Shape
+}
+global @Shape__vtable [storage=readonly, binding=strong, object=_ZTV5Shape] = {
+  i64 0
+  ptr addr @__rtti_struct_Shape
+  ptr addr @Shape__area
+  ptr addr @Shape___Shape
+  ptr addr @Shape___Shape__deleting_entry
+}
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 97
+  i8 98
+  i8 99
+  i8 0
+}
+
+function @later(%x : i32) -> i32 [effects=readnone, binding=strong, object=_Z5lateri] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @earlier(%x : i32) -> i32 [effects=readonly, binding=strong, object=_Z7earlieri] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed i32 @counter
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}
+function @bracketed(%x : i32) -> i32 [effects=readnone, binding=strong, object=_Z9bracketedi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary mul nowrap i32 %t1, 2
+    return i32 %t2
+}
+function @doubled(%x : i32) -> i32 [binding=strong, object=_Z7doubledIiET_S0_] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 @counter
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @counter
+    %t3 = load typed i32 $x
+    %t4 = load typed i32 $x
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}
+function @Shape__area(%this : ptr [object_bytes=16]) -> i32 [effects=readonly, binding=strong, object=_ZNK5Shape4areaEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @length(%text : ptr) -> i64 [binding=strong, object=_Z6lengthPKc] {
+  slot $text : ptr
+
+  block ^entry:
+    store typed ptr %text, $text
+    %t1 = load typed ptr $text
+    %t2 = call i64 @__builtin_strlen(%t1)
+    return i64 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $square : obj<16x8>
+  slot $view : ptr
+  slot $total : i32
+  slot $call__1 : i32
+  slot $call__2 : i32
+  slot $call__3 : i32
+  slot $call__4 : f64
+  slot $call__5 : i32
+  slot $call__6 : i32
+  slot $call__7 : i64
+  slot $cond__8 : i32
+
+  block ^entry:
+    %t1 = addr $square
+    call void @Shape__Shape(%t1)
+    %t2 = addr $square
+    %t3 = index i8 [projection=field] %t2, 8
+    store typed i32 4, %t3
+    %t4 = addr $square
+    store typed ptr %t4, $view
+    eh_try ^cleanup_action_2
+    %t5 = call i32 @later(1)
+    store typed i32 %t5, $call__1
+    %t6 = load typed i32 $call__1
+    %t7 = call i32 @earlier(1)
+    store typed i32 %t7, $call__2
+    %t8 = load typed i32 $call__2
+    %t9 = binary add nowrap i32 %t6, %t8
+    %t10 = call i32 @bracketed(1)
+    store typed i32 %t10, $call__3
+    %t11 = load typed i32 $call__3
+    %t12 = binary add nowrap i32 %t9, %t11
+    %t13 = call f64 @doubled__2(2.0)
+    store typed f64 %t13, $call__4
+    %t14 = load typed f64 $call__4
+    %t15 = convert sitofp f64 i32 %t12
+    %t16 = binary add f64 %t15, %t14
+    %t17 = call i32 @doubled(3)
+    store typed i32 %t17, $call__5
+    %t18 = load typed i32 $call__5
+    %t19 = convert sitofp f64 i32 %t18
+    %t20 = binary add f64 %t16, %t19
+    %t21 = load typed ptr $view
+    %t22 = load typed ptr %t21
+    %t23 = load typed ptr %t22
+    %t24 = call i32 %t23(%t21) as (%arg0 : ptr [object_bytes=16]) -> i32 [effects=readonly]
+    store typed i32 %t24, $call__6
+    %t25 = load typed i32 $call__6
+    %t26 = convert sitofp f64 i32 %t25
+    %t27 = binary add f64 %t20, %t26
+    %t28 = addr @__strlit__1
+    %t29 = call i64 @length(%t28)
+    store typed i64 %t29, $call__7
+    %t30 = load typed i64 $call__7
+    %t31 = convert trunc i32 i64 %t30
+    %t32 = convert sitofp f64 i32 %t31
+    %t33 = binary add f64 %t27, %t32
+    %t34 = convert fptosi i32 f64 %t33
+    store typed i32 %t34, $total
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t35 = addr $square
+    call void @Shape___Shape(%t35)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t36 = load typed i32 $total
+    %t37 = binary add nowrap i32 2, 1
+    %t38 = binary add nowrap i32 %t37, 2
+    %t39 = binary add nowrap i32 %t38, 4
+    %t40 = binary add nowrap i32 %t39, 6
+    %t41 = binary add nowrap i32 %t40, 4
+    %t42 = binary add nowrap i32 %t41, 3
+    %t43 = cmp eq i32 %t36, %t42
+    branch %t43, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__8
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__8
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t44 = load typed i32 $cond__8
+    %t45 = addr $square
+    call void @Shape___Shape(%t45)
+    return i32 %t44
+}
+function @Shape___Shape__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ShapeD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Shape__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Shape___Shape__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ShapeD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Shape__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Shape__Shape(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ShapeC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Shape__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @doubled__2(%x : f64) -> f64 [effects=readnone, binding=weak, object=_Z7doubledIdET_S0_] {
+  slot $x : f64
+
+  block ^entry:
+    store typed f64 %x, $x
+    %t1 = load typed f64 $x
+    %t2 = load typed f64 $x
+    %t3 = binary add f64 %t1, %t2
+    return f64 %t3
+}
+function @Shape___Shape(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5ShapeD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Shape__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN5ShapeC2Ev = @Shape__Shape

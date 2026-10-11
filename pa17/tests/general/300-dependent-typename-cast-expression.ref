@@ -1,0 +1,90 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call u8 @is_finite(1.5f)
+    %t2 = cmp eq u8 %t1, 0
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = call u8 @is_finite__2(2.5)
+    %t4 = cmp eq u8 %t3, 0
+    branch %t4, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t5 = call i64 @widen(21)
+    %t6 = cmp ne i64 %t5, 42
+    branch %t6, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    return i32 0
+}
+function @is_finite(%value : f32) -> u8 [binding=weak, object=_Z9is_finiteIfEbT_] {
+  slot $value : f32
+
+  block ^entry:
+    store typed f32 %value, $value
+    %t1 = load typed f32 $value
+    %t2 = convert fpext f64 f32 %t1
+    %t3 = cmp ne f64 %t2, %t2
+    %t4 = convert trunc i32 i64 %t3
+    %t5 = binary sub i32 1, %t4
+    %t6 = unary neg f64 inf
+    %t7 = cmp eq f64 %t2, inf
+    %t8 = convert trunc i32 i64 %t7
+    %t9 = cmp eq f64 %t2, %t6
+    %t10 = convert trunc i32 i64 %t9
+    %t11 = binary or i32 %t8, %t10
+    %t12 = binary sub i32 1, %t11
+    %t13 = binary and i32 %t5, %t12
+    %t14 = cmp ne i32 %t13, 0
+    %t15 = convert trunc u8 i64 %t14
+    return u8 %t15
+}
+function @is_finite__2(%value : f64) -> u8 [binding=weak, object=_Z9is_finiteIdEbT_] {
+  slot $value : f64
+
+  block ^entry:
+    store typed f64 %value, $value
+    %t1 = load typed f64 $value
+    %t2 = cmp ne f64 %t1, %t1
+    %t3 = convert trunc i32 i64 %t2
+    %t4 = binary sub i32 1, %t3
+    %t5 = unary neg f64 inf
+    %t6 = cmp eq f64 %t1, inf
+    %t7 = convert trunc i32 i64 %t6
+    %t8 = cmp eq f64 %t1, %t5
+    %t9 = convert trunc i32 i64 %t8
+    %t10 = binary or i32 %t7, %t9
+    %t11 = binary sub i32 1, %t10
+    %t12 = binary and i32 %t4, %t11
+    %t13 = cmp ne i32 %t12, 0
+    %t14 = convert trunc u8 i64 %t13
+    return u8 %t14
+}
+function @widen(%value : i32) -> i64 [binding=weak, object=_Z5widenIiElT_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary mul nowrap i32 %t1, 2
+    %t3 = convert sext i64 i32 %t2
+    return i64 %t3
+}

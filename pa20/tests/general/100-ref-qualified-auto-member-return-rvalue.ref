@@ -1,0 +1,34 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @X__X(%t1, 4)
+    %t2 = call ptr @X__base(%t1)
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t4, 4
+    return i32 %t5
+}
+function @X__X(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN1XC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @X__base(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZNO1X4baseEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    return ptr %t1
+}
+alias object _ZN1XC2Ei = @X__X

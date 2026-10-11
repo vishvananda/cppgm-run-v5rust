@@ -1,0 +1,7 @@
+// Itanium 5.1.4.6 (a this-adjusting thunk adjusts `this` and jumps, so
+// variadic arguments reach the overrider unchanged): calling D::sum through
+// B2& (B2 at non-zero offset) passes all nine ints; expect exit 0
+struct B1 { long b1; virtual ~B1() {} };
+struct B2 { virtual long sum(int n, ...) { return -1; } virtual ~B2() {} };
+struct D : B1, B2 { long sum(int n, ...) { __builtin_va_list ap; __builtin_va_start(ap, n); long s = 0; for (int i = 0; i < n; ++i) s = s * 10 + __builtin_va_arg(ap, int); __builtin_va_end(ap); return s; } };
+int main() { D d; B2& b = d; return b.sum(9, 1, 2, 3, 4, 5, 6, 7, 8, 9) == 123456789 ? 0 : 1; }

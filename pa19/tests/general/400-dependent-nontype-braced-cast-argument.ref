@@ -1,0 +1,4 @@
+function @run() -> ptr [binding=strong, object=_Z3runv] {
+  block ^entry:
+    return ptr 0
+}

@@ -1,0 +1,5 @@
+function @atomic_sub_one(%p : ptr) -> i64 {
+  block ^entry:
+    %new = atomic_add_fetch i64 %p, -1, 4
+    return i64 %new
+}

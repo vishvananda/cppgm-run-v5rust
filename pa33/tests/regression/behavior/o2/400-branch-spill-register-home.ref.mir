@@ -1,0 +1,75 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @fallback
+  abi
+    return i8 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, 3
+    ret rax
+
+function @accumulate
+  abi
+    param %take_call -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+    slot $digit -> [rbp-8] : i8
+
+  block ^entry
+    mov rbx, 2
+    imul rbx, 10
+    cmp.i64 rdi, 0
+    jne ^call
+
+  block ^direct
+    store.i8 [rbp-8], 3
+
+  block ^join
+    load.i8 r8, [rbp-8]
+    add rbx, r8
+    ret rbx
+
+  block ^call
+    call @fallback [args=(), unwind=no]
+    store.i8 [rbp-8], rax
+    jmp ^join
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+
+  block ^entry
+    mov rdi, 0
+    call @accumulate [args=(rdi), unwind=no]
+    mov rbx, rax
+    mov rdi, 1
+    call @accumulate [args=(rdi), unwind=no]
+    cmp.i64 rbx, 23
+    setne rbx
+    movzx rbx, rbx
+    cmp.i64 rax, 23
+    setne rax
+    movzx rax, rax
+    or rbx, rax
+    ret rbx

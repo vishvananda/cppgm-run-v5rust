@@ -1,0 +1,6 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable handler pointer to function of () returning void
+end translation unit

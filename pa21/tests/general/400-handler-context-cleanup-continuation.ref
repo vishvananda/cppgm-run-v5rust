@@ -1,0 +1,232 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @trace : i32 [binding=strong] = zero
+
+function @read(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z4readRK5Value] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @choose(%first : u8) -> i32 [binding=strong, object=_Z6chooseb] {
+  slot $first : u8
+  slot $arg__1 : obj<4x4>
+  slot $call__2 : i32
+  slot $arg__3 : obj<4x4>
+  slot $call__4 : i32
+  slot $arg__5 : obj<4x4>
+  slot $call__6 : i32
+
+  block ^entry:
+    store u8 %first, $first
+    eh_try ^catch_dispatch_1
+    %t1 = load u8 $first
+    branch %t1, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    eh_try ^call_unwind_dispatch_7
+    %t2 = addr $arg__1
+    call void @Value__Value(%t2, 7)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_resume_6:
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^call_unwind_dispatch_7:
+    eh_catch_all, 1
+    eh_cleanup
+    jump ^cleanup_resume_6
+
+  block ^call_unwind_end_8:
+    eh_try ^call_unwind_dispatch_10
+    %t3 = call i32 @read(%t2)
+    store typed i32 %t3, $call__2
+    %t4 = load typed i32 $call__2
+    call void @Value___Value(%t2)
+    eh_end
+    jump ^call_unwind_end_11
+
+  block ^cleanup_action_9:
+    call void @Value___Value(%t2)
+    jump ^cleanup_resume_6
+
+  block ^call_unwind_dispatch_10:
+    eh_catch_all, 1
+    eh_cleanup
+    jump ^cleanup_action_9
+
+  block ^call_unwind_end_11:
+    eh_end
+    return i32 %t4
+
+  block ^if_else_5:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    eh_try ^call_unwind_dispatch_7
+    %t5 = addr $arg__3
+    call void @Value__Value(%t5, 9)
+    eh_end
+    eh_try ^call_unwind_dispatch_14
+    %t6 = call i32 @read(%t5)
+    store typed i32 %t6, $call__4
+    %t7 = load typed i32 $call__4
+    call void @Value___Value(%t5)
+    eh_end
+    jump ^call_unwind_end_15
+
+  block ^cleanup_action_13:
+    call void @Value___Value(%t5)
+    jump ^cleanup_resume_6
+
+  block ^call_unwind_dispatch_14:
+    eh_catch_all, 1
+    eh_cleanup
+    jump ^cleanup_action_13
+
+  block ^call_unwind_end_15:
+    eh_end
+    return i32 %t7
+
+  block ^catch_dispatch_1:
+    eh_catch_all, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t8 = exception ptr
+    %t9 = exception_selector i32
+    %t10 = cmp eq i32 %t9, 1
+    branch %t10, ^catch_body_16, ^catch_next_17
+
+  block ^catch_body_16:
+    %t11 = call ptr @__external_runtime____cxa_begin_catch(%t8)
+    eh_cleanup ^catch_cleanup_18
+    eh_try ^call_unwind_dispatch_21
+    %t12 = addr $arg__5
+    call void @Value__Value(%t12, 11)
+    eh_end
+    jump ^call_unwind_end_22
+
+  block ^cleanup_resume_19:
+    resume
+
+  block ^cleanup_action_20:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    jump ^cleanup_resume_19
+
+  block ^call_unwind_dispatch_21:
+    jump ^cleanup_action_20
+
+  block ^call_unwind_end_22:
+    eh_try ^call_unwind_dispatch_24
+    %t13 = call i32 @read(%t12)
+    store typed i32 %t13, $call__6
+    %t14 = load typed i32 $call__6
+    call void @Value___Value(%t12)
+    eh_end
+    jump ^call_unwind_end_25
+
+  block ^cleanup_action_23:
+    call void @Value___Value(%t12)
+    jump ^cleanup_action_20
+
+  block ^call_unwind_dispatch_24:
+    jump ^cleanup_action_23
+
+  block ^call_unwind_end_25:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t14
+
+  block ^catch_cleanup_18:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_17:
+    resume
+
+  block ^try_end_3:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    store typed i32 0, @trace
+    %t1 = call i32 @choose(1)
+    %t2 = cmp ne i32 %t1, 7
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = load typed i32 @trace
+    %t4 = cmp ne i32 %t3, 7
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    store typed i32 0, @trace
+    %t5 = call i32 @choose(0)
+    %t6 = cmp ne i32 %t5, 9
+    branch %t6, ^lor_short_6, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    %t7 = load typed i32 @trace
+    %t8 = cmp ne i32 %t7, 9
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__1
+    jump ^lor_end_7
+
+  block ^lor_short_6:
+    store typed i64 1, $lor__1
+    jump ^lor_end_7
+
+  block ^lor_end_7:
+    %t10 = load typed i64 $lor__1
+    %t11 = convert trunc i32 i64 %t10
+    return i32 %t11
+}
+function @Value__Value(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5ValueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Value___Value(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5ValueD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @trace
+    %t2 = binary mul nowrap i32 %t1, 10
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = binary add nowrap i32 %t2, %t5
+    store typed i32 %t6, @trace
+    return void
+}
+alias object _ZN5ValueC2Ei = @Value__Value
+alias object _ZN5ValueD2Ev = @Value___Value

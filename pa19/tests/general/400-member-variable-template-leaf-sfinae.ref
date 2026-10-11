@@ -1,0 +1,6 @@
+declare global @selected_executor___cppgm_class_template_identity_1_void___value : i32 [binding=weak, object=_ZN8selectedI8executor8propertyILi0EEvE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,55 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @sum_pack(1, 2, 3)
+    %t2 = cmp eq i32 %t1, 6
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @sum_pack(%values : i32, %values__pack2 : i32, %values__pack3 : i32) -> i32 [binding=weak, object=_Z8sum_packIJiiiEEiDpT_] {
+  slot $values : i32
+  slot $values__pack2 : i32
+  slot $values__pack3 : i32
+  slot $result : i32
+  slot $discardarr__1 : obj<16x4>
+
+  block ^entry:
+    store typed i32 %values, $values
+    store typed i32 %values__pack2, $values__pack2
+    store typed i32 %values__pack3, $values__pack3
+    store typed i32 0, $result
+    %t1 = addr $discardarr__1
+    store typed i32 0, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    %t3 = load typed i32 $result
+    %t4 = load typed i32 $values
+    %t5 = binary add nowrap i32 %t3, %t4
+    store typed i32 %t5, $result
+    store typed i32 0, %t2
+    %t6 = index i8 [projection=array_element] %t1, 8
+    %t7 = load typed i32 $result
+    %t8 = load typed i32 $values__pack2
+    %t9 = binary add nowrap i32 %t7, %t8
+    store typed i32 %t9, $result
+    store typed i32 0, %t6
+    %t10 = index i8 [projection=array_element] %t1, 12
+    %t11 = load typed i32 $result
+    %t12 = load typed i32 $values__pack3
+    %t13 = binary add nowrap i32 %t11, %t12
+    store typed i32 %t13, $result
+    store typed i32 0, %t10
+    %t14 = load typed i32 $result
+    return i32 %t14
+}

@@ -1,0 +1,39 @@
+global @values : obj<8x4> [binding=strong] = {
+  zero 8
+}
+global @index : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr @values
+    %t2 = load typed i32 @index
+    %t3 = binary add nowrap i32 %t2, 1
+    store typed i32 %t3, @index
+    %t4 = index i32 [projection=array_element] %t1, %t2
+    %t5 = load typed i32 %t4
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, %t4
+    %t7 = load typed i32 @index
+    %t8 = cmp ne i32 %t7, 1
+    branch %t8, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t9 = addr @values
+    %t10 = index i32 [projection=array_element] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp ne i32 %t11, 1
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t14 = load typed i64 $lor__1
+    %t15 = convert trunc i32 i64 %t14
+    return i32 %t15
+}

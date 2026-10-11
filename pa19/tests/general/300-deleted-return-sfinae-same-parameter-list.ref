@@ -1,0 +1,22 @@
+global @__local_static__function_symbol_5f5a33676574494c6d30454a69634545524b4e31337475706c655f656c656d656e744958545f454a447054305f4545347479706545524b357475706c65494a53325f4545__decl0__value : i32 [binding=weak, object=_ZZ3getILm0EJicEERKN13tuple_elementIXT_EJDpT0_EE4typeERK5tupleIJS2_EEE5value] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<1x1>
+  slot $p : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    store typed ptr %t1, $p
+    %t2 = load typed ptr $p
+    %t3 = call ptr @get(%t2)
+    %t4 = load typed i32 %t3
+    return i32 0
+}
+function @get(%__param0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z3getILm0EJicEERKN13tuple_elementIXT_EJDpT0_EE4typeERK5tupleIJS2_EE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr @__local_static__function_symbol_5f5a33676574494c6d30454a69634545524b4e31337475706c655f656c656d656e744958545f454a447054305f4545347479706545524b357475706c65494a53325f4545__decl0__value
+    return ptr %t1
+}

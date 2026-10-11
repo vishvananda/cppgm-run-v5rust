@@ -1,0 +1,92 @@
+global @constructed : i32 [binding=strong] = 0
+global @destroyed : i32 [binding=strong] = 0
+
+function @observed() -> i32 [unwind=no, binding=strong, object=_Z8observedv] {
+  block ^entry:
+    %t1 = load typed i32 @constructed
+    %t2 = binary mul nowrap i32 %t1, 10
+    %t3 = load typed i32 @destroyed
+    %t4 = binary add nowrap i32 %t2, %t3
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $elements : obj<3x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $elements
+    %t2 = index i8 [projection=array_element] %t1, 0
+    call void @Element__Element(%t2)
+    %t3 = addr $elements
+    %t4 = index i8 [projection=array_element] %t3, 1
+    call void @Element__Element(%t4)
+    %t5 = addr $elements
+    %t6 = index i8 [projection=array_element] %t5, 2
+    call void @Element__Element(%t6)
+    %t7 = call i32 @observed()
+    %t8 = cmp ne i32 %t7, 30
+    branch %t8, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t9 = addr $elements
+    %t10 = index i8 [projection=array_element] %t9, 2
+    call void @Element___Element(%t10)
+    %t11 = addr $elements
+    %t12 = index i8 [projection=array_element] %t11, 1
+    call void @Element___Element(%t12)
+    %t13 = addr $elements
+    %t14 = index i8 [projection=array_element] %t13, 0
+    call void @Element___Element(%t14)
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t15 = addr $elements
+    %t16 = index i8 [projection=array_element] %t15, 2
+    call void @Element___Element(%t16)
+    %t17 = addr $elements
+    %t18 = index i8 [projection=array_element] %t17, 1
+    call void @Element___Element(%t18)
+    %t19 = addr $elements
+    %t20 = index i8 [projection=array_element] %t19, 0
+    call void @Element___Element(%t20)
+    %t21 = call i32 @observed()
+    %t22 = cmp eq i32 %t21, 33
+    branch %t22, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 2, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t23 = load typed i32 $cond__1
+    return i32 %t23
+}
+function @Element__Element(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN7ElementC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @constructed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @constructed
+    return void
+}
+function @Element___Element(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN7ElementD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN7ElementC2Ev = @Element__Element
+alias object _ZN7ElementD2Ev = @Element___Element

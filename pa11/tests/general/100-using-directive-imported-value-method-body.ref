@@ -1,0 +1,21 @@
+global @N__K : i32 [storage=readonly, binding=internal, object=_ZN1NL1KE] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = call i32 @X__g(%t2)
+    %t4 = binary sub nowrap i32 %t3, 4
+    return i32 %t4
+}
+function @X__g(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN1X1gEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @N__K
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}

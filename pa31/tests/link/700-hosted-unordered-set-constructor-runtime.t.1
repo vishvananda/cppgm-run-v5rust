@@ -1,0 +1,19 @@
+#include <string>
+#include <unordered_set>
+
+int main()
+{
+  const std::unordered_set<std::string> keywords = {
+    "if", "else", "while",
+  };
+  if (keywords.count("while") != 1 || keywords.count("banana") != 0)
+    return 1;
+
+  const int values[4] = {3, 5, 5, 8};
+  std::unordered_set<int> unique(values, values + 4);
+  int total = 0;
+  for (std::unordered_set<int>::const_iterator it = unique.begin();
+       it != unique.end(); ++it)
+    total += *it;
+  return total == 16 ? 0 : 2;
+}

@@ -1,0 +1,48 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $holder : obj<4x4>
+  slot $other : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $holder
+    %t2 = addr $holder
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 1, %t3
+    store typed i32 2, $other
+    %t4 = addr $holder
+    %t5 = call ptr @Holder__get__ov2(%t4)
+    %t6 = addr $other
+    %t7 = call i32 @same_mutable(%t5, %t6)
+    %t8 = cmp eq i32 %t7, 1
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}
+function @Holder__get__ov2(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN6Holder3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @same_mutable(%__param0 : ptr [pass=by_address, object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z12same_mutableIiEiRT_S1_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 1
+}

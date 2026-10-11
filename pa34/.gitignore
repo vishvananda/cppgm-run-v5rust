@@ -1,0 +1,8 @@
+*.dSYM
+*.stdout
+*.stderr
+*-self
+*-self-*
+*-inception
+*-inception-*
+testout/

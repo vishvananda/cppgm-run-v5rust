@@ -1,0 +1,36 @@
+// A local class used twice in one name is one substitution candidate:
+// the second use is S<n>_, not the local name spelled again.
+template<class F>
+struct function
+{
+  int set(F) { return 1; }
+};
+
+struct S
+{
+  int g();
+};
+
+int S::g()
+{
+  struct G {};
+  function<G> f;
+  return f.set(G());
+}
+
+template<class T>
+struct wrap
+{
+  T p;
+  template<class U>
+  int from(wrap<U> other) const { return other.p == 0 ? 2 : 0; }
+};
+
+int main()
+{
+  struct Local { int v; };
+  wrap<const Local *> constant = { 0 };
+  wrap<Local *> mutable_one = { 0 };
+  S s;
+  return s.g() + constant.from(mutable_one) == 3 ? 0 : 1;
+}

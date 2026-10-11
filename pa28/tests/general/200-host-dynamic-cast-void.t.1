@@ -1,0 +1,16 @@
+struct HostBase {
+  virtual ~HostBase() {}
+};
+
+struct HostDerived : HostBase {
+  int payload;
+
+  HostDerived() : payload(5) {}
+};
+
+int main()
+{
+  HostDerived derived;
+  HostBase * base = &derived;
+  return dynamic_cast<void *>(base) == &derived ? 0 : 1;
+}

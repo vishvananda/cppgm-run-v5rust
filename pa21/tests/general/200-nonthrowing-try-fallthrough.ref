@@ -1,0 +1,84 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    eh_end
+    return i32 3
+
+  block ^catch_dispatch_1:
+    eh_catch_all, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t1 = exception ptr
+    %t2 = exception_selector i32
+    %t3 = cmp eq i32 %t2, 1
+    branch %t3, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t4 = call ptr @__external_runtime____cxa_begin_catch(%t1)
+    eh_cleanup ^catch_cleanup_6
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    unreachable
+}
+function @g() -> i32 [unwind=no, binding=strong, object=_Z1gv] {
+  block ^entry:
+    return i32 4
+}
+function @h() -> i32 [binding=strong, object=_Z1hv] {
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = call i32 @g()
+    eh_end
+    return i32 %t1
+
+  block ^catch_dispatch_1:
+    eh_catch_all, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t2 = exception ptr
+    %t3 = exception_selector i32
+    %t4 = cmp eq i32 %t3, 1
+    branch %t4, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t5 = call ptr @__external_runtime____cxa_begin_catch(%t2)
+    eh_cleanup ^catch_cleanup_6
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    unreachable
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f()
+    %t2 = call i32 @h()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}

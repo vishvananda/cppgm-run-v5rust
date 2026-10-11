@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition id function of (enum E) returning enum E
+    parameter x enum E
+    compound-statement
+      return-statement
+        id-expression lvalue enum E x
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable x enum E
+          literal prvalue enum E 0
+      return-statement
+        call-expression prvalue enum E
+          callee id function of (enum E) returning enum E
+          id-expression lvalue enum E x
+end translation unit

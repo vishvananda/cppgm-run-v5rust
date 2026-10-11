@@ -1,0 +1,28 @@
+function @convert(%v : i64) -> i64 [binding=strong, object=_Z7convertm] {
+  slot $v : i64
+
+  block ^entry:
+    store typed i64 %v, $v
+    %t1 = load typed i64 $v
+    return i64 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i64 @convert(7)
+    %t2 = cmp eq i64 %t1, 7
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

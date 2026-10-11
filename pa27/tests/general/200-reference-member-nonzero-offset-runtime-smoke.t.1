@@ -1,0 +1,17 @@
+struct Holder {
+  bool ok;
+  int& ref;
+
+  Holder(int& x) : ok(false), ref(x) {
+    ok = true;
+  }
+
+  bool good() const { return ok; }
+  int value() const { return ref; }
+};
+
+int main() {
+  int x = 7;
+  Holder h(x);
+  return h.good() && h.value() == 7 ? 0 : 1;
+}

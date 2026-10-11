@@ -1,0 +1,11 @@
+# budget from 800-single-edge-callee-saved-retention.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 35
+blocks <= 9
+count(call) <= 5
+mem <= 5
+instructions <= 5 in @bump
+stack_size <= 320 in @bump
+instructions <= 17 in @keep_across_edge
+stack_size <= 352 in @keep_across_edge
+instructions <= 15 in @main
+stack_size <= 416 in @main

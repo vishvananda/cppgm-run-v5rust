@@ -1,0 +1,26 @@
+function @make() -> obj<4x4> [binding=strong, object=_Z4makev] {
+  slot $w : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $w
+    %t2 = addr $w
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 42, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $w
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = call obj<4x4> @make()
+    copyobj 4x4 %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 0
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t4, 42
+    return i32 %t5
+}

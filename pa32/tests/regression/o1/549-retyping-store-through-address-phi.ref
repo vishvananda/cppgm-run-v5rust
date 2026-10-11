@@ -1,0 +1,43 @@
+declare function @exit(%status : i32) -> void [unwind=no]
+
+function @main() -> i32 [unwind=no, role=entry] {
+  slot $buffer : obj<16x1>
+  slot $size__1 : i64
+  slot $size__2 : i64
+
+  block ^entry:
+    %p = addr $buffer
+    %q = index i8 %p, 5
+    %size_3 = binary sub ptr %q, %p
+    store i64 %size_3, $size__1
+    %a_4 = addr $size__1
+    %x_5 = load i64 %a_4
+    %less_6 = cmp ult i64 %x_5, 3
+    branch %less_6, ^inline_cont_2, ^inline_copy_1
+
+  block ^inline_copy_1:
+    jump ^inline_cont_2
+
+  block ^inline_cont_2:
+    %v_7 = phi i64 [^inline_copy_1: %x_5, ^entry: 3]
+    %r_8 = binary add i64 %size_3, %v_7
+    store i64 %size_3, $size__2
+    %a_9 = addr $size__2
+    %x_10 = load i64 %a_9
+    %less_11 = cmp ult i64 %x_10, 9
+    branch %less_11, ^inline_cont_4, ^inline_copy_3
+
+  block ^inline_copy_3:
+    jump ^inline_cont_4
+
+  block ^inline_cont_4:
+    %v_12 = phi i64 [^inline_copy_3: %x_10, ^inline_cont_2: 9]
+    %r_13 = binary add i64 %size_3, %v_12
+    %bad_first = cmp ne i64 %r_8, 10
+    %bad_second = cmp ne i64 %r_13, 14
+    %first_bad = convert zext i64 i1 %bad_first
+    %second_bad = convert zext i64 i1 %bad_second
+    %bad = binary or i64 %first_bad, %second_bad
+    %status = convert trunc i32 i64 %bad
+    return i32 %status
+}

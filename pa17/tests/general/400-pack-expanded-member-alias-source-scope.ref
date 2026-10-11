@@ -1,0 +1,12 @@
+function @f(%__param0 : ptr) -> void [binding=strong, object=_Z1fP1BIJddEE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f(0)
+    return i32 0
+}

@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier x
+    compound-statement
+      return-statement
+        parenthesized-expression
+          binary-expression OP_RSHIFT:>>
+            id-expression x
+            literal 8
+end translation unit

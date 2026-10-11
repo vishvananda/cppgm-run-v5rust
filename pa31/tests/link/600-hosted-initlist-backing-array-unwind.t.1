@@ -1,0 +1,8 @@
+// N3485 15.2p2, 8.5.4p5: when an element copy of an initializer_list backing
+// array throws, the temporaries and already-constructed elements are
+// destroyed; expect exit 0
+#include <initializer_list>
+static int live = 0, made = 0, at = -1;
+struct T { T(int) { if (made++ == at) throw 1; ++live; } T(const T&) { if (made++ == at) throw 1; ++live; } ~T() { --live; } };
+void f(std::initializer_list<T>) {}
+int main() { for (at = 0; at < 7; ++at) { made = 0; try { f({T(1), T(2), T(3)}); } catch (int) {} if (live != 0) return 10 + at; } return 0; }

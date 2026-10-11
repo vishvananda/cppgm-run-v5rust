@@ -1,0 +1,63 @@
+// N3485 8.4.2p2, 15.4p14, 12.4p3: a special member function explicitly
+// defaulted on its first declaration has the implicit declaration's
+// exception-specification; one defaulted after its first declaration keeps
+// that declaration's (none: potentially throwing), and so do the implicit
+// members that call it; a destructor without one is noexcept wherever it is
+// defaulted. The GNU traits agree
+#include "800-eh-defaulted-noexcept-run.helper.h"
+struct D { D(); D(const D&); D(D&&); D& operator=(const D&); D& operator=(D&&); ~D(); int x; };
+D::D() = default;
+D::D(const D&) = default;
+D::D(D&&) = default;
+D& D::operator=(const D&) = default;
+D& D::operator=(D&&) = default;
+D::~D() = default;
+struct E { D d; };
+struct Y : D { };
+struct F { F() = default; F(const F&) = default; F& operator=(const F&) = default; int x; };
+struct G { G() noexcept; G(const G&) noexcept; };
+G::G() noexcept = default;
+G::G(const G&) noexcept = default;
+template<class T> struct X { X(); X(const X&); T t; };
+template<class T> X<T>::X() = default;
+template<class T> X<T>::X(const X&) = default;
+extern D d;
+extern E e;
+extern F f;
+extern G g;
+extern X<int> x;
+int main()
+{
+  out_line("D()", noexcept(D()));
+  out_line("D(D&)", noexcept(D(d)));
+  out_line("D(D&&)", noexcept(D(static_cast<D&&>(d))));
+  out_line("D=", noexcept(d = d));
+  out_line("D=&&", noexcept(d = static_cast<D&&>(d)));
+  out_line("~D", noexcept(d.~D()));
+  out_line("E()", noexcept(E()));
+  out_line("E(E&)", noexcept(E(e)));
+  out_line("E=", noexcept(e = e));
+  out_line("Y()", noexcept(Y()));
+  out_line("F()", noexcept(F()));
+  out_line("F(F&)", noexcept(F(f)));
+  out_line("F=", noexcept(f = f));
+  out_line("G()", noexcept(G()));
+  out_line("G(G&)", noexcept(G(g)));
+  X<int> made;
+  out_line("X()", noexcept(X<int>()));
+  out_line("X(X&)", noexcept(X<int>(x)));
+  out_line("has_nothrow_constructor D", __has_nothrow_constructor(D));
+  out_line("has_nothrow_constructor E", __has_nothrow_constructor(E));
+  out_line("has_nothrow_copy D", __has_nothrow_copy(D));
+  out_line("has_nothrow_assign D", __has_nothrow_assign(D));
+  out_line("is_nothrow_constructible D", __is_nothrow_constructible(D));
+  out_line("is_nothrow_constructible D, D&", __is_nothrow_constructible(D, D&));
+  out_line("is_nothrow_constructible F", __is_nothrow_constructible(F));
+  (void)made;
+  return 0;
+}
+D d;
+E e;
+F f;
+G g;
+X<int> x;

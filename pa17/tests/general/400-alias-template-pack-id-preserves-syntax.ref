@@ -1,0 +1,11 @@
+global @seed [binding=strong] = {
+  zero 1
+}
+global @value [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

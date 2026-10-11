@@ -1,0 +1,6 @@
+declare global @can_output_int___cppgm_class_template_identity_1_void___value : u8 [binding=weak, object=_ZN10can_outputIi3boxIJiEEvE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

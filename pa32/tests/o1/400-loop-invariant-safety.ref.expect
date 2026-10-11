@@ -1,0 +1,10 @@
+# budget from 400-loop-invariant-safety.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 36
+blocks <= 16
+count(call) <= 4
+count(load) <= 3
+count(store) <= 6
+count(phi) <= 6
+instructions <= 12 in @keep_trapping_divide
+instructions <= 12 in @keep_without_preheader
+instructions <= 16 in @keep_across_eh

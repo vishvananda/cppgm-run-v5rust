@@ -1,0 +1,9 @@
+lowir2native
+lowir2native-debug
+*.my
+*.my.*
+*.ref.program
+testout
+*.dSYM
+tests/behavior/**/*.ref.mir
+tests/behavior/**/*.ref.cmir

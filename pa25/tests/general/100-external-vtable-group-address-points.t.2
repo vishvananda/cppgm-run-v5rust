@@ -1,0 +1,8 @@
+// second unit: defines D::key (the key function), so D's vtable group is
+// emitted here
+struct B0 { int b0; B0() : b0(1) {} virtual int f0() { return b0; } };
+struct B1p { int p; B1p() : p(2) {} virtual int fp() { return p; } };
+struct B1 : B1p { int b1; B1() : b1(3) {} virtual int f1() { return b1; } };
+struct V { int v; V() : v(5) {} virtual int fv() { return v; } };
+struct D : B0, B1, virtual V { int d; D() : d(6) {} virtual int key(); int fv() { return d + 20; } };
+int D::key() { return 7; }

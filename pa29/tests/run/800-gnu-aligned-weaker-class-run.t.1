@@ -1,0 +1,7 @@
+// GNU aligned on a class only strengthens its alignment (GCC ignores an
+// alignment weaker than the natural one; alignas would be ill-formed,
+// 7.6.2p5); with packed it sets the packed class's alignment.
+struct __attribute__((aligned(2))) A { char c; int i; };
+struct __attribute__((packed, aligned(2))) P { char c; int i; };
+struct __attribute__((aligned(16))) S { char c; int i; };
+int main() { return sizeof(A) == 8 && alignof(A) == 4 && sizeof(P) == 6 && alignof(P) == 2 && sizeof(S) == 16 ? 0 : 1; }

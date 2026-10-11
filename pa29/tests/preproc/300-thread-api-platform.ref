@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/300-thread-api-platform.t
+identifier thread_api_platform
+eof

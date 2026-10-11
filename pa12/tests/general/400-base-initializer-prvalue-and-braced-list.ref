@@ -1,0 +1,221 @@
+global @buffer : obj<32x16> [binding=strong] = {
+  zero 32
+}
+
+function @make_plain() -> obj<8x4> [binding=strong, object=_Z10make_plainv] {
+  slot $plain : obj<8x4>
+  slot $retobj__1 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $plain
+    %t2 = addr $plain
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 6, %t3
+    %t4 = addr $plain
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 7, %t5
+    %t6 = addr $retobj__1
+    %t7 = addr $plain
+    copyobj 8x4 %t7, %t6
+    return obj<8x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $call : obj<8x4>
+  slot $braced : obj<8x4>
+  slot $i : u32
+  slot $partial : ptr
+
+  block ^entry:
+    %t1 = addr $value
+    call void @FromValue__FromValue(%t1)
+    %t2 = addr $value
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp ne i32 %t5, 5
+    branch %t6, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = addr $call
+    call void @FromCall__FromCall(%t7)
+    %t8 = addr $call
+    %t9 = index i8 %t8, 0
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp ne i32 %t11, 6
+    branch %t12, ^if_then_4, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t13 = addr $call
+    %t14 = index i8 %t13, 0
+    %t15 = index i8 [projection=field] %t14, 4
+    %t16 = load typed i32 %t15
+    %t17 = cmp ne i32 %t16, 7
+    branch %t17, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    %t18 = addr $braced
+    call void @Braced__Braced(%t18)
+    %t19 = addr $braced
+    %t20 = index i8 %t19, 0
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load typed i32 %t21
+    %t23 = cmp ne i32 %t22, 3
+    branch %t23, ^if_then_8, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t24 = addr $braced
+    %t25 = index i8 %t24, 0
+    %t26 = index i8 [projection=field] %t25, 4
+    %t27 = load typed i32 %t26
+    %t28 = cmp ne i32 %t27, 4
+    branch %t28, ^if_then_8, ^if_else_9
+
+  block ^if_then_8:
+    return i32 3
+
+  block ^if_else_9:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    store typed u32 0, $i
+    jump ^for_cond_12
+
+  block ^for_cond_12:
+    %t29 = load typed u32 $i
+    %t30 = const i64 32
+    %t31 = convert zext i64 u32 %t29
+    %t32 = cmp ult i64 %t31, %t30
+    branch %t32, ^for_body_13, ^for_end_15
+
+  block ^for_body_13:
+    %t33 = addr @buffer
+    %t34 = load typed u32 $i
+    %t35 = index u8 [projection=array_element] %t33, %t34
+    store u8 85, %t35
+    jump ^for_iter_14
+
+  block ^for_iter_14:
+    %t36 = load typed u32 $i
+    %t37 = binary add u32 %t36, 1
+    store typed u32 %t37, $i
+    jump ^for_cond_12
+
+  block ^for_end_15:
+    %t38 = convert sext i64 i32 8
+    %t39 = addr @buffer
+    %t40 = call ptr @operatornew__ov2(%t38, %t39)
+    call void @Partial__Partial(%t40)
+    store typed ptr %t40, $partial
+    %t41 = load typed ptr $partial
+    %t42 = index i8 %t41, 0
+    %t43 = index i8 [projection=field] %t42, 0
+    %t44 = load typed i32 %t43
+    %t45 = cmp ne i32 %t44, 5
+    branch %t45, ^if_then_16, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t46 = load typed ptr $partial
+    %t47 = index i8 %t46, 0
+    %t48 = index i8 [projection=field] %t47, 4
+    %t49 = load typed i32 %t48
+    %t50 = cmp ne i32 %t49, 0
+    branch %t50, ^if_then_16, ^if_else_17
+
+  block ^if_then_16:
+    return i32 4
+
+  block ^if_else_17:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    return i32 0
+}
+function @FromValue__FromValue(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN9FromValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Value__Value(%t2, 5)
+    return void
+}
+function @FromCall__FromCall(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8FromCallC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call obj<8x4> @make_plain()
+    copyobj 8x4 %t3, %t2
+    return void
+}
+function @Braced__Braced(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6BracedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 3, %t3
+    %t4 = index i8 [projection=field] %t2, 4
+    store typed i32 4, %t4
+    return void
+}
+function @operatornew__ov2(%__param0 : i64, %place : ptr) -> ptr [unwind=no, binding=weak, object=_ZnwmPv, inline_hint=yes] {
+  slot $__param0 : i64
+  slot $place : ptr
+
+  block ^entry:
+    store typed i64 %__param0, $__param0
+    store typed ptr %place, $place
+    %t1 = load typed ptr $place
+    return ptr %t1
+}
+function @Partial__Partial(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN7PartialC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 5, %t3
+    %t4 = index i8 [projection=field] %t2, 4
+    store typed i32 0, %t4
+    return void
+}
+function @Value__Value(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN5ValueC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN9FromValueC2Ev = @FromValue__FromValue
+alias object _ZN8FromCallC2Ev = @FromCall__FromCall
+alias object _ZN6BracedC2Ev = @Braced__Braced
+alias object _ZN7PartialC2Ev = @Partial__Partial
+alias object _ZN5ValueC2Ei = @Value__Value

@@ -1,0 +1,47 @@
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=weak, object=_ZTIi] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__typeinfo_name__double [storage=readonly, binding=weak, object=_ZTSd] = {
+  i8 100
+  i8 0
+}
+global @__rtti_double [storage=readonly, binding=weak, object=_ZTId] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__double
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @__rtti_int
+    %t2 = addr @__rtti_double
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = addr @__rtti_int
+    %t5 = addr @__rtti_int
+    %t6 = cmp eq ptr %t4, %t5
+    branch %t6, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 0
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 2
+}

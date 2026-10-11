@@ -1,0 +1,38 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+  slot $y : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    store typed i32 0, $y
+    %t1 = load typed i32 $x
+    jump ^switch_dispatch_1
+
+  block ^switch_dispatch_1:
+    switch %t1, ^switch_default_6, 0:^switch_case_3, 1:^switch_case_4, 2:^switch_case_5
+
+  block ^switch_case_3:
+    store typed i32 1, $y
+    jump ^switch_end_2
+
+  block ^switch_case_4:
+    jump ^switch_case_5
+
+  block ^switch_case_5:
+    store typed i32 3, $y
+    jump ^switch_end_2
+
+  block ^switch_default_6:
+    store typed i32 4, $y
+    jump ^switch_end_2
+
+  block ^switch_end_2:
+    %t2 = load typed i32 $y
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f(2)
+    %t2 = binary sub nowrap i32 %t1, 3
+    return i32 %t2
+}

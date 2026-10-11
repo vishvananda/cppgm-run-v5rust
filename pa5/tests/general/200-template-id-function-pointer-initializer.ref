@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier foo
+            parameter-clause
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier fp
+          parameter-clause
+        initializer
+          id-expression foo<int>
+end translation unit

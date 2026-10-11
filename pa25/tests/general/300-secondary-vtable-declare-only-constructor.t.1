@@ -1,0 +1,22 @@
+struct primary
+{
+  virtual int first() = 0;
+  virtual ~primary() {}
+};
+
+struct secondary
+{
+  virtual int second() = 0;
+  virtual ~secondary() {}
+};
+
+struct derived : primary, secondary
+{
+  int first();
+  int second() { return 2; }
+};
+
+int derived::first()
+{
+  return 1;
+}

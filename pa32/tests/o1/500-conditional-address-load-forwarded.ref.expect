@@ -1,0 +1,10 @@
+# budget from 500-conditional-address-load-forwarded.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 31
+blocks <= 15
+count(call) <= 3
+count(load) <= 6
+count(store) <= 6
+count(phi) <= 6
+instructions <= 8 in @min_of
+instructions <= 15 in @min_kept_after_store
+instructions <= 11 in @min_of_fields

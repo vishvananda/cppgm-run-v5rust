@@ -1,0 +1,32 @@
+declare function @transformer__transform__2(%arg0 : ptr [object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_ZN11transformer9transformI16external_specialEEiRT_]
+
+global @complete_transformer_owner : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @transformer__transform(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_ZN11transformer9transformI15defined_specialEEiRT_] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $value : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = addr $value
+    %t2 = load typed ptr $this
+    %t3 = addr $value
+    %t4 = call i32 @transformer__transform__2(%t2, %t3)
+    return i32 %t4
+}
+function @use(%object : ptr [pass=by_address, object_bytes=1], %value : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_Z3useR11transformerR15defined_special] {
+  slot $object : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed ptr %value, $value
+    %t1 = load typed ptr $object
+    %t2 = load typed ptr $value
+    %t3 = call i32 @transformer__transform(%t1, %t2)
+    return i32 %t3
+}

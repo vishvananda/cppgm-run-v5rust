@@ -1,0 +1,12 @@
+#include "200-host-virtual-base-indirect-base-access.helper.h"
+
+long helper_base(B & b)
+{
+  Base & base = b;
+  return base.width();
+}
+
+int main()
+{
+  return helper_base(get_b()) == 6 ? 0 : 1;
+}

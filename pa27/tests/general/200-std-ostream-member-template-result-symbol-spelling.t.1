@@ -1,0 +1,28 @@
+namespace std {
+template<class T>
+struct char_traits {};
+
+template<class C, class Traits>
+struct basic_ostream
+{
+  typedef basic_ostream<C, Traits> ostream_type;
+
+  template<class Value>
+  __attribute__((noinline)) ostream_type& _M_insert(Value);
+};
+
+template<class C, class Traits>
+template<class Value>
+typename basic_ostream<C, Traits>::ostream_type&
+basic_ostream<C, Traits>::_M_insert(Value)
+{
+  return *this;
+}
+}
+
+int main()
+{
+  std::basic_ostream<char, std::char_traits<char> > out;
+  out._M_insert(1ul);
+  return 0;
+}

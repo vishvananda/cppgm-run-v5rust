@@ -1,0 +1,54 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = call ptr @find(%t2)
+    %t4 = cmp eq ptr %t3, 0
+    branch %t4, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t5 = addr $value
+    %t6 = call ptr @find__2(%t5)
+    %t7 = cmp eq ptr %t6, 0
+    %t8 = cmp ne i64 %t7, 0
+    store typed i64 %t8, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t9 = load typed i64 $land__2
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @find(%__param0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z4findI6secondLi0EJ5firstS0_EEPKN9enable_ifIXltT0_misZT1_Li1EET_E4typeERK5tupleIJDpT1_EE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return ptr 0
+}
+function @find__2(%__param0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z4findI6secondLi1EJ5firstS0_EEPKN9enable_ifIXeqT0_misZT1_Li1EET_E4typeERK5tupleIJDpT1_EE] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return ptr 0
+}

@@ -1,0 +1,20 @@
+# budget from 100-slot-promotion-convert-debug.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 7
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 7 in @f
+
+# outcomes from 100-slot-promotion-convert-debug.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(load)
+none(store)
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @f
+none(/!dbg\((?!(?:calc\.cpp, 2, 3|calc\.cpp, 2, 9|calc\.cpp, 3, 3|calc\.cpp, 4, 3|calc\.cpp, 5, 3|calc\.cpp, 6, 3|calc\.cpp, 7, 3)\))/) in @f
+none(/^%\S+ = convert sext\b(?!.*!dbg\((?:calc\.cpp, 4, 3)\))/) in @f
+none(/^return\b(?!.*!dbg\((?:calc\.cpp, 7, 3)\))/) in @f

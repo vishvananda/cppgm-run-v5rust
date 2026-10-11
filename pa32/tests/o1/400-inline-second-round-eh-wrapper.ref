@@ -1,0 +1,12 @@
+function @caller(%p : ptr) -> ptr {
+  block ^entry:
+    return ptr %p
+}
+function @mid(%p : ptr) -> ptr {
+  block ^entry:
+    return ptr %p
+}
+function @leaf(%p : ptr) -> ptr {
+  block ^entry:
+    return ptr %p
+}

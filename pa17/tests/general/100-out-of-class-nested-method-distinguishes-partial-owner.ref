@@ -1,0 +1,16 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    call void @A_int____B__f(%t2)
+    return i32 0
+}
+function @A_int____B__f(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1AIRiE1B1fEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

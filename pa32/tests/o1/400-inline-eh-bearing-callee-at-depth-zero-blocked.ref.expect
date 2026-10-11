@@ -1,0 +1,9 @@
+# budget from 400-inline-eh-bearing-callee-at-depth-zero-blocked.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 26
+blocks <= 11
+count(call) <= 6
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 13 in @guarded
+instructions <= 15 in @caller

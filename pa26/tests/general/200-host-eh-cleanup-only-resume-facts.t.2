@@ -1,0 +1,15 @@
+extern int destroyed;
+void wrapper();
+
+int main()
+{
+  try
+  {
+    wrapper();
+    return 1;
+  }
+  catch (int x)
+  {
+    return (x == 11 && destroyed == 1) ? 0 : 2;
+  }
+}

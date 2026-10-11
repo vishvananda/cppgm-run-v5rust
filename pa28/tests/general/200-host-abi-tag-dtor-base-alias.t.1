@@ -1,0 +1,16 @@
+int destroyed = 0;
+
+struct Tagged {
+  __attribute__((noinline)) ~Tagged() __attribute__((__abi_tag__("tag")))
+  {
+    destroyed = 1;
+  }
+};
+
+int main()
+{
+  {
+    Tagged value;
+  }
+  return destroyed == 1 ? 0 : 1;
+}

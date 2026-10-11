@@ -1,0 +1,41 @@
+#include "200-host-array-new-bad-length-unwind.helper.h"
+
+int student_signed(int count)
+{
+  Guard guard;
+  int* array = new int[count];
+  array[count - 1] = count;
+  const int result = array[count - 1];
+  delete[] array;
+  return result;
+}
+
+int student_long(long count)
+{
+  Guard guard;
+  delete[] new long[count];
+  return 0;
+}
+
+int student_sized(size_type count)
+{
+  Guard guard;
+  delete[] new short[count];
+  return 0;
+}
+
+int student_class(long count)
+{
+  Guard guard;
+  Destructible* array = new Destructible[count];
+  const int result = static_cast<int>(array[count - 1].value);
+  delete[] array;
+  return result;
+}
+
+int host_check();
+
+int main()
+{
+  return host_check();
+}

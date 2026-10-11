@@ -1,0 +1,9 @@
+declare global @value_constant_1___value : i64 [binding=weak, object=_ZN14value_constantILl1EE5valueE]
+declare global @value_constant_1000000000___value : i64 [binding=weak, object=_ZN14value_constantILl1000000000EE5valueE]
+
+global @ratio_1_1000000000___den : i64 [storage=readonly, binding=weak, object=_ZN5ratioILl1ELl1000000000EE3denE] = 1000000000
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,34 @@
+struct Empty {
+};
+
+struct Payload {
+  int value;
+
+  Payload() : value(0) {}
+  Payload(const Payload & other) : value(other.value) {}
+
+  Payload & operator=(const Payload & other)
+  {
+    if (value == 99) {
+      value = other.value;
+    } else {
+      value = -1;
+    }
+    return *this;
+  }
+};
+
+struct Holder {
+  [[no_unique_address]] Empty empty;
+  Payload payload;
+};
+
+int main()
+{
+  Holder src;
+  src.payload.value = 7;
+  Holder dst;
+  dst.payload.value = 99;
+  dst = src;
+  return dst.payload.value == 7 ? 0 : 1;
+}

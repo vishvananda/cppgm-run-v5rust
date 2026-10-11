@@ -1,0 +1,19 @@
+#include <set>
+#include <tuple>
+
+int main()
+{
+  std::set<int> seen;
+  seen.insert(1);
+  if (seen.count(1) != 1)
+    return 1;
+
+  typedef std::tuple<const void *, const void *, unsigned long> key_type;
+  const key_type first(0, 0, 1);
+  const key_type second(0, 0, 2);
+  std::set<key_type> keys;
+  keys.insert(second);
+  keys.insert(first);
+
+  return keys.count(first) == 1 && first < second ? 0 : 2;
+}

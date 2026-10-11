@@ -1,0 +1,30 @@
+function @unnamed(%__param0 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z7unnamed3BoxIiE] {
+  slot $__param0 : obj<4x4>
+
+  block ^entry:
+    return i32 1
+}
+function @named(%box : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=strong, object=_Z5named3BoxIcE] {
+  slot $box : obj<1x1>
+
+  block ^entry:
+    return i32 2
+}
+function @trivial(%__param0 : obj<8x8>) -> i32 [binding=strong, object=_Z7trivial5PlainIlE] {
+  slot $__param0 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $__param0
+    copyobj 8x8 %__param0, %t1
+    return i32 3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @deduced(%__param0 : ptr [pass=by_address, object_bytes=2]) -> i32 [binding=weak, object=_Z7deducedIsEi3BoxIT_E, object_root=yes] {
+  slot $__param0 : obj<2x2>
+
+  block ^entry:
+    return i32 4
+}

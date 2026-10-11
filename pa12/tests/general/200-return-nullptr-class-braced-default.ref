@@ -1,0 +1,84 @@
+function @parse(%error : u8) -> obj<4x4> [binding=strong, object=_Z5parseb] {
+  slot $error : u8
+  slot $retobj__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+  slot $argobj__3 : obj<4x4>
+
+  block ^entry:
+    store u8 %error, $error
+    %t1 = load u8 $error
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t2 = addr $retobj__1
+    %t3 = addr $argobj__2
+    call void @storage_ptr__storage_ptr(%t3)
+    call void @value__value(%t2, 0, $argobj__2)
+    return obj<4x4> $retobj__1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = addr $retobj__1
+    %t5 = addr $argobj__3
+    call void @storage_ptr__storage_ptr(%t5)
+    call void @value__value(%t4, 0, $argobj__3)
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $v : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $v
+    %t2 = call obj<4x4> @parse(1)
+    copyobj 4x4 %t2, %t1
+    %t3 = addr $v
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed i32 %t4
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @storage_ptr__storage_ptr(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN11storage_ptrC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @value__value(%this : ptr [object_bytes=4], %__param1 : i64, %sp : obj<4x4>) -> void [binding=weak, object=_ZN5valueC1EDn11storage_ptr, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i64
+  slot $sp : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %__param1, $__param1
+    %t1 = addr $sp
+    copyobj 4x4 %sp, %t1
+    %t2 = addr $sp
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN11storage_ptrC2Ev = @storage_ptr__storage_ptr
+alias object _ZN5valueC2EDn11storage_ptr = @value__value

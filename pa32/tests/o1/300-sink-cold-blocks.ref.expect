@@ -1,0 +1,10 @@
+# budget from 300-sink-cold-blocks.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 22
+blocks <= 12
+count(call) <= 6
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 9 in @guarded
+instructions <= 10 in @chained
+instructions <= 9 in @keeps_live_successor

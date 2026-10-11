@@ -1,0 +1,92 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $made : obj<24x8>
+  slot $through_member : i64
+  slot $through_object : i64
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $made
+    store typed i64 0, %t1
+    %t2 = index i8 %t1, 8
+    store typed i64 0, %t2
+    %t3 = index i8 %t1, 16
+    store typed i64 0, %t3
+    %t4 = addr $made
+    %t5 = call i64 @str_char___total(%t4)
+    store typed i64 %t5, $through_member
+    %t6 = addr $made
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load i64 %t9
+    %t11 = addr $made
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = index i8 [projection=field] %t13, 8
+    %t15 = load i64 %t14
+    %t16 = binary add i64 %t10, %t15
+    %t17 = addr $made
+    %t18 = index i8 [projection=field] %t17, 0
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = index i8 [projection=field] %t19, 16
+    %t21 = load i64 %t20
+    %t22 = binary add i64 %t16, %t21
+    store typed i64 %t22, $through_object
+    %t23 = load typed i64 $through_member
+    %t24 = convert sext i64 i32 0
+    %t25 = cmp eq i64 %t23, %t24
+    branch %t25, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t26 = load typed i64 $through_object
+    %t27 = convert sext i64 i32 0
+    %t28 = cmp eq i64 %t26, %t27
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t30 = load typed i64 $land__2
+    branch %t30, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t31 = load typed i32 $cond__1
+    return i32 %t31
+}
+function @str_char___total(%this : ptr [object_bytes=24]) -> i64 [binding=weak, object=_ZNK3strIcE5totalEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load i64 %t4
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = load i64 %t9
+    %t11 = binary add i64 %t5, %t10
+    %t12 = load typed ptr $this
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = index i8 [projection=field] %t14, 16
+    %t16 = load i64 %t15
+    %t17 = binary add i64 %t11, %t16
+    return i64 %t17
+}

@@ -1,0 +1,96 @@
+function @owner__owner__base_entry(%this : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN5ownerC2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @holder_implementation____holder(%t2)
+    eh_end
+    resume
+}
+function @owner__owner(%this : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN5ownerC1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @holder_implementation____holder(%t2)
+    eh_end
+    resume
+}
+function @owner___owner__base_entry(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5ownerD2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @holder_implementation____holder(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @holder_implementation____holder(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @owner___owner(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5ownerD1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @holder_implementation____holder(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @holder_implementation____holder(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @owner__owner(%t1)
+    %t2 = addr $value
+    %t3 = addr $value
+    call void @owner___owner(%t3)
+    return i32 0
+}
+function @holder_implementation____holder(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN6holderIN5owner14implementationEED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = const i64 1
+    return void
+}
+alias object _ZN6holderIN5owner14implementationEED2Ev = @holder_implementation____holder

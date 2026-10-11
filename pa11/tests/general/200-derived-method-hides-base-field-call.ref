@@ -1,0 +1,64 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $x
+    call void @YDerived__YDerived(%t1)
+    %t2 = addr $x
+    %t3 = call i32 @YDerived__matches(%t2)
+    return i32 %t3
+}
+function @YDerived__YDerived(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN8YDerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @YBase__YBase__base_entry(%t2, 0)
+    return void
+}
+function @YDerived__matches(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN8YDerived7matchesEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = call i32 @YDerived__opcode(%t1)
+    %t3 = cmp eq i32 %t2, 0
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 7
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return i32 3
+}
+function @YBase__YBase__base_entry(%this : ptr [object_bytes=4], %op : i32) -> void [binding=weak, object=_ZN5YBaseC2E3YOp, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $op : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %op, $op
+    %t1 = load typed i32 $op
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @YDerived__opcode(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN8YDerived6opcodeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+alias object _ZN8YDerivedC2Ev = @YDerived__YDerived

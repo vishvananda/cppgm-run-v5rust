@@ -1,0 +1,18 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition library
+    namespace-definition imported
+      namespace-definition detail
+        type-alias unrelated long int
+    namespace-definition websocket
+      namespace-definition detail
+        type-alias frame_header int
+      function-definition library::websocket::read_header function of () returning int
+        compound-statement
+          simple-declaration
+            variable header int
+              literal prvalue int 7
+          return-statement
+            id-expression lvalue int header
+end translation unit

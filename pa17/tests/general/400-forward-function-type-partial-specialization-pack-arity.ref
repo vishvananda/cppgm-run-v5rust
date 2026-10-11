@@ -1,0 +1,25 @@
+declare global @box_int_____arity : i32 [binding=weak, object=_ZN3boxIFivEE5arityE]
+declare global @box_int_int_float____arity : i32 [binding=weak, object=_ZN3boxIFiifEE5arityE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = cmp ne i32 0, 0
+    branch %t1, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t2 = cmp ne i32 2, 2
+    %t3 = cmp ne i64 %t2, 0
+    store typed i64 %t3, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t4 = load typed i64 $lor__1
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}

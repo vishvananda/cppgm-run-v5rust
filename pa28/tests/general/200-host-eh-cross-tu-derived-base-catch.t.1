@@ -1,0 +1,16 @@
+struct BaseError
+{
+  int code;
+
+  BaseError() : code(7) {}
+};
+
+struct DerivedError : BaseError
+{
+  DerivedError() : BaseError() {}
+};
+
+void throw_derived_error()
+{
+  throw DerivedError();
+}

@@ -1,0 +1,31 @@
+struct Member
+{
+  int * pointer;
+  int local;
+
+  Member() : pointer(&local), local(7)
+  {
+  }
+
+  Member(Member && other) : pointer(&local), local(other.local)
+  {
+    other.pointer = 0;
+  }
+};
+
+struct Outer
+{
+  int prefix;
+  Member member;
+};
+
+int main()
+{
+  Outer source;
+  source.prefix = 3;
+  Outer destination(static_cast<Outer &&>(source));
+  return destination.prefix == 3 &&
+         destination.member.local == 7 &&
+         destination.member.pointer == &destination.member.local &&
+         source.member.pointer == 0 ? 0 : 1;
+}

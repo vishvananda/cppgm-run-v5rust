@@ -1,0 +1,27 @@
+declare function @input_base__operator__(%arg0 : ptr [object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN10input_basersIiEERS_RT_]
+
+function @use(%stream : ptr [pass=by_address, object_bytes=1], %value : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z3useR5inputIiERi] {
+  slot $stream : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %stream, $stream
+    store typed ptr %value, $value
+    %t1 = load typed ptr $stream
+    %t2 = load typed ptr $value
+    %t3 = call ptr @input_int___operator__(%t1, %t2)
+    return void
+}
+function @input_int___operator__(%this : ptr [object_bytes=1], %v : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN5inputIiErsIiEER10input_baseRT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %v, $v
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $v
+    %t4 = call ptr @input_base__operator__(%t2, %t3)
+    return ptr %t4
+}

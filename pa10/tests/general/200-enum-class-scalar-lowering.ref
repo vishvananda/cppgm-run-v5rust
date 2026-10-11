@@ -1,0 +1,12 @@
+function @f(%e : i64) -> i64 [binding=strong, object=_Z1f1E] {
+  slot $e : i64
+
+  block ^entry:
+    store typed i64 %e, $e
+    %t1 = load typed i64 $e
+    return i64 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

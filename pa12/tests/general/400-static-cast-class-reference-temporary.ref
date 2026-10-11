@@ -1,0 +1,42 @@
+function @read_ptr(%p : ptr) -> i32 [binding=strong, object=_Z8read_ptrPK7wrapper] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<4x4>
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $p
+    %t2 = addr $p
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 9, %t3
+    %t4 = addr $tmpobj__1
+    %t5 = addr $p
+    call void @wrapper__wrapper(%t4, %t5)
+    %t6 = call i32 @read_ptr(%t4)
+    %t7 = binary sub nowrap i32 %t6, 9
+    return i32 %t7
+}
+function @wrapper__wrapper(%this : ptr [object_bytes=4], %p : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN7wrapperC1ERK7tracked, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+alias object _ZN7wrapperC2ERK7tracked = @wrapper__wrapper

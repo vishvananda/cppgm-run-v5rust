@@ -1,0 +1,430 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Derived [storage=readonly, binding=weak, object=_ZTS7Derived] = {
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Front [storage=readonly, binding=weak, object=_ZTS5Front] = {
+  i8 53
+  i8 70
+  i8 114
+  i8 111
+  i8 110
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Front [storage=readonly, binding=weak, object=_ZTI5Front] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Front
+}
+global @__typeinfo_name__struct_Pair [storage=readonly, binding=weak, object=_ZTS4Pair] = {
+  i8 52
+  i8 80
+  i8 97
+  i8 105
+  i8 114
+  i8 0
+}
+global @__typeinfo_name__struct_Left [storage=readonly, binding=weak, object=_ZTS4Left] = {
+  i8 52
+  i8 76
+  i8 101
+  i8 102
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Left [storage=readonly, binding=weak, object=_ZTI4Left] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Left
+}
+global @__typeinfo_name__struct_Right [storage=readonly, binding=weak, object=_ZTS5Right] = {
+  i8 53
+  i8 82
+  i8 105
+  i8 103
+  i8 104
+  i8 116
+  i8 0
+}
+global @__rtti_struct_Right [storage=readonly, binding=weak, object=_ZTI5Right] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Right
+}
+global @__rtti_struct_Pair [storage=readonly, binding=weak, object=_ZTI4Pair] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Pair
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Left
+  i64 2
+  ptr addr @__rtti_struct_Right
+  i64 4098
+}
+global @__rtti_struct_Derived [storage=readonly, binding=weak, object=_ZTI7Derived] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Front
+  i64 2
+  ptr addr @__rtti_struct_Pair
+  i64 -6141
+}
+global @Derived__vtable [storage=readonly, binding=weak, object=_ZTV7Derived] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_Derived
+  ptr addr @Front__w
+  ptr addr @Derived__x
+}
+global @Derived____view__Pair__16__vtable [storage=readonly, binding=internal] = {
+  i64 0
+  i64 -16
+  i64 -16
+  ptr addr @__rtti_struct_Derived
+  ptr addr @_Derived__x__vtable_return_adjust__this_pos0__return_pos0__vcall_n24
+  ptr addr @Pair__y
+}
+global @Derived____view__Right__32__vtable [storage=readonly, binding=internal] = {
+  i64 -32
+  ptr addr @__rtti_struct_Derived
+  ptr addr @_Pair__y__vtable_return_adjust__this_neg16__return_pos0
+}
+global @Derived____vtt [storage=readonly, binding=weak, object=_ZTT7Derived, object_root=yes] = {
+  ptr addr @Derived__vtable + 24
+  ptr addr @Derived____view__Pair__16__vtable + 32
+  ptr addr @Derived____view__Right__32__vtable + 16
+}
+global @Front__vtable [storage=readonly, binding=weak, object=_ZTV5Front] = {
+  i64 0
+  ptr addr @__rtti_struct_Front
+  ptr addr @Front__w
+}
+global @Pair__vtable [storage=readonly, binding=weak, object=_ZTV4Pair] = {
+  i64 0
+  ptr addr @__rtti_struct_Pair
+  ptr addr @Left__x
+  ptr addr @Pair__y
+}
+global @Pair____view__Right__16__vtable [storage=readonly, binding=internal] = {
+  i64 -16
+  ptr addr @__rtti_struct_Pair
+  ptr addr @_Pair__y__vtable_return_adjust__this_neg16__return_pos0
+}
+global @Left__vtable [storage=readonly, binding=weak, object=_ZTV4Left] = {
+  i64 0
+  ptr addr @__rtti_struct_Left
+  ptr addr @Left__x
+}
+global @Right__vtable [storage=readonly, binding=weak, object=_ZTV5Right] = {
+  i64 0
+  ptr addr @__rtti_struct_Right
+  ptr addr @Right__y
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $derived : obj<48x8>
+  slot $pair : ptr
+  slot $right : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+  slot $pair_member : i128
+  slot $member_pointer_callee__2 : ptr
+
+  block ^entry:
+    %t1 = addr $derived
+    call void @Derived__Derived(%t1)
+    %t2 = addr $derived
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, $pair
+    %t4 = addr $derived
+    %t5 = index i8 %t4, 32
+    store typed ptr %t5, $right
+    %t6 = addr $derived
+    %t7 = load typed ptr %t6
+    %t8 = index i8 %t7, 8
+    %t9 = load typed ptr %t8
+    %t10 = call i32 %t9(%t6) as (%arg0 : ptr [object_bytes=48]) -> i32
+    %t11 = cmp ne i32 %t10, 10
+    branch %t11, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t12 = addr $derived
+    %t13 = index i8 %t12, 0
+    %t14 = load typed ptr %t13
+    %t15 = load typed ptr %t14
+    %t16 = call i32 %t15(%t13) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t17 = cmp ne i32 %t16, 3
+    branch %t17, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t18 = load typed ptr $pair
+    %t19 = load typed ptr %t18
+    %t20 = index i8 %t19, 8
+    %t21 = load typed ptr %t20
+    %t22 = call i32 %t21(%t18) as (%arg0 : ptr [object_bytes=32]) -> i32
+    %t23 = cmp ne i32 %t22, 20
+    branch %t23, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t24 = load typed ptr $pair
+    %t25 = index i8 %t24, 0
+    %t26 = load typed ptr %t25
+    %t27 = load typed ptr %t26
+    %t28 = call i32 %t27(%t25) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t29 = cmp ne i32 %t28, 10
+    branch %t29, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    %t30 = load typed ptr $right
+    %t31 = load typed ptr %t30
+    %t32 = load typed ptr %t31
+    %t33 = call i32 %t32(%t30) as (%arg0 : ptr [object_bytes=16]) -> i32
+    %t34 = cmp ne i32 %t33, 20
+    branch %t34, ^if_then_9, ^if_else_10
+
+  block ^if_then_9:
+    return i32 3
+
+  block ^if_else_10:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    %t35 = convert zext i128 i64 9
+    store typed i128 %t35, $member
+    %t36 = addr $derived
+    %t37 = load typed i128 $member
+    %t38 = binary shr i128 %t37, 64
+    %t39 = convert trunc i64 i128 %t38
+    %t40 = convert trunc i64 i128 %t37
+    %t41 = binary and i64 %t40, 1
+    %t42 = cmp ne i64 %t41, 0
+    %t43 = index i8 %t36, %t39
+    branch %t42, ^member_pointer_virtual_14, ^member_pointer_direct_15
+
+  block ^member_pointer_virtual_14:
+    %t44 = load typed ptr %t43
+    %t45 = binary sub i64 %t40, 1
+    %t46 = index i8 %t44, %t45
+    %t47 = load typed ptr %t46
+    store typed ptr %t47, $member_pointer_callee__1
+    jump ^member_pointer_end_16
+
+  block ^member_pointer_direct_15:
+    %t48 = copy ptr %t40
+    store typed ptr %t48, $member_pointer_callee__1
+    jump ^member_pointer_end_16
+
+  block ^member_pointer_end_16:
+    %t49 = load typed ptr $member_pointer_callee__1
+    %t50 = call i32 %t49(%t43) as (%arg0 : ptr) -> i32
+    %t51 = cmp ne i32 %t50, 10
+    branch %t51, ^if_then_12, ^if_else_13
+
+  block ^if_then_12:
+    return i32 4
+
+  block ^if_else_13:
+    jump ^if_end_17
+
+  block ^if_end_17:
+    %t52 = convert zext i128 i64 9
+    store typed i128 %t52, $pair_member
+    %t53 = load typed ptr $pair
+    %t54 = load typed i128 $pair_member
+    %t55 = binary shr i128 %t54, 64
+    %t56 = convert trunc i64 i128 %t55
+    %t57 = convert trunc i64 i128 %t54
+    %t58 = binary and i64 %t57, 1
+    %t59 = cmp ne i64 %t58, 0
+    %t60 = index i8 %t53, %t56
+    branch %t59, ^member_pointer_virtual_20, ^member_pointer_direct_21
+
+  block ^member_pointer_virtual_20:
+    %t61 = load typed ptr %t60
+    %t62 = binary sub i64 %t57, 1
+    %t63 = index i8 %t61, %t62
+    %t64 = load typed ptr %t63
+    store typed ptr %t64, $member_pointer_callee__2
+    jump ^member_pointer_end_22
+
+  block ^member_pointer_direct_21:
+    %t65 = copy ptr %t57
+    store typed ptr %t65, $member_pointer_callee__2
+    jump ^member_pointer_end_22
+
+  block ^member_pointer_end_22:
+    %t66 = load typed ptr $member_pointer_callee__2
+    %t67 = call i32 %t66(%t60) as (%arg0 : ptr) -> i32
+    %t68 = cmp ne i32 %t67, 20
+    branch %t68, ^if_then_18, ^if_else_19
+
+  block ^if_then_18:
+    return i32 5
+
+  block ^if_else_19:
+    jump ^if_end_23
+
+  block ^if_end_23:
+    return i32 0
+}
+function @Derived__Derived(%this : ptr [object_bytes=48]) -> void [unwind=no, binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 16
+    call void @Pair__Pair__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Front__Front__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = addr @Derived__vtable
+    %t7 = index i8 %t6, 24
+    store typed ptr %t7, %t5
+    %t8 = load typed ptr $this
+    %t9 = load typed ptr %t8
+    %t10 = index i8 %t9, -24
+    %t11 = load typed i64 %t10
+    %t12 = index i8 %t8, %t11
+    %t13 = index i8 %t12, 0
+    %t14 = addr @Derived____view__Pair__16__vtable
+    %t15 = index i8 %t14, 32
+    store typed ptr %t15, %t13
+    %t16 = load typed ptr $this
+    %t17 = load typed ptr %t16
+    %t18 = index i8 %t17, -24
+    %t19 = load typed i64 %t18
+    %t20 = index i8 %t16, %t19
+    %t21 = index i8 %t20, 16
+    %t22 = addr @Derived____view__Right__32__vtable
+    %t23 = index i8 %t22, 16
+    store typed ptr %t23, %t21
+    return void
+}
+function @Front__w(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN5Front1wEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 3
+}
+function @Derived__x(%this : ptr [object_bytes=48]) -> i32 [binding=weak, object=_ZN7Derived1xEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 10
+}
+function @Pair__y(%this : ptr [object_bytes=32]) -> i32 [binding=weak, object=_ZN4Pair1yEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 20
+}
+function @Left__x(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN4Left1xEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @Right__y(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN5Right1yEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 2
+}
+function @Pair__Pair__base_entry(%this : ptr [object_bytes=32]) -> void [unwind=no, binding=weak, object=_ZN4PairC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Left__Left__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 16
+    call void @Right__Right__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = addr @Pair__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 16
+    %t10 = addr @Pair____view__Right__16__vtable
+    %t11 = index i8 %t10, 16
+    store typed ptr %t11, %t9
+    return void
+}
+function @Front__Front__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5FrontC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Front__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Left__Left__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4LeftC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Left__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Right__Right__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5RightC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Right__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @_Derived__x__vtable_return_adjust__this_pos0__return_pos0__vcall_n24(%arg0 : ptr) -> i32 [binding=weak, object=_ZTv0_n24_N7Derived1xEv] {
+  block ^entry:
+    %t1 = load typed ptr %arg0
+    %t2 = index i8 %t1, -24
+    %t3 = load typed i64 %t2
+    %t4 = index i8 %arg0, %t3
+    %t5 = call i32 @Derived__x(%t4)
+    return i32 %t5
+}
+function @_Pair__y__vtable_return_adjust__this_neg16__return_pos0(%arg0 : ptr) -> i32 [binding=weak, object=_ZThn16_N4Pair1yEv] {
+  block ^entry:
+    %t1 = index i8 %arg0, -16
+    %t2 = call i32 @Pair__y(%t1)
+    return i32 %t2
+}

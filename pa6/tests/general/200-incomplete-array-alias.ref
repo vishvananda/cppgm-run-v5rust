@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable arr array of 10 int
+    type-alias UNKA array of 0 int
+    variable arrp pointer to array of 0 int
+    variable arrpp pointer to pointer to array of 0 int
+    variable arr array of 10 int
+end translation unit

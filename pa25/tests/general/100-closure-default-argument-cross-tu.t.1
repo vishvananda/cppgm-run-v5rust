@@ -1,0 +1,7 @@
+// N3485 3.2p5, 5.1.2p3: a lambda in a member function's default argument
+// (class or class template) is the same closure type in every TU, so its
+// static local is one object across TUs; expect exit 0
+struct K { int d(int x = [] { static int n = 0; return n += 10; }()) { return x; } };
+template<class T> struct KT { int d(int x = [] { static int n = 0; return n += 1; }()) { return x; } };
+int other();
+int main() { int b = other(); int a = K().d(); int c = KT<int>().d(); return b == 11 && a == 20 && c == 2 ? 0 : 1; }

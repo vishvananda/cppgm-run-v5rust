@@ -1,0 +1,18 @@
+declare function @X__f(%arg0 : ptr [object_bytes=1]) -> void [binding=strong, object=_ZNK1X1fEv]
+declare function @pick(%arg0 : i128, %arg1 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=weak, object=_Z4pickIv1XJES0_JEEiMT0_KFT_DpT1_ERKT2_DpRKT3_]
+
+global @x [binding=strong] = {
+  zero 1
+}
+global @selected : i32 [binding=strong] = zero
+
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @X__f
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    %t4 = addr @x
+    %t5 = call i32 @pick(%t3, %t4)
+    store typed i32 %t5, @selected
+    return void
+}

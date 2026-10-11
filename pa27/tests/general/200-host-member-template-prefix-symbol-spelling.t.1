@@ -1,0 +1,60 @@
+// Members of nested class template specializations.  Each signature reuses
+// the substitution of a template name or specialization the function's
+// own name already entered: `context::executor` is S0_, `executor<int>` S1_.
+struct context
+{
+  template<class Value>
+  struct executor
+  {
+    int id;
+    struct inner { int depth; };
+    template<class Other>
+    executor<Other> require(const Other &) const
+    {
+      executor<Other> result;
+      result.id = id + 1;
+      return result;
+    }
+    int take(executor other) const { return other.id + 10; }
+    int depth(inner value) const { return value.depth + 20; }
+  };
+};
+
+template<class> struct outer
+{
+  template<class> struct item
+  {
+    int value;
+    item() : value(3) {}
+    template<class U> item(item<U> const & other) : value(other.value + 1) {}
+  };
+};
+
+// Implicit instantiations the host-built caller links against.
+int local_members()
+{
+  context::executor<int> e;
+  e.id = 0;
+  context::executor<int>::inner n;
+  n.depth = 0;
+  outer<int>::item<long> converted = outer<int>::item<int>();
+  return e.require(0L).id + e.take(e) + e.depth(n) + converted.value;
+}
+
+// A function template whose twelfth template parameter appears in its
+// signature: template parameter numbers are decimal, T10_ not TA_.
+template<class A0, class A1, class A2, class A3, class A4, class A5,
+  class A6, class A7, class A8, class A9, class A10, class A11>
+int last(A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 value)
+{
+  return static_cast<int>(value);
+}
+
+int local_last() { return last(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1L); }
+
+int host_members();
+
+int main()
+{
+  return host_members() == 38 && local_members() == 35 && local_last() == 1 ? 0 : 1;
+}

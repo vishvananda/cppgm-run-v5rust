@@ -1,0 +1,81 @@
+function @helper(%value : i32) -> i32 [binding=strong, object=_Z6helperi] {
+  slot $value : i32
+  slot $s : obj<1x1>
+  slot $argobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr $s
+    %t2 = addr $s
+    %t3 = addr $argobj__1
+    %t4 = load typed i32 $value
+    store typed i32 %t4, %t3
+    call void @StringLike__resize_and_overwrite(%t2, 1, $argobj__1)
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @helper(1)
+    return i32 %t1
+}
+function @StringLike__resize_and_overwrite(%this : ptr [object_bytes=1], %n : i32, %op : obj<4x4>) -> void [binding=internal, object=_ZN10StringLike20resize_and_overwriteIZ6helperiE3$_0EEviT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+  slot $op : obj<4x4>
+  slot $term : obj<4x4>
+  slot $r : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = addr $op
+    copyobj 4x4 %op, %t1
+    %t2 = addr $term
+    %t3 = addr $term
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $op
+    %t6 = call ptr @move_ref(%t5)
+    %t7 = load typed i32 $n
+    %t8 = convert sext i64 i32 %t7
+    %t9 = call i32 @__lambda_helper_t113_123__operator__(%t6, 0, %t8)
+    store typed i32 %t9, $r
+    %t10 = load typed i32 $r
+    %t11 = addr $term
+    %t12 = index i8 [projection=field] %t11, 0
+    store typed i32 %t10, %t12
+    return void
+}
+function @move_ref(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=internal, object=_Z8move_refIZ6helperiE3$_0EOT_RS1_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+function @__lambda_helper_t113_123__operator__(%this : ptr [object_bytes=4], %__param1 : ptr, %n : i64) -> i32 [binding=internal, object=_ZZ6helperiENK3$_0clEPcm, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $n : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed i64 %n, $n
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i64 $n
+    %t5 = convert trunc i32 i64 %t4
+    %t6 = binary add nowrap i32 %t3, %t5
+    return i32 %t6
+}
+function @Terminator___Terminator(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=internal, object=_ZZN10StringLike20resize_and_overwriteIZ6helperiE3$_0EEviT_EN10TerminatorD1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZZN10StringLike20resize_and_overwriteIZ6helperiE3$_0EEviT_EN10TerminatorD2Ev = @Terminator___Terminator

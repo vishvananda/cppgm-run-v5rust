@@ -1,0 +1,19 @@
+#include "600-hosted-template-angle-vector-pair-substitution-link-smoke.shared.h"
+
+int main()
+{
+  IRecogTokenSequence tokens;
+  template_angle::NameLookup lookup;
+  template_angle::ParseHeuristicCache cache;
+  std::size_t end = 0;
+  std::vector<std::pair<std::size_t, std::size_t> > arg_ranges(
+      1,
+      std::pair<std::size_t, std::size_t>(1u, 2u));
+  return template_angle::parse_template_id_suffix_ranges(tokens,
+                                                         0,
+                                                         lookup,
+                                                         end,
+                                                         arg_ranges,
+                                                         &cache) &&
+         end == 1 ? 0 : 1;
+}

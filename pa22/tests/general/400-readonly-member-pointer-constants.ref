@@ -1,0 +1,104 @@
+global @value_member [storage=readonly, binding=internal, object=_ZL12value_member] = {
+  i64 8
+}
+global @sum_member [storage=readonly, binding=internal, object=_ZL10sum_member] = {
+  ptr addr @Record__sum
+  i64 0
+}
+global @members [storage=readonly, binding=internal, object=_ZL7members] = {
+  i64 0
+  i64 8
+}
+global @changeable_member [binding=strong] = {
+  i64 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $record : obj<16x8>
+  slot $cond__1 : i32
+  slot $member_pointer_callee__2 : ptr
+
+  block ^entry:
+    %t1 = addr $record
+    %t2 = addr $record
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 1, %t3
+    %t4 = addr $record
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i64 2, %t5
+    %t6 = addr $record
+    %t7 = load typed i64 @value_member
+    %t8 = index i8 [projection=field] %t6, %t7
+    %t9 = load typed i64 %t8
+    %t10 = addr $record
+    %t11 = load typed i128 @sum_member
+    %t12 = binary shr i128 %t11, 64
+    %t13 = convert trunc i64 i128 %t12
+    %t14 = convert trunc i64 i128 %t11
+    %t15 = binary and i64 %t14, 1
+    %t16 = cmp ne i64 %t15, 0
+    %t17 = index i8 %t10, %t13
+    branch %t16, ^member_pointer_virtual_4, ^member_pointer_direct_5
+
+  block ^member_pointer_virtual_4:
+    %t18 = load typed ptr %t17
+    %t19 = binary sub i64 %t14, 1
+    %t20 = index i8 %t18, %t19
+    %t21 = load typed ptr %t20
+    store typed ptr %t21, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_direct_5:
+    %t22 = copy ptr %t14
+    store typed ptr %t22, $member_pointer_callee__2
+    jump ^member_pointer_end_6
+
+  block ^member_pointer_end_6:
+    %t23 = load typed ptr $member_pointer_callee__2
+    %t24 = call i64 %t23(%t17) as (%arg0 : ptr [object_bytes=16]) -> i64
+    %t25 = binary add nowrap i64 %t9, %t24
+    %t26 = addr $record
+    %t27 = addr @members
+    %t28 = index i64 [projection=array_element] %t27, 0
+    %t29 = load typed i64 %t28
+    %t30 = index i8 [projection=field] %t26, %t29
+    %t31 = load typed i64 %t30
+    %t32 = binary add nowrap i64 %t25, %t31
+    %t33 = addr $record
+    %t34 = load typed i64 @changeable_member
+    %t35 = index i8 [projection=field] %t33, %t34
+    %t36 = load typed i64 %t35
+    %t37 = binary add nowrap i64 %t32, %t36
+    %t38 = binary add nowrap i32 2, 3
+    %t39 = binary add nowrap i32 %t38, 1
+    %t40 = binary add nowrap i32 %t39, 1
+    %t41 = convert sext i64 i32 %t40
+    %t42 = cmp eq i64 %t37, %t41
+    branch %t42, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t43 = load typed i32 $cond__1
+    return i32 %t43
+}
+function @Record__sum(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNK6Record3sumEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    %t6 = load typed i64 %t5
+    %t7 = binary add nowrap i64 %t3, %t6
+    return i64 %t7
+}

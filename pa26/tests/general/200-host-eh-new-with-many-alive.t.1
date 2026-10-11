@@ -1,0 +1,39 @@
+// N3485 15.2p1, 5.3.4p18: with nine destructible objects alive, when anything
+// in a full-expression containing a new-expression throws, each of those
+// objects is destroyed once, in reverse order of construction; a countdown
+// throws at each step in turn and the trace records the order
+#include "200-host-eh-new-with-many-alive.helper.h"
+typedef decltype(sizeof(0)) size_type;
+static unsigned long long trace;
+static int cd, steps;
+static void note(int v) { trace = trace * 31 + (unsigned long long)v; }
+static void tick(int w) { ++steps; if (cd > 0 && --cd == 0) throw w; }
+static int g(int x) { tick(x); return x; }
+struct T { int id; T(int i) : id(i) { tick(i); note(i); } ~T() { note(-id); } int get() const { return id; } };
+struct N { N() { tick(90); note(90); }
+  static void* operator new(size_type s) { note(1000); return ::operator new(s); }
+  static void operator delete(void* p) { note(2000); ::operator delete(p); } };
+static T mk(int i) { return T(i); }
+static int use(const T& t) { tick(t.id + 100); return t.id; }
+static int keep(N* n) { delete n; return 1; }
+#define NINE T v1(1); T v2(2); T v3(3); T v4(4); T v5(5); T v6(6); T v7(7); T v8(8); T v9(9);
+static void s1() { NINE g(keep(new N)); }
+static void s2() { NINE use(mk(keep(new N) + 10)); }
+static void s3() { NINE T x(mk(keep(new N) + 20)); note(x.id); }
+static void s4() { NINE note(T(keep(new N) + 30).get()); }
+static void s5() { NINE try { g(keep(new N) + 40); } catch (int e) { note(500 + e); throw; } }
+static void s6() { NINE for (int i = 0; i < 2; ++i) g(keep(new N) + keep(new N) + 50); }
+int main()
+{
+  void (*fs[])() = { s1, s2, s3, s4, s5, s6 };
+  for (int f = 0; f < 6; ++f)
+    for (int k = 0; k < 30; ++k)
+    {
+      trace = 0; steps = 0; cd = k;
+      try { fs[f](); } catch (int e) { note(7000 + e); }
+      out_line("f", trace);
+      if (k > steps)
+        break;
+    }
+  return 0;
+}

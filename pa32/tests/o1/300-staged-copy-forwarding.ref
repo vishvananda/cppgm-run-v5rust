@@ -1,0 +1,42 @@
+declare function @observe(%value : i64) -> void
+
+function @forwards(%dest : ptr, %a : i64, %b : i64) -> void {
+  block ^entry:
+    store i64 %a, %dest
+    %t1 = index i8 [projection=field] %dest, 8
+    store i64 %b, %t1
+    %t2 = index i8 [projection=field] %dest, 16
+    store i64 7, %t2
+    return void
+}
+function @keeps_load(%dest : ptr, %a : i64) -> i64 {
+  block ^entry:
+    store i64 %a, %dest
+    %t1 = index i8 [projection=field] %dest, 8
+    store i64 9, %t1
+    return i64 %a
+}
+function @keeps_two_copies(%dest : ptr, %other : ptr, %a : i64) -> void {
+  block ^entry:
+    store i64 %a, %dest
+    %t1 = index i8 [projection=field] %dest, 8
+    store i64 11, %t1
+    store i64 %a, %other
+    %t2 = index i8 [projection=field] %other, 8
+    store i64 11, %t2
+    return void
+}
+function @keeps_conditional_store(%dest : ptr, %a : i64, %pick : u8) -> void {
+  block ^entry:
+    branch %pick, ^set, ^done
+
+  block ^set:
+    jump ^done
+
+  block ^done:
+    %t1 = phi i64 [^entry: 0, ^set: 13]
+    store i64 %a, %dest
+    %t2 = index i8 [projection=field] %dest, 8
+    store i64 %t1, %t2
+    return void
+}

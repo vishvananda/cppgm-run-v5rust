@@ -1,0 +1,7 @@
+#include "100-polymorphic-constant-init-cross-tu-order.shared.h"
+
+int observed = instance.value.get();
+
+int main() {
+  return observed == 7 ? 0 : 1;
+}

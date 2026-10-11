@@ -1,0 +1,91 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $o : obj<12x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $o
+    call void @object__object(%t1)
+    %t2 = addr $o
+    %t3 = call i32 @object__run(%t2)
+    %t4 = cmp eq i32 %t3, 42
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @object__object(%this : ptr [object_bytes=12]) -> void [binding=weak, object=_ZN6objectC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @pad__pad__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 4
+    call void @holder_object___holder__base_entry(%t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i32 42, %t6
+    return void
+}
+function @object__run(%this : ptr [object_bytes=12]) -> i32 [binding=weak, object=_ZN6object3runEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 4
+    %t3 = call i32 @holder_object___read(%t2)
+    return i32 %t3
+}
+function @pad__pad__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3padC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @holder_object___holder__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6holderI6objectEC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 11, %t2
+    return void
+}
+function @holder_object___read(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN6holderI6objectE4readEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = call ptr @holder_object___final(%t1)
+    %t3 = index i8 [projection=field] %t2, 8
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @holder_object___final(%this : ptr [object_bytes=4]) -> ptr [binding=weak, object=_ZN6holderI6objectE5finalEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, -4
+    return ptr %t2
+}
+alias object _ZN6objectC2Ev = @object__object

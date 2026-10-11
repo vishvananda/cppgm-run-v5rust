@@ -1,0 +1,25 @@
+declare global @outer_int___inner_char___value : i32 [binding=weak, object=_ZN5outerIiE5innerIcE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = const i64 1
+    %t3 = binary add i64 %t1, %t2
+    %t4 = convert trunc i32 i64 %t3
+    %t5 = cmp eq i32 5, %t4
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}

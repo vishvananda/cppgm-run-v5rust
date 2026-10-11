@@ -1,0 +1,143 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Derived [storage=readonly, binding=weak, object=_ZTS7Derived] = {
+  i8 55
+  i8 68
+  i8 101
+  i8 114
+  i8 105
+  i8 118
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_Padding [storage=readonly, binding=weak, object=_ZTS7Padding] = {
+  i8 55
+  i8 80
+  i8 97
+  i8 100
+  i8 100
+  i8 105
+  i8 110
+  i8 103
+  i8 0
+}
+global @__rtti_struct_Padding [storage=readonly, binding=weak, object=_ZTI7Padding] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Padding
+}
+global @__typeinfo_name__struct_Base [storage=readonly, binding=weak, object=_ZTS4Base] = {
+  i8 52
+  i8 66
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_Base [storage=readonly, binding=weak, object=_ZTI4Base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Base
+}
+global @__rtti_struct_Derived [storage=readonly, binding=weak, object=_ZTI7Derived] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Derived
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_Padding
+  i64 2050
+  ptr addr @__rtti_struct_Base
+  i64 3074
+}
+global @Derived__vtable [storage=readonly, binding=weak, object=_ZTV7Derived] = {
+  i64 0
+  ptr addr @__rtti_struct_Derived
+  ptr addr @Derived__read
+}
+
+function @invoke(%object : ptr, %member : i128) -> i32 [binding=strong, object=_Z6invokeP4BaseMS_FivE] {
+  slot $object : ptr
+  slot $member : i128
+  slot $member_pointer_callee__1 : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    store typed i128 %member, $member
+    %t1 = load typed ptr $object
+    %t2 = load typed i128 $member
+    %t3 = binary shr i128 %t2, 64
+    %t4 = convert trunc i64 i128 %t3
+    %t5 = convert trunc i64 i128 %t2
+    %t6 = binary and i64 %t5, 1
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = index i8 %t1, %t4
+    branch %t7, ^member_pointer_virtual_1, ^member_pointer_direct_2
+
+  block ^member_pointer_virtual_1:
+    %t9 = load typed ptr %t8
+    %t10 = binary sub i64 %t5, 1
+    %t11 = index i8 %t9, %t10
+    %t12 = load typed ptr %t11
+    store typed ptr %t12, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_direct_2:
+    %t13 = copy ptr %t5
+    store typed ptr %t13, $member_pointer_callee__1
+    jump ^member_pointer_end_3
+
+  block ^member_pointer_end_3:
+    %t14 = load typed ptr $member_pointer_callee__1
+    %t15 = call i32 %t14(%t8) as (%arg0 : ptr [object_bytes=4]) -> i32
+    return i32 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<16x8>
+  slot $member : i128
+
+  block ^entry:
+    %t1 = addr $object
+    call void @Derived__Derived(%t1)
+    %t2 = addr $object
+    %t3 = index i8 %t2, 8
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = convert zext i128 i64 1
+    %t6 = convert trunc i64 i128 %t5
+    %t7 = cmp ne i64 %t6, 0
+    %t8 = binary mul i64 %t7, -12
+    %t9 = convert sext i128 i64 %t8
+    %t10 = binary shl i128 %t9, 64
+    %t11 = binary add i128 %t5, %t10
+    store typed i128 %t11, $member
+    %t12 = addr $object
+    %t13 = index i8 %t12, 12
+    %t14 = load typed i128 $member
+    %t15 = call i32 @invoke(%t13, %t14)
+    %t16 = cmp ne i32 %t15, 7
+    %t17 = convert trunc i32 i64 %t16
+    return i32 %t17
+}
+function @Derived__Derived(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Derived__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Derived__read(%this : ptr [object_bytes=16]) -> i32 [binding=weak, object=_ZN7Derived4readEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 8
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived

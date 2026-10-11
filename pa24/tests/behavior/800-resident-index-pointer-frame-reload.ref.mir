@@ -1,0 +1,74 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @bytes
+  storage data
+  item i8 11
+  item i8 22
+  item i8 33
+  item i8 44
+
+function @touch
+  abi
+    param %p -> rdi : ptr
+    param %a -> rsi : i64
+    param %b -> rdx : i64
+    param %c -> rcx : i64
+    param %d -> r8 : i64
+    param %e -> r9 : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rbx, @bytes+2
+    mov rdi, rbx
+    mov rsi, 1
+    mov rdx, 2
+    mov rcx, 3
+    mov r8, 4
+    mov r9, 5
+    call @touch [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    mov r8, @bytes+2
+    cmp.ptr rbx, r8
+    je ^good
+    jmp ^bad
+
+  block ^good
+    mov r8, 1
+    add r8, 2
+    add r8, 3
+    add r8, 4
+    add r8, 5
+    mov rdx, 15
+    cmp.i64 r8, rdx
+    sete r8
+    movzx r8, r8
+    cmp.i64 r8, 0
+    sete r8
+    movzx r8, r8
+    ret r8
+
+  block ^bad
+    mov rax, 1
+    ret rax

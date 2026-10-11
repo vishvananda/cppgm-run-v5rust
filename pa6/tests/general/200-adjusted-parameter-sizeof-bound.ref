@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias input array of 4 const int
+    function array_parameter function of (array of 4 int, lvalue-reference to array of 8 int) returning int
+    function alias_parameter function of (array of 4 const int, lvalue-reference to array of 8 int) returning int
+    function function_parameter function of (function of (int) returning int, lvalue-reference to array of 8 int) returning int
+    function qualified_parameter function of (const int, lvalue-reference to array of 4 int) returning int
+    function main function of () returning int
+    scope function main
+      scope block
+end translation unit

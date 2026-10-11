@@ -1,0 +1,2 @@
+-fvisibility=hidden
+-fvisibility-inlines-hidden

@@ -1,0 +1,19 @@
+namespace {
+struct Box {
+  static __attribute__((noinline, used)) int helper(int x)
+  {
+    return x + 1;
+  }
+
+  int run(int x) const
+  {
+    return helper(x) * 2;
+  }
+};
+}
+
+int main()
+{
+  Box box;
+  return box.run(20) == 42 ? 0 : 1;
+}

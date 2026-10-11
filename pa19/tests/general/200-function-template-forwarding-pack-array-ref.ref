@@ -1,0 +1,27 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 120
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : ptr
+  slot $refarg__1 : i32
+
+  block ^entry:
+    %t1 = addr @__strlit__1
+    store typed ptr %t1, $x
+    %t2 = load typed ptr $x
+    store typed i32 1, $refarg__1
+    %t3 = addr $refarg__1
+    %t4 = call i32 @f(%t2, %t3)
+    return i32 %t4
+}
+function @f(%args : ptr [pass=by_address, object_bytes=2], %args__pack2 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z1fIJRA2_KciEEiDpOT_] {
+  slot $args : ptr
+  slot $args__pack2 : ptr
+
+  block ^entry:
+    store typed ptr %args, $args
+    store typed ptr %args__pack2, $args__pack2
+    return i32 7
+}

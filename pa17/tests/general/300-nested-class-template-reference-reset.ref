@@ -1,0 +1,53 @@
+function @target() -> void [binding=strong, object=_Z6targetv] {
+  block ^entry:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = addr @target
+    call void @interpreter__register_function(%t2, %t3)
+    return i32 0
+}
+function @interpreter__register_function(%this : ptr [object_bytes=1], %f : ptr) -> void [binding=weak, object=_ZN11interpreter17register_functionIPFvvEEEvT_] {
+  slot $this : ptr
+  slot $f : ptr
+  slot $p : ptr
+  slot $refarg__1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %f, $f
+    %t1 = addr @interpreter__invoker_void____int_longint___apply
+    store typed ptr %t1, $p
+    %t2 = load typed ptr $f
+    store typed i32 0, $refarg__1
+    %t3 = addr $refarg__1
+    %t4 = load typed ptr $p
+    call void %t4(%t2, %t3) as (%arg0 : ptr, %arg1 : ptr [pass=by_address, object_bytes=4]) -> void
+    return void
+}
+function @interpreter__invoker_void____int_longint___apply(%f : ptr, %args : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN11interpreter7invokerIPFvvEilE5applyIiEEvS2_RKT_, inline_hint=yes] {
+  slot $f : ptr
+  slot $args : ptr
+
+  block ^entry:
+    store typed ptr %f, $f
+    store typed ptr %args, $args
+    %t1 = load typed ptr $f
+    %t2 = load typed ptr $args
+    call void @interpreter__invoker_void____longint_longint___apply(%t1, %t2)
+    return void
+}
+function @interpreter__invoker_void____longint_longint___apply(%__param0 : ptr, %__param1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN11interpreter7invokerIPFvvEllE5applyIiEEvS2_RKT_, inline_hint=yes] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return void
+}

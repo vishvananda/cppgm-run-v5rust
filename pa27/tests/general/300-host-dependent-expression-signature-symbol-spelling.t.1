@@ -1,0 +1,43 @@
+#include "300-host-dependent-expression-signature-symbol-spelling.helper.h"
+
+// The course defines and instantiates the templates; the C unit calls them
+// by clang's names: `_Z7measureIlEDTcldtcv6holderIT_E_E3getEERS1_`,
+// `_Z4wideIiEN9enable_ifIXaagtstT_Li2Entsr10is_pointerIS1_EE5valueEiE4typeES1_`,
+// `_Z4fillIsEiPT_RAplstS0_Li1E_i`, `_Z7checkedIlEN9enable_ifILb1ET_E4typeES1_`
+// and `_Z3ranI6runnerEDTcmcldtcl7declvalIT_EE3runEcvi_EERS1_`.
+template<class T> auto measure(T& value) -> decltype(holder<T>().get())
+{
+  return holder<T>().get() + int(sizeof(value));
+}
+template<class T>
+typename enable_if<(sizeof(T) > 2) && !is_pointer<T>::value, int>::type wide(T value)
+{
+  return int(value) * 2;
+}
+template<class T> int fill(T* first, int (&counts)[sizeof(T) + 1])
+{
+  counts[0] = int(*first);
+  return int(sizeof(counts) / sizeof(counts[0]));
+}
+template<class T>
+typename enable_if<traits<unsigned>::bits == 32, T>::type checked(T value)
+{
+  return value + 1;
+}
+template<class T> auto ran(T& value) -> decltype(declval<T>().run(), int())
+{
+  return value.run() + 1;
+}
+
+template auto measure<long>(long&) -> decltype(holder<long>().get());
+template int wide<int>(int);
+template int fill<short>(short*, int (&)[sizeof(short) + 1]);
+template long checked<long>(long);
+template auto ran<runner>(runner&) -> decltype(declval<runner>().run(), int());
+
+int host_calls();
+
+int main()
+{
+  return host_calls() == 16 + 10 + 3 + 9 + 42 + 4 ? 0 : 1;
+}

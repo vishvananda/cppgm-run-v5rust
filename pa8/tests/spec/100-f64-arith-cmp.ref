@@ -1,0 +1,9 @@
+function @main() -> i64 [role=entry] {
+  block ^entry:
+    %a = const f64 8
+    %b = const f64 2
+    %c = binary div f64 %a, %b
+    %d = const f64 4
+    %ok = cmp eq f64 %c, %d
+    return i64 %ok
+}

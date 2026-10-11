@@ -1,0 +1,17 @@
+template<class T>
+__attribute__((noinline)) inline void write_one(T * p)
+{
+  *p = T(7);
+}
+
+int use_write()
+{
+  int value = 0;
+  write_one(&value);
+  return value;
+}
+
+int main()
+{
+  return use_write() == 7 ? 0 : 1;
+}

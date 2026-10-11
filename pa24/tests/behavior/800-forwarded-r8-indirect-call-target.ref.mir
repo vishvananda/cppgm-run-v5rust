@@ -1,0 +1,85 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @receiver
+  storage scalar i8
+  init i8 0
+
+global @source
+  storage scalar i8
+  init i8 0
+
+global @payload
+  storage scalar i8
+  init i8 0
+
+global @observed
+  storage scalar i64
+  init i64 0
+
+global @dispatch readonly
+  storage data
+  item ptr addr @sink
+
+function @sink
+  abi
+    param %this -> rdi : ptr
+    param %source -> rsi : ptr
+    param %type -> rdx : i32
+    param %data -> rcx : ptr
+    param %size -> r8 : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 @observed, r8
+    ret
+
+function @forward
+  abi
+    param %this -> rdi : ptr
+    param %source -> rsi : ptr
+    param %type -> rdx : i32
+    param %data -> rcx : ptr
+    param %size -> r8 : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.ptr r9, @dispatch
+    call *r9 [args=(rcx,rdx,rsi,rdi,r8)]
+    ret
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @receiver
+    mov rsi, @source
+    mov rcx, @payload
+    mov rdx, 13
+    mov r8, 77
+    call @forward [args=(rcx,rdx,rsi,rdi,r8)]
+    mov rdx, 77
+    cmp.i64 @observed, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

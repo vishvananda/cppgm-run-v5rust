@@ -1,0 +1,15 @@
+# budget from 400-keep-loop-location.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 12
+blocks <= 7
+count(call) <= 3
+count(load) <= 3
+count(store) <= 4
+count(phi) <= 4
+instructions <= 12 in @keep_location
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @keep_location
+none(/!dbg\((?!(?:loop\.cpp, 1, 1|loop\.cpp, 7, 5)\))/) in @keep_location
+has(/^%\S+ = binary add i64 %\S+, 1 !dbg\(loop\.cpp, 7, 5\)/) in @keep_location

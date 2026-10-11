@@ -1,0 +1,7 @@
+// N3485 5.3.4p9,p12: class-specific placement operator new[](size_t, const
+// nothrow_t&) is found and called; expect exit 0
+#include <new>
+#include <cstdlib>
+static int hit = 0;
+struct S { static void* operator new[](std::size_t n, const std::nothrow_t&) throw() { hit = 1; return std::malloc(n); } };
+int main() { S* s = new (std::nothrow) S[3]; return s && hit ? 0 : 1; }

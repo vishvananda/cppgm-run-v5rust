@@ -1,0 +1,10 @@
+global @value : i32 [binding=strong] = 4
+global @pointer : ptr [binding=strong] = addr @value
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed ptr @pointer
+    %t2 = load typed i32 %t1
+    %t3 = binary sub nowrap i32 %t2, 4
+    return i32 %t3
+}

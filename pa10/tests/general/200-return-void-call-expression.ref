@@ -1,0 +1,14 @@
+function @h() -> void [binding=strong, object=_Z1hv] {
+  block ^entry:
+    return void
+}
+function @g() -> void [binding=strong, object=_Z1gv] {
+  block ^entry:
+    call void @h()
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @g()
+    return i32 0
+}

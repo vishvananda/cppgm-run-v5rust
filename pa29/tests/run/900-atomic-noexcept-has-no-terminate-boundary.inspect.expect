@@ -1,0 +1,3 @@
+absent_undefined_symbol_canonical 1 _ZSt9terminatev
+absent_undefined_symbol_canonical 1 _cxa_call_terminate
+absent_undefined_symbol_canonical 1 _cxa_begin_catch

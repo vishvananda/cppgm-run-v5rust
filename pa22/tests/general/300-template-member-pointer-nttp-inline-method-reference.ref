@@ -1,0 +1,17 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $fsm : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $fsm
+    %t2 = addr $fsm
+    return i32 0
+}
+function @unix2dos_fsm__on_lf(%this : ptr [object_bytes=1], %__param1 : i8) -> void [binding=weak, object=_ZN12unix2dos_fsm5on_lfEc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i8
+
+  block ^entry:
+    store typed ptr %this, $this
+    store i8 %__param1, $__param1
+    return void
+}

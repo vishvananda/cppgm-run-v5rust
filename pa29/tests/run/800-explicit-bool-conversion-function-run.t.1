@@ -1,0 +1,7 @@
+// PA29 README (explicit(constant-expression): its condition decides whether
+// the function takes part in copy-initialization; C++20 [dcl.fct.spec]/3):
+// explicit(false) operator long is an implicit conversion,
+// explicit(sizeof(T)==4) operator T is not, for T = int; expect exit 0
+struct A { explicit(false) operator long() const { return 8; } };
+struct B { template <class T> explicit(sizeof(T) == 4) operator T() const { return 1; } operator long() const { return 2; } };
+int main() { A a; long l = a; B b; int i = b; return l == 8 && i == 2 ? 0 : 1; }

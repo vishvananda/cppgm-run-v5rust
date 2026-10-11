@@ -1,0 +1,7 @@
+declare global @is_same_char_char___value : u8 [binding=weak, object=_ZN7is_sameIccE5valueE]
+declare global @is_same_unsignedlongint_unsignedlongint___value : u8 [binding=weak, object=_ZN7is_sameImmE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

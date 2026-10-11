@@ -1,0 +1,10 @@
+# budget from 400-unreachable-terminator-branch.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 9
+blocks <= 8
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @drop_guard
+instructions <= 7 in @keep_ordinary_call
+instructions <= 4 in @main

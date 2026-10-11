@@ -1,0 +1,213 @@
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__class_YD [storage=readonly, binding=weak, object=_ZTS2YD] = {
+  i8 50
+  i8 89
+  i8 68
+  i8 0
+}
+global @__typeinfo_name__class_YB [storage=readonly, binding=weak, object=_ZTS2YB] = {
+  i8 50
+  i8 89
+  i8 66
+  i8 0
+}
+global @__typeinfo_name__class_YA [storage=readonly, binding=weak, object=_ZTS2YA] = {
+  i8 50
+  i8 89
+  i8 65
+  i8 0
+}
+global @__rtti_class_YA [storage=readonly, binding=weak, object=_ZTI2YA] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__class_YA
+}
+global @__rtti_class_YB [storage=readonly, binding=weak, object=_ZTI2YB] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__class_YB
+  i32 0
+  i32 1
+  ptr addr @__rtti_class_YA
+  i64 -6141
+}
+global @__typeinfo_name__class_YC [storage=readonly, binding=weak, object=_ZTS2YC] = {
+  i8 50
+  i8 89
+  i8 67
+  i8 0
+}
+global @__rtti_class_YC [storage=readonly, binding=weak, object=_ZTI2YC] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__class_YC
+  i32 0
+  i32 1
+  ptr addr @__rtti_class_YA
+  i64 -6141
+}
+global @__rtti_class_YD [storage=readonly, binding=weak, object=_ZTI2YD] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__class_YD
+  i32 2
+  i32 2
+  ptr addr @__rtti_class_YB
+  i64 2
+  ptr addr @__rtti_class_YC
+  i64 2050
+}
+global @YD__vtable [storage=readonly, binding=weak, object=_ZTV2YD] = {
+  i64 20
+  i64 0
+  ptr addr @__rtti_class_YD
+}
+global @YD____view__YC__8__vtable [storage=readonly, binding=internal] = {
+  i64 12
+  i64 -8
+  ptr addr @__rtti_class_YD
+}
+global @YD____construction__YB__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC2YD0_2YB] = {
+  i64 20
+  i64 0
+  ptr addr @__rtti_class_YB
+}
+global @YD____construction__YC__8__s0__vtable [storage=readonly, binding=internal, object=_ZTC2YD8_2YC] = {
+  i64 12
+  i64 0
+  ptr addr @__rtti_class_YC
+}
+global @YD____vtt [storage=readonly, binding=weak, object=_ZTT2YD, object_root=yes] = {
+  ptr addr @YD__vtable + 24
+  ptr addr @YD____construction__YB__0__s0__vtable + 24
+  ptr addr @YD____construction__YC__8__s0__vtable + 24
+  ptr addr @YD____view__YC__8__vtable + 24
+}
+global @YB__vtable [storage=readonly, binding=weak, object=_ZTV2YB] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_class_YB
+}
+global @YB____vtt [storage=readonly, binding=weak, object=_ZTT2YB, object_root=yes] = {
+  ptr addr @YB__vtable + 24
+}
+global @YC__vtable [storage=readonly, binding=weak, object=_ZTV2YC] = {
+  i64 12
+  i64 0
+  ptr addr @__rtti_class_YC
+}
+global @YC____vtt [storage=readonly, binding=weak, object=_ZTT2YC, object_root=yes] = {
+  ptr addr @YC__vtable + 24
+}
+
+function @read(%b : ptr [pass=by_address, object_bytes=16]) -> i32 [binding=strong, object=_Z4readR2YB] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    %t2 = load typed ptr %t1
+    %t3 = index i8 %t2, -24
+    %t4 = load typed i64 %t3
+    %t5 = index i8 %t1, %t4
+    %t6 = index i8 %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    return i32 %t8
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<24x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr $d
+    call void @YD__YD(%t1)
+    %t2 = addr $d
+    %t3 = index i8 %t2, 8
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed i32 13, %t4
+    %t5 = addr $d
+    %t6 = index i8 %t5, 20
+    %t7 = index i8 [projection=field] %t6, 0
+    store typed i32 5, %t7
+    %t8 = addr $d
+    %t9 = index i8 %t8, 20
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = cmp eq i32 %t11, 5
+    branch %t12, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t13 = addr $d
+    %t14 = index i8 %t13, 0
+    %t15 = call i32 @read(%t14)
+    %t16 = cmp eq i32 %t15, 5
+    %t17 = cmp ne i64 %t16, 0
+    store typed i64 %t17, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t18 = load typed i64 $land__2
+    branch %t18, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t19 = load typed i32 $cond__1
+    return i32 %t19
+}
+function @YD__YD(%this : ptr [object_bytes=24]) -> void [unwind=no, binding=weak, object=_ZN2YDC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr @YD____vtt
+    %t4 = index i8 %t3, 8
+    call void @YB__YB__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 8
+    %t7 = addr @YD____vtt
+    %t8 = index i8 %t7, 16
+    call void @YC__YC__base_entry(%t6, %t8)
+    %t9 = load typed ptr $this
+    %t10 = addr @YD__vtable
+    %t11 = index i8 %t10, 24
+    store typed ptr %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 8
+    %t14 = addr @YD____view__YC__8__vtable
+    %t15 = index i8 %t14, 24
+    store typed ptr %t15, %t13
+    return void
+}
+function @YB__YB__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN2YBC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}
+function @YC__YC__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN2YCC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}

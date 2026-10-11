@@ -1,0 +1,31 @@
+struct Root
+{
+  virtual ~Root() {}
+};
+
+struct Mid : virtual Root
+{
+  Mid() {}
+};
+
+struct Leaf : virtual Mid
+{
+  Leaf() {}
+};
+
+int main()
+{
+  try
+  {
+    throw Leaf();
+  }
+  catch (Mid const &)
+  {
+    return 0;
+  }
+  catch (...)
+  {
+    return 1;
+  }
+  return 2;
+}

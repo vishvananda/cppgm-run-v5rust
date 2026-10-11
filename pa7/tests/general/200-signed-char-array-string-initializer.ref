@@ -1,0 +1,47 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable sc array of 4 signed char
+    braced-init-list lvalue array of 4 signed char
+      literal prvalue signed char 97
+      literal prvalue signed char 98
+      literal prvalue signed char 99
+      literal prvalue signed char 0
+  variable uc array of 4 unsigned char
+    braced-init-list lvalue array of 4 unsigned char
+      literal prvalue unsigned char 97
+      literal prvalue unsigned char 98
+      literal prvalue unsigned char 99
+      literal prvalue unsigned char 0
+  variable sd array of 3 signed char
+    braced-init-list lvalue array of 3 signed char
+      literal prvalue signed char 97
+      literal prvalue signed char 98
+      literal prvalue signed char 0
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue unsigned long int OP_PLUS:+
+          binary-expression prvalue unsigned long int OP_PLUS:+
+            binary-expression prvalue unsigned long int OP_PLUS:+
+              binary-expression prvalue unsigned long int OP_PLUS:+
+                sizeof-expression prvalue unsigned long int
+                sizeof-expression prvalue unsigned long int
+              sizeof-expression prvalue unsigned long int
+            conditional-expression prvalue int
+              binary-expression prvalue bool OP_EQ:==
+                subscript-expression lvalue signed char
+                  id-expression lvalue array of 4 signed char sc
+                  literal prvalue int 1
+                literal prvalue char 'b'
+              literal prvalue int 0
+              literal prvalue int 50
+          conditional-expression prvalue int
+            binary-expression prvalue bool OP_EQ:==
+              subscript-expression lvalue unsigned char
+                id-expression lvalue array of 4 unsigned char uc
+                literal prvalue int 2
+              literal prvalue char 'c'
+            literal prvalue int 0
+            literal prvalue int 60
+end translation unit

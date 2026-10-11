@@ -1,0 +1,138 @@
+global @constructions : i32 [binding=strong] = 0
+global @calls : i32 [binding=strong] = 0
+
+function @make() -> obj<4x4> [binding=strong, object=_Z4makev] {
+  slot $p : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    %t3 = addr $p
+    %t4 = addr $p
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 3, %t5
+    %t6 = addr $retobj__1
+    %t7 = addr $p
+    copyobj 4x4 %t7, %t6
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $counted : obj<4x4>
+  slot $from_call : obj<4x4>
+  slot $empty : obj<1x1>
+  slot $spelled : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    %t1 = addr $counted
+    call void @Counted__Counted(%t1)
+    %t2 = addr $from_call
+    %t3 = call obj<4x4> @make()
+    copyobj 4x4 %t3, %t2
+    %t4 = addr $empty
+    zeroinit 1x1 %t4
+    %t5 = addr $empty
+    %t6 = addr $spelled
+    call void @Counted__Counted(%t6)
+    %t7 = addr $counted
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 7
+    branch %t10, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t11 = addr $spelled
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i32 %t12
+    %t14 = cmp eq i32 %t13, 7
+    %t15 = cmp ne i64 %t14, 0
+    store typed i64 %t15, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t16 = load typed i64 $land__2
+    branch %t16, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t17 = load typed i32 @constructions
+    %t18 = cmp eq i32 %t17, 2
+    %t19 = cmp ne i64 %t18, 0
+    store typed i64 %t19, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t20 = load typed i64 $land__3
+    branch %t20, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t21 = addr $from_call
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load typed i32 %t22
+    %t24 = cmp eq i32 %t23, 3
+    %t25 = cmp ne i64 %t24, 0
+    store typed i64 %t25, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t26 = load typed i64 $land__4
+    branch %t26, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t27 = load typed i32 @calls
+    %t28 = cmp eq i32 %t27, 1
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t30 = load typed i64 $land__5
+    branch %t30, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t31 = load typed i32 $cond__1
+    return i32 %t31
+}
+function @Counted__Counted(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7CountedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    %t3 = load typed i32 @constructions
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @constructions
+    return void
+}
+alias object _ZN7CountedC2Ev = @Counted__Counted

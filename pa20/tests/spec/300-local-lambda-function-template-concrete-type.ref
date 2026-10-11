@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $f : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $f
+    %t2 = addr $f
+    %t3 = call i32 @__lambda_main_t45_47__operator__(%t2)
+    return i32 %t3
+}
+function @__lambda_main_t45_47__operator__(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZ4mainENK3$_0clEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = call i32 @use(%t2)
+    return i32 %t3
+}
+function @use(%__param0 : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=internal, object=_Z3useIZZ4mainENK3$_0clEvE5localEiR3boxIT_E] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}
+function @box_local____box(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=internal, object=_ZN3boxIZZ4mainENK3$_0clEvE5localED1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN3boxIZZ4mainENK3$_0clEvE5localED2Ev = @box_local____box

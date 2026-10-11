@@ -1,0 +1,14 @@
+// Templated lambdas (C++20 [expr.prim.lambda], P0428; GCC and Clang accept
+// them in C++11 mode): a capture-default captures what the body names, a named
+// constant too where the body odr-uses it (&n, P0588R1), through a nested
+// templated lambda's body as well
+int main() {
+  const int n = 4;
+  int x = 1;
+  auto l = [=]<class T>(T) { return &n; };
+  auto m = [&]<class T>(T) { return &n; };
+  auto a = [=]<class T>(T t) { int arr[n]; return (int)sizeof(arr) + t; };
+  auto b = [&]<class T>(T t) { return [=]<class U, int N>(U u) { U a[N] = {}; return u + x + n + N + (int)sizeof(a); }.template operator()<T, 2>(t); };
+  auto h = [=]<class T>(T t) { return [=]<class U>(U u) { return x + t + u; }(1); };
+  return (l(0) != &n && m(0) == &n && a(1) == 17 && b(5) == 20 && h(100) == 102 && sizeof(l) == sizeof(int)) ? 0 : 1;
+}

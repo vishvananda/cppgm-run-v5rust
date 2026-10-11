@@ -1,0 +1,431 @@
+declare global @Size_4___value : i32 [binding=weak, object=_ZN4SizeILi4EE5valueE]
+
+global @calls : i32 [binding=strong] = zero
+global @plain [storage=readonly, binding=internal, object=_ZL5plain] = {
+  i32 1
+}
+global @bound : obj<12x4> [binding=strong] = {
+  zero 12
+}
+global @members [storage=readonly, binding=internal, object=_ZL7members] = {
+  i32 1
+  i32 10
+  i32 11
+  i32 7
+}
+global @shorter [storage=readonly, binding=internal, object=_ZL7shorter] = {
+  i32 21
+}
+global @longer [storage=readonly, binding=internal, object=_ZL6longer] = {
+  i32 3
+}
+global @wrapped [storage=readonly, binding=internal, object=_ZL7wrapped] = {
+  i32 5
+  i32 3
+}
+global @chained [storage=readonly, binding=internal, object=_ZL7chained] = {
+  i32 6
+  i32 10
+  i32 16
+  i32 7
+  i32 4
+}
+global @early_static : i32 [binding=strong] = zero
+global @early_dynamic : i32 [binding=strong] = zero
+global @constant_initialized [binding=strong] = {
+  i32 30
+  i32 3
+}
+global @defaulted_static [binding=strong] = {
+  i32 21
+}
+global @dynamic : obj<8x4> [binding=strong] = {
+  zero 8
+}
+global @late_dynamic : i32 [binding=strong] = zero
+
+function @counted() -> i32 [binding=strong, object=_Z7countedv] {
+  block ^entry:
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    return i32 %t2
+}
+function @read_static() -> i32 [binding=strong, object=_Z11read_staticv] {
+  block ^entry:
+    %t1 = addr @constant_initialized
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = addr @constant_initialized
+    %t6 = index i8 [projection=field] %t5, 4
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    %t9 = addr @defaulted_static
+    %t10 = index i8 %t9, 0
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    %t13 = binary add nowrap i32 %t8, %t12
+    return i32 %t13
+}
+function @read_dynamic() -> i32 [binding=strong, object=_Z12read_dynamicv] {
+  block ^entry:
+    %t1 = addr @dynamic
+    %t2 = index i8 [projection=field] %t1, 4
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $local : obj<20x4>
+  slot $runtime : obj<8x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = addr @plain
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 1
+    branch %t5, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t6 = const i64 12
+    %t7 = const i64 4
+    %t8 = convert sext i64 i32 3
+    %t9 = binary mul i64 %t8, %t7
+    %t10 = cmp ne i64 %t6, %t9
+    branch %t10, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t11 = addr @members
+    %t12 = index i8 [projection=field] %t11, 8
+    %t13 = load typed i32 %t12
+    %t14 = cmp ne i32 %t13, 11
+    branch %t14, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_5
+
+  block ^if_end_5:
+    %t15 = addr @shorter
+    %t16 = index i8 %t15, 0
+    %t17 = index i8 [projection=field] %t16, 0
+    %t18 = load typed i32 %t17
+    %t19 = cmp ne i32 %t18, 21
+    branch %t19, ^if_then_6, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t20 = addr @wrapped
+    %t21 = index i8 [projection=field] %t20, 4
+    %t22 = load typed i32 %t21
+    %t23 = cmp ne i32 %t22, 3
+    branch %t23, ^if_then_6, ^lor_rhs_8
+
+  block ^lor_rhs_8:
+    %t24 = addr @chained
+    %t25 = index i8 [projection=field] %t24, 16
+    %t26 = load typed i32 %t25
+    %t27 = cmp ne i32 %t26, 4
+    branch %t27, ^if_then_6, ^if_else_7
+
+  block ^if_then_6:
+    return i32 2
+
+  block ^if_else_7:
+    jump ^if_end_10
+
+  block ^if_end_10:
+    %t28 = load typed i32 @early_static
+    %t29 = cmp ne i32 %t28, 54
+    branch %t29, ^if_then_11, ^if_else_12
+
+  block ^if_then_11:
+    return i32 3
+
+  block ^if_else_12:
+    jump ^if_end_13
+
+  block ^if_end_13:
+    %t30 = load typed i32 @early_dynamic
+    %t31 = cmp ne i32 %t30, 0
+    branch %t31, ^if_then_14, ^lor_rhs_18
+
+  block ^lor_rhs_18:
+    %t32 = load typed i32 @late_dynamic
+    %t33 = cmp ne i32 %t32, 1
+    branch %t33, ^if_then_14, ^lor_rhs_17
+
+  block ^lor_rhs_17:
+    %t34 = addr @dynamic
+    %t35 = index i8 %t34, 0
+    %t36 = index i8 [projection=field] %t35, 0
+    %t37 = load typed i32 %t36
+    %t38 = cmp ne i32 %t37, 40
+    branch %t38, ^if_then_14, ^lor_rhs_16
+
+  block ^lor_rhs_16:
+    %t39 = load typed i32 @calls
+    %t40 = cmp ne i32 %t39, 1
+    branch %t40, ^if_then_14, ^if_else_15
+
+  block ^if_then_14:
+    return i32 4
+
+  block ^if_else_15:
+    jump ^if_end_19
+
+  block ^if_end_19:
+    %t41 = addr $local
+    call void @Chained__Chained(%t41, 8)
+    %t42 = addr $runtime
+    call void @Counted__Counted(%t42, 9)
+    %t43 = addr $runtime
+    %t44 = index i8 [projection=field] %t43, 4
+    %t45 = load typed i32 %t44
+    %t46 = cmp eq i32 %t45, 2
+    branch %t46, ^land_rhs_23, ^land_short_24
+
+  block ^land_rhs_23:
+    %t47 = addr $runtime
+    %t48 = index i8 %t47, 0
+    %t49 = index i8 [projection=field] %t48, 0
+    %t50 = load typed i32 %t49
+    %t51 = cmp eq i32 %t50, 9
+    %t52 = cmp ne i64 %t51, 0
+    store typed i64 %t52, $land__2
+    jump ^land_end_25
+
+  block ^land_short_24:
+    store typed i64 0, $land__2
+    jump ^land_end_25
+
+  block ^land_end_25:
+    %t53 = load typed i64 $land__2
+    branch %t53, ^cond_then_20, ^cond_else_21
+
+  block ^cond_then_20:
+    store typed i32 0, $cond__1
+    jump ^cond_end_22
+
+  block ^cond_else_21:
+    store typed i32 5, $cond__1
+    jump ^cond_end_22
+
+  block ^cond_end_22:
+    %t54 = load typed i32 $cond__1
+    return i32 %t54
+}
+function @Plain__Plain(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN5PlainC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    return void
+}
+function @Members__Members__base_entry(%this : ptr [object_bytes=16], %__param1 : i32) -> void [binding=weak, object=_ZN7MembersC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 10, %t5
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 4
+    %t12 = load typed i32 %t11
+    %t13 = binary add nowrap i32 %t9, %t12
+    %t14 = load typed ptr $this
+    %t15 = index i8 [projection=field] %t14, 8
+    store typed i32 %t13, %t15
+    %t16 = load typed ptr $this
+    %t17 = index i8 [projection=field] %t16, 12
+    call void @Inner__Inner(%t17)
+    return void
+}
+function @Defaulted__Defaulted__ov2(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN9DefaultedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Defaults__Defaults__base_entry(%t2, %t3, 20)
+    return void
+}
+function @Defaulted__Defaulted(%this : ptr [object_bytes=4], %__param1 : i32, %__param2 : i32) -> void [binding=weak, object=_ZN9DefaultedC1Eii, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $__param2 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    store typed i32 %__param2, $__param2
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    %t4 = load typed i32 $__param2
+    call void @Defaults__Defaults__base_entry(%t2, %t3, %t4)
+    return void
+}
+function @Wrapped_Base___Wrapped(%this : ptr [object_bytes=8], %__param1 : i32) -> void [binding=weak, object=_ZN7WrappedI4BaseEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 3, %t5
+    return void
+}
+function @Chained__Chained(%this : ptr [object_bytes=20], %__param1 : i32) -> void [binding=weak, object=_ZN7ChainedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Members__Members__base_entry(%t2, %t3)
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 16
+    store typed i32 4, %t5
+    return void
+}
+function @Counted__Counted(%this : ptr [object_bytes=8], %__param1 : i32) -> void [binding=weak, object=_ZN7CountedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    %t4 = call i32 @counted()
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    store typed i32 %t4, %t6
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4], %x : i32) -> void [binding=weak, object=_ZN4BaseC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Inner__Inner(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5InnerC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @Defaults__Defaults__base_entry(%this : ptr [object_bytes=4], %a : i32, %b : i32) -> void [binding=weak, object=_ZN8DefaultsC2Eii, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @Members__Members(%this : ptr [object_bytes=16], %__param1 : i32) -> void [binding=weak, object=_ZN7MembersC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 4
+    store typed i32 10, %t5
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i32 %t8
+    %t10 = load typed ptr $this
+    %t11 = index i8 [projection=field] %t10, 4
+    %t12 = load typed i32 %t11
+    %t13 = binary add nowrap i32 %t9, %t12
+    %t14 = load typed ptr $this
+    %t15 = index i8 [projection=field] %t14, 8
+    store typed i32 %t13, %t15
+    %t16 = load typed ptr $this
+    %t17 = index i8 [projection=field] %t16, 12
+    call void @Inner__Inner(%t17)
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call i32 @read_static()
+    store typed i32 %t1, @early_static
+    %t2 = call i32 @read_dynamic()
+    store typed i32 %t2, @early_dynamic
+    %t3 = addr @dynamic
+    call void @Counted__Counted(%t3, 40)
+    %t4 = call i32 @read_dynamic()
+    store typed i32 %t4, @late_dynamic
+    return void
+}
+alias object _ZN5PlainC2Ei = @Plain__Plain
+alias object _ZN9DefaultedC2Ei = @Defaulted__Defaulted__ov2
+alias object _ZN9DefaultedC2Eii = @Defaulted__Defaulted
+alias object _ZN7WrappedI4BaseEC2Ei = @Wrapped_Base___Wrapped
+alias object _ZN7ChainedC2Ei = @Chained__Chained
+alias object _ZN7CountedC2Ei = @Counted__Counted
+alias object _ZN5InnerC2Ev = @Inner__Inner

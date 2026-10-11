@@ -1,0 +1,22 @@
+global @p [storage=readonly, binding=internal, object=_ZL1p] = {
+  i32 9
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @Point__Point(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN5PointC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN5PointC2Ei = @Point__Point

@@ -1,0 +1,25 @@
+namespace api {
+inline namespace v2 {
+template<class Char, class TraitsT, class AllocT>
+struct Text {};
+}
+
+template<class Char, class TraitsT>
+struct Sink {};
+
+template<class Char, class TraitsT, class AllocT>
+__attribute__((noinline))
+Sink<Char, TraitsT> & operator<<(Sink<Char, TraitsT> & sink,
+                                 Text<Char, TraitsT, AllocT> const &)
+{
+  return sink;
+}
+}
+
+int main()
+{
+  api::Sink<char, int> sink;
+  api::Text<char, int, long> text;
+  api::operator<<(sink, text);
+  return 0;
+}

@@ -1,0 +1,26 @@
+#include "200-host-eh-vbase-rtti-out-of-line.shared.h"
+
+info_base::info_base() : data_(0)
+{
+}
+
+info_base::info_base(info_base const & other) : data_(other.data_)
+{
+}
+
+info_base::~info_base()
+{
+}
+
+payload::payload(int value) : value_(value)
+{
+}
+
+payload::~payload()
+{
+}
+
+void thrower()
+{
+  throw_wrapped(payload(42));
+}

@@ -1,0 +1,28 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @g
+  storage scalar i32
+  init i32 7
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r11, 11
+    xchg.i32 @g, r11
+    load.i32 r8, @g
+    cmp.i32 r8, 11
+    sete r8
+    movzx r8, r8
+    ret r8

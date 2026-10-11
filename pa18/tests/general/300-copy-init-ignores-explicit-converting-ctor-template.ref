@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $result : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    call void @box_type___box(%t1)
+    %t2 = addr $source
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 41, %t3
+    %t4 = addr $result
+    %t5 = addr $source
+    call void @box_consttype___box(%t4, %t5)
+    %t6 = addr $result
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 42
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @box_type___box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxI4typeEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @box_consttype___box(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN3boxIK4typeEC1IS0_EERKS_IT_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+alias object _ZN3boxI4typeEC2Ev = @box_type___box
+alias object _ZN3boxIK4typeEC2IS0_EERKS_IT_E = @box_consttype___box

@@ -1,0 +1,85 @@
+declare global @constant_int_1___value : i32 [binding=weak, object=_ZN8constantIiLi1EE5valueE]
+declare global @constant_int_0___value : i32 [binding=weak, object=_ZN8constantIiLi0EE5valueE]
+declare global @constant_int_2___value : i32 [binding=weak, object=_ZN8constantIiLi2EE5valueE]
+declare global @constant_int_3___value : i32 [binding=weak, object=_ZN8constantIiLi3EE5valueE]
+declare global @constant_int_4___value : i32 [binding=weak, object=_ZN8constantIiLi4EE5valueE]
+declare global @constant_int_5___value : i32 [binding=weak, object=_ZN8constantIiLi5EE5valueE]
+declare global @constant_int_6___value : i32 [binding=weak, object=_ZN8constantIiLi6EE5valueE]
+declare global @constant_int_7___value : i32 [binding=weak, object=_ZN8constantIiLi7EE5valueE]
+declare global @constant_int_8___value : i32 [binding=weak, object=_ZN8constantIiLi8EE5valueE]
+declare global @constant_int_9___value : i32 [binding=weak, object=_ZN8constantIiLi9EE5valueE]
+declare global @constant_int_10___value : i32 [binding=weak, object=_ZN8constantIiLi10EE5valueE]
+declare global @constant_int_11___value : i32 [binding=weak, object=_ZN8constantIiLi11EE5valueE]
+declare global @constant_int_12___value : i32 [binding=weak, object=_ZN8constantIiLi12EE5valueE]
+declare global @constant_int_13___value : i32 [binding=weak, object=_ZN8constantIiLi13EE5valueE]
+declare global @constant_int_14___value : i32 [binding=weak, object=_ZN8constantIiLi14EE5valueE]
+declare global @constant_int_15___value : i32 [binding=weak, object=_ZN8constantIiLi15EE5valueE]
+declare global @constant_int_16___value : i32 [binding=weak, object=_ZN8constantIiLi16EE5valueE]
+declare global @constant_int_17___value : i32 [binding=weak, object=_ZN8constantIiLi17EE5valueE]
+declare global @constant_int_18___value : i32 [binding=weak, object=_ZN8constantIiLi18EE5valueE]
+declare global @constant_int_19___value : i32 [binding=weak, object=_ZN8constantIiLi19EE5valueE]
+declare global @constant_int_20___value : i32 [binding=weak, object=_ZN8constantIiLi20EE5valueE]
+declare global @constant_int_21___value : i32 [binding=weak, object=_ZN8constantIiLi21EE5valueE]
+declare global @constant_int_22___value : i32 [binding=weak, object=_ZN8constantIiLi22EE5valueE]
+declare global @constant_int_23___value : i32 [binding=weak, object=_ZN8constantIiLi23EE5valueE]
+declare global @constant_int_24___value : i32 [binding=weak, object=_ZN8constantIiLi24EE5valueE]
+declare global @constant_int_25___value : i32 [binding=weak, object=_ZN8constantIiLi25EE5valueE]
+declare global @constant_int_26___value : i32 [binding=weak, object=_ZN8constantIiLi26EE5valueE]
+declare global @constant_int_27___value : i32 [binding=weak, object=_ZN8constantIiLi27EE5valueE]
+declare global @constant_int_28___value : i32 [binding=weak, object=_ZN8constantIiLi28EE5valueE]
+declare global @constant_int_29___value : i32 [binding=weak, object=_ZN8constantIiLi29EE5valueE]
+declare global @constant_int_30___value : i32 [binding=weak, object=_ZN8constantIiLi30EE5valueE]
+declare global @constant_int_31___value : i32 [binding=weak, object=_ZN8constantIiLi31EE5valueE]
+declare global @constant_int_32___value : i32 [binding=weak, object=_ZN8constantIiLi32EE5valueE]
+declare global @constant_int_33___value : i32 [binding=weak, object=_ZN8constantIiLi33EE5valueE]
+declare global @constant_int_34___value : i32 [binding=weak, object=_ZN8constantIiLi34EE5valueE]
+declare global @constant_int_35___value : i32 [binding=weak, object=_ZN8constantIiLi35EE5valueE]
+declare global @constant_int_36___value : i32 [binding=weak, object=_ZN8constantIiLi36EE5valueE]
+declare global @constant_int_37___value : i32 [binding=weak, object=_ZN8constantIiLi37EE5valueE]
+declare global @constant_int_38___value : i32 [binding=weak, object=_ZN8constantIiLi38EE5valueE]
+declare global @constant_int_39___value : i32 [binding=weak, object=_ZN8constantIiLi39EE5valueE]
+declare global @constant_int_40___value : i32 [binding=weak, object=_ZN8constantIiLi40EE5valueE]
+declare global @constant_int_41___value : i32 [binding=weak, object=_ZN8constantIiLi41EE5valueE]
+declare global @constant_int_42___value : i32 [binding=weak, object=_ZN8constantIiLi42EE5valueE]
+declare global @constant_int_43___value : i32 [binding=weak, object=_ZN8constantIiLi43EE5valueE]
+declare global @constant_int_44___value : i32 [binding=weak, object=_ZN8constantIiLi44EE5valueE]
+declare global @constant_int_45___value : i32 [binding=weak, object=_ZN8constantIiLi45EE5valueE]
+declare global @constant_int_46___value : i32 [binding=weak, object=_ZN8constantIiLi46EE5valueE]
+declare global @constant_int_47___value : i32 [binding=weak, object=_ZN8constantIiLi47EE5valueE]
+declare global @constant_int_48___value : i32 [binding=weak, object=_ZN8constantIiLi48EE5valueE]
+declare global @constant_int_49___value : i32 [binding=weak, object=_ZN8constantIiLi49EE5valueE]
+declare global @constant_int_50___value : i32 [binding=weak, object=_ZN8constantIiLi50EE5valueE]
+declare global @constant_int_51___value : i32 [binding=weak, object=_ZN8constantIiLi51EE5valueE]
+declare global @constant_int_52___value : i32 [binding=weak, object=_ZN8constantIiLi52EE5valueE]
+declare global @constant_int_53___value : i32 [binding=weak, object=_ZN8constantIiLi53EE5valueE]
+declare global @constant_int_54___value : i32 [binding=weak, object=_ZN8constantIiLi54EE5valueE]
+declare global @constant_int_55___value : i32 [binding=weak, object=_ZN8constantIiLi55EE5valueE]
+declare global @constant_int_56___value : i32 [binding=weak, object=_ZN8constantIiLi56EE5valueE]
+declare global @constant_int_57___value : i32 [binding=weak, object=_ZN8constantIiLi57EE5valueE]
+declare global @constant_int_58___value : i32 [binding=weak, object=_ZN8constantIiLi58EE5valueE]
+declare global @constant_int_59___value : i32 [binding=weak, object=_ZN8constantIiLi59EE5valueE]
+declare global @constant_int_60___value : i32 [binding=weak, object=_ZN8constantIiLi60EE5valueE]
+declare global @constant_int_61___value : i32 [binding=weak, object=_ZN8constantIiLi61EE5valueE]
+declare global @constant_int_62___value : i32 [binding=weak, object=_ZN8constantIiLi62EE5valueE]
+declare global @constant_int_63___value : i32 [binding=weak, object=_ZN8constantIiLi63EE5valueE]
+declare global @constant_int_64___value : i32 [binding=weak, object=_ZN8constantIiLi64EE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = cmp eq i32 64, 64
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}

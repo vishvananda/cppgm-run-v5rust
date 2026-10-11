@@ -1,0 +1,4 @@
+// N3485 9.6/1 + PA29 README (__int128 hosted type): an unsigned __int128
+// bit-field of width 100 holds 100 bits; expect exit 0
+struct W { unsigned __int128 wide : 100; };
+int main() { W w; w.wide = ((unsigned __int128)1 << 99) | 7; return (w.wide >> 96) == 8 && (w.wide & 7) == 7 ? 0 : 1; }

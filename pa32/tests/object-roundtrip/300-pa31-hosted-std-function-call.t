@@ -1,0 +1,1 @@
+../../../pa31/tests/link/600-hosted-std-function-call-link-smoke.t

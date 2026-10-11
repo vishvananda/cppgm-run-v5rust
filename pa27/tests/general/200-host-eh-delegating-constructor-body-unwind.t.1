@@ -1,0 +1,8 @@
+int live;
+struct member { member() { ++live; } ~member() { --live; } };
+struct owner {
+  member value;
+  owner(int) {}
+  owner() : owner(0) { throw 1; }
+};
+int main() { try { owner value; } catch (...) {} return live; }

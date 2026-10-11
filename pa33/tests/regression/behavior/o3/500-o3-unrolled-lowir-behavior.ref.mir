@@ -1,0 +1,29 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @observed
+  storage scalar i64
+  init i64 0
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    store.i64 @observed, 0
+    store.i64 @observed, 1
+    store.i64 @observed, 3
+    store.i64 @observed, 6
+    cmp.i64 @observed, 6
+    setne rax
+    movzx rax, rax
+    ret rax

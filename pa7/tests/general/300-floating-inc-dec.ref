@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition adjust function of (double) returning double
+    parameter value double
+    compound-statement
+      expression-statement
+        unary-expression lvalue double OP_INC:++
+          id-expression lvalue double value
+      expression-statement
+        postfix-expression prvalue double OP_DEC:--
+          id-expression lvalue double value
+      return-statement
+        id-expression lvalue double value
+end translation unit

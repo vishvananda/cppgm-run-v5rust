@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C class C
+    type-alias C class C
+    type S struct S
+    type-alias S struct S
+    type E enum E
+    enumerator E_value enum E 2
+    type-alias E enum E
+    variable c class C
+    variable s struct S
+    variable e enum E
+    variable values array of 2 int
+    scope class C
+      variable c int
+    scope class S
+      variable s int
+end translation unit

@@ -1,0 +1,45 @@
+function @Y__Y__base_entry(%this : ptr [object_bytes=4]) -> void [binding=strong, object=_ZN1YC2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 4, %t2
+    return void
+}
+function @Y__Y(%this : ptr [object_bytes=4]) -> void [binding=strong, object=_ZN1YC1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 4, %t2
+    return void
+}
+function @Y___Y__base_entry(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=strong, object=_ZN1YD2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @Y__Y(%t1)
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @Y___Y(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=strong, object=_ZN1YD1Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

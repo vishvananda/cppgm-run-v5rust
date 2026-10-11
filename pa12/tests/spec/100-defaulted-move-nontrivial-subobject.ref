@@ -1,0 +1,212 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $base_source : obj<4x4>
+  slot $base_dest : obj<4x4>
+  slot $member_source : obj<4x4>
+  slot $member_dest : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = addr $base_source
+    call void @BaseHolder__BaseHolder(%t1)
+    %t2 = addr $base_dest
+    %t3 = addr $base_source
+    call void @BaseHolder__BaseHolder__ov2(%t2, %t3)
+    %t4 = addr $member_source
+    call void @MemberHolder__MemberHolder(%t4)
+    %t5 = addr $member_dest
+    %t6 = addr $member_source
+    call void @MemberHolder__MemberHolder__ov2(%t5, %t6)
+    %t7 = addr $base_source
+    %t8 = index i8 %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    %t11 = unary neg i32 1
+    %t12 = cmp eq i32 %t10, %t11
+    branch %t12, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t13 = addr $base_dest
+    %t14 = index i8 %t13, 0
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i32 %t15
+    %t17 = cmp eq i32 %t16, 42
+    %t18 = cmp ne i64 %t17, 0
+    store typed i64 %t18, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t19 = load typed i64 $land__2
+    branch %t19, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t20 = addr $member_source
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load typed i32 %t22
+    %t24 = unary neg i32 1
+    %t25 = cmp eq i32 %t23, %t24
+    %t26 = cmp ne i64 %t25, 0
+    store typed i64 %t26, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t27 = load typed i64 $land__3
+    branch %t27, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t28 = addr $member_dest
+    %t29 = index i8 [projection=field] %t28, 0
+    %t30 = index i8 [projection=field] %t29, 0
+    %t31 = load typed i32 %t30
+    %t32 = cmp eq i32 %t31, 17
+    %t33 = cmp ne i64 %t32, 0
+    store typed i64 %t33, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t34 = load typed i64 $land__4
+    branch %t34, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t35 = load typed i32 $cond__1
+    return i32 %t35
+}
+function @BaseHolder__BaseHolder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN10BaseHolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Stateful__Stateful__base_entry(%t2, 42)
+    return void
+}
+function @BaseHolder__BaseHolder__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN10BaseHolderC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $__param1
+    %t4 = index i8 %t3, 0
+    call void @Stateful__Stateful__ov3__base_entry(%t2, %t4)
+    return void
+}
+function @MemberHolder__MemberHolder(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN12MemberHolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Stateful__Stateful(%t2, 17)
+    return void
+}
+function @MemberHolder__MemberHolder__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN12MemberHolderC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $__param1
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Stateful__Stateful__ov3(%t2, %t4)
+    return void
+}
+function @Stateful__Stateful__base_entry(%this : ptr [object_bytes=4], %state_value : i32) -> void [binding=weak, object=_ZN8StatefulC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $state_value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %state_value, $state_value
+    %t1 = load typed i32 $state_value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Stateful__Stateful__ov3__base_entry(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN8StatefulC2EOS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = unary neg i32 1
+    %t7 = load typed ptr $other
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed i32 %t6, %t8
+    return void
+}
+function @Stateful__Stateful(%this : ptr [object_bytes=4], %state_value : i32) -> void [binding=weak, object=_ZN8StatefulC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $state_value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %state_value, $state_value
+    %t1 = load typed i32 $state_value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Stateful__Stateful__ov3(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN8StatefulC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    %t6 = unary neg i32 1
+    %t7 = load typed ptr $other
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed i32 %t6, %t8
+    return void
+}
+alias object _ZN10BaseHolderC2Ev = @BaseHolder__BaseHolder
+alias object _ZN10BaseHolderC2EOS_ = @BaseHolder__BaseHolder__ov2
+alias object _ZN12MemberHolderC2Ev = @MemberHolder__MemberHolder
+alias object _ZN12MemberHolderC2EOS_ = @MemberHolder__MemberHolder__ov2

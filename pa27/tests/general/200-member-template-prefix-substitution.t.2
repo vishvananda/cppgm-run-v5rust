@@ -1,0 +1,11 @@
+#include "200-member-template-prefix-substitution.helper.h"
+
+int one();
+
+int main()
+{
+  Node first = {10};
+  Node second = {20};
+  Base<int> base;
+  return one() + base.pick(&first, &second, 1)->value + base.pick(&first, &second, 0)->value - 33;
+}

@@ -1,0 +1,39 @@
+function @outer__f() -> i32 [binding=strong, object=_ZN5outer1fEv] {
+  slot $a : obj<8x8>
+  slot $b : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $b
+    %t3 = addr $a
+    %t4 = addr $b
+    %t5 = call u8 @lib__operator__(%t3, %t4)
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @outer__f()
+    return i32 %t1
+}
+function @lib__operator__(%__param0 : ptr [pass=by_address, object_bytes=8], %__param1 : ptr [pass=by_address, object_bytes=8]) -> u8 [binding=internal, object=_ZN3libeqIPZN5outer1fEvE5LocalEEbRKNS_8WrapIterIT_EES8_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return u8 1
+}

@@ -1,0 +1,6 @@
+declare global @trait___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN5traitI3argIiEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

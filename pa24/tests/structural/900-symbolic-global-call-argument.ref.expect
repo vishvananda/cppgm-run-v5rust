@@ -1,0 +1,9 @@
+# budget from 900-symbolic-global-call-argument.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 29
+blocks <= 5
+count(call) <= 7
+mem <= 9
+instructions <= 5 in @read
+stack_size <= 320 in @read
+instructions <= 25 in @main
+stack_size <= 384 in @main

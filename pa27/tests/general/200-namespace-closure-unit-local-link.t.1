@@ -1,0 +1,11 @@
+// Each unit's namespace-scope closure type and unnamed class are its own
+// `$_0`: their member functions are local symbols, so the units link.
+auto pick = []() -> int { return 7; };
+
+static struct
+{
+  int base;
+  int get() const { return base; }
+} first = { 1 };
+
+int first_unit() { return pick() + first.get(); }

@@ -1,0 +1,42 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $buffer : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $buffer
+    %t2 = addr $value
+    %t3 = addr $buffer
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $buffer
+    %t6 = call i64 @Buffer__address(%t5)
+    %t7 = addr $value
+    %t8 = copy i64 %t7
+    %t9 = cmp eq i64 %t6, %t8
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__1
+    return i32 %t10
+}
+function @Buffer__address(%this : ptr [object_bytes=8]) -> i64 [binding=weak, object=_ZNK6Buffer7addressEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = copy i64 %t3
+    return i64 %t4
+}

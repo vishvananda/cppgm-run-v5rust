@@ -1,0 +1,16 @@
+# budget from 500-volatile-access-preservation.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 25
+blocks <= 7
+count(call) <= 3
+count(load) <= 9
+count(store) <= 8
+count(phi) <= 3
+instructions <= 9 in @keeps_volatile_slot_accesses
+instructions <= 5 in @keeps_unused_volatile_load
+instructions <= 4 in @keeps_ordinary_elimination
+instructions <= 15 in @main
+
+# outcomes from 500-volatile-access-preservation.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @keeps_ordinary_elimination)
+none(call @keeps_unused_volatile_load)
+none(call @keeps_volatile_slot_accesses)

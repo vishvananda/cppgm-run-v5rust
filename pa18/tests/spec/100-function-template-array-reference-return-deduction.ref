@@ -1,0 +1,24 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    store typed i32 %t2, $value
+    %t3 = load typed i32 $value
+    %t4 = cmp eq i32 %t3, 1
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}

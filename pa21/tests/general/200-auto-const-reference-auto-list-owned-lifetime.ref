@@ -1,0 +1,118 @@
+global @alive : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $xs : ptr
+  slot $tmpobj__1 : obj<16x8>
+  slot $initlist__2 : obj<8x4>
+  slot $lor__3 : i64
+  slot $call__4 : i64
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = addr $initlist__2
+    call void @S__S(%t2, 1)
+    %t3 = index i8 [projection=array_element] %t2, 4
+    eh_try ^call_unwind_dispatch_1
+    call void @S__S(%t3, 2)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^call_unwind_dispatch_1:
+    call void @S___S(%t2)
+    resume
+
+  block ^call_unwind_end_2:
+    store typed ptr %t2, %t1
+    %t4 = index i8 %t1, 8
+    store typed i64 2, %t4
+    store typed ptr %t1, $xs
+    %t5 = load typed i32 @alive
+    %t6 = cmp ne i32 %t5, 2
+    branch %t6, ^lor_short_6, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    eh_try ^cleanup_action_9
+    %t7 = load typed ptr $xs
+    %t8 = call i64 @std__initializer_list_S___size(%t7)
+    store typed i64 %t8, $call__4
+    %t9 = load typed i64 $call__4
+    %t10 = convert sext i64 i32 2
+    %t11 = cmp ne i64 %t9, %t10
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__3
+    eh_end
+    jump ^call_unwind_end_10
+
+  block ^cleanup_resume_8:
+    resume
+
+  block ^cleanup_action_9:
+    call void @S___S(%t3)
+    call void @S___S(%t2)
+    jump ^cleanup_resume_8
+
+  block ^call_unwind_end_10:
+    jump ^lor_end_7
+
+  block ^lor_short_6:
+    store typed i64 1, $lor__3
+    jump ^lor_end_7
+
+  block ^lor_end_7:
+    %t13 = load typed i64 $lor__3
+    branch %t13, ^if_then_3, ^if_else_4
+
+  block ^if_then_3:
+    call void @S___S(%t3)
+    call void @S___S(%t2)
+    return i32 1
+
+  block ^if_else_4:
+    jump ^if_end_11
+
+  block ^if_end_11:
+    call void @S___S(%t3)
+    call void @S___S(%t2)
+    %t14 = load typed i32 @alive
+    %t15 = cmp ne i32 %t14, 0
+    %t16 = convert trunc i32 i64 %t15
+    return i32 %t16
+}
+function @S__S(%this : ptr [object_bytes=4], %v : i32) -> void [unwind=no, binding=weak, object=_ZN1SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 @alive
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, @alive
+    return void
+}
+function @S___S(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN1SD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @alive
+    return void
+}
+function @std__initializer_list_S___size(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNKSt16initializer_listI1SE4sizeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    %t3 = load typed i64 %t2
+    return i64 %t3
+}
+alias object _ZN1SC2Ei = @S__S
+alias object _ZN1SD2Ev = @S___S

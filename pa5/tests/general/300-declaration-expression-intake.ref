@@ -1,0 +1,235 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier m
+    special-member-declaration C
+      declarator
+        identifier C
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            default-argument
+              initializer
+                literal 0
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            default-argument
+              initializer
+                literal 0
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:C
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_STAR:*
+            identifier operator->
+            parameter-clause
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:C
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_AMP:&
+            identifier operator++
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier operator<<
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:C
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier expressions
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier a
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier c
+    compound-statement
+      expression-statement
+        assignment-expression OP_ASS:=
+          member-expression OP_ARROW:->
+            call-expression
+              id-expression C
+              argument-list
+                id-expression a
+            identifier m
+          literal 7
+      expression-statement
+        postfix-expression OP_INC:++
+          call-expression
+            id-expression C
+            argument-list
+              id-expression a
+      expression-statement
+        binary-expression OP_LSHIFT:<<
+          call-expression
+            id-expression C
+            argument-list
+              id-expression a
+              literal 5
+          id-expression c
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier declarations
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier d
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier e
+              array-suffix
+                literal 5
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier f
+            initializer
+              braced-init-list
+                literal 1
+                literal 2
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier g
+            initializer
+              paren-initializer
+                keyword-literal KW_NULLPTR:nullptr
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier a
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier b
+              parameter-clause
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier c
+            initializer
+              literal 7
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier comma_declarations
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier h
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier d
+          init-declarator
+            declarator
+              identifier e
+          init-declarator
+            declarator
+              identifier f
+            initializer
+              literal 3
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier g
+            initializer
+              paren-initializer
+                id-expression h
+                literal 2
+end translation unit

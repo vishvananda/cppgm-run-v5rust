@@ -1,0 +1,14 @@
+# budget from 400-cross-block-no-unwind-eh-strip.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 10
+blocks <= 6
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 5 in @leaf
+instructions <= 5 in @wrapper
+instructions <= 6 in @main
+
+# outcomes from 400-cross-block-no-unwind-eh-strip.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @leaf)
+none(call @wrapper)

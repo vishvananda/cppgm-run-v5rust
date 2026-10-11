@@ -1,0 +1,5 @@
+// N3485 9.6p3 (bit-field of integral type; GCC __int128 allows widths up to
+// 128): an unsigned __int128 bit-field must compile and keep its width;
+// expect exit 0
+struct W { unsigned __int128 lo : 60; unsigned __int128 wide : 100; };
+int main() { W w; w.wide = ~(unsigned __int128)0; w.lo = 1; return (w.wide >> 99) == 1 && w.lo == 1 ? 0 : 1; }

@@ -1,0 +1,132 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @box
+  storage scalar i8
+  init i8 7
+
+global @strlit
+  storage data
+  item i8 0
+
+global @dispatch readonly
+  storage data
+  item ptr addr @sink
+
+global @g_num
+  storage scalar i64
+  init i64 0
+
+global @g_type
+  storage scalar i32
+  init i32 0
+
+global @g_nbytes
+  storage scalar i64
+  init i64 0
+
+function @data
+  abi
+    param %this -> rdi : ptr
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rdi
+
+function @size
+  abi
+    param %this -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 1
+    ret rax
+
+function @sink
+  abi
+    param %this -> rdi : ptr
+    param %src -> rsi : ptr
+    param %num -> rdx : i64
+    param %type -> rcx : i32
+    param %data -> r8 : ptr
+    param %nbytes -> r9 : i64
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    store.i64 @g_num, rdx
+    store.i32 @g_type, rcx
+    store.i64 @g_nbytes, r9
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+
+  block ^entry
+    mov rbx, @box
+    mov r12, @strlit
+    mov rdi, rbx
+    call @data [args=(rdi)]
+    mov r13, rax
+    mov rdi, rbx
+    call @size [args=(rdi)]
+    mov r9, rax
+    load.ptr r8, @dispatch
+    mov rdi, rbx
+    mov rsi, r12
+    mov rdx, 1
+    mov rcx, 13
+    mov r11, r8
+    mov r8, r13
+    call *r11 [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    cmp.i64 @g_num, 1
+    je ^rhs
+    jmp ^short
+
+  block ^rhs
+    mov rdx, 13
+    cmp.i32 @g_type, rdx
+    sete r8
+    movzx r8, r8
+    cmp.i64 r8, 0
+    jne ^rhs2
+    jmp ^short
+
+  block ^rhs2
+    mov rdx, 1
+    cmp.i64 @g_nbytes, rdx
+    sete r8
+    movzx r8, r8
+    cmp.i64 r8, 0
+    setne r8
+    movzx r8, r8
+    ret r8
+
+  block ^short
+    mov rax, 0
+    ret rax

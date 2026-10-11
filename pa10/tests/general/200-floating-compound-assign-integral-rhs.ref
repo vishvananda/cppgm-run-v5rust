@@ -1,0 +1,35 @@
+function @scale(%den : i64) -> f80 [binding=strong, object=_Z5scaley] {
+  slot $den : i64
+  slot $t : f80
+
+  block ^entry:
+    store typed i64 %den, $den
+    store typed f80 12L, $t
+    %t1 = load typed f80 $t
+    %t2 = load typed i64 $den
+    %t3 = convert uitofp f80 i64 %t2
+    %t4 = binary div f80 %t1, %t3
+    store typed f80 %t4, $t
+    %t5 = load typed f80 $t
+    return f80 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call f80 @scale(3)
+    %t2 = cmp eq f80 %t1, 4L
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}

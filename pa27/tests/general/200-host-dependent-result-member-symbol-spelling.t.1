@@ -1,0 +1,36 @@
+template<typename T>
+struct reference_wrapper {
+  reference_wrapper(T &) {}
+};
+
+template<typename I>
+struct basic_regex {};
+
+namespace proto {
+  template<typename T>
+  struct terminal {
+    struct type {
+      static type make(T) { return type(); }
+    };
+  };
+}
+
+// The result is a member of a specialization whose argument is the
+// template parameter: the signature spells it with T_, not with int.
+template<typename BidiIter>
+typename proto::terminal<reference_wrapper<basic_regex<BidiIter> const> >::type
+by_ref(basic_regex<BidiIter> const & rex)
+{
+  reference_wrapper<basic_regex<BidiIter> const> ref(rex);
+  return proto::terminal<reference_wrapper<basic_regex<BidiIter> const> >::type::make(ref);
+}
+
+template proto::terminal<reference_wrapper<basic_regex<int> const> >::type
+by_ref<int>(basic_regex<int> const &);
+
+int host_by_ref();
+
+int main()
+{
+  return host_by_ref() - 7;
+}

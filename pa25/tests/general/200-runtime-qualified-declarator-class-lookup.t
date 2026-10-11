@@ -1,0 +1,7 @@
+// Names after a qualified declarator-id are looked up in the member's class
+// first (3.4.3p3): a conversion-function-id's type, the trailing return type,
+// a dynamic or noexcept exception-specification and default arguments, where a
+// namespace-scope name of another category would mislead the parser. A friend
+// declaration naming a namespace's function looks its parameter types up as in
+// the befriending class (g++ and clang++ both find C::T, an int, so N::f(int)
+// is the friend)

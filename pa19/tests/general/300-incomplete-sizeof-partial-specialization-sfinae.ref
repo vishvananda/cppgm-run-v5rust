@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @lazy_X_void___value()
+    return i32 %t1
+}
+function @lazy_X_void___value() -> i32 [binding=weak, object=_ZN4lazyI1XvE5valueEv, inline_hint=yes] {
+  block ^entry:
+    return i32 0
+}

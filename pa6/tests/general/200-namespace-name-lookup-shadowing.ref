@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace N2
+      type-alias T int
+      variable q int
+    scope namespace M2
+      variable N2 int
+      variable t int
+    scope namespace M3
+      variable N4 int
+      variable u int
+    scope namespace M4
+      variable N2 int
+      variable t4 int
+end translation unit

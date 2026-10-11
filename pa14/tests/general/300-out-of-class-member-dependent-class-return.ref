@@ -1,0 +1,34 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = call obj<4x4> @holder_tag_char___call()
+    copyobj 4x4 %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 0
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}
+function @holder_tag_char___call() -> obj<4x4> [binding=weak, object=_ZN6holderI3tagcE4callEv, inline_hint=yes] {
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $retobj__1
+    %t2 = call obj<4x4> @holder_tag_char___value()
+    copyobj 4x4 %t2, %t1
+    return obj<4x4> $retobj__1
+}
+function @holder_tag_char___value() -> obj<4x4> [binding=weak, object=_ZN6holderI3tagcE5valueEv] {
+  slot $out : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $out
+    %t2 = addr $out
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $retobj__1
+    %t5 = addr $out
+    copyobj 4x4 %t5, %t4
+    return obj<4x4> $retobj__1
+}

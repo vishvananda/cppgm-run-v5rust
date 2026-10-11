@@ -1,0 +1,32 @@
+function @call_add(%p : ptr) -> i32 [binding=strong, object=_Z8call_addP3boxIiE] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = call i32 @box_int___add(%t1, 2)
+    return i32 %t2
+}
+function @box_int___add(%this : ptr [object_bytes=4], %delta : i32) -> i32 [binding=weak, object=_ZN3boxIiE3addIiEEiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $delta : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %delta, $delta
+    %t1 = load typed ptr $this
+    call void @box_int___touch(%t1)
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = load typed i32 $delta
+    %t6 = binary add nowrap i32 %t4, %t5
+    return i32 %t6
+}
+function @box_int___touch(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxIiE5touchEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

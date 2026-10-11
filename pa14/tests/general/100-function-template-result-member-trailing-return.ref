@@ -1,0 +1,74 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = addr $h
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $h
+    %t5 = call i32 @test(%t4)
+    %t6 = cmp eq i32 %t5, 7
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @test(%token : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_Z4testI7handlerEDTcldtcv6resultIT_E_E3getEERS2_] {
+  slot $token : ptr
+  slot $r : obj<4x4>
+
+  block ^entry:
+    store typed ptr %token, $token
+    %t1 = addr $r
+    %t2 = addr $r
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr $token
+    %t5 = call ptr @handler__operator_(%t3, %t4)
+    %t6 = addr $r
+    %t7 = call i32 @result_handler___get(%t6)
+    return i32 %t7
+}
+function @handler__operator_(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN7handleraSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+function @result_handler___get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN6resultI7handlerE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = call i32 @handler__get(%t2)
+    return i32 %t3
+}
+function @handler__get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN7handler3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

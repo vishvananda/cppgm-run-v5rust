@@ -1,0 +1,7 @@
+declare global @is_long_int___value : u8 [binding=weak, object=_ZN7is_longIiE5valueE]
+declare global @is_long_char___value : u8 [binding=weak, object=_ZN7is_longIcE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

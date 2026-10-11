@@ -1,0 +1,8 @@
+global @k : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

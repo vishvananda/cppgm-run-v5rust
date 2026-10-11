@@ -1,0 +1,73 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @sum_object_and_scalars
+  abi
+    param %pair -> rdi : i64
+    param %pair -> rsi : i64
+    param %a -> rdx : i64
+    param %b -> rcx : i64
+    param %c -> r8 : i64
+    param %d -> r9 : i64
+    param %tail -> [rbp+16] : i64
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $pair -> [rbp-16] : obj<16x8>
+    param-slot %pair -> [rbp-32] : obj<16x8>
+    param-slot %tail -> [rbp-40] : i64
+
+  block ^entry
+    load.i64 rax, [rbp+16]
+    store.i64 [rbp-40], rax
+    store.i64 [rbp-32], rdi
+    store.i64 [rbp-24], rsi
+    copy_bytes 16x8, [rbp-16], [rbp-32]
+    load.i64 rdi, [rbp-16]
+    add rdi, [rbp-8]
+    add rdi, rdx
+    add rdi, rcx
+    add rdi, r8
+    add rdi, r9
+    add rdi, [rbp-40]
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $pair -> [rbp-16] : obj<16x8>
+
+  block ^entry
+    store.i64 [rbp-16], 100
+    store.i64 [rbp-8], 200
+    sub rsp, 16
+    load.i64 rdi, [rbp-16]
+    load.i64 rsi, [rbp-8]
+    mov rdx, 1
+    mov rcx, 2
+    mov r8, 3
+    mov r9, 4
+    mov r11, 50
+    store.i64 [rsp], r11
+    call @sum_object_and_scalars [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    mov rdx, 360
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    cmp.i64 rax, 0
+    sete rax
+    movzx rax, rax
+    ret rax

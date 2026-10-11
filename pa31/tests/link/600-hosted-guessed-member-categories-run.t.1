@@ -1,0 +1,101 @@
+// N3485 14.6p2-p3, 14.5.7, 14.7.3: a qualified name in a statement names a
+// type or a value as lookup finds it: through an alias template of a member a
+// template-id reaches, an alias of a template parameter, a typedef of a member
+// an explicit specialization varies, a member typedef naming a template
+// parameter (std::vector's allocator_type), nested aliases and an explicit
+// specialization's member class
+#include <cstdio>
+#include <vector>
+
+struct V
+{
+	typedef int m;
+};
+struct W
+{
+	static int m;
+};
+int W::m = 4;
+template<class T>
+struct B
+{
+	typedef V type;
+};
+template<>
+struct B<int>
+{
+	typedef W type;
+};
+template<class T>
+using A = typename B<T>::type;
+template<class T>
+using Id = T;
+struct S
+{
+	static int m;
+	typedef int t;
+};
+int S::m = 5;
+typedef B<int>::type BT;
+template<class T>
+struct C
+{
+	struct N
+	{
+		typedef V type;
+	};
+};
+template<class T>
+using AN = typename C<T>::N;
+template<class T>
+struct P
+{};
+template<>
+struct P<int>
+{
+	struct Q;
+};
+template<>
+struct P<char>
+{
+	struct Q;
+};
+struct P<char>::Q
+{
+	typedef int t;
+};
+struct P<int>::Q
+{
+	static int t;
+};
+int P<int>::Q::t = 9;
+// Declarations where only a type can stand keep taking such names for
+// types (a name followed by a declarator-id, a parameter's type).
+std::vector<int>::allocator_type::value_type gx = 1;
+int* gp = &BT::m;
+int twice(std::vector<int>::allocator_type::value_type x, AN<int>::type::m y)
+{
+	return x + y;
+}
+
+int main()
+{
+	int q = 3;
+	A<char>::m* p1 = &q;
+	int r1 = A<int>::m * 1;
+	Id<S>::t* p2 = &q;
+	int r2 = Id<S>::m * 1;
+	BT::m* q;
+	BT::m = 6;
+	int r3 = (BT::m) * 1;
+	std::vector<int> v(1, 7);
+	std::vector<int>::allocator_type::value_type* p3 = &v[0];
+	AN<int>::type::m k = 8;
+	AN<int>::type::m* p4 = &k;
+	int z = 9;
+	P<char>::Q::t* p5 = &z;
+	int r4 = P<int>::Q::t * 1;
+	std::printf("%d %d %d %d %d %d %d %d %d %d %d %d\n", *p1, r1, *p2 - 3 + r2, r3, *p3, *p4, *p5, *p1 - 1, q, r1, r4,
+		twice(gx, *gp));
+	return 0;
+}

@@ -1,0 +1,17 @@
+declare function @may_throw() -> void
+declare function @destroy(%object : ptr) -> void [unwind=no]
+
+function @main() -> void [role=entry] {
+  slot $object : obj<8x8>
+
+  block ^entry:
+    %object_ptr = addr $object
+    eh_try ^cleanup
+    call void @may_throw()
+    eh_end
+    return void
+
+  block ^cleanup:
+    call void @destroy(%object_ptr)
+    resume
+}

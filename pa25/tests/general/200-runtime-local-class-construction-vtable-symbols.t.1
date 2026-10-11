@@ -1,0 +1,18 @@
+// N3485 9.8, 12.7p4, Itanium 2.6: same-spelled local classes in two functions
+// are distinct classes with their own construction vtables (no
+// shared/duplicate symbol); expect exit 0
+volatile int input = 0;
+int f() {
+  struct V { int v; V() : v(1) {} virtual int vf() { return v; } };
+  struct A : virtual V { int a; A() : a(vf()) {} };
+  struct D : A { int d; D() : d(3) {} };
+  D x; return x.a + x.d;
+}
+int g() {
+  struct W { int w0, w1, w2, w3; W() : w0(0), w1(0), w2(0), w3(0) {} };
+  struct V { int v; V() : v(10) {} virtual int vf() { return v + 100; } };
+  struct A : W, virtual V { int a; A() : a(vf()) {} };
+  struct D : A { int k[5]; int d; D() : d(30) {} };
+  D x; return x.a + x.d;
+}
+int main() { return f() + g() - 140 + input == 4 ? 0 : 1; }

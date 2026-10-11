@@ -1,0 +1,12 @@
+struct L
+{
+  int value;
+  static int global(L const & item);
+};
+
+int main()
+{
+  L item;
+  item.value = 41;
+  return L::global(item) == 42 ? 0 : 1;
+}

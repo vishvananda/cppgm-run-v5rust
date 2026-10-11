@@ -1,0 +1,42 @@
+// The host compiler's intrinsic headers compile in hosted mode and their
+// SSE/SSE2 operations, lane extraction and insertion, _mm_malloc and
+// <x86intrin.h>'s byte swap and bit scan run as the host compiler's build
+// does. GCC's intrinsics are gnu_inline always_inline functions emitted only
+// where used: an unused one's asm (pconfigintrin.h's pconfig) is never
+// assembled, and at -O1 and above a lane builtin's selector is the wrapper's
+// parameter, a constant once the wrapper is inlined.
+#include <immintrin.h>
+#include <x86intrin.h>
+#include <cstdint>
+#include <cstdio>
+
+int main()
+{
+	__m128 a = _mm_set_ps(4.0f, 3.0f, 2.0f, 1.0f);
+	__m128 b = _mm_set1_ps(0.5f);
+	__m128 c = _mm_mul_ps(_mm_add_ps(a, b), a);
+	float floats[4];
+	_mm_storeu_ps(floats, c);
+	__m128i i = _mm_add_epi32(_mm_set_epi32(4, 3, 2, 1), _mm_set1_epi32(10));
+	int ints[4];
+	_mm_storeu_si128((__m128i*)ints, i);
+	__m128i halves = _mm_set_epi16(7, 6, 5, 4, 3, 2, 1, 0);
+	__m128i inserted = _mm_insert_epi16(halves, -9, 2);
+	__m128d d = _mm_set_pd(2.5, 1.5);
+	std::printf("%g %g %g %g %g\n", floats[0], floats[1], floats[2], floats[3], _mm_cvtss_f32(c));
+	std::printf("%d %d %d %d %d %d %d %g\n", ints[0], ints[1], ints[2], ints[3], _mm_cvtsi128_si32(i),
+		_mm_extract_epi16(halves, 5), _mm_extract_epi16(inserted, 2), _mm_cvtsd_f64(d));
+	float* aligned = (float*)_mm_malloc(64 * sizeof(float), 64);
+	if (aligned == nullptr)
+		return 1;
+	for (int k = 0; k < 64; ++k)
+		aligned[k] = (float)k;
+	__m128 sum = _mm_setzero_ps();
+	for (int k = 0; k < 64; k += 4)
+		sum = _mm_add_ps(sum, _mm_load_ps(aligned + k));
+	_mm_storeu_ps(floats, sum);
+	std::printf("aligned %d sum %g\n", (int)((uintptr_t)aligned % 64), floats[0] + floats[1] + floats[2] + floats[3]);
+	_mm_free(aligned);
+	std::printf("%x %d\n", (unsigned)_bswap(0x01020304), __bsfd(8));
+	return 0;
+}

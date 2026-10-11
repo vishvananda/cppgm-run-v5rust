@@ -1,0 +1,23 @@
+1 translation units
+start translation unit 1
+translation-unit
+  enum-specifier kind
+    enumerator value
+  class-specifier owner
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        enum-specifier kind
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier direct
+    simple-declaration
+      decl-specifier-seq
+        enum-specifier kind
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_STAR:*
+            identifier pointer
+end translation unit

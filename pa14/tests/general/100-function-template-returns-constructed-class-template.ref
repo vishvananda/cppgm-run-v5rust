@@ -1,0 +1,187 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $node : obj<4x4>
+  slot $ints : obj<16x8>
+  slot $nodes : obj<16x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    store typed i32 7, $value
+    %t1 = addr $node
+    %t2 = addr $node
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 9, %t3
+    %t4 = addr $ints
+    %t5 = addr $value
+    %t6 = convert sext i64 i32 1
+    %t7 = call obj<16x8> @allocate_at_least(%t5, %t6)
+    copyobj 16x8 %t7, %t4
+    %t8 = addr $nodes
+    %t9 = addr $node
+    %t10 = convert sext i64 i32 1
+    %t11 = call obj<16x8> @allocate_at_least__2(%t9, %t10)
+    copyobj 16x8 %t11, %t8
+    %t12 = addr $ints
+    %t13 = index i8 [projection=field] %t12, 0
+    %t14 = load typed ptr %t13
+    %t15 = addr $value
+    %t16 = cmp eq ptr %t14, %t15
+    branch %t16, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t17 = addr $ints
+    %t18 = index i8 [projection=field] %t17, 8
+    %t19 = load typed i64 %t18
+    %t20 = convert sext i64 i32 1
+    %t21 = cmp eq i64 %t19, %t20
+    %t22 = cmp ne i64 %t21, 0
+    store typed i64 %t22, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t23 = load typed i64 $land__2
+    branch %t23, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t24 = addr $nodes
+    %t25 = index i8 [projection=field] %t24, 0
+    %t26 = load typed ptr %t25
+    %t27 = addr $node
+    %t28 = cmp eq ptr %t26, %t27
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t30 = load typed i64 $land__3
+    branch %t30, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t31 = addr $nodes
+    %t32 = index i8 [projection=field] %t31, 0
+    %t33 = load typed ptr %t32
+    %t34 = index i8 [projection=field] %t33, 0
+    %t35 = load typed i32 %t34
+    %t36 = cmp eq i32 %t35, 9
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t38 = load typed i64 $land__4
+    branch %t38, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t39 = addr $nodes
+    %t40 = index i8 [projection=field] %t39, 8
+    %t41 = load typed i64 %t40
+    %t42 = convert sext i64 i32 1
+    %t43 = cmp eq i64 %t41, %t42
+    %t44 = cmp ne i64 %t43, 0
+    store typed i64 %t44, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t45 = load typed i64 $land__5
+    branch %t45, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t46 = load typed i32 $cond__1
+    return i32 %t46
+}
+function @allocate_at_least(%ptr : ptr, %n : i64) -> obj<16x8> [binding=weak, object=_Z17allocate_at_leastIiE17allocation_resultIT_EPS1_m] {
+  slot $ptr : ptr
+  slot $n : i64
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %ptr, $ptr
+    store typed i64 %n, $n
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $ptr
+    %t3 = load typed i64 $n
+    call void @allocation_result_int___allocation_result(%t1, %t2, %t3)
+    return obj<16x8> $retobj__1
+}
+function @allocate_at_least__2(%ptr : ptr, %n : i64) -> obj<16x8> [binding=weak, object=_Z17allocate_at_leastI4NodeE17allocation_resultIT_EPS2_m] {
+  slot $ptr : ptr
+  slot $n : i64
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %ptr, $ptr
+    store typed i64 %n, $n
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $ptr
+    %t3 = load typed i64 $n
+    call void @allocation_result_Node___allocation_result(%t1, %t2, %t3)
+    return obj<16x8> $retobj__1
+}
+function @allocation_result_int___allocation_result(%this : ptr [object_bytes=16], %__ptr : ptr, %__count : i64) -> void [binding=weak, object=_ZN17allocation_resultIiEC1EPim, inline_hint=yes] {
+  slot $this : ptr
+  slot $__ptr : ptr
+  slot $__count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__ptr, $__ptr
+    store typed i64 %__count, $__count
+    %t1 = load typed ptr $__ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $__count
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}
+function @allocation_result_Node___allocation_result(%this : ptr [object_bytes=16], %__ptr : ptr, %__count : i64) -> void [binding=weak, object=_ZN17allocation_resultI4NodeEC1EPS0_m, inline_hint=yes] {
+  slot $this : ptr
+  slot $__ptr : ptr
+  slot $__count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__ptr, $__ptr
+    store typed i64 %__count, $__count
+    %t1 = load typed ptr $__ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $__count
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}
+alias object _ZN17allocation_resultIiEC2EPim = @allocation_result_int___allocation_result
+alias object _ZN17allocation_resultI4NodeEC2EPS0_m = @allocation_result_Node___allocation_result

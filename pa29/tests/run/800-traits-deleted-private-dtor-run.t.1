@@ -1,0 +1,7 @@
+// N3485 20.9.4.3p6 + 12.4p11 + 12.4p5/8.4.2p4 via GCC trait builtins used by
+// hosted <type_traits> (PA29): T t; is ill-formed when ~T is private or
+// deleted, so __is_constructible is false; a dtor deleted on first declaration
+// is trivial; expect exit 0
+struct PrivDtor { private: ~PrivDtor() {} };
+struct DelDtor { ~DelDtor() = delete; };
+int main() { return (__is_constructible(PrivDtor) ? 1 : 0) | (__is_constructible(DelDtor) ? 2 : 0) | (__has_trivial_destructor(DelDtor) ? 0 : 4); }

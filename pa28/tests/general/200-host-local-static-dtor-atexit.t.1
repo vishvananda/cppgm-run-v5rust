@@ -1,0 +1,20 @@
+extern "C" int atexit(void (*)(void));
+extern "C" void _Exit(int);
+
+int state;
+
+struct probe
+{
+  probe() { state = 1; }
+  ~probe() { state = 2; }
+};
+
+void check() { if(state != 2) _Exit(1); }
+void touch() { static probe value; }
+
+int main()
+{
+  if(atexit(check) != 0) return 2;
+  touch();
+  return state == 1 ? 0 : 3;
+}

@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable a array of 4 int
+    variable b array of 4 int
+end translation unit

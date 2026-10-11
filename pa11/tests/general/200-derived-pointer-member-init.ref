@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $node : obj<1x1>
+  slot $iter : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $node
+    %t2 = addr $iter
+    %t3 = addr $node
+    call void @Iter__Iter(%t2, %t3)
+    %t4 = addr $iter
+    return i32 0
+}
+function @Iter__Iter(%this : ptr [object_bytes=8], %node : ptr) -> void [binding=weak, object=_ZN4IterC1EP4Node, inline_hint=yes] {
+  slot $this : ptr
+  slot $node : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %node, $node
+    %t1 = load typed ptr $node
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    return void
+}
+alias object _ZN4IterC2EP4Node = @Iter__Iter

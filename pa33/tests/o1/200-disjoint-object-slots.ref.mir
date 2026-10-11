@@ -1,0 +1,110 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @observe
+  abi
+    param %object -> rdi : ptr
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    load.i32 rax, [rdi]
+    ret rax
+
+function @probe
+  abi
+    param %choice -> rdi : i32
+    return i32 -> rax
+  frame
+    stack_size 1600
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $left -> [rbp-1600] : obj<1600x4>
+    slot $right -> [rbp-1600] : obj<1600x4>
+
+  block ^entry
+    cmp.i32 rdi, 0
+    je ^right
+
+  block ^left
+    store.i32 [rbp-1600], 7
+    lea rdi, [rbp-1600]
+    call @observe [args=(rdi)]
+    ret rax
+
+  block ^right
+    store.i32 [rbp-1600], 9
+    lea rdi, [rbp-1600]
+    call @observe [args=(rdi)]
+    ret rax
+
+function @loop_overlap
+  abi
+    return i32 -> rax
+  frame
+    stack_size 3216
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $first -> [rbp-1616] : obj<1600x4>
+    slot $second -> [rbp-3216] : obj<1600x4>
+    slot $saved -> [rbp-16] : ptr
+    slot $iteration -> [rbp-8] : i32
+
+  block ^entry
+    store.i32 [rbp-8], 0
+
+  block ^dispatch
+    cmp.i32 [rbp-8], 0
+    jne ^second
+
+  block ^first
+    lea r8, [rbp-1616]
+    store.i32 [r8], 7
+    store.ptr [rbp-16], r8
+    store.i32 [rbp-8], 1
+    cmp.i32 [rbp-8], 0
+    je ^first
+
+  block ^second
+    load.ptr r8, [rbp-16]
+    cmp.i32 [r8], 7
+    setne rax
+    movzx rax, rax
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+
+  block ^entry
+    mov rdi, 1
+    call @probe [args=(rdi)]
+    mov rbx, rax
+    mov rdi, 0
+    call @probe [args=(rdi)]
+    cmp.i32 rbx, 7
+    setne rbx
+    movzx rbx, rbx
+    cmp.i32 rax, 9
+    setne rax
+    movzx rax, rax
+    or rbx, rax
+    call @loop_overlap [args=()]
+    or rbx, rax
+    ret rbx

@@ -1,0 +1,2 @@
+global @x : i32 [storage=thread_local, binding=strong] = zero
+global @y : i32 [storage=thread_local, binding=strong] = 7

@@ -1,0 +1,8 @@
+function @drop_const_pointer(%p : ptr) -> ptr [binding=strong, object=_Z18drop_const_pointerPKPi] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}

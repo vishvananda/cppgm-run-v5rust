@@ -1,0 +1,48 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $e : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $e
+    %t2 = addr $e
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed u32 3, %t3
+    %t4 = addr $e
+    %t5 = call u32 @engine_unsignedint_1_0_2___run(%t4)
+    %t6 = cmp eq u32 %t5, 2
+    branch %t6, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t7 = load typed i32 $cond__1
+    return i32 %t7
+}
+function @engine_unsignedint_1_0_2___run(%this : ptr [object_bytes=4]) -> u32 [binding=weak, object=_ZN6engineIjLj1ELj0ELj2EE3runEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed u32 %t2
+    %t4 = convert zext i64 u32 %t3
+    %t5 = call i64 @helper_1_0_2_4294967295___next(%t4)
+    %t6 = convert trunc u32 i64 %t5
+    return u32 %t6
+}
+function @helper_1_0_2_4294967295___next(%x : i64) -> i64 [binding=weak, object=_ZN6helperILy1ELy0ELy2ELy4294967295EE4nextEy, inline_hint=yes] {
+  slot $x : i64
+
+  block ^entry:
+    store typed i64 %x, $x
+    %t1 = load typed i64 $x
+    %t2 = binary add i64 %t1, 4294967295
+    return i64 %t2
+}

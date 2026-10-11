@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    variable value int
+      literal prvalue int 7
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        id-expression lvalue int N::value
+end translation unit

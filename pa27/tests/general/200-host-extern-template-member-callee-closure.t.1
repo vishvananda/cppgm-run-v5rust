@@ -1,0 +1,24 @@
+template<class T>
+struct Box
+{
+  int target() const;
+
+  int wrapper() const
+  {
+    return target();
+  }
+};
+
+extern template int Box<int>::target() const;
+
+template<class T>
+int Box<T>::target() const
+{
+  return 1;
+}
+
+int main()
+{
+  Box<int> box;
+  return box.wrapper() == 9 ? 0 : 1;
+}

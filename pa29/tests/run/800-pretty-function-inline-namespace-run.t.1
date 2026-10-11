@@ -1,0 +1,50 @@
+bool contains(const char * text, const char * needle)
+{
+  for(; *text; ++text) {
+    const char * left = text;
+    const char * right = needle;
+    while(*left && *right && *left == *right) {
+      ++left;
+      ++right;
+    }
+    if(!*right) {
+      return true;
+    }
+  }
+  return false;
+}
+
+namespace api
+{
+inline namespace abi
+{
+struct value
+{
+};
+}
+
+enum code
+{
+  ok
+};
+}
+
+template<class T>
+int probe()
+{
+  const char * pretty = __PRETTY_FUNCTION__;
+  return contains(pretty, "[T = api::value]") &&
+         !contains(pretty, "api::abi::value") ? 0 : 1;
+}
+
+template<class T>
+int probe_enum()
+{
+  const char * pretty = __PRETTY_FUNCTION__;
+  return contains(pretty, "[T = api::code]") ? 0 : 1;
+}
+
+int main()
+{
+  return probe<api::value>() || probe_enum<api::code>();
+}

@@ -1,0 +1,30 @@
+extern "C" int puts(const char *);
+
+struct marker {
+  virtual ~marker() {}
+};
+
+struct payload : virtual marker {
+  explicit payload(int value) : value_(value) {}
+
+  int value_;
+};
+
+template<class T>
+struct wrapper : T {
+  explicit wrapper(T const & value) : T(value) {}
+};
+
+int main()
+{
+  wrapper<payload> first(payload(42));
+  wrapper<payload> second(first);
+
+  payload * copied = dynamic_cast<payload *>(&second);
+  if(!copied || copied->value_ != 42) {
+    return 1;
+  }
+
+  puts("ok");
+  return 0;
+}

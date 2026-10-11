@@ -1,0 +1,13 @@
+function @f(%p : ptr) -> i64 [binding=strong, object=_Z1fPKc] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = copy i64 %t1
+    return i64 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

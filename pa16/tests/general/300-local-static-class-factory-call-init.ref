@@ -1,0 +1,89 @@
+global @factory_calls : i32 [binding=strong] = 0
+global @__local_static__read_cached__decl0__cached : obj<24x8> [binding=internal, object=_ZZ11read_cachedlE6cached] = {
+  zero 24
+}
+global @__local_static__read_cached__decl0__cached__guard : i64 [binding=internal, object=_ZGVZ11read_cachedlE6cached] = zero
+
+function @make_wide(%ret : ptr [pass=indirect_result, object_bytes=24], %seed : i64) -> void [binding=strong, object=_Z9make_widel] {
+  slot $seed : i64
+
+  block ^entry:
+    store typed i64 %seed, $seed
+    %t1 = load typed i32 @factory_calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @factory_calls
+    %t3 = load typed i64 $seed
+    %t4 = index i8 [projection=field] %ret, 0
+    store typed i64 %t3, %t4
+    %t5 = load typed i64 $seed
+    %t6 = binary add nowrap i64 %t5, 1
+    %t7 = index i8 [projection=field] %ret, 8
+    store typed i64 %t6, %t7
+    %t8 = load typed i64 $seed
+    %t9 = binary add nowrap i64 %t8, 2
+    %t10 = index i8 [projection=field] %ret, 16
+    store typed i64 %t9, %t10
+    return void
+}
+function @read_cached(%seed : i64) -> i64 [binding=strong, object=_Z11read_cachedl] {
+  slot $seed : i64
+
+  block ^entry:
+    store typed i64 %seed, $seed
+    %t1 = load typed i64 @__local_static__read_cached__decl0__cached__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__read_cached__decl0__cached
+    %t4 = load typed i64 $seed
+    call void @make_wide(%t3, %t4)
+    store typed i64 1, @__local_static__read_cached__decl0__cached__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = addr @__local_static__read_cached__decl0__cached
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i64 %t6
+    %t8 = addr @__local_static__read_cached__decl0__cached
+    %t9 = index i8 [projection=field] %t8, 16
+    %t10 = load typed i64 %t9
+    %t11 = binary add nowrap i64 %t7, %t10
+    return i64 %t11
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i64 @read_cached(7)
+    %t2 = cmp ne i64 %t1, 16
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = load typed i32 @factory_calls
+    %t4 = cmp ne i32 %t3, 1
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t5 = call i64 @read_cached(9)
+    %t6 = cmp ne i64 %t5, 16
+    branch %t6, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t7 = load typed i32 @factory_calls
+    %t8 = cmp ne i32 %t7, 1
+    branch %t8, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 2
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    return i32 0
+}

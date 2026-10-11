@@ -1,0 +1,8 @@
+constexpr int x = 1;
+extern const int linked;
+const int* other_x();
+
+int main()
+{
+  return x == 1 && *other_x() == 2 && &x != other_x() && linked == 3 ? 0 : 1;
+}

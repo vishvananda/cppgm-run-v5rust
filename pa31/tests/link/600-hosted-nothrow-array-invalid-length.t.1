@@ -1,0 +1,40 @@
+// An array new-expression whose count is invalid (negative, or a size
+// beyond std::size_t's range: 5.3.4p7) through a non-throwing allocation
+// function yields null without calling it (CWG 1992, C++17 [expr.new]p8;
+// g++ and clang give null for these); the throwing form throws
+// std::bad_array_new_length (a std::bad_alloc: the hosts' is one too).
+#include <cstdio>
+#include <new>
+struct S
+{
+	S() : v(0) { std::printf("S() "); }
+	~S() { std::printf("~S "); }
+	int v;
+};
+int count(int n)
+{
+	return n;
+}
+int main()
+{
+	int n = count(-1);
+	S* s = new (std::nothrow) S[n];
+	std::printf("S[-1]: %s\n", s ? "nonnull" : "null");
+	long big = count(1) * (1L << 62);
+	S* b = new (std::nothrow) S[big];
+	std::printf("S[big]: %s\n", b ? "nonnull" : "null");
+	try
+	{
+		S* t = new S[n];
+		std::printf("threw no %p\n", (void*)t);
+	}
+	catch (std::bad_alloc&)
+	{
+		std::printf("bad_alloc\n");
+	}
+	n = count(2);
+	S* ok = new (std::nothrow) S[n];
+	std::printf("S[2]: %s\n", ok ? "nonnull" : "null");
+	delete[] ok;
+	return 0;
+}

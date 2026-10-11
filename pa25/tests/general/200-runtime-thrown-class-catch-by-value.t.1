@@ -1,0 +1,14 @@
+struct A
+{
+  ~A() {}
+};
+
+int main()
+{
+  try {
+    throw A();
+  } catch (A) {
+    return 0;
+  }
+  return 1;
+}

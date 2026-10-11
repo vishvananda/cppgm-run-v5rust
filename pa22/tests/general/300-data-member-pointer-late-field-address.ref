@@ -1,0 +1,5 @@
+function @select_second() -> i64 [binding=strong, object=_Z13select_secondv] {
+  block ^entry:
+    %t1 = const i64 1
+    return i64 %t1
+}

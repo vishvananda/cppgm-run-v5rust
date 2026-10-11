@@ -1,0 +1,26 @@
+function @id(%value : i32) -> i32 [binding=strong, object=_Z2idi] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @f(3)
+    %t2 = binary sub nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @f(%value : i32) -> i32 [binding=weak, object=_Z1fIJiEEiDpT_] {
+  slot $value : i32
+  slot $result : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = call i32 @id(%t1)
+    store typed i32 %t2, $result
+    %t3 = load typed i32 $result
+    return i32 %t3
+}

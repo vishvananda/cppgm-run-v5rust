@@ -1,0 +1,66 @@
+function @take_direct(%direct : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z11take_direct6Direct] {
+  slot $direct : obj<4x4>
+
+  block ^entry:
+    %t1 = index i8 %direct, 0
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $direct : obj<4x4>
+  slot $cond__1 : i32
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $direct
+    call void @Direct__Direct(%t1, 9)
+    %t2 = addr $arg__2
+    %t3 = addr $direct
+    call void @Direct__Direct__ov2(%t2, %t3)
+    %t4 = call i32 @take_direct(%t2)
+    %t5 = cmp eq i32 %t4, 9
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @Direct__Direct(%this : ptr [object_bytes=4], %initial : i32) -> void [binding=weak, object=_ZN6DirectC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $initial : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %initial, $initial
+    %t1 = load typed i32 $initial
+    %t2 = load typed ptr $this
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t1, %t4
+    return void
+}
+function @Direct__Direct__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN6DirectC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 %t3, 0
+    copyobj 4x4 %t4, %t2
+    return void
+}
+alias object _ZN6DirectC2Ei = @Direct__Direct
+alias object _ZN6DirectC2ERKS_ = @Direct__Direct__ov2

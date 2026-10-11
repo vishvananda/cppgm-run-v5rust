@@ -1,0 +1,47 @@
+global @__local_static__function_symbol_5f5a3576616c7565494c693145456976__decl0__data [binding=weak, object=_ZZ5valueILi1EEivE4data] = {
+  i32 1
+}
+global @__local_static__function_symbol_5f5a3576616c7565494c693245456976__decl0__data [binding=weak, object=_ZZ5valueILi2EEivE4data] = {
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @value()
+    %t2 = cmp ne i32 %t1, 1
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = call i32 @value__2()
+    %t4 = cmp ne i32 %t3, 2
+    branch %t4, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}
+function @value() -> i32 [binding=weak, object=_Z5valueILi1EEiv] {
+  block ^entry:
+    %t1 = addr @__local_static__function_symbol_5f5a3576616c7565494c693145456976__decl0__data
+    %t2 = index i32 [projection=array_element] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @value__2() -> i32 [binding=weak, object=_Z5valueILi2EEiv] {
+  block ^entry:
+    %t1 = addr @__local_static__function_symbol_5f5a3576616c7565494c693245456976__decl0__data
+    %t2 = index i32 [projection=array_element] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

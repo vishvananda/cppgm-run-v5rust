@@ -1,0 +1,9 @@
+// Itanium ABI 2.6 (VTT and construction vtables; K1 is a nearly empty virtual
+// primary of K2 and of K3): K4's construction vtables/VTT must be emitted once
+// each; expect exit 0
+struct K0 { virtual void f0() {} };
+struct K1 : virtual K0 { int d1; };
+struct K2 : virtual K1 {};
+struct K3 : virtual K1, virtual K2 {};
+struct K4 : virtual K2, K3 {};
+int main() { K4* p = new K4; delete p; return 0; }

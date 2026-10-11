@@ -1,0 +1,9 @@
+#include <string>
+#include <unordered_map>
+
+int main()
+{
+  std::unordered_map<std::string, int> m;
+  m["x"] = 7;
+  return m.begin()->second == 7 ? 0 : 1;
+}

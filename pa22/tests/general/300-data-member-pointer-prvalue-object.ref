@@ -1,0 +1,46 @@
+function @make(%v : i32) -> obj<4x4> [binding=strong, object=_Z4makei] {
+  slot $v : i32
+  slot $x : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed i32 %v, $v
+    %t1 = addr $x
+    %t2 = load typed i32 $v
+    %t3 = addr $x
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    %t5 = addr $retobj__1
+    %t6 = addr $x
+    copyobj 4x4 %t6, %t5
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $pm : i64
+  slot $cond__1 : i32
+  slot $tmpobj__2 : obj<4x4>
+
+  block ^entry:
+    %t1 = const i64 0
+    store typed i64 %t1, $pm
+    %t2 = addr $tmpobj__2
+    %t3 = call obj<4x4> @make(42)
+    copyobj 4x4 %t3, %t2
+    %t4 = load typed i64 $pm
+    %t5 = index i8 [projection=field] %t2, %t4
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 42
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}

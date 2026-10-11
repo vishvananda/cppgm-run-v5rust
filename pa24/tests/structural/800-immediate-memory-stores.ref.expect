@@ -1,0 +1,11 @@
+# budget from 800-immediate-memory-stores.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 99
+blocks <= 7
+count(call) <= 5
+mem <= 11
+instructions <= 5 in @store_dereference
+stack_size <= 320 in @store_dereference
+instructions <= 5 in @store_indexed
+stack_size <= 320 in @store_indexed
+instructions <= 91 in @main
+stack_size <= 352 in @main

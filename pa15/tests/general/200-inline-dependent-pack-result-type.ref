@@ -1,0 +1,17 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 0, $x
+    %t1 = addr $x
+    call void @f(%t1)
+    return i32 0
+}
+function @f(%p : ptr) -> void [binding=weak, object=_Z1fIiJEEN6resultIv4predIT_JDpT0_EEE4typeEPS2_S4_, inline_hint=yes] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return void
+}

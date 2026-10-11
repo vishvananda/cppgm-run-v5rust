@@ -1,0 +1,44 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 42
+    call @identity [args=(rdi), unwind=no]
+    cmp.i64 rax, 0
+    je ^bad
+
+  block ^done
+    cmp.i64 rax, 42
+    setne rax
+    movzx rax, rax
+    ret rax
+
+  block ^bad
+    mov rax, 1
+    ret rax

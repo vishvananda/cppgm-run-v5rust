@@ -1,0 +1,10 @@
+// N3485 5.3.4p19-20: when the constructor throws in new (5) X(), the matching
+// placement deallocation function operator delete(void*, int) is called;
+// expect exit 0
+#include <new>
+#include <cstdlib>
+int deleted = 0;
+void* operator new(std::size_t n, int) { return std::malloc(n); }
+void operator delete(void* p, int) { deleted = 1; std::free(p); }
+struct X { X() { throw 1; } };
+int main() { try { new (5) X(); } catch (int) {} return deleted ? 0 : 1; }

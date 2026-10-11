@@ -1,0 +1,9 @@
+function @touch() -> void [unwind=no, binding=strong, object=_Z5touchv] {
+  block ^entry:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @touch()
+    return i32 0
+}

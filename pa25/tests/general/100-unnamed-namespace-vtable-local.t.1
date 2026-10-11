@@ -1,0 +1,5 @@
+// N3485 3.5p4: a class in an unnamed namespace (and its vtable/member
+// functions) has internal linkage; each unit's Q is distinct; expect exit 0
+// when both units are compiled by cppgm++
+namespace { struct Q { virtual int q() { return 5; } }; }
+int from1() { Q q; Q* p = &q; return p->q(); }

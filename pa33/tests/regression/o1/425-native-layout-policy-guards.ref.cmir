@@ -1,0 +1,188 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @frameless_leaf
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    add rdi, 1
+    ret rdi
+
+function @frameless_call
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    call @identity [args=(rdi), unwind=no]
+    ret rax
+
+function @frame_operand
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, 31
+    ret rax
+
+function @dynamic_stack
+  abi
+    param %bytes -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    stack_alloc r8, rdi
+    store.i64 [r8], 37
+    load.i64 rax, [r8]
+    ret rax
+
+function @floating_scratch
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    fadd.f64 xmm0, 1.25, 2.5
+    fne.f64 rax, xmm0, 3.75
+    ret rax
+
+function @host_eh
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    eh_push ^handler, 0
+    mov rdi, 41
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    ret rax
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @direct_returns
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    cmp.i64 rdi, 0
+    je ^no
+
+  block ^yes
+    mov rax, 43
+    ret rax
+
+  block ^no
+    mov rax, 47
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2> <gpr3> <gpr4>
+    temp %eh_value -> [rbp-<off0>] : i64
+
+  block ^entry
+    mov rdi, 28
+    call @frameless_leaf [args=(rdi), unwind=no]
+    mov <gpr0>, rax
+    mov rdi, 30
+    call @frameless_call [args=(rdi), unwind=no]
+    mov <gpr1>, rax
+    call @frame_operand [args=(), unwind=no]
+    mov <gpr2>, rax
+    mov rdi, 16
+    call @dynamic_stack [args=(rdi), unwind=no]
+    mov <gpr3>, rax
+    call @floating_scratch [args=(), unwind=no]
+    mov <gpr4>, rax
+    call @host_eh [args=()]
+    mov <gpr5>, rax
+    store.i64 [rbp-<off0>], <gpr5>
+    mov rdi, 1
+    call @direct_returns [args=(rdi), unwind=no]
+    cmp.i64 <gpr0>, 29
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    cmp.i64 <gpr1>, 30
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    cmp.i64 <gpr2>, 31
+    setne <gpr2>
+    movzx <gpr2>, <gpr2>
+    cmp.i64 <gpr3>, 37
+    setne <gpr3>
+    movzx <gpr3>, <gpr3>
+    cmp.i64 [rbp-<off0>], 41
+    setne r8
+    movzx r8, r8
+    cmp.i64 rax, 43
+    setne rax
+    movzx rax, rax
+    or <gpr0>, <gpr1>
+    or <gpr2>, <gpr3>
+    or <gpr4>, r8
+    or <gpr0>, <gpr2>
+    or <gpr4>, rax
+    or <gpr0>, <gpr4>
+    ret <gpr0>

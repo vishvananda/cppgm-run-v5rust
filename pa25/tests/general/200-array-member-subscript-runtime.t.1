@@ -1,0 +1,10 @@
+struct Buffer
+{
+  char data[4];
+};
+
+int main()
+{
+  Buffer b = {{'x', 'y', 0, 0}};
+  return b.data[0] == 'x' && b.data[1] == 'y' ? 0 : 1;
+}

@@ -1,0 +1,99 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @observed : i32 [binding=strong] = zero
+global @__typeinfo_name__struct_base [storage=readonly, binding=weak, object=_ZTS4base] = {
+  i8 52
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_base [storage=readonly, binding=weak, object=_ZTI4base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_base
+}
+global @base__vtable [storage=readonly, binding=weak, object=_ZTV4base] = {
+  i64 0
+  ptr addr @__rtti_struct_base
+  ptr addr @base___base
+  ptr addr @base___base__deleting_entry
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = cmp ne ptr 0, 0
+    branch %t1, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    %t2 = load typed ptr 0
+    %t3 = index i8 %t2, 8
+    %t4 = load typed ptr %t3
+    call void %t4(0) as (%arg0 : ptr [object_bytes=16]) -> void [unwind=no]
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    %t5 = load typed i32 @observed
+    return i32 %t5
+}
+function @base___base__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4baseD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    call void @base___base(%t1)
+    eh_end
+    %t2 = load typed ptr $this
+    call void @operatordelete(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    call void @operatordelete(%t3)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @base___base(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN4baseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    store typed i32 2, @observed
+    eh_end
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    call void @member___member(%t5)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    call void @member___member(%t7)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @member___member(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN6memberD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 1, @observed
+    return void
+}
+alias object _ZN4baseD2Ev = @base___base
+alias object _ZN6memberD2Ev = @member___member

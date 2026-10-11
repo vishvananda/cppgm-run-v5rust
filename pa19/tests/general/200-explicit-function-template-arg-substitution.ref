@@ -1,0 +1,17 @@
+function @h(%p : ptr) -> ptr [binding=strong, object=_Z1hPm] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = call ptr @foo(%t1)
+    return ptr %t2
+}
+function @foo(%p : ptr) -> ptr [binding=weak, object=_Z3fooImEPN10remove_refIT_E4typeES4_] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    return ptr %t1
+}

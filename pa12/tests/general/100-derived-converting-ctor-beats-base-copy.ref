@@ -1,0 +1,63 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<4x4>
+  slot $b : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $d
+    call void @Derived__Derived(%t1)
+    %t2 = addr $b
+    %t3 = addr $d
+    call void @Base__Base__ov2(%t2, %t3)
+    %t4 = addr $b
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @Derived__Derived(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    return void
+}
+function @Base__Base__ov2(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC1ER7Derived, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN4BaseC2ER7Derived = @Base__Base__ov2

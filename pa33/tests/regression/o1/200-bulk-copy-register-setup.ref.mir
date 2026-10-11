@@ -1,0 +1,40 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @src
+  storage data
+  item i64 0
+  item i64 9
+
+global @dst
+  storage data
+  item i64 1
+  item i64 1
+
+global @src_ptr
+  storage data
+  item ptr addr @src
+
+global @dst_ptr
+  storage data
+  item ptr addr @dst
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    load.ptr r8, @dst_ptr
+    load.ptr r9, @src_ptr
+    copy_bytes 16x8, r8, r9
+    load.i64 rax, @dst
+    ret rax

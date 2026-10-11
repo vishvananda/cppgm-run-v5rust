@@ -1,0 +1,9 @@
+tests/*.my*
+pptoken
+pptoken-fast
+pptoken-self-fast
+pptoken-debug
+*.dSYM
+testin
+testout
+.test_failed

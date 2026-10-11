@@ -1,0 +1,19 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : f64
+
+  block ^entry:
+    %t1 = unary neg f64 0
+    store typed f64 %t1, $value
+    %t2 = load typed f64 $value
+    %t3 = cmp ne f64 %t2, 0
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return i32 0
+}

@@ -1,0 +1,296 @@
+global @alive : i32 [binding=strong] = zero
+global @destroyed : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $bound : ptr
+  slot $tmpobj__1 : obj<16x8>
+  slot $sentinel : i64
+  slot $lor__2 : i64
+  slot $call__3 : i64
+  slot $lor__4 : i64
+  slot $lor__5 : i64
+  slot $cleanup_return__6 : i32
+  slot $second : ptr
+  slot $tmpobj__7 : obj<16x8>
+  slot $lor__8 : i64
+  slot $call__9 : i64
+  slot $call__10 : i64
+  slot $lor__11 : i64
+  slot $lor__12 : i64
+  slot $lor__13 : i64
+  slot $call__14 : i64
+  slot $lor__15 : i64
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    call void @Payload__Payload(%t1, 10, 20)
+    eh_try ^cleanup_action_2
+    store typed ptr %t1, $bound
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    call void @Payload___Payload(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    store typed i64 91, $sentinel
+    eh_try ^cleanup_action_2
+    %t2 = load typed ptr $bound
+    %t3 = call i64 @Payload__sum(%t2)
+    store typed i64 %t3, $call__3
+    %t4 = load typed i64 $call__3
+    %t5 = cmp ne i64 %t4, 30
+    eh_end
+    branch %t5, ^lor_short_7, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t6 = load typed i64 $sentinel
+    %t7 = cmp ne i64 %t6, 91
+    %t8 = cmp ne i64 %t7, 0
+    store typed i64 %t8, $lor__2
+    jump ^lor_end_8
+
+  block ^lor_short_7:
+    store typed i64 1, $lor__2
+    jump ^lor_end_8
+
+  block ^lor_end_8:
+    %t9 = load typed i64 $lor__2
+    branch %t9, ^lor_short_10, ^lor_rhs_9
+
+  block ^lor_rhs_9:
+    %t10 = load typed i32 @alive
+    %t11 = cmp ne i32 %t10, 1
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__4
+    jump ^lor_end_11
+
+  block ^lor_short_10:
+    store typed i64 1, $lor__4
+    jump ^lor_end_11
+
+  block ^lor_end_11:
+    %t13 = load typed i64 $lor__4
+    branch %t13, ^lor_short_13, ^lor_rhs_12
+
+  block ^lor_rhs_12:
+    %t14 = load typed i32 @destroyed
+    %t15 = cmp ne i32 %t14, 0
+    %t16 = cmp ne i64 %t15, 0
+    store typed i64 %t16, $lor__5
+    jump ^lor_end_14
+
+  block ^lor_short_13:
+    store typed i64 1, $lor__5
+    jump ^lor_end_14
+
+  block ^lor_end_14:
+    %t17 = load typed i64 $lor__5
+    branch %t17, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    store typed i32 1, $cleanup_return__6
+    jump ^return_cleanup_action_16
+
+  block ^return_cleanup_terminal_15:
+    return i32 $cleanup_return__6
+
+  block ^return_cleanup_action_16:
+    call void @Payload___Payload(%t1)
+    jump ^return_cleanup_terminal_15
+
+  block ^if_else_5:
+    jump ^if_end_17
+
+  block ^if_end_17:
+    %t18 = addr $tmpobj__7
+    eh_try ^cleanup_action_2
+    call void @Payload__Payload(%t18, 31, 42)
+    eh_end
+    eh_try ^cleanup_action_18
+    store typed ptr %t18, $second
+    eh_end
+    jump ^call_unwind_end_19
+
+  block ^cleanup_action_18:
+    call void @Payload___Payload(%t18)
+    jump ^cleanup_action_2
+
+  block ^call_unwind_end_19:
+    eh_try ^cleanup_action_18
+    %t19 = load typed ptr $second
+    %t20 = call i64 @Payload__sum(%t19)
+    store typed i64 %t20, $call__9
+    %t21 = load typed i64 $call__9
+    %t22 = cmp ne i64 %t21, 73
+    eh_end
+    branch %t22, ^lor_short_23, ^lor_rhs_22
+
+  block ^lor_rhs_22:
+    eh_try ^cleanup_action_18
+    %t23 = load typed ptr $bound
+    %t24 = call i64 @Payload__sum(%t23)
+    store typed i64 %t24, $call__10
+    %t25 = load typed i64 $call__10
+    %t26 = cmp ne i64 %t25, 30
+    %t27 = cmp ne i64 %t26, 0
+    store typed i64 %t27, $lor__8
+    eh_end
+    jump ^lor_end_24
+
+  block ^lor_short_23:
+    store typed i64 1, $lor__8
+    jump ^lor_end_24
+
+  block ^lor_end_24:
+    %t28 = load typed i64 $lor__8
+    branch %t28, ^lor_short_26, ^lor_rhs_25
+
+  block ^lor_rhs_25:
+    %t29 = load typed i32 @alive
+    %t30 = cmp ne i32 %t29, 2
+    %t31 = cmp ne i64 %t30, 0
+    store typed i64 %t31, $lor__11
+    jump ^lor_end_27
+
+  block ^lor_short_26:
+    store typed i64 1, $lor__11
+    jump ^lor_end_27
+
+  block ^lor_end_27:
+    %t32 = load typed i64 $lor__11
+    branch %t32, ^if_then_20, ^if_else_21
+
+  block ^if_then_20:
+    call void @Payload___Payload(%t18)
+    call void @Payload___Payload(%t1)
+    return i32 2
+
+  block ^if_else_21:
+    jump ^if_end_28
+
+  block ^if_end_28:
+    call void @Payload___Payload(%t18)
+    %t33 = load typed i32 @alive
+    %t34 = cmp ne i32 %t33, 1
+    branch %t34, ^lor_short_32, ^lor_rhs_31
+
+  block ^lor_rhs_31:
+    %t35 = load typed i32 @destroyed
+    %t36 = cmp ne i32 %t35, 1
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $lor__12
+    jump ^lor_end_33
+
+  block ^lor_short_32:
+    store typed i64 1, $lor__12
+    jump ^lor_end_33
+
+  block ^lor_end_33:
+    %t38 = load typed i64 $lor__12
+    branch %t38, ^lor_short_35, ^lor_rhs_34
+
+  block ^lor_rhs_34:
+    eh_try ^cleanup_action_2
+    %t39 = load typed ptr $bound
+    %t40 = call i64 @Payload__sum(%t39)
+    store typed i64 %t40, $call__14
+    %t41 = load typed i64 $call__14
+    %t42 = cmp ne i64 %t41, 30
+    %t43 = cmp ne i64 %t42, 0
+    store typed i64 %t43, $lor__13
+    eh_end
+    jump ^lor_end_36
+
+  block ^lor_short_35:
+    store typed i64 1, $lor__13
+    jump ^lor_end_36
+
+  block ^lor_end_36:
+    %t44 = load typed i64 $lor__13
+    branch %t44, ^if_then_29, ^if_else_30
+
+  block ^if_then_29:
+    store typed i32 3, $cleanup_return__6
+    jump ^return_cleanup_action_16
+
+  block ^if_else_30:
+    jump ^if_end_37
+
+  block ^if_end_37:
+    call void @Payload___Payload(%t1)
+    %t45 = load typed i32 @alive
+    %t46 = cmp ne i32 %t45, 0
+    branch %t46, ^lor_short_39, ^lor_rhs_38
+
+  block ^lor_rhs_38:
+    %t47 = load typed i32 @destroyed
+    %t48 = cmp ne i32 %t47, 2
+    %t49 = cmp ne i64 %t48, 0
+    store typed i64 %t49, $lor__15
+    jump ^lor_end_40
+
+  block ^lor_short_39:
+    store typed i64 1, $lor__15
+    jump ^lor_end_40
+
+  block ^lor_end_40:
+    %t50 = load typed i64 $lor__15
+    %t51 = convert trunc i32 i64 %t50
+    return i32 %t51
+}
+function @Payload__Payload(%this : ptr [object_bytes=16], %x : i64, %y : i64) -> void [binding=weak, object=_ZN7PayloadC1Exx, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : i64
+  slot $y : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %x, $x
+    store typed i64 %y, $y
+    %t1 = load typed i64 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    %t4 = load typed i64 $y
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    %t7 = load typed i32 @alive
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @alive
+    return void
+}
+function @Payload___Payload(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7PayloadD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @alive
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @alive
+    %t3 = load typed i32 @destroyed
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @destroyed
+    return void
+}
+function @Payload__sum(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNK7Payload3sumEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i64 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 8
+    %t6 = load typed i64 %t5
+    %t7 = binary add nowrap i64 %t3, %t6
+    return i64 %t7
+}
+alias object _ZN7PayloadC2Exx = @Payload__Payload
+alias object _ZN7PayloadD2Ev = @Payload___Payload

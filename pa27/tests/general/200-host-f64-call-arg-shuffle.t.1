@@ -1,0 +1,11 @@
+extern "C" double identity(double);
+extern "C" double combine(double, double);
+extern "C" double global_value;
+
+int main()
+{
+  double shuffled = combine(1.0 - identity(0.75), (double)2);
+  double memory_first = combine(global_value, identity(0.5));
+  return shuffled > 4.49 && shuffled < 4.51 &&
+         memory_first > 30.49 && memory_first < 30.51 ? 0 : 1;
+}

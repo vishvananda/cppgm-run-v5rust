@@ -1,0 +1,10 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = const i64 12
+    %t2 = const i64 4
+    %t3 = convert sext i64 i32 3
+    %t4 = binary mul i64 %t3, %t2
+    %t5 = cmp ne i64 %t1, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

@@ -1,0 +1,17 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $x
+    %t3 = call i32 @X__f(%t2)
+    %t4 = binary sub nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @X__f(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN1X1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}

@@ -1,0 +1,11 @@
+declare function @engine__run(%arg0 : ptr [object_bytes=1], %arg1 : i32, %arg2 : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_ZN6engine3runIlEEviOT_]
+declare function @consume(%arg0 : i128) -> void [binding=strong, object=_Z7consumeM6engineFviOlE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @engine__run
+    %t2 = copy i64 %t1
+    %t3 = convert zext i128 i64 %t2
+    call void @consume(%t3)
+    return i32 0
+}

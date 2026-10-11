@@ -1,0 +1,16 @@
+namespace {
+struct Analyzer {
+  Analyzer();
+  ~Analyzer();
+  int x;
+};
+
+Analyzer::Analyzer() : x(0) {}
+Analyzer::~Analyzer() {}
+}
+
+int main()
+{
+  Analyzer a;
+  return a.x;
+}

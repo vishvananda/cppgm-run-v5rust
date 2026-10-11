@@ -1,0 +1,12 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @explicit_free(%v : i32) -> i32 [binding=weak, object=_Z13explicit_freeIiET_S0_, object_root=yes] {
+  slot $v : i32
+
+  block ^entry:
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    return i32 %t1
+}

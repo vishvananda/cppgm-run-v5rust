@@ -1,0 +1,56 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+            initializer
+              keyword-literal KW_NULLPTR:nullptr
+      expression-statement
+        assignment-expression OP_ASS:=
+          id-expression p
+          new-expression
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+            initializer
+              paren-initializer
+                literal 1
+      expression-statement
+        type-trait-expression KW_TYPEID:typeid
+          id-expression x
+      expression-statement
+        type-trait-expression KW_ALIGNOF:alignof
+          type-id
+            type-specifier-seq
+              type-specifier KW_INT:int
+      expression-statement
+        type-trait-expression KW_NOEXCEPT:noexcept
+          call-expression
+            id-expression f
+            argument-list
+      expression-statement
+        delete-expression
+          id-expression p
+      expression-statement
+        delete-expression
+          array-delete
+          id-expression q
+      expression-statement
+        delete-expression
+          global-scope
+          array-delete
+          id-expression r
+end translation unit

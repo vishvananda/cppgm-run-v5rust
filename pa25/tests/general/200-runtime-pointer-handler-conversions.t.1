@@ -1,0 +1,134 @@
+// N3485 15.3p3, 4.4, 4.10: a pointer handler matches a thrown pointer
+// convertible by a qualification conversion, by conversion to an
+// unambiguous public base (first level only) or to cv void* (object
+// pointers only), and std::nullptr_t; a pointer-to-member handler matches
+// by qualification conversion, and a thrown std::nullptr_t gives it the null
+// member pointer (Itanium 2.3: -1 for a data member, a zero function word
+// and adjustment for a member function). Each test returns 0 when it matches
+// as g++.
+struct Base { int b; Base() : b(1) {} virtual ~Base() {} };
+struct Other { int o; Other() : o(2) {} virtual ~Other() {} };
+struct Derived : Base, Other { int d; Derived() : d(3) {} };
+struct Private : private Base {};
+struct Left : Base {};
+struct Right : Base {};
+struct Diamond : Left, Right {};
+struct VBase { int v; VBase() : v(7) {} };
+struct VDerived : virtual VBase {};
+struct S { int m; int n; int f() { return 5; } };
+static Derived derived;
+static char text[] = "x";
+static VDerived vderived;
+int fn() { return 9; }
+
+int qualification() {
+  try { throw text + 0; } catch (const char* p) { return p == text ? 0 : 1; }
+  return 1;
+}
+int multilevel() {
+  char* p = text;
+  try { throw &p; } catch (const char* const* q) { return *q == text ? 0 : 1; }
+  return 1;
+}
+int unsafe_multilevel() {
+  char* p = text;
+  try { try { throw &p; } catch (const char** q) { return 1; } } catch (char** q) { return *q == text ? 0 : 1; }
+  return 1;
+}
+int lost_qualification() {
+  try { try { throw static_cast<const char*>(text); } catch (char* p) { return 1; } } catch (const char*) { return 0; }
+  return 1;
+}
+int to_base() {
+  try { throw &derived; } catch (Base* p) { return p == static_cast<Base*>(&derived) && p->b == 1 ? 0 : 1; }
+  return 1;
+}
+int to_second_base() {
+  try { throw &derived; } catch (const Other* p) { return p == static_cast<Other*>(&derived) && p->o == 2 ? 0 : 1; }
+  return 1;
+}
+int to_virtual_base() {
+  try { throw &vderived; } catch (VBase* p) { return p == static_cast<VBase*>(&vderived) && p->v == 7 ? 0 : 1; }
+  return 1;
+}
+int null_to_base() {
+  try { throw static_cast<Derived*>(0); } catch (Other* p) { return p == 0 ? 0 : 1; }
+  return 1;
+}
+int private_base() {
+  static Private object;
+  try { try { throw &object; } catch (Base*) { return 1; } } catch (Private*) { return 0; }
+  return 1;
+}
+int ambiguous_base() {
+  static Diamond object;
+  try { try { throw &object; } catch (Base*) { return 1; } } catch (Diamond*) { return 0; }
+  return 1;
+}
+int no_base_at_second_level() {
+  Derived* p = &derived;
+  try { try { throw &p; } catch (Base**) { return 1; } } catch (Derived**) { return 0; }
+  return 1;
+}
+int to_void() {
+  try { throw &derived; } catch (void* p) { return p == &derived ? 0 : 1; }
+  return 1;
+}
+int const_to_void() {
+  try { try { throw static_cast<const int*>(&derived.b); } catch (void*) { return 1; } }
+  catch (const void* p) { return p == &derived.b ? 0 : 1; }
+  return 1;
+}
+int function_not_void() {
+  try { try { throw &fn; } catch (void*) { return 1; } } catch (int (*p)()) { return p() == 9 ? 0 : 1; }
+  return 1;
+}
+int null_pointer() {
+  try { throw nullptr; } catch (Base* p) { return p == 0 ? 0 : 1; }
+  return 1;
+}
+int member_exact() {
+  S s; s.m = 4; s.n = 6;
+  try { throw &S::n; } catch (int S::* p) { return s.*p == 6 ? 0 : 1; }
+  return 1;
+}
+int member_qualification() {
+  S s; s.m = 4; s.n = 6;
+  try { throw &S::n; } catch (const int S::* p) { return s.*p == 6 ? 0 : 1; }
+  return 1;
+}
+int member_function() {
+  S s;
+  try { throw &S::f; } catch (int (S::*p)()) { return (s.*p)() == 5 ? 0 : 1; }
+  return 1;
+}
+int null_data_member() {
+  try { throw nullptr; } catch (int S::* p) {
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&p);
+    for (int i = 0; i < 8; ++i) if (bytes[i] != 0xff) return 1;
+    return p == 0 && !p ? 0 : 1;
+  }
+  return 1;
+}
+int null_member_function() {
+  try { throw nullptr; } catch (int (S::*p)()) {
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&p);
+    for (int i = 0; i < 16; ++i) if (bytes[i] != 0) return 1;
+    return p == 0 && !p ? 0 : 1;
+  }
+  return 1;
+}
+int class_handler() {
+  try { throw Derived(); } catch (Other& o) { return o.o == 2 ? 0 : 1; }
+  return 1;
+}
+int main() {
+  int (*tests[])() = { qualification, multilevel, unsafe_multilevel, lost_qualification,
+    to_base, to_second_base, to_virtual_base, null_to_base, private_base, ambiguous_base,
+    no_base_at_second_level, to_void, const_to_void, function_not_void, null_pointer,
+    member_exact, member_qualification, member_function, null_data_member,
+    null_member_function, class_handler };
+  int failed = 0;
+  for (int i = 0; i < 21; ++i) if (tests[i]()) failed = i + 1;
+  return failed;
+}

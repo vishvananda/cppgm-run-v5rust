@@ -1,0 +1,20 @@
+#include "200-host-eh-vbase-rtti-out-of-line.shared.h"
+
+int main()
+{
+  try {
+    thrower();
+  } catch(info_base & caught) {
+    add_info(caught);
+    payload * concrete = dynamic_cast<payload *>(&caught);
+    if(!concrete || concrete->value_ != 42) {
+      return 2;
+    }
+    if(caught.data_ != &caught) {
+      return 3;
+    }
+    puts("ok");
+    return 0;
+  }
+  return 1;
+}

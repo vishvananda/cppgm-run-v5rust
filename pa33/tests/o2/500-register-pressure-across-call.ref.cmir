@@ -1,0 +1,111 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @pressure
+  abi
+    param %n -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2> <gpr3> <gpr4>
+    param-slot %n -> [rbp-<off0>] : i64
+    temp %t50 -> [rbp-<off1>] : i64
+    temp %t51 -> [rbp-<off2>] : i64
+    temp %t52 -> [rbp-<off3>] : i64
+    temp %t53 -> [rbp-<off4>] : i64
+
+  block ^entry
+    store.i64 [rbp-<off0>], rdi
+    mov <gpr1>, 1
+    mov <gpr2>, 2
+    mov <gpr3>, 3
+    mov <gpr4>, 4
+    store.i64 [rbp-<off1>], 5
+    store.i64 [rbp-<off2>], 6
+    store.i64 [rbp-<off3>], 7
+    store.i64 [rbp-<off4>], 8
+    mov <gpr0>, 0
+
+  block ^for_cond_1
+    cmp.i64 <gpr0>, rdi
+    jl ^for_body_2
+
+  block ^for_end_4
+    add <gpr1>, <gpr2>
+    add <gpr1>, <gpr3>
+    add <gpr1>, <gpr4>
+    add <gpr1>, [rbp-<off1>]
+    add <gpr1>, [rbp-<off2>]
+    add <gpr1>, [rbp-<off3>]
+    add <gpr1>, [rbp-<off4>]
+    ret <gpr1>
+
+  block ^for_body_2
+    mov rdi, <gpr0>
+    call @step [args=(rdi)]
+    add <gpr1>, rax
+    add <gpr2>, <gpr1>
+    add <gpr3>, <gpr2>
+    add <gpr4>, <gpr3>
+    mov r8, <gpr4>
+    add r8, [rbp-<off1>]
+    mov r9, r8
+    add r9, [rbp-<off2>]
+    mov rdi, r9
+    add rdi, [rbp-<off3>]
+    mov rsi, rdi
+    add rsi, [rbp-<off4>]
+    add <gpr0>, 1
+    store.i64 [rbp-<off1>], r8
+    store.i64 [rbp-<off2>], r9
+    store.i64 [rbp-<off3>], rdi
+    store.i64 [rbp-<off4>], rsi
+    cmp.i64 <gpr0>, [rbp-<off0>]
+    jl ^for_body_2
+    jmp ^for_end_4
+
+function @step
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    add rdi, 1
+    ret rdi
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 3
+    call @pressure [args=(rdi)]
+    cmp.i64 rax, 1008
+    je ^cond_then_1
+
+  block ^cond_else_2
+    mov rax, 1
+
+  block ^cond_end_3
+    ret rax
+
+  block ^cond_then_1
+    mov rax, 0
+    jmp ^cond_end_3

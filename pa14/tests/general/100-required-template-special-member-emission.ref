@@ -1,0 +1,68 @@
+global @total : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @box_int___box(%t1)
+    %t2 = addr $b
+    %t3 = addr $a
+    call void @box_int___box__ov2(%t2, %t3)
+    %t4 = load typed i32 @total
+    %t5 = addr $b
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    store typed i32 %t8, @total
+    %t9 = addr $b
+    call void @box_int____box(%t9)
+    %t10 = addr $a
+    call void @box_int____box(%t10)
+    %t11 = load typed i32 @total
+    %t12 = binary sub nowrap i32 %t11, 7
+    return i32 %t12
+}
+function @box_int___box(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN3boxIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @box_int___box__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN3boxIiEC1ERKS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 2
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+function @box_int____box(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN3boxIiED1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @total
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i32 %t3
+    %t5 = binary add nowrap i32 %t1, %t4
+    store typed i32 %t5, @total
+    return void
+}
+alias object _ZN3boxIiEC2Ev = @box_int___box
+alias object _ZN3boxIiEC2ERKS0_ = @box_int___box__ov2
+alias object _ZN3boxIiED2Ev = @box_int____box

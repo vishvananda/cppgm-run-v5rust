@@ -1,0 +1,101 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @first
+  storage scalar i64
+  init i64 11
+
+global @second
+  storage scalar i64
+  init i64 22
+
+function @identity
+  abi
+    param %value -> rdi : ptr
+    return ptr -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rdi
+
+function @check
+  abi
+    param %first -> rdi : ptr
+    param %value -> [rbp+16] : f80
+    param %second -> rsi : ptr
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @first
+    mov r9, @second
+    cmp.ptr rdi, r8
+    sete rdi
+    movzx rdi, rdi
+    feq.f80 r8, [rbp+16], 3.5L
+    cmp.ptr rsi, r9
+    sete rsi
+    movzx rsi, rsi
+    and rdi, rsi
+    and rdi, r8
+    ret rdi
+
+function @forward
+  abi
+    param %first -> rdi : ptr
+    param %value -> [rbp+16] : f80
+    param %second -> rsi : ptr
+    return i64 -> rax
+  frame
+    stack_size 96
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $value -> [rbp-16] : f80
+    temp %loaded_value -> [rbp-32] : f80
+
+  block ^entry
+    mov rbx, rsi
+    fmov.f80 [rbp-16], [rbp+16]
+    call @identity [args=(rdi)]
+    fmov.f80 [rbp-32], [rbp-16]
+    sub rsp, 16
+    fmov.f80 [rsp], [rbp-32]
+    mov rdi, rax
+    mov rsi, rbx
+    call @check [args=(rsi,rdi), stack=16]
+    add rsp, 16
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @first
+    mov r9, @second
+    sub rsp, 16
+    fmov.f80 [rsp], 3.5L
+    mov rdi, r8
+    mov rsi, r9
+    call @forward [args=(rsi,rdi), stack=16]
+    add rsp, 16
+    ret rax

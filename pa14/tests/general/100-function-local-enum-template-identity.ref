@@ -1,0 +1,38 @@
+function @f() -> void [binding=strong, object=_Z1fv] {
+  slot $a : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @A_T___A(%t1)
+    return void
+}
+function @g() -> void [binding=strong, object=_Z1gv] {
+  slot $a : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @A_T___A__2(%t1)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f()
+    call void @g()
+    return i32 0
+}
+function @A_T___A(%this : ptr [object_bytes=1]) -> void [binding=internal, object=_ZN1AIZ1fvE1TEC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @A_T___A__2(%this : ptr [object_bytes=1]) -> void [binding=internal, object=_ZN1AIZ1gvE1TEC1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN1AIZ1fvE1TEC2Ev = @A_T___A
+alias object _ZN1AIZ1gvE1TEC2Ev = @A_T___A__2

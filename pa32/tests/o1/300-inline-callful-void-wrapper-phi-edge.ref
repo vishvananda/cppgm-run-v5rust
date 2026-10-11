@@ -1,0 +1,19 @@
+declare function @observe(%value : i64) -> void [unwind=no]
+
+function @wrapper(%value : i64) -> void [unwind=no] {
+  block ^entry:
+    call void @observe(%value)
+    return void
+}
+function @caller(%condition : i64) -> i64 [binding=strong] {
+  block ^entry:
+    branch %condition, ^inline_entry_1, ^join
+
+  block ^inline_entry_1:
+    call void @observe(7)
+    jump ^join
+
+  block ^join:
+    %result = phi i64 [^inline_entry_1: 11, ^entry: 22]
+    return i64 %result
+}

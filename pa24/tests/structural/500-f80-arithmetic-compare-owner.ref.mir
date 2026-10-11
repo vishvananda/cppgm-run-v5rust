@@ -1,0 +1,21 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    temp %sum -> [rbp-16] : f80
+
+  block ^entry
+    fadd.f80 [rbp-16], 1.25L, 2.5L
+    feq.f80 rax, [rbp-16], 3.75L
+    ret rax

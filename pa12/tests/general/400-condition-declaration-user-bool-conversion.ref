@@ -1,0 +1,69 @@
+function @f() -> u8 [binding=internal, object=_ZL1fv] {
+  slot $direct : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $direct
+    call void @Box__Box(%t1)
+    %t2 = addr $direct
+    %t3 = call u8 @Box__operatorbool(%t2)
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return u8 0
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return u8 1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call u8 @f()
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 10, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @Box__Box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3BoxC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @Box__operatorbool(%this : ptr [object_bytes=4]) -> u8 [binding=weak, object=_ZNK3BoxcvbEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 0
+    %t5 = convert trunc u8 i64 %t4
+    return u8 %t5
+}
+function @Box___Box(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN3BoxD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN3BoxC2Ev = @Box__Box
+alias object _ZN3BoxD2Ev = @Box___Box

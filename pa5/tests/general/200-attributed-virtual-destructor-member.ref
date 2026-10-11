@@ -1,0 +1,64 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition std
+    namespace-definition __1
+      inline
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier C
+        class-specifier __owns_one_state
+          class-key KW_CLASS:class
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier C
+        class-specifier __owns_two_states
+          class-key KW_CLASS:class
+          base-clause
+            base-specifier
+              access-specifier KW_PUBLIC:public
+              base-name __owns_one_state<C>
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier KW_TYPEDEF:typedef
+              decl-specifier __owns_one_state<C>
+            init-declarator-list
+              init-declarator
+                declarator
+                  identifier base
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:base
+            init-declarator-list
+              init-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier __second_
+          access-specifier KW_PUBLIC:public
+          special-member-declaration ~__owns_two_states
+            member-specifiers
+              specifier KW_VIRTUAL:virtual
+            declarator
+              identifier ~__owns_two_states
+              parameter-clause
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier C
+        special-member-definition __owns_two_states<C>::~__owns_two_states
+          declarator
+            identifier __owns_two_states<C>::~__owns_two_states
+            parameter-clause
+          compound-statement
+            expression-statement
+              delete-expression
+                id-expression __second_
+end translation unit

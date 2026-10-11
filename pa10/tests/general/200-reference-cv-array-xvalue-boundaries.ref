@@ -1,0 +1,184 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+}
+
+function @case_0__check_case() -> i32 [binding=strong, object=_ZN6case_010check_caseEv] {
+  slot $a : obj<8x4>
+  slot $r : ptr
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $a
+    store typed ptr %t2, $r
+    %t3 = load typed ptr $r
+    %t4 = index i32 [projection=array_element] %t3, 0
+    %t5 = addr $a
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = cmp ne ptr %t4, %t6
+    branch %t7, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t8 = load typed ptr $r
+    %t9 = index i32 [projection=array_element] %t8, 1
+    %t10 = load typed i32 %t9
+    %t11 = cmp ne i32 %t10, 2
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t13 = load typed i64 $lor__1
+    %t14 = convert trunc i32 i64 %t13
+    return i32 %t14
+}
+function @case_1__check_case() -> i32 [binding=strong, object=_ZN6case_110check_caseEv] {
+  slot $a : obj<16x4>
+  slot $r : ptr
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr $a
+    store typed i32 1, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    store typed i32 2, %t2
+    %t3 = index i8 %t1, 8
+    store typed i32 3, %t3
+    %t4 = index i8 [projection=array_element] %t3, 4
+    store typed i32 4, %t4
+    %t5 = addr $a
+    store typed ptr %t5, $r
+    %t6 = load typed ptr $r
+    %t7 = binary mul i64 0, 8
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    %t9 = index i32 [projection=array_element] %t8, 0
+    %t10 = addr $a
+    %t11 = binary mul i64 0, 8
+    %t12 = index i8 [projection=array_element] %t10, %t11
+    %t13 = index i32 [projection=array_element] %t12, 0
+    %t14 = cmp ne ptr %t9, %t13
+    branch %t14, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t15 = load typed ptr $r
+    %t16 = binary mul i64 1, 8
+    %t17 = index i8 [projection=array_element] %t15, %t16
+    %t18 = index i32 [projection=array_element] %t17, 1
+    %t19 = load typed i32 %t18
+    %t20 = cmp ne i32 %t19, 4
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t22 = load typed i64 $lor__1
+    %t23 = convert trunc i32 i64 %t22
+    return i32 %t23
+}
+function @case_2__check_case() -> i32 [binding=strong, object=_ZN6case_210check_caseEv] {
+  slot $a : obj<8x4>
+  slot $r : ptr
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $a
+    store typed ptr %t2, $r
+    %t3 = load typed ptr $r
+    %t4 = index i32 [projection=array_element] %t3, 0
+    %t5 = addr $a
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = cmp ne ptr %t4, %t6
+    branch %t7, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t8 = load typed ptr $r
+    %t9 = index i32 [projection=array_element] %t8, 1
+    %t10 = load typed i32 %t9
+    %t11 = cmp ne i32 %t10, 2
+    %t12 = cmp ne i64 %t11, 0
+    store typed i64 %t12, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t13 = load typed i64 $lor__1
+    %t14 = convert trunc i32 i64 %t13
+    return i32 %t14
+}
+function @case_3__check_case() -> i32 [binding=strong, object=_ZN6case_310check_caseEv] {
+  slot $a : obj<8x4>
+  slot $r : ptr
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $a
+    store typed ptr %t2, $r
+    %t3 = load typed ptr $r
+    %t4 = index i32 [projection=array_element] %t3, 1
+    store volatile i32 5, %t4
+    %t5 = addr $a
+    %t6 = index i32 [projection=array_element] %t5, 1
+    %t7 = load typed i32 %t6
+    %t8 = binary sub nowrap i32 %t7, 5
+    return i32 %t8
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @case_0__check_case()
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t2 = call i32 @case_1__check_case()
+    branch %t2, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t3 = call i32 @case_2__check_case()
+    branch %t3, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    return i32 3
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    %t4 = call i32 @case_3__check_case()
+    branch %t4, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 4
+
+  block ^if_else_11:
+    jump ^if_end_12
+
+  block ^if_end_12:
+    return i32 0
+}

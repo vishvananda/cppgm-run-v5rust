@@ -1,0 +1,70 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @G__G(%arg0 : ptr [object_bytes=4], %arg1 : i32) -> void [binding=strong, object=_ZN1GC1Ei]
+declare function @G___G(%arg0 : ptr [object_bytes=4]) -> void [binding=strong, object=_ZN1GD1Ev]
+
+function @f() -> void [linkage=c, binding=strong] {
+  slot $a : obj<4x4>
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @G__G(%t1, 1)
+    %t2 = addr $b
+    eh_try ^cleanup_action_2
+    call void @G__G(%t2, 2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    eh_try ^lexical_cleanup_terminate_4
+    %t3 = addr $a
+    call void @G___G(%t3)
+    eh_end
+    jump ^cleanup_resume_1
+
+  block ^lexical_cleanup_terminate_4:
+    eh_catch_all, 1
+    %t4 = exception ptr
+    call void @cppgm_call_terminate(%t4)
+    unreachable
+
+  block ^call_unwind_end_3:
+    eh_try ^lexical_cleanup_dispatch_7
+    %t5 = addr $b
+    call void @G___G(%t5)
+    eh_end
+    %t6 = addr $a
+    call void @G___G(%t6)
+    return void
+
+  block ^lexical_unwind_5:
+    resume
+
+  block ^lexical_unwind_6:
+    eh_try ^lexical_cleanup_terminate_8
+    %t7 = addr $a
+    call void @G___G(%t7)
+    eh_end
+    jump ^lexical_unwind_5
+
+  block ^lexical_cleanup_terminate_8:
+    eh_catch_all, 2
+    %t8 = exception ptr
+    call void @cppgm_call_terminate(%t8)
+    unreachable
+
+  block ^lexical_cleanup_dispatch_7:
+    eh_cleanup
+    eh_end
+    jump ^lexical_unwind_6
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}

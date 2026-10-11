@@ -1,0 +1,23 @@
+int c;
+
+struct A {
+  A()
+  {
+    ++c;
+  }
+
+  ~A()
+  {
+    --c;
+  }
+};
+
+struct B {
+  A a;
+};
+
+int main()
+{
+  B();
+  return c;
+}

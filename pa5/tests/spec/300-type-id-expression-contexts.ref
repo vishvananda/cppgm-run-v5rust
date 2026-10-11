@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            ptr-operator OP_STAR:*
+            identifier p
+    compound-statement
+      return-statement
+        binary-expression OP_PLUS:+
+          sizeof-expression
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+              abstract-declarator
+                ptr-operator OP_STAR:*
+          cast-expression KW_STATIC_CAST:static_cast
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+            unary-expression OP_STAR:*
+              id-expression p
+end translation unit

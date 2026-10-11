@@ -1,0 +1,48 @@
+function @f(%x : ptr [pass=by_address, object_bytes=8], %y : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_Z1fRPvS0_] {
+  slot $x : ptr
+  slot $y : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    %t1 = load typed ptr $x
+    %t2 = load typed ptr $y
+    call void @swap_values(%t1, %t2)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}
+function @swap_values(%x : ptr [pass=by_address, object_bytes=8], %y : ptr [pass=by_address, object_bytes=8]) -> void [binding=weak, object=_Z11swap_valuesIPvEvRT_S2_] {
+  slot $x : ptr
+  slot $y : ptr
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    %t1 = load typed ptr $x
+    %t2 = call ptr @move_value(%t1)
+    %t3 = load typed ptr %t2
+    store typed ptr %t3, $t
+    %t4 = load typed ptr $y
+    %t5 = call ptr @move_value(%t4)
+    %t6 = load typed ptr %t5
+    %t7 = load typed ptr $x
+    store typed ptr %t6, %t7
+    %t8 = addr $t
+    %t9 = call ptr @move_value(%t8)
+    %t10 = load typed ptr %t9
+    %t11 = load typed ptr $y
+    store typed ptr %t10, %t11
+    return void
+}
+function @move_value(%value : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=weak, object=_Z10move_valueIRPvEON16remove_referenceIT_E4typeEOS3_] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}

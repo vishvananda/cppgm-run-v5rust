@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition array_const_reference_binding
+    type-alias matrix array of 3 array of 4 char
+    function-definition array_const_reference_binding::take function of (lvalue-reference to array of 3 array of 4 const char, pointer to const char) returning unsigned int
+      parameter value lvalue-reference to array of 3 array of 4 const char
+      parameter  pointer to const char
+      compound-statement
+        return-statement
+          literal prvalue unsigned int 0u
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable local array of 3 array of 4 char
+      return-statement
+        call-expression prvalue unsigned int
+          callee array_const_reference_binding::take function of (lvalue-reference to array of 3 array of 4 const char, pointer to const char) returning unsigned int
+          id-expression lvalue array of 3 array of 4 char local
+          literal lvalue array of 6 const char "local"
+end translation unit

@@ -1,0 +1,13 @@
+#include <cstdio>
+
+template <class T> struct Tag { static int id; static int count(); };
+template <class T> int Tag<T>::id = 1;
+template <class T> int Tag<T>::count() { return id + 10; }
+
+template <> struct Tag<char> { static int id; static int count(); };
+
+int main()
+{
+  std::printf("%d %d %d\n", Tag<char>::id, Tag<char>::count(), Tag<int>::count());
+  return 0;
+}

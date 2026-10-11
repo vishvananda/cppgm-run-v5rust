@@ -1,0 +1,29 @@
+struct Result {
+  long values[8];
+};
+
+struct Guard {
+  int *depth;
+  explicit Guard(int *depth_) : depth(depth_) { ++*depth; }
+  ~Guard() { --*depth; }
+};
+
+Result fail()
+{
+  throw 7;
+}
+
+int main()
+{
+  int depth = 0;
+  try {
+    Guard guard(&depth);
+    Result result = fail();
+    (void)result;
+  } catch(int value) {
+    return value == 7 && depth == 0 ? 0 : 1;
+  } catch(...) {
+    return 2;
+  }
+  return 3;
+}

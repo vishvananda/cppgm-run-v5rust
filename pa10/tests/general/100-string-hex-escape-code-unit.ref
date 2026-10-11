@@ -1,0 +1,36 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 -85
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = const i64 2
+    %t2 = convert sext i64 i32 2
+    %t3 = cmp ne i64 %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = addr @__strlit__1
+    %t5 = index i8 [projection=array_element] %t4, 0
+    %t6 = load i8 %t5
+    %t7 = copy u8 %t6
+    %t8 = convert zext i32 u8 %t7
+    %t9 = cmp ne i32 %t8, 171
+    branch %t9, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    return i32 0
+}

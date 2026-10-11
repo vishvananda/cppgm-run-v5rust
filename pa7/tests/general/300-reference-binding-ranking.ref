@@ -1,0 +1,71 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f1 function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+  function-declaration f2 function of () returning rvalue-reference to int
+  function-definition g function of (lvalue-reference to const int) returning int
+    parameter  lvalue-reference to const int
+    compound-statement
+      return-statement
+        literal prvalue int 1
+  function-definition g function of (rvalue-reference to const int) returning int
+    parameter  rvalue-reference to const int
+    compound-statement
+      return-statement
+        literal prvalue int 2
+  function-definition converted function of (lvalue-reference to const long long int) returning int
+    parameter  lvalue-reference to const long long int
+    compound-statement
+      return-statement
+        literal prvalue int 5
+  function-definition converted function of (rvalue-reference to const long long int) returning int
+    parameter  rvalue-reference to const long long int
+    compound-statement
+      return-statement
+        literal prvalue int 6
+  function-definition sel function of (lvalue-reference to function of () returning void) returning int
+    parameter  lvalue-reference to function of () returning void
+    compound-statement
+      return-statement
+        literal prvalue int 3
+  function-definition sel function of (rvalue-reference to function of () returning void) returning int
+    parameter  rvalue-reference to function of () returning void
+    compound-statement
+      return-statement
+        literal prvalue int 4
+  function-declaration fn function of () returning void
+  function-definition h function of () returning int
+    compound-statement
+      simple-declaration
+        variable i int
+          literal prvalue int 0
+      simple-declaration
+        variable u unsigned int
+          literal prvalue int 0
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                call-expression prvalue int
+                  callee g function of (lvalue-reference to const int) returning int
+                  id-expression lvalue int i
+                call-expression prvalue int
+                  callee g function of (rvalue-reference to const int) returning int
+                  call-expression prvalue int
+                    callee f1 function of () returning int
+              call-expression prvalue int
+                callee g function of (rvalue-reference to const int) returning int
+                call-expression xvalue rvalue-reference to int
+                  callee f2 function of () returning rvalue-reference to int
+            call-expression prvalue int
+              callee sel function of (lvalue-reference to function of () returning void) returning int
+              id-expression lvalue function of () returning void fn
+          call-expression prvalue int
+            callee converted function of (rvalue-reference to const long long int) returning int
+            cast-expression prvalue const long long int
+              id-expression lvalue unsigned int u
+end translation unit

@@ -1,0 +1,183 @@
+typedef __int128_t I128;
+typedef __uint128_t U128;
+
+unsigned long long low_i128(I128 value)
+{
+  return (unsigned long long)value;
+}
+
+long long high_i128(I128 value)
+{
+  return (long long)(value >> 64);
+}
+
+unsigned long long low_u128(U128 value)
+{
+  return (unsigned long long)value;
+}
+
+unsigned long long high_u128(U128 value)
+{
+  return (unsigned long long)(value >> 64);
+}
+
+U128 variable_left_shift(U128 value, int count)
+{
+  return value << count;
+}
+
+U128 variable_logical_right_shift(U128 value, int count)
+{
+  return value >> count;
+}
+
+I128 variable_arithmetic_right_shift(I128 value, int count)
+{
+  return value >> count;
+}
+
+U128 bitwise_complement(U128 value)
+{
+  return ~value;
+}
+
+bool has_halves(U128 value, unsigned long long high,
+                unsigned long long low)
+{
+  return high_u128(value) == high && low_u128(value) == low;
+}
+
+I128 make_signed()
+{
+  return (((I128)1) << 66) + 5;
+}
+
+U128 make_unsigned()
+{
+  return (((U128)1) << 68) + 9;
+}
+
+bool unsigned_nonzero(U128 value)
+{
+  return !!value;
+}
+
+I128 widen_i32(int value)
+{
+  return (I128)value;
+}
+
+int main()
+{
+  I128 a = make_signed();
+  if(low_i128(a) != 5ULL || high_i128(a) != 4LL) {
+    return 1;
+  }
+
+  I128 b = a * 3;
+  if(low_i128(b) != 15ULL || high_i128(b) != 12LL) {
+    return 2;
+  }
+
+  I128 c = b / 3;
+  if(low_i128(c) != 5ULL || high_i128(c) != 4LL) {
+    return 3;
+  }
+
+  I128 d = b % 3;
+  if(low_i128(d) != 0ULL || high_i128(d) != 0LL) {
+    return 4;
+  }
+
+  U128 u = make_unsigned();
+  if(low_u128(u) != 9ULL || high_u128(u) != 16ULL) {
+    return 5;
+  }
+
+  U128 v = u >> 2;
+  if(low_u128(v) != 2ULL || high_u128(v) != 4ULL) {
+    return 6;
+  }
+
+  U128 w = v << 1;
+  if(low_u128(w) != 4ULL || high_u128(w) != 8ULL) {
+    return 7;
+  }
+
+  U128 x = w / 4;
+  if(low_u128(x) != 1ULL || high_u128(x) != 2ULL) {
+    return 8;
+  }
+
+  U128 y = w % 4;
+  if(low_u128(y) != 0ULL || high_u128(y) != 0ULL) {
+    return 9;
+  }
+
+  if(!unsigned_nonzero(((U128)1) << 64) || unsigned_nonzero((U128)0)) {
+    return 10;
+  }
+
+  int runtime_negative_one = -1;
+  I128 widened = widen_i32(runtime_negative_one);
+  if(low_i128(widened) != 18446744073709551615ULL ||
+     high_i128(widened) != -1LL) {
+    return 11;
+  }
+
+  struct ShiftCase {
+    int count;
+    unsigned long long left_high;
+    unsigned long long left_low;
+    unsigned long long logical_high;
+    unsigned long long logical_low;
+    unsigned long long arithmetic_high;
+    unsigned long long arithmetic_low;
+  };
+
+  const ShiftCase shift_cases[] = {
+    {0, 0, 1,
+     0x8000000000000000ULL, 0,
+     0x8000000000000000ULL, 0},
+    {1, 0, 2,
+     0x4000000000000000ULL, 0,
+     0xc000000000000000ULL, 0},
+    {63, 0, 0x8000000000000000ULL,
+     1, 0,
+     0xffffffffffffffffULL, 0},
+    {64, 1, 0,
+     0, 0x8000000000000000ULL,
+     0xffffffffffffffffULL, 0x8000000000000000ULL},
+    {65, 2, 0,
+     0, 0x4000000000000000ULL,
+     0xffffffffffffffffULL, 0xc000000000000000ULL},
+    {127, 0x8000000000000000ULL, 0,
+     0, 1,
+     0xffffffffffffffffULL, 0xffffffffffffffffULL}
+  };
+
+  U128 high_bit = ((U128)1) << 127;
+  for(int i = 0; i < 6; ++i) {
+    const ShiftCase &test = shift_cases[i];
+    if(!has_halves(variable_left_shift((U128)1, test.count),
+                   test.left_high, test.left_low)) {
+      return 12;
+    }
+    if(!has_halves(variable_logical_right_shift(high_bit, test.count),
+                   test.logical_high, test.logical_low)) {
+      return 13;
+    }
+    if(!has_halves((U128)variable_arithmetic_right_shift((I128)high_bit,
+                                                        test.count),
+                   test.arithmetic_high, test.arithmetic_low)) {
+      return 14;
+    }
+  }
+
+  if(!has_halves(bitwise_complement((U128)0),
+                 0xffffffffffffffffULL, 0xffffffffffffffffULL)) {
+    return 15;
+  }
+
+  return 0;
+}

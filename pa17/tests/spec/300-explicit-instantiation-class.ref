@@ -1,0 +1,48 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $h
+    call void @holder_int___holder(%t1, 7)
+    %t2 = addr $h
+    %t3 = call i32 @holder_int___get(%t2)
+    %t4 = cmp eq i32 %t3, 7
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @holder_int___holder(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN6holderIiEC1Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @holder_int___get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK6holderIiE3getEv, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+alias object _ZN6holderIiEC2Ei = @holder_int___holder

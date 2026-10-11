@@ -1,0 +1,4 @@
+preproc 1
+sof tests/directives/170-nondir4.t
+identifier ok
+eof

@@ -1,0 +1,22 @@
+#include "200-host-eh-unwind-through-plain-frame.helper.h"
+
+__attribute__((noinline)) void throw_marker(int value)
+{
+  throw Marker(value);
+}
+
+__attribute__((noinline)) int keep_live(int a, int b, int c, int d)
+{
+  return a * 3 + b * 5 + c * 7 + d * 11;
+}
+
+__attribute__((noinline)) void plain_frame(int value)
+{
+  int a = keep_live(value, value + 1, value + 2, value + 3);
+  int b = keep_live(a, value + 4, value + 5, value + 6);
+  if(b == 0)
+  {
+    return;
+  }
+  throw_marker(value);
+}

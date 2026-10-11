@@ -1,0 +1,269 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @keep1
+  storage scalar i64
+  init i64 1
+
+global @keep2
+  storage scalar i64
+  init i64 2
+
+global @keep3
+  storage scalar i64
+  init i64 3
+
+global @keep4
+  storage scalar i64
+  init i64 4
+
+global @keep5
+  storage scalar i64
+  init i64 5
+
+global @number
+  storage scalar i64
+  init i64 40
+
+global @number_pointer
+  storage data
+  item ptr addr @number
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ret rdi
+
+function @copy_to_edge_home
+  abi
+    param %value -> rdi : i64
+    param %condition -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+    param-slot %value -> [rbp-8] : i64
+    temp %result -> [rbp-16] : i64
+
+  block ^entry
+    store.i64 [rbp-8], rdi
+    mov rbx, rsi
+    eh_push ^handler, 0
+    mov rdi, 7
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 rbx, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-8]
+    add r8, 1
+    store.i64 [rbp-16], r8
+
+  block ^done
+    mov rax, r8
+    ret rax
+
+  block ^right
+    load.i64 r8, [rbp-8]
+    sub r8, 1
+    store.i64 [rbp-16], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @call_result_to_edge_home
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+    temp %value -> [rbp-8] : i64
+    temp %result -> [rbp-16] : i64
+
+  block ^entry
+    mov rbx, rdi
+    eh_push ^handler, 0
+    mov rdi, 40
+    call @identity [args=(rdi), unwind=no]
+    store.i64 [rbp-8], rax
+    mov rdi, 9
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 rbx, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-8]
+    add r8, 2
+    store.i64 [rbp-16], r8
+
+  block ^done
+    mov rax, r8
+    ret rax
+
+  block ^right
+    load.i64 r8, [rbp-8]
+    sub r8, 2
+    store.i64 [rbp-16], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @load_with_dead_address
+  abi
+    param %condition -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+    temp %a -> [rbp-8] : i64
+    temp %b -> [rbp-16] : i64
+    temp %c -> [rbp-24] : i64
+    temp %d -> [rbp-32] : i64
+    temp %e -> [rbp-40] : i64
+    temp %value -> [rbp-48] : i64
+    temp %result -> [rbp-56] : i64
+
+  block ^entry
+    mov rbx, rdi
+    eh_push ^handler, 0
+    load.i64 r8, @keep1
+    store.i64 [rbp-8], r8
+    load.i64 r8, @keep2
+    store.i64 [rbp-16], r8
+    load.i64 r8, @keep3
+    store.i64 [rbp-24], r8
+    load.i64 r8, @keep4
+    store.i64 [rbp-32], r8
+    load.i64 r8, @keep5
+    store.i64 [rbp-40], r8
+    load.ptr r8, @number_pointer
+    load.i64 r8, [r8]
+    store.i64 [rbp-48], r8
+    mov rdi, 11
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.i64 rbx, 0
+    je ^right
+
+  block ^left
+    load.i64 r8, [rbp-8]
+    add r8, [rbp-16]
+    load.i64 r9, [rbp-24]
+    add r9, [rbp-32]
+    add r8, r9
+    add r8, [rbp-40]
+    add r8, 3
+    store.i64 [rbp-56], r8
+
+  block ^done
+    add r8, [rbp-48]
+    ret r8
+
+  block ^right
+    load.i64 r8, [rbp-8]
+    add r8, [rbp-16]
+    load.i64 r9, [rbp-24]
+    add r9, [rbp-32]
+    add r8, r9
+    add r8, [rbp-40]
+    sub r8, 3
+    store.i64 [rbp-56], r8
+    jmp ^done
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @load_with_live_address
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx r12
+
+  block ^entry
+    eh_push ^handler, 0
+    load.ptr rbx, @number_pointer
+    load.i64 r12, [rbx]
+    mov rdi, 13
+    call @identity [args=(rdi), unwind=no]
+    eh_pop
+    cmp.ptr rbx, 0
+    sete rbx
+    movzx rbx, rbx
+    cmp.i64 r12, 40
+    setne r12
+    movzx r12, r12
+    or rbx, r12
+    ret rbx
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx r12 r13
+
+  block ^entry
+    mov rdi, 40
+    mov rsi, 1
+    call @copy_to_edge_home [args=(rsi,rdi)]
+    mov rbx, rax
+    mov rdi, 1
+    call @call_result_to_edge_home [args=(rdi)]
+    mov r12, rax
+    mov rdi, 1
+    call @load_with_dead_address [args=(rdi)]
+    mov r13, rax
+    call @load_with_live_address [args=()]
+    cmp.i64 rbx, 41
+    setne rbx
+    movzx rbx, rbx
+    cmp.i64 r12, 42
+    setne r12
+    movzx r12, r12
+    cmp.i64 r13, 58
+    setne r13
+    movzx r13, r13
+    or rbx, r12
+    or r13, rax
+    or rbx, r13
+    ret rbx

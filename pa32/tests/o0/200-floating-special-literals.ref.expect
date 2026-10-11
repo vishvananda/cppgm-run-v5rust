@@ -1,0 +1,12 @@
+# budget from 200-floating-special-literals.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 8
+blocks <= 8
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 4 in @positive_infinity
+instructions <= 4 in @negative_infinity
+instructions <= 4 in @quiet_nan
+instructions <= 4 in @extended_infinity
+instructions <= 4 in @suffixed_literal

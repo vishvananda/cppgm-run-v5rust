@@ -1,0 +1,62 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @object
+  storage data
+  item i64 42
+  item i64 0
+  item i64 0
+  item ptr addr @read_value
+
+function @read_value
+  abi
+    param %tag -> rdi : i64
+    param %p -> rsi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    add rdi, [rsi]
+    ret rdi
+
+function @invoke
+  abi
+    param %this -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.ptr r8, [rdi+24]
+    mov rsi, rdi
+    mov rdi, 5
+    call *r8 [args=(rsi,rdi)]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @object
+    call @invoke [args=(rdi)]
+    cmp.i64 rax, 47
+    setne rax
+    movzx rax, rax
+    ret rax

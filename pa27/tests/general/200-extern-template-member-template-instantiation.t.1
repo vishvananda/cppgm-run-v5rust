@@ -1,0 +1,10 @@
+#include "200-extern-template-member-template-instantiation.helper.h"
+
+int main()
+{
+  Box<int> box(7);
+  int offset = 4;
+  // The provider cannot instantiate a member template over this local closure.
+  return box.read() == 17 &&
+    box.apply([offset](int value) { return value + offset; }) == 11 ? 0 : 1;
+}

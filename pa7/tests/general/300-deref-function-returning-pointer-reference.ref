@@ -1,0 +1,23 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition get function of (lvalue-reference to pointer to int) returning lvalue-reference to pointer to int
+    parameter p lvalue-reference to pointer to int
+    compound-statement
+      return-statement
+        id-expression lvalue pointer to int p
+  function-definition f function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 1
+      simple-declaration
+        variable p pointer to int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int x
+      return-statement
+        unary-expression lvalue int OP_STAR:*
+          call-expression lvalue lvalue-reference to pointer to int
+            callee get function of (lvalue-reference to pointer to int) returning lvalue-reference to pointer to int
+            id-expression lvalue pointer to int p
+end translation unit

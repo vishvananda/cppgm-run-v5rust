@@ -1,0 +1,38 @@
+extern "C" void _Exit(int);
+
+namespace std {
+typedef void (*terminate_handler)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+}  // namespace std
+
+void throw_int();
+
+void no_escape() noexcept
+{
+  throw_int();
+}
+
+void mark_terminate()
+{
+  _Exit(7);
+}
+
+void throw_int()
+{
+  throw 1;
+}
+
+int main()
+{
+  std::set_terminate(mark_terminate);
+  void (*p)() = no_escape;
+  try
+  {
+    p();
+  }
+  catch (...)
+  {
+    return 4;
+  }
+  return 3;
+}

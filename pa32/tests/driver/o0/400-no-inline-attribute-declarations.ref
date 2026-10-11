@@ -1,0 +1,70 @@
+function @declared_first(%x : i32) -> i32 [binding=strong, object=_Z14declared_firsti, no_inline=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @after_declarator(%x : i32) -> i32 [binding=strong, object=_Z16after_declaratori, no_inline=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 2
+    return i32 %t2
+}
+function @ordinary(%x : i32) -> i32 [binding=strong, object=_Z8ordinaryi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = addr $box
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = call i32 @declared_first(0)
+    %t5 = call i32 @after_declarator(0)
+    %t6 = binary add nowrap i32 %t4, %t5
+    %t7 = addr $box
+    %t8 = call i32 @Box__member(%t7)
+    %t9 = binary add nowrap i32 %t6, %t8
+    %t10 = call i32 @ordinary(0)
+    %t11 = binary add nowrap i32 %t9, %t10
+    %t12 = cmp eq i32 %t11, 10
+    branch %t12, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @Box__member(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK3Box6memberEv, inline_hint=yes, no_inline=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 3
+    return i32 %t4
+}

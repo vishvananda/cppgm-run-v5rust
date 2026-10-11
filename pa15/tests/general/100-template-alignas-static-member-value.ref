@@ -1,0 +1,31 @@
+declare global @alignment_of_int___value : u32 [binding=weak, object=_ZN12alignment_ofIiE5valueE]
+
+global @global_value : obj<16x4> [binding=strong] = {
+  zero 16
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = const i64 4
+    %t3 = cmp eq i64 %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

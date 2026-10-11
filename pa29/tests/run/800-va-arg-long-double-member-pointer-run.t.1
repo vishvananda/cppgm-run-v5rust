@@ -1,0 +1,7 @@
+// N3485 18.10/C 7.15.1.1 via GCC __builtin_va_arg (PA28 tests
+// va_start/va_arg): va_arg of a pointer-to-member type must be supported;
+// expect exit 0
+struct S { int a, b; };
+typedef int S::* PM;
+static PM pm(int n, ...) { __builtin_va_list ap; __builtin_va_start(ap, n); PM v = __builtin_va_arg(ap, PM); __builtin_va_end(ap); return v; }
+int main() { S s = { 1, 2 }; return s.*pm(1, &S::b) == 2 ? 0 : 1; }

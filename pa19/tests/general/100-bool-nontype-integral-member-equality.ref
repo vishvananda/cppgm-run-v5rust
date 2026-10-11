@@ -1,0 +1,9 @@
+declare global @size2_int___value : i32 [binding=weak, object=_ZN5size2IiE5valueE]
+declare global @nth_0_int___value : i32 [binding=weak, object=_ZN3nthILi0EiE5valueE]
+declare global @nth_1_int___value : i32 [binding=weak, object=_ZN3nthILi1EiE5valueE]
+declare global @nth_2_int___value : i32 [binding=weak, object=_ZN3nthILi2EiE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

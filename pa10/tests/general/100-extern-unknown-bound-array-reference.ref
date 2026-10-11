@@ -1,0 +1,10 @@
+declare global @source__text [binding=strong, object=_ZN6source4textE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @source__text
+    %t2 = index i8 [projection=array_element] %t1, 0
+    %t3 = load i8 %t2
+    %t4 = convert sext i32 i8 %t3
+    return i32 %t4
+}

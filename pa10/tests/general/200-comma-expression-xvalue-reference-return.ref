@@ -1,0 +1,21 @@
+function @move_value(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_Z10move_valueRi] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    return ptr %t1
+}
+function @get(%value : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=strong, object=_Z3getRi] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = call ptr @move_value(%t1)
+    return ptr %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1,0 +1,10 @@
+declare global @prefer_fn__call_traits_executor__property_void___overload : i32 [binding=weak, object=_ZN9prefer_fn11call_traitsIRN3lib8executorENS1_8propertyEvE8overloadE]
+
+global @lib___GLOBAL__N_1__prefer [storage=readonly, binding=internal, object=_ZN3lib12_GLOBAL__N_16preferE] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

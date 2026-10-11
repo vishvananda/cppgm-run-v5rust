@@ -1,0 +1,35 @@
+function @which(%__param0 : i32) -> i32 [binding=strong, object=_Z5whichi] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 1
+}
+function @which__ov2(%__param0 : ptr) -> i32 [binding=strong, object=_Z5whichPi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = copy ptr 0
+    %t2 = call i32 @which__ov2(%t1)
+    %t3 = cmp eq i32 %t2, 2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}

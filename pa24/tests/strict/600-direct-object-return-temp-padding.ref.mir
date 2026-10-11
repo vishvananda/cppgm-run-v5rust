@@ -1,0 +1,40 @@
+machine_ir x86_64 linux
+
+startup
+    call @__cppgm_406d61696e [args=()]
+    mov rdi, rax
+    exit
+
+function @f
+  abi
+    return obj<3x1> -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $x -> [rbp-8] : obj<3x1>
+
+  block ^entry
+    zero_bytes 3x1, [rbp-8]
+    store.u8 [rbp-7], 1
+    load.i64 rax, [rbp-8]
+    ret
+
+function @__cppgm_406d61696e
+  abi
+    return i32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $out -> [rbp-8] : obj<3x1>
+    temp %t2 -> [rbp-16] : obj<3x1>
+
+  block ^entry
+    call @f [args=()]
+    store.i64 [rbp-16], rax
+    copy_bytes 3x1, [rbp-8], [rbp-16]
+    mov rax, 0
+    ret rax

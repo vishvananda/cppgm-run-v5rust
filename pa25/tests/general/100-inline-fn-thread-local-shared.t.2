@@ -1,0 +1,4 @@
+// second TU using the same inline function
+extern int seed;
+inline int tl() { thread_local int t = ++seed * 1000; return ++t; }
+int unit2() { return tl(); }

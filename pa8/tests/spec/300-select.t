@@ -1,0 +1,19 @@
+function @pick(%c : i64, %a : i32, %b : i32) -> i32 {
+  block ^entry:
+    %v = select i32 %c, %a, %b
+    return i32 %v
+}
+
+function @main() -> i64 {
+  block ^entry:
+    %lt = cmp lt i32 3, 4
+    %x = select i32 %lt, 10, 20
+    %y = call i32 @pick(0, 1, 2)
+    %both_null = cmp eq ptr nullptr, nullptr
+    %p = select ptr %both_null, @main, nullptr
+    %ok = cmp ne ptr %p, nullptr
+    %s = binary add i32 %x, %y
+    %t = convert sext i64 i32 %s
+    %u = select i64 %ok, %t, 0
+    return i64 %u
+}

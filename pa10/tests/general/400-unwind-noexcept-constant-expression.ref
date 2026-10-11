@@ -1,0 +1,62 @@
+function @four_bytes(%x : i32) -> i32 [unwind=no, binding=strong, object=_Z10four_bytesi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @eight_bytes(%x : i32) -> i32 [binding=strong, object=_Z11eight_bytesi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 2
+    return i32 %t2
+}
+function @nested(%x : i32) -> i32 [unwind=no, binding=strong, object=_Z6nestedi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @arithmetic(%x : i32) -> i32 [unwind=no, binding=strong, object=_Z10arithmetici] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @four_bytes(0)
+    %t2 = call i32 @eight_bytes(0)
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @nested(0)
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @arithmetic(0)
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = cmp eq i32 %t7, 10
+    branch %t8, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t9 = load typed i32 $cond__1
+    return i32 %t9
+}

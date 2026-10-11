@@ -1,0 +1,745 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+
+global @clock : i32 [binding=strong] = zero
+global @trail : obj<32x4> [binding=strong] = {
+  zero 32
+}
+global @count : i32 [binding=strong] = zero
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $braced : obj<12x4>
+  slot $catch__1 : ptr
+  slot $e : i32
+  slot $converted : obj<16x4>
+  slot $catch__2 : ptr
+  slot $e__shadow2 : i32
+  slot $first : obj<4x4>
+  slot $catch__3 : ptr
+  slot $e__shadow3 : i32
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = addr $braced
+    call void @Braced__Braced(%t1, 1)
+    %t2 = addr $braced
+    call void @Braced___Braced(%t2)
+    eh_end
+    return i32 1
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t3 = exception ptr
+    %t4 = exception_selector i32
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t6 = call ptr @__external_runtime____cxa_begin_catch(%t3)
+    store typed ptr %t6, $catch__1
+    eh_cleanup ^catch_cleanup_6
+    %t7 = load typed i32 %t6
+    store typed i32 %t7, $e
+    %t8 = load typed i32 $e
+    %t9 = unary neg i32 2
+    %t10 = cmp ne i32 %t8, %t9
+    branch %t10, ^if_then_7, ^if_else_8
+
+  block ^if_then_7:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 2
+
+  block ^if_else_8:
+    jump ^if_end_9
+
+  block ^if_end_9:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    %t11 = load typed i32 @count
+    %t12 = cmp ne i32 %t11, 2
+    branch %t12, ^if_then_10, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t13 = addr @trail
+    %t14 = index i32 [projection=array_element] %t13, 0
+    %t15 = load typed i32 %t14
+    %t16 = cmp ne i32 %t15, 1
+    branch %t16, ^if_then_10, ^lor_rhs_12
+
+  block ^lor_rhs_12:
+    %t17 = addr @trail
+    %t18 = index i32 [projection=array_element] %t17, 1
+    %t19 = load typed i32 %t18
+    %t20 = cmp ne i32 %t19, 9
+    branch %t20, ^if_then_10, ^if_else_11
+
+  block ^if_then_10:
+    return i32 3
+
+  block ^if_else_11:
+    jump ^if_end_14
+
+  block ^if_end_14:
+    store typed i32 0, @count
+    eh_try ^catch_dispatch_15
+    %t21 = addr $converted
+    call void @Converted__Converted(%t21, 1)
+    %t22 = addr $converted
+    call void @Converted___Converted(%t22)
+    eh_end
+    return i32 4
+
+  block ^catch_dispatch_15:
+    eh_catch @__external_rtti__int, 2
+    jump ^catch_entry_16
+
+  block ^catch_entry_16:
+    %t23 = exception ptr
+    %t24 = exception_selector i32
+    %t25 = cmp eq i32 %t24, 2
+    branch %t25, ^catch_body_18, ^catch_next_19
+
+  block ^catch_body_18:
+    %t26 = call ptr @__external_runtime____cxa_begin_catch(%t23)
+    store typed ptr %t26, $catch__2
+    eh_cleanup ^catch_cleanup_20
+    %t27 = load typed i32 %t26
+    store typed i32 %t27, $e__shadow2
+    %t28 = load typed i32 $e__shadow2
+    %t29 = unary neg i32 6
+    %t30 = cmp ne i32 %t28, %t29
+    branch %t30, ^if_then_21, ^if_else_22
+
+  block ^if_then_21:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 5
+
+  block ^if_else_22:
+    jump ^if_end_23
+
+  block ^if_end_23:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_17
+
+  block ^catch_cleanup_20:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_19:
+    resume
+
+  block ^try_end_17:
+    %t31 = load typed i32 @count
+    %t32 = cmp ne i32 %t31, 3
+    branch %t32, ^if_then_24, ^lor_rhs_28
+
+  block ^lor_rhs_28:
+    %t33 = addr @trail
+    %t34 = index i32 [projection=array_element] %t33, 0
+    %t35 = load typed i32 %t34
+    %t36 = cmp ne i32 %t35, 5
+    branch %t36, ^if_then_24, ^lor_rhs_27
+
+  block ^lor_rhs_27:
+    %t37 = addr @trail
+    %t38 = index i32 [projection=array_element] %t37, 1
+    %t39 = load typed i32 %t38
+    %t40 = cmp ne i32 %t39, 4
+    branch %t40, ^if_then_24, ^lor_rhs_26
+
+  block ^lor_rhs_26:
+    %t41 = addr @trail
+    %t42 = index i32 [projection=array_element] %t41, 2
+    %t43 = load typed i32 %t42
+    %t44 = cmp ne i32 %t43, 9
+    branch %t44, ^if_then_24, ^if_else_25
+
+  block ^if_then_24:
+    return i32 6
+
+  block ^if_else_25:
+    jump ^if_end_29
+
+  block ^if_end_29:
+    store typed i32 0, @count
+    eh_try ^catch_dispatch_30
+    %t45 = addr $first
+    call void @First__First(%t45, 0)
+    %t46 = addr $first
+    call void @First___First(%t46)
+    eh_end
+    return i32 7
+
+  block ^catch_dispatch_30:
+    eh_catch @__external_rtti__int, 3
+    jump ^catch_entry_31
+
+  block ^catch_entry_31:
+    %t47 = exception ptr
+    %t48 = exception_selector i32
+    %t49 = cmp eq i32 %t48, 3
+    branch %t49, ^catch_body_33, ^catch_next_34
+
+  block ^catch_body_33:
+    %t50 = call ptr @__external_runtime____cxa_begin_catch(%t47)
+    store typed ptr %t50, $catch__3
+    eh_cleanup ^catch_cleanup_35
+    %t51 = load typed i32 %t50
+    store typed i32 %t51, $e__shadow3
+    %t52 = load typed i32 $e__shadow3
+    %t53 = cmp ne i32 %t52, 100
+    branch %t53, ^if_then_36, ^if_else_37
+
+  block ^if_then_36:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 8
+
+  block ^if_else_37:
+    jump ^if_end_38
+
+  block ^if_end_38:
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_32
+
+  block ^catch_cleanup_35:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_34:
+    resume
+
+  block ^try_end_32:
+    %t54 = load typed i32 @count
+    %t55 = cmp ne i32 %t54, 0
+    branch %t55, ^if_then_39, ^if_else_40
+
+  block ^if_then_39:
+    return i32 9
+
+  block ^if_else_40:
+    jump ^if_end_41
+
+  block ^if_end_41:
+    return i32 0
+}
+function @Braced__Braced(%this : ptr [object_bytes=12], %__param1 : i32) -> void [binding=weak, object=_ZN6BracedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    eh_cleanup ^constructor_cleanup_1
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    call void @Tracked__Tracked(%t5, 1)
+    eh_end
+    eh_cleanup ^constructor_cleanup_2
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 4
+    %t8 = unary neg i32 2
+    call void @Tracked__Tracked(%t7, %t8)
+    eh_end
+    eh_cleanup ^constructor_cleanup_3
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 8
+    call void @Tracked__Tracked(%t10, 3)
+    eh_end
+    eh_cleanup ^constructor_cleanup_4
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t11 = load typed ptr $this
+    %t12 = index i8 %t11, 0
+    call void @Base___Base(%t12)
+    eh_end
+    resume
+
+  block ^constructor_cleanup_2:
+    %t13 = load typed ptr $this
+    %t14 = index i8 [projection=field] %t13, 0
+    call void @Tracked___Tracked(%t14)
+    jump ^constructor_cleanup_1
+
+  block ^constructor_cleanup_3:
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 4
+    call void @Tracked___Tracked(%t16)
+    jump ^constructor_cleanup_2
+
+  block ^constructor_cleanup_4:
+    %t17 = load typed ptr $this
+    %t18 = index i8 [projection=field] %t17, 8
+    call void @Tracked___Tracked(%t18)
+    jump ^constructor_cleanup_3
+}
+function @Braced___Braced(%this : ptr [object_bytes=12]) -> void [unwind=no, binding=weak, object=_ZN6BracedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    call void @Tracked___Tracked(%t2)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    call void @Tracked___Tracked(%t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    call void @Tracked___Tracked(%t6)
+    %t7 = load typed ptr $this
+    %t8 = index i8 %t7, 0
+    call void @Base___Base(%t8)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    eh_cleanup ^destructor_suffix_cleanup_5
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 4
+    call void @Tracked___Tracked(%t10)
+    eh_end
+    jump ^destructor_suffix_next_6
+
+  block ^destructor_suffix_cleanup_5:
+    %t11 = load typed ptr $this
+    %t12 = index i8 [projection=field] %t11, 0
+    call void @Tracked___Tracked(%t12)
+    %t13 = load typed ptr $this
+    %t14 = index i8 %t13, 0
+    call void @Base___Base(%t14)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_6:
+    eh_cleanup ^destructor_suffix_cleanup_7
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 0
+    call void @Tracked___Tracked(%t16)
+    eh_end
+    jump ^destructor_suffix_next_8
+
+  block ^destructor_suffix_cleanup_7:
+    %t17 = load typed ptr $this
+    %t18 = index i8 %t17, 0
+    call void @Base___Base(%t18)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_8:
+    %t19 = load typed ptr $this
+    %t20 = index i8 %t19, 0
+    call void @Base___Base(%t20)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t21 = load typed ptr $this
+    %t22 = index i8 [projection=field] %t21, 8
+    call void @Tracked___Tracked(%t22)
+    %t23 = load typed ptr $this
+    %t24 = index i8 [projection=field] %t23, 4
+    call void @Tracked___Tracked(%t24)
+    %t25 = load typed ptr $this
+    %t26 = index i8 [projection=field] %t25, 0
+    call void @Tracked___Tracked(%t26)
+    %t27 = load typed ptr $this
+    %t28 = index i8 %t27, 0
+    call void @Base___Base(%t28)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Converted__Converted(%this : ptr [object_bytes=16], %__param1 : i32) -> void [binding=weak, object=_ZN9ConvertedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    eh_cleanup ^constructor_cleanup_1
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    call void @Tracked__Tracked(%t5, 4)
+    eh_end
+    eh_cleanup ^constructor_cleanup_2
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 4
+    call void @Tracked__Tracked(%t7, 5)
+    eh_end
+    eh_cleanup ^constructor_cleanup_3
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 8
+    %t10 = unary neg i32 6
+    call void @Tracked__Tracked(%t9, %t10)
+    eh_end
+    eh_cleanup ^constructor_cleanup_4
+    %t11 = load typed ptr $this
+    %t12 = index i8 [projection=field] %t11, 12
+    call void @Tracked__Tracked(%t12, 7)
+    eh_end
+    eh_cleanup ^constructor_cleanup_5
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t13 = load typed ptr $this
+    %t14 = index i8 %t13, 0
+    call void @Base___Base(%t14)
+    eh_end
+    resume
+
+  block ^constructor_cleanup_2:
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 0
+    call void @Tracked___Tracked(%t16)
+    jump ^constructor_cleanup_1
+
+  block ^constructor_cleanup_3:
+    %t17 = load typed ptr $this
+    %t18 = index i8 [projection=field] %t17, 4
+    call void @Tracked___Tracked(%t18)
+    jump ^constructor_cleanup_2
+
+  block ^constructor_cleanup_4:
+    %t19 = load typed ptr $this
+    %t20 = index i8 [projection=field] %t19, 8
+    call void @Tracked___Tracked(%t20)
+    jump ^constructor_cleanup_3
+
+  block ^constructor_cleanup_5:
+    %t21 = load typed ptr $this
+    %t22 = index i8 [projection=field] %t21, 12
+    call void @Tracked___Tracked(%t22)
+    jump ^constructor_cleanup_4
+}
+function @Converted___Converted(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN9ConvertedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 12
+    call void @Tracked___Tracked(%t2)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    call void @Tracked___Tracked(%t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 4
+    call void @Tracked___Tracked(%t6)
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    call void @Tracked___Tracked(%t8)
+    %t9 = load typed ptr $this
+    %t10 = index i8 %t9, 0
+    call void @Base___Base(%t10)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    eh_cleanup ^destructor_suffix_cleanup_5
+    %t11 = load typed ptr $this
+    %t12 = index i8 [projection=field] %t11, 8
+    call void @Tracked___Tracked(%t12)
+    eh_end
+    jump ^destructor_suffix_next_6
+
+  block ^destructor_suffix_cleanup_5:
+    %t13 = load typed ptr $this
+    %t14 = index i8 [projection=field] %t13, 4
+    call void @Tracked___Tracked(%t14)
+    %t15 = load typed ptr $this
+    %t16 = index i8 [projection=field] %t15, 0
+    call void @Tracked___Tracked(%t16)
+    %t17 = load typed ptr $this
+    %t18 = index i8 %t17, 0
+    call void @Base___Base(%t18)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_6:
+    eh_cleanup ^destructor_suffix_cleanup_7
+    %t19 = load typed ptr $this
+    %t20 = index i8 [projection=field] %t19, 4
+    call void @Tracked___Tracked(%t20)
+    eh_end
+    jump ^destructor_suffix_next_8
+
+  block ^destructor_suffix_cleanup_7:
+    %t21 = load typed ptr $this
+    %t22 = index i8 [projection=field] %t21, 0
+    call void @Tracked___Tracked(%t22)
+    %t23 = load typed ptr $this
+    %t24 = index i8 %t23, 0
+    call void @Base___Base(%t24)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_8:
+    eh_cleanup ^destructor_suffix_cleanup_9
+    %t25 = load typed ptr $this
+    %t26 = index i8 [projection=field] %t25, 0
+    call void @Tracked___Tracked(%t26)
+    eh_end
+    jump ^destructor_suffix_next_10
+
+  block ^destructor_suffix_cleanup_9:
+    %t27 = load typed ptr $this
+    %t28 = index i8 %t27, 0
+    call void @Base___Base(%t28)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_10:
+    %t29 = load typed ptr $this
+    %t30 = index i8 %t29, 0
+    call void @Base___Base(%t30)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t31 = load typed ptr $this
+    %t32 = index i8 [projection=field] %t31, 12
+    call void @Tracked___Tracked(%t32)
+    %t33 = load typed ptr $this
+    %t34 = index i8 [projection=field] %t33, 8
+    call void @Tracked___Tracked(%t34)
+    %t35 = load typed ptr $this
+    %t36 = index i8 [projection=field] %t35, 4
+    call void @Tracked___Tracked(%t36)
+    %t37 = load typed ptr $this
+    %t38 = index i8 [projection=field] %t37, 0
+    call void @Tracked___Tracked(%t38)
+    %t39 = load typed ptr $this
+    %t40 = index i8 %t39, 0
+    call void @Base___Base(%t40)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @First__First(%this : ptr [object_bytes=4], %__param1 : i32) -> void [binding=weak, object=_ZN5FirstC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed i32 $__param1
+    call void @Base__Base__base_entry(%t2, %t3)
+    eh_cleanup ^constructor_cleanup_1
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    call void @Tracked__Tracked(%t5, 8)
+    eh_end
+    eh_cleanup ^constructor_cleanup_2
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t6 = load typed ptr $this
+    %t7 = index i8 %t6, 0
+    call void @Base___Base(%t7)
+    eh_end
+    resume
+
+  block ^constructor_cleanup_2:
+    %t8 = load typed ptr $this
+    %t9 = index i8 [projection=field] %t8, 0
+    call void @Tracked___Tracked(%t9)
+    jump ^constructor_cleanup_1
+}
+function @First___First(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5FirstD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Tracked___Tracked(%t2)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Base___Base(%t4)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 0
+    call void @Base___Base(%t6)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    call void @Tracked___Tracked(%t8)
+    %t9 = load typed ptr $this
+    %t10 = index i8 %t9, 0
+    call void @Base___Base(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=1], %k : i32) -> void [binding=weak, object=_ZN4BaseC2Ei, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $k : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %k, $k
+    %t1 = load typed i32 $k
+    %t2 = cmp eq i32 %t1, 0
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t3 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 100, %t3
+    %t4 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t3, %t4, 0)
+    return void
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+function @Tracked__Tracked(%this : ptr [object_bytes=4], %i : i32) -> void [binding=weak, object=_ZN7TrackedC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %i, $i
+    %t1 = load typed i32 $i
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    %t4 = load typed i32 $i
+    %t5 = cmp lt i32 %t4, 0
+    branch %t5, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t6 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    %t7 = load typed i32 $i
+    store typed i32 %t7, %t6
+    %t8 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t6, %t8, 0)
+    return void
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+function @Base___Base(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN4BaseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @trail
+    %t2 = load typed i32 @count
+    %t3 = binary add nowrap i32 %t2, 1
+    store typed i32 %t3, @count
+    %t4 = index i32 [projection=array_element] %t1, %t2
+    store typed i32 9, %t4
+    return void
+}
+function @Tracked___Tracked(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN7TrackedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = addr @trail
+    %t5 = load typed i32 @count
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @count
+    %t7 = index i32 [projection=array_element] %t4, %t5
+    store typed i32 %t3, %t7
+    return void
+}
+alias object _ZN6BracedC2Ei = @Braced__Braced
+alias object _ZN6BracedD2Ev = @Braced___Braced
+alias object _ZN9ConvertedC2Ei = @Converted__Converted
+alias object _ZN9ConvertedD2Ev = @Converted___Converted
+alias object _ZN5FirstC2Ei = @First__First
+alias object _ZN5FirstD2Ev = @First___First
+alias object _ZN7TrackedC2Ei = @Tracked__Tracked
+alias object _ZN4BaseD2Ev = @Base___Base
+alias object _ZN7TrackedD2Ev = @Tracked___Tracked

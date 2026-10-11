@@ -1,0 +1,13 @@
+declare function @make() -> obj<8x4> [binding=weak, object=_Z4makeIiE1PIT_Ev]
+
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  slot $tmpobj__1 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = call obj<8x4> @make()
+    copyobj 8x4 %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 4
+    %t4 = load typed i32 %t3
+    return i32 %t4
+}

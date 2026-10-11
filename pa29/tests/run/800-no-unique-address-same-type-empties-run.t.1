@@ -1,0 +1,9 @@
+// PA29 README ([[no_unique_address]] layout) + Itanium ABI 2.4
+// (potentially-overlapping empty subobjects of one type get distinct offsets,
+// without growing the class): B is 4 bytes with e2 at 1 and x at 0; C (E[2]
+// then E) is 3 bytes; expect exit 0
+#include <cstddef>
+struct E {};
+struct B { [[no_unique_address]] E e1; [[no_unique_address]] E e2; int x; };
+struct C { [[no_unique_address]] E m0[2]; [[no_unique_address]] E m1; };
+int main() { return sizeof(B) == 4 && offsetof(B, e2) == 1 && offsetof(B, x) == 0 && sizeof(C) == 3 && offsetof(C, m1) == 2 ? 0 : 1; }

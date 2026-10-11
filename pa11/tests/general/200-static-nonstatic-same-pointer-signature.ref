@@ -1,0 +1,25 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    call void @block__unlink__ov2(%t2)
+    return i32 0
+}
+function @block__unlink__ov2(%pb : ptr) -> void [binding=weak, object=_ZN5block6unlinkEPS_, inline_hint=yes] {
+  slot $pb : ptr
+
+  block ^entry:
+    store typed ptr %pb, $pb
+    %t1 = load typed ptr $pb
+    call void @block__unlink(%t1)
+    return void
+}
+function @block__unlink(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5block6unlinkEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier foo
+    class-key KW_STRUCT:struct
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:foo
+        init-declarator-list
+          init-declarator
+            declarator
+              nested-declarator
+                declarator
+                  identifier x
+      return-statement
+        literal 0
+end translation unit

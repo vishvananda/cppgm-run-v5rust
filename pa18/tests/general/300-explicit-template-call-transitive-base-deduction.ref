@@ -1,0 +1,55 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $t : obj<16x8>
+
+  block ^entry:
+    %t1 = addr $t
+    call void @ns__tuple_int__int___tuple(%t1)
+    %t2 = addr $t
+    %t3 = index i8 %t2, 0
+    %t4 = call ptr @ns__helper(%t3)
+    %t5 = load typed i32 %t4
+    return i32 0
+}
+function @ns__tuple_int__int___tuple(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN2ns5tupleIJPiiEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @ns__impl_0_int__int___impl__base_entry(%t2)
+    return void
+}
+function @ns__helper(%object : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN2ns6helperILm1EiJEEERT0_RNS_4implIXT_EJS1_DpT1_EEE] {
+  slot $object : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    %t1 = load typed ptr $object
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @ns__impl_0_int__int___impl__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN2ns4implILm0EJPiiEEC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @ns__impl_1_int___impl__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed ptr 0, %t4
+    return void
+}
+function @ns__impl_1_int___impl__base_entry(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN2ns4implILm1EJiEEC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+alias object _ZN2ns5tupleIJPiiEEC2Ev = @ns__tuple_int__int___tuple

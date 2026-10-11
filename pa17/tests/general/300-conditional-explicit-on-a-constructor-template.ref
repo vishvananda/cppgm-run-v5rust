@@ -1,0 +1,105 @@
+declare global @pick_true___implicit : u8 [binding=weak, object=_ZN4pickILb1EE8implicitE]
+declare global @pick_false___implicit : u8 [binding=weak, object=_ZN4pickILb0EE8implicitE]
+
+function @take_box(%b : obj<8x8>) -> void [binding=strong, object=_Z8take_box3boxIlE] {
+  slot $b : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $b
+    copyobj 8x8 %b, %t1
+    %t2 = addr $b
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $narrow : obj<4x4>
+  slot $argobj__1 : obj<8x8>
+  slot $source : obj<4x4>
+  slot $direct : obj<8x8>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $narrow
+    call void @box_int___box(%t1)
+    %t2 = addr $argobj__1
+    %t3 = addr $narrow
+    call void @box_longint___box(%t2, %t3)
+    call void @take_box($argobj__1)
+    %t4 = addr $source
+    call void @guarded_int___guarded(%t4)
+    %t5 = addr $direct
+    %t6 = addr $source
+    call void @guarded_longint___guarded(%t5, %t6)
+    %t7 = addr $direct
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = load typed i64 %t8
+    %t10 = cmp eq i64 %t9, 0
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__2
+    return i32 %t11
+}
+function @box_int___box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @box_longint___box(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN3boxIlEC1IiEERKS_IT_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = convert sext i64 i32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t4, %t6
+    return void
+}
+function @guarded_int___guarded(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN7guardedIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @guarded_longint___guarded(%this : ptr [object_bytes=8], %other : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN7guardedIlEC1IiEERKS_IT_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = convert sext i64 i32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t4, %t6
+    return void
+}
+alias object _ZN3boxIiEC2Ev = @box_int___box
+alias object _ZN3boxIlEC2IiEERKS_IT_E = @box_longint___box
+alias object _ZN7guardedIiEC2Ev = @guarded_int___guarded
+alias object _ZN7guardedIlEC2IiEERKS_IT_E = @guarded_longint___guarded

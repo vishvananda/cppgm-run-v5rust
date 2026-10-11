@@ -1,0 +1,15 @@
+# budget from 700-narrow-call-result-terminal-consumers.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 73
+blocks <= 11
+count(call) <= 13
+mem <= 13
+instructions <= 5 in @byte_value
+stack_size <= 320 in @byte_value
+instructions <= 9 in @store_result
+stack_size <= 320 in @store_result
+instructions <= 7 in @return_result
+stack_size <= 320 in @return_result
+instructions <= 7 in @widen_result
+stack_size <= 320 in @widen_result
+instructions <= 49 in @main
+stack_size <= 448 in @main

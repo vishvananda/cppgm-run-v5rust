@@ -1,0 +1,5 @@
+#if __has_attribute(__using_if_exists__)
+have_using_if_exists_attr
+#else
+missing_using_if_exists_attr
+#endif

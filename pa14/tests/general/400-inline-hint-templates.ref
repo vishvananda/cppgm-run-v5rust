@@ -1,0 +1,86 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $box : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $box
+    %t2 = addr $box
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 0, %t3
+    %t4 = addr $box
+    %t5 = call i32 @Box_int___in_class(%t4)
+    %t6 = addr $box
+    %t7 = call i32 @Box_int___out_of_class(%t6)
+    %t8 = binary add nowrap i32 %t5, %t7
+    %t9 = addr $box
+    %t10 = call i32 @Box_int___inline_out_of_class(%t9)
+    %t11 = binary add nowrap i32 %t8, %t10
+    %t12 = call i32 @plain_template(0)
+    %t13 = binary add nowrap i32 %t11, %t12
+    %t14 = call i32 @inline_template(0)
+    %t15 = binary add nowrap i32 %t13, %t14
+    %t16 = cmp eq i32 %t15, 10
+    branch %t16, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t17 = load typed i32 $cond__1
+    return i32 %t17
+}
+function @Box_int___in_class(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK3BoxIiE8in_classEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @Box_int___out_of_class(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK3BoxIiE12out_of_classEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    return i32 %t4
+}
+function @Box_int___inline_out_of_class(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZNK3BoxIiE19inline_out_of_classEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 2
+    return i32 %t4
+}
+function @plain_template(%x : i32) -> i32 [binding=weak, object=_Z14plain_templateIiET_S0_] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @inline_template(%x : i32) -> i32 [binding=weak, object=_Z15inline_templateIiET_S0_, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 4
+    return i32 %t2
+}

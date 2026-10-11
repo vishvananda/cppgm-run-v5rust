@@ -1,0 +1,59 @@
+global @ns__mark : u8 [binding=strong, object=_ZN2ns4markE] = 0
+global @ns__init : u8 [binding=strong, object=_ZN2ns4initE] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = load u8 @ns__mark
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t2 = load typed i32 $cond__1
+    return i32 %t2
+}
+function @ns__core___cppgm_class_template_identity_1___init() -> u8 [binding=weak, object=_ZN2ns4coreI14factory_markerIXadL_ZNS_4markEEEEE4initEv, inline_hint=yes] {
+  slot $a : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $a
+    call void @ns__core___cppgm_class_template_identity_1___holder_arg__holder_arg(%t1)
+    %t2 = addr $a
+    %t3 = index i8 [projection=field] %t2, 0
+    return u8 1
+}
+function @ns__core___cppgm_class_template_identity_1___holder_arg__holder_arg(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN2ns4coreI14factory_markerIXadL_ZNS_4markEEEEE10holder_argC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @factory_class__ns__mark_int_int___factory_class(%t2)
+    return void
+}
+function @factory_class__ns__mark_int_int___factory_class(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN13factory_classIXadL_ZN2ns4markEEEiiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr @ns__mark
+    store u8 1, %t1
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call u8 @ns__core___cppgm_class_template_identity_1___init()
+    store u8 %t1, @ns__init
+    return void
+}
+alias object _ZN2ns4coreI14factory_markerIXadL_ZNS_4markEEEEE10holder_argC2Ev = @ns__core___cppgm_class_template_identity_1___holder_arg__holder_arg
+alias object _ZN13factory_classIXadL_ZN2ns4markEEEiiEC2Ev = @factory_class__ns__mark_int_int___factory_class

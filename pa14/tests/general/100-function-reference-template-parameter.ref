@@ -1,0 +1,29 @@
+function @inc(%value : i32) -> i32 [binding=strong, object=_Z3inci] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = binary add nowrap i32 %t1, 1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @inc
+    %t2 = call i32 @apply(41, %t1)
+    %t3 = cmp ne i32 %t2, 42
+    %t4 = convert trunc i32 i64 %t3
+    return i32 %t4
+}
+function @apply(%value : i32, %fn : ptr [pass=by_address]) -> i32 [binding=weak, object=_Z5applyIFiiEEiiRKT_] {
+  slot $value : i32
+  slot $fn : ptr
+
+  block ^entry:
+    store typed i32 %value, $value
+    store typed ptr %fn, $fn
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $fn
+    %t3 = call i32 %t2(%t1) as (%arg0 : i32) -> i32
+    return i32 %t3
+}

@@ -1,0 +1,4 @@
+// second TU instantiating C<int>::I::b
+template<class T> struct C { struct I { static int b; }; };
+template<class T> int C<T>::I::b = 3;
+int other() { return C<int>::I::b; }

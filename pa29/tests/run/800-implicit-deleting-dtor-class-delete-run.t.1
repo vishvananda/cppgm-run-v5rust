@@ -1,0 +1,8 @@
+// N3485 12.4p12, 12.5p4: a derived class's implicit virtual destructor must
+// call the base's class operator delete from its deleting destructor;
+// expect exit 0
+#include <cstdlib>
+static int hit = 0;
+struct P { virtual ~P() {} static void operator delete(void* p) { hit = 1; std::free(p); } };
+struct Q : P { };
+int main() { P* p = new Q; delete p; return hit ? 0 : 1; }

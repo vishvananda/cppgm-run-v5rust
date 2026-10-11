@@ -1,0 +1,66 @@
+// __builtin_va_arg of a trivially copyable class (psABI 3.5.7: its eightbytes'
+// classes, INTEGER from gp_offset, SSE from fp_offset, both or neither from
+// the register save area, MEMORY and a class past two eightbytes from the
+// overflow area at its alignment), a long double (overflow area, 16-aligned)
+// and a member function pointer (two INTEGER eightbytes, 8-aligned in the
+// overflow area); through a forwarded list too, past the registers.
+struct FI { float a; int b; };
+struct DD { double a, b; };
+struct DL { double a; long b; };
+struct C3 { char c[3]; };
+struct F3 { float a, b, c; };
+struct Big { long a[5]; };
+struct alignas(16) A16 { long a; };
+struct S { int x; int f() { return x; } int g() { return x * 2; } };
+typedef int (S::*PF)();
+static int check(int n, __builtin_va_list ap)
+{
+	int bad = 0;
+	S s = { 3 };
+	for (int i = 0; i < n; ++i)
+	{
+		FI fi = __builtin_va_arg(ap, FI);
+		DD dd = __builtin_va_arg(ap, DD);
+		DL dl = __builtin_va_arg(ap, DL);
+		C3 c3 = __builtin_va_arg(ap, C3);
+		F3 f3 = __builtin_va_arg(ap, F3);
+		Big big = __builtin_va_arg(ap, Big);
+		A16 a16 = __builtin_va_arg(ap, A16);
+		long double ld = __builtin_va_arg(ap, long double);
+		PF pf = __builtin_va_arg(ap, PF);
+		double d = __builtin_va_arg(ap, double);
+		bad += fi.a != 1.5f + i || fi.b != 7 + i;
+		bad += dd.a != 2 + i || dd.b != 3;
+		bad += dl.a != 4.5 || dl.b != 5 + i;
+		bad += c3.c[0] != 1 || c3.c[2] != 3 + i;
+		bad += f3.a != 1 || f3.c != 3 + i;
+		bad += big.a[0] != 1 || big.a[4] != 5 + i;
+		bad += a16.a != 99 + i;
+		bad += ld != 2.25L + i;
+		bad += (s.*pf)() != (i % 2 ? 6 : 3);
+		bad += d != 0.5 * i;
+	}
+	return bad;
+}
+static int get(int n, ...)
+{
+	__builtin_va_list ap;
+	__builtin_va_start(ap, n);
+	const int bad = check(n, ap);
+	__builtin_va_end(ap);
+	return bad;
+}
+int main()
+{
+	FI fi[3] = { { 1.5f, 7 }, { 2.5f, 8 }, { 3.5f, 9 } };
+	DD dd[3] = { { 2, 3 }, { 3, 3 }, { 4, 3 } };
+	DL dl[3] = { { 4.5, 5 }, { 4.5, 6 }, { 4.5, 7 } };
+	C3 c3[3] = { { { 1, 2, 3 } }, { { 1, 2, 4 } }, { { 1, 2, 5 } } };
+	F3 f3[3] = { { 1, 2, 3 }, { 1, 2, 4 }, { 1, 2, 5 } };
+	Big big[3] = { { { 1, 2, 3, 4, 5 } }, { { 1, 2, 3, 4, 6 } }, { { 1, 2, 3, 4, 7 } } };
+	A16 a16[3];
+	for (int i = 0; i < 3; ++i)
+		a16[i].a = 99 + i;
+	return get(3, fi[0], dd[0], dl[0], c3[0], f3[0], big[0], a16[0], 2.25L, &S::f, 0.0, fi[1], dd[1], dl[1], c3[1],
+		f3[1], big[1], a16[1], 3.25L, &S::g, 0.5, fi[2], dd[2], dl[2], c3[2], f3[2], big[2], a16[2], 4.25L, &S::f, 1.0);
+}

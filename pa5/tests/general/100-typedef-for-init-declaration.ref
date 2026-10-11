@@ -1,0 +1,53 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_LONG:long
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier size_t
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:size_t
+          declarator
+            identifier n
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:size_t
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier count
+            initializer
+              id-expression n
+      for-statement
+        for-init-statement
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:size_t
+            init-declarator-list
+              init-declarator
+                declarator
+                  identifier i
+                initializer
+                  literal 0
+        condition
+          binary-expression OP_NE:!=
+            id-expression i
+            id-expression count
+        iteration
+          unary-expression OP_INC:++
+            id-expression i
+        compound-statement
+end translation unit

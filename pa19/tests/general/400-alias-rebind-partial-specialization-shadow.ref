@@ -1,0 +1,34 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $ia : obj<1x1>
+  slot $ra : obj<1x1>
+  slot $pva : ptr
+
+  block ^entry:
+    %t1 = addr $ia
+    call void @std__allocator_int___allocator(%t1)
+    %t2 = addr $ra
+    %t3 = addr $ia
+    call void @std__allocator_void____allocator(%t2, %t3)
+    %t4 = addr $ra
+    store typed ptr %t4, $pva
+    %t5 = load typed ptr $pva
+    return i32 0
+}
+function @std__allocator_int___allocator(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZNSaIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @std__allocator_void____allocator(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZNSaIPvEC1IiEERKSaIT_E, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+alias object _ZNSaIiEC2Ev = @std__allocator_int___allocator
+alias object _ZNSaIPvEC2IiEERKSaIT_E = @std__allocator_void____allocator

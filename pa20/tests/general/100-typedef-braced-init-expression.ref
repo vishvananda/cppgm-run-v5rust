@@ -1,0 +1,4 @@
+function @f() -> i32 [binding=strong, object=_Z1fv] {
+  block ^entry:
+    return i32 3
+}

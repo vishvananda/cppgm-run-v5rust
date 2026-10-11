@@ -1,0 +1,2 @@
+namespace std {template<class E>class initializer_list {const E* first;unsigned long count;initializer_list(const E*p,unsigned long n):first(p),count(n){} public:initializer_list():first(0),count(0){} unsigned long size()const{return count;} const E*begin()const{return first;} };}
+int alive;struct S{int x;S(int v)noexcept:x(v){++alive;}S(const S&s)noexcept:x(s.x){++alive;}~S()noexcept{--alive;}};int main(){{const auto& xs=std::initializer_list<S>{1,2};if(alive!=2||xs.size()!=2)return 1;}return alive!=0;}

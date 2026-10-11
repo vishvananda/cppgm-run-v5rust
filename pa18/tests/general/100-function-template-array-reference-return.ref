@@ -1,0 +1,17 @@
+declare function @cast(%arg0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z4castIcLj1EERAT0__T_RAT0__Kc]
+
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @use()
+    return i32 0
+}
+function @use() -> void [binding=weak, object=_Z3useIcEvv] {
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call ptr @cast(%t1)
+    return void
+}

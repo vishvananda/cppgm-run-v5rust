@@ -1,0 +1,13 @@
+global @n__outer_int___inner__value : i32 [binding=weak, object=_ZN1n5outerIiE5inner5valueE] = 7
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @n__outer_int___read()
+    %t2 = binary sub nowrap i32 %t1, 7
+    return i32 %t2
+}
+function @n__outer_int___read() -> i32 [binding=weak, object=_ZN1n5outerIiE4readEv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @n__outer_int___inner__value
+    return i32 %t1
+}

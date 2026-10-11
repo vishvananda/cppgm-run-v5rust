@@ -1,0 +1,6 @@
+weak_symbol 1 _ZN8WithInit2fpMUlvE_8__invokeEv 1
+weak_symbol 1 _ZN8WithInit2gpMUliE_8__invokeEi 1
+weak_symbol 1 _ZZN8WithInit4pickEPFivEiEd0_NUlvE_8__invokeEv 1
+weak_symbol 1 _ZN5TableIiE4sizeMUlvE_8__invokeEv 1
+weak_symbol 1 _ZN5TableIcE4sizeMUlvE_8__invokeEv 1
+local_defined_symbol_pattern 1 ^_ZN5Plain.*(?:8__invokeEv|4_FUNEv)$ 1

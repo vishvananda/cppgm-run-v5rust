@@ -1,0 +1,90 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @cleanup_count : i32 [binding=strong] = zero
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+
+function @fail() -> void [binding=strong, object=_Z4failv, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t1
+    %t2 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    unreachable
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    eh_try ^catch_dispatch_2
+    eh_try ^call_unwind_dispatch_1
+    call void @fail()
+    eh_end
+    %t1 = load typed i32 @cleanup_count
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @cleanup_count
+    eh_end
+    return i32 2
+
+  block ^call_unwind_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    %t3 = load typed i32 @cleanup_count
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @cleanup_count
+    eh_end
+    eh_end
+    jump ^catch_entry_3
+
+  block ^catch_dispatch_2:
+    eh_catch @__external_rtti__int, 1
+    jump ^catch_entry_3
+
+  block ^catch_entry_3:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_4, ^catch_next_9
+
+  block ^catch_body_4:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    eh_cleanup ^catch_cleanup_8
+    %t9 = load typed i32 %t8
+    %t10 = cmp eq i32 %t9, 7
+    branch %t10, ^land_rhs_5, ^cond_else_6
+
+  block ^land_rhs_5:
+    %t11 = load typed i32 @cleanup_count
+    %t12 = cmp eq i32 %t11, 1
+    branch %t12, ^cond_end_7, ^cond_else_6
+
+  block ^cond_else_6:
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t13 = phi i32 [^cond_else_6: 1, ^land_rhs_5: 0]
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t13
+
+  block ^catch_cleanup_8:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_9:
+    resume
+}

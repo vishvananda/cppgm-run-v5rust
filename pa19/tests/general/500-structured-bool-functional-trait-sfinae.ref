@@ -1,0 +1,6 @@
+declare global @gate___cppgm_class_template_identity_1_const__cppgm_class_template_identity_1__void___value : u8 [binding=weak, object=_ZN4gateIN2ns14default_deleteIN8cpp_decl10DeclaratorEEERKS4_vE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

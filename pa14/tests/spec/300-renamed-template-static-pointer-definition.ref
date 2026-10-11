@@ -1,0 +1,9 @@
+global @X_int___n : ptr [binding=weak, object=_ZN1XIiE1nE] = 0
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed ptr @X_int___n
+    %t2 = cmp ne ptr %t1, 0
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}

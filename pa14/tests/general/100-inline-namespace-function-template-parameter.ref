@@ -1,0 +1,44 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $in : obj<4x4>
+  slot $out : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $in
+    %t2 = addr $out
+    %t3 = addr $out
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = addr $in
+    %t6 = addr $out
+    %t7 = call ptr @abi_case__fetch(%t5, %t6)
+    %t8 = addr $in
+    %t9 = cmp eq ptr %t7, %t8
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t10 = addr $out
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = load typed i32 %t11
+    store typed i32 %t12, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t13 = load typed i32 $cond__1
+    return i32 %t13
+}
+function @abi_case__fetch(%in : ptr [pass=by_address, object_bytes=4], %out : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN8abi_case5fetchIcNS_6traitsIcEENS_5allocIcEEEERNS_6streamIT_T0_EES9_RNS_2v26bufferIS6_S7_T1_EE] {
+  slot $in : ptr
+  slot $out : ptr
+
+  block ^entry:
+    store typed ptr %in, $in
+    store typed ptr %out, $out
+    %t1 = load typed ptr $out
+    %t2 = load typed ptr $in
+    return ptr %t2
+}

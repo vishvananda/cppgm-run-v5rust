@@ -1,0 +1,6 @@
+function @f() -> i64 {
+  block ^entry:
+    %a = const i64 255
+    %b = const i64 30
+    return i64 %a
+}

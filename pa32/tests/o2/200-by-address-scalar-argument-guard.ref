@@ -1,0 +1,101 @@
+function @read_i64(%p : ptr [pass=by_address, object_bytes=8]) -> i64 [binding=internal, no_inline=yes] {
+  block ^entry:
+    %v = load i64 %p
+    return i64 %v
+}
+function @bump_i64(%p : ptr [pass=by_address, object_bytes=8]) -> i64 [binding=internal, no_inline=yes] {
+  block ^entry:
+    %v = load i64 %p
+    %w = binary add i64 %v, 10
+    store i64 %w, %p
+    return i64 %w
+}
+function @read_i32(%p : ptr [pass=by_address]) -> i32 [binding=internal, no_inline=yes] {
+  block ^entry:
+    %v = load i32 %p
+    return i32 %v
+}
+function @read_f64(%p : ptr [pass=by_address]) -> f64 [binding=internal, no_inline=yes] {
+  block ^entry:
+    %v = load f64 %p
+    return f64 %v
+}
+function @difference(%a : ptr [pass=by_address], %b : ptr [pass=by_address]) -> i64 [binding=internal, no_inline=yes] {
+  block ^entry:
+    %x = load i64 %a
+    %y = load i64 %b
+    %d = binary sub i64 %x, %y
+    return i64 %d
+}
+function @known_on_edge(%object : ptr) -> i64 [binding=internal, no_inline=yes] {
+  slot $refarg__1 : i64
+
+  block ^entry:
+    %value = load i64 %object
+    %is_zero = cmp eq i64 %value, 0
+    branch %is_zero, ^known, ^other
+
+  block ^known:
+    %t3 = addr $refarg__1
+    store i64 0, %t3
+    %r = call i64 @read_i64(%t3)
+    %s = binary add i64 %r, 20
+    return i64 %s
+
+  block ^other:
+    return i64 9
+}
+function @main() -> i64 [role=entry] {
+  slot $refarg__1 : i64
+  slot $refarg__2 : i64
+  slot $refarg__3 : i64
+  slot $refarg__4 : i64
+  slot $refarg__5 : i64
+  slot $refarg__6 : i64
+  slot $refarg__7 : i64
+  slot $refarg__8 : i32
+  slot $refarg__9 : f64
+  slot $zero : i64
+
+  block ^entry:
+    %t1 = addr $refarg__1
+    store i64 5, %t1
+    %r0 = call i64 @read_i64(%t1)
+    %t3 = addr $refarg__2
+    store i64 5, %t3
+    %r1 = call i64 @bump_i64(%t3)
+    %t5 = addr $refarg__3
+    store i64 5, %t5
+    %r2 = call i64 @read_i64(%t5)
+    %t7 = addr $refarg__4
+    store i64 7, %t7
+    %t8 = addr $refarg__5
+    store i64 5, %t8
+    %r3 = call i64 @difference(%t7, %t8)
+    %t10 = addr $refarg__6
+    store i64 5, %t10
+    %t11 = addr $refarg__7
+    store i64 5, %t11
+    %r4 = call i64 @difference(%t10, %t11)
+    %t13 = addr $refarg__8
+    store i32 3, %t13
+    %r5w = call i32 @read_i32(%t13)
+    %r5 = convert sext i64 i32 %r5w
+    %t16 = addr $refarg__9
+    store f64 2.5, %t16
+    %r6f = call f64 @read_f64(%t16)
+    %r6d = binary mul f64 %r6f, 2
+    %r6 = convert fptosi i64 f64 %r6d
+    %za = addr $zero
+    store i64 0, %za
+    %r8 = call i64 @known_on_edge(%za)
+    %s0 = binary add i64 %r0, %r1
+    %s1 = binary add i64 %r2, %s0
+    %s2 = binary add i64 %r3, %s1
+    %s3 = binary add i64 %r4, %s2
+    %s4 = binary add i64 %r5, %s3
+    %s5 = binary add i64 %r6, %s4
+    %s6 = binary add i64 %s5, 6
+    %s7 = binary add i64 %r8, %s6
+    return i64 %s7
+}

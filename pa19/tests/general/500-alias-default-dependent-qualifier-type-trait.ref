@@ -1,0 +1,16 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    call void @take(%t2)
+    return i32 0
+}
+function @take(%__param0 : ptr) -> void [binding=weak, object=_Z4takeISt3VecIiEvEvPSt6UniqueIT_E] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}

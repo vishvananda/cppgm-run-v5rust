@@ -1,0 +1,53 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $src : obj<4x4>
+  slot $dst : obj<4x4>
+  slot $lhs : ptr
+  slot $rhs : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $src
+    %t2 = addr $dst
+    %t3 = addr $src
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 305419896, %t4
+    %t5 = addr $dst
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 2139062143, %t6
+    %t7 = addr $dst
+    %t8 = index i8 %t7, 0
+    store typed ptr %t8, $lhs
+    %t9 = addr $src
+    %t10 = index i8 %t9, 0
+    store typed ptr %t10, $rhs
+    %t11 = load typed ptr $lhs
+    %t12 = load typed ptr $rhs
+    %t13 = call ptr @EmptyDerived__operator_(%t11, %t12)
+    %t14 = addr $dst
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i32 %t15
+    %t17 = cmp eq i32 %t16, 2139062143
+    branch %t17, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t18 = load typed i32 $cond__1
+    return i32 %t18
+}
+function @EmptyDerived__operator_(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> ptr [unwind=no, binding=weak, object=_ZN12EmptyDerivedaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    return ptr %t1
+}

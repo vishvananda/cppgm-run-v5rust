@@ -1,0 +1,8 @@
+// N3485 5.1.2p5, 15.4p9, 15.5.1: an exception leaving a lambda declared
+// noexcept calls std::terminate() (not caught by the caller's caller);
+// expect exit 0
+#include <exception>
+#include <cstdlib>
+void term() { std::exit(0); }
+void k8() { auto f = []() noexcept { throw 8; }; f(); }
+int main() { std::set_terminate(term); try { k8(); } catch (...) { return 1; } return 2; }

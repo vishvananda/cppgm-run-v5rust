@@ -1,0 +1,19 @@
+typedef struct { int value; } pa27_link_state;
+typedef union { int value; long other; } pa27_link_union;
+typedef enum { pa27_link_red = 4, pa27_link_blue = 9 } pa27_link_color;
+
+namespace abi_link {
+int struct_probe(pa27_link_state *state);
+int union_probe(pa27_link_union *value);
+int enum_probe(pa27_link_color color);
+}
+
+int main()
+{
+  pa27_link_state state;
+  state.value = 11;
+  pa27_link_union data;
+  data.value = 13;
+  return abi_link::struct_probe(&state) + abi_link::union_probe(&data) +
+         abi_link::enum_probe(pa27_link_blue);
+}

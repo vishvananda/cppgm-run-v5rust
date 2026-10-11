@@ -1,0 +1,7 @@
+preproc 1
+sof tests/preproc/400-has-feature-decltype.t
+identifier decltype_feature_on
+identifier decltype_extension_on
+identifier n3276_feature_on
+identifier n3276_extension_on
+eof

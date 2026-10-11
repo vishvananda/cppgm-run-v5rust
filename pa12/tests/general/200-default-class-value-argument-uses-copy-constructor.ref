@@ -1,0 +1,81 @@
+global @default_source : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $arg__1 : obj<4x4>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $arg__1
+    %t3 = addr @default_source
+    call void @copied_value__copied_value__ov2(%t2, %t3)
+    call void @consumer__consumer(%t1, %t2)
+    %t4 = addr $value
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 5
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__2
+    return i32 %t8
+}
+function @copied_value__copied_value(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN12copied_valueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 4, %t2
+    return void
+}
+function @copied_value__copied_value__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN12copied_valueC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, 1
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 %t4, %t6
+    return void
+}
+function @consumer__consumer(%this : ptr [object_bytes=4], %input : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN8consumerC1E12copied_value, inline_hint=yes] {
+  slot $this : ptr
+  slot $input : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = index i8 [projection=field] %input, 0
+    %t2 = load typed i32 %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @default_source
+    call void @copied_value__copied_value(%t1)
+    return void
+}
+alias object _ZN12copied_valueC2Ev = @copied_value__copied_value
+alias object _ZN12copied_valueC2ERKS_ = @copied_value__copied_value__ov2
+alias object _ZN8consumerC2E12copied_value = @consumer__consumer

@@ -1,0 +1,97 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_std__ios_base [storage=readonly, binding=weak, object=_ZTSSt8ios_base] = {
+  i8 83
+  i8 116
+  i8 56
+  i8 105
+  i8 111
+  i8 115
+  i8 95
+  i8 98
+  i8 97
+  i8 115
+  i8 101
+  i8 0
+}
+global @__rtti_struct_std__ios_base [storage=readonly, binding=weak, object=_ZTISt8ios_base] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_std__ios_base
+}
+global @std__ios_base__vtable [storage=readonly, binding=strong, object=_ZTVSt8ios_base] = {
+  i64 0
+  ptr addr @__rtti_struct_std__ios_base
+  ptr addr @std__ios_base___ios_base
+  ptr addr @std__ios_base___ios_base__deleting_entry
+}
+
+function @std__ios_base___ios_base__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=strong, object=_ZNSt8ios_baseD2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @std__ios_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @std__ios_base___ios_base__deleting_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=strong, object=_ZNSt8ios_baseD0Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @std__ios_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @std__ios_base___ios_base(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=strong, object=_ZNSt8ios_baseD1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @std__ios_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @std__ios_base__ios_base(%t1)
+    %t2 = addr $value
+    call void @std__ios_base___ios_base(%t2)
+    return i32 0
+}
+function @std__ios_base__ios_base(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZNSt8ios_baseC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @std__ios_base__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZNSt8ios_baseC2Ev = @std__ios_base__ios_base

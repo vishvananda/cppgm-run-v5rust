@@ -1,0 +1,9 @@
+function @pick__ov2() -> i32 [arity=variadic, binding=strong, object=_Z4pickz] {
+  block ^entry:
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @pick__ov2(0)
+    return i32 %t1
+}

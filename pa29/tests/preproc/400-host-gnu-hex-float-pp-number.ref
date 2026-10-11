@@ -1,0 +1,9 @@
+preproc 1
+sof tests/preproc/400-host-gnu-hex-float-pp-number.t
+literal 0x1.0p-16382Q long double 00000000000000800100000000000000
+literal 0x1p3 double 0000000000002040
+literal 0x1p3f float 00000041
+literal 0x1p3F float 00000041
+literal 0x1p3l long double 00000000000000800240000000000000
+literal 0x1p3L long double 00000000000000800240000000000000
+eof

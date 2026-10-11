@@ -1,0 +1,72 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition Imported
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier begin
+        class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      class-specifier end
+        class-key KW_STRUCT:struct
+  using-directive
+    target Imported
+  class-specifier Span
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier begin
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier end
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    declarator
+      identifier outside
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:Span
+          declarator
+            identifier span
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:Span
+          declarator
+            identifier root
+    compound-statement
+      return-statement
+        binary-expression OP_LOR:||
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression span
+              identifier begin
+            member-expression OP_DOT:.
+              id-expression root
+              identifier begin
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression span
+              identifier end
+            member-expression OP_DOT:.
+              id-expression root
+              identifier end
+end translation unit

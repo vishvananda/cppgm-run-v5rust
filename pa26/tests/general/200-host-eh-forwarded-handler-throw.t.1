@@ -1,0 +1,18 @@
+// N3485 15.3p4, 15.1p8: an exception no handler of an inner try block matches
+// is caught by the enclosing try block's handler; one that handler throws is
+// not caught by its own try block but by the next enclosing one
+#include "200-host-eh-forwarded-handler-throw.helper.h"
+struct E0 { virtual ~E0() {} };
+int depth;
+void f0()
+{
+  try {
+    try {
+      try { throw 1u; }
+      catch (E0* h) { out_line("inner", 0); }
+    }
+    catch (unsigned h) { out_line("middle", h); if (++depth < 3) throw 2u; }
+  }
+  catch (...) { out_line("outer", depth); }
+}
+int main() { f0(); return 0; }

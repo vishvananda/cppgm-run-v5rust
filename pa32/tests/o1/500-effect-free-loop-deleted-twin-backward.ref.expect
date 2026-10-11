@@ -1,0 +1,11 @@
+# budget from 500-effect-free-loop-deleted-twin-backward.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 10
+blocks <= 6
+count(call) <= 3
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 4
+instructions <= 10 in @destroy_backward
+
+# outcomes from 500-effect-free-loop-deleted-twin-backward.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)

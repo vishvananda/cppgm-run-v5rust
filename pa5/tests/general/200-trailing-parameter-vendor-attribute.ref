@@ -1,0 +1,26 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier type_info
+    class-key KW_STRUCT:struct
+  class-specifier P
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VIRTUAL:virtual
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_STAR:*
+            identifier g
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_CONST:const
+                  decl-specifier TT_IDENTIFIER:type_info
+                declarator
+                  ptr-operator OP_AMP:&
+                  identifier ti
+            function-qualifier noexcept
+end translation unit

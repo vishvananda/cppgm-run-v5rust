@@ -1,0 +1,111 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<24x8>
+  slot $destination : obj<24x8>
+
+  block ^entry:
+    %t1 = addr $source
+    call void @Impl__Impl(%t1)
+    %t2 = addr $destination
+    %t3 = addr $source
+    call void @Impl__Impl__ov2(%t2, %t3)
+    %t4 = addr $destination
+    %t5 = index i8 %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed ptr %t6
+    %t8 = cmp ne ptr %t7, 0
+    %t9 = convert trunc i32 i64 %t8
+    return i32 %t9
+}
+function @Impl__Impl(%this : ptr [object_bytes=24]) -> void [binding=weak, object=_ZN4ImplC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Empty__Empty__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Data__Data__base_entry(%t4)
+    return void
+}
+function @Impl__Impl__ov2(%this : ptr [alias=noalias, object_bytes=24], %other : ptr [pass=by_address, alias=noalias, object_bytes=24]) -> void [unwind=no, binding=weak, object=_ZN4ImplC1EOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 %t3, 0
+    call void @Empty__Empty__ov2__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 0
+    %t7 = load typed ptr $other
+    %t8 = index i8 %t7, 0
+    call void @Data__Data__ov2__base_entry(%t6, %t8)
+    return void
+}
+function @Empty__Empty__base_entry(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5EmptyC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Data__Data__base_entry(%this : ptr [object_bytes=24]) -> void [binding=weak, object=_ZN4DataC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed ptr 0, %t2
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 8
+    store typed ptr 0, %t4
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 16
+    store typed ptr 0, %t6
+    return void
+}
+function @Empty__Empty__ov2__base_entry(%this : ptr [alias=noalias, object_bytes=1], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5EmptyC2ERKS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+function @Data__Data__ov2__base_entry(%this : ptr [alias=noalias, object_bytes=24], %other : ptr [pass=by_address, alias=noalias, object_bytes=24]) -> void [unwind=no, binding=weak, object=_ZN4DataC2EOS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = load typed ptr $other
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed ptr %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 8
+    store typed ptr %t8, %t10
+    %t11 = load typed ptr $other
+    %t12 = index i8 [projection=field] %t11, 16
+    %t13 = load typed ptr %t12
+    %t14 = load typed ptr $this
+    %t15 = index i8 [projection=field] %t14, 16
+    store typed ptr %t13, %t15
+    return void
+}
+alias object _ZN4ImplC2Ev = @Impl__Impl
+alias object _ZN4ImplC2EOS_ = @Impl__Impl__ov2

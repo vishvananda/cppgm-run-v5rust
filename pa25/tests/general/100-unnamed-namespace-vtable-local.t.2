@@ -1,0 +1,4 @@
+// second unit: a different internal Q; expect exit 0
+namespace { struct Q { virtual int q() { return 50; } }; }
+int from1();
+int main() { Q q; Q* p = &q; return (p->q() == 50 && from1() == 5) ? 0 : 1; }

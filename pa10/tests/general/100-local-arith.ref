@@ -1,0 +1,11 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $y : i32
+
+  block ^entry:
+    %t1 = binary add nowrap i32 1, 2
+    store typed i32 %t1, $y
+    %t2 = load typed i32 $y
+    %t3 = binary add nowrap i32 %t2, 3
+    store typed i32 %t3, $y
+    return i32 %t3
+}

@@ -1,0 +1,104 @@
+global @width : ptr [binding=weak, object=_Z5widthIiE] = addr @__lambda1___FUN
+global @width__2 : ptr [binding=weak, object=_Z5widthIcE] = addr @__lambda2___FUN
+global @store__tally : ptr [binding=weak, object=_ZN5store5tallyIsEE] = addr @store____lambda3___FUN
+global @store__tally__2 : ptr [binding=weak, object=_ZN5store5tallyIcEE] = addr @store____lambda4___FUN
+global @__local_static__store____lambda3___FUN__decl0__calls : i32 [binding=internal, object=_ZZNK5store3$_2clEvE5calls] = 0
+global @__local_static__store____lambda4___FUN__decl0__calls : i32 [binding=internal, object=_ZZNK5store3$_3clEvE5calls] = 0
+
+function @first() -> i32 [binding=strong, object=_Z5firstv] {
+  block ^entry:
+    %t1 = load typed ptr @width
+    %t2 = call i32 %t1() as () -> i32
+    return i32 %t2
+}
+function @second() -> i32 [binding=strong, object=_Z6secondv] {
+  block ^entry:
+    %t1 = load typed ptr @width__2
+    %t2 = call i32 %t1() as () -> i32
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @first()
+    %t2 = cmp ne i32 %t1, 4
+    branch %t2, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t3 = call i32 @second()
+    %t4 = cmp ne i32 %t3, 1
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 10
+
+  block ^if_else_2:
+    jump ^if_end_4
+
+  block ^if_end_4:
+    %t5 = load typed ptr @store__tally
+    %t6 = call i32 %t5() as () -> i32
+    %t7 = cmp ne i32 %t6, 2
+    branch %t7, ^if_then_5, ^lor_rhs_7
+
+  block ^lor_rhs_7:
+    %t8 = load typed ptr @store__tally__2
+    %t9 = call i32 %t8() as () -> i32
+    %t10 = cmp ne i32 %t9, 1
+    branch %t10, ^if_then_5, ^if_else_6
+
+  block ^if_then_5:
+    return i32 11
+
+  block ^if_else_6:
+    jump ^if_end_8
+
+  block ^if_end_8:
+    %t11 = load typed ptr @store__tally
+    %t12 = call i32 %t11() as () -> i32
+    %t13 = cmp eq i32 %t12, 4
+    branch %t13, ^cond_then_9, ^cond_else_10
+
+  block ^cond_then_9:
+    store typed i32 0, $cond__1
+    jump ^cond_end_11
+
+  block ^cond_else_10:
+    store typed i32 12, $cond__1
+    jump ^cond_end_11
+
+  block ^cond_end_11:
+    %t14 = load typed i32 $cond__1
+    return i32 %t14
+}
+function @__lambda1___FUN() -> i32 [binding=internal, object=_ZN3$_08__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 4
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @__lambda2___FUN() -> i32 [binding=internal, object=_ZN3$_18__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @store____lambda3___FUN() -> i32 [binding=internal, object=_ZN5store3$_28__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @__local_static__store____lambda3___FUN__decl0__calls
+    %t2 = const i64 2
+    %t3 = convert trunc i32 i64 %t2
+    %t4 = binary add nowrap i32 %t1, %t3
+    store typed i32 %t4, @__local_static__store____lambda3___FUN__decl0__calls
+    return i32 %t4
+}
+function @store____lambda4___FUN() -> i32 [binding=internal, object=_ZN5store3$_38__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i32 @__local_static__store____lambda4___FUN__decl0__calls
+    %t2 = const i64 1
+    %t3 = convert trunc i32 i64 %t2
+    %t4 = binary add nowrap i32 %t1, %t3
+    store typed i32 %t4, @__local_static__store____lambda4___FUN__decl0__calls
+    return i32 %t4
+}

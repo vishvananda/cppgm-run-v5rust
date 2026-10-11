@@ -1,0 +1,22 @@
+#include "200-host-array-cookie-new-delete.helper.h"
+
+int main()
+{
+  int status = 0;
+  host_drop_trivial(new Trivial[3]);
+  Destructible* made = new Destructible[3];
+  if (made[2].value != 7) status |= 1;
+  host_drop_destructible(made);
+  if (destroyed != 3) status |= 2;
+  host_drop_sized(new Sized[3]);
+  if (sized_released != 3 * sizeof(Sized) + 8) status |= 4;
+
+  delete[] host_make_trivial(4);
+  Destructible* host_made = host_make_destructible(4);
+  if (host_made[3].value != 7) status |= 8;
+  delete[] host_made;
+  if (destroyed != 7) status |= 16;
+  delete[] host_make_sized(4);
+  if (sized_released != 4 * sizeof(Sized) + 8) status |= 32;
+  return status;
+}

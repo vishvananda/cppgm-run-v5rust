@@ -1,0 +1,26 @@
+// An explicit instantiation declaration promises another translation unit
+// will define the members -- but a member the declaration excluded from that
+// instantiation is not one of them, so this translation unit still has to
+// instantiate and emit its own copy.
+template<class T>
+struct S {
+  __attribute__((__exclude_from_explicit_instantiation__)) int hidden() const;
+  int ordinary() const;
+  T value;
+};
+
+template<class T>
+inline __attribute__((__exclude_from_explicit_instantiation__))
+int S<T>::hidden() const { return 41; }
+
+template<class T>
+int S<T>::ordinary() const { return 40; }
+
+extern template struct S<char>;
+
+int main()
+{
+  S<char> s;
+  s.value = 0;
+  return s.hidden() == 41 ? 0 : 1;
+}

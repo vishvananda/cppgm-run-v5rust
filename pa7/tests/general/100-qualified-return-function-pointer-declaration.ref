@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition ns
+    type-alias result int
+  function-definition declare_pointer function of () returning void
+    compound-statement
+      simple-declaration
+        variable function_pointer pointer to function of () returning int
+end translation unit

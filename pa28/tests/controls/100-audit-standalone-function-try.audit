@@ -1,0 +1,5 @@
+# AUDIT-ID: BACKEND
+kind standalone
+input pa21/tests/general/200-inner-handler-function-try-body-local.t
+expected run
+optimization O0 O2

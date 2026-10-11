@@ -1,0 +1,28 @@
+#include <iostream>
+#include <utility>
+
+struct derived_iostream : std::basic_iostream<char> {
+  derived_iostream()
+      : std::basic_iostream<char>(0)
+  {
+  }
+
+  derived_iostream(derived_iostream&& other)
+      : std::basic_iostream<char>(std::move(other))
+  {
+  }
+
+  derived_iostream& operator=(derived_iostream&& other)
+  {
+    std::basic_iostream<char>::operator=(std::move(other));
+    return *this;
+  }
+};
+
+int main()
+{
+  derived_iostream first;
+  derived_iostream second;
+  second = std::move(first);
+  return 0;
+}

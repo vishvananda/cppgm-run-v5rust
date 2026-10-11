@@ -1,0 +1,43 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 0
+}
+
+function @pick(%keep : u8, %b : obj<4x4>) -> obj<4x4> [binding=strong, object=_Z4pickb3Box] {
+  slot $keep : u8
+  slot $b : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store u8 %keep, $keep
+    %t1 = addr $b
+    copyobj 4x4 %b, %t1
+    %t2 = addr $retobj__1
+    %t3 = load u8 $keep
+    branch %t3, ^condobj_then_1, ^condobj_else_2
+
+  block ^condobj_then_1:
+    %t4 = addr $b
+    copyobj 4x4 %t4, %t2
+    jump ^condobj_end_3
+
+  block ^condobj_else_2:
+    %t5 = addr @__strlit__1
+    call void @Box__Box(%t2, %t5)
+    jump ^condobj_end_3
+
+  block ^condobj_end_3:
+    return obj<4x4> $retobj__1
+}
+function @Box__Box(%this : ptr [object_bytes=4], %__param1 : ptr) -> void [binding=weak, object=_ZN3BoxC1EPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+alias object _ZN3BoxC2EPKc = @Box__Box

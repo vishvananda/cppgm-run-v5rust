@@ -1,0 +1,49 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 111
+  i8 110
+  i8 101
+  i8 0
+}
+global @table_int___row [storage=readonly, binding=weak, object=_ZN5tableIiE3rowE] = {
+  ptr addr @__strlit__1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @table_int___row
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=array_element] %t3, 0
+    %t5 = load i8 %t4
+    %t6 = convert sext i32 i8 %t5
+    %t7 = cmp eq i32 %t6, 111
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @entry__entry(%this : ptr [object_bytes=8], %value : ptr) -> void [binding=weak, object=_ZN5entryC1EPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN5entryC2EPKc = @entry__entry

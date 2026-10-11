@@ -1,0 +1,15 @@
+struct virtual_base {};
+struct first_base { int value; };
+struct derived : first_base, virtual virtual_base {};
+
+template<class T> struct holder {
+  T * pointer;
+  template<class U> holder(U * value) : pointer(value) {}
+};
+
+int main() {
+  derived object;
+  (void)object;
+  holder<virtual_base> value(static_cast<derived *>(0));
+  return value.pointer != 0;
+}

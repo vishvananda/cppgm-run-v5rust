@@ -1,0 +1,11 @@
+invalid "\x100"
+simple ; OP_SEMICOLON
+invalid u8"\x100"
+simple ; OP_SEMICOLON
+invalid u"\x10000"
+simple ; OP_SEMICOLON
+invalid U"\x100000000"
+simple ; OP_SEMICOLON
+invalid L"\x100000000"
+simple ; OP_SEMICOLON
+eof

@@ -1,0 +1,7 @@
+// N3485 5.2.2p4, 12.8; PA23 README (by-value parameter of a class with virtual
+// bases carries hidden virtual-base pointers): passing such a class by value
+// must compile and run; expect exit 0
+struct A { int x; };
+struct B : virtual A { int y; };
+int take(B b) { return b.x + b.y; }
+int main() { B b; b.x = 1; b.y = 2; return take(b) == 3 ? 0 : 1; }

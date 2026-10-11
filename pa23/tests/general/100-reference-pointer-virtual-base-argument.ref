@@ -1,0 +1,450 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_StringStream [storage=readonly, binding=weak, object=_ZTS12StringStream] = {
+  i8 49
+  i8 50
+  i8 83
+  i8 116
+  i8 114
+  i8 105
+  i8 110
+  i8 103
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__typeinfo_name__struct_IOStream [storage=readonly, binding=weak, object=_ZTS8IOStream] = {
+  i8 56
+  i8 73
+  i8 79
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__typeinfo_name__struct_IStream [storage=readonly, binding=weak, object=_ZTS7IStream] = {
+  i8 55
+  i8 73
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__typeinfo_name__struct_BasicIOS [storage=readonly, binding=weak, object=_ZTS8BasicIOS] = {
+  i8 56
+  i8 66
+  i8 97
+  i8 115
+  i8 105
+  i8 99
+  i8 73
+  i8 79
+  i8 83
+  i8 0
+}
+global @__typeinfo_name__struct_IOS [storage=readonly, binding=weak, object=_ZTS3IOS] = {
+  i8 51
+  i8 73
+  i8 79
+  i8 83
+  i8 0
+}
+global @__rtti_struct_IOS [storage=readonly, binding=weak, object=_ZTI3IOS] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_IOS
+}
+global @__rtti_struct_BasicIOS [storage=readonly, binding=weak, object=_ZTI8BasicIOS] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_BasicIOS
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_IOS
+  i64 -6141
+}
+global @__rtti_struct_IStream [storage=readonly, binding=weak, object=_ZTI7IStream] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_IStream
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_BasicIOS
+  i64 -8189
+}
+global @__typeinfo_name__struct_OStream [storage=readonly, binding=weak, object=_ZTS7OStream] = {
+  i8 55
+  i8 79
+  i8 83
+  i8 116
+  i8 114
+  i8 101
+  i8 97
+  i8 109
+  i8 0
+}
+global @__rtti_struct_OStream [storage=readonly, binding=weak, object=_ZTI7OStream] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_OStream
+  i32 0
+  i32 1
+  ptr addr @__rtti_struct_BasicIOS
+  i64 -8189
+}
+global @__rtti_struct_IOStream [storage=readonly, binding=weak, object=_ZTI8IOStream] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_IOStream
+  i32 2
+  i32 2
+  ptr addr @__rtti_struct_IStream
+  i64 2
+  ptr addr @__rtti_struct_OStream
+  i64 2050
+}
+global @__rtti_struct_StringStream [storage=readonly, binding=weak, object=_ZTI12StringStream] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_StringStream
+  ptr addr @__rtti_struct_IOStream
+}
+global @StringStream__vtable [storage=readonly, binding=weak, object=_ZTV12StringStream] = {
+  i64 0
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_StringStream
+}
+global @StringStream____view__OStream__8__vtable [storage=readonly, binding=internal] = {
+  i64 -8
+  i64 8
+  i64 -8
+  ptr addr @__rtti_struct_StringStream
+}
+global @StringStream____construction__IOStream__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC12StringStream0_8IOStream] = {
+  i64 0
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_IOStream
+}
+global @StringStream____construction__IOStream__0__s1__vtable [storage=readonly, binding=internal] = {
+  i64 -8
+  i64 8
+  i64 -8
+  ptr addr @__rtti_struct_IOStream
+}
+global @StringStream____construction__IStream__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC12StringStream0_7IStream] = {
+  i64 0
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_IStream
+}
+global @StringStream____construction__OStream__8__s0__vtable [storage=readonly, binding=internal, object=_ZTC12StringStream8_7OStream] = {
+  i64 -8
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_OStream
+}
+global @StringStream____construction__OStream__8__s1__vtable [storage=readonly, binding=internal] = {
+  i64 16
+  i64 8
+  ptr addr @__rtti_struct_OStream
+}
+global @StringStream____construction__BasicIOS__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC12StringStream0_8BasicIOS] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_BasicIOS
+}
+global @StringStream____vtt [storage=readonly, binding=weak, object=_ZTT12StringStream, object_root=yes] = {
+  ptr addr @StringStream__vtable + 32
+  ptr addr @StringStream____construction__IOStream__0__s0__vtable + 32
+  ptr addr @StringStream____construction__IStream__0__s0__vtable + 32
+  ptr addr @StringStream____construction__IStream__0__s0__vtable + 32
+  ptr addr @StringStream____construction__OStream__8__s0__vtable + 32
+  ptr addr @StringStream____construction__OStream__8__s1__vtable + 24
+  ptr addr @StringStream____construction__IOStream__0__s0__vtable + 32
+  ptr addr @StringStream____construction__IOStream__0__s1__vtable + 32
+  ptr addr @StringStream__vtable + 32
+  ptr addr @StringStream____view__OStream__8__vtable + 32
+  ptr addr @StringStream____construction__BasicIOS__0__s0__vtable + 24
+}
+global @IOStream__vtable [storage=readonly, binding=weak, object=_ZTV8IOStream] = {
+  i64 0
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_IOStream
+}
+global @IOStream____view__OStream__8__vtable [storage=readonly, binding=internal] = {
+  i64 -8
+  i64 8
+  i64 -8
+  ptr addr @__rtti_struct_IOStream
+}
+global @IOStream____construction__IStream__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC8IOStream0_7IStream] = {
+  i64 0
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_IStream
+}
+global @IOStream____construction__OStream__8__s0__vtable [storage=readonly, binding=internal, object=_ZTC8IOStream8_7OStream] = {
+  i64 -8
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_OStream
+}
+global @IOStream____construction__OStream__8__s1__vtable [storage=readonly, binding=internal] = {
+  i64 16
+  i64 8
+  ptr addr @__rtti_struct_OStream
+}
+global @IOStream____construction__BasicIOS__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC8IOStream0_8BasicIOS] = {
+  i64 16
+  i64 0
+  ptr addr @__rtti_struct_BasicIOS
+}
+global @IOStream____vtt [storage=readonly, binding=weak, object=_ZTT8IOStream, object_root=yes] = {
+  ptr addr @IOStream__vtable + 32
+  ptr addr @IOStream____construction__IStream__0__s0__vtable + 32
+  ptr addr @IOStream____construction__IStream__0__s0__vtable + 32
+  ptr addr @IOStream____construction__OStream__8__s0__vtable + 32
+  ptr addr @IOStream____construction__OStream__8__s1__vtable + 24
+  ptr addr @IOStream__vtable + 32
+  ptr addr @IOStream____view__OStream__8__vtable + 32
+  ptr addr @IOStream____construction__BasicIOS__0__s0__vtable + 24
+}
+global @IStream__vtable [storage=readonly, binding=weak, object=_ZTV7IStream] = {
+  i64 0
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_IStream
+}
+global @IStream____construction__BasicIOS__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC7IStream0_8BasicIOS] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_BasicIOS
+}
+global @IStream____vtt [storage=readonly, binding=weak, object=_ZTT7IStream, object_root=yes] = {
+  ptr addr @IStream__vtable + 32
+  ptr addr @IStream__vtable + 32
+  ptr addr @IStream____construction__BasicIOS__0__s0__vtable + 24
+}
+global @BasicIOS__vtable [storage=readonly, binding=weak, object=_ZTV8BasicIOS] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_BasicIOS
+}
+global @BasicIOS____vtt [storage=readonly, binding=weak, object=_ZTT8BasicIOS, object_root=yes] = {
+  ptr addr @BasicIOS__vtable + 24
+}
+global @OStream__vtable [storage=readonly, binding=weak, object=_ZTV7OStream] = {
+  i64 0
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_OStream
+}
+global @OStream____construction__BasicIOS__0__s0__vtable [storage=readonly, binding=internal, object=_ZTC7OStream0_8BasicIOS] = {
+  i64 8
+  i64 0
+  ptr addr @__rtti_struct_BasicIOS
+}
+global @OStream____vtt [storage=readonly, binding=weak, object=_ZTT7OStream, object_root=yes] = {
+  ptr addr @OStream__vtable + 32
+  ptr addr @OStream__vtable + 32
+  ptr addr @OStream____construction__BasicIOS__0__s0__vtable + 24
+}
+
+function @read(%out : ptr) -> i32 [binding=strong, object=_Z4readP7OStream] {
+  slot $out : ptr
+  slot $basecast__1 : ptr
+
+  block ^entry:
+    store typed ptr %out, $out
+    %t1 = load typed ptr $out
+    %t2 = cmp eq ptr %t1, 0
+    branch %t2, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t3 = load typed ptr %t1
+    %t4 = index i8 %t3, -24
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t1, %t5
+    %t7 = index i8 %t6, 0
+    store typed ptr %t7, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t8 = load typed ptr $basecast__1
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    return i32 %t10
+}
+function @call(%ptr : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z4callRKP12StringStream] {
+  slot $ptr : ptr
+  slot $basecast__1 : ptr
+
+  block ^entry:
+    store typed ptr %ptr, $ptr
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr %t1
+    %t3 = cmp eq ptr %t2, 0
+    branch %t3, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t4 = index i8 %t2, 8
+    store typed ptr %t4, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t5 = load typed ptr $basecast__1
+    %t6 = call i32 @read(%t5)
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $stream : obj<24x8>
+  slot $ptr : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $stream
+    call void @StringStream__StringStream(%t1)
+    %t2 = addr $stream
+    store typed ptr %t2, $ptr
+    %t3 = addr $ptr
+    %t4 = call i32 @call(%t3)
+    %t5 = cmp eq i32 %t4, 7
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @StringStream__StringStream(%this : ptr [object_bytes=24]) -> void [binding=weak, object=_ZN12StringStreamC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = addr @StringStream____vtt
+    %t4 = index i8 %t3, 80
+    call void @BasicIOS__BasicIOS__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 0
+    %t7 = addr @StringStream____vtt
+    %t8 = index i8 %t7, 8
+    call void @IOStream__IOStream__base_entry(%t6, %t8)
+    %t9 = load typed ptr $this
+    %t10 = addr @StringStream__vtable
+    %t11 = index i8 %t10, 32
+    store typed ptr %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 8
+    %t14 = addr @StringStream____view__OStream__8__vtable
+    %t15 = index i8 %t14, 32
+    store typed ptr %t15, %t13
+    %t16 = load typed ptr $this
+    %t17 = load typed ptr %t16
+    %t18 = index i8 %t17, -24
+    %t19 = load typed i64 %t18
+    %t20 = index i8 %t16, %t19
+    %t21 = index i8 %t20, 0
+    %t22 = index i8 [projection=field] %t21, 0
+    store typed i32 7, %t22
+    return void
+}
+function @BasicIOS__BasicIOS__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN8BasicIOSC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    return void
+}
+function @IOStream__IOStream__base_entry(%this : ptr [object_bytes=24], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN8IOStreamC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = index i8 %__vtt, 8
+    call void @IStream__IStream__base_entry(%t2, %t3)
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 8
+    %t6 = index i8 %__vtt, 24
+    call void @OStream__OStream__base_entry(%t5, %t6)
+    %t7 = load typed ptr $this
+    %t8 = load typed ptr %__vtt
+    store typed ptr %t8, %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 %t8, -32
+    %t11 = load typed i64 %t10
+    %t12 = index i8 %t9, %t11
+    %t13 = index i8 %__vtt, 40
+    %t14 = load typed ptr %t13
+    store typed ptr %t14, %t12
+    %t15 = load typed ptr $this
+    %t16 = index i8 %t15, 8
+    %t17 = index i8 %__vtt, 48
+    %t18 = load typed ptr %t17
+    store typed ptr %t18, %t16
+    return void
+}
+function @IStream__IStream__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN7IStreamC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t2, -32
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t3, %t5
+    %t7 = index i8 %__vtt, 8
+    %t8 = load typed ptr %t7
+    store typed ptr %t8, %t6
+    return void
+}
+function @OStream__OStream__base_entry(%this : ptr [object_bytes=16], %__vtt : ptr) -> void [unwind=no, binding=weak, object=_ZN7OStreamC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr %__vtt
+    store typed ptr %t2, %t1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t2, -32
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t3, %t5
+    %t7 = index i8 %__vtt, 8
+    %t8 = load typed ptr %t7
+    store typed ptr %t8, %t6
+    return void
+}

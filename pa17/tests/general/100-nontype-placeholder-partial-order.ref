@@ -1,0 +1,7 @@
+declare global @X___cppgm_class_template_identity_1_int_void___value : i32 [binding=weak, object=_ZN1XI1PIiLi0ELb0EEivE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = binary sub nowrap i32 2, 2
+    return i32 %t1
+}

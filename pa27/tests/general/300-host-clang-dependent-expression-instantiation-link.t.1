@@ -1,0 +1,14 @@
+#include "300-host-clang-dependent-expression-instantiation-link.helper.h"
+
+int main()
+{
+  // Calls to the instantiations the C unit defines under clang's names:
+  // `_Z5unboxIiEDTcldtfp_3getEERK3boxIT_E`,
+  // `_Z5twiceIiEN9enable_ifIXaasr11is_integralIT_EE5valueeqstS1_Li4EES1_E4typeES1_`
+  // and `_Z4lastIsLi3EEiRAmiT0_Li1E_T_RAmlstS0_T0__i`.
+  box<int> b;
+  b.value = 5;
+  short values[2] = { 3, 4 };
+  int counts[6] = { 0, 0, 0, 0, 0, 0 };
+  return unbox(b) == 6 && twice(7) == 14 && last<short, 3>(values, counts) == 4 ? 0 : 1;
+}

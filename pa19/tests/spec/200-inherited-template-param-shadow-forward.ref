@@ -1,0 +1,85 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $p : obj<16x8>
+  slot $refarg__1 : u32
+  slot $refarg__2 : u32
+  slot $cond__3 : i32
+  slot $land__4 : i64
+
+  block ^entry:
+    %t1 = addr $p
+    store typed u32 1, $refarg__1
+    %t2 = addr $refarg__1
+    store typed u32 2, $refarg__2
+    %t3 = addr $refarg__2
+    call void @ns__Pair_unsignedlongint_unsignedlongint___Pair(%t1, %t2, %t3)
+    %t4 = addr $p
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i64 %t5
+    %t7 = convert sext i64 i32 1
+    %t8 = cmp eq i64 %t6, %t7
+    branch %t8, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t9 = addr $p
+    %t10 = index i8 [projection=field] %t9, 8
+    %t11 = load typed i64 %t10
+    %t12 = convert sext i64 i32 2
+    %t13 = cmp eq i64 %t11, %t12
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__4
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__4
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t15 = load typed i64 $land__4
+    branch %t15, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t16 = load typed i32 $cond__3
+    return i32 %t16
+}
+function @ns__Pair_unsignedlongint_unsignedlongint___Pair(%this : ptr [object_bytes=16], %x : ptr [pass=by_address, object_bytes=4], %y : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN2ns4PairImmEC1IjjEEOT_OT0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $x : ptr
+  slot $y : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %x, $x
+    store typed ptr %y, $y
+    %t1 = load typed ptr $x
+    %t2 = call ptr @ns__forward(%t1)
+    %t3 = load typed u32 %t2
+    %t4 = convert zext i64 u32 %t3
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t4, %t6
+    %t7 = load typed ptr $y
+    %t8 = call ptr @ns__forward(%t7)
+    %t9 = load typed u32 %t8
+    %t10 = convert zext i64 u32 %t9
+    %t11 = load typed ptr $this
+    %t12 = index i8 [projection=field] %t11, 8
+    store typed i64 %t10, %t12
+    return void
+}
+function @ns__forward(%t : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN2ns7forwardIjEEOT_RNS_16remove_referenceIS1_E4typeE] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+alias object _ZN2ns4PairImmEC2IjjEEOT_OT0_ = @ns__Pair_unsignedlongint_unsignedlongint___Pair

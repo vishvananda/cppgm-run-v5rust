@@ -1,0 +1,99 @@
+// GNU __bf16 on x86-64 (GCC and Clang): converting to float is exact (a
+// float's upper half), to double, long double, the integers and bool goes
+// through float; converting from float, double and long double rounds once to
+// nearest even, from an integer through float; arithmetic over every pair of a
+// table of values (the infinities, a quiet NaN, subnormals, the largest finite
+// values) gives GCC's and Clang's results
+#include <cstdio>
+#include <cstring>
+
+static unsigned short bits(__bf16 v)
+{
+	unsigned short u;
+	std::memcpy(&u, &v, 2);
+	return u;
+}
+
+static __bf16 make(unsigned short u)
+{
+	__bf16 v;
+	std::memcpy(&v, &u, 2);
+	return v;
+}
+
+static unsigned fbits(float v)
+{
+	unsigned u;
+	std::memcpy(&u, &v, 4);
+	return u;
+}
+
+static unsigned long long dbits(double v)
+{
+	unsigned long long u;
+	std::memcpy(&u, &v, 8);
+	return u;
+}
+
+volatile unsigned short samples[] = { 0x0000, 0x8000, 0x3f80, 0xbf80, 0x3f81, 0x4049, 0x7f7f, 0xff7f, 0x0001, 0x8001,
+	0x007f, 0x0080, 0x7f80, 0xff80, 0x7fc0, 0x4300, 0x4f00, 0x5f00, 0xcf00, 0x3f00, 0x3eff, 0x4b80, 0xc6ff, 0x46fe,
+	0x7e00 };
+volatile double doubles[] = { 0.0, -0.0, 1.0, 1.00390625, 1.0039062500001, 1.0117187499, 3.14159, -2.5e-40, 1e-45,
+	3.4e38, 3.3961775292304854e38, 3.39e38, -1e300, 1e-300, 65504.0, 123456789.0, 0.1, 1.0 / 3.0 };
+volatile long long integers[] = { 0, 1, -1, 255, 256, 257, 16777217, -16777219, 2147483647, -2147483647 - 1,
+	9007199254740993LL, 0x7fffffffffffffffLL, -0x7fffffffffffffffLL - 1, 1000, 1001, 129, 131, 263, 0x10101 };
+
+int main()
+{
+	const unsigned count = sizeof samples / sizeof samples[0];
+	for (unsigned i = 0; i < count; ++i)
+	{
+		const __bf16 v = make(samples[i]);
+		const float f = v;
+		const double d = v;
+		std::printf("%04x: f %08x d %016llx ld %g", bits(v), fbits(f), dbits(d), (double)(long double)v);
+		if ((samples[i] & 0x7f80) != 0x7f80)
+		{
+			if (f > -2147483648.0f && f < 2147483648.0f)
+				std::printf(" i %d", (int)v);
+			if (f >= 0 && f < 4294967296.0f)
+				std::printf(" u %u", (unsigned)v);
+			if (f > -9.2e18f && f < 9.2e18f)
+				std::printf(" ll %lld", (long long)v);
+			if (f > -1.7e38f && f < 1.7e38f)
+			{
+				const __int128 wide = v;
+				std::printf(" i128 %llx:%llx", (unsigned long long)(wide >> 64), (unsigned long long)wide);
+			}
+		}
+		std::printf(" b %d neg %04x inc %04x dec %04x\n", (int)(bool)v, bits(-v), bits(v + 1), bits(v - 1));
+	}
+	for (unsigned i = 0; i < sizeof doubles / sizeof doubles[0]; ++i)
+	{
+		const double d = doubles[i];
+		const float f = (float)d;
+		const long double ld = d;
+		std::printf("%016llx: %04x, float %08x: %04x, long double: %04x\n", dbits(d), bits((__bf16)d), fbits(f),
+			bits((__bf16)f), bits((__bf16)ld));
+	}
+	for (unsigned i = 0; i < sizeof integers / sizeof integers[0]; ++i)
+	{
+		const long long x = integers[i];
+		std::printf("%lld: %04x int %04x unsigned %04x ull %04x short %04x schar %04x i128 %04x\n", x,
+			bits((__bf16)x), bits((__bf16)(int)x), bits((__bf16)(unsigned)x), bits((__bf16)(unsigned long long)x),
+			bits((__bf16)(short)x), bits((__bf16)(signed char)x), bits((__bf16)(__int128)x));
+	}
+	unsigned long hash = 0;
+	for (unsigned i = 0; i < count; ++i)
+	{
+		for (unsigned j = 0; j < count; ++j)
+		{
+			const __bf16 a = make(samples[i]), b = make(samples[j]);
+			const unsigned r = bits(a + b) ^ (bits(a - b) << 3) ^ (bits(a * b) << 7) ^ (bits(a / b) << 11) ^
+				((a < b) << 1) ^ ((a == b) << 2) ^ ((a >= b) << 5) ^ ((a != b) << 9);
+			hash = hash * 1000003u + r + bits(a * b + a) + bits(a / b - b * a) * 7u;
+		}
+	}
+	std::printf("pairs %lx\n", hash);
+	return 0;
+}

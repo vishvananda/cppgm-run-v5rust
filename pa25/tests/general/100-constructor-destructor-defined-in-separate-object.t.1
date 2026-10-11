@@ -1,0 +1,12 @@
+#include "100-constructor-destructor-defined-in-separate-object.shared.h"
+
+Parser::Parser(int value) : cursor(value)
+{
+}
+
+int main()
+{
+  Cursor direct(3);
+  Parser parser(3);
+  return direct.size == 3 && parser.cursor.size == 3 ? 0 : 1;
+}

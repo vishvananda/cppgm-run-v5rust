@@ -1,0 +1,19 @@
+global @selected : ptr [binding=strong] = addr @inspect
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $value
+    %t2 = load typed ptr @selected
+    %t3 = call i32 %t2(%t1) as (%arg0 : ptr) -> i32
+    return i32 %t3
+}
+function @inspect(%__param0 : ptr) -> i32 [binding=weak, object=_Z7inspectIiEiPT_] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return i32 0
+}

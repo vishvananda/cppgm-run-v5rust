@@ -1,0 +1,20 @@
+global @global_value : i32 [binding=strong] = 0
+
+function @sink(%__param0 : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z4sinkRi] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return void
+}
+function @get() -> ptr [binding=strong, object=_Z3getv] {
+  block ^entry:
+    %t1 = addr @global_value
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call ptr @get()
+    call void @sink(%t1)
+    return i32 0
+}

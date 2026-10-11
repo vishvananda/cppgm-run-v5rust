@@ -1,0 +1,6 @@
+declare global @is_destructible___cppgm_class_template_identity_1___value : u8 [binding=weak, object=_ZN15is_destructibleIN2ns6detail4IterINS1_4PairIKNS0_2v16StringIcEEmEELb0ELb1EEEE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

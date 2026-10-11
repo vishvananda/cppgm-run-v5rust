@@ -1,0 +1,12 @@
+tests/**/*.my*
+tests/**/*.stdout
+!tests/**/*.ref.stdout
+testout
+.test_failed
+*.dSYM
+
+# Behaviour references: the program output the reference produced.  The
+# reference's LowIR for the exercise is an intermediate of that run, like its
+# program, and is not a reference.
+!tests/behavior/*.ref.program.stdout
+tests/behavior/*.ref.lowir

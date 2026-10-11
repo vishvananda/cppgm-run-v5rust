@@ -1,0 +1,33 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $it : obj<1x1>
+  slot $argobj__1 : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $it
+    call void @Iter_Vec___Iter(%t1)
+    %t2 = addr $argobj__1
+    %t3 = addr $it
+    call void @use($argobj__1, 3)
+    return i32 0
+}
+function @Iter_Vec___Iter(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN4IterI3VecEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @use(%it : obj<1x1> [classes=none], %n : i32) -> void [binding=weak, object=_Z3useI3VecEv4IterIT_EN6traitsIS2_E9size_typeE] {
+  slot $it : obj<1x1>
+  slot $n : i32
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    store typed i32 %t1, $value
+    %t2 = load typed i32 $value
+    %t3 = addr $it
+    return void
+}
+alias object _ZN4IterI3VecEC2Ev = @Iter_Vec___Iter

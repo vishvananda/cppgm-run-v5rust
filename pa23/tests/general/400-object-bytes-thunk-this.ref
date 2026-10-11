@@ -1,0 +1,469 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_Second [storage=readonly, binding=weak, object=_ZTS6Second] = {
+  i8 54
+  i8 83
+  i8 101
+  i8 99
+  i8 111
+  i8 110
+  i8 100
+  i8 0
+}
+global @__rtti_struct_Second [storage=readonly, binding=weak, object=_ZTI6Second] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Second
+}
+global @Second__vtable [storage=readonly, binding=weak, object=_ZTV6Second] = {
+  i64 0
+  ptr addr @__rtti_struct_Second
+  ptr addr @Second__second
+  ptr addr @Second___Second
+  ptr addr @Second___Second__deleting_entry
+}
+global @__typeinfo_name__struct_Joined [storage=readonly, binding=weak, object=_ZTS6Joined] = {
+  i8 54
+  i8 74
+  i8 111
+  i8 105
+  i8 110
+  i8 101
+  i8 100
+  i8 0
+}
+global @__typeinfo_name__struct_First [storage=readonly, binding=weak, object=_ZTS5First] = {
+  i8 53
+  i8 70
+  i8 105
+  i8 114
+  i8 115
+  i8 116
+  i8 0
+}
+global @__rtti_struct_First [storage=readonly, binding=weak, object=_ZTI5First] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_First
+}
+global @__rtti_struct_Joined [storage=readonly, binding=weak, object=_ZTI6Joined] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Joined
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_First
+  i64 2
+  ptr addr @__rtti_struct_Second
+  i64 4098
+}
+global @Joined__vtable [storage=readonly, binding=weak, object=_ZTV6Joined] = {
+  i64 0
+  ptr addr @__rtti_struct_Joined
+  ptr addr @First__first
+  ptr addr @Joined___Joined
+  ptr addr @Joined___Joined__deleting_entry
+  ptr addr @Joined__second
+}
+global @Joined____view__Second__16__vtable [storage=readonly, binding=internal] = {
+  i64 -16
+  ptr addr @__rtti_struct_Joined
+  ptr addr @_Joined__second__vtable_return_adjust__this_neg16__return_pos0
+  ptr addr @_Joined___Joined__vtable_return_adjust__this_neg16__return_pos0
+  ptr addr @_Joined___Joined__deleting_entry__vtable_return_adjust__this_neg16__return_pos0
+}
+global @First__vtable [storage=readonly, binding=weak, object=_ZTV5First] = {
+  i64 0
+  ptr addr @__rtti_struct_First
+  ptr addr @First__first
+  ptr addr @First___First
+  ptr addr @First___First__deleting_entry
+}
+
+function @ask(%s : ptr [pass=by_address, object_bytes=16]) -> i64 [binding=strong, object=_Z3askRK6Second] {
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = load typed ptr %t1
+    %t3 = load typed ptr %t2
+    %t4 = call i64 %t3(%t1) as (%arg0 : ptr [object_bytes=16]) -> i64
+    return i64 %t4
+}
+function @drop(%s : ptr) -> void [binding=strong, object=_Z4dropP6Second] {
+  slot $s : ptr
+
+  block ^entry:
+    store typed ptr %s, $s
+    %t1 = load typed ptr $s
+    %t2 = cmp ne ptr %t1, 0
+    branch %t2, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    %t3 = load typed ptr %t1
+    %t4 = index i8 %t3, 16
+    %t5 = load typed ptr %t4
+    call void %t5(%t1) as (%arg0 : ptr [object_bytes=16]) -> void [unwind=no]
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $joined : ptr
+  slot $result : i64
+  slot $basecast__1 : ptr
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = convert sext i64 i32 40
+    %t2 = call ptr @operatornew(%t1)
+    call void @Joined__Joined(%t2)
+    store typed ptr %t2, $joined
+    %t3 = load typed ptr $joined
+    %t4 = index i8 %t3, 16
+    %t5 = call i64 @ask(%t4)
+    store typed i64 %t5, $result
+    %t6 = load typed ptr $joined
+    %t7 = cmp eq ptr %t6, 0
+    branch %t7, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t8 = index i8 %t6, 16
+    store typed ptr %t8, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t9 = load typed ptr $basecast__1
+    call void @drop(%t9)
+    %t10 = load typed i64 $result
+    %t11 = cmp eq i64 %t10, 3
+    branch %t11, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__2
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t12 = load typed i32 $cond__2
+    return i32 %t12
+}
+function @Second__second(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNK6Second6secondEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i64 2
+}
+function @Second___Second__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN6SecondD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Second__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Second___Second__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN6SecondD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Second__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Joined__Joined(%this : ptr [object_bytes=40]) -> void [unwind=no, binding=weak, object=_ZN6JoinedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @First__First__base_entry(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 16
+    call void @Second__Second__base_entry(%t4)
+    eh_end
+    eh_cleanup ^constructor_cleanup_2
+    %t5 = load typed ptr $this
+    %t6 = addr @Joined__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 16
+    %t10 = addr @Joined____view__Second__16__vtable
+    %t11 = index i8 %t10, 16
+    store typed ptr %t11, %t9
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 0
+    call void @First___First__base_entry(%t13)
+    eh_end
+    resume
+
+  block ^constructor_cleanup_2:
+    %t14 = load typed ptr $this
+    %t15 = index i8 %t14, 16
+    call void @Second___Second__base_entry(%t15)
+    jump ^constructor_cleanup_1
+}
+function @First__first(%this : ptr [object_bytes=16]) -> i64 [binding=weak, object=_ZNK5First5firstEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i64 1
+}
+function @Joined___Joined__deleting_entry(%this : ptr [object_bytes=40]) -> void [unwind=no, binding=weak, object=_ZN6JoinedD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Joined__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 16
+    %t6 = addr @Joined____view__Second__16__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 16
+    call void @Second___Second__base_entry(%t9)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t10 = load typed ptr $this
+    %t11 = index i8 %t10, 0
+    call void @First___First__base_entry(%t11)
+    %t12 = load typed ptr $this
+    call void @operatordelete(%t12)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    eh_cleanup ^destructor_suffix_cleanup_5
+    %t13 = load typed ptr $this
+    %t14 = index i8 %t13, 0
+    call void @First___First__base_entry(%t14)
+    eh_end
+    jump ^destructor_suffix_next_6
+
+  block ^destructor_suffix_cleanup_5:
+    %t15 = load typed ptr $this
+    call void @operatordelete(%t15)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_6:
+    %t16 = load typed ptr $this
+    call void @operatordelete(%t16)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t17 = load typed ptr $this
+    %t18 = index i8 %t17, 16
+    call void @Second___Second__base_entry(%t18)
+    %t19 = load typed ptr $this
+    %t20 = index i8 %t19, 0
+    call void @First___First__base_entry(%t20)
+    %t21 = load typed ptr $this
+    call void @operatordelete(%t21)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Joined___Joined(%this : ptr [object_bytes=40]) -> void [unwind=no, binding=weak, object=_ZN6JoinedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @Joined__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 16
+    %t6 = addr @Joined____view__Second__16__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 16
+    call void @Second___Second__base_entry(%t9)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t10 = load typed ptr $this
+    %t11 = index i8 %t10, 0
+    call void @First___First__base_entry(%t11)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 0
+    call void @First___First__base_entry(%t13)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t14 = load typed ptr $this
+    %t15 = index i8 %t14, 16
+    call void @Second___Second__base_entry(%t15)
+    %t16 = load typed ptr $this
+    %t17 = index i8 %t16, 0
+    call void @First___First__base_entry(%t17)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Joined__second(%this : ptr [object_bytes=40]) -> i64 [binding=weak, object=_ZNK6Joined6secondEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i64 3
+}
+function @First___First__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5FirstD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @First__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @First___First__deleting_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5FirstD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @First__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @First__First__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5FirstC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @First__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Second__Second__base_entry(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN6SecondC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Second__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @First___First(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN5FirstD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @First__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @Second___Second(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN6SecondD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @Second__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @_Joined__second__vtable_return_adjust__this_neg16__return_pos0(%arg0 : ptr) -> i64 [binding=weak, object=_ZThn16_NK6Joined6secondEv] {
+  block ^entry:
+    %t1 = index i8 %arg0, -16
+    %t2 = call i64 @Joined__second(%t1)
+    return i64 %t2
+}
+function @_Joined___Joined__deleting_entry__vtable_return_adjust__this_neg16__return_pos0(%arg0 : ptr) -> void [unwind=no, binding=weak, object=_ZThn16_N6JoinedD0Ev] {
+  block ^entry:
+    %t1 = index i8 %arg0, -16
+    call void @Joined___Joined__deleting_entry(%t1)
+    return void
+}
+function @_Joined___Joined__vtable_return_adjust__this_neg16__return_pos0(%arg0 : ptr) -> void [unwind=no, binding=weak, object=_ZThn16_N6JoinedD1Ev] {
+  block ^entry:
+    %t1 = index i8 %arg0, -16
+    call void @Joined___Joined(%t1)
+    return void
+}
+alias object _ZN6JoinedC2Ev = @Joined__Joined
+alias object _ZN6JoinedD2Ev = @Joined___Joined

@@ -1,0 +1,8 @@
+function @f(%n : i64) -> i64 [binding=strong, object=_Z1fm] {
+  slot $n : i64
+
+  block ^entry:
+    store typed i64 %n, $n
+    %t1 = load typed i64 $n
+    return i64 %t1
+}

@@ -1,0 +1,14 @@
+global @g : obj<16x8> [binding=strong] = {
+  zero 16
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = const i64 16
+    %t2 = convert trunc i32 i64 %t1
+    return i32 %t2
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}

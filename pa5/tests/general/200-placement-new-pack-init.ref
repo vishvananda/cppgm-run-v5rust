@@ -1,0 +1,121 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:T
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_LAND:&&
+            identifier declval
+            parameter-clause
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:T
+      init-declarator-list
+        init-declarator
+          declarator
+            ptr-operator OP_LAND:&&
+            identifier forward
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  ptr-operator OP_LAND:&&
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Args
+        type-parameter
+          parameter-key KW_CLASS:class
+          default-template-argument
+            type-id
+              type-specifier-seq
+                decltype-specifier decltype(::new(declval<void*>())T(declval<Args>()...))
+                  new-expression
+                    global-scope
+                    placement (declval<void*>())
+                      paren-argument-list
+                        call-expression
+                          id-expression declval<void*>
+                          argument-list
+                    type-id
+                      type-specifier-seq
+                        type-name T
+                    initializer
+                      paren-initializer
+                        pack-expansion-expression
+                          call-expression
+                            id-expression declval<Args>
+                            argument-list
+    function-definition
+      decl-specifier-seq
+        decl-specifier TT_IDENTIFIER:T
+      declarator
+        ptr-operator OP_STAR:*
+        identifier f
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:T
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:Args
+            declarator
+              ptr-operator OP_LAND:&&
+              parameter-pack ...
+              identifier args
+      compound-statement
+        return-statement
+          binary-expression OP_COMMA:,
+            parenthesized-expression
+              cast-expression OP_LPAREN:
+                type-id
+                  type-specifier-seq
+                    type-specifier KW_VOID:void
+                literal 0
+            new-expression
+              global-scope
+              placement ((void*)p)
+                paren-argument-list
+                  cast-expression OP_LPAREN:
+                    type-id
+                      type-specifier-seq
+                        type-specifier KW_VOID:void
+                      abstract-declarator
+                        ptr-operator OP_STAR:*
+                    id-expression p
+              type-id
+                type-specifier-seq
+                  type-name T
+              initializer
+                paren-initializer
+                  pack-expansion-expression
+                    call-expression
+                      id-expression forward<Args>
+                      argument-list
+                        id-expression args
+end translation unit

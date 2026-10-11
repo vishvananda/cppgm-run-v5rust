@@ -1,0 +1,83 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+  i32 3
+  i32 4
+  i32 5
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data : obj<20x4>
+  slot $first : ptr
+  slot $refarg__1 : i32
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $data
+    copyobj 20x4 @__constexpr_template__1, %t1
+    %t2 = addr $data
+    store typed i32 0, $refarg__1
+    %t3 = addr $refarg__1
+    %t4 = call ptr @find_not(%t2, %t3)
+    store typed ptr %t4, $first
+    %t5 = load typed ptr $first
+    %t6 = addr $data
+    %t7 = cmp eq ptr %t5, %t6
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__2
+    return i32 %t8
+}
+function @find_not(%r : ptr [pass=by_address, object_bytes=20], %x : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z8find_notIA5_iiEN14range_iteratorIT_E4typeERS2_RKT0_] {
+  slot $r : ptr
+  slot $x : ptr
+
+  block ^entry:
+    store typed ptr %r, $r
+    store typed ptr %x, $x
+    %t1 = load typed ptr $r
+    %t2 = call ptr @begin(%t1)
+    %t3 = load typed ptr $r
+    %t4 = call ptr @begin(%t3)
+    %t5 = load typed ptr $x
+    %t6 = call ptr @find_first(%t2, %t4, %t5)
+    return ptr %t6
+}
+function @begin(%r : ptr [pass=by_address, object_bytes=20]) -> ptr [binding=weak, object=_Z5beginIA5_iEN14range_iteratorIT_E4typeERS2_] {
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %r, $r
+    %t1 = load typed ptr $r
+    %t2 = call ptr @range_begin(%t1)
+    return ptr %t2
+}
+function @find_first(%first : ptr, %__param1 : ptr, %__param2 : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z10find_firstIPiS0_iET_S1_T0_RKT1_] {
+  slot $first : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %first, $first
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    %t1 = load typed ptr $first
+    return ptr %t1
+}
+function @range_begin(%a : ptr [pass=by_address, object_bytes=20]) -> ptr [binding=weak, object=_Z11range_beginIiLm5EEPT_RAT0__S0_] {
+  slot $a : ptr
+
+  block ^entry:
+    store typed ptr %a, $a
+    %t1 = load typed ptr $a
+    return ptr %t1
+}

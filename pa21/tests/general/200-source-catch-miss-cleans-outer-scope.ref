@@ -1,0 +1,143 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+declare global @__external_rtti__long_int [role=rtti_data, binding=strong, object=_ZTIl]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @destroyed : i32 [binding=strong] = 0
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__ehobj_int [binding=internal] = {
+  zero 4
+}
+global @__typeinfo_name__long_int [storage=readonly, binding=weak, object=_ZTSl] = {
+  i8 108
+  i8 0
+}
+global @__rtti_long_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__long_int
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $guard : obj<1x1>
+  slot $cond__1 : i32
+
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = addr $guard
+    eh_try ^catch_dispatch_4
+    %t2 = call ptr @__external_runtime____cxa_allocate_exception(4)
+    store typed i32 7, %t2
+    %t3 = addr @__external_rtti__int
+    call void @__external_runtime____cxa_throw(%t2, %t3, 0)
+    eh_end
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_4:
+    eh_catch @__external_rtti__long_int, 1
+    eh_catch @__external_rtti__int, 2
+    eh_cleanup
+    eh_end
+    jump ^catch_entry_5
+
+  block ^catch_entry_5:
+    %t4 = exception ptr
+    %t5 = exception_selector i32
+    %t6 = cmp eq i32 %t5, 1
+    branch %t6, ^catch_body_7, ^catch_next_8
+
+  block ^catch_body_7:
+    %t7 = call ptr @__external_runtime____cxa_begin_catch(%t4)
+    eh_cleanup ^catch_cleanup_9
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    %t8 = addr $guard
+    call void @Guard___Guard(%t8)
+    eh_end
+    return i32 10
+
+  block ^catch_cleanup_9:
+    eh_catch @__external_rtti__int, 2
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    %t9 = addr $guard
+    call void @Guard___Guard(%t9)
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_next_8:
+    %t10 = addr $guard
+    call void @Guard___Guard(%t10)
+    eh_end
+    jump ^catch_entry_2
+
+  block ^try_end_6:
+    %t11 = addr $guard
+    call void @Guard___Guard(%t11)
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 2
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t12 = exception ptr
+    %t13 = exception_selector i32
+    %t14 = cmp eq i32 %t13, 2
+    branch %t14, ^catch_body_10, ^catch_next_11
+
+  block ^catch_body_10:
+    %t15 = call ptr @__external_runtime____cxa_begin_catch(%t12)
+    eh_cleanup ^catch_cleanup_12
+    %t16 = load typed i32 @destroyed
+    %t17 = cmp eq i32 %t16, 1
+    branch %t17, ^cond_then_13, ^cond_else_14
+
+  block ^cond_then_13:
+    store typed i32 0, $cond__1
+    jump ^cond_end_15
+
+  block ^cond_else_14:
+    store typed i32 1, $cond__1
+    jump ^cond_end_15
+
+  block ^cond_end_15:
+    %t18 = load typed i32 $cond__1
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 %t18
+
+  block ^catch_cleanup_12:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_11:
+    resume
+
+  block ^try_end_3:
+    return i32 2
+}
+function @Guard___Guard(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN5GuardD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN5GuardD2Ev = @Guard___Guard

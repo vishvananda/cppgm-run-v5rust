@@ -1,0 +1,37 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier _Iterator
+    class-specifier __bounded_iter
+      class-key KW_STRUCT:struct
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier _It
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_FRIEND:friend
+            decl-specifier KW_CONSTEXPR:constexpr
+            decl-specifier __bounded_iter<_It>
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier __make_bounded_iter
+                parameter-clause
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier TT_IDENTIFIER:_It
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier TT_IDENTIFIER:_It
+                  parameter-declaration
+                    decl-specifier-seq
+                      decl-specifier TT_IDENTIFIER:_It
+end translation unit

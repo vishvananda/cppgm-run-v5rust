@@ -1,0 +1,21 @@
+int unnamed_local()
+{
+  struct { int r; int get() const { return r; } } a = { 5 };
+  return a.get();
+}
+
+int invoker()
+{
+  int (*f)() = [] { return 6; };
+  return f();
+}
+
+int nested()
+{
+  return [] { return [] { return 7; }(); }();
+}
+
+int main()
+{
+  return unnamed_local() + invoker() + nested() == 5 + 6 + 7 ? 0 : 1;
+}

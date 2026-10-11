@@ -1,0 +1,111 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $s
+    call void @str__str(%t1)
+    %t2 = addr $s
+    %t3 = call i32 @str__build(%t2, 10, 20)
+    %t4 = cmp eq i32 %t3, 34
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @str__str(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3strC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @str__build(%this : ptr [object_bytes=4], %first : i32, %second : i32) -> i32 [binding=weak, object=_ZN3str5buildEii, inline_hint=yes] {
+  slot $this : ptr
+  slot $first : i32
+  slot $second : i32
+  slot $temp : obj<4x4>
+  slot $argobj__1 : obj<1x1>
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %first, $first
+    store typed i32 %second, $second
+    %t1 = addr $temp
+    %t2 = addr $argobj__1
+    %t3 = load typed i32 $first
+    %t4 = load typed i32 $second
+    %t5 = addr $argobj__2
+    %t6 = load typed ptr $this
+    %t7 = call obj<4x4> @str__make_alloc(%t6)
+    copyobj 4x4 %t7, %t5
+    call void @str__str__ov2(%t1, $argobj__1, %t3, %t4, $argobj__2)
+    %t8 = addr $temp
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = load typed i32 %t9
+    return i32 %t10
+}
+function @str__make_alloc(%this : ptr [object_bytes=4]) -> obj<4x4> [binding=weak, object=_ZNK3str10make_allocEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @alloc__alloc__ov2(%t1, 4)
+    return obj<4x4> $retobj__1
+}
+function @str__str__ov2(%this : ptr [object_bytes=4], %__param1 : obj<1x1> [classes=none], %first : i32, %second : i32, %a : obj<4x4>) -> void [binding=weak, object=_ZN3strC1E5tag_tii5alloc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+  slot $first : i32
+  slot $second : i32
+  slot $a : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %first, $first
+    store typed i32 %second, $second
+    %t1 = addr $a
+    copyobj 4x4 %a, %t1
+    %t2 = load typed i32 $first
+    %t3 = load typed i32 $second
+    %t4 = binary add nowrap i32 %t2, %t3
+    %t5 = addr $a
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load typed i32 %t6
+    %t8 = binary add nowrap i32 %t4, %t7
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 %t8, %t10
+    return void
+}
+function @alloc__alloc__ov2(%this : ptr [object_bytes=4], %seed : i32) -> void [binding=weak, object=_ZN5allocC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $seed : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %seed, $seed
+    %t1 = load typed i32 $seed
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN3strC2Ev = @str__str
+alias object _ZN3strC2E5tag_tii5alloc = @str__str__ov2
+alias object _ZN5allocC2Ei = @alloc__alloc__ov2

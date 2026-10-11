@@ -1,0 +1,25 @@
+// N3485 15.3p4, 15.3p15, 15.2p2: an exception from a member initializer or
+// from the body of a constructor whose body is a function-try-block destroys
+// the subobjects already constructed and enters the handler, which rethrows
+// when it reaches its end
+#include "200-host-eh-ctor-try-resume.helper.h"
+static int thrower(int code) { if (code) throw code; return 0; }
+struct Member { int id; Member(int i) : id(i) { out_line("M", i); } ~Member() { out_line("~M", id); } };
+struct Base { Base() { out_line("B", 0); } ~Base() { out_line("~B", 0); } };
+struct Ctor : Base
+{
+  Member a, b;
+  int value;
+  Ctor(int where, int parameter)
+  try : Base(), a(1), b((thrower(where == 1 ? 5 : 0), 2)), value(thrower(where == 2 ? 6 : 0))
+  { if (where == 3) throw 7; }
+  catch (int e) { out_line("handler", e + parameter); }
+};
+int main()
+{
+  for (int where = 0; where < 4; ++where)
+  {
+    try { Ctor c(where, 100); out_line("made", where); } catch (int e) { out_line("caught", e); }
+  }
+  return 0;
+}

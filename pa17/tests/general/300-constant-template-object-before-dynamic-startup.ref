@@ -1,0 +1,82 @@
+global @observed : i32 [binding=strong] = zero
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 111
+  i8 110
+  i8 101
+  i8 0
+}
+global @Storage_int___text [storage=readonly, binding=weak, object=_ZN7StorageIiE4textE] = {
+  ptr addr @__strlit__1
+}
+
+function @read() -> i32 [binding=strong, object=_Z4readv] {
+  block ^entry:
+    %t1 = addr @Storage_int___text
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = index i8 [projection=array_element] %t3, 0
+    %t5 = load i8 %t4
+    %t6 = convert sext i32 i8 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+
+  block ^entry:
+    %t1 = load typed i32 @observed
+    %t2 = cmp eq i32 %t1, 111
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = addr @Storage_int___text
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = load typed ptr %t4
+    %t6 = index i8 [projection=array_element] %t5, 2
+    %t7 = load i8 %t6
+    %t8 = convert sext i32 i8 %t7
+    %t9 = cmp eq i32 %t8, 101
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @Text__Text(%this : ptr [object_bytes=8], %text : ptr) -> void [binding=weak, object=_ZN4TextC1EPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $text : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %text, $text
+    %t1 = load typed ptr $text
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call i32 @read()
+    store typed i32 %t1, @observed
+    return void
+}
+alias object _ZN4TextC2EPKc = @Text__Text

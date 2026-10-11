@@ -1,0 +1,26 @@
+struct Prefix {
+  virtual ~Prefix() {}
+};
+
+struct Base {
+  virtual ~Base() {}
+
+  virtual Base * self()
+  {
+    return this;
+  }
+};
+
+struct Derived : Prefix, Base {
+  Derived * self()
+  {
+    return this;
+  }
+};
+
+int main()
+{
+  Derived derived;
+  Base * base = &derived;
+  return base->self() == base ? 0 : 1;
+}

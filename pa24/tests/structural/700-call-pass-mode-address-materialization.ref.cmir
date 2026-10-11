@@ -1,0 +1,48 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @copy_ref
+  abi
+    param %ret -> rdi : ptr
+    param %src -> rsi : ptr
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rsi, [rsi]
+    store.i64 [rdi], rsi
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $src -> [rbp-<off0>] : i64
+    slot $dst -> [rbp-<off1>] : i64
+
+  block ^entry
+    store.i64 [rbp-<off0>], 7
+    store.i64 [rbp-<off1>], 0
+    lea rdi, [rbp-<off1>]
+    lea rsi, [rbp-<off0>]
+    call @copy_ref [args=(rsi,rdi)]
+    mov rdx, 7
+    cmp.i64 [rbp-<off1>], rdx
+    sete r8
+    movzx r8, r8
+    cmp.i64 r8, 0
+    sete r8
+    movzx r8, r8
+    ret r8

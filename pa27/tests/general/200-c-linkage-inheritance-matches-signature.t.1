@@ -1,0 +1,14 @@
+extern "C" int signature_probe(int);
+
+namespace abi_link
+{
+int signature_probe(long value)
+{
+  return value == 4 ? 0 : 1;
+}
+}
+
+int main()
+{
+  return abi_link::signature_probe(4);
+}

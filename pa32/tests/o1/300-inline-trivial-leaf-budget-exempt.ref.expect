@@ -1,0 +1,16 @@
+# budget from 300-inline-trivial-leaf-budget-exempt.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 1760
+blocks <= 7
+count(call) <= 5
+count(load) <= 3
+count(store) <= 1756
+count(phi) <= 3
+instructions <= 37 in @piece
+instructions <= 7 in @tiny
+instructions <= 8 in @small
+instructions <= 1715 in @driver
+
+# outcomes from 300-inline-trivial-leaf-budget-exempt.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(call @piece)
+none(call @small)
+none(call @tiny)

@@ -1,0 +1,41 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier B1
+    class-key KW_STRUCT:struct
+  class-specifier B2
+    class-key KW_STRUCT:struct
+  class-specifier C
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        virtual KW_VIRTUAL:virtual
+        access-specifier KW_PUBLIC:public
+        base-name B1
+      base-specifier
+        access-specifier KW_PROTECTED:protected
+        base-name B2
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier x
+    special-member-definition C
+      declarator
+        identifier C
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id B1
+          paren-argument-list
+        mem-initializer
+          mem-initializer-id B2
+          braced-init-list
+        mem-initializer
+          mem-initializer-id x
+          braced-init-list
+            literal 1
+      compound-statement
+end translation unit

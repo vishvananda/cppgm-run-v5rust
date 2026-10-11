@@ -1,0 +1,10 @@
+#include <sstream>
+#include <string>
+
+int main() {
+  std::ostringstream out;
+  out << 42;
+  std::string s = out.str();
+  std::istringstream in(s);
+  return in.rdbuf() ? 0 : 1;
+}

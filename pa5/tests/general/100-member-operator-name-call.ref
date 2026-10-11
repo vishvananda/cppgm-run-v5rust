@@ -1,0 +1,41 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier P
+    class-specifier X
+      class-key KW_STRUCT:struct
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_STATIC:static
+          decl-specifier decltype(declval<const P&>().operator->())
+            call-expression
+              member-expression OP_DOT:.
+                call-expression
+                  id-expression declval<const P&>
+                  argument-list
+                identifier operator->
+              argument-list
+        declarator
+          identifier call
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_CONST:const
+                decl-specifier TT_IDENTIFIER:P
+              declarator
+                ptr-operator OP_AMP:&
+                identifier p
+          function-qualifier noexcept
+        compound-statement
+          return-statement
+            call-expression
+              member-expression OP_DOT:.
+                id-expression p
+                identifier operator->
+              argument-list
+end translation unit

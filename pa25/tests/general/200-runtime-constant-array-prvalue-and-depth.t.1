@@ -1,0 +1,29 @@
+// N3485 5.19p2, 8.5.1: a constant expression may subscript an array prvalue
+// (A2{1, 2}[1], CWG 1213) and read an element of a class prvalue's array
+// member; constant evaluation reaches a subobject nested 300 members deep
+typedef int A2[2];
+struct S
+{
+	int a[3];
+};
+constexpr int ia = A2{ 1, 2 }[1];
+constexpr int ib = S{ { 4, 5, 6 } }.a[2];
+static_assert(ia == 2 && ib == 6, "");
+
+template<int N>
+struct Chain
+{
+	Chain<N - 1> m;
+	int x = N;
+};
+template<>
+struct Chain<0>
+{
+	int x = 0;
+};
+constexpr Chain<300> deep{};
+static_assert(deep.x == 300 && deep.m.m.m.x == 297, "");
+int main()
+{
+	return 0;
+}

@@ -1,0 +1,11 @@
+// Itanium ABI 2.5.2, 5.2.3: D's key function is in the other unit, so this
+// unit's constructor stores each vtable segment pointer (B1 secondary sharing
+// B1p's vptr, virtual base V) at its address point in the external group;
+// expect exit 0
+struct B0 { int b0; B0() : b0(1) {} virtual int f0() { return b0; } };
+struct B1p { int p; B1p() : p(2) {} virtual int fp() { return p; } };
+struct B1 : B1p { int b1; B1() : b1(3) {} virtual int f1() { return b1; } };
+struct V { int v; V() : v(5) {} virtual int fv() { return v; } };
+struct D : B0, B1, virtual V { int d; D() : d(6) {} virtual int key(); int fv() { return d + 20; } };
+int use(D& x) { B1& c = x; V& f = x; return c.f1() * 100 + f.fv(); }
+int main() { D x; return use(x) == 326 ? 0 : 1; }

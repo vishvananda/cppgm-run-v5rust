@@ -1,0 +1,4 @@
+simple operator KW_OPERATOR
+literal "" array of 1 char 00
+identifier sv
+eof

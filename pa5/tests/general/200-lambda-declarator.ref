@@ -1,0 +1,38 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier main
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_AUTO:auto
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier f
+            initializer
+              lambda-expression
+                lambda-introducer []
+                lambda-declarator
+                  parameter-clause
+                    parameter-declaration
+                      decl-specifier-seq
+                        decl-specifier KW_INT:int
+                      declarator
+                        identifier x
+                  lambda-specifier KW_MUTABLE:mutable
+                  noexcept-specification
+                    id-expression x
+                  trailing-return-type
+                    type-id
+                      type-specifier-seq
+                        type-specifier KW_INT:int
+                compound-statement
+                  return-statement
+                    id-expression x
+end translation unit

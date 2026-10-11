@@ -1,0 +1,1 @@
+../../../pa21/tests/general/200-synthesized-copy-move-construction-prefix.t

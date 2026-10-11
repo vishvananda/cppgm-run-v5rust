@@ -1,0 +1,62 @@
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $node : obj<1x1>
+  slot $owner : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $node
+    %t2 = addr $owner
+    %t3 = addr $node
+    call void @Owner_Node___Owner(%t2, %t3)
+    %t4 = addr $owner
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = cmp eq ptr %t6, 0
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @Owner_Node___Owner(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN5OwnerI4NodeEC1EPS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = convert sext i64 i32 8
+    %t2 = call ptr @operatornew(%t1)
+    %t3 = load typed ptr $p
+    call void @Control_Node___Control(%t2, %t3)
+    %t4 = index i8 %t2, 0
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed ptr %t4, %t6
+    return void
+}
+function @Control_Node___Control(%this : ptr [object_bytes=8], %p : ptr) -> void [unwind=no, binding=weak, object=_ZN7ControlI4NodeEC1EPS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN5OwnerI4NodeEC2EPS0_ = @Owner_Node___Owner
+alias object _ZN7ControlI4NodeEC2EPS0_ = @Control_Node___Control

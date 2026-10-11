@@ -1,0 +1,13 @@
+declare function @__cppgm_builtin_memset(%arg0 : ptr, %arg1 : i32, %arg2 : i64) -> ptr [unwind=no, binding=strong, object=cppgm_builtin_memset]
+
+function @construct_at_end(%buffer : ptr, %n : i64, %value : ptr) -> void {
+  block ^entry:
+    %end_slot = index i8 %buffer, 8
+    %end = load ptr %end_slot
+    %new_end = index i8 %end, %n
+    %t4 = load u8 %value
+    %t5 = convert zext i32 u8 %t4
+    %t6 = call ptr @__cppgm_builtin_memset(%end, %t5, %n)
+    store ptr %new_end, %end_slot
+    return void
+}

@@ -1,0 +1,83 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier Node
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier value
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier low
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier high
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    declarator
+      identifier outside
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:Node
+          declarator
+            identifier node
+    compound-statement
+      return-statement
+        binary-expression OP_LOR:||
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression node
+              identifier value
+            member-expression OP_DOT:.
+              id-expression node
+              identifier low
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression node
+              identifier value
+            member-expression OP_DOT:.
+              id-expression node
+              identifier high
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_BOOL:bool
+    declarator
+      identifier inside
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:Node
+          declarator
+            identifier node
+    compound-statement
+      return-statement
+        binary-expression OP_LAND:&&
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression node
+              identifier value
+            member-expression OP_DOT:.
+              id-expression node
+              identifier low
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression node
+              identifier value
+            member-expression OP_DOT:.
+              id-expression node
+              identifier high
+end translation unit

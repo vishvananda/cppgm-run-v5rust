@@ -1,0 +1,28 @@
+# budget from 400-loop-and-eh-placement.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 117
+blocks <= 27
+count(call) <= 9
+mem <= 31
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 17 in @walk_unavoidable
+stack_size <= 64 in @walk_unavoidable
+instructions <= 28 in @walk_guarded
+stack_size <= 64 in @walk_guarded
+instructions <= 18 in @call_free_eh_load
+stack_size <= 64 in @call_free_eh_load
+instructions <= 14 in @call_crossing_eh_value
+stack_size <= 64 in @call_crossing_eh_value
+instructions <= 48 in @main
+stack_size <= 68 in @main
+
+# contract from 400-loop-and-eh-placement.ref.mir: the exception regions, calls, callee-saved registers and memory accesses the fixture requires
+count(eh_push) == 1 in @call_free_eh_load
+count(eh_pop) == 1 in @call_free_eh_load
+count(eh_push) == 1 in @call_crossing_eh_value
+count(eh_pop) == 1 in @call_crossing_eh_value
+count(call @identity) == 1 in @call_crossing_eh_value
+count(call @call_crossing_eh_value) == 1 in @main
+count(call @call_free_eh_load) == 2 in @main
+count(call @walk_guarded) == 1 in @main
+count(call @walk_unavoidable) == 1 in @main

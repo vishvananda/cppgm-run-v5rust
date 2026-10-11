@@ -1,0 +1,39 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 0
+  i32 1
+  i32 2
+  i32 3
+  i32 4
+}
+global @__constexpr_template__2 [storage=readonly, binding=internal] = {
+  i32 5
+  i32 6
+  i32 7
+  i32 8
+  i32 9
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<20x4>
+  slot $b : obj<20x4>
+
+  block ^entry:
+    %t1 = addr $a
+    copyobj 20x4 @__constexpr_template__1, %t1
+    %t2 = addr $b
+    copyobj 20x4 @__constexpr_template__2, %t2
+    %t3 = addr $a
+    %t4 = addr $b
+    %t5 = call i32 @guarded_extent(%t3, %t4)
+    %t6 = binary sub nowrap i32 %t5, 5
+    return i32 %t6
+}
+function @guarded_extent(%__param0 : ptr [pass=by_address, object_bytes=20], %__param1 : ptr [pass=by_address, object_bytes=20]) -> i32 [binding=weak, object=_Z14guarded_extentIiLj5ETnN9enable_ifIXsr6is_intIT_EE5valueEiE4typeELi0EEiRAT0__S1_S5_] {
+  slot $__param0 : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    store typed ptr %__param1, $__param1
+    return i32 5
+}

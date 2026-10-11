@@ -1,0 +1,12 @@
+declare function @i() -> ptr [binding=strong, object=_Z1iv]
+declare function @a() -> ptr [binding=strong, object=_Z1av]
+
+function @g() -> void [binding=strong, object=_Z1gv] {
+  block ^entry:
+    %t1 = call ptr @i()
+    %t2 = call ptr @a()
+    %t3 = load typed ptr %t1
+    %t4 = load typed ptr %t3
+    call void %t4(%t1, %t2) as (%arg0 : ptr [object_bytes=8], %arg1 : ptr [pass=by_address, object_bytes=8]) -> void
+    return void
+}

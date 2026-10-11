@@ -1,0 +1,90 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @src24
+  storage data
+  item i64 11
+  item i64 22
+  item i64 33
+
+global @dst24
+  storage data
+  item zero 24
+
+global @src7
+  storage data
+  item i32 100
+  item i16 200
+  item i8 50
+
+global @dst7
+  storage data
+  item zero 8
+
+global @src33
+  storage data
+  item i64 1
+  item i64 2
+  item i64 3
+  item i64 4
+  item i8 5
+
+global @dst33
+  storage data
+  item zero 33
+
+function @copy_all
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    copy_bytes 24x8, @dst24, @src24
+    copy_bytes 7x1, @dst7, @src7
+    copy_bytes 33x1, @dst33, @src33
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    call @copy_all [args=()]
+    load.i64 r8, @dst24
+    load.i64 r9, @dst24+8
+    load.i64 rdi, @dst24+16
+    add r8, r9
+    add r8, rdi
+    load.u32 r9, @dst7
+    load.u16 rdi, @dst7+4
+    load.u8 rsi, @dst7+6
+    add r8, r9
+    add r8, rdi
+    add r8, rsi
+    load.i64 r9, @dst33
+    load.i64 rdi, @dst33+8
+    load.i64 rsi, @dst33+16
+    load.i64 rdx, @dst33+24
+    load.u8 rcx, @dst33+32
+    add r8, r9
+    add r8, rdi
+    add r8, rsi
+    add r8, rdx
+    add r8, rcx
+    cmp.i64 r8, 431
+    setne r8
+    movzx r8, r8
+    ret r8

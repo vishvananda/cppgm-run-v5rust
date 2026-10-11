@@ -1,0 +1,17 @@
+function @callee(%x : i32) -> i32 {
+  block ^entry:
+    %t2 = cmp eq i32 %x, 0
+    return i32 %t2
+}
+function @caller(%x : i32) -> i32 {
+  block ^entry:
+    %t2_1 = cmp eq i32 %x, 0
+    %t2 = copy i32 %t2_1
+    branch %t2, ^then, ^else
+
+  block ^then:
+    return i32 1
+
+  block ^else:
+    return i32 0
+}

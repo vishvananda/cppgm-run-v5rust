@@ -1,0 +1,27 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $b : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $b
+    %t2 = addr $b
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i32 [projection=array_element] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $b
+    %t6 = call i32 @Box__operator__(%t5, 0)
+    return i32 %t6
+}
+function @Box__operator__(%this : ptr [object_bytes=4], %i : i32) -> i32 [binding=weak, object=_ZNK3BoxixEi, inline_hint=yes] {
+  slot $this : ptr
+  slot $i : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %i, $i
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 $i
+    %t4 = index i32 [projection=array_element] %t2, %t3
+    %t5 = load typed i32 %t4
+    return i32 %t5
+}

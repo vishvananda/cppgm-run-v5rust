@@ -1,0 +1,17 @@
+extern void may_throw();
+
+int destroyed = 0;
+
+struct Guard
+{
+  ~Guard()
+  {
+    ++destroyed;
+  }
+};
+
+void wrapper()
+{
+  Guard g;
+  may_throw();
+}

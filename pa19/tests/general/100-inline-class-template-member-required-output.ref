@@ -1,0 +1,78 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : obj<1x1>
+  slot $result : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $a
+    %t2 = addr $result
+    %t3 = addr $a
+    %t4 = convert sext i64 i32 1
+    %t5 = call obj<16x8> @allocator_traits___cppgm_class_template_identity_1___allocate_at_least(%t3, %t4)
+    copyobj 16x8 %t5, %t2
+    %t6 = addr $result
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed i64 %t7
+    %t9 = convert sext i64 i32 1
+    %t10 = cmp eq i64 %t8, %t9
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @allocator_traits___cppgm_class_template_identity_1___allocate_at_least(%a : ptr [pass=by_address, object_bytes=1], %n : i64) -> obj<16x8> [binding=weak, object=_ZN16allocator_traitsI9allocatorIiEE17allocate_at_leastERS1_m, inline_hint=yes] {
+  slot $a : ptr
+  slot $n : i64
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %a, $a
+    store typed i64 %n, $n
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $a
+    %t3 = load typed i64 $n
+    %t4 = call obj<16x8> @allocator_int___allocate_at_least(%t2, %t3)
+    copyobj 16x8 %t4, %t1
+    return obj<16x8> $retobj__1
+}
+function @allocator_int___allocate_at_least(%this : ptr [object_bytes=1], %n : i64) -> obj<16x8> [binding=weak, object=_ZNK9allocatorIiE17allocate_at_leastEm, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i64
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i64 %n, $n
+    %t1 = addr $retobj__1
+    %t2 = load typed i64 $n
+    call void @allocation_result__allocation_result__aggregate(%t1, 0, %t2)
+    return obj<16x8> $retobj__1
+}
+function @allocation_result__allocation_result__aggregate(%this : ptr [object_bytes=16], %ptr : ptr, %count : i64) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $ptr : ptr
+  slot $count : i64
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %ptr, $ptr
+    store typed i64 %count, $count
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i64 $count
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i64 %t4, %t6
+    return void
+}

@@ -1,0 +1,5 @@
+// N3485 5.2.7p8: a dynamic_cast downcast through a private base fails at run
+// time and yields a null pointer
+struct B { virtual ~B() {} };
+struct PD : private B { B* self() { return this; } };
+int main() { PD d; B* p = d.self(); return dynamic_cast<PD*>(p) == 0 ? 0 : 1; }

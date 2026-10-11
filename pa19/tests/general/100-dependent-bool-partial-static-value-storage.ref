@@ -1,0 +1,31 @@
+global @boost__integral_constant_unsignedint_4___value : u32 [storage=readonly, binding=weak, object=_ZN5boost17integral_constantIjLj4EE5valueE] = 4
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @align_value(0)
+    %t2 = const i64 4
+    %t3 = convert sext i64 i32 %t1
+    %t4 = cmp eq i64 %t3, %t2
+    branch %t4, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t5 = load typed i32 $cond__1
+    return i32 %t5
+}
+function @align_value(%__param0 : i32) -> i32 [binding=weak, object=_Z11align_valueIiEiT_] {
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0, $__param0
+    return i32 4
+}

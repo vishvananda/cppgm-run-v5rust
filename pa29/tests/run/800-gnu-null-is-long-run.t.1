@@ -1,0 +1,7 @@
+// GNU __null (NULL of <stddef.h>, PA29 hosted literal forms): an integer null
+// pointer constant of type long on LP64, so pick(__null) selects pick(long) as
+// with g++/clang; expect exit 0
+static int pick(int) { return 1; }
+static int pick(long) { return 0; }
+static int pick(void*) { return 3; }
+int main() { return pick(__null); }

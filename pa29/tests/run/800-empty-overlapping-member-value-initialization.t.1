@@ -1,0 +1,55 @@
+struct Empty {};
+
+struct Member {
+  int value;
+  [[no_unique_address]] Empty empty;
+  Member() : value(0x12345678), empty() {}
+};
+
+struct MemberBraces {
+  int value;
+  [[no_unique_address]] Empty empty;
+  MemberBraces() : value(0x12345678), empty{} {}
+};
+
+struct MemberTemporary {
+  int value;
+  [[no_unique_address]] Empty empty;
+  MemberTemporary() : value(0x12345678), empty(Empty()) {}
+};
+
+struct MemberConditional {
+  int value;
+  [[no_unique_address]] Empty empty;
+  MemberConditional(bool which)
+      : value(0x12345678), empty(which ? Empty() : Empty()) {}
+};
+
+struct Aggregate {
+  int value;
+  [[no_unique_address]] Empty empty;
+};
+
+template<class E>
+struct Anonymous {
+  struct {
+    int value;
+    [[no_unique_address]] E empty;
+  };
+  template<bool = true>
+  Anonymous(int n) : value(n), empty() {}
+};
+
+int main() {
+  Member a;
+  MemberBraces b;
+  MemberTemporary c;
+  Aggregate d{0x12345678, {}};
+  Aggregate e{0x12345678, Empty()};
+  Anonymous<Empty> f(0x12345678);
+  MemberConditional g(true), h(false);
+  return a.value != 0x12345678 || b.value != 0x12345678 ||
+    c.value != 0x12345678 || d.value != 0x12345678 ||
+    e.value != 0x12345678 || f.value != 0x12345678 ||
+    g.value != 0x12345678 || h.value != 0x12345678;
+}

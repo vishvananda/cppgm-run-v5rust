@@ -1,0 +1,6 @@
+// N3485 16.8p4: implementation-predefined macro names other than the listed
+// ones begin with _Uppercase or __; `unix` and `linux` must not be predefined
+// (g++ -std=c++11 does not); expect exit 0
+int unix = 3;
+int linux = 4;
+int main() { return unix + linux == 7 ? 0 : 1; }

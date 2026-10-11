@@ -1,0 +1,224 @@
+global @constructions : i32 [binding=strong] = zero
+global @destructions : i32 [binding=strong] = zero
+global @invalid_destructions : i32 [binding=strong] = zero
+
+function @read(%object : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z4readRK4Left] {
+  slot $object : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    %t1 = load typed ptr $object
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @read__ov2(%object : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z4readRK5Right] {
+  slot $object : ptr
+
+  block ^entry:
+    store typed ptr %object, $object
+    %t1 = load typed ptr $object
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : u8
+  slot $result : i32
+  slot $cond__1 : i32
+  slot $arg__2 : obj<4x4>
+  slot $call__3 : i32
+  slot $arg__4 : obj<4x4>
+  slot $call__5 : i32
+  slot $lor__6 : i64
+  slot $lor__7 : i64
+  slot $lor__8 : i64
+
+  block ^entry:
+    store u8 0, $first
+    %t1 = load u8 $first
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    eh_try ^cleanup_resume_4
+    %t2 = addr $arg__2
+    call void @Left__Left(%t2)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_resume_4:
+    resume
+
+  block ^call_unwind_end_5:
+    eh_try ^cleanup_action_6
+    %t3 = call i32 @read(%t2)
+    store typed i32 %t3, $call__3
+    %t4 = load typed i32 $call__3
+    store typed i32 %t4, $cond__1
+    call void @Left___Left(%t2)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @Left___Left(%t2)
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_end_7:
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    eh_try ^cleanup_resume_4
+    %t5 = addr $arg__4
+    call void @Right__Right(%t5)
+    eh_end
+    eh_try ^cleanup_action_8
+    %t6 = call i32 @read__ov2(%t5)
+    store typed i32 %t6, $call__5
+    %t7 = load typed i32 $call__5
+    store typed i32 %t7, $cond__1
+    call void @Right___Right(%t5)
+    eh_end
+    jump ^call_unwind_end_9
+
+  block ^cleanup_action_8:
+    call void @Right___Right(%t5)
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_end_9:
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    store typed i32 %t8, $result
+    %t9 = load typed i32 $result
+    %t10 = cmp ne i32 %t9, 9
+    branch %t10, ^lor_short_11, ^lor_rhs_10
+
+  block ^lor_rhs_10:
+    %t11 = load typed i32 @constructions
+    %t12 = cmp ne i32 %t11, 1
+    %t13 = cmp ne i64 %t12, 0
+    store typed i64 %t13, $lor__6
+    jump ^lor_end_12
+
+  block ^lor_short_11:
+    store typed i64 1, $lor__6
+    jump ^lor_end_12
+
+  block ^lor_end_12:
+    %t14 = load typed i64 $lor__6
+    branch %t14, ^lor_short_14, ^lor_rhs_13
+
+  block ^lor_rhs_13:
+    %t15 = load typed i32 @destructions
+    %t16 = cmp ne i32 %t15, 1
+    %t17 = cmp ne i64 %t16, 0
+    store typed i64 %t17, $lor__7
+    jump ^lor_end_15
+
+  block ^lor_short_14:
+    store typed i64 1, $lor__7
+    jump ^lor_end_15
+
+  block ^lor_end_15:
+    %t18 = load typed i64 $lor__7
+    branch %t18, ^lor_short_17, ^lor_rhs_16
+
+  block ^lor_rhs_16:
+    %t19 = load typed i32 @invalid_destructions
+    %t20 = cmp ne i32 %t19, 0
+    %t21 = cmp ne i64 %t20, 0
+    store typed i64 %t21, $lor__8
+    jump ^lor_end_18
+
+  block ^lor_short_17:
+    store typed i64 1, $lor__8
+    jump ^lor_end_18
+
+  block ^lor_end_18:
+    %t22 = load typed i64 $lor__8
+    %t23 = convert trunc i32 i64 %t22
+    return i32 %t23
+}
+function @Left__Left(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4LeftC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    %t3 = load typed i32 @constructions
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @constructions
+    return void
+}
+function @Left___Left(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN4LeftD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 7
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t5 = load typed i32 @invalid_destructions
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @invalid_destructions
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = load typed i32 @destructions
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @destructions
+    return void
+}
+function @Right__Right(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5RightC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 9, %t2
+    %t3 = load typed i32 @constructions
+    %t4 = binary add nowrap i32 %t3, 1
+    store typed i32 %t4, @constructions
+    return void
+}
+function @Right___Right(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5RightD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp ne i32 %t3, 9
+    branch %t4, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t5 = load typed i32 @invalid_destructions
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @invalid_destructions
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t7 = load typed i32 @destructions
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, @destructions
+    return void
+}
+alias object _ZN4LeftC2Ev = @Left__Left
+alias object _ZN4LeftD2Ev = @Left___Left
+alias object _ZN5RightC2Ev = @Right__Right
+alias object _ZN5RightD2Ev = @Right___Right

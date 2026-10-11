@@ -1,0 +1,12 @@
+function @take_move_box(%box : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z13take_move_box7MoveBox] {
+  slot $box : obj<4x4>
+
+  block ^entry:
+    return i32 1
+}
+function @take_copy_box(%box : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z13take_copy_box7CopyBox] {
+  slot $box : obj<4x4>
+
+  block ^entry:
+    return i32 2
+}

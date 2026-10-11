@@ -1,0 +1,28 @@
+# PA35 acceptance gates (read by scripts/check.pl; see README.md), in three
+# groups checked in order: correctness, then compiler speed, then codegen.
+#
+# A gate with `from` and `step` also has a progress ladder (scripts/progress.pl,
+# `make -C pa35 test-progress`): rungs at limit x (1 + step)^k up to `from`;
+# a measurement passes every rung at or above it, so each rung is one step of
+# measured progress toward the limit and the last rung is the gate itself.
+# Steps follow measurement noise: 0.5% for the workload's instruction and
+# cache-simulation counts, 1% for the kernels and text size, 2% for memory,
+# 5% for timed runs.
+# group        name                      metric                     op  limit  from  step
+correctness    workload-compiles         workload-compiles          ==  1
+correctness    behavior                  behavior-failures          ==  0
+correctness    generated                 generated-failures         ==  0
+speed          compile-O0-time           time-O0                    <=  0.25   4.0   0.05
+speed          compile-O3-time           time-O3                    <=  0.25   4.0   0.05
+speed          compile-O3-memory         rss-O3                     <=  1.00   4.0   0.02
+speed          compile-scaling           scaling                    <=  3.00   8.0   0.05
+codegen        workload-identical        identical                  ==  1
+codegen        codegen-O0-instructions   O0-own                     <=  1.08   3.0   0.005
+codegen        codegen-O3-instructions   O3-own                     <=  1.12   3.0   0.005
+codegen        codegen-O0-cycle-proxy    O0-proxy                   <=  1.09   3.0   0.005
+codegen        codegen-O3-cycle-proxy    O3-proxy                   <=  1.10   3.0   0.005
+codegen        text-size                 text                       <=  1.15   2.0   0.01
+codegen        kernel-accessor-distinct  kernel-accessor-distinct   <=  1.30   3.0   0.01
+codegen        kernel-accessor-alias     kernel-accessor-alias      <=  1.30   3.0   0.01
+codegen        kernel-lookup             kernel-lookup              <=  1.30   3.0   0.01
+codegen        kernel-exceptions         kernel-exceptions          <=  1.30   3.0   0.01

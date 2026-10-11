@@ -1,0 +1,9 @@
+#include <string>
+#include <vector>
+
+int main()
+{
+  std::vector<std::string> values;
+  values.push_back("a");
+  return values.size() == 1 && values[0].size() == 1 && values[0][0] == 'a' ? 0 : 1;
+}

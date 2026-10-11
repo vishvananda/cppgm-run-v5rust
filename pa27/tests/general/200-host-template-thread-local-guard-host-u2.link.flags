@@ -1,0 +1,2 @@
+__LIBDIR__/libu2.o
+-pthread

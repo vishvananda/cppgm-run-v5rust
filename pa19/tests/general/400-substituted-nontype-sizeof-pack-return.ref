@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @size_check()
+    return i32 %t1
+}
+function @size_check() -> i32 [binding=weak, object=_Z10size_checkILm0EJiEEN9bool_typeIXgeT_sZT0_EE4typeEv] {
+  block ^entry:
+    return i32 0
+}

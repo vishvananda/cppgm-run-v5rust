@@ -1,0 +1,4 @@
+preproc 1
+sof tests/directives/500-alt.t
+identifier baz
+eof

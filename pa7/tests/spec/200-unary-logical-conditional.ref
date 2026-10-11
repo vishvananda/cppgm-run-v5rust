@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition f function of () returning int
+    compound-statement
+      simple-declaration
+        variable x int
+          literal prvalue int 0
+      simple-declaration
+        variable y int
+          literal prvalue int 1
+      simple-declaration
+        variable b bool
+          binary-expression prvalue bool OP_LOR:||
+            unary-expression prvalue bool OP_LNOT:!
+              id-expression lvalue int x
+            binary-expression prvalue bool OP_LAND:&&
+              id-expression lvalue int y
+              literal prvalue bool KW_TRUE:true
+      expression-statement
+        unary-expression lvalue int OP_INC:++
+          id-expression lvalue int x
+      expression-statement
+        postfix-expression prvalue int OP_INC:++
+          id-expression lvalue int y
+      return-statement
+        conditional-expression lvalue int
+          id-expression lvalue bool b
+          id-expression lvalue int x
+          id-expression lvalue int y
+end translation unit

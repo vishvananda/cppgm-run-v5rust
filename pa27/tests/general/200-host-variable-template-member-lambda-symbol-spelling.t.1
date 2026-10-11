@@ -1,0 +1,14 @@
+#include "200-host-variable-template-member-lambda-symbol-spelling.helper.h"
+
+int host_next();
+int host_count();
+
+int main()
+{
+  // The specialization's pointer, and so the closure and its static, is
+  // one with the host unit's.
+  if (next_id<int>() != 1 || host_next() != 2 || next_id<int>() != 3) return 1;
+  if (next_id<char>() != 1) return 2;
+  table::count<int> = 20;
+  return host_count() == 21 && table::count<int> == 21 ? 0 : 3;
+}

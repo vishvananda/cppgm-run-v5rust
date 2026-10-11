@@ -1,0 +1,3 @@
+weak_symbol 1 _ZThn16_N7wrapperI8left_oneED0Ev
+weak_symbol 1 _ZThn16_N7wrapperI8left_twoED0Ev
+absent_defined_symbol_substring 1 _ZThn16_N7wrapperIT_ED0Ev

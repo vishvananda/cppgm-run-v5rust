@@ -1,0 +1,9 @@
+# The counted loops of at most four passes are fully unrolled: each becomes
+# straight-line code or a return (a rolled loop keeps its phi, test, branch
+# and step).  The loops the course solution keeps rolled are not bounded
+# here; the regression lane pins them.
+instructions <= 8 in @unroll_four
+instructions <= 4 in @unroll_decrement
+instructions <= 4 in @unroll_inverted_exit
+instructions <= 4 in @unroll_unsigned
+instructions <= 4 in @unroll_zero_trip

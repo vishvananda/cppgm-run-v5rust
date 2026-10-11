@@ -1,0 +1,32 @@
+// N3485 6.7p2, 6.7p3, 3.6.2p2: a block-scope static whose initializer is a
+// constant expression is constant-initialized before its block is entered,
+// in a function template specialization as in an ordinary function.
+int manager_call() { return 10; }
+int invoker_call() { return 1; }
+struct table { int (*manager)(); int (*invoker)(); };
+int plain(bool skip)
+{
+  if (skip) goto after;
+  {
+    static const table stored = { &manager_call, &invoker_call };
+after:
+    return stored.manager != 0 ? stored.manager() + stored.invoker() : 0;
+  }
+}
+template<class T> struct manager { static int call() { return 20; } };
+template<class T> int specialized(bool skip)
+{
+  if (skip) goto after;
+  {
+    static const table stored = { &manager<T>::call, &invoker_call };
+after:
+    return stored.manager != 0 ? stored.manager() + stored.invoker() : 0;
+  }
+}
+int main()
+{
+  int result = 0;
+  if (plain(true) != 11) result |= 1;
+  if (specialized<int>(true) != 21) result |= 2;
+  return result;
+}

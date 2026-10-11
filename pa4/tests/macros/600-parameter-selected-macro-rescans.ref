@@ -1,0 +1,4 @@
+preproc 1
+sof tests/macros/600-parameter-selected-macro-rescans.t
+identifier REPEAT_1
+eof

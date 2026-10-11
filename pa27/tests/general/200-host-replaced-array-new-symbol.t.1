@@ -1,0 +1,9 @@
+// N3485 17.6.4.6p2-3/18.6.1.2 + Itanium mangling: a program's replacement
+// operator new[]/delete[] (this TU) is the global _Znam/_ZdaPv used by every
+// TU's new[]; expect exit 0
+static int news, dels;
+alignas(16) static char heap[256];
+void* operator new[](unsigned long) { ++news; return heap; }
+void operator delete[](void*) noexcept { ++dels; }
+void other();
+int main() { other(); return news == 1 && dels == 1 ? 0 : 1; }

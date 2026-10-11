@@ -1,0 +1,5 @@
+function @f() -> i64 {
+  block ^entry:
+    %a = const f64 snan
+    return i64 0
+}

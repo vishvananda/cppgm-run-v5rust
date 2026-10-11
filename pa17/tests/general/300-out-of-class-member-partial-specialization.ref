@@ -1,0 +1,6 @@
+declare global @outer__inner_int_int_int___value : i32 [binding=weak, object=_ZN5outer5innerIiiiE5valueE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

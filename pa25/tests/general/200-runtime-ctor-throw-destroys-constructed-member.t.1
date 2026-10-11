@@ -1,0 +1,32 @@
+int members;
+
+struct Member {
+  Member()
+  {
+    ++members;
+  }
+
+  ~Member()
+  {
+    --members;
+  }
+};
+
+struct B {
+  Member m;
+
+  B()
+  {
+    throw 1;
+  }
+};
+
+int main()
+{
+  try {
+    B b;
+  }
+  catch(...) {
+  }
+  return members;
+}

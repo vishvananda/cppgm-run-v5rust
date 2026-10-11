@@ -1,0 +1,17 @@
+template<class T>
+__attribute__((noinline)) inline void touch_noop(T * p)
+{
+}
+
+int global_value = 4;
+
+int use_noop(int * p)
+{
+  touch_noop(p);
+  return *p + 1;
+}
+
+int main()
+{
+  return use_noop(&global_value) == 5 ? 0 : 1;
+}

@@ -1,0 +1,177 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<1x1>
+  slot $direct : obj<4x4>
+  slot $direct_list : obj<4x4>
+  slot $copy_list : obj<4x4>
+  slot $producer : obj<1x1>
+  slot $converted : obj<4x4>
+  slot $class_direct_list : obj<4x4>
+  slot $class_copy_list : obj<4x4>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+  slot $land__6 : i64
+
+  block ^entry:
+    %t1 = addr $source
+    %t2 = addr $direct
+    %t3 = addr $source
+    %t4 = call i32 @X__operatorint(%t3)
+    call void @A__A(%t2, %t4)
+    %t5 = addr $direct_list
+    %t6 = addr $source
+    %t7 = call i32 @X__operatorint(%t6)
+    call void @A__A(%t5, %t7)
+    %t8 = addr $copy_list
+    %t9 = addr $source
+    %t10 = call i32 @X__operatorint(%t9)
+    call void @A__A(%t8, %t10)
+    %t11 = addr $producer
+    %t12 = addr $converted
+    %t13 = addr $producer
+    %t14 = call obj<4x4> @Y__operatorA(%t13)
+    copyobj 4x4 %t14, %t12
+    %t15 = addr $class_direct_list
+    %t16 = addr $producer
+    %t17 = call obj<4x4> @Y__operatorA(%t16)
+    copyobj 4x4 %t17, %t15
+    %t18 = addr $class_copy_list
+    %t19 = addr $producer
+    %t20 = call obj<4x4> @Y__operatorA(%t19)
+    copyobj 4x4 %t20, %t18
+    %t21 = addr $direct
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load typed i32 %t22
+    %t24 = cmp eq i32 %t23, 7
+    branch %t24, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t25 = addr $direct_list
+    %t26 = index i8 [projection=field] %t25, 0
+    %t27 = load typed i32 %t26
+    %t28 = cmp eq i32 %t27, 7
+    %t29 = cmp ne i64 %t28, 0
+    store typed i64 %t29, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t30 = load typed i64 $land__2
+    branch %t30, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t31 = addr $copy_list
+    %t32 = index i8 [projection=field] %t31, 0
+    %t33 = load typed i32 %t32
+    %t34 = cmp eq i32 %t33, 7
+    %t35 = cmp ne i64 %t34, 0
+    store typed i64 %t35, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t36 = load typed i64 $land__3
+    branch %t36, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t37 = addr $converted
+    %t38 = index i8 [projection=field] %t37, 0
+    %t39 = load typed i32 %t38
+    %t40 = cmp eq i32 %t39, 9
+    %t41 = cmp ne i64 %t40, 0
+    store typed i64 %t41, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t42 = load typed i64 $land__4
+    branch %t42, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t43 = addr $class_direct_list
+    %t44 = index i8 [projection=field] %t43, 0
+    %t45 = load typed i32 %t44
+    %t46 = cmp eq i32 %t45, 9
+    %t47 = cmp ne i64 %t46, 0
+    store typed i64 %t47, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t48 = load typed i64 $land__5
+    branch %t48, ^land_rhs_16, ^land_short_17
+
+  block ^land_rhs_16:
+    %t49 = addr $class_copy_list
+    %t50 = index i8 [projection=field] %t49, 0
+    %t51 = load typed i32 %t50
+    %t52 = cmp eq i32 %t51, 9
+    %t53 = cmp ne i64 %t52, 0
+    store typed i64 %t53, $land__6
+    jump ^land_end_18
+
+  block ^land_short_17:
+    store typed i64 0, $land__6
+    jump ^land_end_18
+
+  block ^land_end_18:
+    %t54 = load typed i64 $land__6
+    branch %t54, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t55 = load typed i32 $cond__1
+    return i32 %t55
+}
+function @X__operatorint(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK1XcviEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 7
+}
+function @A__A(%this : ptr [object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN1AC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @Y__operatorA(%this : ptr [object_bytes=1]) -> obj<4x4> [binding=weak, object=_ZNK1Ycv1AEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    call void @A__A(%t1, 9)
+    return obj<4x4> $retobj__1
+}
+alias object _ZN1AC2Ei = @A__A

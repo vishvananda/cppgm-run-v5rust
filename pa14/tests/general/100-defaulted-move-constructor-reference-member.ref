@@ -1,0 +1,60 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $source : obj<16x8>
+  slot $moved : obj<16x8>
+
+  block ^entry:
+    store typed i32 7, $value
+    %t1 = addr $source
+    %t2 = addr $value
+    %t3 = addr $value
+    call void @RefPair_int___RefPair(%t1, %t2, %t3)
+    %t4 = addr $moved
+    %t5 = addr $source
+    call void @RefPair_int___RefPair__ov2(%t4, %t5)
+    %t6 = addr $moved
+    %t7 = index i8 [projection=field] %t6, 8
+    %t8 = load typed ptr %t7
+    %t9 = load typed i32 %t8
+    %t10 = binary sub nowrap i32 %t9, 7
+    return i32 %t10
+}
+function @RefPair_int___RefPair(%this : ptr [object_bytes=16], %first_value : ptr, %second_value : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN7RefPairIiEC1EPiRi, inline_hint=yes] {
+  slot $this : ptr
+  slot $first_value : ptr
+  slot $second_value : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %first_value, $first_value
+    store typed ptr %second_value, $second_value
+    %t1 = load typed ptr $first_value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed ptr $second_value
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed ptr %t4, %t6
+    return void
+}
+function @RefPair_int___RefPair__ov2(%this : ptr [alias=noalias, object_bytes=16], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN7RefPairIiEC1EOS0_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $__param1
+    copyobj 8x8 %t2, %t1
+    %t3 = load typed ptr $__param1
+    %t4 = index i8 [projection=field] %t3, 8
+    %t5 = load typed ptr %t4
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed ptr %t5, %t7
+    return void
+}
+alias object _ZN7RefPairIiEC2EPiRi = @RefPair_int___RefPair
+alias object _ZN7RefPairIiEC2EOS0_ = @RefPair_int___RefPair__ov2

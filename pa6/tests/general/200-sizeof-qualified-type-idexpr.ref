@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable arr array of 4 int
+    scope namespace N
+      type CY struct CY
+      scope class CY
+        type EY enum class EY
+        scope enum EY
+          enumerator A enum class EY 1
+end translation unit

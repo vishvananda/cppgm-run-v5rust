@@ -1,0 +1,27 @@
+declare function @host_scale(%p : obj<16x8> [classes=sse_integer], %k : f64) -> obj<16x8> [result_classes=sse_integer]
+declare function @host_pair(%p : obj<12x4> [classes=sse_sse]) -> f64
+declare function @host_tag(%t : obj<1x1> [classes=none], %x : i32) -> i32
+declare function @host_wide(%w : obj<16x16> [classes=memory]) -> f64
+
+global @hook_value : i32 [binding=weak, replaceable=yes] = 3
+
+function @hook() -> i32 [binding=weak, replaceable=yes] {
+  block ^entry:
+    return i32 1
+}
+function @swap(%v : obj<16x8> [classes=sse_sse]) -> obj<16x8> [result_classes=sse_sse] {
+  block ^entry:
+    return obj<16x8> %v
+}
+function @aligned(%a : obj<16x16> [classes=sse_none]) -> obj<8x4> [result_classes=sse] {
+  slot $r : obj<8x4>
+
+  block ^entry:
+    zeroinit 8x4 $r
+    return obj<8x4> $r
+}
+function @call_through(%fp : ptr, %v : obj<16x8> [classes=integer_sse]) -> obj<16x8> [result_classes=integer_sse] {
+  block ^entry:
+    %r = call obj<16x8> %fp(%v) as (%a0 : obj<16x8> [classes=integer_sse]) -> obj<16x8> [result_classes=integer_sse]
+    return obj<16x8> %r
+}

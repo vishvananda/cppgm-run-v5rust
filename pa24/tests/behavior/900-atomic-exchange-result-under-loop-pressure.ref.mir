@@ -1,0 +1,68 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @g
+  storage scalar i64
+  init i64 0
+
+function @pressure
+  abi
+    param %seed -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov r8, rdi
+    add r8, 1
+    mov r9, rdi
+    add r9, 2
+    mov rsi, rdi
+    add rsi, 3
+    mov rdx, rdi
+    add rdx, 4
+    mov rcx, rdi
+    add rcx, 5
+    jmp ^exchange
+
+  block ^exchange
+    mov rax, rdi
+    add rax, 6
+    mov rbx, rax
+    xchg.i64 @g, rbx
+    cmp.i64 rbx, 0
+    jne ^exchange
+    jmp ^done
+
+  block ^done
+    add r8, r9
+    add rsi, rdx
+    add r8, rsi
+    add r8, rcx
+    ret r8
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, 10
+    call @pressure [args=(rdi)]
+    mov rdx, 65
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

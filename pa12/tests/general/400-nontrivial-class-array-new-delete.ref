@@ -1,0 +1,248 @@
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+declare function @operatordelete__(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete_array]
+
+global @constructed : i32 [binding=internal, object=_ZL11constructed] = zero
+global @destroyed : i32 [binding=internal, object=_ZL9destroyed] = zero
+global @fail : i32 [binding=internal, object=_ZL4fail] = zero
+global @expected : i32 [binding=internal, object=_ZL8expected] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $items : ptr
+  slot $array_new_index__1 : i64
+  slot $array_dtor_index__2 : i64
+  slot $ok : i32
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $array_delete_index__5 : i64
+  slot $cond__6 : i32
+  slot $land__7 : i64
+  slot $land__8 : i64
+  slot $land__9 : i64
+
+  block ^entry:
+    %t1 = call ptr @operatornew__(20)
+    %t2 = index i8 %t1, 8
+    %t3 = const i64 3
+    store typed i64 %t3, %t1
+    %t4 = const i64 3
+    store typed i64 0, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_cond_1:
+    %t5 = load typed i64 $array_new_index__1
+    %t6 = cmp ult i64 %t5, %t4
+    branch %t6, ^array_new_ctor_body_2, ^array_new_ctor_end_3
+
+  block ^array_new_ctor_body_2:
+    %t7 = binary mul i64 %t5, 4
+    %t8 = index i8 %t2, %t7
+    eh_try ^array_new_ctor_cleanup_4
+    call void @Item__Item(%t8)
+    eh_end
+    %t9 = binary add i64 %t5, 1
+    store typed i64 %t9, $array_new_index__1
+    jump ^array_new_ctor_cond_1
+
+  block ^array_new_ctor_end_3:
+    jump ^array_new_ctor_cont_5
+
+  block ^array_new_ctor_cleanup_4:
+    %t10 = load typed i64 $array_new_index__1
+    store typed i64 %t10, $array_dtor_index__2
+    jump ^array_dtor_cond_6
+
+  block ^array_dtor_cond_6:
+    %t11 = load typed i64 $array_dtor_index__2
+    %t12 = cmp ne i64 %t11, 0
+    branch %t12, ^array_dtor_body_7, ^array_dtor_end_8
+
+  block ^array_dtor_body_7:
+    %t13 = binary sub i64 %t11, 1
+    store typed i64 %t13, $array_dtor_index__2
+    %t14 = binary mul i64 %t13, 4
+    %t15 = index i8 %t2, %t14
+    call void @Item___Item(%t15)
+    jump ^array_dtor_cond_6
+
+  block ^array_dtor_end_8:
+    call void @operatordelete__(%t1)
+    resume
+
+  block ^array_new_ctor_cont_5:
+    store typed ptr %t2, $items
+    %t16 = load typed i32 @constructed
+    %t17 = cmp eq i32 %t16, 3
+    branch %t17, ^land_rhs_9, ^land_short_10
+
+  block ^land_rhs_9:
+    %t18 = load typed ptr $items
+    %t19 = binary mul i64 0, 4
+    %t20 = index i8 [projection=array_element] %t18, %t19
+    %t21 = index i8 [projection=field] %t20, 0
+    %t22 = load typed i32 %t21
+    %t23 = cmp eq i32 %t22, 1
+    %t24 = cmp ne i64 %t23, 0
+    store typed i64 %t24, $land__3
+    jump ^land_end_11
+
+  block ^land_short_10:
+    store typed i64 0, $land__3
+    jump ^land_end_11
+
+  block ^land_end_11:
+    %t25 = load typed i64 $land__3
+    branch %t25, ^land_rhs_12, ^land_short_13
+
+  block ^land_rhs_12:
+    %t26 = load typed ptr $items
+    %t27 = binary mul i64 2, 4
+    %t28 = index i8 [projection=array_element] %t26, %t27
+    %t29 = index i8 [projection=field] %t28, 0
+    %t30 = load typed i32 %t29
+    %t31 = cmp eq i32 %t30, 3
+    %t32 = cmp ne i64 %t31, 0
+    store typed i64 %t32, $land__4
+    jump ^land_end_14
+
+  block ^land_short_13:
+    store typed i64 0, $land__4
+    jump ^land_end_14
+
+  block ^land_end_14:
+    %t33 = load typed i64 $land__4
+    %t34 = convert trunc i32 i64 %t33
+    store typed i32 %t34, $ok
+    %t35 = load typed ptr $items
+    %t36 = cmp ne ptr %t35, 0
+    branch %t36, ^array_delete_nonnull_15, ^array_delete_end_16
+
+  block ^array_delete_nonnull_15:
+    %t37 = index i8 %t35, -8
+    %t38 = load typed i64 %t37
+    store typed i64 %t38, $array_delete_index__5
+    jump ^array_delete_dtor_cond_17
+
+  block ^array_delete_dtor_cond_17:
+    %t39 = load typed i64 $array_delete_index__5
+    %t40 = cmp ne i64 %t39, 0
+    branch %t40, ^array_delete_dtor_body_18, ^array_delete_dtor_end_19
+
+  block ^array_delete_dtor_body_18:
+    %t41 = binary sub i64 %t39, 1
+    store typed i64 %t41, $array_delete_index__5
+    %t42 = binary mul i64 %t41, 4
+    %t43 = index i8 %t35, %t42
+    call void @Item___Item(%t43)
+    jump ^array_delete_dtor_cond_17
+
+  block ^array_delete_dtor_end_19:
+    call void @operatordelete__(%t37)
+    jump ^array_delete_end_16
+
+  block ^array_delete_end_16:
+    %t44 = load typed i32 $ok
+    branch %t44, ^land_rhs_23, ^land_short_24
+
+  block ^land_rhs_23:
+    %t45 = load typed i32 @fail
+    %t46 = cmp eq i32 %t45, 0
+    %t47 = cmp ne i64 %t46, 0
+    store typed i64 %t47, $land__7
+    jump ^land_end_25
+
+  block ^land_short_24:
+    store typed i64 0, $land__7
+    jump ^land_end_25
+
+  block ^land_end_25:
+    %t48 = load typed i64 $land__7
+    branch %t48, ^land_rhs_26, ^land_short_27
+
+  block ^land_rhs_26:
+    %t49 = load typed i32 @destroyed
+    %t50 = cmp eq i32 %t49, 6
+    %t51 = cmp ne i64 %t50, 0
+    store typed i64 %t51, $land__8
+    jump ^land_end_28
+
+  block ^land_short_27:
+    store typed i64 0, $land__8
+    jump ^land_end_28
+
+  block ^land_end_28:
+    %t52 = load typed i64 $land__8
+    branch %t52, ^land_rhs_29, ^land_short_30
+
+  block ^land_rhs_29:
+    %t53 = load typed i32 @expected
+    %t54 = cmp eq i32 %t53, 0
+    %t55 = cmp ne i64 %t54, 0
+    store typed i64 %t55, $land__9
+    jump ^land_end_31
+
+  block ^land_short_30:
+    store typed i64 0, $land__9
+    jump ^land_end_31
+
+  block ^land_end_31:
+    %t56 = load typed i64 $land__9
+    branch %t56, ^cond_then_20, ^cond_else_21
+
+  block ^cond_then_20:
+    store typed i32 0, $cond__6
+    jump ^cond_end_22
+
+  block ^cond_else_21:
+    store typed i32 1, $cond__6
+    jump ^cond_end_22
+
+  block ^cond_end_22:
+    %t57 = load typed i32 $cond__6
+    return i32 %t57
+}
+function @Item__Item(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4ItemC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @constructed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @constructed
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 %t2, %t4
+    return void
+}
+function @Item___Item(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN4ItemD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed i32 @expected
+    %t5 = cmp ne i32 %t3, %t4
+    branch %t5, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    store typed i32 1, @fail
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t6 = load typed i32 @expected
+    %t7 = binary sub nowrap i32 %t6, 1
+    store typed i32 %t7, @expected
+    %t8 = load typed i32 @destroyed
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = binary add nowrap i32 %t8, %t11
+    store typed i32 %t12, @destroyed
+    return void
+}
+alias object _ZN4ItemC2Ev = @Item__Item
+alias object _ZN4ItemD2Ev = @Item___Item

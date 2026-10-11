@@ -1,0 +1,62 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $h : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $h
+    %t2 = addr $h
+    %t3 = call ptr @holder_int___back(%t2)
+    %t4 = addr $h
+    %t5 = call ptr @holder_int___front(%t4)
+    return i32 0
+}
+function @holder_int___back(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN6holderIiE4backEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call ptr @base_int___create(%t2, 0)
+    return ptr %t3
+}
+function @holder_int___front(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN6holderIiE5frontEv] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = call ptr @base_int___create(%t2, 0)
+    return ptr %t3
+}
+function @base_int___create(%this : ptr [object_bytes=1], %__param1 : i32) -> ptr [binding=weak, object=_ZN4baseIiE6createIiEEPiT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+  slot $g : obj<1x1>
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    %t1 = addr $g
+    call void @guard_int___guard(%t1, 0)
+    %t2 = addr $g
+    %t3 = call ptr @guard_int___get(%t2)
+    return ptr %t3
+}
+function @guard_int___guard(%this : ptr [object_bytes=1], %__param1 : i32) -> void [binding=weak, object=_ZN5guardIiEC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return void
+}
+function @guard_int___get(%this : ptr [object_bytes=1]) -> ptr [binding=weak, object=_ZN5guardIiE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return ptr 0
+}
+alias object _ZN5guardIiEC2Ei = @guard_int___guard

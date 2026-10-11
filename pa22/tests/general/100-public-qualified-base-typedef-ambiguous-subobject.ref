@@ -1,0 +1,67 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $object : obj<2x1>
+  slot $first : ptr
+  slot $second : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed i32 0, $value
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 %t3, 0
+    store typed ptr %t4, $first
+    %t5 = addr $object
+    %t6 = index i8 %t5, 1
+    %t7 = index i8 %t6, 0
+    store typed ptr %t7, $second
+    %t8 = load typed ptr $first
+    %t9 = load typed ptr $second
+    %t10 = cmp eq ptr %t8, %t9
+    branch %t10, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 2
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t11 = load typed i32 $value
+    %t12 = addr $object
+    %t13 = call i32 @outer__color(%t12)
+    %t14 = binary add nowrap i32 %t11, %t13
+    %t15 = cmp eq i32 %t14, 3
+    branch %t15, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    store typed i32 0, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    store typed i32 1, $cond__1
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t16 = load typed i32 $cond__1
+    return i32 %t16
+}
+function @outer__color(%this : ptr [object_bytes=2]) -> i32 [binding=weak, object=_ZN5outer5colorEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 1
+    %t3 = index i8 %t2, 0
+    %t4 = call i32 @impl__color(%t3)
+    return i32 %t4
+}
+function @impl__color(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN4impl5colorEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 3
+}

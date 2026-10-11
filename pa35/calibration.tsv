@@ -1,0 +1,63 @@
+# PA35 calibration: the course solution's value for every gate in gates.txt, built
+# as the student export's dev/Makefile builds a seed (the configuration a student's
+# gates compare), on the machine and toolchain below; written by the course's
+# release check, do not edit by hand. Each gate must clear its limit by the
+# release margin of its kind: margin = limit / value - 1. The limits do not depend on
+# this file.
+meta	date	2026-10-11T18:02:37Z
+meta	source	a68181d46bc481b2b8e4ea23677979a8ad6f173c
+meta	cpu	Intel(R) Xeon(R) CPU E5-2696 v4 @ 2.20GHz
+meta	processors	88
+meta	kernel	Linux 7.0
+meta	host compiler	g++ 15.2.0
+meta	libstdc++	__GLIBCXX__ 20260321, release 15
+meta	libc	glibc 2.43
+meta	valgrind	valgrind 3.26.0
+meta	cache simulation	I1 cache: 32768 B, 64 B, 8-way associative; D1 cache: 32768 B, 64 B, 8-way associative; LL cache: 58720256 B, 64 B, 28-way associative
+meta	generated seeds	100
+meta	build	CC_FLAGS=-std=gnu++11 -Wall -O3 (the student export's dev/Makefile)
+#
+# gate	op	limit	release margin	value	margin	status
+gate	workload-compiles	==	1	-	1	-	pass
+gate	behavior	==	0	-	0	-	pass
+gate	generated	==	0	-	0	-	pass
+gate	compile-O0-time	<=	0.25	25.0% (time)	0.1282	95.06%	pass
+gate	compile-O3-time	<=	0.25	25.0% (time)	0.1211	106.41%	pass
+gate	compile-O3-memory	<=	1.00	25.0% (memory)	0.4216	137.19%	pass
+gate	compile-scaling	<=	3.00	25.0% (time)	2.1200	41.51%	pass
+gate	workload-identical	==	1	-	1	-	pass
+gate	codegen-O0-instructions	<=	1.08	2.0% (count)	0.9665	11.75%	pass
+gate	codegen-O3-instructions	<=	1.12	2.0% (count)	1.0212	9.67%	pass
+gate	codegen-O0-cycle-proxy	<=	1.09	1.5% (proxy)	0.9733	11.99%	pass
+gate	codegen-O3-cycle-proxy	<=	1.10	1.5% (proxy)	1.0116	8.73%	pass
+gate	text-size	<=	1.15	1.0% (text)	1.0500	9.52%	pass
+gate	kernel-accessor-distinct	<=	1.30	2.0% (count)	1.0000	30.00%	pass
+gate	kernel-accessor-alias	<=	1.30	2.0% (count)	1.0000	30.00%	pass
+gate	kernel-lookup	<=	1.30	2.0% (count)	1.1917	9.09%	pass
+gate	kernel-exceptions	<=	1.30	2.0% (count)	1.2066	7.74%	pass
+#
+# measurement	seed or cppgm++	self or host	ratio
+detail	O0-own	3089260994	2985694532	0.966475
+detail	O0-total	3228692568	3117658801	0.965610
+detail	O0-calls	48630599	50629942	1.041113
+detail	O0-proxy	2713494586	2640965975.33333	0.973271
+detail	O3-own	7404798953	7561803253	1.021203
+detail	O3-total	7893245524	8080625827	1.023739
+detail	O3-calls	68252682	68760136	1.007435
+detail	O3-proxy	6626783406.33333	6703900037.33333	1.011637
+detail	text-bytes	4862102	5104466	1.049848
+detail	time-E	0.129539	0.141246	0.917116
+detail	rss-E	12084	17936	0.673729
+detail	time-O0	0.862848	6.732317	0.128165
+detail	rss-O0	210076	489076	0.429537
+detail	time-O3	2.103729	17.369598	0.121116
+detail	rss-O3	212436	503880	0.421600
+detail	scaling-functions	1.85	0.00 0.03 0.04 0.06 0.10	
+detail	scaling-macros	flat	0.00 0.01 0.02 0.05 0.09	
+detail	scaling-members	flat	0.00 0.01 0.02 0.05 0.10	
+detail	scaling-scopes	2.12	0.04 0.10 0.16 0.30 0.58	
+detail	scaling-statements	flat	0.00 0.01 0.02 0.03 0.05	
+detail	scaling-templates	flat	0.00 0.01 0.03 0.04 0.09	
+detail	scaling-worst	2.12		
+detail	behavior	behavior: 93/93 tests pass at O0 O1 O2 O3		
+detail	generated	generated: 302/302 programs pass at O0 O1 O2 O3		

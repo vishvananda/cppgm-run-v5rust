@@ -1,0 +1,9 @@
+// Itanium C++ ABI 2.5-2.6/5.1.4: a polymorphic virtual base (vtable vbase
+// offsets, VTT, D1/D2/D0) built by one compiler is usable from the other;
+// expect exit 0
+#include "200-host-virtual-base-xunit-host-u2.helper.h"
+int log = 0;
+P::~P() { log += 1; }
+int P::f() { return 1; }
+VV::~VV() { log += 10; }
+int main() { int r = check(); return r == 0 && log == 22 ? 0 : 1; }

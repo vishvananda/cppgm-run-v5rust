@@ -1,0 +1,74 @@
+function @convert(%value : u32, %exponent : i32, %first : ptr, %last : ptr) -> obj<16x8> [binding=strong, object=_Z7convertIf12traits_floatE6resultNT0_12carrier_uintEiPcS4_] {
+  slot $value : u32
+  slot $exponent : i32
+  slot $first : ptr
+  slot $last : ptr
+  slot $retobj__1 : obj<16x8>
+
+  block ^entry:
+    store typed u32 %value, $value
+    store typed i32 %exponent, $exponent
+    store typed ptr %first, $first
+    store typed ptr %last, $last
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $last
+    %t3 = load typed u32 $value
+    %t4 = convert zext i64 u32 %t3
+    %t5 = index i8 %t2, %t4
+    %t6 = load typed i32 $exponent
+    %t7 = convert sext i64 i32 %t6
+    %t8 = index i8 %t5, %t7
+    call void @result__result__aggregate(%t1, %t8, 0)
+    return obj<16x8> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $buf : obj<8x1>
+  slot $r : obj<16x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $r
+    %t2 = addr $buf
+    %t3 = addr $buf
+    %t4 = index i8 %t3, 8
+    %t5 = call obj<16x8> @convert(1, 2, %t2, %t4)
+    copyobj 16x8 %t5, %t1
+    %t6 = addr $r
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed ptr %t7
+    %t9 = addr $buf
+    %t10 = index i8 %t9, 11
+    %t11 = cmp eq ptr %t8, %t10
+    branch %t11, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @result__result__aggregate(%this : ptr [object_bytes=16], %ptr : ptr, %ec : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $ptr : ptr
+  slot $ec : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %ptr, $ptr
+    store typed i32 %ec, $ec
+    %t1 = load typed ptr $ptr
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    %t4 = load typed i32 $ec
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 8
+    store typed i32 %t4, %t6
+    return void
+}

@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $first : obj<8x8>
+  slot $last : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $value
+    %t3 = addr $first
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed ptr %t2, %t4
+    %t5 = addr $last
+    %t6 = addr $value
+    %t7 = addr $last
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed ptr %t6, %t8
+    %t9 = addr $first
+    %t10 = call ptr @pointer__operatorint_(%t9)
+    %t11 = addr $last
+    %t12 = call ptr @pointer__operatorint_(%t11)
+    %t13 = binary sub ptr %t10, %t12
+    %t14 = binary shr exact i64 %t13, 2
+    %t15 = convert trunc i32 i64 %t14
+    return i32 %t15
+}
+function @pointer__operatorint_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK7pointercvPiEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}

@@ -1,0 +1,4 @@
+function @probe(%arg : i64) -> i64 !dbg(calc.cpp, 1, 1) {
+  block ^entry:
+    return i64 %arg !dbg(calc.cpp, 11, 2)
+}

@@ -1,0 +1,21 @@
+#include <cstdio>
+
+struct HostedLocalVTableLinkSmoke
+{
+  virtual int value();
+  virtual ~HostedLocalVTableLinkSmoke();
+};
+
+int HostedLocalVTableLinkSmoke::value()
+{
+  return 7;
+}
+
+HostedLocalVTableLinkSmoke::~HostedLocalVTableLinkSmoke() {}
+
+int main()
+{
+  HostedLocalVTableLinkSmoke value;
+  std::printf("%d\n", value.value());
+  return 0;
+}

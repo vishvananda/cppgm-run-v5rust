@@ -1,0 +1,12 @@
+# budget from 500-fill-loop-kept-first-last.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 10
+blocks <= 6
+count(call) <= 4
+count(load) <= 3
+count(store) <= 3
+count(phi) <= 3
+instructions <= 10 in @fill_range
+
+# outcomes from 500-fill-loop-kept-first-last.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(store)
+none(phi)

@@ -1,0 +1,20 @@
+int c, d;
+
+struct A
+{
+  int i;
+  A() { i = ++c; }
+  A(const A&) { i = ++c; }
+  ~A() { ++d; }
+};
+
+int main()
+{
+  int catch_state_ok = 0;
+  try {
+    throw A();
+  } catch (A) {
+    catch_state_ok = (c == 2 && d == 0);
+  }
+  return !(catch_state_ok && c == 2 && d == 2);
+}

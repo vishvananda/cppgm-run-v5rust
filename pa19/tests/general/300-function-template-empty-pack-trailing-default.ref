@@ -1,0 +1,15 @@
+declare function @N__S_int___S(%arg0 : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1N1SIiEC1Ev]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $s : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $s
+    call void @N__make(%t1)
+    return i32 0
+}
+function @N__make(%ret : ptr [pass=indirect_result, object_bytes=1]) -> void [binding=weak, object=_ZN1N4makeIiJELi0EEENS_1SIT_EEDpOT0_] {
+  block ^entry:
+    call void @N__S_int___S(%ret)
+    return void
+}

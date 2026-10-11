@@ -1,0 +1,32 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : u32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed u32 7, $value
+    %t1 = load typed u32 $value
+    %t2 = call i32 @narrow(%t1)
+    %t3 = cmp eq i32 %t2, 7
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @narrow(%value : u32) -> i32 [binding=weak, object=_Z6narrowIjEN4meta9enable_ifIXltstT_Lm8EEiE4typeES2_] {
+  slot $value : u32
+
+  block ^entry:
+    store typed u32 %value, $value
+    %t1 = load typed u32 $value
+    %t2 = copy i32 %t1
+    return i32 %t2
+}

@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope template-parameters
+      type TT template-parameter TT
+      type Box struct Box
+      scope class Box
+end translation unit

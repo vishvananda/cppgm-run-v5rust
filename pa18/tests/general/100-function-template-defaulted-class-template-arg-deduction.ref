@@ -1,0 +1,40 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $arg : obj<8x8>
+  slot $cond__1 : i32
+  slot $argobj__2 : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $arg
+    %t2 = addr $arg
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 7, %t3
+    %t4 = addr $argobj__2
+    %t5 = addr $arg
+    copyobj 8x8 %t5, %t4
+    %t6 = call i64 @unwrap($argobj__2)
+    %t7 = cmp eq i64 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @unwrap(%arg : obj<8x8>) -> i64 [binding=weak, object=_Z6unwrapIlET_3BoxIS0_iE] {
+  slot $arg : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $arg
+    copyobj 8x8 %arg, %t1
+    %t2 = addr $arg
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i64 %t3
+    return i64 %t4
+}

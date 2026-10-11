@@ -1,0 +1,7 @@
+#include "200-host-imported-covariant-return-adjustment.helper.h"
+
+int main()
+{
+  CovariantBase * base = make_covariant_base();
+  return base->self() == base ? 0 : 1;
+}

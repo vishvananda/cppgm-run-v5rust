@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition n
+    function-declaration n::g function of () returning int
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee n::g function of () returning int
+end translation unit

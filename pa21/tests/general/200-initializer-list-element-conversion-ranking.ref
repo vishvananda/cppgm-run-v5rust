@@ -1,0 +1,2 @@
+declare global @IsSame_IntResult_IntResult___value : u8 [binding=weak, object=_ZN6IsSameI9IntResultS0_E5valueE]
+declare global @IsSame_UnsignedResult_UnsignedResult___value : u8 [binding=weak, object=_ZN6IsSameI14UnsignedResultS0_E5valueE]

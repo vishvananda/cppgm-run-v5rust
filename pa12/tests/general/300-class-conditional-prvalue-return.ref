@@ -1,0 +1,47 @@
+function @make(%b : u8) -> obj<4x4> [binding=strong, object=_Z4makeb] {
+  slot $b : u8
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    store u8 %b, $b
+    %t1 = addr $retobj__1
+    %t2 = load u8 $b
+    branch %t2, ^condobj_then_1, ^condobj_else_2
+
+  block ^condobj_then_1:
+    call void @S__S(%t1, 1)
+    jump ^condobj_end_3
+
+  block ^condobj_else_2:
+    call void @S__S(%t1, 2)
+    jump ^condobj_end_3
+
+  block ^condobj_end_3:
+    return obj<4x4> $retobj__1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $tmpobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $tmpobj__1
+    %t2 = call obj<4x4> @make(1)
+    copyobj 4x4 %t2, %t1
+    %t3 = index i8 [projection=field] %t1, 0
+    %t4 = load typed i32 %t3
+    %t5 = binary sub nowrap i32 %t4, 1
+    return i32 %t5
+}
+function @S__S(%this : ptr [object_bytes=4], %v : i32) -> void [binding=weak, object=_ZN1SC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $v : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %v, $v
+    %t1 = load typed i32 $v
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN1SC2Ei = @S__S

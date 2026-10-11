@@ -1,0 +1,10 @@
+function @select_address(%choose : i64) -> i64 [no_inline=yes] {
+  block ^entry:
+    %t1 = select i64 %choose, 11, 22
+    return i64 %t1
+}
+function @select_partial_address(%choose : i64) -> i64 [no_inline=yes] {
+  block ^entry:
+    %t1 = select i64 %choose, 33, 0
+    return i64 %t1
+}

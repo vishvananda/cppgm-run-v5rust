@@ -1,0 +1,110 @@
+function @make(%ret : ptr [pass=indirect_result, object_bytes=4]) -> void [binding=strong, object=_Z4makev] {
+  block ^entry:
+    call void @Outer__Outer(%ret)
+    %t1 = index i8 [projection=field] %ret, 0
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $target : obj<4x4>
+  slot $arg__1 : obj<4x4>
+  slot $cond__2 : i32
+
+  block ^entry:
+    %t1 = addr $target
+    call void @Outer__Outer(%t1)
+    %t2 = addr $target
+    %t3 = addr $arg__1
+    call void @make(%t3)
+    %t4 = call ptr @Outer__operator___ov2(%t2, %t3)
+    %t5 = addr $target
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = cmp eq i32 %t8, 7
+    branch %t9, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__2
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t10 = load typed i32 $cond__2
+    return i32 %t10
+}
+function @Outer__Outer(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5OuterC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @MoveOnly__MoveOnly(%t2, 0)
+    return void
+}
+function @Outer__operator___ov2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN5OuteraSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = call ptr @MoveOnly__operator___ov2(%t2, %t4)
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @MoveOnly__MoveOnly(%this : ptr [object_bytes=4], %value : i32) -> void [binding=weak, object=_ZN8MoveOnlyC1Ei, inline_hint=yes] {
+  slot $this : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+function @MoveOnly__operator___ov2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_ZN8MoveOnlyaSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    %t3 = cmp ne ptr %t1, %t2
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t4 = load typed ptr $other
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 0
+    store typed i32 %t6, %t8
+    %t9 = load typed ptr $other
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i32 0, %t10
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t11 = load typed ptr $this
+    return ptr %t11
+}
+alias object _ZN5OuterC2Ev = @Outer__Outer
+alias object _ZN8MoveOnlyC2Ei = @MoveOnly__MoveOnly

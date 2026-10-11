@@ -1,0 +1,14 @@
+preproc 1
+sof tests/directives/400-header-guard-shapes.t
+identifier guard_undef
+identifier guard_undef
+identifier guard_trailing_inside
+identifier guard_trailing_after
+identifier guard_trailing_after
+identifier guard_else_first
+identifier guard_else_again
+identifier guard_defined_form
+identifier guard_leading_before
+identifier guard_leading_inside
+identifier guard_leading_before
+eof

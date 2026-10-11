@@ -1,0 +1,7 @@
+// GNU weak attribute, N3485 3.6.3p1, 3.7.2: when a strong definition of a
+// thread_local variable in one unit replaces a weak one in another, the
+// program has one object, statically initialized by the strong definition's
+// initializer and destroyed once per thread
+#include "200-host-weak-thread-local-destroyed-once-host-u1.helper.h"
+thread_local D w = { 100 };
+int main() { int a = read_u2(); printf("u2 sees %d, u1 sees %d\n", a, w.v); return 0; }

@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable a array of 10 int
+    variable a array of 10 int
+    variable a array of 10 int
+    scope namespace Q
+      variable arr array of 12 int
+      variable arr2 array of 7 volatile int
+      variable arr array of 12 int
+      variable arr2 array of 7 volatile int
+end translation unit

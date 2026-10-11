@@ -1,0 +1,94 @@
+function @Holder__operator__(%this : ptr [object_bytes=8], %rhs : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_ZN6HolderpLERKS_] {
+  slot $this : ptr
+  slot $rhs : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %rhs, $rhs
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i64 %t3
+    %t5 = load typed ptr $rhs
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = call ptr @Property__operatorread_access_t(%t6)
+    %t8 = load typed i64 %t7
+    %t9 = binary add i64 %t4, %t8
+    store typed i64 %t9, %t3
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lhs : obj<8x8>
+  slot $rhs : obj<8x8>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $lhs
+    call void @Holder__Holder(%t1)
+    %t2 = addr $rhs
+    call void @Holder__Holder(%t2)
+    %t3 = convert sext i64 i32 2
+    %t4 = addr $lhs
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t3, %t6
+    %t7 = convert sext i64 i32 5
+    %t8 = addr $rhs
+    %t9 = index i8 [projection=field] %t8, 0
+    %t10 = index i8 [projection=field] %t9, 0
+    store typed i64 %t7, %t10
+    %t11 = addr $lhs
+    %t12 = addr $rhs
+    call void @Holder__operator__(%t11, %t12)
+    %t13 = addr $lhs
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i64 %t15
+    %t17 = convert sext i64 i32 7
+    %t18 = cmp eq i64 %t16, %t17
+    branch %t18, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t19 = load typed i32 $cond__1
+    return i32 %t19
+}
+function @Property__operatorread_access_t(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK8PropertycvRKmEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    return ptr %t2
+}
+function @Holder__Holder(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN6HolderC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Property__Property(%t2)
+    return void
+}
+function @Property__Property(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN8PropertyC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = convert sext i64 i32 0
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i64 %t1, %t3
+    return void
+}
+alias object _ZN6HolderC2Ev = @Holder__Holder
+alias object _ZN8PropertyC2Ev = @Property__Property

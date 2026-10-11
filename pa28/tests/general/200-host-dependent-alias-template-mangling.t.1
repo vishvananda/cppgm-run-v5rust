@@ -1,0 +1,47 @@
+template<class Ptr, class T>
+struct rebind_pointer
+{
+  typedef T * type;
+};
+
+template<class Ptr, class T>
+using rebind_pointer_t = typename rebind_pointer<Ptr, T>::type;
+
+template<class T, class Ptr>
+struct node
+{
+};
+
+template<class P>
+struct base
+{
+};
+
+template<class Alloc>
+struct allocator_traits
+{
+  typedef void * void_pointer;
+};
+
+template<class T, class Alloc>
+struct table
+{
+  typedef allocator_traits<Alloc> alloc_traits;
+  using void_pointer = typename alloc_traits::void_pointer;
+  using node_type = node<T, void_pointer>;
+  using node_pointer = rebind_pointer_t<void_pointer, node_type>;
+  using first_node = base<node_pointer>;
+
+  table() noexcept;
+  void perform(node_pointer p, first_node q) noexcept;
+};
+
+template<class T, class Alloc>
+table<T, Alloc>::table() noexcept
+{
+}
+
+int main()
+{
+  return 0;
+}

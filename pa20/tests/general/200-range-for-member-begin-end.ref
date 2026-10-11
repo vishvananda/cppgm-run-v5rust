@@ -1,0 +1,153 @@
+global @__constexpr_template__1 [storage=readonly, binding=internal] = {
+  i32 1
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $data : obj<8x4>
+  slot $r : obj<8x8>
+  slot $s : i32
+  slot $__begin1 : obj<8x8>
+  slot $__end2 : obj<8x8>
+  slot $x : i32
+
+  block ^entry:
+    %t1 = addr $data
+    copyobj 8x4 @__constexpr_template__1, %t1
+    %t2 = addr $r
+    %t3 = addr $data
+    call void @Range__Range(%t2, %t3)
+    store typed i32 0, $s
+    %t4 = addr $__begin1
+    %t5 = addr $r
+    %t6 = call obj<8x8> @Range__begin(%t5)
+    copyobj 8x8 %t6, %t4
+    %t7 = addr $__end2
+    %t8 = addr $r
+    %t9 = call obj<8x8> @Range__end(%t8)
+    copyobj 8x8 %t9, %t7
+    jump ^for_cond_1
+
+  block ^for_cond_1:
+    %t10 = addr $__begin1
+    %t11 = addr $__end2
+    %t12 = call u8 @Iter__operator__(%t10, %t11)
+    branch %t12, ^for_body_2, ^for_end_4
+
+  block ^for_body_2:
+    %t13 = addr $__begin1
+    %t14 = call ptr @Iter__operator_(%t13)
+    %t15 = load typed i32 %t14
+    store typed i32 %t15, $x
+    %t16 = load typed i32 $s
+    %t17 = load typed i32 $x
+    %t18 = binary add nowrap i32 %t16, %t17
+    store typed i32 %t18, $s
+    jump ^for_iter_3
+
+  block ^for_iter_3:
+    %t19 = addr $__begin1
+    %t20 = call ptr @Iter__operator____2(%t19)
+    jump ^for_cond_1
+
+  block ^for_end_4:
+    %t21 = load typed i32 $s
+    return i32 %t21
+}
+function @Range__Range(%this : ptr [object_bytes=8], %data : ptr) -> void [binding=weak, object=_ZN5RangeC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $data : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %data, $data
+    %t1 = load typed ptr $data
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @Range__begin(%this : ptr [object_bytes=8]) -> obj<8x8> [binding=weak, object=_ZN5Range5beginEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    call void @Iter__Iter(%t1, %t4)
+    return obj<8x8> $retobj__1
+}
+function @Range__end(%this : ptr [object_bytes=8]) -> obj<8x8> [binding=weak, object=_ZN5Range3endEv, inline_hint=yes] {
+  slot $this : ptr
+  slot $retobj__1 : obj<8x8>
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = addr $retobj__1
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed ptr %t3
+    %t5 = binary mul i64 2, 4
+    %t6 = index i8 %t4, %t5
+    call void @Iter__Iter(%t1, %t6)
+    return obj<8x8> $retobj__1
+}
+function @Iter__operator__(%this : ptr [object_bytes=8], %o : ptr [pass=by_address, object_bytes=8]) -> u8 [binding=weak, object=_ZNK4IterneERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $o : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %o, $o
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed ptr $o
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed ptr %t5
+    %t7 = cmp ne ptr %t3, %t6
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}
+function @Iter__operator_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZNK4IterdeEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+function @Iter__operator____2(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN4IterppEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 %t3, %t4
+    store typed ptr %t5, %t2
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+function @Iter__Iter(%this : ptr [object_bytes=8], %p : ptr) -> void [binding=weak, object=_ZN4IterC1EPi, inline_hint=yes] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+alias object _ZN5RangeC2EPi = @Range__Range
+alias object _ZN4IterC2EPi = @Iter__Iter

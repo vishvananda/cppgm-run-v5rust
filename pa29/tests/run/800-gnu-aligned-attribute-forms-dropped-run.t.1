@@ -1,0 +1,7 @@
+// PA29 README (the aligned attribute) / GCC manual: aligned after a member
+// declarator, the argument-less form (__BIGGEST_ALIGNMENT__ = 16) and the
+// [[gnu::aligned(N)]] spelling all raise alignment; expect exit 0
+struct A { char c; int x __attribute__((aligned(16))); };
+struct J { char c; long l __attribute__((aligned)); };
+struct [[gnu::aligned(32)]] K { char c; };
+int main() { return sizeof(A) == 32 && sizeof(J) == 32 && alignof(K) == 32 ? 0 : 1; }

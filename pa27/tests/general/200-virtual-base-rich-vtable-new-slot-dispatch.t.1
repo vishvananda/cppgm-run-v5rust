@@ -1,0 +1,5 @@
+struct V { virtual ~V() {} virtual int tag() { return 9; } };
+struct D : virtual V { virtual int id() { return 1; } };
+int call_tag(V &v) { return v.tag(); }
+int call_id(D &d) { return d.id(); }
+int main() { D d; return call_tag(d) == 9 && call_id(d) == 1 ? 0 : 1; }

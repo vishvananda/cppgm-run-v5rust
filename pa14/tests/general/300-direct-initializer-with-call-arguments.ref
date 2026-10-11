@@ -1,0 +1,99 @@
+function @by_value(%x : i32) -> i32 [binding=strong, object=_Z8by_valuei] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $a : i32
+  slot $b : i32
+  slot $h : obj<4x4>
+  slot $argobj__1 : obj<1x1>
+  slot $k : obj<4x4>
+  slot $argobj__2 : obj<1x1>
+  slot $cond__3 : i32
+  slot $land__4 : i64
+
+  block ^entry:
+    store typed i32 1, $a
+    store typed i32 2, $b
+    %t1 = addr $h
+    %t2 = addr $argobj__1
+    %t3 = addr $a
+    %t4 = call ptr @pass(%t3)
+    %t5 = load typed i32 %t4
+    %t6 = addr $b
+    %t7 = call ptr @pass(%t6)
+    %t8 = load typed i32 %t7
+    call void @holder__holder(%t1, $argobj__1, %t5, %t8)
+    %t9 = addr $k
+    %t10 = addr $argobj__2
+    %t11 = load typed i32 $a
+    %t12 = call i32 @by_value(%t11)
+    %t13 = load typed i32 $b
+    %t14 = call i32 @by_value(%t13)
+    call void @holder__holder(%t9, $argobj__2, %t12, %t14)
+    %t15 = addr $h
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = load typed i32 %t16
+    %t18 = cmp eq i32 %t17, 3
+    branch %t18, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t19 = addr $k
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = load typed i32 %t20
+    %t22 = cmp eq i32 %t21, 3
+    %t23 = cmp ne i64 %t22, 0
+    store typed i64 %t23, $land__4
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__4
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t24 = load typed i64 $land__4
+    branch %t24, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__3
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t25 = load typed i32 $cond__3
+    return i32 %t25
+}
+function @pass(%t : ptr [pass=by_address, object_bytes=4]) -> ptr [binding=weak, object=_Z4passIiERT_S1_] {
+  slot $t : ptr
+
+  block ^entry:
+    store typed ptr %t, $t
+    %t1 = load typed ptr $t
+    return ptr %t1
+}
+function @holder__holder(%this : ptr [object_bytes=4], %__param1 : obj<1x1> [classes=none], %a : i32, %b : i32) -> void [binding=weak, object=_ZN6holderC1E3tagii, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : obj<1x1>
+  slot $a : i32
+  slot $b : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %a, $a
+    store typed i32 %b, $b
+    %t1 = load typed i32 $a
+    %t2 = load typed i32 $b
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+alias object _ZN6holderC2E3tagii = @holder__holder

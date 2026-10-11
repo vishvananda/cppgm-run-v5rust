@@ -1,0 +1,99 @@
+// N3485 8.5.1p2, 15.2p2, 5.3.4p18: when a copy or move constructor run while
+// aggregate-initializing a class prvalue (an argument, an allocated object, an
+// array element, a member, a return value) throws, the members already
+// initialized are destroyed and allocated storage is freed, so no object stays
+// alive; each case runs with an exception at every construction in turn
+#include "200-host-eh-aggregate-helper-unwind.helper.h"
+static int live, countdown, imbalance, allocated;
+static void tick() { if (countdown > 0 && --countdown == 0) throw 5; }
+// Constructors that may throw.
+struct T
+{
+  int id;
+  T(int i) : id(i) { tick(); ++live; }
+  T(const T& o) : id(o.id) { tick(); ++live; }
+  ~T() { --live; }
+};
+// Only the copy may throw: the list's own calls cannot.
+struct W
+{
+  int id;
+  W(int i) noexcept : id(i) { ++live; }
+  W(const W& o) : id(o.id) { tick(); ++live; }
+  ~W() { --live; }
+};
+// Only the move may throw.
+struct M
+{
+  int id;
+  M(int i) noexcept : id(i) { ++live; }
+  M(const M& o) noexcept : id(o.id) { ++live; }
+  M(M&& o) : id(o.id) { tick(); ++live; }
+  ~M() { --live; }
+};
+struct V { V() { tick(); ++live; } ~V() { --live; } };
+struct P2 { T a; T b; };
+struct Q2
+{
+  W a;
+  W b;
+  static void* operator new(unsigned long n) { ++allocated; return ::operator new(n); }
+  static void operator delete(void* p) { --allocated; ::operator delete(p); }
+};
+struct QM { M a; int x; M b; };
+struct P3 { T a; V v; };
+struct Outer2 { Q2 q; Q2 r; };
+struct Holder { W first; Q2 q; Holder() : first(7), q(Q2{W(1), W(2)}) { } };
+static int use2(const P2& p) { return p.a.id + p.b.id; }
+static int useq(const Q2& p) { return p.a.id + p.b.id; }
+static int usem(const QM& p) { return p.a.id + p.b.id; }
+static int use3(const P3& p) { return p.a.id; }
+static int useo2(const Outer2& p) { return p.q.a.id + p.r.b.id; }
+static Q2 makeq(int k) { W guard(0); if (k > 100) return Q2{W(5), W(6)}; return Q2{W(1), W(2)}; }
+static void argument() { T guard(0); use2(P2{T(1), T(2)}); }
+static void copy_only() { W guard(0); useq(Q2{W(1), W(2)}); }
+static void move_only() { M guard(0); usem(QM{M(1), 2, M(3)}); }
+static void omitted() { T guard(0); use3(P3{T(1)}); }
+static void allocated_t() { T guard(0); delete new P2{T(1), T(2)}; }
+static void allocated_w() { W guard(0); delete new Q2{W(1), W(2)}; }
+static void array() { W guard(0); Q2 a[2] = { Q2{W(1), W(2)}, Q2{W(3), W(4)} }; useq(a[1]); }
+static void members() { W guard(0); Outer2 o{Q2{W(1), W(2)}, Q2{W(3), W(4)}}; useo2(o); }
+static void initializer() { W guard(0); Holder h; useq(h.q); }
+static void returned() { W guard(0); Q2 r = makeq(1); useq(r); }
+static void unmatched() { W guard(0); try { useq(Q2{W(1), W(2)}); } catch (long) { } }
+static void run(void (*f)(), const char* name)
+{
+  for (int k = 1; k < 60; ++k)
+  {
+    countdown = k;
+    bool thrown = false;
+    try { f(); } catch (int) { thrown = true; }
+    if (live != 0 || allocated != 0)
+    {
+      out_line(name, k);
+      out_line("live", live);
+      out_line("allocated", allocated);
+      ++imbalance;
+      live = allocated = 0;
+    }
+    if (!thrown)
+      break;
+  }
+  countdown = 0;
+}
+int main()
+{
+  run(argument, "argument");
+  run(copy_only, "copy_only");
+  run(move_only, "move_only");
+  run(omitted, "omitted");
+  run(allocated_t, "allocated_t");
+  run(allocated_w, "allocated_w");
+  run(array, "array");
+  run(members, "members");
+  run(initializer, "initializer");
+  run(returned, "returned");
+  run(unmatched, "unmatched");
+  out_line("imbalance", imbalance);
+  return 0;
+}

@@ -1,0 +1,12 @@
+declare global @static_abs_1___value : i64 [binding=weak, object=_ZN10static_absILl1EE5valueE]
+declare global @static_gcd_1_0___value : i64 [binding=weak, object=_ZN10static_gcdILl1ELl0EE5valueE]
+declare global @static_gcd_1000000000_1___value : i64 [binding=weak, object=_ZN10static_gcdILl1000000000ELl1EE5valueE]
+declare global @static_gcd_1_1000000000___value : i64 [binding=weak, object=_ZN10static_gcdILl1ELl1000000000EE5valueE]
+declare global @static_abs_1000000000___value : i64 [binding=weak, object=_ZN10static_absILl1000000000EE5valueE]
+declare global @static_id_42___value : i64 [binding=weak, object=_ZN9static_idILl42EE5valueE]
+declare global @ratio_1_1000000000___den : i64 [binding=weak, object=_ZN5ratioILl1ELl1000000000EE3denE]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

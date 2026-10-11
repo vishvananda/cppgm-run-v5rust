@@ -1,0 +1,7 @@
+// PA28 README (ABI tags affect host names) + GCC abi_tag: a function taking an
+// abi-tagged enumeration is mangled _Z2te2EnB1e; a cppgm++ unit calling the
+// g++-defined te must use that name; expect link ok and exit 0 under every mix
+// of units built by cppgm++ and by the host compiler
+enum __attribute__((abi_tag("e"))) En { e1 = 5 };
+int te(En);
+int main() { return te(e1) == 5 ? 0 : 1; }

@@ -1,0 +1,25 @@
+struct BaseError
+{
+  virtual ~BaseError();
+  virtual int tag() const;
+};
+
+struct DerivedError : BaseError
+{
+  DerivedError();
+  ~DerivedError();
+  int tag() const;
+};
+
+int main()
+{
+  try
+  {
+    throw DerivedError();
+  }
+  catch (BaseError & error)
+  {
+    return error.tag() == 7 ? 0 : 2;
+  }
+  return 1;
+}

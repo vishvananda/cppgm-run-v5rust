@@ -1,0 +1,13 @@
+global @g : i32 [binding=strong] = 4
+
+function @add() -> i32 [binding=strong, object=_Z3addv] {
+  block ^entry:
+    %t1 = load typed i32 @g
+    %t2 = binary add nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @add()
+    return i32 %t1
+}

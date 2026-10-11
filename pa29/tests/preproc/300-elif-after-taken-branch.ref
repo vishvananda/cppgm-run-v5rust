@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/300-elif-after-taken-branch.t
+identifier active
+eof

@@ -1,0 +1,35 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $l : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $l
+    %t2 = addr $l
+    call void @List_int___resize(%t2)
+    return i32 0
+}
+function @List_int___resize(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN4ListIiE6resizeEv] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = copy ptr 0
+    %t4 = copy ptr 0
+    %t5 = call ptr @Base_int___create(%t2, %t3, %t4)
+    store typed ptr %t5, $p
+    %t6 = load typed ptr $p
+    return void
+}
+function @Base_int___create(%this : ptr [object_bytes=1], %__param1 : ptr, %__param2 : ptr) -> ptr [binding=weak, object=_ZN4BaseIiE6createIJEEEP4NodeS3_S3_DpOT_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $__param2 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %__param2, $__param2
+    return ptr 0
+}

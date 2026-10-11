@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/300-host-llvm-and-bswap-builtins.t
+identifier good
+eof

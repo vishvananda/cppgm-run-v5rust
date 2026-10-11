@@ -1,0 +1,223 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar i32
+  init i32 17
+
+function @return_constant
+  abi
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 11
+    ret rax
+
+function @return_load
+  abi
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i32 rax, @value
+    ret rax
+
+function @return_global_address
+  abi
+    return ptr -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, @value
+    ret rax
+
+function @return_slot_address
+  abi
+    return ptr -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $local -> [rbp-<off0>] : i32
+
+  block ^entry
+    lea rax, [rbp-<off0>]
+    ret rax
+
+function @return_compare
+  abi
+    param %left -> rdi : i64
+    param %right -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    cmp.i64 rdi, rsi
+    setb rdi
+    movzx rdi, rdi
+    ret rdi
+
+function @return_negated
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    neg rdi
+    ret rdi
+
+function @return_converted
+  abi
+    param %value -> rdi : i64
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    sext.i32 rdi
+    ret rdi
+
+function @return_quotient
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov <gpr0>, 7
+    mov rax, rdi
+    cqo
+    idiv <gpr0>
+    ret rax
+
+function @return_remainder
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov <gpr0>, 7
+    mov rax, rdi
+    cqo
+    idiv <gpr0>
+    ret rdx
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve <gpr1> <gpr2> <gpr3> <gpr4> <gpr5>
+    temp %converted -> [rbp-<off0>] : i32
+    temp %quotient -> [rbp-<off1>] : i64
+
+  block ^entry
+    call @return_constant [args=()]
+    mov <gpr1>, rax
+    sext.i32 <gpr1>
+    call @return_load [args=()]
+    mov <gpr2>, rax
+    sext.i32 <gpr2>
+    call @return_global_address [args=()]
+    mov <gpr3>, rax
+    mov rdi, 3
+    mov rsi, 5
+    call @return_compare [args=(rsi,rdi)]
+    mov <gpr4>, rax
+    mov rdi, -7
+    call @return_negated [args=(rdi)]
+    mov <gpr5>, rax
+    mov rdi, 4294967297
+    call @return_converted [args=(rdi)]
+    mov <gpr6>, rax
+    sext.i32 <gpr6>
+    store.i32 [rbp-<off0>], <gpr6>
+    mov rdi, 50
+    call @return_quotient [args=(rdi)]
+    mov <gpr6>, rax
+    store.i64 [rbp-<off1>], <gpr6>
+    mov rdi, 50
+    call @return_remainder [args=(rdi)]
+    mov r8, @value
+    mov rdx, 11
+    cmp.i32 <gpr1>, rdx
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    mov rdx, 17
+    cmp.i32 <gpr2>, rdx
+    setne <gpr2>
+    movzx <gpr2>, <gpr2>
+    cmp.ptr <gpr3>, r8
+    setne <gpr3>
+    movzx <gpr3>, <gpr3>
+    mov rdx, 1
+    cmp.i64 <gpr4>, rdx
+    setne <gpr4>
+    movzx <gpr4>, <gpr4>
+    mov rdx, 7
+    cmp.i64 <gpr5>, rdx
+    setne <gpr5>
+    movzx <gpr5>, <gpr5>
+    mov rdx, 1
+    cmp.i32 [rbp-<off0>], rdx
+    setne r8
+    movzx r8, r8
+    mov rdx, 7
+    cmp.i64 [rbp-<off1>], rdx
+    setne r9
+    movzx r9, r9
+    mov rdx, 1
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or <gpr1>, <gpr2>
+    or <gpr3>, <gpr4>
+    or <gpr3>, <gpr5>
+    or <gpr3>, r8
+    or r9, rax
+    or <gpr3>, r9
+    or <gpr1>, <gpr3>
+    sext.i32 <gpr1>
+    ret <gpr1>

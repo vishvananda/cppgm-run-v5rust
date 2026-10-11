@@ -1,0 +1,7 @@
+# budget from 800-direct-branch-slot-address-compare.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 21
+blocks <= 7
+count(call) <= 3
+mem <= 7
+instructions <= 21 in @main
+stack_size <= 352 in @main

@@ -1,0 +1,14 @@
+global @literal___cppgm_class_template_identity_1___data [storage=readonly, binding=weak, object=_ZN7literalI5bytesIJLh4ELh7EEEE4dataE] = {
+  u8 4
+  u8 7
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @literal___cppgm_class_template_identity_1___data
+    %t2 = index u8 [projection=array_element] %t1, 1
+    %t3 = load u8 %t2
+    %t4 = convert zext i32 u8 %t3
+    %t5 = binary sub nowrap i32 %t4, 7
+    return i32 %t5
+}

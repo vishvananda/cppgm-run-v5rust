@@ -1,0 +1,23 @@
+# budget from 400-native-layout-policy-guards.ref.mir: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 92
+blocks <= 15
+count(call) <= 12
+mem <= 18
+instructions <= 4 in @identity
+stack_size <= 48 in @identity
+instructions <= 5 in @frameless_leaf
+stack_size <= 48 in @frameless_leaf
+instructions <= 5 in @frameless_call
+stack_size <= 48 in @frameless_call
+instructions <= 5 in @frame_operand
+stack_size <= 48 in @frame_operand
+instructions <= 9 in @dynamic_stack
+stack_size <= 48 in @dynamic_stack
+instructions <= 6 in @floating_scratch
+stack_size <= 85 in @floating_scratch
+instructions <= 10 in @host_eh
+stack_size <= 48 in @host_eh
+instructions <= 9 in @direct_returns
+stack_size <= 48 in @direct_returns
+instructions <= 56 in @main
+stack_size <= 85 in @main

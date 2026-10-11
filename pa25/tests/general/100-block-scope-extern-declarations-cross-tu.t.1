@@ -1,0 +1,15 @@
+// N3485 3.5p6: block-scope declarations of a function and an extern
+// variable name the namespace-scope entities defined in another source.
+int use()
+{
+  extern int shared;
+  int combine(int, int);
+  int (*pointer)(int, int) = combine;
+  shared = combine(shared, 2);
+  return pointer(shared, 1);
+}
+int read_shared();
+int main()
+{
+  return use() == 9 && read_shared() == 8 ? 0 : 1;
+}

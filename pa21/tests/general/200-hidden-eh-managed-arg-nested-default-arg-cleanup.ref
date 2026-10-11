@@ -1,0 +1,267 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 115
+  i8 117
+  i8 109
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 98
+  i8 97
+  i8 100
+  i8 0
+}
+global @__strlit__3 [storage=readonly, binding=internal] = {
+  i8 99
+  i8 104
+  i8 97
+  i8 114
+  i8 0
+}
+global @__strlit__4 [storage=readonly, binding=internal] = {
+  i8 0
+}
+global @__strlit__5 [storage=readonly, binding=internal] = {
+  i8 41
+  i8 0
+}
+
+function @operator_(%ret : ptr [pass=indirect_result, object_bytes=4], %lhs : ptr [pass=by_address, object_bytes=4], %__param2 : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_ZplRK4TextS1_] {
+  slot $lhs : ptr
+  slot $__param2 : ptr
+  slot $condaddr__1 : ptr
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store typed ptr %__param2, $__param2
+    eh_try ^cleanup_resume_1
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 3
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_5:
+    branch %t4, ^condaddr_then_2, ^condaddr_else_3
+
+  block ^condaddr_then_2:
+    %t5 = addr @__strlit__1
+    store typed ptr %t5, $condaddr__1
+    jump ^condaddr_end_4
+
+  block ^condaddr_else_3:
+    %t6 = addr @__strlit__2
+    store typed ptr %t6, $condaddr__1
+    jump ^condaddr_end_4
+
+  block ^condaddr_end_4:
+    %t7 = load typed ptr $condaddr__1
+    eh_try ^cleanup_resume_1
+    %t8 = addr $arg__2
+    call void @Alloc__Alloc(%t8)
+    eh_end
+    eh_try ^cleanup_action_6
+    call void @Text__Text(%ret, %t7, %t8)
+    call void @Alloc___Alloc(%t8)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @Alloc___Alloc(%t8)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_7:
+    return void
+}
+function @operator___ov2(%ret : ptr [pass=indirect_result, object_bytes=4], %lhs : ptr [pass=by_address, object_bytes=4], %__param2 : i8) -> void [binding=strong, object=_ZplRK4Textc] {
+  slot $lhs : ptr
+  slot $__param2 : i8
+  slot $cond__1 : ptr
+  slot $arg__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %lhs, $lhs
+    store i8 %__param2, $__param2
+    eh_try ^cleanup_resume_1
+    %t1 = load typed ptr $lhs
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = cmp eq i32 %t3, 3
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_5:
+    branch %t4, ^cond_then_2, ^cond_else_3
+
+  block ^cond_then_2:
+    %t5 = addr @__strlit__3
+    store typed ptr %t5, $cond__1
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    %t6 = addr @__strlit__2
+    store typed ptr %t6, $cond__1
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t7 = load typed ptr $cond__1
+    eh_try ^cleanup_resume_1
+    %t8 = addr $arg__2
+    call void @Alloc__Alloc(%t8)
+    eh_end
+    eh_try ^cleanup_action_6
+    call void @Text__Text(%ret, %t7, %t8)
+    call void @Alloc___Alloc(%t8)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @Alloc___Alloc(%t8)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_7:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $delimiter : obj<4x4>
+  slot $arg__1 : obj<4x4>
+  slot $quote : i8
+  slot $terminator : obj<4x4>
+  slot $arg__2 : obj<4x4>
+  slot $arg__3 : obj<4x4>
+  slot $arg__4 : obj<4x4>
+  slot $cond__5 : i32
+
+  block ^entry:
+    %t1 = addr $delimiter
+    %t2 = addr @__strlit__4
+    %t3 = addr $arg__1
+    call void @Alloc__Alloc(%t3)
+    eh_try ^cleanup_action_2
+    call void @Text__Text(%t1, %t2, %t3)
+    call void @Alloc___Alloc(%t3)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    call void @Alloc___Alloc(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    store i8 34, $quote
+    %t4 = addr $terminator
+    eh_try ^cleanup_resume_1
+    %t5 = addr $arg__2
+    %t6 = addr $arg__3
+    %t7 = addr @__strlit__5
+    %t8 = addr $arg__4
+    call void @Alloc__Alloc(%t8)
+    eh_end
+    eh_try ^cleanup_action_4
+    call void @Text__Text(%t6, %t7, %t8)
+    eh_end
+    jump ^call_unwind_end_5
+
+  block ^cleanup_action_4:
+    call void @Alloc___Alloc(%t8)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_5:
+    eh_try ^cleanup_action_6
+    %t9 = addr $delimiter
+    call void @operator_(%t5, %t6, %t9)
+    eh_end
+    jump ^call_unwind_end_7
+
+  block ^cleanup_action_6:
+    call void @Text___Text(%t6)
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_7:
+    eh_try ^cleanup_action_8
+    %t10 = load i8 $quote
+    call void @operator___ov2(%t4, %t5, %t10)
+    call void @Text___Text(%t5)
+    call void @Text___Text(%t6)
+    call void @Alloc___Alloc(%t8)
+    eh_end
+    jump ^call_unwind_end_9
+
+  block ^cleanup_action_8:
+    call void @Text___Text(%t5)
+    jump ^cleanup_action_6
+
+  block ^call_unwind_end_9:
+    %t11 = addr $terminator
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i32 %t12
+    %t14 = cmp eq i32 %t13, 3
+    branch %t14, ^cond_then_10, ^cond_else_11
+
+  block ^cond_then_10:
+    store typed i32 0, $cond__5
+    jump ^cond_end_12
+
+  block ^cond_else_11:
+    store typed i32 1, $cond__5
+    jump ^cond_end_12
+
+  block ^cond_end_12:
+    %t15 = load typed i32 $cond__5
+    return i32 %t15
+}
+function @Alloc__Alloc(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5AllocC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 3, %t2
+    return void
+}
+function @Text__Text(%this : ptr [object_bytes=4], %__param1 : ptr, %alloc : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_ZN4TextC1EPKcRK5Alloc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $alloc : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed ptr %alloc, $alloc
+    %t1 = load typed ptr $alloc
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @Alloc___Alloc(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5AllocD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @Text___Text(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN4TextD1Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN5AllocC2Ev = @Alloc__Alloc
+alias object _ZN4TextC2EPKcRK5Alloc = @Text__Text
+alias object _ZN5AllocD2Ev = @Alloc___Alloc
+alias object _ZN4TextD2Ev = @Text___Text

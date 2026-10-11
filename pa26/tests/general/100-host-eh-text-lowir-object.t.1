@@ -1,0 +1,16 @@
+int f()
+{
+  throw 7;
+}
+
+int main()
+{
+  try
+  {
+    return f();
+  }
+  catch (int x)
+  {
+    return x - 7;
+  }
+}

@@ -1,0 +1,65 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $moved : obj<4x4>
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr $source
+    call void @leaf__result_int___result(%t1)
+    %t2 = addr $moved
+    %t3 = addr $source
+    call void @leaf__result_int___result__ov2(%t2, %t3)
+    %t4 = addr $moved
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load typed i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t8 = load typed i32 $cond__1
+    return i32 %t8
+}
+function @leaf__result_int___result(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4leaf6resultIiEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @leaf__result_int___result__ov2(%this : ptr [alias=noalias, object_bytes=4], %other : ptr [pass=by_address, alias=noalias, object_bytes=4]) -> void [binding=weak, object=_ZN4leaf6resultIiEC1EOS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    %t3 = call i32 @leaf__result_int___move_from(%t1, %t2)
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed i32 %t3, %t5
+    return void
+}
+function @leaf__result_int___move_from(%this : ptr [object_bytes=4], %__param1 : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=weak, object=_ZN4leaf6resultIiE9move_fromIiEEiONS0_IT_EE, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return i32 7
+}
+alias object _ZN4leaf6resultIiEC2Ev = @leaf__result_int___result
+alias object _ZN4leaf6resultIiEC2EOS1_ = @leaf__result_int___result__ov2

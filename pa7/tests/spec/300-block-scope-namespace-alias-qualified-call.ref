@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition outer
+    namespace-definition inner
+      function-definition outer::inner::value function of (int) returning int
+        parameter x int
+        compound-statement
+          return-statement
+            binary-expression prvalue int OP_PLUS:+
+              id-expression lvalue int x
+              literal prvalue int 1
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        conditional-expression prvalue int
+          binary-expression prvalue bool OP_EQ:==
+            call-expression prvalue int
+              callee outer::inner::value function of (int) returning int
+              literal prvalue int 2
+            literal prvalue int 3
+          literal prvalue int 0
+          literal prvalue int 1
+end translation unit

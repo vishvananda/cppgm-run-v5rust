@@ -1,0 +1,3 @@
+// N3485 7.1.2p4, 3.2p6, Itanium C++ ABI 5.1.6-5.1.8: the local classes and
+// closure types of an extern inline function are the same entities in every
+// unit, so their static locals (and cnt<L>'s) are one object

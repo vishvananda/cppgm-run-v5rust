@@ -1,0 +1,37 @@
+typedef __uint128_t U128;
+typedef __int128_t I128;
+
+static const char digit_table[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+int same(const char *lhs, const char *rhs)
+{
+  for(int i = 0; ; ++i) {
+    if(lhs[i] != rhs[i]) {
+      return 0;
+    }
+    if(lhs[i] == 0) {
+      return 1;
+    }
+  }
+}
+
+int main()
+{
+  U128 raw = (static_cast<U128>(12180528120708168240ULL) << 64) |
+             static_cast<U128>(7919336826204185461ULL);
+  I128 signed_value = static_cast<I128>(raw);
+  U128 unsigned_value = -static_cast<U128>(signed_value);
+  U128 unsigned_base = static_cast<U128>(3);
+  // Leave one initialized byte after the digit range as its terminator.
+  char buffer[129] = {};
+  char *end = buffer + 127;
+
+  while(unsigned_value != static_cast<U128>(0)) {
+    *end-- = digit_table[static_cast<unsigned long>(unsigned_value % unsigned_base)];
+    unsigned_value /= unsigned_base;
+  }
+
+  const char *expected =
+      "21001000220200100110110102112000120221222000012002210202112110120102001201120020";
+  return same(end + 1, expected) ? 0 : 1;
+}

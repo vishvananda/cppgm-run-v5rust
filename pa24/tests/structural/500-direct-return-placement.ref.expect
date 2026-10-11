@@ -1,0 +1,25 @@
+# budget from 500-direct-return-placement.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 187
+blocks <= 21
+count(call) <= 17
+mem <= 27
+instructions <= 5 in @return_constant
+stack_size <= 320 in @return_constant
+instructions <= 5 in @return_load
+stack_size <= 320 in @return_load
+instructions <= 5 in @return_global_address
+stack_size <= 320 in @return_global_address
+instructions <= 5 in @return_slot_address
+stack_size <= 352 in @return_slot_address
+instructions <= 9 in @return_compare
+stack_size <= 320 in @return_compare
+instructions <= 5 in @return_negated
+stack_size <= 320 in @return_negated
+instructions <= 5 in @return_converted
+stack_size <= 320 in @return_converted
+instructions <= 11 in @return_quotient
+stack_size <= 320 in @return_quotient
+instructions <= 11 in @return_remainder
+stack_size <= 320 in @return_remainder
+instructions <= 135 in @main
+stack_size <= 448 in @main

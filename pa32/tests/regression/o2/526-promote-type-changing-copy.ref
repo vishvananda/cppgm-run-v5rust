@@ -1,0 +1,6 @@
+function @choose_unsigned(%take_signed : i64, %signed_value : i32) -> u32 [no_inline=yes] {
+  block ^entry:
+    %as_unsigned = copy u32 %signed_value
+    %t2 = select u32 %take_signed, %as_unsigned, 7
+    return u32 %t2
+}

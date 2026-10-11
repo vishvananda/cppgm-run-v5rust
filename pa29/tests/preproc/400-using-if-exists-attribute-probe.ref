@@ -1,0 +1,4 @@
+preproc 1
+sof tests/preproc/400-using-if-exists-attribute-probe.t
+identifier have_using_if_exists_attr
+eof

@@ -1,0 +1,29 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $made : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $made
+    call void @str_char_int___str(%t1, 0)
+    %t2 = addr $made
+    call void @str_char_int___take(%t2, 0)
+    return i32 0
+}
+function @str_char_int___str(%this : ptr [object_bytes=1], %__param1 : ptr) -> void [binding=weak, object=_ZN3strIciEC1ILi0EEEPKc, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}
+function @str_char_int___take(%this : ptr [object_bytes=1], %__param1 : i32) -> void [binding=weak, object=_ZN3strIciE4takeIiTnN9enable_ifIXsr8is_allocIT_EE5valueEiE4typeELi0EEEvS3_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %__param1, $__param1
+    return void
+}
+alias object _ZN3strIciEC2ILi0EEEPKc = @str_char_int___str

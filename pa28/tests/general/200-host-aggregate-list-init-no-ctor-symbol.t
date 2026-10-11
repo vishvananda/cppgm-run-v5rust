@@ -1,0 +1,11 @@
+# host aggregate list init does not emit constructor symbols
+# split
+struct HostAggregateNoCtor {
+  int value;
+};
+
+int main()
+{
+  HostAggregateNoCtor item{42};
+  return item.value == 42 ? 0 : 1;
+}

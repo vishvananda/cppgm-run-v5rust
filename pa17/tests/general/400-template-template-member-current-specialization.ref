@@ -1,0 +1,23 @@
+global @a [binding=strong] = {
+  zero 1
+}
+global @b [binding=strong] = {
+  zero 1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @a
+    %t2 = addr @b
+    call void @Box_int_int_LayoutImpl___f(%t1, %t2)
+    return i32 0
+}
+function @Box_int_int_LayoutImpl___f(%this : ptr [object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> void [binding=weak, object=_ZN3BoxIii10LayoutImplE1fERS1_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    return void
+}

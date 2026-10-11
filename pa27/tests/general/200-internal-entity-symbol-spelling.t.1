@@ -1,0 +1,40 @@
+int seed() { return 1; }
+
+static int data = 2;
+namespace ns { static int v = 3; }
+const char text[] = { 'A', 0 };
+static union { int ua; float ub; };
+
+static struct
+{
+  int x;
+  int get() const { return x; }
+} unnamed_s = { 4 };
+
+int get() { static int local = seed(); return local; }
+static int sfun() { static int k = seed(); return k; }
+
+struct S { int m() const; };
+int S::m() const { static int x = seed(); return x; }
+
+int b1()
+{
+  { struct L { static int f() { return 1; } }; }
+  struct L { static int f() { return 2; } };
+  return L::f();
+}
+
+int b4()
+{
+  static int k = seed();
+  struct k { static int f() { return 3; } };
+  return k + k::f();
+}
+
+int main()
+{
+  ua = 8;
+  return data + ns::v + text[0] + unnamed_s.get() + get() + sfun() +
+    S().m() + b1() + b4() + ua ==
+    2 + 3 + 'A' + 4 + 1 + 1 + 1 + 2 + 4 + 8 ? 0 : 1;
+}

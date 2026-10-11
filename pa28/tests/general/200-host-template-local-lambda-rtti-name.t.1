@@ -1,0 +1,15 @@
+namespace std {
+class type_info;
+}
+
+template<class T>
+const void *capture_type(T)
+{
+  auto function = [] {};
+  return &typeid(function);
+}
+
+int main()
+{
+  return capture_type(1) ? 0 : 1;
+}

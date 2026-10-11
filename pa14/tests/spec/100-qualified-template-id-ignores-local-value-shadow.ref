@@ -1,0 +1,11 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $function : i32
+  slot $callback : obj<1x1>
+
+  block ^entry:
+    store typed i32 0, $function
+    %t1 = addr $callback
+    %t2 = addr $callback
+    %t3 = load typed i32 $function
+    return i32 %t3
+}

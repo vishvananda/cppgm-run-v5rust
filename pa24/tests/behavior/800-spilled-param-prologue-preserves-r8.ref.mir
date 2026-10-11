@@ -1,0 +1,87 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @good
+  storage scalar i64
+  init i64 42
+
+global @bad
+  storage scalar i64
+  init i64 13
+
+function @sink
+  abi
+    param %p -> rdi : ptr
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 rax, [rdi]
+    ret rax
+
+function @target
+  abi
+    param %a -> rdi : ptr
+    param %b -> rsi : ptr
+    param %c -> rdx : ptr
+    param %d -> rcx : ptr
+    param %z -> r8 : ptr
+    param %f -> r9 : ptr
+    param %g -> [rbp+16] : ptr
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $force_spill -> [rbp-40] : obj<40x8>
+
+  block ^entry
+    mov rbx, r8
+    store.ptr [rbp-40], rsi
+    jmp ^after
+
+  block ^after
+    mov rdi, rbx
+    call @sink [args=(rdi)]
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov r8, @good
+    mov rdi, @bad
+    sub rsp, 16
+    mov rsi, rdi
+    mov rdx, 0
+    mov rcx, 0
+    mov r9, 0
+    mov r11, 0
+    store.ptr [rsp], r11
+    call @target [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    mov rdx, 42
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    mov rdx, 0
+    cmp.i64 rax, rdx
+    sete rax
+    movzx rax, rax
+    ret rax

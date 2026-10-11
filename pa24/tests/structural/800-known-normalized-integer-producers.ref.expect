@@ -1,0 +1,11 @@
+# budget from 800-known-normalized-integer-producers.ref.mir: the course solution's count, widened by 100% and rounded up, plus one, and at least three more than the count
+instructions <= 47
+blocks <= 7
+count(call) <= 5
+mem <= 5
+instructions <= 9 in @shift_with_typed_count
+stack_size <= 320 in @shift_with_typed_count
+instructions <= 7 in @explicit_truncation
+stack_size <= 320 in @explicit_truncation
+instructions <= 33 in @main
+stack_size <= 448 in @main

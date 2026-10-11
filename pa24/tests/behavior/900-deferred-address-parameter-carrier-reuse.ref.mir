@@ -1,0 +1,209 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @recs
+  storage data
+  item zero 672
+
+global @obj
+  storage data
+  item zero 128
+
+global @info
+  storage data
+  item u32 2
+  item u32 0
+
+function @grow
+  abi
+    param %this -> rdi : ptr
+    param %type -> rsi : u32
+    return u32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    add rsi, 1
+    zext.i32 rsi
+    ret rsi
+
+function @seed
+  abi
+    param %this -> rdi : ptr
+    param %variable -> rsi : u32
+    param %binding -> rdx : u32
+    param %type -> rcx : u32
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    add rdx, rcx
+    zext.i32 rdx
+    load.ptr rdi, [rdi+104]
+    imul rsi, 168
+    store.u32 [rdi+rsi+136], rdx
+    ret
+
+function @probe
+  abi
+    param %this -> rdi : ptr
+    param %variable -> rsi : u32
+    param %binding -> rdx : u32
+    param %type -> rcx : u32
+    param %initializer -> r8 : ptr
+    param %has_initializer -> r9 : u8
+    param %declaration_only -> [rbp+16] : u8
+    param %qualified -> [rbp+24] : u8
+    return u32 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    slot $object -> [rbp-8] : u32
+    param-slot %this -> [rbp-16] : ptr
+    param-slot %variable -> [rbp-24] : u32
+    param-slot %binding -> [rbp-32] : u32
+    param-slot %type -> [rbp-40] : u32
+    param-slot %declaration_only -> [rbp-48] : u8
+    param-slot %qualified -> [rbp-56] : u8
+
+  block ^entry
+    load.u8 rax, [rbp+16]
+    store.u8 [rbp-48], rax
+    load.u8 rax, [rbp+24]
+    store.u8 [rbp-56], rax
+    store.ptr [rbp-16], rdi
+    store.u32 [rbp-24], rsi
+    store.u32 [rbp-32], rdx
+    store.u32 [rbp-40], rcx
+    cmp.u8 r9, 0
+    jne ^then
+    jmp ^other
+
+  block ^then
+    load.u32 r9, [r8]
+    load.ptr rdx, [rdi+104]
+    imul r9, 168
+    load.i64 rdx, [rdx+r9+72]
+    load.ptr r9, [rdi+104]
+    imul rsi, 168
+    store.i64 [r9+rsi+72], rdx
+    load.u32 r9, [r8]
+    load.ptr rdx, [rdi+104]
+    imul r9, 168
+    load.u32 rdx, [rdx+r9+132]
+    load.ptr rdi, [rdi+104]
+    store.u32 [rdi+rsi+132], rdx
+    load.u32 rax, [r8]
+    ret rax
+
+  block ^other
+    mov rsi, rcx
+    call @grow [args=(rsi,rdi)]
+    store.u32 [rbp-8], rax
+    cmp.u8 [rbp-48], 0
+    jne ^bail
+    jmp ^orcheck
+
+  block ^orcheck
+    cmp.u32 [rbp-8], 0
+    je ^bail
+    jmp ^orright
+
+  block ^orright
+    cmp.u8 [rbp-56], 0
+    jne ^andright
+    jmp ^tail
+
+  block ^andright
+    load.u32 r8, [rbp-8]
+    load.ptr r10, [rbp-16]
+    load.ptr r9, [r10+104]
+    imul r8, 168
+    cmp.u32 [r9+r8+140], 0
+    jne ^bail
+    jmp ^tail
+
+  block ^bail
+    mov rax, 4294967295
+    ret rax
+
+  block ^tail
+    load.ptr rdi, [rbp-16]
+    load.u32 rsi, [rbp-24]
+    load.u32 rdx, [rbp-32]
+    load.u32 rcx, [rbp-40]
+    call @seed [args=(rcx,rdx,rsi,rdi)]
+    load.ptr r10, [rbp-16]
+    load.ptr r8, [r10+104]
+    load.u32 r10, [rbp-24]
+    mov r9, r10
+    imul r9, 168
+    load.u32 rax, [r8+r9+136]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rdi, @obj
+    mov rbx, @recs
+    store.ptr [rdi+104], rbx
+    store.i64 [rbx+408], 77
+    store.u32 [rbx+468], 8
+    mov r8, @info
+    sub rsp, 16
+    mov rsi, 1
+    mov rdx, 10
+    mov rcx, 20
+    mov r9, 1
+    mov r11, 0
+    store.u8 [rsp], r11
+    mov r11, 0
+    store.u8 [rsp+8], r11
+    call @probe [args=(rcx,rdx,rsi,rdi,r8,r9), stack=16]
+    add rsp, 16
+    mov r8, rax
+    zext.i32 r8
+    cmp.i64 r8, 2
+    jne ^fail
+    jmp ^check1
+
+  block ^check1
+    lea r8, [rbx+168]
+    cmp.i64 [r8+72], 77
+    jne ^fail
+    jmp ^check2
+
+  block ^check2
+    load.u32 r9, [r8+132]
+    cmp.i64 r9, 8
+    jne ^fail
+    jmp ^good
+
+  block ^good
+    mov rax, 0
+    ret rax
+
+  block ^fail
+    mov rax, 1
+    ret rax

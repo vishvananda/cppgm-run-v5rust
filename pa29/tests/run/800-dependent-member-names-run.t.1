@@ -1,0 +1,79 @@
+// In a template definition a member of a template-id depending on template
+// parameters (not the current instantiation), and a member of a typedef of
+// such a type, is a dependent name: without `typename` a value (14.6p2),
+// so `(B<T>::type::m) * k` and `(policy::value) * k` are products even
+// where the primary's class makes the name a type. g++ and clang++ print
+// "8 8 18 27".
+#include <cstdio>
+
+struct V
+{
+	typedef int m;
+};
+struct W
+{
+	static int m;
+};
+int W::m = 4;
+template<class T>
+struct B
+{
+	typedef V type;
+};
+template<>
+struct B<int>
+{
+	typedef W type;
+};
+template<class T>
+using C = B<T>;
+
+struct default_policy
+{
+	struct value
+	{};
+};
+struct int_policy
+{
+	static const int value = 9;
+};
+template<class T>
+struct traits
+{
+	typedef default_policy type;
+};
+template<>
+struct traits<int>
+{
+	typedef int_policy type;
+};
+
+template<class T>
+int f(int k)
+{
+	return (B<T>::type::m) * k;
+}
+template<class T>
+int g(int k)
+{
+	return (C<T>::type::m) * k;
+}
+template<class T>
+int h(int k)
+{
+	typedef typename traits<T>::type policy;
+	int r = (policy::value)*k;
+	return r;
+}
+template<class T>
+int j(int k)
+{
+	typedef typename traits<T>::type policy;
+	return policy::value * k;
+}
+
+int main()
+{
+	std::printf("%d %d %d %d\n", f<int>(2), g<int>(2), h<int>(2), j<int>(3));
+	return 0;
+}

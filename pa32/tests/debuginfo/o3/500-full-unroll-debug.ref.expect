@@ -1,0 +1,19 @@
+# budget from 500-full-unroll-debug.ref: the course solution's count, widened by 10% and rounded up, plus one, and at least three more than the count
+instructions <= 7
+blocks <= 4
+count(call) <= 3
+count(load) <= 3
+count(store) <= 6
+count(phi) <= 3
+instructions <= 7 in @main
+
+# outcomes from 500-full-unroll-debug.ref: what the course solution removed stays removed (a call inlined, memory promoted, a definition pruned)
+none(phi)
+
+# Preserve source locations without fixing instructions or layout (pa8/lowir.md,
+# "Debug Locations"): a surviving, moved or copied instruction keeps its
+# location, nothing invents one, and the return keeps the statement's.
+has(/!dbg\(/) in @main
+none(/!dbg\((?!(?:loop\.cpp, 3, 3|loop\.cpp, 4, 3|loop\.cpp, 4, 10|loop\.cpp, 4, 15|loop\.cpp, 5, 5|loop\.cpp, 4, 20|loop\.cpp, 4, 25|loop\.cpp, 7, 3)\))/) in @main
+none(/^store\b(?!.*!dbg\((?:loop\.cpp, 5, 5)\))/) in @main
+none(/^return\b(?!.*!dbg\((?:loop\.cpp, 7, 3)\))/) in @main

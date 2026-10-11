@@ -1,0 +1,109 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @C__vtable [binding=strong, object=_ZTV1C]
+declare global @B__vtable [binding=strong, object=_ZTV1B]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> void [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+declare function @take(%arg0 : ptr [pass=by_address, object_bytes=16]) -> void [binding=strong, object=_Z4take1C]
+declare function @C___C(%arg0 : ptr [object_bytes=16]) -> void [unwind=no, binding=strong, object=_ZN1CD1Ev]
+
+global @__typeinfo_name__struct_A [storage=readonly, binding=weak, object=_ZTS1A] = {
+  i8 49
+  i8 65
+  i8 0
+}
+global @__rtti_struct_A [storage=readonly, binding=weak, object=_ZTI1A] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_A
+}
+global @A__vtable [storage=readonly, binding=weak, object=_ZTV1A] = {
+  i64 0
+  ptr addr @__rtti_struct_A
+  ptr addr @__cxa_pure_virtual
+  ptr addr @__cxa_pure_virtual
+}
+
+function @pass(%value : ptr [pass=by_address, object_bytes=16]) -> void [binding=strong, object=_Z4passR1C] {
+  slot $value : ptr
+  slot $arg__1 : obj<16x8>
+
+  block ^entry:
+    store typed ptr %value, $value
+    eh_try ^cleanup_resume_1
+    %t1 = addr $arg__1
+    %t2 = load typed ptr $value
+    call void @C__C(%t1, %t2)
+    eh_end
+    jump ^call_unwind_end_2
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^call_unwind_end_2:
+    eh_try ^cleanup_action_3
+    call void @take(%t1)
+    call void @C___C(%t1)
+    eh_end
+    jump ^call_unwind_end_4
+
+  block ^cleanup_action_3:
+    call void @C___C(%t1)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_4:
+    return void
+}
+function @C__C(%this : ptr [alias=noalias, object_bytes=16], %other : ptr [pass=by_address, alias=noalias, object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN1CC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    %t3 = load typed ptr $other
+    %t4 = index i8 %t3, 0
+    call void @A__A__base_entry(%t2, %t4)
+    %t5 = load typed ptr $this
+    %t6 = index i8 %t5, 8
+    %t7 = load typed ptr $other
+    %t8 = index i8 %t7, 8
+    call void @B__B__base_entry(%t6, %t8)
+    %t9 = load typed ptr $this
+    %t10 = addr @C__vtable
+    %t11 = index i8 %t10, 16
+    store typed ptr %t11, %t9
+    %t12 = load typed ptr $this
+    %t13 = index i8 %t12, 8
+    %t14 = addr @C__vtable
+    %t15 = index i8 %t14, 48
+    store typed ptr %t15, %t13
+    return void
+}
+function @A__A__base_entry(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1AC2ERKS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @B__B__base_entry(%this : ptr [alias=noalias, object_bytes=8], %other : ptr [pass=by_address, alias=noalias, object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1BC2ERKS_, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = addr @B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+alias object _ZN1CC2ERKS_ = @C__C

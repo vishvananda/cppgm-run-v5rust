@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition h function of (long int) returning long int
+    parameter x long int
+    compound-statement
+      return-statement
+        id-expression lvalue long int x
+  function-definition f function of () returning long int
+    compound-statement
+      simple-declaration
+        variable y short int
+          literal prvalue int 0
+      simple-declaration
+        variable z long int
+          id-expression lvalue short int y
+      return-statement
+        call-expression prvalue long int
+          callee h function of (long int) returning long int
+          id-expression lvalue short int y
+end translation unit

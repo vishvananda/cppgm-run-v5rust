@@ -1,0 +1,24 @@
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @twice(3)
+    %t2 = call i32 @f(%t1)
+    return i32 %t2
+}
+function @twice(%x : i32) -> i32 [binding=weak, object=_Z5twicei, inline_hint=yes] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed i32 $x
+    %t3 = binary add nowrap i32 %t1, %t2
+    return i32 %t3
+}

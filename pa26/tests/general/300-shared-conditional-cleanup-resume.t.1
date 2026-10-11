@@ -1,0 +1,42 @@
+#include "300-shared-conditional-cleanup-resume.helper.h"
+
+Value choose(bool first, bool second)
+{
+  const Value left = first ? Value(1) : Value(2) + Value(3);
+  const Value right = second ? Value(4) : Value(5) + Value(6);
+  return left + right;
+}
+
+int main()
+{
+  for (int flags = 0; flags != 4; ++flags)
+  {
+    const bool first = (flags & 1) != 0;
+    const bool second = (flags & 2) != 0;
+    attempts = constructed = destroyed = live = fail_at = 0;
+    {
+      Value result = choose(first, second);
+      if (result.value != (first ? 1 : 5) + (second ? 4 : 11)) return 1;
+    }
+    if (live != 0 || destroyed != constructed) return 2;
+    const int total = attempts;
+
+    for (int failure = 1; failure <= total; ++failure)
+    {
+      attempts = constructed = destroyed = live = 0;
+      fail_at = failure;
+      try
+      {
+        Value result = choose(first, second);
+        return 3;
+      }
+      catch (int value)
+      {
+        if (value != 7 || attempts != failure) return 4;
+      }
+      if (live != 0 || constructed != failure - 1 ||
+          destroyed != constructed) return 5;
+    }
+  }
+  return 0;
+}

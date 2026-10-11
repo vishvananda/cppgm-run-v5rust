@@ -1,0 +1,22 @@
+// N3485 14.1p10, 14.3.3: a template template-parameter defaulted to an alias
+// template declared before the class (libc++'s tuple and _And) names that
+// alias template wherever the constructor template is used, so
+// __is_constructible sees the constructor only when its enable_if holds
+#include <cstdio>
+// A trait declared before the alias template a constructor template's
+// template template-parameter defaults to (libc++'s tuple and _And).
+template <class T, class... A> struct constructible { static const bool value = __is_constructible(T, A...); };
+template <bool B> struct bool_constant { static const bool value = B; };
+template <class... T> bool_constant<true> all_helper(int);
+template <class... T> using All = decltype(all_helper<T...>(0));
+template <bool B, class T = int> struct enable_if {};
+template <class T> struct enable_if<true, T> { typedef T type; };
+template <class... Tp> struct tuple {
+	template <template <class...> class All = All, typename enable_if<All<Tp...>::value, int>::type = 0>
+	tuple(const Tp&...) {}
+};
+int main() {
+	std::printf("%d %d\n", (int)constructible<tuple<int, int>, int, int>::value,
+		(int)constructible<tuple<int, int>, int, int*>::value);
+	return 0;
+}

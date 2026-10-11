@@ -1,0 +1,97 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    call void @box__box(%t1)
+    %t2 = addr $source
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 7, %t3
+    %t4 = addr $source
+    call void @assign_rvalue(%t4)
+    %t5 = addr $source
+    call void @assign_const_lvalue(%t5)
+    return i32 0
+}
+function @box__box(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN3boxC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 0, %t2
+    return void
+}
+function @assign_rvalue(%source : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_Z13assign_rvalueI3boxEvRKT_] {
+  slot $source : ptr
+  slot $target : obj<4x4>
+  slot $arg__1 : obj<4x4>
+  slot $argobj__2 : obj<4x4>
+
+  block ^entry:
+    store typed ptr %source, $source
+    %t1 = addr $target
+    call void @box__box(%t1)
+    %t2 = addr $target
+    %t3 = addr $arg__1
+    %t4 = addr $argobj__2
+    %t5 = load typed ptr $source
+    copyobj 4x4 %t5, %t4
+    %t6 = call obj<4x4> @make_copy($argobj__2)
+    copyobj 4x4 %t6, %t3
+    %t7 = call ptr @box__operator___ov3(%t2, %t3)
+    return void
+}
+function @assign_const_lvalue(%source : ptr [pass=by_address, object_bytes=4]) -> void [binding=weak, object=_Z19assign_const_lvalueI3boxEvRKT_] {
+  slot $source : ptr
+  slot $target : obj<4x4>
+
+  block ^entry:
+    store typed ptr %source, $source
+    %t1 = addr $target
+    call void @box__box(%t1)
+    %t2 = addr $target
+    %t3 = load typed ptr $source
+    %t4 = call ptr @box__operator___ov2(%t2, %t3)
+    return void
+}
+function @make_copy(%source : obj<4x4>) -> obj<4x4> [binding=weak, object=_Z9make_copyI3boxET_S1_] {
+  slot $source : obj<4x4>
+  slot $retobj__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $source
+    copyobj 4x4 %source, %t1
+    %t2 = addr $retobj__1
+    %t3 = addr $source
+    copyobj 4x4 %t3, %t2
+    return obj<4x4> $retobj__1
+}
+function @box__operator___ov2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN3boxaSERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+function @box__operator___ov3(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN3boxaSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $this
+    %t2 = load typed ptr $other
+    copyobj 4x4 %t2, %t1
+    %t3 = load typed ptr $this
+    return ptr %t3
+}
+alias object _ZN3boxC2Ev = @box__box

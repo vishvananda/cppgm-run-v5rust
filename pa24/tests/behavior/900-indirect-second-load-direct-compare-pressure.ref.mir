@@ -1,0 +1,85 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @values
+  storage data
+  item i64 1
+  item i64 0
+
+function @probe
+  abi
+    param %base -> rdi : ptr
+    param %a -> rsi : i64
+    param %b -> rdx : i64
+    param %c -> rcx : i64
+    param %d -> r8 : i64
+    param %e -> r9 : i64
+    return i64 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+    slot $iteration -> [rbp-8] : i64
+    temp %pressure -> [rbp-16] : i64
+    temp %iteration -> [rbp-24] : i64
+
+  block ^entry
+    store.i64 [rbp-8], 0
+    lea rax, [rdi+8]
+    jmp ^condition
+
+  block ^condition
+    mov rbx, rsi
+    add rbx, rdx
+    store.i64 [rbp-16], rbx
+    load.i64 rbx, [rbp-8]
+    store.i64 [rbp-24], rbx
+    cmp.i64 rbx, [rdi]
+    jb ^body
+    jmp ^done
+
+  block ^body
+    mov rbx, rcx
+    add rbx, r8
+    add rbx, [rbp-16]
+    add rbx, rsi
+    add rbx, rdx
+    add rbx, r9
+    store.i64 [rax], rbx
+    load.i64 rbx, [rbp-24]
+    add rbx, 1
+    store.i64 [rbp-8], rbx
+    jmp ^condition
+
+  block ^done
+    load.i64 rax, [rbp-24]
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rdi, @values
+    mov rsi, 1
+    mov rdx, 2
+    mov rcx, 3
+    mov r8, 4
+    mov r9, 5
+    call @probe [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    mov rdx, 1
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    ret rax

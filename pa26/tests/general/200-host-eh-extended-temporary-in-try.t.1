@@ -1,0 +1,37 @@
+// N3485 12.2p3, 12.2p5, 15.2p1: a temporary bound to a reference persists with
+// it, while a temporary its initializer made is destroyed at the end of the
+// full-expression; when an exception later leaves the block (a try block, a
+// handler, a function-try-block, a loop), each is destroyed once: const and
+// rvalue references, a reference member of an aggregate, two references and
+// nested blocks
+#include "200-host-eh-extended-temporary-in-try.helper.h"
+static unsigned long long trace;
+static int mode;
+static void note(int v) { trace = trace * 31 + (unsigned long long)v; }
+struct T { int id; T(int i) : id(i) {} ~T() { note(id); } int get() const { return id; } };
+struct H { const T& m; };
+static T mk(int i) { return T(i); }
+static int use(const T& t) { return t.id; }
+static void g() { if (mode) throw 1; }
+static void a1() { try { const T& v = T(T(2).get() + 1); g(); note(v.id); } catch (...) { note(100); } }
+static void a2() { try { T&& v = mk(use(T(2)) + 1); g(); note(v.id); } catch (...) { note(100); } }
+static void a3() { try { H h = { mk(use(T(2)) + 1) }; g(); note(h.m.id); } catch (...) { note(100); } }
+static void a4() { try { const T& v = mk(use(T(2)) + 1); { T w(5); g(); } note(v.id); } catch (...) { note(100); } }
+static void a5() { try { const T& v = mk(use(T(2)) + 1); const T& u = mk(use(T(6)) + v.id); g(); note(u.id); } catch (...) { note(100); } }
+static void a6() { try { const T& v = mk(use(T(2)) + 1); try { g(); } catch (int) { note(200); throw; } note(v.id); } catch (...) { note(100); } }
+static void a7() { try { throw 0; } catch (int) { const T& v = mk(use(T(2)) + 1); g(); note(v.id); } }
+static void a8() try { const T& v = mk(use(T(2)) + 1); g(); note(v.id); } catch (...) { note(100); }
+static void a9() { for (int i = 0; i < 2; ++i) try { const T& v = mk(use(T(2 + i)) + 1); g(); note(v.id); } catch (...) { note(100 + i); } }
+static void a10() { T w(7); try { const T& v = T(T(T(2).get() + 1).get() + 1); g(); note(v.id); } catch (...) { note(100); } }
+int main()
+{
+  void (*fs[])() = { a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 };
+  for (int f = 0; f < 10; ++f)
+    for (mode = 0; mode < 2; ++mode)
+    {
+      trace = 0;
+      try { fs[f](); } catch (int e) { note(7000 + e); }
+      out_line("f", trace);
+    }
+  return 0;
+}

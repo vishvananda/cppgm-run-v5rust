@@ -1,0 +1,9 @@
+#include "100-polymorphic-inline-header-duplicate.helper.h"
+
+int other();
+
+int main()
+{
+  Poly p;
+  return p.f() + other() - 14;
+}
