@@ -1,24 +1,26 @@
 # PA4 port ledger
 
 Stage base commit: e953408ec36e27923018214d0c788e91d2756633
-Last audited commit: `a56a656f20d03249cf4d6b4581ece696f0f1f512`
+Last audited commit: `209cc516db532a3ed94c5359fcef82d7e9a98231` (code/architecture reviewed; full acceptance remains open)
 
 Implementation checkpoints:
 
 - `52ff1e8344d359aaa501d740291fb105f6300df6`: macro group (2026-10-11).
 - `5c06195f4c6f7960bcc768092a844871f1eaa2df`: conditional inclusion and controlling-expression rescanning (2026-10-11); entry HEAD `fd2481a` (documentation handoff after the macro implementation).
 - `16f0a9779f89f5b82544b1f1085b53593df1f749`: presumed locations, file/line builtin replacement and macro-expanded line control (2026-10-11); entry HEAD `af7984f93d7ba4aedca00014cd7590441667d207`.
-- `1fc98f61a249287476c98af449b1ca371e321285`: pragma directives/operators, packing and once registration (2026-10-11); entry HEAD `fbc24e1f77a920deb5b6889c2a62cc11a0216438`; independent review pending.
-- File inclusion/source ownership checkpoint (2026-10-11), introduced by this entry's commit; entry HEAD `f37c6f89bec2cdf1a6fce366b4b0b060c460f2f1`; independent review pending.
+- `1fc98f61a249287476c98af449b1ca371e321285`: pragma directives/operators, packing and once registration (2026-10-11); entry HEAD `fbc24e1f77a920deb5b6889c2a62cc11a0216438`; independently reviewed by the full-stage audit below.
+- File inclusion/source ownership checkpoint (2026-10-11), introduced by this entry's commit; entry HEAD `f37c6f89bec2cdf1a6fce366b4b0b060c460f2f1`; implementation `dfe3e9d`, independently reviewed below.
 
-The three accepted implementation checkpoints are independently audited below,
-through the audit fixes in `4359650`, `637b946` and `a56a656`. Ralph retains stage advancement. The
-location-control checkpoint reduced fixed failures from 14 to 8; this audit
-preserves all 98 accepted passing identities and the same eight failing IDs.
-Full PA4 remains incomplete; this certifies only the completed groups.
-The subsequent unaudited pragma implementation reaches 100/106. The file
-inclusion checkpoint below reaches 106/106; both leave the last-audited marker
-unchanged and retain their independent review boundaries.
+- `209cc516db532a3ed94c5359fcef82d7e9a98231`: full-stage audit fixes for predefined clock values, synthetic predefinition source ownership and work counters; entry HEAD `dfe3e9d`.
+
+The historical checkpoint sections below preserve their validation boundaries.
+The current fixed gate passes 106/106, the full course suite passes 112/112,
+and earlier PA1–PA3 stages and full course suites pass. Full acceptance is
+still open: the protected adapter rejects an empty-source `--stats` invocation
+solely for allocator storage, which the conversion plan treats as an
+implementation-specific measurement. The full-stage audit section records the
+exact reproduction, all reviewed owners, resource costs and required external
+baseline disposition. Ralph retains the existing goal and stage advancement.
 
 ## Contract and ownership
 
