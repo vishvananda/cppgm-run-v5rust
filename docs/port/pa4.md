@@ -9,14 +9,16 @@ Implementation checkpoints:
 - `5c06195f4c6f7960bcc768092a844871f1eaa2df`: conditional inclusion and controlling-expression rescanning (2026-10-11); entry HEAD `fd2481a` (documentation handoff after the macro implementation).
 - `16f0a9779f89f5b82544b1f1085b53593df1f749`: presumed locations, file/line builtin replacement and macro-expanded line control (2026-10-11); entry HEAD `af7984f93d7ba4aedca00014cd7590441667d207`.
 - `1fc98f61a249287476c98af449b1ca371e321285`: pragma directives/operators, packing and once registration (2026-10-11); entry HEAD `fbc24e1f77a920deb5b6889c2a62cc11a0216438`; independent review pending.
+- File inclusion/source ownership checkpoint (2026-10-11), introduced by this entry's commit; entry HEAD `f37c6f89bec2cdf1a6fce366b4b0b060c460f2f1`; independent review pending.
 
 The three accepted implementation checkpoints are independently audited below,
 through the audit fixes in `4359650`, `637b946` and `a56a656`. Ralph retains stage advancement. The
 location-control checkpoint reduced fixed failures from 14 to 8; this audit
 preserves all 98 accepted passing identities and the same eight failing IDs.
 Full PA4 remains incomplete; this certifies only the completed groups.
-The subsequent unaudited pragma implementation reaches 100/106 and is documented
-at the end of this ledger; it leaves the last-audited marker unchanged.
+The subsequent unaudited pragma implementation reaches 100/106. The file
+inclusion checkpoint below reaches 106/106; both leave the last-audited marker
+unchanged and retain their independent review boundaries.
 
 ## Contract and ownership
 
@@ -734,3 +736,135 @@ service and pragma state. Build-time predefined values, telemetry and later
 hosted environments/probes remain separately documented unfinished groups.
 The implementation does not update the last-audited marker, certify full PA4,
 or advance Ralph's stage.
+
+## File inclusion, source frames and header reentry checkpoint (2026-10-11)
+
+Entry HEAD: `f37c6f89bec2cdf1a6fce366b4b0b060c460f2f1`.
+Stage base remains `e953408ec36e27923018214d0c788e91d2756633`; last audited
+commit remains `a56a656f20d03249cf4d6b4581ece696f0f1f512`.
+The implementation commit is the commit introducing this checkpoint entry.
+Independent review and stage advancement belong to Ralph.
+
+This coherent group reduces the fixed manifest from six failures to zero:
+100/106 -> 106/106, preserving all 100 entry passing identities and all 106
+case identities. The gained IDs, all in `tests/directives/`, are
+`200-include.t`, `400-bad-include.t`, `400-header-guard-shapes.t`,
+`400-header-guarded.t`, `600-pragma-op.t`, `800-pragma-once.t`.
+There are no remaining failing fixed-manifest IDs. This is implementation
+and validation evidence for the group, not certification of complete PA4:
+build-time predefined values and the statistics interface are still missing.
+
+### C++ owners and typed data flow
+
+Read the frozen `preprocessor_directives.cpp::run_include`,
+`read_replaced_include_name`, `find_include`, `include_file`, `track_guard`,
+`run_conditional`, `innermost_conditional` and `skip_group_directive`;
+`preprocessor.cpp::leaving_file`, `describe`, `presumed_line` and
+`presumed_file_literal`; `source/source_files.{h,cpp}`,
+`source/source_stack.{h,cpp}` and `source/source_buffer.cpp::ReadFrom`.
+The surrounding handouts, contract, specification and conversion plan were
+reread for this checkpoint.
+
+| Responsibility | Rust owner and invariants |
+| --- | --- |
+| Physical file identity and storage | `preprocess/files.rs`: private compact `FileId`, dense immutable image store, path hit/miss cache, device/inode alias cache and optional guard `NameId`. One read per successfully opened identity; cache traversal never orders output. |
+| Host file boundary | `driver/file_identity.rs`: regular-file stat, byte paths and C-string termination, bulk reading with checked reservation for an appended newline, retention of bytes delivered before a read failure. `FileServices` explicitly supplies identity/read functions; compiler phases perform no platform or environment queries. |
+| Source image and physical index | `support/source/mod.rs`, `lex/pp_lexer/{mod,literals}.rs`: borrowed primary or shared immutable header image, one lazily built physical line index per image. Lexers own handles and use temporary translation-reader views, avoiding self-referential storage. Clean header spellings retain an image range; translated text retains the existing shared spelling. No per-token image allocation or image copy occurs. |
+| Include operand grammar | `preprocess/inclusion.rs`: direct header-name bypasses replacement and requires line end; other tokens use the same line-mode rescanner, then ordinary-string decoding or the C++ angle-token spelling/whitespace combination. Empty/malformed/extra-token diagnostics and demand precedence are preserved. Transient operands are cleared after decoding. |
+| File search and reentry | `preprocess/input.rs`: current presumed-name directory then working-directory search for both course delimiter forms. The found path becomes the included filename. Once identity and defined guard checks precede the exact depth limit (current depth > 200). No canonicalized path replaces the observable spelling. |
+| Source frames and locations | `preprocess/input.rs`, `preprocess/locations.rs`: private compact `InclusionId`, checked 32-bit nonoverlapping location ranges, dense inclusion records with parent/include-directive edges and independent presumed-name/delta histories. Active lexer frames are bounded by inclusion depth and released on file return; retained inclusion facts support later diagnostics and macro tokens. |
+| Conditional file boundaries and guards | `preprocess/conditionals.rs`, `preprocess/input.rs`, `preprocess/unit.rs`: each frame records entry depth and a copied optional open-conditional location from the owning conditional stack. A header cannot close a parent's section; an unclosed section fails before popping its frame. Start/open/closed/none guard states follow the C++ active and resumed-skipped directive transitions, and only a wholly closed guard is recorded on return. Undefinition permits reentry. |
+| Builtins and diagnostics | `preprocess/macros/expander.rs`, `preprocess/input.rs`: file/line lookup follows the token's owning inclusion even after lookahead leaves that file. Source errors use the active physical image; directive errors use the global range. Diagnostic history and innermost-first `note: included from` lines preserve C++ names, lines, columns and ordering. |
+
+Header EOF continues into its includer's text without a synthetic expansion
+boundary; a directive remains a boundary. Macros defined by headers retain
+stable source spellings after the lexer frame is released. Repeated headers
+share their image and physical line index; repeated entries have distinct
+locations and presumed histories. Source images, macro definitions, inclusion
+records, names, pragmas and file caches all die with their translation unit;
+no whole-unit token sequence is materialized. No backend, optimizer, target
+code generation, dependency, unsafe code, fallback compiler, fixture,
+reference or checker policy was changed.
+
+Rust invariant tests exercise cached misses/alias reads/shared physical line
+indices, header-definition survival, actual guard reentry skipping followed by
+undefinition, macro invocation through header EOF, token-owned builtin
+locations, conditional-file rejection diagnostics and emptied expansion
+storage. Existing pragma/line/macro tests remain green. The file audit reports
+zero findings and no new lint suppressions.
+
+### Validation and retained artifacts
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa4-inclusion/`.
+`entry-head.txt` and `entry-stage.json` preserve entry state; `summary.json`
+records the final binary hashes, unchanged manifest digest, exact identity
+comparison, gained cases and raw invocation verification.
+
+| Command/check | Result; evidence relative to root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS; `preflight.log` |
+| `make test-pa4` / required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa4` | PASS 106/106, exit 0; `stage.log`, `pa4-result.json`, copied raw `cases/` |
+| `make course-pa4` | PASS 110/110, exit 0 and no failure marker; `course.log`, `pa4-course/{course-result.json,counts.txt,trace.jsonl,mismatches/}` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS PA1 58/58, PA2 26/26, PA3 20/20 and all full course targets; `prior.log`, copied `pa{1,2,3}-result.json` and `pa{1,2,3}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS 100/100; `preserve.log` |
+| Entry/current identities and every raw PA4 invocation | PASS: same fixed 106 identities/digest; all prior passes retained; six gained; every invocation has exact ordinary status and bytes; `summary.json` |
+| `make lint` (`clone_quality.py`) | PASS rustfmt, strict Clippy, debug/release tests and file audit; `quality.log` |
+| `make audit-rust` | PASS 59 files, zero findings; `audit.log` |
+| `python3 probe.py` | PASS 202/202 equal status/stdout/stderr/complete output; `probe.log`, `probe-results.json`, source/header/alias inputs and raw observations in `probe/` |
+
+Differential probes cover direct and replaced operands, string decoding,
+whitespace in expanded angle names, invalid literals, extra tokens, NUL and
+UTF-8 paths, directories/missing files, recursive depth failure, active/inactive
+conditionals and lexical errors in headers, nested inclusion notes, guard
+shape/invalidation/undefinition, hard/symbolic aliases, once pragmas through
+line control, multiple primary-source reset, retained macro spellings,
+macro argument collection across file return, and parent location restoration.
+No new oracle/harness defect was observed. These scratch probes supplement
+and do not change any frozen lane.
+
+### Compile-time/RSS/scaling observations
+
+`python3 measure.py` records three observations per tool/workload with raw
+`/usr/bin/time` data and complete output hashes in `resources/`;
+`resources.log` and `resources/results.json` retain the results.
+Every corresponding C++/Rust output hash is equal. Wall time includes launch;
+RSS is the maximum of three runs. Large guarded/once headers contain 1,000
+output lines but are read/lexed only on their first entry. Unguarded headers
+emit 16 literals plus file/line builtins per entry, exercising repeated location
+queries against the shared physical index.
+
+| Workload | Scale | Primary bytes | Header bytes | Rust ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| guarded | 10,000 | 200,000 | 67,035 | 23.088 | 2,188 |
+| guarded | 50,000 | 1,000,000 | 67,035 | 63.451 | 2,892 |
+| guarded | 100,000 | 2,000,000 | 67,035 | 125.498 | 4,304 |
+| once | 10,000 | 200,000 | 67,013 | 18.128 | 2,192 |
+| once | 50,000 | 1,000,000 | 67,013 | 57.251 | 2,904 |
+| once | 100,000 | 2,000,000 | 67,013 | 101.636 | 4,308 |
+| unguarded-locations | 1,000 | 20,000 | 67 | 10.933 | 2,188 |
+| unguarded-locations | 5,000 | 100,000 | 67 | 49.174 | 2,936 |
+| unguarded-locations | 10,000 | 200,000 | 67 | 81.240 | 3,600 |
+
+The guarded and once paths retain one physical header and one header inclusion;
+additional directives hit the path/identity and skip facts. Unguarded reentry
+retains one image/line index and one small location-history record per entry;
+active lexer frames follow nesting depth. Produced-token work remains linear
+in required output. These measurements impose no PA35 generated-code target.
+The shared filesystem remains within the 100-GiB storage ceiling; raw capacity
+and usage are retained in `storage.txt`.
+
+### Next dependency boundary
+
+The course inclusion group, including guard and once reentry and exact
+included-file diagnostics, is implemented with zero fixed-manifest failures.
+Next handle the remaining PA4 tool/environment interfaces as an independently
+reviewable group: typed once-per-invocation author/date/time inputs for builtin
+replacement (`preprocessor.cpp::PredefinedText`, `preproc.cpp::SetBuildTime`)
+and exact preprocessing/expansion counters and `--stats` rendering. These
+currently return missing-implementation status 86 on demand; fixture coverage
+does not certify them. Hosted search paths, include-next, feature probes and
+host environment/dialect extensions remain later-stage responsibilities.
+Independent pragma/inclusion architecture review and Ralph's checkpoint/final
+audits decide acceptance and advancement; this implementation leaves the
+last-audited marker unchanged.

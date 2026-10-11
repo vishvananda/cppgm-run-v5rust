@@ -2,7 +2,7 @@
 use super::hide_sets::HideSetId;
 use crate::lex::identifiers::NameId;
 use crate::lex::pp_lexer::{PpToken, PpTokenKind, Punctuator};
-use crate::support::source::SourceOffset;
+use crate::support::source::{SourceBuffer, SourceOffset};
 use std::rc::Rc;
 
 pub(crate) const LEADING_SPACE: u8 = 1;
@@ -17,12 +17,18 @@ pub(crate) const FROM_ARGUMENT: u8 = 64;
 pub(crate) enum Spelling<'a> {
     Source(&'a [u8]),
     Shared(Rc<[u8]>),
+    Image {
+        source: Rc<SourceBuffer>,
+        begin: SourceOffset,
+        end: SourceOffset,
+    },
 }
 impl Spelling<'_> {
     pub(crate) fn bytes(&self) -> &[u8] {
         match self {
             Self::Source(text) => text,
             Self::Shared(text) => text,
+            Self::Image { source, begin, end } => &source.bytes()[begin.index()..end.index()],
         }
     }
 }

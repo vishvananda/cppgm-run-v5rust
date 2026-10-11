@@ -1,6 +1,7 @@
 //! Immutable physical source and stateless phase 1–2 views.
 
 mod translation;
+use std::{cell::OnceCell, rc::Rc};
 pub(crate) use translation::{END_OF_SOURCE, SourceChar, TranslationReader};
 
 /// Compact byte identity within one physical source buffer.
@@ -38,6 +39,23 @@ impl SourceError {
 pub struct SourceBuffer {
     bytes: Vec<u8>,
     begin: SourceOffset,
+    line_starts: OnceCell<Vec<u32>>,
+}
+
+/// An immutable source image; file-backed consumers share one retained allocation.
+#[derive(Clone)]
+pub(crate) enum SourceImage<'a> {
+    Borrowed(&'a SourceBuffer),
+    Shared(Rc<SourceBuffer>),
+}
+impl std::ops::Deref for SourceImage<'_> {
+    type Target = SourceBuffer;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Borrowed(source) => source,
+            Self::Shared(source) => source,
+        }
+    }
 }
 
 impl SourceBuffer {
@@ -63,6 +81,7 @@ impl SourceBuffer {
         }
         Ok(Self {
             bytes,
+            line_starts: OnceCell::new(),
             begin: SourceOffset(u32::try_from(begin).map_err(|_| "source file is too large")?),
         })
     }
@@ -78,8 +97,29 @@ impl SourceBuffer {
         bytes.push(b'\n');
         Ok(Self {
             bytes,
+            line_starts: OnceCell::new(),
             begin: SourceOffset(0),
         })
+    }
+
+    /// Physical line indexing is shared by every inclusion and built only on demand.
+    pub(crate) fn line_starts(&self) -> &[u32] {
+        self.line_starts.get_or_init(|| {
+            let mut starts = vec![self.begin.0];
+            // Construction guarantees every byte offset fits the compact space.
+            let mut offset = self.begin.0;
+            for &byte in &self.bytes[self.begin.index()..] {
+                offset += 1;
+                if byte == b'\n' {
+                    starts.push(offset);
+                }
+            }
+            starts
+        })
+    }
+    #[cfg(test)]
+    pub(crate) fn has_line_index(&self) -> bool {
+        self.line_starts.get().is_some()
     }
 
     pub(crate) fn bytes(&self) -> &[u8] {

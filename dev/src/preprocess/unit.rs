@@ -37,7 +37,7 @@ impl<'a> Preprocessor<'a> {
     pub fn with_name(source: &'a SourceBuffer, name: &[u8]) -> Result<Self, PreprocessError> {
         Self::with_file_identity(source, name, |_| None)
     }
-    /// Construct a file-backed unit with a demand-only host identity service.
+    /// Construct a unit with host identity queries and no include-file reader.
     /// # Errors
     /// Returns lexical construction errors before token delivery begins.
     pub fn with_file_identity(
@@ -45,17 +45,34 @@ impl<'a> Preprocessor<'a> {
         name: &[u8],
         identity_query: super::files::FileIdentityQuery,
     ) -> Result<Self, PreprocessError> {
+        Self::with_file_services(
+            source,
+            name,
+            super::files::FileServices {
+                identity: identity_query,
+                read: |_| None,
+            },
+        )
+    }
+    /// Construct a unit with demand-only host file operations.
+    /// # Errors
+    /// Returns lexical construction errors before token delivery begins.
+    pub fn with_file_services(
+        source: &'a SourceBuffer,
+        name: &[u8],
+        services: super::files::FileServices,
+    ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let definitions = Definitions::new(&mut names)?;
         Ok(Self {
-            source: SourceInput::with_name(source, name)?,
+            source: SourceInput::with_file_services(source, name, services)?,
             names,
             definitions,
             expander: Expander::default(),
             current: Token::end(source.begin()),
             conditionals: Conditionals::default(),
             line_tokens: Vec::new(),
-            pragmas: super::pragmas::Pragmas::new(identity_query),
+            pragmas: super::pragmas::Pragmas::new(services.identity),
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -86,6 +103,8 @@ impl<'a> Preprocessor<'a> {
     }
     fn run_directive(&mut self) -> Result<(), PreprocessError> {
         let directive = self.source.next_in_line(&mut self.names)?;
+        self.source
+            .track_guard(directive.spelling.bytes(), self.conditionals.depth());
         if directive.kind == PpTokenKind::NewLine {
             self.source.end_directive();
             return Ok(());
@@ -123,7 +142,21 @@ impl<'a> Preprocessor<'a> {
                 )?;
             }
             b"include" => {
-                return Err(PreprocessError::NotImplemented("file inclusion"));
+                let name = super::inclusion::read_name(
+                    &directive,
+                    &mut self.source,
+                    &mut self.names,
+                    &self.definitions,
+                    &mut self.expander,
+                    &mut self.line_tokens,
+                )?;
+                self.source.include(
+                    &directive,
+                    &name,
+                    self.conditionals.depth(),
+                    &self.definitions,
+                    &self.pragmas,
+                )?;
             }
             b"line" => super::line_control::run_line(
                 &directive,
@@ -143,6 +176,10 @@ impl<'a> Preprocessor<'a> {
                 ));
             }
         }
+        self.source.set_open_conditional(
+            self.conditionals
+                .open_since(self.source.conditional_depth()),
+        );
         self.source.end_directive();
         Ok(())
     }
@@ -155,10 +192,7 @@ impl<'a> Preprocessor<'a> {
         match error {
             PreprocessError::Source(error) => self.source.describe(error),
             PreprocessError::Directive { location, message } => {
-                self.source
-                    .describe(&crate::support::source::SourceError::new(
-                        *location, message,
-                    ))
+                self.source.describe_at(*location, message)
             }
             PreprocessError::Limit(message)
             | PreprocessError::Invariant(message)
@@ -456,5 +490,107 @@ chosen
         assert_eq!(kind, PpTokenKind::Identifier);
         assert_eq!(token.spelling, b"name");
         assert_eq!((token.begin.index(), token.end.index()), (35, 39));
+    }
+}
+
+#[cfg(test)]
+mod inclusion_tests {
+    use super::*;
+    use crate::preprocess::files::{FileIdentity, FileServices};
+
+    fn services() -> FileServices {
+        FileServices {
+            identity: |name| match name {
+                b"primary" => Some(FileIdentity::new(1, 1)),
+                b"header" | b"alias" => Some(FileIdentity::new(1, 2)),
+                _ => None,
+            },
+            read: |_| {
+                Some(b"#ifndef GUARD\n#define GUARD\n#define ID(x) x\n#define SAVED 9\n__FILE__ __LINE__\nID\n#endif\n".to_vec())
+            },
+        }
+    }
+    #[test]
+    fn header_definitions_survive_return_and_guards_skip_aliases_until_undefined() {
+        let source = SourceBuffer::new(b"#include \"header\"\n(SAVED)\n#include \"alias\"\n__FILE__ __LINE__\n#undef GUARD\n#include \"header\"\n(7)\n".to_vec()).unwrap();
+        let mut input = Preprocessor::with_file_services(&source, b"primary", services()).unwrap();
+        let mut result = Vec::new();
+        loop {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            if kind == PpTokenKind::EndOfFile {
+                break;
+            }
+            result.push(input.token(kind).spelling.to_vec());
+        }
+        assert_eq!(
+            result,
+            [
+                b"\"header\"".as_slice(),
+                b"5",
+                b"ID",
+                b"(",
+                b"9",
+                b")",
+                b"\"primary\"",
+                b"4",
+                b"\"header\"",
+                b"5",
+                b"ID",
+                b"(",
+                b"7",
+                b")"
+            ]
+        );
+        assert_eq!(input.source.inclusion_count(), 3);
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
+    #[test]
+    fn macro_invocations_run_through_header_eof_without_a_directive_boundary() {
+        let source = SourceBuffer::new(b"#include \"header\"\n(7)\n".to_vec()).unwrap();
+        let mut services = services();
+        services.read = |_| Some(b"#define F(x) x\nF\n".to_vec());
+        let mut input = Preprocessor::with_file_services(&source, b"primary", services).unwrap();
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"7");
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
+    #[test]
+    fn builtin_locations_remain_with_a_header_after_lookahead_returns_to_parent() {
+        let source = SourceBuffer::new(b"#include \"header\"\n".to_vec()).unwrap();
+        let mut services = services();
+        services.read = |_| Some(b"#define F(x) x\nF(__FILE__ __LINE__)\n".to_vec());
+        let mut input = Preprocessor::with_file_services(&source, b"primary", services).unwrap();
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"\"header\"");
+        let kind = input.next_non_whitespace_kind().unwrap();
+        assert_eq!(input.token(kind).spelling, b"2");
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+    }
+    #[test]
+    fn included_files_cannot_close_a_parent_conditional() {
+        for directive in [b"#endif\n".as_slice(), b"#else\n", b"#elif 1\n"] {
+            let source =
+                SourceBuffer::new(b"#if 1\n#include \"header\"\n#endif\n".to_vec()).unwrap();
+            let mut services = services();
+            services.read = match directive {
+                b"#endif\n" => |_| Some(b"#endif\n".to_vec()),
+                b"#else\n" => |_| Some(b"#else\n".to_vec()),
+                _ => |_| Some(b"#elif 1\n".to_vec()),
+            };
+            let mut input =
+                Preprocessor::with_file_services(&source, b"primary", services).unwrap();
+            let error = input.next_non_whitespace_kind().unwrap_err();
+            assert_eq!(
+                input.describe(&error).unwrap(),
+                b"header:1:2: #elif, #else or #endif without #if\nnote: included from primary:2"
+            );
+        }
     }
 }

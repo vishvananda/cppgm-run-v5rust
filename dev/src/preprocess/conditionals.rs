@@ -62,6 +62,14 @@ impl Default for Conditionals {
     }
 }
 impl Conditionals {
+    pub(crate) fn depth(&self) -> usize {
+        self.sections.len()
+    }
+    pub(crate) fn open_since(&self, depth: usize) -> Option<SourceOffset> {
+        (self.sections.len() > depth)
+            .then(|| self.sections.last().map(|section| section.location))
+            .flatten()
+    }
     pub(crate) fn check_end(&self) -> Result<(), PreprocessError> {
         if let Some(section) = self.sections.last() {
             return Err(PreprocessError::at(
@@ -96,6 +104,14 @@ impl Conditionals {
                         ));
                     }
                     expect_end(directive, source, names)?;
+                    if role == ConditionalDirective::Ifndef {
+                        source.open_guard(
+                            name.name.ok_or(PreprocessError::Invariant(
+                                "conditional name without identifier",
+                            ))?,
+                            self.sections.len(),
+                        );
+                    }
                     name.name.is_some_and(|name| definitions.is_defined(name))
                         == (role == ConditionalDirective::Ifdef)
                 };
@@ -111,6 +127,12 @@ impl Conditionals {
             ConditionalDirective::Elif
             | ConditionalDirective::Else
             | ConditionalDirective::Endif => {
+                if self.sections.len() <= source.conditional_depth() {
+                    return Err(PreprocessError::at(
+                        directive.begin,
+                        "#elif, #else or #endif without #if",
+                    ));
+                }
                 let section = self.sections.last_mut().ok_or_else(|| {
                     PreprocessError::at(directive.begin, "#elif, #else or #endif without #if")
                 })?;
@@ -209,6 +231,7 @@ impl Conditionals {
         definitions: &Definitions<'a>,
         expander: &mut Expander<'a>,
     ) -> Result<bool, PreprocessError> {
+        source.track_guard(directive.spelling.bytes(), self.sections.len());
         if role == ConditionalDirective::Endif {
             expect_end(directive, source, names)?;
             self.sections.pop();

@@ -6,7 +6,8 @@ pub use punctuators::Punctuator;
 pub(super) use punctuators::identifier_operator;
 
 use crate::support::source::{
-    END_OF_SOURCE, SourceBuffer, SourceChar, SourceError, SourceOffset, TranslationReader,
+    END_OF_SOURCE, SourceBuffer, SourceChar, SourceError, SourceImage, SourceOffset,
+    TranslationReader,
 };
 use crate::support::unicode::append_utf8;
 use classes::{
@@ -101,8 +102,7 @@ pub struct PpLexerOptions {
 
 /// One lexer owns no token sequence and retains capacity only for translated text.
 pub struct PpLexer<'a> {
-    source: &'a SourceBuffer,
-    reader: TranslationReader<'a>,
+    source: SourceImage<'a>,
     current: SourceChar,
     begin: SourceOffset,
     clean_end: SourceOffset,
@@ -131,11 +131,17 @@ impl<'a> PpLexer<'a> {
         source: &'a SourceBuffer,
         options: PpLexerOptions,
     ) -> Result<Self, SourceError> {
-        let reader = TranslationReader::new(source, !options.token_text);
+        Self::with_image(SourceImage::Borrowed(source), options)
+    }
+
+    pub(crate) fn with_image(
+        source: SourceImage<'a>,
+        options: PpLexerOptions,
+    ) -> Result<Self, SourceError> {
+        let reader = TranslationReader::new(&source, !options.token_text);
         let current = reader.logical(source.begin())?;
         Ok(Self {
             source,
-            reader,
             current,
             begin: current.begin,
             clean_end: current.begin,
@@ -150,6 +156,10 @@ impl<'a> PpLexer<'a> {
             punctuator: None,
             options,
         })
+    }
+
+    fn reader(&self) -> TranslationReader<'_> {
+        TranslationReader::new(&self.source, !self.options.token_text)
     }
 
     /// Permit a header-name as the next non-whitespace token.
@@ -302,7 +312,7 @@ impl<'a> PpLexer<'a> {
         Ok(())
     }
     fn after(&self, c: SourceChar) -> Result<SourceChar, SourceError> {
-        self.reader.logical(c.end)
+        self.reader().logical(c.end)
     }
 
     fn update_context(&mut self, kind: PpTokenKind) {

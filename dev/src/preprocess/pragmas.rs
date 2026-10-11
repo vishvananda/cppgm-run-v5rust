@@ -34,6 +34,9 @@ impl Pragmas {
     pub(crate) fn pack_alignment(&self) -> u32 {
         self.pack
     }
+    pub(crate) fn is_once(&self, identity: FileIdentity) -> bool {
+        self.once_files.contains(&identity)
+    }
     fn mark_once(&mut self, name: &[u8]) {
         if let Some(identity) = (self.identity_query)(name) {
             self.once_files.insert(identity);

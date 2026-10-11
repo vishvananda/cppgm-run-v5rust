@@ -272,7 +272,7 @@ impl<'a> Expander<'a> {
                 Builtin::File => {
                     token.kind = PpTokenKind::StringLiteral;
                     token.name = None;
-                    token.spelling = Spelling::Shared(source.file_literal());
+                    token.spelling = Spelling::Shared(source.file_literal(token.begin));
                     token.hide_set = HideSetId::default();
                     return Ok(false);
                 }

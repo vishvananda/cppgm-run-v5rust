@@ -1,8 +1,8 @@
 // Translated from source/source_files.cpp and preprocessor.cpp. See NOTICE.
 //! Physical line index and presumed-location history for one source inclusion.
 use super::error::PreprocessError;
-use crate::support::source::{SourceBuffer, SourceError, SourceOffset};
-use std::{cell::OnceCell, rc::Rc};
+use crate::support::source::{SourceBuffer, SourceError, SourceImage, SourceOffset};
+use std::rc::Rc;
 
 struct LineState {
     delta: i64,
@@ -14,17 +14,18 @@ struct EarlierState {
     state: LineState,
 }
 pub(crate) struct Locations<'a> {
-    source: &'a SourceBuffer,
-    starts: OnceCell<Vec<u32>>,
+    source: SourceImage<'a>,
     current: LineState,
     earlier: Vec<EarlierState>,
     file_literal: Option<Rc<[u8]>>,
 }
 impl<'a> Locations<'a> {
     pub(crate) fn new(source: &'a SourceBuffer, name: &[u8]) -> Self {
+        Self::with_image(SourceImage::Borrowed(source), name)
+    }
+    pub(crate) fn with_image(source: SourceImage<'a>, name: &[u8]) -> Self {
         Self {
             source,
-            starts: OnceCell::new(),
             current: LineState {
                 delta: 0,
                 name: name.into(),
@@ -33,19 +34,24 @@ impl<'a> Locations<'a> {
             file_literal: None,
         }
     }
+    pub(crate) fn line_and_name(
+        &self,
+        location: SourceOffset,
+    ) -> Result<(Rc<[u8]>, i64), PreprocessError> {
+        let state = self
+            .earlier
+            .get(
+                self.earlier
+                    .partition_point(|state| state.until <= location),
+            )
+            .map_or(&self.current, |earlier| &earlier.state);
+        Ok((
+            state.name.clone(),
+            (self.physical_line(location)? + state.delta).max(1),
+        ))
+    }
     fn starts(&self) -> &[u32] {
-        self.starts.get_or_init(|| {
-            let mut starts = vec![self.source.begin().0];
-            // SourceBuffer guarantees all image indices fit in u32.
-            let mut offset = self.source.begin().0;
-            for &byte in &self.source.bytes()[self.source.begin().index()..] {
-                offset += 1;
-                if byte == b'\n' {
-                    starts.push(offset);
-                }
-            }
-            starts
-        })
+        self.source.line_starts()
     }
     fn physical_line(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
         i64::try_from(self.starts().partition_point(|&start| start <= location.0))
@@ -148,10 +154,10 @@ mod tests {
     fn line_index_is_lazy_and_history_preserves_original_diagnostic_state() {
         let source = SourceBuffer::new(b"a\nb\nc\nd\n".to_vec()).unwrap();
         let mut locations = Locations::new(&source, b"physical");
-        assert!(locations.starts.get().is_none());
+        assert!(!source.has_line_index());
         let initial_literal = locations.file_literal();
         assert!(Rc::ptr_eq(&initial_literal, &locations.file_literal()));
-        assert!(locations.starts.get().is_none());
+        assert!(!source.has_line_index());
         locations
             .set_line(SourceOffset(3), 50, Some(b"first".to_vec()))
             .unwrap();

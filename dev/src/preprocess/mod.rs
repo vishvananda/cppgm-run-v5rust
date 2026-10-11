@@ -7,6 +7,7 @@ mod conditionals;
 pub mod error;
 pub mod expression;
 pub mod files;
+mod inclusion;
 mod input;
 mod line_control;
 mod locations;

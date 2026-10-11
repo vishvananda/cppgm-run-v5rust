@@ -117,12 +117,12 @@ impl PpLexer<'_> {
         } else {
             let mut offset = begin;
             while offset < end {
-                let c = self.reader.raw(offset)?;
+                let c = self.reader().raw(offset)?;
                 self.append(c)?;
                 offset = c.end;
             }
         }
-        self.current = self.reader.logical(end)?;
+        self.current = self.reader().logical(end)?;
         self.literal_suffix(
             PpTokenKind::StringLiteral,
             PpTokenKind::UserDefinedStringLiteral,
@@ -133,7 +133,7 @@ impl PpLexer<'_> {
         let mut delimiter = [0u32; 16];
         let mut count = 0;
         let mut verbatim = true;
-        let mut c = self.reader.raw(begin)?;
+        let mut c = self.reader().raw(begin)?;
         while c.code != 0x28 {
             if c.code == END_OF_SOURCE {
                 return Err(SourceError::new(
@@ -153,10 +153,10 @@ impl PpLexer<'_> {
             delimiter[count] = c.code;
             count += 1;
             verbatim &= !mapped_byte(c);
-            c = self.reader.raw(c.end)?;
+            c = self.reader().raw(c.end)?;
         }
         loop {
-            c = self.reader.raw(c.end)?;
+            c = self.reader().raw(c.end)?;
             if c.code == END_OF_SOURCE {
                 return Err(SourceError::new(
                     self.begin,
@@ -174,7 +174,7 @@ impl PpLexer<'_> {
                 .copied()
                 .chain(std::iter::once(0x22))
             {
-                close = self.reader.raw(close.end)?;
+                close = self.reader().raw(close.end)?;
                 if close.code != expected {
                     break;
                 }
