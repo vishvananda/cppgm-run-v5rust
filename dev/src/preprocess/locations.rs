@@ -78,6 +78,9 @@ impl<'a> Locations<'a> {
             })
             .clone()
     }
+    pub(crate) fn presumed_name(&self) -> &[u8] {
+        &self.current.name
+    }
     pub(crate) fn set_line(
         &mut self,
         newline: SourceOffset,

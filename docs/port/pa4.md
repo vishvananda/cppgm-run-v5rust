@@ -579,3 +579,154 @@ reviewed implementation/fix commit, followed only by this audit documentation.
 Next work remains the file-store/source-frame/inclusion boundary described
 above, followed by pragmas and other outstanding PA4 responsibilities. No claim
 of complete PA4 behavior or stage advancement is made.
+
+## Pragma implementation checkpoint (2026-10-11)
+
+Entry HEAD: `fbc24e1f77a920deb5b6889c2a62cc11a0216438`.
+The stage base and last-audited commit at the top remain unchanged. This is an
+implementation handoff for independent review, not a new audit or stage
+advancement. Fixed-manifest progress is **98/106 -> 100/106**: eight failures
+become six, with the same 106 case identities and all 98 entry passes retained.
+The two gained IDs are `tests/directives/500-pragma-ignore.t` and
+`tests/directives/501-pragma-op-ignore.t`. The complete course lane is 104/110;
+its six failures and failure marker remain visible.
+
+### Owners, behavior and architecture
+
+Consulted the frozen C++ `dev/src/preprocess/preprocessor.cpp` functions `next`,
+`run_pragma_operator`, `run_pragma` and `mark_once`,
+`preprocessor_directives.cpp` functions `run_pragma_directive`,
+`run_pack_pragma` and `apply_pack_pragma`, the `preprocessor.h` packing contract,
+`source/source_files.cpp` function `GetFileIdentity`, and the shared token-text
+lexer and literal-boundary owners. All paths refer to the recorded frozen
+checkout, not candidate C++ code.
+
+Rust responsibilities:
+
+- `dev/src/preprocess/pragmas.rs`: raw directive dispatch; post-rescan operator
+  grammar and removal; literal prefix/raw-body handling; destringizing only
+  escaped quote/backslash; shared phase-3 token-text lexer; ignored unknown
+  pragmas and the C++ lexical-error boundary; exact packing and once registration.
+- `dev/src/preprocess/files.rs`: private device/inode identity values and a
+  typed demand-only host query. `dev/src/driver/file_identity.rs` supplies the
+  safe standard-library stat equivalent, following symlinks, accepting only
+  regular files and respecting the frozen C-string NUL boundary.
+- `unit.rs`: owns the pragma state and queries it at text demand; exposes the
+  current packing value to future parser consumers. `input.rs` and
+  `locations.rs` expose the latest presumed name without rendering/reparsing a
+  file literal. `driver/preproc.rs` supplies the host identity service and
+  creates fresh unit state for every primary file. In-memory construction has
+  no host file identity; the file tool uses the explicit file-backed constructor.
+
+Packing recognizes loose operand syntax, push/pop/show flags and the last
+pp-number's decimal prefix, including explicit uint32 wrapping. Push and pop
+happen in C++ order before invalid alignment is ignored; `show` changes nothing.
+Directive operands are not expanded. Small typed operand facts are accumulated
+locally and applied only after the complete operand run lexes successfully.
+This preserves the C++ delayed state mutation without owning a second token
+vector. Operator text uses `for_token_text` and disables phases 1/2, exactly as
+C++; embedded newlines and raw bodies keep their original behavior. It uses the
+shared literal splitter, not phase-5 escape decoding.
+
+Operators execute only after rescanning, never during argument prescan,
+stringizing, unused argument handling, controlling expressions or line control.
+Three expanded operands are demanded at a text boundary; malformed invocations
+report the operator's location, while upstream lexical/macro errors preserve
+precedence. Repeated substituted operators execute separately. The removed
+operator tokens do not interrupt post-token string concatenation. The temporary
+text buffer and lexer die at operator completion. Packing/once stores die with
+the unit; names, macro tokens and definition ownership remain unchanged. Hash
+iteration does not determine output. Identity lookup occurs only for executed
+once pragmas. No new dependencies, unsafe code, environment reads in phases,
+compiler subprocesses, fixture recognition, backend changes or optimizations
+were introduced. The independent audit reports zero findings with no new lint
+suppression.
+
+Rust invariant tests cover observable packing at each token-demand boundary,
+argument-prescan-once versus repeated operator execution, emptied expansion
+storage, wrap/last-number/push/pop/show behavior, atomic lexical failure, latest
+presumed-name registration, identity aliases/NUL handling/nonregular rejection
+and unit lifetime. Frozen fixtures and protected policy were not changed.
+
+### Validation and retained evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa4-pragmas/`.
+Release `preproc` SHA-256:
+`a73bcecebdadbbecc508a8eed2f2742cbc1c7635b6d2cef7dcd309088cb6d5af`.
+Manifest digest remains
+`d3a98a505d9872f5a8b579b2f2b9937c606c0fcf6f372c9f7f2d1f5bfe9a3120`.
+
+| Command/check | Result and evidence relative to root |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa4` | PASS; `preflight.log` |
+| `make test-pa4` (required `clone_check.py stage pa4`) | 100/106; checker exit 1, make exit 2 for six inclusions; `stage.log`, `pa4-result.json`, copied raw `cases/` |
+| `make course-pa4` | 104/110; make exit 2, failure marker retained; `course.log`, copied `pa4-course/{course-result.json,counts.txt,trace.jsonl,mismatches/}` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa4` | PASS: PA1 58/58, PA2 26/26, PA3 20/20, all full course targets; `prior.log`, copied `pa{1,2,3}-result.json` and `pa{1,2,3}-course/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa4` | PASS 98/98; `preserve.log` |
+| Fresh entry/current identity and raw-trace comparison | PASS: unchanged 106 identities, 98 retained, two gained; all 100 passes match status 0/1 and complete bytes; `entry-stage.json`, `summary.json` |
+| `make lint` (`clone_quality.py`) | PASS: rustfmt, strict all-target/all-feature Clippy, debug/release tests and audit; `quality.log` |
+| `make audit-rust` | PASS: 58 files, zero findings; `audit.log` |
+| `python3 probe.py` | 549/549 equal status/stdout/stderr/complete output; `probe.log`, `probe-results.json`, raw inputs and observations in `probe/` |
+| `python3 pack-check.py` | 4,103/4,103 equal token-by-token packing observations; `pack-results.json`, `pack-sequence.cpp`, `pack-{cpp,rust}.{stdout,stderr}` |
+
+The packing probe uses scratch views linked against the unchanged frozen C++
+objects and the Rust library respectively. `pack-view.cpp`, `pack-view.rs` and
+`pack-view-build-command.json` retain the views and C++ link inputs. These are
+external validation tools, never implementations invoked by the compiler.
+They exercise directive/operator/raw/macro forms, repeated arguments, loose
+syntax, decimal suffixes/wrap, invalid alignment and lexical failure. The
+549 complete-tool probes additionally cover literal prefixes, malformed
+operators, macro-produced operands, inactive/controlling/stringized/unused
+contexts, location diagnostics, comments and string concatenation. No new
+oracle or harness defect was observed.
+
+### Compile-time/RSS/scaling observations
+
+`python3 measure.py` retains three observations per tool/workload, raw
+`/usr/bin/time` data, source and complete output hashes in `resources/`;
+`resources.log` and `resources/results.json` record the results. Every workload
+has identical C++/Rust output hashes. Median wall milliseconds include launch;
+RSS is the maximum of three runs. These describe the supported preprocessing
+paths and impose no generated-code optimization target.
+
+| Workload | Scale | Input bytes | Rust ms | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| Ignored operators and emitted tokens | 10,000 | 270,000 | 17.838 | 2,228 |
+| Same | 50,000 | 1,350,000 | 78.445 | 3,636 |
+| Same | 100,000 | 2,700,000 | 147.699 | 4,340 |
+| Pack push/pop operator pairs | 10,000 | 560,000 | 34.155 | 2,932 |
+| Same | 50,000 | 2,800,000 | 162.083 | 5,044 |
+| Same | 100,000 | 5,600,000 | 313.403 | 7,848 |
+| Operands in one pack directive | 10,000 | 80,024 | 6.699 | 2,228 |
+| Same | 50,000 | 400,024 | 21.860 | 2,224 |
+| Same | 100,000 | 800,024 | 38.390 | 2,928 |
+| Repeated once registration | 10,000 | 130,008 | 49.136 | 2,228 |
+| Same | 50,000 | 650,008 | 221.803 | 2,932 |
+| Same | 100,000 | 1,300,008 | 440.949 | 3,632 |
+
+Storage follows retained source bytes, active expansion depth, pack stack depth
+and distinct registered identities; pack operands retain constant-size facts.
+Time scales with required tokens/operators/host queries. The shared filesystem
+used 5.34 GB of its approximately 105.09 GB capacity after these small artifacts,
+within the stated 100-GiB ceiling.
+
+### Next dependency boundary and exact remaining IDs
+
+The coherent pragma-execution group is implemented; file inclusion is still
+explicitly missing. Once registration is present, but reentry skipping and
+multi-file identity/location behavior require the file store and source-frame
+stack. The exact fixed failures, all under `tests/directives/`, are:
+`200-include.t`, `400-bad-include.t`, `400-header-guard-shapes.t`,
+`400-header-guarded.t`, `600-pragma-op.t`, `800-pragma-once.t`.
+All six raw traces show candidate status 86 at `file inclusion` versus oracle
+status 0 (or status 1 for `400-bad-include.t`); none is called a matching rejection.
+
+Next port `source_files.{h,cpp}` and `source_stack.{h,cpp}` ownership, compact
+file/inclusion IDs and global location ranges, immutable cached source images,
+include operand/search semantics, per-frame conditional depth, guard tracking,
+once skips and inclusion-stack diagnostics. Reuse the typed host identity
+service and pragma state. Build-time predefined values, telemetry and later
+hosted environments/probes remain separately documented unfinished groups.
+The implementation does not update the last-audited marker, certify full PA4,
+or advance Ralph's stage.

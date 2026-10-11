@@ -7,6 +7,7 @@ pub fn run_tool(tool: &str) -> std::process::ExitCode {
     std::process::ExitCode::from(86)
 }
 
+mod file_identity;
 pub mod pptoken;
 
 pub mod posttoken;

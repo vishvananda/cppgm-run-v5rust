@@ -22,7 +22,8 @@ pub fn emit_preprocessed(
     name: &[u8],
     output: &mut (impl Write + ?Sized),
 ) -> Result<(), PreprocToolError> {
-    let input = Preprocessor::with_name(source, name).map_err(PreprocToolError::Initialization)?;
+    let input = Preprocessor::with_file_identity(source, name, super::file_identity::query)
+        .map_err(PreprocToolError::Initialization)?;
     let mut tokens = PostTokenizer::from_input(input, NumberDialect::Cxx11);
     loop {
         let token = match tokens.next_token() {

@@ -240,6 +240,9 @@ impl<'a> SourceInput<'a> {
     pub(crate) fn file_literal(&mut self) -> std::rc::Rc<[u8]> {
         self.locations.file_literal()
     }
+    pub(crate) fn presumed_name(&self) -> &[u8] {
+        self.locations.presumed_name()
+    }
     pub(crate) fn set_line(
         &mut self,
         number: u32,

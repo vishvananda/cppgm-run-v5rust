@@ -23,6 +23,7 @@ pub struct Preprocessor<'a> {
     current: Token<'a>,
     conditionals: Conditionals,
     line_tokens: Vec<Token<'a>>,
+    pragmas: super::pragmas::Pragmas,
 }
 impl<'a> Preprocessor<'a> {
     /// # Errors
@@ -30,10 +31,20 @@ impl<'a> Preprocessor<'a> {
     pub fn new(source: &'a SourceBuffer) -> Result<Self, PreprocessError> {
         Self::with_name(source, b"")
     }
-    /// Construct a translation unit with its command-line presumed filename.
+    /// Construct an in-memory unit with a presumed filename and no host file identity.
     /// # Errors
     /// Returns lexical construction errors before token delivery begins.
     pub fn with_name(source: &'a SourceBuffer, name: &[u8]) -> Result<Self, PreprocessError> {
+        Self::with_file_identity(source, name, |_| None)
+    }
+    /// Construct a file-backed unit with a demand-only host identity service.
+    /// # Errors
+    /// Returns lexical construction errors before token delivery begins.
+    pub fn with_file_identity(
+        source: &'a SourceBuffer,
+        name: &[u8],
+        identity_query: super::files::FileIdentityQuery,
+    ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let definitions = Definitions::new(&mut names)?;
         Ok(Self {
@@ -44,6 +55,7 @@ impl<'a> Preprocessor<'a> {
             current: Token::end(source.begin()),
             conditionals: Conditionals::default(),
             line_tokens: Vec::new(),
+            pragmas: super::pragmas::Pragmas::new(identity_query),
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -121,7 +133,9 @@ impl<'a> Preprocessor<'a> {
                 &mut self.expander,
                 &mut self.line_tokens,
             )?,
-            b"pragma" => return Err(PreprocessError::NotImplemented("pragma directives")),
+            b"pragma" => self
+                .pragmas
+                .run_directive(&mut self.source, &mut self.names)?,
             _ => {
                 return Err(PreprocessError::at(
                     directive.begin,
@@ -131,6 +145,11 @@ impl<'a> Preprocessor<'a> {
         }
         self.source.end_directive();
         Ok(())
+    }
+    /// Maximum member alignment currently selected by pragma pack; zero means default.
+    #[must_use]
+    pub fn pack_alignment(&self) -> u32 {
+        self.pragmas.pack_alignment()
     }
     pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
         match error {
@@ -159,7 +178,14 @@ impl PostTokenInput for Preprocessor<'_> {
                 continue;
             }
             if token.kind == PpTokenKind::Identifier && token.spelling.bytes() == b"_Pragma" {
-                return Err(PreprocessError::NotImplemented("pragma operator"));
+                self.pragmas.run_operator(
+                    &token,
+                    &mut self.source,
+                    &mut self.names,
+                    &self.definitions,
+                    &mut self.expander,
+                )?;
+                continue;
             }
             if token.kind == PpTokenKind::EndOfFile {
                 self.conditionals.check_end()?;
@@ -184,6 +210,39 @@ impl PostTokenInput for Preprocessor<'_> {
 mod tests {
     use super::*;
     use crate::lex::pp_lexer::Punctuator;
+
+    #[test]
+    fn pragma_execution_waits_for_text_demand_and_follows_argument_prescan() {
+        let source = SourceBuffer::new(
+            br#"#define TWICE(x) x x
+#define MAKE(x) _Pragma(#x)
+before TWICE(MAKE(pack(push,1)) __COUNTER__) after
+#pragma pack(pop)
+middle
+_Pragma(R"(pack(pop))") end
+"#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut input = Preprocessor::new(&source).unwrap();
+        for (expected, alignment) in [
+            (b"before".as_slice(), 0),
+            (b"0", 1),
+            (b"0", 1),
+            (b"after", 1),
+            (b"middle", 1),
+            (b"end", 0),
+        ] {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, expected);
+            assert_eq!(input.pack_alignment(), alignment);
+        }
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
 
     #[test]
     fn wrapped_parameter_roles_report_a_limit_without_indexing_absent_arguments() {
