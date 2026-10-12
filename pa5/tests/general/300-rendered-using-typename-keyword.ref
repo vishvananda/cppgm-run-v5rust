@@ -1,0 +1,35 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier g
+            parameter-clause
+            function-qualifier noexcept([]{usingtypename T::V;Vvalue;returntrue;}())
+              call-expression
+                lambda-expression
+                  lambda-introducer []
+                  compound-statement
+                    using-declaration
+                      target T::V
+                    simple-declaration
+                      decl-specifier-seq
+                        decl-specifier TT_IDENTIFIER:V
+                      init-declarator-list
+                        init-declarator
+                          declarator
+                            identifier value
+                    return-statement
+                      keyword-literal KW_TRUE:true
+                argument-list
+end translation unit

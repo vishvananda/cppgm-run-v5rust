@@ -7,6 +7,124 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: AST ownership, rendering and keyword boundaries — 2026-10-12
+
+Entry/reviewed commit: `ee1309e842a1dd469248509f3ff68ce06e6117ac` (clean).
+Stage base and last accepted partial audit above remain unchanged. The resulting
+commit and clean status are recorded in `pa5-views-audit/handoff.json`.
+**PA5 full acceptance remains open; the existing goal remains blocked.**
+It was not reset or marked complete, and Ralph state was not edited.
+
+The full frozen AST headers, `ast_printer.cpp/h`, `ast_render.cpp/h`,
+`syntax_unit.cpp/h`, `parse_token_stream.cpp/h` and `scratch_list.h` were
+compared directly with Rust `ast.rs`, `storage.rs`, `printer.rs`, `render.rs`,
+`mod.rs`, `cursor.rs` and the AST driver/tool entry. `ast_clone.h` and actual
+semantic/template consumers establish that specialization copying and pack
+expansion belong to later semantic stages, with no PA5 parser invocation of
+that implementation. Later semantic attachments, chosen/live readings, hosted
+GNU/fold/asm syntax, generic lambda heads and telemetry remain explicit later
+owners, not hidden successful compiler paths. Source-map rows were updated.
+
+`reviewed-views-responsibilities.json` records the ownership and output review.
+The navigation census adds **62 printer/render functions**, reaching **257
+source-reviewed entries out of 282**, with 25 later grammar/interface entries.
+Headers, inline helpers, storage and tool responsibilities are reviewed
+separately; the census count is not a proof of stage completion.
+
+Findings resolved:
+
+- Function ref qualifiers spelled `bitand` or `and` dump and render as `&` or
+  `&&`, matching the frozen token-only qualifier fact. Parsing normalizes the
+  existing typed Operator fact; pointer operators and expression operators
+  retain their alternative spellings. The retained representation preserves
+  the previously passing deep-template boundary, without changing the guard
+  budget or introducing calibrated thresholds.
+- Qualified conversions require a space after `operator` when their type
+  starts with a vector attribute or a global typename-specifier. The typed
+  word-start predicate now recognizes those actual rendered prefixes, without
+  rendering and reparsing a temporary type string.
+- A using-declaration owns its `typename` flag separately from its target
+  Name. It consumes the keyword once, retains the unresolved Type publication
+  rule, and renders `usingtypename T::V` rather than repeating `typename`.
+- Member, declarator and declared-type name entry points reject `typename`.
+  Named type specifiers and primary functional casts retain their existing
+  keyword demand and located facts. Constructor mem-initializer type names
+  reject the keyword at their owning boundary, like `parse_ctor_initializer`.
+
+The recorded before receipts show **nine ordinary byte/acceptance differences
+resolved** (ref qualifiers 2, qualified conversions 4, rendered using 1, member
+access 2). The ctor keyword boundary is an additional source-derived fix.
+`final.json` has **98/98** comparisons; **3462/3462** recent, **2141/2141** prior,
+and **158/158** state/ctor/cache comparisons remain exact: **5859/5859** ordinary
+raw status/stdout/stderr/full-AST comparisons. Five new required fixtures in
+PA5's executed general lane and only their new expectations supplement the
+unchanged frozen manifest; `new-regressions.json` has **5/5** exact comparisons.
+No added fixture count is claimed as a frozen-manifest gain.
+
+Architecture review: one in-process preprocessing/phase-7/parser owner per
+source; owned typed syntax slabs and compact list IDs; exhaustive Tree marks
+including both list-data and nested scratch lengths; checked u32 host-size
+bounds before allocation; explicit target wrap/truncation distinct from host
+sizes; bounded retained pull windows and original-ordinal deferred token runs;
+shared stable source/name/literal storage; explicit deferred-body demand;
+iterative borrowed printer/renderer work stacks and source order; no dump text
+round-trip, fixture dispatch, unsafe code or C++ implementation fallback.
+The tool owns environment/OS queries and bounded output buffering. I/O failure
+continues parsing later inputs before final failure, matching the frozen stream.
+Backend/per-function and PA32/PA33 optimizer policies are later dependencies;
+no PA35 objective or generated-code optimization was introduced.
+
+The existing speculative-list complete-key compatibility finding remains open
+at `pa5-state-final/cache-key-finding.json`. Full acceptance cannot certify that
+property from passing fixtures or from the handout's semantic exclusions.
+The native sweep remains **46/48**, retaining every previously passing native
+case. Exact unresolved IDs are **final-native/parentheses/4800** (C++ success,
+Rust located rejection at column 4234) and **final-native/known-templates/4800**
+(C++ rejection at column 7627, Rust rejection at column 4839). They are ordinary
+strict diagnostics, not exempt resource statistics. No signal, panic or status
+86 occurs in the sweep. These two differences and the complete-key finding
+are the next dependency boundary; they prevent full acceptance and phase-goal
+completion despite the successful gates.
+
+Final validation after the last retained production mutation:
+
+- `make build`; `make lint`: rustfmt, strict Clippy, debug/release **134 library
+  and 9 tool tests**, authoritative source audit **87 files, 0 findings**.
+- `make test-pa5` and exact required
+  `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5`:
+  **193/193**, successful normal statuses and strict artifact/stream comparison.
+- `make course-pa5`: original full test target **291/291**, no failure markers.
+  The first invocation raced creation of the fifth new fixture, yielding one
+  missing test-status artifact; it was rerun with all inputs present before
+  discovery. Both receipts remain in `intermediate-checks/` and `checks.json`.
+- Protected `prior pa5`: earlier PA1–PA4 fixed **58/26/20/106** and full course
+  **58/28/20/112**, all passing. Protected `preflight pa5`, `preserve pa5` and
+  `make audit-rust` pass. Post-ledger audit and `git diff --check` also pass.
+
+Artifacts: `/home/vishvananda/work/private/v5rust/artifacts/pa5-views-audit/`.
+`checks.json`, command logs and archived `results/`, `course/`, `cases/` retain
+exact commands and gate evidence. `final.json`, `recent-probes.json`,
+`prior-probes.json`, `state-probes.json`, `final-native.json`, the responsibility
+review, census and per-invocation raw streams/ASTs retain source evidence.
+Intermediate rejected experiments and discovery receipts remain separate.
+Frozen C++ commit remains `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`; tool SHA256
+is `b7d0c36db57478609a74ade0fbaa0b878827286581c2cf80f69d3e64597fbda3`.
+Retained Rust tool SHA256 is
+`b74884b2d395e02db6e9c8db9609400eb7388b634afa34a85c09cfe96eb33c31`.
+
+Resource observations are separate from output equality. `measure.py` runs
+36 serial warm whole `--emit-ast` invocations after all validation/probe handles
+finish, with identical source/tool hashes, LC_ALL=C and TZ=UTC. Every run exits
+0 with equal raw streams and full AST bytes. At 1000/4000/16000 units, ref
+qualifier views have Rust median ms **54.802/150.435/564.688** versus C++
+**20.236/77.995/272.079**, Rust max RSS KiB **8020/19848/69356** (C++ at 16000:
+54196). Qualified conversion views have Rust median ms
+**40.458/116.671/442.090** versus C++ **16.237/60.436/189.981**, Rust max RSS
+KiB **8016/16328/54744** (C++ at 16000: 47648). `measurements.json`,
+`resource-summary.json`, `resource-metadata.json`, workload sources and output
+hashes retain these observations; no throughput target is inferred. Storage
+remains within the 100 GiB task ceiling (`storage.txt`).
+
 ## Full-stage audit continuation: parser state and body boundaries — 2026-10-12
 
 Entry/reviewed commit: `6234a394ed322f7c8e0d1fd11b2dee4049cc9bc9` (clean).

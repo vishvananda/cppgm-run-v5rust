@@ -559,6 +559,7 @@ pub(super) enum DeclKind {
     },
     Using {
         directive: bool,
+        typename_keyword: bool,
         target: Name,
     },
     Alias {

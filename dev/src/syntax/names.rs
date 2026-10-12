@@ -58,12 +58,21 @@ impl Parser<'_> {
         self.name_in_context(NameMode::Type)
     }
     pub(super) fn member_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        if self.keyword()? == Some(K::Typename) {
+            return self.fail();
+        }
         self.name_in_context(NameMode::Member)
     }
     pub(super) fn declarator_id(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        if self.keyword()? == Some(K::Typename) {
+            return self.fail();
+        }
         self.name_in_context(NameMode::Declarator)
     }
     pub(super) fn declared_type_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        if self.keyword()? == Some(K::Typename) {
+            return self.fail();
+        }
         self.name_in_context(NameMode::DeclaredType)
     }
     fn name_in_context(&mut self, mode: NameMode) -> Result<(Name, Option<Binding>), ParseError> {

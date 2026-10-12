@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier X
+    class-key KW_STRUCT:struct
+    alias-declaration T
+      type-id
+        type-specifier-seq
+          type-specifier KW_INT:int
+  class-specifier A
+    class-key KW_STRUCT:struct
+    special-member-declaration operator__attribute__((__vector_size__(16)))int
+      declarator
+        identifier operator__attribute__((__vector_size__(16)))int
+        parameter-clause
+    special-member-declaration operatortypename ::X::T
+      declarator
+        identifier operatortypename ::X::T
+        parameter-clause
+  special-member-definition A::operator __attribute__((__vector_size__(16)))int
+    declarator
+      identifier A::operator __attribute__((__vector_size__(16)))int
+      parameter-clause
+    compound-statement
+  special-member-definition A::operator typename ::X::T
+    declarator
+      identifier A::operator typename ::X::T
+      parameter-clause
+    compound-statement
+end translation unit

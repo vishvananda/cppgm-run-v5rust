@@ -1,0 +1,69 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier A
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier l
+            parameter-clause
+            ref-qualifier OP_AMP:&
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier r
+            parameter-clause
+            ref-qualifier OP_LAND:&&
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      declarator
+        identifier f
+        parameter-clause
+        ref-qualifier OP_AMP:&
+      compound-statement
+        return-statement
+          literal 1
+    special-member-definition operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        ref-qualifier OP_LAND:&&
+      compound-statement
+        return-statement
+          literal 2
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier g
+          parameter-clause
+          function-qualifier noexcept([]{struct B{voidf()&&;};returntrue;}())
+            call-expression
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  class-specifier B
+                    class-key KW_STRUCT:struct
+                    simple-declaration
+                      decl-specifier-seq
+                        decl-specifier KW_VOID:void
+                      init-declarator-list
+                        init-declarator
+                          declarator
+                            identifier f
+                            parameter-clause
+                            ref-qualifier OP_LAND:&&
+                  return-statement
+                    keyword-literal KW_TRUE:true
+              argument-list
+end translation unit

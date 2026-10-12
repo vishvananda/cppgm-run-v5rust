@@ -563,7 +563,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.tasks
                     .push(Task::Line("target", Payload::Name(target), false));
             }
-            DeclKind::Using { directive, target } => {
+            DeclKind::Using {
+                directive, target, ..
+            } => {
                 self.open(
                     if directive {
                         "using-directive"

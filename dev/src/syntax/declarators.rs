@@ -494,7 +494,11 @@ impl Parser<'_> {
                     QualifierKind::Throw(self.throw_types()?)
                 }
                 _ if matches!(self.punctuator()?, Some(P::BitAnd | P::LogicalAnd)) => {
-                    QualifierKind::Ref(self.operator()?)
+                    // The frozen qualifier stores the token kind only; unlike
+                    // pointer operators, alternative spellings are not retained.
+                    let mut op = self.operator()?;
+                    op.alternative = false;
+                    QualifierKind::Ref(op)
                 }
                 _ if self.accept(P::Arrow)? => QualifierKind::Trailing(self.type_id(true)?),
                 _ if matches!(self.token()?.kind, TokenKind::Identifier(name) if matches!(self.cursor.name(name), b"final" | b"override")) => {

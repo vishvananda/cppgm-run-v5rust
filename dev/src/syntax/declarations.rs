@@ -289,6 +289,7 @@ impl Parser<'_> {
                 kind: DeclKind::Alias { name, ty },
             });
         }
+        let typename_keyword = !directive && self.accept_keyword(K::Typename)?;
         let (target, binding) = if directive {
             if self.keyword()? == Some(K::Typename) {
                 return self.fail();
@@ -325,7 +326,7 @@ impl Parser<'_> {
                 );
             }
         } else if !directive
-            && self.tree.names.get(target).typename_keyword
+            && typename_keyword
             && let Some(name) = self.last_identifier(target)
         {
             self.scopes.declare(
@@ -344,7 +345,11 @@ impl Parser<'_> {
         self.tree.declarations.add(Declaration {
             attributes,
             location,
-            kind: DeclKind::Using { directive, target },
+            kind: DeclKind::Using {
+                directive,
+                typename_keyword,
+                target,
+            },
         })
     }
     fn static_assert(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {

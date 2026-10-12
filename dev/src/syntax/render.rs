@@ -473,26 +473,27 @@ impl<'a, 'source> Renderer<'a, 'source> {
             .get(self.tree.types.get(ty).specifiers)
             .first()
             .is_some_and(|specifier| match &specifier.kind {
-                SpecifierKind::Vector { .. } => false,
-                SpecifierKind::Keyword(_)
+                SpecifierKind::Vector { .. }
+                | SpecifierKind::Keyword(_)
                 | SpecifierKind::Enum(_)
                 | SpecifierKind::Decltype(_)
                 | SpecifierKind::Class(_)
                 | SpecifierKind::Elaborated { .. } => true,
                 SpecifierKind::Named(name) => {
                     let name = self.tree.names.get(*name);
-                    !name.global
-                        && self
-                            .tree
-                            .name_lists
-                            .get(name.components)
-                            .first()
-                            .is_some_and(|component| {
-                                matches!(
-                                    component.kind,
-                                    NameKind::Identifier(_) | NameKind::Decltype(_)
-                                )
-                            })
+                    name.typename_keyword
+                        || (!name.global
+                            && self
+                                .tree
+                                .name_lists
+                                .get(name.components)
+                                .first()
+                                .is_some_and(|component| {
+                                    matches!(
+                                        component.kind,
+                                        NameKind::Identifier(_) | NameKind::Decltype(_)
+                                    )
+                                }))
                 }
             })
     }
@@ -978,12 +979,16 @@ impl Renderer<'_, '_> {
                 self.tasks.push(Render::Identifier(name));
                 self.tasks.push(Render::Text("namespace"));
             }
-            DeclKind::Using { directive, target } => {
+            DeclKind::Using {
+                directive,
+                typename_keyword,
+                target,
+            } => {
                 self.tasks.push(Render::Text(";"));
                 self.tasks.push(Render::Name(target, true));
                 self.tasks.push(Render::Text(if directive {
                     "usingnamespace"
-                } else if self.tree.names.get(target).typename_keyword {
+                } else if typename_keyword {
                     "usingtypename "
                 } else {
                     "using"

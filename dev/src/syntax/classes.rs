@@ -694,6 +694,9 @@ impl Parser<'_> {
         let start = self.tree.mem_initializers.begin();
         loop {
             let location = self.location()?;
+            if self.keyword()? == Some(K::Typename) {
+                return self.fail();
+            }
             let mentions = self.pack_mentions;
             let name = if self.keyword()? == Some(K::Decltype) {
                 self.single_decltype_name()?
