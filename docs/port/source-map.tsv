@@ -2,7 +2,7 @@ cpp_source	rust_owner	status
 dev/abimangle-scaffold.cpp		pending
 dev/abimangle.cpp		pending
 dev/cppgm++-scaffold.cpp		pending
-dev/cppgm++.cpp		pending
+dev/cppgm++.cpp	dev/bin/cppgm.rs,dev/bin/source_tool/build_time.rs,dev/src/driver/ast.rs	partial: PA5 AST invocation, per-file source/syntax ownership, output order/failure and exact located errors; other emit/driver/hosted/options/statistics paths pending
 dev/lowir-scaffold.cpp		pending
 dev/lowir.cpp		pending
 dev/lowir2native-scaffold.cpp		pending
@@ -16,7 +16,7 @@ dev/ppexpr.cpp	dev/bin/ppexpr.rs,dev/bin/source_tool/mod.rs,dev/src/driver/ppexp
 dev/pptoken-scaffold.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/pptoken.cpp	dev/bin/pptoken.rs,dev/bin/source_tool/mod.rs	complete
 dev/preproc-scaffold.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs	complete: all PA4 file/macro/directive/builtin/statistics interfaces implemented and audited; protected telemetry comparator disposition verified
-dev/preproc.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs,dev/src/driver/file_identity.rs,dev/src/preprocess/options.rs,dev/src/preprocess/counters.rs	complete: audited PA4 file CLI, reset, diagnostics, inclusion, once-per-invocation host clock, stats work counters and no-runner batch protocol; protected telemetry adapter correction verified with raw receipts
+dev/preproc.cpp	dev/bin/preproc.rs,dev/src/driver/preproc.rs,dev/src/driver/file_identity.rs,dev/src/preprocess/options.rs,dev/src/preprocess/counters.rs,dev/bin/source_tool/build_time.rs	complete: audited PA4 file CLI, reset, diagnostics, inclusion, once-per-invocation host clock, stats work counters and no-runner batch protocol; protected telemetry adapter correction verified with raw receipts
 dev/src/abi/facts/abi_fact_case.h		pending
 dev/src/abi/facts/abi_fact_definitions.cpp		pending
 dev/src/abi/facts/abi_fact_reader.cpp		pending
@@ -50,9 +50,9 @@ dev/src/lex/string_concatenation.cpp	dev/src/lex/strings.rs	partial: strict Cxx1
 dev/src/lex/string_concatenation.h	dev/src/lex/strings.rs	partial: private sequence store with compact piece spans and parse-once boundaries; GNU reserved suffix option deferred
 dev/src/lex/text_literal.cpp	dev/src/lex/text.rs	partial: single-piece splitting, typed escape decoding, scalar character evaluation and target multicharacter packing; joined-spelling piece-end helper deferred to its consumer
 dev/src/lex/text_literal.h	dev/src/lex/text.rs	partial: encoding prefixes, compact body/suffix boundaries and typed character facts; joined-spelling traversal helper deferred
-dev/src/lex/token_kind.cpp	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: simple identifier lookup including split alternative operators and all term names; spelling/assignment-query APIs deferred
-dev/src/lex/token_kind.h	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: all PA2 simple identities; primary/alternative spelling and assignment-query APIs deferred
-dev/src/lex/token_spelling.h	dev/src/lex/mod.rs,dev/src/lex/pp_lexer/mod.rs,dev/src/lex/strings.rs	partial: borrowed source/scratch/current-sequence slices and shared immutable retained preprocessor spellings; later parser ownership pending
+dev/src/lex/token_kind.cpp	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: PA2 token identities and PA5 canonical/alternative spelling views plus typed keyword/punctuator inspection; additional query APIs deferred
+dev/src/lex/token_kind.h	dev/src/lex/vocabulary.rs,dev/src/lex/pp_lexer/punctuators.rs	partial: PA2 token identities and PA5 canonical/alternative spelling views plus typed keyword/punctuator inspection; additional query APIs deferred
+dev/src/lex/token_spelling.h	dev/src/lex/mod.rs,dev/src/lex/pp_lexer/mod.rs,dev/src/lex/strings.rs,dev/src/syntax/storage.rs,dev/src/syntax/cursor.rs	partial: borrowed source/scratch/current-sequence slices, shared retained preprocessing images and PA5 stable literal spans/non-owning identifier and token descriptors; deferred token runs and later hosted spellings pending
 dev/src/lex/ud_suffix.cpp	dev/src/lex/number.rs	partial: strict underscore and Annex E UTF-8 suffixes; GNU reserved suffix option deferred
 dev/src/lex/ud_suffix.h	dev/src/lex/number.rs	partial: strict underscore and Annex E UTF-8 suffixes; GNU reserved suffix option deferred
 dev/src/lower/aggregate_lowering.cpp		pending
@@ -359,7 +359,7 @@ dev/src/support/file_handle.h		pending
 dev/src/support/flat_map.h		pending
 dev/src/support/internal_error.h		pending
 dev/src/support/memory/arena.cpp		pending
-dev/src/support/memory/arena.h		pending
+dev/src/support/memory/arena.h	dev/src/syntax/storage.rs,dev/src/syntax/ast.rs	partial: PA5 safe typed slabs/list storage and full parser rewind snapshots replace raw arena allocation; later phase arena owners pending
 dev/src/support/memory/zeroed_allocator.h		pending
 dev/src/support/not_implemented.h		pending
 dev/src/support/pointer_map.h		pending
@@ -371,37 +371,37 @@ dev/src/support/tool_errors.h		pending
 dev/src/support/tool_help_text.h		pending
 dev/src/support/unicode/utf8.cpp	dev/src/support/unicode.rs	complete
 dev/src/support/unicode/utf8.h	dev/src/support/unicode.rs	complete
-dev/src/syntax/ast.h		pending
+dev/src/syntax/ast.h	dev/src/syntax/ast.rs,dev/src/syntax/storage.rs	partial: flat typed syntax stores and compact unit-private IDs; class/template/deferred syntax variants pending
 dev/src/syntax/ast_clone.cpp		pending
 dev/src/syntax/ast_clone.h		pending
-dev/src/syntax/ast_declarations.h		pending
-dev/src/syntax/ast_expressions.h		pending
-dev/src/syntax/ast_names.h		pending
-dev/src/syntax/ast_printer.cpp		pending
-dev/src/syntax/ast_printer.h		pending
-dev/src/syntax/ast_render.cpp		pending
-dev/src/syntax/ast_render.h		pending
-dev/src/syntax/ast_statements.h		pending
-dev/src/syntax/ast_types.h		pending
+dev/src/syntax/ast_declarations.h	dev/src/syntax/ast.rs	partial: namespace/alias/using/simple/function/enum/static-assert/linkage records and source locations; class/member/template declarations pending
+dev/src/syntax/ast_expressions.h	dev/src/syntax/ast.rs	partial: phase-7 literal facts, qualified IDs, operator chains, casts/traits/calls/subscripts/member accesses/braced lists; allocation/lambdas/packs pending
+dev/src/syntax/ast_names.h	dev/src/syntax/ast.rs,dev/src/syntax/scopes.rs	partial: structured qualified identifier components, global/typename flags and retained parsing-category/scope facts; special names/template arguments/conflicts pending
+dev/src/syntax/ast_printer.cpp	dev/src/syntax/printer.rs	partial: iterative exact PA5 dump for foundation variants, explicit source order and trailing abstract/clause ellipsis distinction; later syntax variants pending
+dev/src/syntax/ast_printer.h	dev/src/syntax/printer.rs,dev/src/syntax/mod.rs	partial: borrowed typed unit dump API; additional syntax variants pending
+dev/src/syntax/ast_render.cpp	dev/src/syntax/render.rs	partial: iterative typed compact names/types/expressions/declarator/qualifier views, no text transport; class/template/lambda variants pending
+dev/src/syntax/ast_render.h	dev/src/syntax/render.rs	partial: unit-borrowed renderer and reusable action/output buffers for supported variants
+dev/src/syntax/ast_statements.h	dev/src/syntax/ast.rs	partial: ordinary blocks, declarations/expressions, conditions, selection/loops/range-for/labels/jumps; ambiguous readings, try/handlers/asm pending
+dev/src/syntax/ast_types.h	dev/src/syntax/ast.rs	partial: specifier/declarator derivations, clause ellipsis form, parameters/defaults, cv/ref/noexcept/throw/trailing-return syntax; member pointers/attributes/packs/dependent types pending
 dev/src/syntax/gnu_names.h		pending
 dev/src/syntax/name_conflicts.h		pending
-dev/src/syntax/name_scopes.cpp		pending
-dev/src/syntax/name_scopes.h		pending
-dev/src/syntax/parse_token_stream.cpp		pending
-dev/src/syntax/parse_token_stream.h		pending
-dev/src/syntax/parser.cpp		pending
-dev/src/syntax/parser.h		pending
-dev/src/syntax/parser_declarations.cpp		pending
-dev/src/syntax/parser_declarators.cpp		pending
-dev/src/syntax/parser_expressions.cpp		pending
-dev/src/syntax/parser_names.cpp		pending
-dev/src/syntax/parser_regions.h		pending
-dev/src/syntax/parser_specifiers.cpp		pending
-dev/src/syntax/parser_state.cpp		pending
-dev/src/syntax/parser_state.h		pending
-dev/src/syntax/parser_statements.cpp		pending
-dev/src/syntax/scratch_list.h		pending
-dev/src/syntax/syntax_unit.cpp		pending
-dev/src/syntax/syntax_unit.h		pending
+dev/src/syntax/name_scopes.cpp	dev/src/syntax/scopes.rs,dev/src/syntax/parser.rs	partial: indexed typed parsing categories, lexical parents, namespace reopen/alias/import edges and transactional binding/edge/anonymous-scope undo; classes/template contexts/conflicts and full nomination rules pending
+dev/src/syntax/name_scopes.h	dev/src/syntax/scopes.rs	partial: compact ScopeId, typed Binding/Category and private lookup/mutation/rollback APIs; later categories/conflict/environment overlays pending
+dev/src/syntax/parse_token_stream.cpp	dev/src/syntax/cursor.rs	partial: demand post-token pulls, stable literal byte pool, identifier borrowing, linked right-shift halves, retained checkpoints and 4096-token compaction; deferred runs/pack/prelude/hosted remapping pending
+dev/src/syntax/parse_token_stream.h	dev/src/syntax/cursor.rs	partial: copied compact cursor descriptors and checked absolute positions, structured parse errors; replay/capture/pack observations pending
+dev/src/syntax/parser.cpp	dev/src/syntax/parser.rs,dev/src/syntax/mod.rs	partial: unit/declaration sequence and typed parser lifetime; deferred class/lambda/function-try/ctor bodies pending
+dev/src/syntax/parser.h	dev/src/syntax/parser.rs,dev/src/syntax/declarations.rs,dev/src/syntax/declarators.rs,dev/src/syntax/expressions.rs,dev/src/syntax/statements.rs	partial: typed grammar interfaces and Result alternatives; remaining PA5 grammar groups pending
+dev/src/syntax/parser_declarations.cpp	dev/src/syntax/declarations.rs	partial: empty/simple/function/namespace/using/alias/linkage/static-assert/initializer syntax; typedef/alias enum scope identity retained; class members/templates/special members/packs/attributes pending
+dev/src/syntax/parser_declarators.cpp	dev/src/syntax/declarators.rs	partial: pointers/references/cv/nesting/arrays/function parameter clauses/defaults/qualifiers/type-ids and reversible function-vs-initializer attempts; member pointers/attributes/dependent packs pending
+dev/src/syntax/parser_expressions.cpp	dev/src/syntax/expressions.rs	partial: exact precedence/associativity, right-shift adjacency, scalar/keyword literals, parens/calls/subscripts/member/postfix/conditional/casts/sizeof/typeid/alignof/noexcept/braced lists; special sizeof named-function types, new/delete/lambdas/packs/folds/throw/builtins pending
+dev/src/syntax/parser_names.cpp	dev/src/syntax/parser.rs	partial: identifier paths, explicit typename/global scope, declared-category preference and course C/Y/E/T fallback; template-id/angle-list/special operator names/dependent conflict machinery pending
+dev/src/syntax/parser_regions.h	dev/src/syntax/parser.rs	partial: nested Result boundaries and full syntax/list/scope/function-context transaction; oracle host byte-stack budget and deferred speculation boundaries pending (deep missing path remains status 86)
+dev/src/syntax/parser_specifiers.cpp	dev/src/syntax/declarations.rs	partial: builtin/storage/cv/named/enum specifiers, scoped/opaque/anonymous enum syntax, underlying types and members; class/decltype/attributes/GNU specifiers pending
+dev/src/syntax/parser_state.cpp	dev/src/syntax/parser.rs,dev/src/syntax/ast.rs,dev/src/syntax/scopes.rs	partial: transactional slab/list/name-scope checkpoints and furthest absolute-token diagnostic position; memoized angles/conflicts/deferred state/statistics pending
+dev/src/syntax/parser_state.h	dev/src/syntax/parser.rs,dev/src/syntax/ast.rs	partial: unit-owned cursor/tree/categories, reversible function-scope and Result parse outcomes; later state/statistics/deferred bodies pending
+dev/src/syntax/parser_statements.cpp	dev/src/syntax/statements.rs	partial: ordinary declaration preference, condition declarations, blocks/if/switch/while/do/for/range-for/labels/jumps/return/throw statements; ambiguous retained readings/selection initializers/structured bindings/try/asm pending
+dev/src/syntax/scratch_list.h	dev/src/syntax/storage.rs	partial: reusable nested scratch and immutable typed list slices with transactional truncation; later syntax consumers pending
+dev/src/syntax/syntax_unit.cpp	dev/src/syntax/mod.rs,dev/src/driver/ast.rs	partial: one preprocessing/post-token/cursor/tree owner per source, parse-once root and lazy structured diagnostic view; hosted prelude/deferred consumers/statistics pending
+dev/src/syntax/syntax_unit.h	dev/src/syntax/mod.rs	partial: unit-private typed AST owner with borrowed print API; future semantic interface and counters pending
 dev/src/types/fundamental_type.cpp	dev/src/types/fundamental.rs	partial: all PA2 numeric/text type names/sizes and literal integer bounds; remaining type properties deferred
 dev/src/types/fundamental_type.h	dev/src/types/fundamental.rs	partial: thirteen distinct PA2 numeric/text identities; semantic/extended types deferred

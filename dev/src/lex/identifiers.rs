@@ -38,4 +38,7 @@ impl Identifiers {
     pub(crate) fn spelling(&self, id: NameId) -> Rc<[u8]> {
         self.spellings[id.index()].clone()
     }
+    pub(crate) fn bytes(&self, id: NameId) -> &[u8] {
+        &self.spellings[id.index()]
+    }
 }

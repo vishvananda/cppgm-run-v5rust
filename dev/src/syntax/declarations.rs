@@ -1,0 +1,496 @@
+// Translated from syntax/parser_declarations.cpp and parser_specifiers.cpp. See NOTICE.
+use super::{
+    ParseError,
+    ast::{
+        DeclId, DeclKind, Declaration, Enumerator, InitDeclarator, Initializer, Specifier, TypeId,
+        TypeSyntax,
+    },
+    cursor::TokenKind,
+    parser::Parser,
+    scopes::{Binding, Category},
+    storage::List,
+};
+use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
+use crate::support::source::SourceOffset;
+impl Parser<'_> {
+    pub(super) fn declaration(&mut self) -> Result<DeclId, ParseError> {
+        self.nested(Self::declaration_inner)
+    }
+    fn declaration_inner(&mut self) -> Result<DeclId, ParseError> {
+        self.attributes_boundary()?;
+        let location = self.location()?;
+        if self.accept(P::Semicolon)? {
+            return self.tree.declarations.add(Declaration {
+                location,
+                kind: DeclKind::Empty,
+            });
+        }
+        match self.keyword()? {
+            Some(K::Namespace) => self.namespace(location, false),
+            Some(K::Inline) if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Namespace)) =>
+            {
+                self.cursor.advance()?;
+                self.namespace(location, true)
+            }
+            Some(K::Using) => self.using_declaration(location),
+            Some(K::StaticAssert) => self.static_assert(location),
+            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(_)) => {
+                self.linkage(location)
+            }
+            Some(K::Template) => Err(ParseError::NotImplemented(
+                "template declarations and parameter categories",
+            )),
+            _ => self.simple_declaration(location),
+        }
+    }
+    fn namespace(&mut self, location: SourceOffset, inline: bool) -> Result<DeclId, ParseError> {
+        self.cursor.advance()?;
+        let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) {
+            Some(self.identifier()?)
+        } else {
+            None
+        };
+        if let Some(name) = name
+            && self.accept(P::Assign)?
+        {
+            let (target, binding) = self.name()?;
+            self.expect(P::Semicolon)?;
+            self.scopes.declare(
+                name,
+                Binding {
+                    category: Category::Namespace,
+                    scope: binding.and_then(|binding| binding.scope),
+                },
+            );
+            return self.tree.declarations.add(Declaration {
+                location,
+                kind: DeclKind::NamespaceAlias { name, target },
+            });
+        }
+        self.attributes_boundary()?;
+        self.expect(P::LeftBrace)?;
+        let enclosing = self.scopes.current;
+        let existing = name
+            .and_then(|name| self.scopes.own(enclosing, name))
+            .filter(|binding| binding.category == Category::Namespace)
+            .and_then(|binding| binding.scope);
+        let existing = if name.is_none() {
+            self.scopes.unnamed(enclosing)
+        } else {
+            existing
+        };
+        let scope = if let Some(scope) = existing {
+            scope
+        } else {
+            self.scopes.push()?
+        };
+        self.scopes.current = enclosing;
+        if let Some(name) = name {
+            self.scopes.declare(
+                name,
+                Binding {
+                    category: Category::Namespace,
+                    scope: Some(scope),
+                },
+            );
+        }
+        if name.is_none() {
+            self.scopes.set_unnamed(enclosing, scope);
+        }
+        if name.is_none() || inline {
+            self.scopes.add_edge(scope);
+        }
+        self.scopes.current = scope;
+        let declarations = self.declarations(true)?;
+        self.expect(P::RightBrace)?;
+        self.scopes.current = enclosing;
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::Namespace {
+                name,
+                inline,
+                declarations,
+            },
+        })
+    }
+    fn using_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        self.cursor.advance()?;
+        let directive = self.accept_keyword(K::Namespace)?;
+        if !directive
+            && matches!(self.token()?.kind, TokenKind::Identifier(_))
+            && self.at_ahead(P::Assign, 1)?
+        {
+            let name = self.identifier()?;
+            self.cursor.advance()?;
+            let ty = self.type_id(true)?;
+            self.expect(P::Semicolon)?;
+            let type_node = self.tree.types.get(ty);
+            let scope = if type_node.declarator.is_none() {
+                self.specifier_scope(type_node.specifiers)
+            } else {
+                None
+            };
+            self.scopes.declare(
+                name,
+                Binding {
+                    category: Category::Type,
+                    scope,
+                },
+            );
+            return self.tree.declarations.add(Declaration {
+                location,
+                kind: DeclKind::Alias { name, ty },
+            });
+        }
+        let (target, binding) = self.name()?;
+        self.expect(P::Semicolon)?;
+        if let Some(binding) = binding {
+            if directive {
+                if let Some(scope) = binding.scope
+                    && binding.category == Category::Namespace
+                {
+                    self.scopes.add_edge(scope);
+                }
+            } else if let Some(&name) = self
+                .tree
+                .name_lists
+                .get(self.tree.names.get(target).components)
+                .last()
+            {
+                self.scopes.declare(name, binding);
+            }
+        } else if !directive
+            && self.tree.names.get(target).typename_keyword
+            && let Some(&name) = self
+                .tree
+                .name_lists
+                .get(self.tree.names.get(target).components)
+                .last()
+        {
+            self.scopes.declare(
+                name,
+                Binding {
+                    category: Category::Type,
+                    scope: None,
+                },
+            );
+        }
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::Using { directive, target },
+        })
+    }
+    fn static_assert(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let condition = self.assignment_expression()?;
+        let message = if self.accept(P::Comma)? {
+            let TokenKind::Literal(literal) = self.token()?.kind else {
+                return self.fail();
+            };
+            if !matches!(literal.kind, crate::lex::PostTokenKind::String { .. }) {
+                return self.fail();
+            }
+            self.cursor.advance()?;
+            Some(literal)
+        } else {
+            None
+        };
+        self.expect(P::RightParen)?;
+        self.expect(P::Semicolon)?;
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::StaticAssert { condition, message },
+        })
+    }
+    fn linkage(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        self.cursor.advance()?;
+        let TokenKind::Literal(literal) = self.token()?.kind else {
+            return self.fail();
+        };
+        let language = super::storage::TextStore::unquote(literal.spelling);
+        self.cursor.advance()?;
+        let braced = self.accept(P::LeftBrace)?;
+        let declarations = if braced {
+            let declarations = self.declarations(true)?;
+            self.expect(P::RightBrace)?;
+            declarations
+        } else {
+            let start = self.tree.decl_lists.begin();
+            let declaration = self.declaration()?;
+            self.tree.decl_lists.push(declaration);
+            self.tree.decl_lists.finish(start)?
+        };
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::Linkage {
+                language,
+                braced,
+                declarations,
+            },
+        })
+    }
+    pub(super) fn specifier_sequence(
+        &mut self,
+        definite: bool,
+        type_only: bool,
+    ) -> Result<List<Specifier>, ParseError> {
+        let start = self.tree.specs.begin();
+        let mut has_type = false;
+        loop {
+            self.attributes_boundary()?;
+            match self.keyword()? {
+                Some(word)
+                    if Self::is_specifier(word)
+                        && (!type_only
+                            || Self::has_type_keyword(word)
+                            || matches!(word, K::Const | K::Volatile)) =>
+                {
+                    has_type |= Self::has_type_keyword(word);
+                    self.cursor.advance()?;
+                    self.tree.specs.push(Specifier::Keyword(word));
+                }
+                Some(K::Enum) if !has_type => {
+                    let enumeration = self.enum_specifier()?;
+                    self.tree.specs.push(Specifier::Enum(enumeration));
+                    has_type = true;
+                }
+                Some(K::Class | K::Struct | K::Union) if !has_type => {
+                    return Err(ParseError::NotImplemented(
+                        "class specifiers, member scopes and deferred bodies",
+                    ));
+                }
+                Some(K::Decltype) if !has_type => {
+                    return Err(ParseError::NotImplemented(
+                        "decltype operands and qualified types",
+                    ));
+                }
+                _ if !has_type
+                    && (matches!(self.token()?.kind, TokenKind::Identifier(_))
+                        || self.at(P::Scope)?
+                        || self.keyword()? == Some(K::Typename)) =>
+                {
+                    let named = self.attempt(|parser| {
+                        let (name, binding) = parser.name()?;
+                        let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
+                        if !parser.is_type_name(name, binding, definite, followed) {
+                            return parser.fail();
+                        }
+                        Ok(name)
+                    })?;
+                    let Some(name) = named else {
+                        break;
+                    };
+                    self.tree.specs.push(Specifier::Named(name));
+                    has_type = true;
+                }
+                _ => break,
+            }
+        }
+        if self.tree.specs.begin() == start || (type_only && !has_type) {
+            return self.fail();
+        }
+        self.tree.specs.finish(start)
+    }
+    pub(super) fn type_id(&mut self, definite: bool) -> Result<TypeId, ParseError> {
+        let location = self.location()?;
+        let specifiers = self.specifier_sequence(definite, true)?;
+        let declarator = self.declarator(super::declarators::Mode::Abstract)?;
+        let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+        self.tree.types.add(TypeSyntax {
+            location,
+            specifiers,
+            declarator,
+        })
+    }
+    fn enum_specifier(&mut self) -> Result<DeclId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        let key = if matches!(self.keyword()?, Some(K::Class | K::Struct)) {
+            let key = self.keyword()?;
+            self.cursor.advance()?;
+            key
+        } else {
+            None
+        };
+        self.attributes_boundary()?;
+        let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
+            Some(self.name()?.0)
+        } else {
+            None
+        };
+        let underlying = if self.accept(P::Colon)? {
+            let location = self.location()?;
+            let specifiers = self.specifier_sequence(true, true)?;
+            Some(self.tree.types.add(TypeSyntax {
+                location,
+                specifiers,
+                declarator: None,
+            })?)
+        } else {
+            None
+        };
+        let has_body = self.accept(P::LeftBrace)?;
+        if !has_body && name.is_none() {
+            return self.fail();
+        }
+        let enclosing = self.scopes.current;
+        let scope = if has_body {
+            let scope = self.scopes.push()?;
+            self.scopes.current = enclosing;
+            Some(scope)
+        } else {
+            None
+        };
+        if let Some(simple) = name.and_then(|name| self.simple_name(name)) {
+            self.scopes.declare(
+                simple,
+                Binding {
+                    category: Category::Type,
+                    scope,
+                },
+            );
+        }
+        let start = self.tree.enumerators.begin();
+        let mut trailing_comma = false;
+        if has_body {
+            while !self.at(P::RightBrace)? {
+                let name = self.identifier()?;
+                self.attributes_boundary()?;
+                let value = if self.accept(P::Assign)? {
+                    Some(self.assignment_expression()?)
+                } else {
+                    None
+                };
+                self.tree.enumerators.push(Enumerator { name, value });
+                if let Some(scope) = scope {
+                    self.scopes.declare_in(
+                        scope,
+                        name,
+                        Binding {
+                            category: Category::Value,
+                            scope: None,
+                        },
+                    );
+                }
+                if key.is_none() {
+                    self.scopes.declare(
+                        name,
+                        Binding {
+                            category: Category::Value,
+                            scope: None,
+                        },
+                    );
+                }
+                if !self.accept(P::Comma)? {
+                    break;
+                }
+                trailing_comma = self.at(P::RightBrace)?;
+            }
+            self.expect(P::RightBrace)?;
+        }
+        let enumerators = self.tree.enumerators.finish(start)?;
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::Enum {
+                scope,
+                name,
+                key,
+                underlying,
+                enumerators,
+                has_body,
+                trailing_comma,
+            },
+        })
+    }
+    fn simple_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        let specifiers = self.specifier_sequence(false, false)?;
+        let typedef = self
+            .tree
+            .specs
+            .get(specifiers)
+            .iter()
+            .any(|specifier| matches!(specifier, Specifier::Keyword(K::Typedef)));
+        if self.accept(P::Semicolon)? {
+            if let [Specifier::Enum(enumeration)] = self.tree.specs.get(specifiers) {
+                return Ok(*enumeration);
+            }
+            return self.tree.declarations.add(Declaration {
+                location,
+                kind: DeclKind::Simple {
+                    specifiers,
+                    declarators: List::default(),
+                },
+            });
+        }
+        self.function_scope = None;
+        let start = self.tree.init_declarators.begin();
+        loop {
+            let declarator = self.declarator(super::declarators::Mode::Named)?;
+            self.declare_declarator(declarator, typedef, self.specifier_scope(specifiers));
+            if self.is_function(declarator) && self.at(P::LeftBrace)? {
+                let enclosing = self.scopes.current;
+                self.scopes.current = self
+                    .function_scope
+                    .ok_or(ParseError::Invariant("missing function parameter scope"))?;
+                let body = self.compound_statement()?;
+                self.scopes.current = enclosing;
+                return self.tree.declarations.add(Declaration {
+                    location,
+                    kind: DeclKind::Function {
+                        specifiers,
+                        declarator,
+                        body,
+                    },
+                });
+            }
+            if self.keyword()? == Some(K::Try) {
+                return Err(ParseError::NotImplemented(
+                    "function try blocks and handlers",
+                ));
+            }
+            let initializer = if matches!(
+                self.punctuator()?,
+                Some(P::Assign | P::LeftBrace | P::LeftParen)
+            ) {
+                Some(self.initializer()?)
+            } else {
+                None
+            };
+            self.tree.init_declarators.push(InitDeclarator {
+                declarator,
+                initializer,
+            });
+            if !self.accept(P::Comma)? {
+                break;
+            }
+        }
+        self.expect(P::Semicolon)?;
+        let declarators = self.tree.init_declarators.finish(start)?;
+        self.tree.declarations.add(Declaration {
+            location,
+            kind: DeclKind::Simple {
+                specifiers,
+                declarators,
+            },
+        })
+    }
+    pub(super) fn initializer(&mut self) -> Result<Initializer, ParseError> {
+        if self.accept(P::Assign)? {
+            if self.accept_keyword(K::Default)? {
+                return Ok(Initializer::Default);
+            }
+            if self.accept_keyword(K::Delete)? {
+                return Ok(Initializer::Delete);
+            }
+            return Ok(Initializer::Assign(self.initializer_clause()?));
+        }
+        if self.at(P::LeftBrace)? {
+            return Ok(Initializer::Braced(self.braced_list()?));
+        }
+        self.expect(P::LeftParen)?;
+        Ok(Initializer::Parenthesized(
+            self.expression_list(P::RightParen)?,
+        ))
+    }
+}

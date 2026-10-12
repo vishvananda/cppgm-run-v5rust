@@ -211,6 +211,9 @@ impl<'a> Preprocessor<'a> {
     pub fn pack_alignment(&self) -> u32 {
         self.pragmas.pack_alignment()
     }
+    pub(crate) fn name_spelling(&self, name: NameId) -> &[u8] {
+        self.names.bytes(name)
+    }
     /// Snapshot all work demanded so far, including a failed operation's work.
     #[must_use]
     pub fn counters(&self) -> super::counters::PreprocessorCounters {

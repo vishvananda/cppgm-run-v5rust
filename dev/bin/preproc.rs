@@ -2,7 +2,6 @@
 use cppgm_rust::{
     driver::preproc::{PreprocToolError, describe, emit_preprocessed},
     preprocess::error::PreprocessError,
-    preprocess::options::PredefinedValues,
     support::source::SourceBuffer,
 };
 use std::{
@@ -46,6 +45,9 @@ enum CliError {
         counters: Box<cppgm_rust::preprocess::counters::PreprocessorCounters>,
     },
 }
+#[path = "source_tool/build_time.rs"]
+mod build_time;
+
 fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     run_with_args(&args)
@@ -67,7 +69,7 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
     if args.len() < 3 || args[0] != "-o" {
         return Err(CliError::Message("invalid usage".to_owned()));
     }
-    let values = build_time()?;
+    let values = build_time::query().map_err(CliError::Message)?;
     let mut output = OutputStream {
         file: File::create(&args[1]).ok().map(io::BufWriter::new),
     };
@@ -136,34 +138,6 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
     output
         .flush()
         .map_err(|error| CliError::Message(error.to_string()))
-}
-// Host clock input, confined to the tool boundary. Python's standard time
-// module uses the host's localtime, including libc's POSIX TZ rules. This
-// avoids authored FFI and the differing timezone policies of date utilities.
-// One query captures both fields for every primary source in this invocation.
-fn build_time() -> Result<PredefinedValues, CliError> {
-    let stamp = std::process::Command::new("/usr/bin/python3")
-        .args([
-            "-I", "-S", "-c",
-            "import time; stamp=time.asctime(time.localtime()); print(stamp[4:11]+stamp[20:24]); print(stamp[11:19])",
-        ])
-        .output()
-        .map_err(|error| CliError::Message(error.to_string()))?;
-    if !stamp.status.success() {
-        return Err(CliError::Message(
-            "cannot query the local build time".to_owned(),
-        ));
-    }
-    let Some(split) = stamp.stdout.iter().position(|&byte| byte == b'\n') else {
-        return Err(CliError::Message("invalid local build time".to_owned()));
-    };
-    let date = &stamp.stdout[..split];
-    let time = &stamp.stdout[split + 1..];
-    Ok(PredefinedValues {
-        author: b"Course Solution".to_vec(),
-        date: date.to_vec(),
-        time: time.strip_suffix(b"\n").unwrap_or(time).to_vec(),
-    })
 }
 fn emit_unimplemented_batch(input: impl BufRead, output: &mut impl Write) {
     for line in input.split(b'\n') {

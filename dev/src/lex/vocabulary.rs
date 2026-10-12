@@ -81,6 +81,84 @@ pub enum Keyword {
 }
 
 impl Keyword {
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Alignas => "alignas",
+            Self::Alignof => "alignof",
+            Self::Asm => "asm",
+            Self::Auto => "auto",
+            Self::Bool => "bool",
+            Self::Break => "break",
+            Self::Case => "case",
+            Self::Catch => "catch",
+            Self::Char => "char",
+            Self::Char16T => "char16_t",
+            Self::Char32T => "char32_t",
+            Self::Class => "class",
+            Self::Const => "const",
+            Self::Constexpr => "constexpr",
+            Self::ConstCast => "const_cast",
+            Self::Continue => "continue",
+            Self::Decltype => "decltype",
+            Self::Default => "default",
+            Self::Delete => "delete",
+            Self::Do => "do",
+            Self::Double => "double",
+            Self::DynamicCast => "dynamic_cast",
+            Self::Else => "else",
+            Self::Enum => "enum",
+            Self::Explicit => "explicit",
+            Self::Export => "export",
+            Self::Extern => "extern",
+            Self::False => "false",
+            Self::Float => "float",
+            Self::For => "for",
+            Self::Friend => "friend",
+            Self::Goto => "goto",
+            Self::If => "if",
+            Self::Inline => "inline",
+            Self::Int => "int",
+            Self::Long => "long",
+            Self::Mutable => "mutable",
+            Self::Namespace => "namespace",
+            Self::New => "new",
+            Self::Noexcept => "noexcept",
+            Self::Nullptr => "nullptr",
+            Self::Operator => "operator",
+            Self::Private => "private",
+            Self::Protected => "protected",
+            Self::Public => "public",
+            Self::Register => "register",
+            Self::ReinterpretCast => "reinterpret_cast",
+            Self::Return => "return",
+            Self::Short => "short",
+            Self::Signed => "signed",
+            Self::Sizeof => "sizeof",
+            Self::Static => "static",
+            Self::StaticAssert => "static_assert",
+            Self::StaticCast => "static_cast",
+            Self::Struct => "struct",
+            Self::Switch => "switch",
+            Self::Template => "template",
+            Self::This => "this",
+            Self::ThreadLocal => "thread_local",
+            Self::Throw => "throw",
+            Self::True => "true",
+            Self::Try => "try",
+            Self::Typedef => "typedef",
+            Self::Typeid => "typeid",
+            Self::Typename => "typename",
+            Self::Union => "union",
+            Self::Unsigned => "unsigned",
+            Self::Using => "using",
+            Self::Virtual => "virtual",
+            Self::Void => "void",
+            Self::Volatile => "volatile",
+            Self::WcharT => "wchar_t",
+            Self::While => "while",
+        }
+    }
+
     pub(super) fn find(text: &[u8]) -> Option<Self> {
         Some(match text {
             b"alignas" => Self::Alignas,
@@ -257,11 +335,11 @@ impl SimpleToken {
             .or_else(|| super::pp_lexer::identifier_operator(text).and_then(Self::punctuator))
     }
 
-    pub(super) fn keyword(word: Keyword) -> Self {
+    pub(crate) fn keyword(word: Keyword) -> Self {
         Self(SimpleIdentity::Keyword(word))
     }
 
-    pub(super) fn punctuator(punctuator: Punctuator) -> Option<Self> {
+    pub(crate) fn punctuator(punctuator: Punctuator) -> Option<Self> {
         Some(match punctuator {
             Punctuator::Hash | Punctuator::HashHash => return None,
             Punctuator::New => Self::keyword(Keyword::New),
@@ -275,6 +353,27 @@ impl SimpleToken {
         match self.0 {
             SimpleIdentity::Keyword(word) => word.name(),
             SimpleIdentity::Punctuator(punctuator) => punctuator_name(punctuator),
+        }
+    }
+
+    pub(crate) fn spelling(self) -> &'static str {
+        match self.0 {
+            SimpleIdentity::Keyword(word) => word.spelling(),
+            SimpleIdentity::Punctuator(operator) => operator.spelling(),
+        }
+    }
+
+    pub(crate) fn as_keyword(self) -> Option<Keyword> {
+        match self.0 {
+            SimpleIdentity::Keyword(word) => Some(word),
+            SimpleIdentity::Punctuator(_) => None,
+        }
+    }
+
+    pub(crate) fn as_punctuator(self) -> Option<Punctuator> {
+        match self.0 {
+            SimpleIdentity::Punctuator(operator) => Some(operator),
+            SimpleIdentity::Keyword(_) => None,
         }
     }
 }
