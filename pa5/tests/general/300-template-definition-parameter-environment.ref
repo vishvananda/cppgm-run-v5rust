@@ -1,0 +1,128 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier T
+    class-specifier C
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier f
+              parameter-clause
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier C<T>::f
+        parameter-clause
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:T
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier value
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier D
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier f
+              parameter-clause
+                parameter-declaration
+                  decl-specifier-seq
+                    decl-specifier KW_INT:int
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier T
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier D<T>::f
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier value
+            default-argument
+              initializer
+                binary-expression OP_LT:<
+                  id-expression T
+                  literal 2
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier x
+              initializer
+                binary-expression OP_LT:<
+                  id-expression T
+                  literal 2
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier E
+      class-key KW_STRUCT:struct
+      class-forward-declaration Inner
+        class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier T
+    class-specifier E<T>::Inner
+      class-key KW_STRUCT:struct
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        declarator
+          identifier f
+          parameter-clause
+        compound-statement
+          return-statement
+            binary-expression OP_LT:<
+              id-expression T
+              literal 2
+end translation unit

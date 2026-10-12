@@ -25,7 +25,7 @@ pub(super) struct DeferredBody {
 impl Parser<'_> {
     pub(super) fn in_class(&self) -> bool {
         matches!(
-            self.scopes.kind(self.scopes.current),
+            self.scopes.kind(self.scopes.declaration_scope()),
             ScopeKind::Class(_) | ScopeKind::AnonymousClass
         )
     }
@@ -58,6 +58,8 @@ impl Parser<'_> {
             return self.elaborated_class(key, name, friend, first);
         }
         let enclosing = self.scopes.current;
+        let is_template = self.pending_template;
+        self.pending_template = false;
         let identifier = name.and_then(|name| self.last_identifier(name));
         let qualified = name.is_some_and(|name| {
             let name = self.tree.names.get(name);
@@ -65,36 +67,64 @@ impl Parser<'_> {
         });
         let mut home = name
             .and_then(|name| self.tree.names.get(name).prefix_scope)
-            .unwrap_or(enclosing);
+            .unwrap_or(self.scopes.declaration_scope());
         if let Some(identifier) = identifier
             && name.is_some_and(|name| self.tree.names.get(name).prefix_scope.is_some())
         {
             home = self.scopes.class_home(home, identifier);
         }
-        let existing = identifier.and_then(|id| self.scopes.own(home, id));
+        let specialization = name.is_some_and(|name| self.name_has_arguments(name));
+        let primary = if specialization {
+            identifier.and_then(|id| self.scopes.lookup_name(id, true))
+        } else {
+            None
+        };
+        let existing = if specialization {
+            None
+        } else {
+            identifier.and_then(|id| self.scopes.own(home, id))
+        };
         let scope = if let Some(scope) = existing.and_then(|binding| binding.scope)
             && identifier
                 .is_some_and(|identifier| self.scopes.kind(scope) == ScopeKind::Class(identifier))
             && !self.scopes.complete(scope)
         {
-            self.scopes.reopen(scope, home)?;
+            self.scopes.reopen(scope, enclosing)?;
             scope
         } else {
-            self.scopes.current = home;
+            self.scopes.current = enclosing;
             let scope = self
                 .scopes
                 .push_kind(identifier.map_or(ScopeKind::AnonymousClass, ScopeKind::Class))?;
             self.scopes.current = enclosing;
             scope
         };
+        if qualified {
+            self.scopes.set_member(scope, home);
+        }
         let binding = Binding {
-            category: Category::Type,
+            parameter: false,
+            category: if is_template || name.is_some_and(|name| self.name_has_arguments(name)) {
+                Category::TypeTemplate
+            } else {
+                Category::Type
+            },
             scope: Some(scope),
         };
         if let Some(identifier) = identifier {
-            if !qualified
+            if specialization && !qualified {
+                if let Some(target) = primary
+                    .filter(|binding| binding.category == Category::TypeTemplate)
+                    .and_then(|binding| binding.scope)
+                {
+                    let saved = self.scopes.current;
+                    self.scopes.current = target;
+                    self.scopes.add_edge(scope);
+                    self.scopes.current = saved;
+                }
+            } else if !qualified
                 || existing.is_some_and(|previous| {
-                    previous.category == Category::Type
+                    matches!(previous.category, Category::Type | Category::TypeTemplate)
                         && previous
                             .scope
                             .is_none_or(|scope| !self.scopes.complete(scope))
@@ -150,10 +180,15 @@ impl Parser<'_> {
         friend: bool,
         first: bool,
     ) -> Result<Specifier, ParseError> {
-        if let Some(identifier) = self.simple_name(name) {
+        let is_template = self.pending_template;
+        self.pending_template = false;
+        if let Some(identifier) = self
+            .simple_name(name)
+            .filter(|_| !self.name_has_arguments(name))
+        {
             let standalone = first && self.at(P::Semicolon)?;
             let existing = if standalone {
-                self.scopes.own(self.scopes.current, identifier)
+                self.scopes.own(self.scopes.declaration_scope(), identifier)
             } else {
                 self.scopes.lookup_name(identifier, true)
             };
@@ -168,12 +203,20 @@ impl Parser<'_> {
                 None
             };
             let binding = Binding {
-                category: Category::Type,
+                parameter: false,
+                category: if is_template {
+                    Category::TypeTemplate
+                } else {
+                    Category::Type
+                },
                 scope,
             };
-            if existing.is_none() && !friend {
+            if is_template {
+                self.scopes
+                    .declare_in(self.scopes.declaration_scope(), identifier, binding);
+            } else if existing.is_none() && !friend {
                 let where_declared = if standalone {
-                    self.scopes.current
+                    self.scopes.declaration_scope()
                 } else {
                     self.scopes.enclosing_declaration_scope()
                 };
@@ -204,7 +247,8 @@ impl Parser<'_> {
             if let Some(base) = binding.and_then(|binding| binding.scope) {
                 let enclosing = self.scopes.current;
                 self.scopes.current = class;
-                self.scopes.add_edge(base);
+                self.scopes
+                    .add_base(base, self.tree.names.get(name).mentions_parameters);
                 self.scopes.current = enclosing;
             }
             self.tree.bases.push(Base {
@@ -269,7 +313,7 @@ impl Parser<'_> {
                     (NameKind::Identifier(owner), NameKind::Identifier(last)) if owner == last)
         } else if self.in_class() {
             matches!(last.kind, NameKind::Destructor(_) | NameKind::Conversion(_))
-                || matches!((self.scopes.kind(self.scopes.current), last.kind),
+                || matches!((self.scopes.kind(self.scopes.declaration_scope()), last.kind),
                     (ScopeKind::Class(owner), NameKind::Identifier(last)) if owner == last)
         } else {
             false
@@ -288,13 +332,12 @@ impl Parser<'_> {
         specifiers: List<Specifier>,
         name: Name,
     ) -> Result<DeclId, ParseError> {
+        self.pending_template = false;
         let enclosing = self.scopes.current;
         let in_class = self.in_class();
         self.function_scope = None;
-        if let Some(scope) = self.tree.names.get(name).prefix_scope {
-            self.scopes.current = scope;
-        }
-        let parameters = self.parameter_clause(true)?;
+        let member = self.tree.names.get(name).prefix_scope;
+        let parameters = self.parameter_clause_member(true, member)?;
         self.scopes.current = self
             .function_scope
             .ok_or(ParseError::Invariant("missing special member scope"))?;

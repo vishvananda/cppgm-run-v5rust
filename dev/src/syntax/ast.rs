@@ -22,7 +22,16 @@ pub(super) struct QualifiedName {
     pub typename_keyword: bool,
     pub components: List<NameComponent>,
     pub prefix_scope: Option<ScopeId>,
+    pub prefix_state: PrefixState,
+    pub mentions_parameters: bool,
     pub binding: Option<Binding>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PrefixState {
+    Unqualified,
+    Known,
+    Unknown,
+    Dependent,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct NameComponent {
@@ -32,6 +41,8 @@ pub(super) struct NameComponent {
     )]
     pub location: SourceOffset,
     pub kind: NameKind,
+    pub template_keyword: bool,
+    pub arguments: Option<List<TemplateArgument>>,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum NameKind {
@@ -44,6 +55,49 @@ pub(super) enum NameKind {
     Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum TemplateArgumentKind {
+    Type(TypeId),
+    Expression(ExprId),
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TemplateArgument {
+    pub kind: TemplateArgumentKind,
+    pub pack: bool,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TemplateParameter {
+    #[expect(
+        dead_code,
+        reason = "Template parameter location is retained for later semantic diagnostics"
+    )]
+    pub location: SourceOffset,
+    pub pack: bool,
+    pub kind: TemplateParameterKind,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TemplateParameterClause {
+    #[expect(
+        dead_code,
+        reason = "Template head location is retained for later semantic diagnostics"
+    )]
+    pub location: SourceOffset,
+    pub parameters: List<TemplateParameter>,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum TemplateParameterKind {
+    Type {
+        key: Keyword,
+        name: Option<NameId>,
+        parameters: Option<TemplateParameterClause>,
+        default: Option<TypeId>,
+    },
+    NonType {
+        specifiers: List<Specifier>,
+        declarator: Option<DeclaratorId>,
+        default: Option<ExprId>,
+    },
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Operator {
     pub token: SimpleToken,
     pub alternative: bool,
@@ -52,6 +106,7 @@ pub(super) struct Operator {
 pub(super) struct Literal {
     pub kind: PostTokenKind,
     pub spelling: Text,
+    pub token_form: bool,
     #[expect(
         dead_code,
         reason = "Phase-7 decoded bytes retained for semantic literal analysis"
@@ -227,6 +282,14 @@ pub(super) struct Declaration {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum DeclKind {
+    Template {
+        parameters: TemplateParameterClause,
+        declaration: DeclId,
+    },
+    ExplicitInstantiation {
+        is_extern: bool,
+        declaration: DeclId,
+    },
     Empty,
     Simple {
         specifiers: List<Specifier>,
@@ -297,6 +360,8 @@ pub(super) struct Expression {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum ExprKind {
+    PackExpansion(ExprId),
+    SizeofPack(NameId),
     Id(Name),
     Literal(Literal),
     Keyword(Keyword),
@@ -468,6 +533,8 @@ pub(super) struct Tree {
     pub bit_fields: Lists<BitField>,
     pub mem_initializers: Lists<MemInitializer>,
     pub handlers: Lists<Handler>,
+    pub template_parameters: Lists<TemplateParameter>,
+    pub template_arguments: Lists<TemplateArgument>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct TreeMark {
@@ -496,6 +563,8 @@ pub(super) struct TreeMark {
     bit_fields: ListMark,
     mem_initializers: ListMark,
     handlers: ListMark,
+    template_parameters: ListMark,
+    template_arguments: ListMark,
 }
 impl Tree {
     pub(super) fn complete_body(
@@ -537,6 +606,8 @@ impl Tree {
             bit_fields: self.bit_fields.mark(),
             mem_initializers: self.mem_initializers.mark(),
             handlers: self.handlers.mark(),
+            template_parameters: self.template_parameters.mark(),
+            template_arguments: self.template_arguments.mark(),
         }
     }
     pub(super) fn rewind(&mut self, mark: &TreeMark) {
@@ -565,5 +636,7 @@ impl Tree {
         self.bit_fields.rewind(mark.bit_fields);
         self.mem_initializers.rewind(mark.mem_initializers);
         self.handlers.rewind(mark.handlers);
+        self.template_parameters.rewind(mark.template_parameters);
+        self.template_arguments.rewind(mark.template_arguments);
     }
 }

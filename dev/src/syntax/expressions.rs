@@ -49,55 +49,61 @@ impl Parser<'_> {
                 });
             }
             let left = parser.binary(3)?;
-            let location = parser.tree.expressions.get(left).location;
-            if parser.accept(P::Question)? {
-                let then_expr = parser.expression()?;
-                parser.expect(P::Colon)?;
-                let else_expr = parser.assignment_expression()?;
-                return parser.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::Conditional {
-                        condition: left,
-                        then_expr,
-                        else_expr,
-                    },
-                });
-            }
-            if matches!(
-                parser.punctuator()?,
-                Some(
-                    P::Assign
-                        | P::AddAssign
-                        | P::SubtractAssign
-                        | P::MultiplyAssign
-                        | P::DivideAssign
-                        | P::RemainderAssign
-                        | P::ShiftLeftAssign
-                        | P::ShiftRightAssign
-                        | P::AndAssign
-                        | P::XorAssign
-                        | P::OrAssign
-                )
-            ) {
-                let op = parser.operator()?;
-                let right = parser.initializer_clause()?;
-                return parser.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::Binary {
-                        op,
-                        left,
-                        right,
-                        assignment: true,
-                    },
-                });
-            }
-            Ok(left)
+            parser.assignment_rest(left)
         })
+    }
+    pub(super) fn assignment_rest(&mut self, left: ExprId) -> Result<ExprId, ParseError> {
+        let location = self.tree.expressions.get(left).location;
+        if self.accept(P::Question)? {
+            let then_expr = self.without_angle(Self::expression)?;
+            self.expect(P::Colon)?;
+            let else_expr = self.assignment_expression()?;
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Conditional {
+                    condition: left,
+                    then_expr,
+                    else_expr,
+                },
+            });
+        }
+        if matches!(
+            self.punctuator()?,
+            Some(
+                P::Assign
+                    | P::AddAssign
+                    | P::SubtractAssign
+                    | P::MultiplyAssign
+                    | P::DivideAssign
+                    | P::RemainderAssign
+                    | P::ShiftLeftAssign
+                    | P::ShiftRightAssign
+                    | P::AndAssign
+                    | P::XorAssign
+                    | P::OrAssign
+            )
+        ) {
+            let op = self.operator()?;
+            let right = self.initializer_clause()?;
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Binary {
+                    op,
+                    left,
+                    right,
+                    assignment: true,
+                },
+            });
+        }
+        Ok(left)
     }
     fn binary_operator(&mut self) -> Result<Option<(Operator, u8, usize)>, ParseError> {
         let TokenKind::Simple(mut op) = self.token()?.kind else {
             return Ok(None);
         };
+        if self.angle && op.token.as_punctuator() == Some(P::Greater) {
+            return Ok(None);
+        }
         let mut width = 1;
         let precedence = match op.token.as_punctuator() {
             Some(P::DotStar | P::ArrowStar) => 13,
@@ -123,7 +129,14 @@ impl Parser<'_> {
         Ok(Some((op, precedence, width)))
     }
     fn binary(&mut self, minimum: u8) -> Result<ExprId, ParseError> {
-        let mut left = self.unary()?;
+        let left = self.unary()?;
+        self.binary_rest(left, minimum)
+    }
+    pub(super) fn binary_rest(
+        &mut self,
+        mut left: ExprId,
+        minimum: u8,
+    ) -> Result<ExprId, ParseError> {
         while let Some((op, precedence, width)) = self.binary_operator()? {
             if precedence < minimum {
                 break;
@@ -242,7 +255,7 @@ impl Parser<'_> {
                 let ty = self.type_id(true)?;
                 self.expect(P::Greater)?;
                 self.expect(P::LeftParen)?;
-                let operand = self.expression()?;
+                let operand = self.without_angle(Self::expression)?;
                 self.expect(P::RightParen)?;
                 let expr = self.tree.expressions.add(Expression {
                     location,
@@ -419,8 +432,14 @@ impl Parser<'_> {
     }
     fn sizeof_expression(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
         self.cursor.advance()?;
-        if self.at(P::Ellipsis)? {
-            return Err(ParseError::NotImplemented("sizeof parameter packs"));
+        if self.accept(P::Ellipsis)? {
+            self.expect(P::LeftParen)?;
+            let name = self.identifier()?;
+            self.expect(P::RightParen)?;
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::SizeofPack(name),
+            });
         }
         let parenthesized = self.at(P::LeftParen)?;
         let ty = if parenthesized {
@@ -485,7 +504,7 @@ impl Parser<'_> {
                 _ => match op.token.as_punctuator() {
                     Some(P::LeftParen) => {
                         self.cursor.advance()?;
-                        let inner = self.expression()?;
+                        let inner = self.without_angle(Self::expression)?;
                         self.expect(P::RightParen)?;
                         ExprKind::Paren(inner)
                     }
@@ -505,6 +524,14 @@ impl Parser<'_> {
     }
     fn primary_name(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
         let (name, binding) = self.name()?;
+        self.primary_from_name(name, binding, location)
+    }
+    pub(super) fn primary_from_name(
+        &mut self,
+        name: super::ast::Name,
+        binding: Option<super::scopes::Binding>,
+        location: SourceOffset,
+    ) -> Result<ExprId, ParseError> {
         let node = *self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
         let decltype = if !node.global
@@ -517,7 +544,12 @@ impl Parser<'_> {
         };
         let known_type = node.typename_keyword
             || decltype.is_some()
-            || binding.is_some_and(|binding| binding.category == super::scopes::Category::Type);
+            || binding.is_some_and(|binding| {
+                matches!(
+                    binding.category,
+                    super::scopes::Category::Type | super::scopes::Category::TypeTemplate
+                )
+            });
         if (self.at(P::LeftParen)? && known_type)
             || (self.at(P::LeftBrace)?
                 && (known_type || self.is_type_name(name, binding, false, false)))
@@ -557,7 +589,7 @@ impl Parser<'_> {
             },
         })
     }
-    fn postfix(&mut self, mut expr: ExprId) -> Result<ExprId, ParseError> {
+    pub(super) fn postfix(&mut self, mut expr: ExprId) -> Result<ExprId, ParseError> {
         loop {
             let location = self.tree.expressions.get(expr).location;
             let kind = if self.accept(P::LeftParen)? {
@@ -566,7 +598,7 @@ impl Parser<'_> {
                     arguments: self.expression_list(P::RightParen)?,
                 }
             } else if self.accept(P::LeftBracket)? {
-                let index = self.expression()?;
+                let index = self.without_angle(Self::expression)?;
                 self.expect(P::RightBracket)?;
                 ExprKind::Subscript { base: expr, index }
             } else if matches!(self.punctuator()?, Some(P::Dot | P::Arrow)) {
@@ -574,7 +606,7 @@ impl Parser<'_> {
                 ExprKind::Member {
                     base: expr,
                     op,
-                    member: self.name()?.0,
+                    member: self.member_name()?.0,
                 }
             } else if matches!(self.punctuator()?, Some(P::Increment | P::Decrement)) {
                 ExprKind::Postfix {
@@ -591,10 +623,12 @@ impl Parser<'_> {
         self.nested(|parser| {
             let location = parser.location()?;
             parser.expect(P::LeftBrace)?;
+            let saved_angle = parser.angle;
+            parser.angle = false;
             let start = parser.tree.expr_lists.begin();
             let mut trailing_comma = false;
             while !parser.at(P::RightBrace)? {
-                let element = parser.initializer_clause()?;
+                let element = parser.expanded_initializer()?;
                 parser.tree.expr_lists.push(element);
                 if !parser.accept(P::Comma)? {
                     break;
@@ -603,6 +637,7 @@ impl Parser<'_> {
             }
             parser.expect(P::RightBrace)?;
             let elements = parser.tree.expr_lists.finish(start)?;
+            parser.angle = saved_angle;
             parser.tree.expressions.add(Expression {
                 location,
                 kind: ExprKind::Braced {
@@ -612,14 +647,26 @@ impl Parser<'_> {
             })
         })
     }
+    fn expanded_initializer(&mut self) -> Result<ExprId, ParseError> {
+        let element = self.initializer_clause()?;
+        if self.accept(P::Ellipsis)? {
+            let location = self.tree.expressions.get(element).location;
+            self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::PackExpansion(element),
+            })
+        } else {
+            Ok(element)
+        }
+    }
     pub(super) fn expression_list(&mut self, close: P) -> Result<List<ExprId>, ParseError> {
+        self.without_angle(|parser| parser.expression_list_inner(close))
+    }
+    fn expression_list_inner(&mut self, close: P) -> Result<List<ExprId>, ParseError> {
         let start = self.tree.expr_lists.begin();
         while !self.at(close)? {
-            let element = self.initializer_clause()?;
+            let element = self.expanded_initializer()?;
             self.tree.expr_lists.push(element);
-            if self.at(P::Ellipsis)? {
-                return Err(ParseError::NotImplemented("expression pack expansions"));
-            }
             if !self.accept(P::Comma)? {
                 break;
             }

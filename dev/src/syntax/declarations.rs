@@ -40,7 +40,7 @@ impl Parser<'_> {
             });
         }
         if matches!(
-            self.scopes.kind(self.scopes.current),
+            self.scopes.kind(self.scopes.declaration_scope()),
             super::scopes::ScopeKind::Namespace
                 | super::scopes::ScopeKind::Class(_)
                 | super::scopes::ScopeKind::AnonymousClass
@@ -60,9 +60,11 @@ impl Parser<'_> {
             Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(_)) => {
                 self.linkage(location)
             }
-            Some(K::Template) => Err(ParseError::NotImplemented(
-                "template declarations and parameter categories",
-            )),
+            Some(K::Template) if self.at_ahead(P::Less, 1)? => self.template_declaration(location),
+            Some(K::Template) => self.explicit_instantiation(location),
+            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Template)) => {
+                self.explicit_instantiation(location)
+            }
             _ => self.simple_declaration(location),
         }
     }
@@ -81,6 +83,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    parameter: false,
                     category: Category::Namespace,
                     scope: binding.and_then(|binding| binding.scope),
                 },
@@ -112,6 +115,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    parameter: false,
                     category: Category::Namespace,
                     scope: Some(scope),
                 },
@@ -138,6 +142,8 @@ impl Parser<'_> {
     }
     fn using_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
         self.cursor.advance()?;
+        let is_template = self.pending_template;
+        self.pending_template = false;
         let directive = self.accept_keyword(K::Namespace)?;
         if !directive
             && matches!(self.token()?.kind, TokenKind::Identifier(_))
@@ -153,10 +159,16 @@ impl Parser<'_> {
             } else {
                 None
             };
-            self.scopes.declare(
+            self.scopes.declare_in(
+                self.scopes.declaration_scope(),
                 name,
                 Binding {
-                    category: Category::Type,
+                    parameter: false,
+                    category: if is_template {
+                        Category::TypeTemplate
+                    } else {
+                        Category::Type
+                    },
                     scope,
                 },
             );
@@ -184,6 +196,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    parameter: false,
                     category: Category::Type,
                     scope: None,
                 },
@@ -389,6 +402,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 simple,
                 Binding {
+                    parameter: false,
                     category: Category::Type,
                     scope,
                 },
@@ -411,6 +425,7 @@ impl Parser<'_> {
                         scope,
                         name,
                         Binding {
+                            parameter: false,
                             category: Category::Value,
                             scope: None,
                         },
@@ -420,6 +435,7 @@ impl Parser<'_> {
                     self.scopes.declare(
                         name,
                         Binding {
+                            parameter: false,
                             category: Category::Value,
                             scope: None,
                         },
@@ -486,6 +502,7 @@ impl Parser<'_> {
             if self.is_function(declarator)
                 && (self.at(P::LeftBrace)? || self.keyword()? == Some(K::Try))
             {
+                self.pending_template = false;
                 let body = self.finish_function_body(self.in_class(), false)?;
                 return self.tree.declarations.add(Declaration {
                     location,
@@ -504,7 +521,7 @@ impl Parser<'_> {
                 .declarator_name(declarator)
                 .and_then(|name| self.tree.names.get(name).prefix_scope)
             {
-                self.scopes.current = scope;
+                self.scopes.member_context(scope)?;
             }
             let result = if matches!(
                 self.punctuator()?,
@@ -524,6 +541,7 @@ impl Parser<'_> {
                 break;
             }
         }
+        self.pending_template = false;
         self.expect(P::Semicolon)?;
         let declarators = self.tree.init_declarators.finish(start)?;
         self.tree.declarations.add(Declaration {

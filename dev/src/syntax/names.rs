@@ -2,7 +2,7 @@
 //! Structured name components; operator and conversion spellings are views.
 use super::{
     ParseError,
-    ast::{ExprId, Name, NameComponent, NameKind, QualifiedName},
+    ast::{ExprId, Name, NameComponent, NameKind, PrefixState, QualifiedName},
     cursor::TokenKind,
     parser::Parser,
     scopes::{Binding, Category, Scopes},
@@ -11,34 +11,47 @@ use crate::lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Key
 
 impl Parser<'_> {
     pub(super) fn name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        self.name_in_context(false)
+        self.name_in_context(false, false)
     }
     pub(super) fn type_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        self.name_in_context(true)
+        self.name_in_context(true, false)
+    }
+    pub(super) fn member_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        self.name_in_context(false, true)
     }
     fn name_in_context(
         &mut self,
         type_context: bool,
+        member_context: bool,
     ) -> Result<(Name, Option<Binding>), ParseError> {
+        let mentions = self.template_mentions;
         let typename_keyword = self.accept_keyword(K::Typename)?;
         let global = self.accept(P::Scope)?;
         let start = self.tree.name_lists.begin();
         let mut prefix = global.then_some(Scopes::global());
         let mut qualified = global;
+        let mut dependent_prefix = false;
+        let mut prefix_specialization = false;
         let binding = loop {
             let location = self.location()?;
+            let template_keyword =
+                (qualified || member_context) && self.accept_keyword(K::Template)?;
             if !qualified && self.accept_keyword(K::Decltype)? {
                 let operand = self.decltype_operand()?;
                 self.tree.name_lists.push(NameComponent {
                     location,
                     kind: NameKind::Decltype(operand),
+                    template_keyword,
+                    arguments: None,
                 });
                 if self.accept(P::Scope)? {
                     qualified = true;
                     prefix = None;
+                    dependent_prefix = true;
                     continue;
                 }
                 break Some(Binding {
+                    parameter: false,
                     category: Category::Type,
                     scope: None,
                 });
@@ -46,16 +59,24 @@ impl Parser<'_> {
             if !type_context && self.keyword()? == Some(K::Operator) {
                 let enclosing = self.scopes.current;
                 if let Some(scope) = prefix {
-                    self.scopes.current = scope;
+                    self.scopes.member_context(scope)?;
                 }
                 let result = self.operator_name();
                 self.scopes.current = enclosing;
                 let kind = result?;
-                if self.at(P::Less)? && !matches!(kind, NameKind::Conversion(_)) {
-                    return Err(ParseError::NotImplemented("operator template-id arguments"));
-                }
-                self.tree.name_lists.push(NameComponent { location, kind });
+                let arguments = if self.at(P::Less)? && !matches!(kind, NameKind::Conversion(_)) {
+                    self.attempt(Self::template_arguments)?
+                } else {
+                    None
+                };
+                self.tree.name_lists.push(NameComponent {
+                    location,
+                    kind,
+                    template_keyword,
+                    arguments,
+                });
                 break Some(Binding {
+                    parameter: false,
                     category: Category::Value,
                     scope: None,
                 });
@@ -66,43 +87,83 @@ impl Parser<'_> {
                 } else {
                     NameKind::Destructor(self.identifier()?)
                 };
-                if self.at(P::Less)? {
-                    return Err(ParseError::NotImplemented(
-                        "destructor template-id arguments",
-                    ));
-                }
-                self.tree.name_lists.push(NameComponent { location, kind });
+                let arguments = if self.at(P::Less)? {
+                    Some(self.template_arguments()?)
+                } else {
+                    None
+                };
+                self.tree.name_lists.push(NameComponent {
+                    location,
+                    kind,
+                    template_keyword,
+                    arguments,
+                });
                 break None;
             }
             let identifier = self.identifier()?;
-            self.tree.name_lists.push(NameComponent {
-                location,
-                kind: NameKind::Identifier(identifier),
-            });
+
             let prefix_only = self.at(P::Scope)? && !self.at_ahead(P::Multiply, 1)?;
             let binding = if let Some(scope) = prefix {
-                self.scopes.lookup_in_name(scope, identifier, prefix_only)
+                self.scopes.lookup_specialization(
+                    scope,
+                    identifier,
+                    prefix_only,
+                    prefix_specialization,
+                )
             } else if qualified {
                 None
             } else {
                 self.scopes.lookup_name(identifier, prefix_only)
             };
-            if self.at(P::Less)?
-                && binding.is_none_or(|binding| binding.category != Category::Value)
-                && self.cursor.name(identifier).contains(&b'T')
-            {
-                return Err(ParseError::NotImplemented(
-                    "template-id name disambiguation",
-                ));
+            if !member_context && binding.is_some_and(|binding| binding.parameter) {
+                self.template_mentions = self.template_mentions.wrapping_add(1);
             }
+            let argument_mentions = self.template_mentions;
+            let arguments = if self.at(P::Less)? {
+                if template_keyword
+                    || binding.is_some_and(|binding| {
+                        matches!(
+                            binding.category,
+                            Category::TypeTemplate | Category::FunctionTemplate
+                        )
+                    }) && (qualified || !member_context)
+                {
+                    Some(self.template_arguments()?)
+                } else if member_context && !qualified {
+                    if self.scopes.ever_template(identifier) {
+                        self.optional_template_arguments(true)?
+                    } else {
+                        None
+                    }
+                } else if binding.is_none() && !dependent_prefix {
+                    self.optional_template_arguments(false)?
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            self.tree.name_lists.push(NameComponent {
+                location,
+                kind: NameKind::Identifier(identifier),
+                template_keyword,
+                arguments,
+            });
             if self.at(P::Scope)? && self.at_ahead(P::Multiply, 1)? {
                 break binding;
             }
             if !self.accept(P::Scope)? {
                 break binding;
             }
+            prefix_specialization = arguments.is_some()
+                && self.template_mentions == argument_mentions
+                && binding.is_some_and(|binding| binding.category == Category::TypeTemplate);
             qualified = true;
             prefix = binding.and_then(|binding| binding.scope);
+            dependent_prefix |= prefix.is_none()
+                && binding.is_some_and(|binding| {
+                    matches!(binding.category, Category::Type | Category::TypeTemplate)
+                });
         };
         let components = self.tree.name_lists.finish(start)?;
         let name = self.tree.names.add(QualifiedName {
@@ -110,6 +171,16 @@ impl Parser<'_> {
             typename_keyword,
             components,
             prefix_scope: prefix,
+            prefix_state: if !qualified {
+                PrefixState::Unqualified
+            } else if prefix.is_some() {
+                PrefixState::Known
+            } else if dependent_prefix {
+                PrefixState::Dependent
+            } else {
+                PrefixState::Unknown
+            },
+            mentions_parameters: self.template_mentions != mentions,
             binding,
         })?;
         Ok((name, binding))
@@ -212,7 +283,7 @@ impl Parser<'_> {
     }
     pub(super) fn decltype_operand(&mut self) -> Result<ExprId, ParseError> {
         self.expect(P::LeftParen)?;
-        let operand = self.expression()?;
+        let operand = self.without_angle(Self::expression)?;
         self.expect(P::RightParen)?;
         Ok(operand)
     }
@@ -228,7 +299,10 @@ impl Parser<'_> {
             return true;
         }
         if let Some(binding) = binding {
-            return binding.category == Category::Type;
+            return matches!(binding.category, Category::Type | Category::TypeTemplate);
+        }
+        if name.prefix_state == PrefixState::Dependent && !followed_by_identifier {
+            return false;
         }
         let Some(last) = self.tree.name_lists.get(name.components).last() else {
             return false;
@@ -255,6 +329,13 @@ impl Parser<'_> {
             NameKind::Identifier(identifier) => Some(identifier),
             _ => None,
         }
+    }
+    pub(super) fn name_has_arguments(&self, name: Name) -> bool {
+        self.tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .last()
+            .is_some_and(|component| component.arguments.is_some())
     }
     pub(super) fn simple_name(&self, name: Name) -> Option<NameId> {
         let node = self.tree.names.get(name);

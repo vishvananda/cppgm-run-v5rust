@@ -90,6 +90,7 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         word,
         Binding {
+            parameter: false,
             category: Category::Type,
             scope: None,
         },
@@ -105,6 +106,7 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         missing,
         Binding {
+            parameter: false,
             category: Category::Value,
             scope: None,
         },
@@ -545,4 +547,145 @@ fn successive_classes_release_body_tokens_and_keep_the_pull_window_bounded() {
     assert_eq!(unit.parser.cursor.runs_mark(), 0);
     assert!(unit.parser.cursor.peak_run_tokens < 10);
     assert!(unit.parser.cursor.peak_window < 4120);
+}
+
+#[test]
+fn template_transaction_rewinds_heads_arguments_environment_and_deferred_bodies() {
+    use super::ast::{Specifier, TemplateParameterKind};
+    let source = SourceBuffer::new(
+        b"template<class T, int N=1> struct C { T f(){return T(N);} }; C<int,2> value;".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"template-transaction").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.token().unwrap();
+    let environment = parser.scopes.environment();
+    let parameters = parser.tree.template_parameters.mark();
+    let arguments = parser.tree.template_arguments.mark();
+    let heads = parser.tree.declarations.mark();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            parser.declaration()?;
+            assert!(parser.deferred.is_empty());
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.scopes.environment(), environment);
+    assert_eq!(parser.tree.template_parameters.mark(), parameters);
+    assert_eq!(parser.tree.template_arguments.mark(), arguments);
+    assert_eq!(parser.tree.declarations.mark(), heads);
+    assert!(!parser.pending_template);
+    assert!(!parser.angle);
+    let c = parser.cursor.intern_name(b"C").unwrap();
+    assert!(parser.scopes.lookup(c).is_none());
+    let declaration = parser.declaration().unwrap();
+    let DeclKind::Template {
+        parameters,
+        declaration,
+    } = parser.tree.declarations.get(declaration).kind
+    else {
+        panic!("template head");
+    };
+    let parameters = parser.tree.template_parameters.get(parameters.parameters);
+    assert!(matches!(
+        parameters[0].kind,
+        TemplateParameterKind::Type { .. }
+    ));
+    assert!(matches!(
+        parameters[1].kind,
+        TemplateParameterKind::NonType { .. }
+    ));
+    assert!(matches!(
+        parser.tree.declarations.get(declaration).kind,
+        DeclKind::Class(Specifier::Class(_))
+    ));
+    assert_eq!(
+        parser.scopes.lookup(c).unwrap().category,
+        Category::TypeTemplate
+    );
+    let t = parser.cursor.intern_name(b"T").unwrap();
+    assert!(parser.scopes.lookup(t).is_none());
+    parser.declaration().unwrap();
+}
+
+#[test]
+fn failed_angle_query_is_reused_only_in_its_name_environment() {
+    use super::{ast::TemplateArgumentKind, scopes::Binding};
+    let source = SourceBuffer::new(b"x<word*>()".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"angle-environment").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.token().unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    parser.scopes.declare(
+        word,
+        Binding {
+            category: Category::Value,
+            scope: None,
+            parameter: false,
+        },
+    );
+    let before = parser.scopes.environment();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            let (name, _) = parser.name()?;
+            assert!(!parser.name_has_arguments(name));
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.scopes.environment(), before);
+    parser.scopes.declare(
+        word,
+        Binding {
+            category: Category::Type,
+            scope: None,
+            parameter: false,
+        },
+    );
+    assert_ne!(parser.scopes.environment(), before);
+    let (name, _) = parser.name().unwrap();
+    let last = parser
+        .tree
+        .name_lists
+        .get(parser.tree.names.get(name).components)
+        .last()
+        .unwrap();
+    let arguments = parser.tree.template_arguments.get(last.arguments.unwrap());
+    let TemplateArgumentKind::Type(ty) = arguments[0].kind else {
+        panic!("typed argument");
+    };
+    let declarator = parser.tree.types.get(ty).declarator.unwrap();
+    assert_eq!(
+        parser
+            .tree
+            .pointers
+            .get(parser.tree.declarators.get(declarator).pointers)
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn relational_angle_fences_bound_speculation_on_long_undeclared_chains() {
+    let mut text = b"void f(){a0".to_vec();
+    for index in 1..=4096 {
+        text.extend_from_slice(format!("<a{index}").as_bytes());
+    }
+    text.extend_from_slice(b";}");
+    let source = SourceBuffer::new(text).unwrap();
+    let input = Preprocessor::with_name(&source, b"relational-fences").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    assert!(unit.parser.checkpoints < 4096 * 4);
+    let mut output = Vec::new();
+    unit.print(&mut output).unwrap();
+    assert!(output.ends_with(b"id-expression a4096\n"));
 }

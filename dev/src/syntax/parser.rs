@@ -19,6 +19,10 @@ pub(super) struct Parser<'a> {
     pub tree: Tree,
     pub scopes: Scopes,
     pub function_scope: Option<ScopeId>,
+    pub template_mentions: u64,
+    pub angle: bool,
+    pub pending_template: bool,
+    pub angles: super::angles::Angles,
     pub class_depth: usize,
     pub deferred: Vec<super::classes::DeferredBody>,
     depth: u32,
@@ -35,6 +39,9 @@ struct Checkpoint {
     tree: TreeMark,
     scopes: ScopeMark,
     function_scope: Option<ScopeId>,
+    template_mentions: u64,
+    angle: bool,
+    pending_template: bool,
     class_depth: usize,
     deferred: usize,
     runs: usize,
@@ -46,6 +53,10 @@ impl<'a> Parser<'a> {
             tree: Tree::default(),
             scopes: Scopes::default(),
             function_scope: None,
+            template_mentions: 0,
+            angle: false,
+            pending_template: false,
+            angles: super::angles::Angles::default(),
             class_depth: 0,
             deferred: Vec::new(),
             depth: 0,
@@ -75,6 +86,7 @@ impl<'a> Parser<'a> {
                     Scopes::global(),
                     name,
                     Binding {
+                        parameter: false,
                         category,
                         scope: None,
                     },
@@ -130,6 +142,13 @@ impl<'a> Parser<'a> {
             self.fail()
         }
     }
+    pub(super) fn error_mark(&self) -> (u64, SourceOffset) {
+        (self.error_position, self.furthest)
+    }
+    pub(super) fn restore_error(&mut self, mark: (u64, SourceOffset)) {
+        self.error_position = mark.0;
+        self.furthest = mark.1;
+    }
     pub(super) fn fail<T>(&mut self) -> Result<T, ParseError> {
         let location = self.location()?;
         let position = self.cursor.absolute_position()?;
@@ -184,6 +203,9 @@ impl<'a> Parser<'a> {
             tree: self.tree.mark(),
             scopes: self.scopes.mark(),
             function_scope: self.function_scope,
+            template_mentions: self.template_mentions,
+            angle: self.angle,
+            pending_template: self.pending_template,
             class_depth: self.class_depth,
             deferred: self.deferred.len(),
             runs: self.cursor.runs_mark(),
@@ -198,6 +220,9 @@ impl<'a> Parser<'a> {
             self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
             self.function_scope = mark.function_scope;
+            self.template_mentions = mark.template_mentions;
+            self.angle = mark.angle;
+            self.pending_template = mark.pending_template;
             self.class_depth = mark.class_depth;
             self.deferred.truncate(mark.deferred);
             self.cursor.rewind_runs(mark.runs);
@@ -238,13 +263,18 @@ impl<'a> Parser<'a> {
     ) {
         if let Some(name) = self
             .declarator_name(declarator)
+            .filter(|name| !self.name_has_arguments(*name))
             .and_then(|name| self.simple_name(name))
         {
-            self.scopes.declare(
+            self.scopes.declare_in(
+                self.scopes.declaration_scope(),
                 name,
                 Binding {
+                    parameter: false,
                     category: if typedef {
                         Category::Type
+                    } else if self.pending_template {
+                        Category::FunctionTemplate
                     } else {
                         Category::Value
                     },

@@ -1,4 +1,5 @@
 //! Parse-once source syntax over the shared preprocessing and phase-7 owners.
+mod angles;
 mod ast;
 mod classes;
 mod cursor;
@@ -12,6 +13,7 @@ mod render;
 mod scopes;
 mod statements;
 mod storage;
+mod templates;
 
 use crate::lex::{PostTokenizer, number::NumberDialect};
 use crate::preprocess::{error::PreprocessError, unit::Preprocessor};

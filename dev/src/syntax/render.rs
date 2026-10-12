@@ -4,7 +4,8 @@ use super::{
     ast::{
         Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId, ExceptionDeclaration,
         ExprId, ExprKind, Handler, Initializer, Name, NameComponent, NameKind, Operator,
-        ParameterClause, Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
+        ParameterClause, Qualifier, Specifier, StmtId, StmtKind, Suffix, TemplateArgumentKind,
+        TemplateParameter, TemplateParameterClause, TemplateParameterKind, Tree, TypeId,
     },
     cursor::Cursor,
     storage::{List, Text},
@@ -13,6 +14,8 @@ use crate::lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Key
 #[derive(Clone, Copy)]
 pub(super) enum Render {
     Text(&'static str),
+    TemplateClause(TemplateParameterClause),
+    TemplateParameter(TemplateParameter),
     Declaration(DeclId),
     Statement(StmtId),
     Condition(Condition),
@@ -74,6 +77,25 @@ impl<'a, 'source> Renderer<'a, 'source> {
     }
     fn expand(&mut self, task: Render) -> std::io::Result<()> {
         match task {
+            Render::TemplateClause(parameters) => {
+                let parameters = parameters.parameters;
+                self.text("template<");
+                self.tasks.push(Render::Text(">"));
+                for (index, &parameter) in self
+                    .tree
+                    .template_parameters
+                    .get(parameters)
+                    .iter()
+                    .enumerate()
+                    .rev()
+                {
+                    self.tasks.push(Render::TemplateParameter(parameter));
+                    if index != 0 {
+                        self.tasks.push(Render::Text(","));
+                    }
+                }
+            }
+            Render::TemplateParameter(parameter) => self.template_parameter(parameter),
             Render::Declaration(id) => self.declaration(id),
             Render::Statement(id) => self.statement(id),
             Render::Condition(condition) => self.condition(condition),
@@ -131,7 +153,35 @@ impl<'a, 'source> Renderer<'a, 'source> {
             Render::NameRest(name) => {
                 self.components(self.tree.names.get(name).components, 1, false);
             }
-            Render::Component(component, qualified) => self.component(component.kind, qualified),
+            Render::Component(component, qualified) => {
+                if component.template_keyword {
+                    self.text("template ");
+                }
+                if let Some(arguments) = component.arguments {
+                    self.tasks.push(Render::Text(">"));
+                    for (index, argument) in self
+                        .tree
+                        .template_arguments
+                        .get(arguments)
+                        .iter()
+                        .enumerate()
+                        .rev()
+                    {
+                        if argument.pack {
+                            self.tasks.push(Render::Text("..."));
+                        }
+                        self.tasks.push(match argument.kind {
+                            TemplateArgumentKind::Type(ty) => Render::Type(ty),
+                            TemplateArgumentKind::Expression(expr) => Render::Expression(expr),
+                        });
+                        if index != 0 {
+                            self.tasks.push(Render::Text(","));
+                        }
+                    }
+                    self.tasks.push(Render::Text("<"));
+                }
+                self.component(component.kind, qualified);
+            }
             Render::Decltype(operand) => {
                 self.text("decltype(");
                 self.tasks.push(Render::Text(")"));
@@ -167,51 +217,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 }
             }
             Render::Specifier(specifier) => self.specifier(specifier),
-            Render::Declarator(id) => {
-                let node = self.tree.declarators.get(id);
-                for &suffix in self.tree.suffixes.get(node.suffixes).iter().rev() {
-                    match suffix {
-                        Suffix::Array(bound) => {
-                            self.tasks.push(Render::Text("]"));
-                            if let Some(bound) = bound {
-                                self.tasks.push(Render::Expression(bound));
-                            }
-                            self.tasks.push(Render::Text("["));
-                        }
-                        Suffix::Function {
-                            parameters,
-                            qualifiers,
-                        } => {
-                            for &qualifier in self.tree.qualifiers.get(qualifiers).iter().rev() {
-                                self.tasks.push(Render::Qualifier(qualifier));
-                            }
-                            self.tasks.push(Render::Clause(parameters));
-                        }
-                    }
-                }
-                if let Some(nested) = node.nested {
-                    self.tasks.push(Render::Text(")"));
-                    self.tasks.push(Render::Declarator(nested));
-                    self.tasks.push(Render::Text("("));
-                }
-                if let Some(name) = node.name {
-                    self.tasks.push(Render::Name(name, true));
-                }
-                if node.pack {
-                    self.tasks.push(Render::Text("..."));
-                }
-                for pointer in self.tree.pointers.get(node.pointers).iter().rev() {
-                    for &cv in self.tree.cvs.get(pointer.cv).iter().rev() {
-                        self.tasks.push(Render::Text(" "));
-                        self.tasks.push(Render::Text(cv.spelling()));
-                    }
-                    self.tasks.push(
-                        pointer
-                            .class_name
-                            .map_or(Render::Operator(pointer.op), Render::MemberPointer),
-                    );
-                }
-            }
+            Render::Declarator(id) => self.declarator(id),
             Render::Clause(clause) => {
                 self.tasks.push(Render::Text(")"));
                 if clause.ellipsis {
@@ -311,6 +317,51 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
             Specifier::Enum(decl) => self.enumeration(decl),
             Specifier::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
+        }
+    }
+    fn declarator(&mut self, id: DeclaratorId) {
+        let node = self.tree.declarators.get(id);
+        for &suffix in self.tree.suffixes.get(node.suffixes).iter().rev() {
+            match suffix {
+                Suffix::Array(bound) => {
+                    self.tasks.push(Render::Text("]"));
+                    if let Some(bound) = bound {
+                        self.tasks.push(Render::Expression(bound));
+                    }
+                    self.tasks.push(Render::Text("["));
+                }
+                Suffix::Function {
+                    parameters,
+                    qualifiers,
+                } => {
+                    for &qualifier in self.tree.qualifiers.get(qualifiers).iter().rev() {
+                        self.tasks.push(Render::Qualifier(qualifier));
+                    }
+                    self.tasks.push(Render::Clause(parameters));
+                }
+            }
+        }
+        if let Some(nested) = node.nested {
+            self.tasks.push(Render::Text(")"));
+            self.tasks.push(Render::Declarator(nested));
+            self.tasks.push(Render::Text("("));
+        }
+        if let Some(name) = node.name {
+            self.tasks.push(Render::Name(name, true));
+        }
+        if node.pack {
+            self.tasks.push(Render::Text("..."));
+        }
+        for pointer in self.tree.pointers.get(node.pointers).iter().rev() {
+            for &cv in self.tree.cvs.get(pointer.cv).iter().rev() {
+                self.tasks.push(Render::Text(" "));
+                self.tasks.push(Render::Text(cv.spelling()));
+            }
+            self.tasks.push(
+                pointer
+                    .class_name
+                    .map_or(Render::Operator(pointer.op), Render::MemberPointer),
+            );
         }
     }
     fn components(&mut self, components: List<NameComponent>, start: usize, global: bool) {
@@ -448,6 +499,15 @@ impl<'a, 'source> Renderer<'a, 'source> {
     fn expression(&mut self, id: ExprId) {
         match self.tree.expressions.get(id).kind {
             ExprKind::Id(name) => self.tasks.push(Render::Name(name, true)),
+            ExprKind::SizeofPack(name) => {
+                self.text("sizeof...(");
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Identifier(name));
+            }
+            ExprKind::PackExpansion(pattern) => {
+                self.tasks.push(Render::Text("..."));
+                self.tasks.push(Render::Expression(pattern));
+            }
             ExprKind::Literal(literal) => self.tasks.push(Render::Spelling(literal.spelling)),
             ExprKind::Keyword(word) => self.text(word.spelling()),
             ExprKind::Paren(inner) => {
@@ -678,8 +738,68 @@ impl Renderer<'_, '_> {
         self.tasks.push(Render::Text(" "));
         self.tasks.push(Render::Text(class.key.spelling()));
     }
+    fn template_parameter(&mut self, parameter: TemplateParameter) {
+        match parameter.kind {
+            TemplateParameterKind::Type {
+                key,
+                name,
+                parameters,
+                default,
+            } => {
+                if let Some(default) = default {
+                    self.tasks.push(Render::Type(default));
+                    self.tasks.push(Render::Text("="));
+                }
+                if let Some(name) = name {
+                    self.tasks.push(Render::Identifier(name));
+                }
+                if parameter.pack {
+                    self.tasks.push(Render::Text("..."));
+                }
+                self.tasks.push(Render::Text(" "));
+                self.tasks.push(Render::Text(key.spelling()));
+                if let Some(parameters) = parameters {
+                    self.tasks.push(Render::TemplateClause(parameters));
+                }
+            }
+            TemplateParameterKind::NonType {
+                specifiers,
+                declarator,
+                default,
+            } => {
+                if let Some(default) = default {
+                    self.tasks.push(Render::Expression(default));
+                    self.tasks.push(Render::Text("="));
+                }
+                if let Some(declarator) = declarator {
+                    self.tasks.push(Render::Declarator(declarator));
+                }
+                if parameter.pack {
+                    self.tasks.push(Render::Text("..."));
+                }
+                self.tasks.push(Render::Specs(specifiers));
+            }
+        }
+    }
     fn declaration(&mut self, id: DeclId) {
         match self.tree.declarations.get(id).kind {
+            DeclKind::Template {
+                parameters,
+                declaration,
+            } => {
+                self.tasks.push(Render::Declaration(declaration));
+                self.tasks.push(Render::TemplateClause(parameters));
+            }
+            DeclKind::ExplicitInstantiation {
+                is_extern,
+                declaration,
+            } => {
+                self.tasks.push(Render::Declaration(declaration));
+                self.tasks.push(Render::Text("template "));
+                if is_extern {
+                    self.tasks.push(Render::Text("extern"));
+                }
+            }
             DeclKind::Empty => self.tasks.push(Render::Text(";")),
             DeclKind::Class(specifier) => {
                 self.tasks.push(Render::Text(";"));

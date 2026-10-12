@@ -100,9 +100,9 @@ impl Parser<'_> {
                     if let Some(scope) =
                         name.and_then(|name| self.tree.names.get(name).prefix_scope)
                     {
-                        self.scopes.current = scope;
+                        self.scopes.member_context(scope)?;
                     }
-                    let result = self.expression();
+                    let result = self.without_angle(Self::expression);
                     self.scopes.current = enclosing;
                     Some(result?)
                 };
@@ -124,12 +124,8 @@ impl Parser<'_> {
                             !matches!(component.kind, super::ast::NameKind::Identifier(_))
                         })
                 });
-            let enclosing = self.scopes.current;
-            if let Some(scope) = name.and_then(|name| self.tree.names.get(name).prefix_scope) {
-                self.scopes.current = scope;
-            }
-            let result = self.attempt(|parser| parser.parameter_clause(definite));
-            self.scopes.current = enclosing;
+            let member = name.and_then(|name| self.tree.names.get(name).prefix_scope);
+            let result = self.attempt(|parser| parser.parameter_clause_member(definite, member));
             let Some(parameters) = result? else {
                 break;
             };
@@ -200,7 +196,7 @@ impl Parser<'_> {
                         .iter()
                         .any(|byte| matches!(byte, b'C' | b'Y' | b'E' | b'T'))
                 },
-                |binding| binding.category != Category::Type,
+                |binding| !matches!(binding.category, Category::Type | Category::TypeTemplate),
             ));
         }
         Ok(false)
@@ -228,13 +224,30 @@ impl Parser<'_> {
         }
         (!node.pointers.is_empty()).then_some(false)
     }
-    pub(super) fn parameter_clause(
+    pub(super) fn parameter_clause_member(
+        &mut self,
+        definite: bool,
+        member: Option<super::scopes::ScopeId>,
+    ) -> Result<ParameterClause, ParseError> {
+        self.without_angle(|parser| {
+            let pending = parser.pending_template;
+            parser.pending_template = false;
+            let result = parser.parameter_clause_inner(definite, member);
+            parser.pending_template = pending;
+            result
+        })
+    }
+    fn parameter_clause_inner(
         &mut self,
         mut definite: bool,
+        member: Option<super::scopes::ScopeId>,
     ) -> Result<ParameterClause, ParseError> {
         self.expect(P::LeftParen)?;
         let enclosing = self.scopes.current;
         let scope = self.scopes.push()?;
+        if let Some(member) = member {
+            self.scopes.set_member(scope, member);
+        }
         let start = self.tree.parameters.begin();
         let mut ellipsis = false;
         let mut ellipsis_without_comma = false;

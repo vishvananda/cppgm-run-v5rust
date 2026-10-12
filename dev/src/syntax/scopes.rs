@@ -9,16 +9,20 @@ pub(super) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Category {
     Type,
+    TypeTemplate,
+    FunctionTemplate,
     Value,
     Namespace,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Binding {
     pub category: Category,
+    pub parameter: bool,
     pub scope: Option<ScopeId>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ScopeKind {
+    Template,
     Ordinary,
     Namespace,
     Block,
@@ -30,6 +34,7 @@ struct Scope {
     kind: ScopeKind,
     complete: bool,
     parent: Option<ScopeId>,
+    member_of: Option<ScopeId>,
     depth: u32,
     edges: Vec<Edge>,
 }
@@ -37,6 +42,7 @@ struct Scope {
 struct Edge {
     target: ScopeId,
     at: Option<ScopeId>,
+    dependent: bool,
 }
 #[derive(Clone, Copy)]
 struct Pending {
@@ -64,6 +70,7 @@ enum Change {
     Binding((ScopeId, NameId), Option<Binding>),
     Edge(ScopeId),
     Complete(ScopeId, bool),
+    Member(ScopeId, Option<ScopeId>),
     Parent(ScopeId, Option<ScopeId>, u32),
 }
 #[derive(Clone, Copy)]
@@ -71,6 +78,7 @@ pub(super) struct ScopeMark {
     scopes: usize,
     changes: usize,
     current: ScopeId,
+    environment: u64,
 }
 pub(super) struct Scopes {
     records: Vec<Scope>,
@@ -78,9 +86,11 @@ pub(super) struct Scopes {
     unnamed: HashMap<ScopeId, ScopeId>,
     changes: Vec<Change>,
     pub current: ScopeId,
+    environment: u64,
+    epoch: u64,
     visited: HashSet<ScopeId>,
     pending: BinaryHeap<Pending>,
-    edge_targets: HashSet<(ScopeId, ScopeId)>,
+    edge_targets: HashSet<(ScopeId, ScopeId, bool)>,
     name_marks: Vec<u8>,
     search_work: Vec<ScopeId>,
 }
@@ -91,6 +101,7 @@ impl Default for Scopes {
                 kind: ScopeKind::Namespace,
                 complete: false,
                 parent: None,
+                member_of: None,
                 depth: 0,
                 edges: Vec::new(),
             }],
@@ -98,6 +109,8 @@ impl Default for Scopes {
             unnamed: HashMap::new(),
             changes: Vec::new(),
             current: ScopeId(0),
+            environment: 0,
+            epoch: 0,
             visited: HashSet::new(),
             pending: BinaryHeap::new(),
             edge_targets: HashSet::new(),
@@ -107,11 +120,31 @@ impl Default for Scopes {
     }
 }
 impl Scopes {
+    pub(super) fn environment(&self) -> u64 {
+        self.environment
+    }
+    fn changed(&mut self) {
+        // A transaction restores its environment; new mutations receive a fresh
+        // identity, so recycled scope slots cannot reuse failed parse queries.
+        self.epoch = self.epoch.wrapping_add(1);
+        self.environment = self.epoch;
+    }
     pub(super) fn global() -> ScopeId {
         ScopeId(0)
     }
     pub(super) fn kind(&self, scope: ScopeId) -> ScopeKind {
         self.records[scope.0 as usize].kind
+    }
+    pub(super) fn set_member(&mut self, scope: ScopeId, member: ScopeId) {
+        let old = self.records[scope.0 as usize].member_of;
+        self.changes.push(Change::Member(scope, old));
+        self.records[scope.0 as usize].member_of = Some(member);
+        self.changed();
+    }
+    pub(super) fn member_context(&mut self, member: ScopeId) -> Result<ScopeId, ParseError> {
+        let scope = self.push()?;
+        self.set_member(scope, member);
+        Ok(scope)
     }
     pub(super) fn complete(&self, scope: ScopeId) -> bool {
         self.records[scope.0 as usize].complete
@@ -120,6 +153,7 @@ impl Scopes {
         let old = self.records[scope.0 as usize].complete;
         self.changes.push(Change::Complete(scope, old));
         self.records[scope.0 as usize].complete = true;
+        self.changed();
     }
     pub(super) fn reopen(&mut self, scope: ScopeId, parent: ScopeId) -> Result<(), ParseError> {
         let depth = self.records[parent.0 as usize]
@@ -131,6 +165,7 @@ impl Scopes {
             .push(Change::Parent(scope, record.parent, record.depth));
         record.parent = Some(parent);
         record.depth = depth;
+        self.changed();
         Ok(())
     }
     pub(super) fn class_home(&self, mut home: ScopeId, name: NameId) -> ScopeId {
@@ -173,6 +208,7 @@ impl Scopes {
             kind,
             complete: false,
             parent: Some(self.current),
+            member_of: None,
             depth: self.records[self.current.0 as usize]
                 .depth
                 .checked_add(1)
@@ -180,6 +216,7 @@ impl Scopes {
             edges: Vec::new(),
         });
         self.current = id;
+        self.changed();
         Ok(id)
     }
     pub(super) fn unnamed(&self, scope: ScopeId) -> Option<ScopeId> {
@@ -198,6 +235,21 @@ impl Scopes {
             scope = parent;
         }
         scope
+    }
+    pub(super) fn declaration_scope(&self) -> ScopeId {
+        let mut scope = self.current;
+        while self.kind(scope) == ScopeKind::Template {
+            let Some(parent) = self.records[scope.0 as usize].parent else {
+                break;
+            };
+            scope = parent;
+        }
+        scope
+    }
+    pub(super) fn ever_template(&self, name: NameId) -> bool {
+        self.name_marks
+            .get(name.index())
+            .is_some_and(|marks| marks & 4 != 0)
     }
     pub(super) fn own(&self, scope: ScopeId, name: NameId) -> Option<Binding> {
         self.bindings.get(&(scope, name)).copied()
@@ -219,14 +271,29 @@ impl Scopes {
         } else {
             1
         };
+        if binding.category == Category::TypeTemplate
+            || (binding.category == Category::FunctionTemplate
+                && matches!(
+                    self.kind(scope),
+                    ScopeKind::Class(_) | ScopeKind::AnonymousClass | ScopeKind::Enum
+                ))
+        {
+            self.name_marks[name.index()] |= 4;
+        }
         let key = (scope, name);
         let binding = self.own(scope, name).map_or(binding, |previous| {
-            if (binding.category == Category::Value && previous.category == Category::Type)
+            if previous.category == Category::FunctionTemplate
+                && binding.category == Category::Value
+            {
+                previous
+            } else if (binding.category == Category::Value
+                && matches!(previous.category, Category::Type | Category::TypeTemplate))
                 || (previous.category == Category::Value
-                    && binding.category == Category::Type
+                    && matches!(binding.category, Category::Type | Category::TypeTemplate)
                     && binding.scope.is_some())
             {
                 Binding {
+                    parameter: false,
                     category: Category::Value,
                     scope: binding.scope.or(previous.scope),
                 }
@@ -238,9 +305,13 @@ impl Scopes {
         });
         let old = self.bindings.insert(key, binding);
         self.changes.push(Change::Binding(key, old));
+        self.changed();
     }
     pub(super) fn add_edge(&mut self, scope: ScopeId) {
-        self.add_edge_at(scope, None);
+        self.add_edge_at(scope, None, false);
+    }
+    pub(super) fn add_base(&mut self, scope: ScopeId, dependent: bool) {
+        self.add_edge_at(scope, None, dependent);
     }
     pub(super) fn add_using_directive(&mut self, nominated: ScopeId) {
         let mut at = self.current;
@@ -262,15 +333,21 @@ impl Scopes {
         while self.kind(at) != ScopeKind::Namespace {
             at = self.records[at.0 as usize].parent.unwrap_or(Self::global());
         }
-        self.add_edge_at(nominated, Some(at));
+        self.add_edge_at(nominated, Some(at), false);
     }
-    fn add_edge_at(&mut self, scope: ScopeId, at: Option<ScopeId>) {
+    fn add_edge_at(&mut self, scope: ScopeId, at: Option<ScopeId>, dependent: bool) {
         let current = self.current;
-        if self.edge_targets.insert((current, scope)) {
-            self.records[current.0 as usize]
-                .edges
-                .push(Edge { target: scope, at });
+        if dependent && self.edge_targets.contains(&(current, scope, false)) {
+            return;
+        }
+        if self.edge_targets.insert((current, scope, dependent)) {
+            self.records[current.0 as usize].edges.push(Edge {
+                target: scope,
+                at,
+                dependent,
+            });
             self.changes.push(Change::Edge(current));
+            self.changed();
         }
     }
     pub(super) fn lookup(&mut self, name: NameId) -> Option<Binding> {
@@ -287,19 +364,74 @@ impl Scopes {
         self.visited.clear();
         self.pending.clear();
         let mut current = Some(self.current);
+        let mut home: Option<ScopeId> = None;
         while let Some(scope) = current {
+            if self.kind(scope) == ScopeKind::Namespace
+                && let Some(inner) = home.take()
+                && let Some(binding) = self.search_home(inner, scope, name, prefix_only)
+            {
+                return Some(binding);
+            }
             if let Some(binding) = self.search_level(scope, name, prefix_only) {
                 return Some(binding);
+            }
+            if let Some(member) = self.records[scope.0 as usize].member_of {
+                let mut member = member;
+                loop {
+                    if self.kind(member) == ScopeKind::Namespace {
+                        home = Some(member);
+                        break;
+                    }
+                    if self.kind(member) != ScopeKind::Template
+                        && let Some(binding) = self.search(member, name, prefix_only)
+                    {
+                        return Some(binding);
+                    }
+                    let next = self.records[member.0 as usize]
+                        .member_of
+                        .or(self.records[member.0 as usize].parent);
+                    let Some(next) = next else {
+                        break;
+                    };
+                    member = next;
+                }
             }
             current = self.records[scope.0 as usize].parent;
         }
         None
     }
-    pub(super) fn lookup_in_name(
+    fn search_home(
+        &mut self,
+        mut inner: ScopeId,
+        scope: ScopeId,
+        name: NameId,
+        prefix_only: bool,
+    ) -> Option<Binding> {
+        let mut outer = inner;
+        while self.records[outer.0 as usize].depth > self.records[scope.0 as usize].depth {
+            outer = self.records[outer.0 as usize]
+                .parent
+                .unwrap_or(Self::global());
+        }
+        if outer != scope {
+            return None;
+        }
+        while inner != scope {
+            if let Some(binding) = self.search_level(inner, name, prefix_only) {
+                return Some(binding);
+            }
+            inner = self.records[inner.0 as usize]
+                .parent
+                .unwrap_or(Self::global());
+        }
+        None
+    }
+    pub(super) fn lookup_specialization(
         &mut self,
         scope: ScopeId,
         name: NameId,
         prefix_only: bool,
+        specialization: bool,
     ) -> Option<Binding> {
         if self
             .name_marks
@@ -309,10 +441,15 @@ impl Scopes {
             return None;
         }
         self.visited.clear();
-        self.search(scope, name, prefix_only)
+        self.search_with_bases(scope, name, prefix_only, specialization)
     }
     fn found(binding: Binding, prefix_only: bool) -> bool {
-        !prefix_only || binding.category != Category::Value || binding.scope.is_some()
+        !prefix_only
+            || matches!(
+                binding.category,
+                Category::Type | Category::TypeTemplate | Category::Namespace
+            )
+            || binding.scope.is_some()
     }
     fn search_level(&mut self, scope: ScopeId, name: NameId, prefix_only: bool) -> Option<Binding> {
         if matches!(
@@ -355,6 +492,15 @@ impl Scopes {
         None
     }
     fn search(&mut self, scope: ScopeId, name: NameId, prefix_only: bool) -> Option<Binding> {
+        self.search_with_bases(scope, name, prefix_only, false)
+    }
+    fn search_with_bases(
+        &mut self,
+        scope: ScopeId,
+        name: NameId,
+        prefix_only: bool,
+        specialization: bool,
+    ) -> Option<Binding> {
         self.search_work.clear();
         self.search_work.push(scope);
         while let Some(scope) = self.search_work.pop() {
@@ -381,6 +527,7 @@ impl Scopes {
                 self.records[scope.0 as usize]
                     .edges
                     .iter()
+                    .filter(|edge| !edge.dependent || specialization)
                     .map(|edge| edge.target),
             );
         }
@@ -391,6 +538,7 @@ impl Scopes {
             scopes: self.records.len(),
             changes: self.changes.len(),
             current: self.current,
+            environment: self.environment,
         }
     }
     pub(super) fn rewind(&mut self, mark: ScopeMark) {
@@ -408,6 +556,9 @@ impl Scopes {
                 Some(Change::Binding(key, None)) => {
                     self.bindings.remove(&key);
                 }
+                Some(Change::Member(scope, old)) => {
+                    self.records[scope.0 as usize].member_of = old;
+                }
                 Some(Change::Complete(scope, old)) => {
                     self.records[scope.0 as usize].complete = old;
                 }
@@ -417,7 +568,8 @@ impl Scopes {
                 }
                 Some(Change::Edge(scope)) => {
                     if let Some(edge) = self.records[scope.0 as usize].edges.pop() {
-                        self.edge_targets.remove(&(scope, edge.target));
+                        self.edge_targets
+                            .remove(&(scope, edge.target, edge.dependent));
                     }
                 }
                 None => break,
@@ -425,6 +577,7 @@ impl Scopes {
         }
         self.records.truncate(mark.scopes);
         self.current = mark.current;
+        self.environment = mark.environment;
     }
     pub(super) fn settle(&mut self) {
         self.changes.clear();

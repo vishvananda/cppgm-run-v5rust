@@ -1,0 +1,105 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier get
+            parameter-clause
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier get
+          parameter-clause
+  class-specifier C
+    class-key KW_STRUCT:struct
+    template-declaration
+      template-parameter-clause
+        template-parameter-list
+          type-parameter
+            parameter-key KW_CLASS:class
+            identifier T
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier count
+              parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression get<int>
+          argument-list
+      expression-statement
+        call-expression
+          member-expression OP_DOT:.
+            id-expression x
+            identifier count<int>
+          argument-list
+      expression-statement
+        binary-expression OP_LOR:||
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression x
+              identifier count
+            id-expression a
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression x
+              identifier count
+            parenthesized-expression
+              id-expression b
+      expression-statement
+        binary-expression OP_LOR:||
+          binary-expression OP_LT:<
+            member-expression OP_DOT:.
+              id-expression x
+              identifier get
+            id-expression a
+          binary-expression OP_GT:>
+            member-expression OP_DOT:.
+              id-expression x
+              identifier get
+            parenthesized-expression
+              id-expression b
+      return-statement
+        literal 0
+  class-specifier Owner
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_FRIEND:friend
+        class-forward-declaration Unknown
+          class-key KW_STRUCT:struct
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier g
+      parameter-clause
+    compound-statement
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression Unknown
+          id-expression p
+end translation unit

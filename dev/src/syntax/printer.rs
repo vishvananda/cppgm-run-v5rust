@@ -4,8 +4,9 @@ use super::{
     ast::{
         Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId,
         Enumerator, ExceptionDeclaration, ExprId, ExprKind, FunctionBody, Handler, InitDeclarator,
-        Initializer, MemInitializer, Name, NameKind, Operator, Parameter, ParameterClause,
-        Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
+        Initializer, Literal, MemInitializer, Name, NameKind, Operator, Parameter, ParameterClause,
+        Qualifier, Specifier, StmtId, StmtKind, Suffix, TemplateParameter, TemplateParameterClause,
+        TemplateParameterKind, Tree, TypeId,
     },
     cursor::Cursor,
     render::{Render, Renderer, operator_spelling},
@@ -16,6 +17,7 @@ use std::io::{self, Write};
 #[derive(Clone, Copy)]
 enum Payload {
     None,
+    LiteralToken(Literal),
     Text(&'static str),
     Spelling(Text),
     Identifier(NameId),
@@ -30,6 +32,8 @@ enum Payload {
 #[derive(Clone, Copy)]
 enum Task {
     Close,
+    TemplateClause(TemplateParameterClause),
+    TemplateParameter(TemplateParameter),
     Line(&'static str, Payload, bool),
     Declaration(DeclId),
     Expression(ExprId),
@@ -94,6 +98,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(label.as_bytes())?;
         let task = match payload {
             Payload::None => None,
+            Payload::LiteralToken(literal) => {
+                self.output.write_all(b" TT_LITERAL:")?;
+                self.renderer.render(Render::Spelling(literal.spelling))?;
+                self.output.write_all(&self.renderer.bytes)?;
+                None
+            }
             Payload::Text(text) => Some(Render::Text(text)),
             Payload::Spelling(text) => Some(Render::Spelling(text)),
             Payload::Identifier(name) => Some(Render::Identifier(name)),
@@ -121,6 +131,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         self.renderer.tree.name_lists.get(node.components)[0].kind,
                         NameKind::Identifier(_)
                     )
+                    && self.renderer.tree.name_lists.get(node.components)[0]
+                        .arguments
+                        .is_none()
                 {
                     self.output.write_all(b" TT_IDENTIFIER:")?;
                     self.renderer.render(Render::Name(name, false))?;
@@ -158,6 +171,26 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn execute(&mut self, task: Task) -> io::Result<()> {
         match task {
+            Task::TemplateClause(parameters) => {
+                let parameters = parameters.parameters;
+                self.open("template-parameter-clause", Payload::None)?;
+                if !parameters.is_empty() {
+                    self.tasks.push(Task::Close);
+                    for &parameter in self
+                        .renderer
+                        .tree
+                        .template_parameters
+                        .get(parameters)
+                        .iter()
+                        .rev()
+                    {
+                        self.tasks.push(Task::TemplateParameter(parameter));
+                    }
+                    self.tasks
+                        .push(Task::Line("template-parameter-list", Payload::None, true));
+                }
+            }
+            Task::TemplateParameter(parameter) => self.template_parameter(parameter)?,
             Task::Body(id) => {
                 let Body::Parsed(body) = *self.renderer.tree.bodies.get(id) else {
                     return Err(io::Error::other("unparsed deferred function body"));
@@ -325,17 +358,100 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         declarator,
                         initializer,
                     } => {
+                        self.tasks.push(Task::Close);
                         self.tasks.push(Task::Initializer(initializer));
                         self.tasks.push(Task::Declarator(Some(declarator), false));
                         self.tasks.push(Task::Specs(specifiers, false));
+                        self.tasks
+                            .push(Task::Line("condition-declaration", Payload::None, true));
                     }
                 }
             }
         }
         Ok(())
     }
+    fn template_parameter(&mut self, parameter: TemplateParameter) -> io::Result<()> {
+        match parameter.kind {
+            TemplateParameterKind::Type {
+                key,
+                name,
+                parameters,
+                default,
+            } => {
+                self.open("type-parameter", Payload::None)?;
+                if let Some(default) = default {
+                    self.tasks.push(Task::Close);
+                    self.tasks.push(Task::Type(default));
+                    self.tasks
+                        .push(Task::Line("default-template-argument", Payload::None, true));
+                }
+                if let Some(name) = name {
+                    self.tasks
+                        .push(Task::Line("identifier", Payload::Identifier(name), false));
+                }
+                if parameter.pack {
+                    self.tasks
+                        .push(Task::Line("parameter-pack", Payload::Text("..."), false));
+                }
+                self.tasks
+                    .push(Task::Line("parameter-key", Payload::Keyword(key), false));
+                if let Some(parameters) = parameters {
+                    self.tasks.push(Task::TemplateClause(parameters));
+                    self.tasks.push(Task::Line(
+                        "template-template-parameter",
+                        Payload::None,
+                        false,
+                    ));
+                }
+            }
+            TemplateParameterKind::NonType {
+                specifiers,
+                declarator,
+                default,
+            } => {
+                self.open("non-type-template-parameter", Payload::None)?;
+                if let Some(default) = default {
+                    self.tasks.push(Task::Close);
+                    self.tasks.push(Task::Expression(default));
+                    self.tasks
+                        .push(Task::Line("default-template-argument", Payload::None, true));
+                }
+                if let Some(declarator) = declarator {
+                    self.tasks.push(Task::Declarator(Some(declarator), false));
+                }
+                if parameter.pack {
+                    self.tasks
+                        .push(Task::Line("parameter-pack", Payload::Text("..."), false));
+                }
+                self.tasks.push(Task::Specs(specifiers, false));
+            }
+        }
+        Ok(())
+    }
     fn declaration(&mut self, id: DeclId) -> io::Result<()> {
         match self.renderer.tree.declarations.get(id).kind {
+            DeclKind::Template {
+                parameters,
+                declaration,
+            } => {
+                self.open("template-declaration", Payload::None)?;
+                self.tasks.push(Task::Declaration(declaration));
+                self.tasks.push(Task::TemplateClause(parameters));
+            }
+            DeclKind::ExplicitInstantiation {
+                is_extern,
+                declaration,
+            } => {
+                self.open(
+                    if is_extern {
+                        "explicit-instantiation-declaration"
+                    } else {
+                        "explicit-instantiation-definition"
+                    },
+                    Payload::None,
+                )?;
+                self.tasks.push(Task::Declaration(declaration));
+            }
             DeclKind::Class(specifier) => self.tasks.push(Task::OwnedSpecifier(specifier)),
             DeclKind::Access(access) => {
                 self.line("access-specifier", Payload::Keyword(access), false)?;
@@ -806,9 +922,24 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
+            ExprKind::SizeofPack(name) => {
+                self.line("sizeof-pack-expression", Payload::Identifier(name), false)?;
+            }
+            ExprKind::PackExpansion(pattern) => {
+                self.open("pack-expansion-expression", Payload::None)?;
+                self.tasks.push(Task::Expression(pattern));
+            }
             ExprKind::Id(name) => self.line("id-expression", Payload::Name(name), false)?,
             ExprKind::Literal(literal) => {
-                self.line("literal", Payload::Spelling(literal.spelling), false)?;
+                self.line(
+                    "literal",
+                    if literal.token_form {
+                        Payload::LiteralToken(literal)
+                    } else {
+                        Payload::Spelling(literal.spelling)
+                    },
+                    false,
+                )?;
             }
             ExprKind::Keyword(word) => {
                 self.line("keyword-literal", Payload::Keyword(word), false)?;

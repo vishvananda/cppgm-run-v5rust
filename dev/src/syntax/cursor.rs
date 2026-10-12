@@ -143,6 +143,7 @@ impl<'a> Cursor<'a> {
             }
             kind => TokenKind::Literal(Literal {
                 kind,
+                token_form: false,
                 spelling: self.spellings.add(post.source)?,
                 data: self.spellings.add(post.data)?,
                 suffix: self.spellings.add(post.suffix)?,
