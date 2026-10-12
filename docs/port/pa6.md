@@ -1,7 +1,7 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `b635af3fa3484170186c324c243bf339a17f86dd` (ongoing full-stage audit; callable identities and template throw ownership reviewed, acceptance withheld).
+Last audited commit: `5851cab157eacc66f410f3275b0c06bd2f8d1c41` (PA6 full-stage acceptance PASS; due responsibilities reviewed and fixed, later-stage boundaries individually recorded).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
@@ -2029,3 +2029,181 @@ expression typing, overload resolution, layout or instantiation, or classify
 all remaining probes away without direct handout/source evidence. Full-stage
 acceptance and Ralph's existing goal remain open; no goal or Ralph state was
 created, reset, paused, advanced or replaced.
+
+## Full-stage acceptance closure: allocation names and stage boundaries
+
+Audit target `pa6 full-stage`, phase `audit`; stage base remains
+`70e745588987998ee1e5bde80b3861541eab753d`. Incoming clean ledger revision:
+`83c4d4f7c7597766f0341986590fe9e5430dd0fb`; incoming implementation audit marker:
+`b635af3fa3484170186c324c243bf339a17f86dd`. Reviewed and validated implementation:
+`5851cab157eacc66f410f3275b0c06bd2f8d1c41`.
+
+**PA6 acceptance: PASS for the cumulative PA1–PA6 handout contract.** This
+closes the previously withheld stage audit after fixing the remaining due
+allocation-name group and individually classifying the wider compiler census.
+It does not certify the complete Types mode on inputs requiring later-stage
+features. Those remain explicit implementation dependencies, with their actual
+mismatches retained below. No fixed case, reference, baseline, control checker,
+acceptance policy or Ralph state was changed. Ralph owns stage advancement.
+
+The audit follows CLONE_CONTRACT.md's instruction not to force future-stage
+capabilities into early gates. PA6 README's Input Contract distinguishes syntax
+acceptance from its semantic slice; its Out Of Scope excludes overload sets,
+expression typing, general queries, template-aware semantic disambiguation,
+specializations/instantiations, non-type binding and full constant evaluation.
+The type notation in `pa6/scopes-and-types.md` specifies the supported forms.
+These existing boundaries, rather than the outcome of a probe, determine what
+is due. The historical ledger entries remain checkpoint evidence; this entry
+supersedes their open-boundary statements for PA6 acceptance only.
+
+### Source responsibility closure and completeness reasoning
+
+Read the repository instructions, clone contract, specification, clone plan,
+full handout and scopes/types guide, source map and historical ledger. The
+frozen source revision remains `0fe8e3b4bde9929c2419fb7906028df83bb17de5`.
+The following groups trace the due C++ control flow to Rust owners, including
+behavior beyond the initial 121 fixtures. The preceding audit entries record
+individual diagnostic, arithmetic and ordering findings and their fixes.
+
+| Due responsibility and reviewed C++ owner | Rust owner and acceptance reasoning |
+| --- | --- |
+| `cppgm++.cpp` types source loop | `dev/bin/cppgm.rs`, `driver/ast.rs`: flags/output handling, input order, wrappers, independent units, located failures and retained AST mode. One preprocessor/cursor/AST is consumed in process by Rust sema and dump. |
+| `analyzer.cpp` dispatch, namespace/alias/using/declaration linkage | `analyzer.rs`, `lookup.rs`, `graph.rs`: reopened scopes share identity; aliases distinguish name entities from target scope; indexed using edges preserve source ordinals, common-ancestor nomination, inline lookup, cycles and later namespace additions. Special callable imports share the qualified lookup owner. |
+| `analyzer_types.cpp`, `type_table.cpp` specifier/declarator formation | `specifiers.rs`, `declarators.rs`, `types.rs`: supported fundamental/cv combinations and invalid combinations; pointer/reference/array/function precedence; alias collapsing and array qualification; source parameters versus canonical signatures and adjusted parameter objects; sole void, varargs and qualifier rules. Matching uses typed identity, not rendered output. |
+| `analyzer_declarations.cpp` declaration/entity matching | `declarations.rs`, `data_members.rs`, `function_names.rs`: publication order, compatible objects/functions, completed arrays, initialized references, void objects, qualified enclosing scopes, static/linkage/constexpr agreement, duplicate definitions, declared/source labels and explicit function body ownership. Unsupported overload construction is a separate later boundary. |
+| `analyzer_classes.cpp` class/enum/anonymous declaration paths | `declarations.rs`, `enumerations.rs`, `anonymous_types.rs`, `special_members.rs`: class keys/forwards/injected names, scoped opaque enums, elaborated hidden tags, enum underlying selection, anonymous token-ordinal names/adoption/storage and member conflict ordering. Complete-class events precede member body/exception lookup. Types-mode special-member declaration facts do not demand semantic construction plans. |
+| `analyzer.cpp::template_declaration/template_parameters`, `class_templates.cpp`, `template_names.cpp`, `template_placeholders.cpp` declaration-head slice | `templates.rs`, `expression_keys.rs`, `name_keys.rs`: owned type/template-template parameter scopes, positional canonical entities distinct from source names, same-shape heads/defaults/alias-template declarations and structural noexcept compatibility. Qualified dependent members and instantiated specializations remain outside PA6. |
+| `constant_evaluator.cpp`, `integral_arithmetic.cpp`, enum selection | `constants.rs`, `integral.rs`, `enumerations.rs`: literal/character conversion, LP64 signedness/rank/promotion, sign extension/truncation, unsigned wrapping, checked signed arithmetic/division/shifts, short-circuit unselected operands, scoped-enum restrictions, const/constexpr/reference reads, positive bounds and static assertions. Failure order remains distinct from a nonconstant result. |
+| `analyzer_types.cpp` type-forming queries and `layout.cpp` required size dependencies | `queries.rs`, `layout.rs`: lookup-based sizeof disambiguation, supported decltype entity/lvalue forms, scalar/array/enum/plain-class sizes, incomplete/cyclic/too-large diagnostics, ordered union/member placement and demand-only layout memos. Extended object/query interpretation remains later. |
+| `analyzer_exceptions.cpp` ordinary/member exception states | `exceptions.rs`, `exception_operands.rs`, `template_exceptions.rs`: first/compatible redeclaration facts, namespace declaration-point visibility, complete-class deferred member specifications, prototype parameters, unused ordinary checks at unit end, dynamic throw formation, builtin allocator first-declaration policy and template pending-operand/category rules. Exceptions remain outside canonical function identity. |
+| `analyzer_bodies.cpp`, `analyzer_handlers.cpp`, `analyzer_range_for.cpp` Types branch | `statements.rs`, `analyzer.rs`, `expressions.rs`: function/block/condition/loop/catch scope and guarded redeclaration rules, borrowed statement readings, complete-class deferred bodies, name-only operand order and suppression of unevaluated/initializer class demand. Semantic return/conversion/lifetime/lowering branches are future owners. |
+| `semantic_dump.cpp`, graph/entity/type records | `dump.rs`, `graph.rs`, `types.rs`: deterministic ordered bindings/child scopes, source type spelling, completed shared entity types, hidden builtin/anonymous facts and declaration labels independent of first-entity body labels. No output normalization is used. |
+
+The final finding was `analyzer_bodies.cpp::new_expression` (line 1742): a
+bounded first root array suffix is a runtime expression, not a constant array
+bound. Rust previously returned status 86 for every array allocation, including
+valid PA6 name traversal. `declarators.rs::allocation_type` now reuses the
+existing borrowed root-suffix view with that first suffix skipped; remaining
+suffixes still form types normally. `expressions.rs` schedules the bound as an
+ordinary operand, preserving placements/initializer LIFO visitation and empty,
+evaluated class-constructor demand. Nested expression walks protect their
+worklist base, so type formation does not consume pending outer operands.
+Unbounded roots retain the original unknown-bound type; structural key formation
+continues to report an unknown unbounded-array key. No AST copy, mutation,
+text reparsing or fabricated type fact for the stripped view was introduced.
+
+All 46 targeted probes match exit, stdout, stderr and successful dump bytes:
+positive/nonconstant/negative/zero/floating first operands; inner constant,
+nonconstant, invalid and void dimensions; placement/type/initializer diagnostic
+precedence; aliases/qualified/class/incomplete types; nested and parenthesized
+allocations; unevaluated operands and repeated constructor demand. New
+`890-allocation-name-*.t` cases and oracle-derived reference pairs run in PA6's
+original course lane. These exercise name-only behavior without asserting later
+allocation typing, overload selection or native allocation lowering.
+
+### Exact remaining census IDs and owning boundaries
+
+Fresh receipts in `census-summary.json` retain every mismatch. They are not
+counted as passes, converted into generic rejections or removed from evidence.
+The 27-case census improves from 17 to 20 exact matches; its three due allocation
+failures are closed. Each remaining ID has the following existing boundary:
+
+| Remaining ID(s) | Source dependency and handout ownership |
+| --- | --- |
+| `class-inheritance-simple`, `class-inheritance-unknown` | C++ `analyzer_classes.cpp::base_classes` adds base lookup/relationships. PA6's required named class/forward scope model has no base relationship; PA11 README lines 15 and 273 explicitly introduce single inheritance. Both successful formation and unknown-base diagnosis belong there. |
+| `class-bit-field` | C++ class bit-field declaration/width/storage facts; PA11 README lines 265–273 requires the bit-field model. It is absent from PA6's supported declaration/type notation. |
+| `member-pointer-declaration` | C++ member-pointer type owner/member identity; PA6's type vocabulary has ordinary pointers/references, not member pointers. PA9 README lines 131–135 introduces the standalone ABI form; PA22 README lines 11 and 171 requires source member-pointer type formation. PA11 explicitly excludes member pointers. |
+| `function-trailing-return` | C++ `analyzer_types.cpp` forms a placeholder, then replaces it using the trailing type and its prototype scope. The supplied `auto f()->int` is not return deduction, but still requires the placeholder declarator interface, absent from PA6's fundamental vocabulary. PA14 README lines 286–287 explicitly requires trailing-return declarator forms. It remains recorded there rather than being mislabeled as a PA20 deduction test. |
+| `variable-placeholder-auto` | C++ auto initializer deduction, outside PA6 expression typing/type vocabulary; PA20 README lines 10 and 174–180 requires it. |
+| `function-template-noexcept-qualified-value`, `dependent-qualified-value`, `dependent-qualified-type`, `inner-qualify` | C++ dependent qualified name/type and structural placeholder lookup, not ordinary lookup through an existing class/namespace/enum scope. `inner-qualify` is `typename TT::type` for an uninstantiated template-template parameter. PA14 README lines 227–230 and PA15 lines 228–231 explicitly introduce dependent names/qualified lookup. PA6 excludes template-aware semantics and instantiation. |
+| `function-different-shape`, `function-template-ordinary` | Both introduce distinct functions with one ordinary name and require the C++ overload set/template-overload representation. PA6 explicitly excludes overload sets and resolution; PA7 and PA14 own those interfaces. Same-shape template redeclarations, which require no distinct overload set, already match. |
+
+The production Missing-site review agrees with these boundaries: packs/non-type
+binding/specialization/instantiation/dependent lookup are PA14–PA15 dependencies;
+call conversions/default application and extended operand typing are PA7 or
+later; constexpr function interpretation is PA16; virtual override/layout,
+friend/mutable and extended/vector type semantics are later class/extension
+features. PA6's explicitly required storage/function specifiers, ordinary
+exception slice, supported integral constants and type-forming queries do not
+enter those unfinished branches. No currently required PA6 case is accepted
+through a stub or delegated compiler path.
+
+The four malformed nonmember destructor redeclaration probes described in the
+preceding entry remain reproducible frozen-oracle SIGSEGV baseline issues.
+PA6's Input Contract excludes ill-formed inputs it is not required to diagnose;
+nonmember destructors are not a required declaration form. Thus they do not
+supply language-result requirements for this stage, and are not qualified stack
+exhaustion or successful matches. Their raw crash evidence is retained at
+`pa6-function-names/oracle-crashes.json`. The complete compiler port must retain
+that baseline report; safe Rust must never reproduce the invalid memory access.
+
+### Architecture, validation and resources
+
+The audit traces the driver through one owned source/cursor/AST to unit-owned
+semantic stores and iterative dump output. Checked compact IDs and private
+store APIs retain typed names/types/entities/scopes. Canonical type interning
+compares exact structural records after fingerprint lookup; source declarations
+retain parameter and presentation facts separately. Lookup caches no mutable
+namespace result. Exception, constant, layout and template facts remain under
+their recorded unit/entity/head/environment owners; no new cache is introduced.
+Transactional parser selection stays bounded and refers to original AST IDs.
+Worklists restore nested bases and structured Results propagate errors. The new
+allocation view borrows syntax and retains explicit demand. There is no unsafe
+code, C++ fallback, dependency addition, fixture tailoring, production phase
+process execution/environment read, blanket lint allowance or mechanical split.
+Per-function backend ownership and existing optimizer/register-allocation
+policies were not changed.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa6-allocation-names/`.
+Candidate cppgm++ SHA-256:
+`d3accf86f9c26a3082ec4b05474cfe8aabc42694f1e852931df947428b8c8c2e`.
+Frozen C++ tool SHA-256 remains
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Validation command/review | Result | Artifact |
+| --- | --- | --- |
+| `make build` | PASS | `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | 121/121 exact PASS | `stage.log`, `stage-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa6` | 694/694 PASS, exit 0, no failure marker | `course.log`, `course-result.json`, `course-counts.txt`, `course-trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa6` | PA1–PA5 exact gates and original full courses PASS (58, 28, 20, 112, 296 course groups) | `prior.log`, `prior-course-results.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa6` | 121/121 preserved | `preserve.log` |
+| `make lint` / `clone_quality.py` | rustfmt, strict Clippy, debug/release tests and file audit PASS | `quality.log` |
+| `make audit-rust` | 113 files, zero source/function/nesting findings | `audit.log` |
+| New allocation probes | 46/46 strict matches | `probe.py`, `probe-summary.json`, `probes.jsonl`, `new-fixtures.json` |
+| Historical responsibility probes | anonymous 87/87, constants 64/64, constructors 135/135, exceptions 67/67; templates 97/100 and boundary 20/27 with the above future dependencies | `review_census.py`, `census-summary.json`, `census/*/trace.jsonl` |
+
+Fixed-surface parity, original full courses and earlier-stage preservation are
+all required here; additional passing fixtures alone were not the completeness
+argument. New references were generated only for new cases. No generated dumps,
+logs, caches or Cargo outputs were committed.
+
+Warm C++ AA calibration followed by ABBA/BAAB measurements retain individual
+wall/RSS observations, source/binary/output hashes and exact comparator receipts
+in `measure.py`, `measurements.json`, `measure-trace.jsonl` and `measure.log`.
+Costs include startup and dump I/O; they are observations independent of dump
+byte equality and do not impose PA35 optimization objectives.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| runtime-array-names | 1000 | 18.01 / 9332 | 46.34 / 8744 |
+| runtime-array-names | 4000 | 58.96 / 19896 | 138.29 / 25488 |
+| runtime-array-names | 16000 | 226.83 / 64440 | 513.22 / 93112 |
+| class-array-demand | 1000 | 19.65 / 10776 | 50.00 / 10008 |
+| class-array-demand | 4000 | 69.53 / 24844 | 151.32 / 29676 |
+| class-array-demand | 16000 | 287.18 / 84836 | 564.41 / 108684 |
+
+The fixed 700-nested-class allocation-name probe begins at a 1 MiB native stack.
+The protected adapter reports `match: true`, `stack_qualification.passed: true`:
+both tools succeed at the same 16 MiB retry with no differences and identical
+dump SHA-256 `9ac21793e89d0bb55fb5da61399eeb04deeb4fe690116bc90ff827250ad79fe6`.
+`nested-summary.json` links the original and larger-stack evidence. No native
+exhaustion cutoff or diagnostic position was reproduced/calibrated.
+
+Next dependency boundary: PA7 expression typing/conversion/overload facts, then
+the explicitly listed later declaration/template/class capabilities. The source
+map remains partial for those C++ files' complete compiler responsibilities;
+this is deliberate and is not a claim that the full compiler is finished.
+The committed audit and `handoff.json` record a clean checkout. Ralph's existing
+phase goal may now be completed; no goal was created/replaced and no Ralph state
+or stage-advancement policy was edited.
