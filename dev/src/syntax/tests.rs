@@ -39,6 +39,81 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn class_attributes_do_not_inherit_the_declared_templates_category() {
+    let source =
+        SourceBuffer::new(b"template<class T> struct alignas(sizeof(struct Word*)) C{};".to_vec())
+            .unwrap();
+    let input = Preprocessor::with_name(&source, b"class-attribute-template-context").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let word = parser.cursor.intern_name(b"Word").unwrap();
+    let class = parser.cursor.intern_name(b"C").unwrap();
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+    assert_eq!(
+        parser.scopes.lookup(class).unwrap().category,
+        Category::TypeTemplate
+    );
+}
+
+#[test]
+fn replacement_class_scopes_keep_the_previous_members_reachable() {
+    let source =
+        SourceBuffer::new(b"struct C{using Old=int;}; struct C{using New=int;};".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-scope-replacement").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let class = parser.cursor.intern_name(b"C").unwrap();
+    let old = parser.cursor.intern_name(b"Old").unwrap();
+    let first = parser.scopes.lookup(class).unwrap().scope.unwrap();
+    parser.declaration().unwrap();
+    let replacement = parser.scopes.lookup(class).unwrap().scope.unwrap();
+    assert_ne!(replacement, first);
+    assert_eq!(
+        parser
+            .scopes
+            .lookup_specialization(replacement, old, false, false)
+            .unwrap()
+            .category,
+        Category::Type
+    );
+}
+
+#[test]
+fn qualified_definitions_keep_the_members_declared_category() {
+    let source =
+        SourceBuffer::new(b"struct A{template<class T> struct C;}; struct A::C{};".to_vec())
+            .unwrap();
+    let input = Preprocessor::with_name(&source, b"qualified-class-category").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let owner = parser.cursor.intern_name(b"A").unwrap();
+    let class = parser.cursor.intern_name(b"C").unwrap();
+    let owner = parser.scopes.lookup(owner).unwrap().scope.unwrap();
+    let before = parser.scopes.own(owner, class).unwrap();
+    parser.declaration().unwrap();
+    let after = parser.scopes.own(owner, class).unwrap();
+    assert_eq!(after.scope, before.scope);
+    assert_eq!(after.category, Category::TypeTemplate);
+    assert_eq!(
+        parser
+            .scopes
+            .own(after.scope.unwrap(), class)
+            .unwrap()
+            .category,
+        Category::Type
+    );
+}
+
+#[test]
 fn failed_namespace_and_template_heads_restore_the_enclosing_scope() {
     for bytes in [
         b"namespace N{int x=; }".as_slice(),

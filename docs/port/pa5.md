@@ -7,6 +7,141 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: specifier contexts, class ownership and demand — 2026-10-12
+
+Entry/reviewed commit: `3196d267b25c3bad48ce7d999e318fb02e4a9210` (clean).
+The base and last accepted partial audit above remain unchanged. The resulting
+commit and clean status are recorded in `pa5-specifier-audit/handoff.json`.
+**Full acceptance remains open.** The existing goal tool still reports
+`blocked`; this continuation neither created/reset the goal nor edited Ralph
+state, and continued the requested source audit with verified behavior fixes.
+
+The entire frozen `parser_specifiers.cpp` was consulted directly: **19 due
+functions** plus six anonymous helpers were reviewed. GNU typeof and type
+transforms, and explicit(condition), are later owning grammar; their source
+classification is recorded rather than represented as due successful stubs.
+The due functions cover declaration/type sequences, retained/unknown
+attributes, named types, class/enum heads and bodies, forwards, specialization
+links, base clauses and scope publication. Adjacent names, scope and transaction
+owners were consulted. `reviewed-specifier-responsibilities.json` records each
+function's control flow, modes, failure/demand, numeric/source and Rust owners.
+The explicit source-review census is now **108 entries**; remaining name,
+scope, state, AST and header responsibilities still need final review.
+
+Findings resolved:
+
+- Attribute alignment/vector operands retain their enclosing template-angle
+  mode. Ordinary parentheses still clear that mode at their own grammar
+  boundary; an unparenthesized closing-angle or shift-right token no longer
+  becomes an invented expression operator. Alignment's type alternative is
+  demanded only at a type-start predicate, with one shared identifier Name.
+  Decltype/typename starts use their owning type-id reader. A successful type
+  followed by a wrong delimiter silently declines without inventing a furthest
+  error, matching the frozen tentative reader.
+- Class heads consume their pending-template fact before attributes and names.
+  A tag introduced by an attribute is an ordinary type, while the enclosing
+  class keeps its captured template fact. An unqualified template forward
+  declaration consults its own declaration home rather than borrowing an
+  outer class scope; friends retain the separate outer lookup rule.
+- A forward class scope is selected by the actual absent injected-class-name
+  predicate, not by its completion flag. The predicate preserves the frozen
+  class-name, category and nonspecialization rules. Replacing a class parsing
+  scope installs an explicit edge to the previous owned class scope, retaining
+  its members. Completing a qualified forward keeps that member's declared
+  category; its injected name carries the new definition's category.
+- Class completion and outermost deferred-body parsing now precede trailing
+  GNU attribute demand. A bad body reports its own failure before an invalid
+  trailing attribute is consumed. Compact body targets and replay ownership
+  remain on the same parsed tree; token runs are released at that boundary.
+- Enum underlying specifiers inherit the enclosing definite-type requirement.
+  An ordinary unknown underlying name is rejected rather than being invented
+  as a type; contexts that require a type retain their frozen fallback.
+
+Three new invariants verify ordinary attribute tag versus enclosing class
+category, previous-member reachability across scope replacement, and qualified
+forward category versus injected-name category. The completion getter is now
+test-only: production uses the actual forward predicate. No lint suppression
+or unused production interface was added.
+
+The entry sweeps improved **141/161 to 161/161**, **50/66 to 66/66**,
+**16/36 to 36/36**, **80/120 to 120/120**, and **12/16 to 16/16**, resolving
+**100 measured differences**. Additional qualified/forward cases match **26/26
+and 24/24**. `specifier-probes.json` records all **449/449** new ordinary probes;
+**2186/2186** recent and **2141/2141** prior probes remain exact, totaling
+**4776/4776** raw status/stdout/stderr/full AST comparisons. Earlier attempts
+and pre-final logs remain in `before-final/` and `before-body-order/`; only the
+final receipts certify the last production mutation. Fixed-manifest progress
+remains 193 entry/final passes, no lost IDs and no fixed failures. Fixture
+additions and navigation counts do not establish full acceptance.
+
+Eight new required executed PA5 general cases and only their new expectations:
+`300-attribute-angle-boundary-reject`, `300-attribute-parentheses-angle`,
+`300-class-attribute-tag-template-reject`, `300-class-scope-replacement`,
+`300-qualified-class-category`, `300-enum-underlying-unknown-reject`,
+`300-enum-underlying-definite-context`, and
+`300-class-body-before-trailing-attribute-reject`. Syntax-only forms retain
+parser facts without deciding later semantic validity. Inputs were not
+formatted. Original references/fixtures, frozen oracle, policy and Ralph state
+were unchanged.
+
+Architecture review: private typed names/scopes/specifiers remain the owners
+of publication and lookup facts. The new class graph edge participates in
+existing invalidation and transaction rollback; no incomplete-key cache or
+cross-unit storage was introduced. Bounded tentative type reading and explicit
+deferred-body demand preserve parse-once ownership. No unsafe code, dependency,
+compiler-source environment read, due-phase oracle subprocess, blanket
+allowance, mechanical split, backend/optimizer/register allocator change or
+PA35 work was added. Rustfmt/strict Clippy and the **87-file authoritative
+audit** pass with zero findings. Debug/release tests pass **126 library plus
+nine tool tests**.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-specifier-audit/`.
+`metadata.json`, `progress.json`, `checks.json`, archived `results/`, `cases/`,
+`course/` and raw probe receipts preserve source/tool hashes and exact IDs.
+Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+All final commands ran after the last production mutation:
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS strict Clippy/rustfmt and debug/release 126 library + nine tool tests; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 277/277, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+Resource observations are separate from equality. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+**36 serial warm whole invocations** after all verification processes were
+terminal, at 1000/4000/16000 units, ordered
+oracle/oracle/oracle/candidate/candidate/oracle. Every run exits 0 and matches
+full raw output/streams. Source/tool hashes, ASTs, streams and RSS files are
+retained. Median wall milliseconds include preprocessing, launch and I/O;
+RSS is maximum measured KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Parenthesized attribute operands in template-angle context | 66.74 / 163.03 / 530.35 | 19.21 / 62.89 / 239.32 | 7992 / 16288 / 56972 |
+| Previous class-scope edges and qualified category ownership | 79.16 / 221.94 / 805.03 | 26.43 / 88.54 / 337.52 | 9248 / 26664 / 96816 |
+
+C++ maximum RSS at 16k is respectively 47316 and 73408 KiB. These samples make
+no speed or generated-code claim. `storage.txt` records the shared-volume
+sample, below the 107374182400-byte task ceiling.
+
+`final-native.json` still matches **45/48**. Remaining IDs are
+`final-native/parentheses/4800` (C++ success, Rust nesting rejection at column
+4234), `final-native/known-templates/2400` (C++ success, Rust rejection at 4752),
+and `final-native/known-templates/4800` (C++ rejection at 7627, Rust at 4752).
+Every rejection is normal and located; no signal, panic, timeout or status 86
+was accepted. The common native byte-budget formula does not establish host
+frame parity. No calibration, fixture exclusion, diagnostic waiver, baseline
+change or reproducible oracle bug was used. Full acceptance and goal completion
+remain withheld pending **remaining source responsibilities and exact native
+rejection parity**.
+
 ## Full-stage audit continuation: declaration context and special-member selection — 2026-10-12
 
 Entry/reviewed commit: `16e1b5bde71d7f24e6ad416360672895fbb2a90c` (clean).

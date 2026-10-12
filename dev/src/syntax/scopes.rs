@@ -441,6 +441,7 @@ impl Scopes {
         self.set_member(scope, member);
         Ok(scope)
     }
+    #[cfg(test)]
     pub(super) fn complete(&self, scope: ScopeId) -> bool {
         self.records[scope.0 as usize].complete
     }

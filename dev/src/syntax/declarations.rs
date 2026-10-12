@@ -447,7 +447,7 @@ impl Parser<'_> {
                     });
                 }
                 Some(K::Enum) if !has_type => {
-                    let enumeration = self.enum_specifier()?;
+                    let enumeration = self.enum_specifier(definite)?;
                     self.tree.specs.push(Specifier {
                         location,
                         kind: SpecifierKind::Enum(enumeration),
@@ -574,7 +574,7 @@ impl Parser<'_> {
                 | SpecifierKind::Decltype(_) => true,
             })
     }
-    fn enum_specifier(&mut self) -> Result<DeclId, ParseError> {
+    fn enum_specifier(&mut self, definite: bool) -> Result<DeclId, ParseError> {
         let location = self.location()?;
         self.cursor.advance()?;
         let key = if matches!(self.keyword()?, Some(K::Class | K::Struct)) {
@@ -603,7 +603,7 @@ impl Parser<'_> {
         };
         let underlying = if self.accept(P::Colon)? {
             let location = self.location()?;
-            let specifiers = self.specifier_sequence(true, true)?;
+            let specifiers = self.specifier_sequence(definite, true)?;
             Some(self.tree.types.add(TypeSyntax {
                 specialization: 0,
                 location,

@@ -1,0 +1,39 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    alias-declaration Old
+      type-id
+        type-specifier-seq
+          type-specifier KW_INT:int
+  class-specifier C
+    class-key KW_STRUCT:struct
+    alias-declaration New
+      type-id
+        type-specifier-seq
+          type-specifier KW_INT:int
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier C::Old
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier C::New
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier q
+end translation unit

@@ -1,0 +1,27 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration T
+    type-id
+      type-specifier-seq
+        enum-specifier E
+          type-id
+            type-specifier-seq
+              type-name Unknown
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                enum-specifier F
+                  type-id
+                    type-specifier-seq
+                      type-name Another
+              declarator
+                identifier x
+end translation unit

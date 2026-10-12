@@ -66,7 +66,7 @@ impl Parser<'_> {
                     expression: None,
                     ty: None,
                 };
-                self.without_angle(|parser| parser.alignment_operand(&mut attribute))?;
+                self.alignment_operand(&mut attribute)?;
                 self.expect(P::RightParen)?;
                 self.tree.attributes.push(attribute);
             } else {
@@ -220,11 +220,11 @@ impl Parser<'_> {
             }
             A::VectorSize | A::ExtVectorType => {
                 self.expect(P::LeftParen)?;
-                attribute.expression = Some(self.without_angle(Self::assignment_expression)?);
+                attribute.expression = Some(self.assignment_expression()?);
                 self.expect(P::RightParen)?;
             }
             A::Alignas if self.accept(P::LeftParen)? => {
-                attribute.expression = Some(self.without_angle(Self::assignment_expression)?);
+                attribute.expression = Some(self.assignment_expression()?);
                 self.expect(P::RightParen)?;
             }
             _ => (),
@@ -241,10 +241,7 @@ impl Parser<'_> {
     }
     fn alignment_operand(&mut self, attribute: &mut Attribute) -> Result<(), ParseError> {
         let location = self.location()?;
-        if matches!(self.token()?.kind, TokenKind::Identifier(_))
-            || self.at(P::Scope)?
-            || matches!(self.keyword()?, Some(K::Decltype | K::Typename))
-        {
+        if self.name_starts_ahead(0)? {
             let (name, binding) = self.name()?;
             if self.is_type_name(name, binding, false, false)
                 && let Some(ty) = self.attempt(|parser| {
@@ -261,11 +258,13 @@ impl Parser<'_> {
             let binary = self.binary_rest(primary, 3)?;
             let assignment = self.assignment_rest(binary)?;
             attribute.expression = Some(self.expression_rest(assignment)?);
-        } else if let Some(ty) = self.attempt(|parser| {
-            let ty = parser.type_id(false)?;
-            parser.expect_alignment_end()?;
-            Ok(ty)
-        })? {
+        } else if self.type_specifier_start(0)?
+            && let Some(ty) = self.attempt(|parser| {
+                let ty = parser.type_id(false)?;
+                parser.expect_alignment_end()?;
+                Ok(ty)
+            })?
+        {
             attribute.ty = Some(ty);
         } else {
             attribute.expression = Some(self.assignment_expression()?);
@@ -276,7 +275,10 @@ impl Parser<'_> {
         if self.at(P::RightParen)? {
             Ok(())
         } else {
-            self.fail()
+            Err(ParseError::Syntax {
+                location: self.location()?,
+                message: "syntax error",
+            })
         }
     }
     pub(super) fn pending_class_attributes(&self) -> bool {

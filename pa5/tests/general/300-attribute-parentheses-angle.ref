@@ -1,0 +1,38 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<int>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier x
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<int__attribute__((__vector_size__((1>>2))))>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier y
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+          default-template-argument
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+    class-specifier Q
+      class-key KW_STRUCT:struct
+end translation unit

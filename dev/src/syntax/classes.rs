@@ -40,6 +40,8 @@ impl Parser<'_> {
         let key = self
             .keyword()?
             .ok_or(ParseError::Invariant("missing class key"))?;
+        let is_template = self.pending_template;
+        self.pending_template = false;
         self.cursor.advance()?;
         let attributes = self.collect_attributes(false)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
@@ -74,11 +76,9 @@ impl Parser<'_> {
             if self.pending_attributes.is_some() {
                 self.pending_class_tags = tags;
             }
-            return self.elaborated_class(key, name, friend, first, location);
+            return self.elaborated_class(key, name, friend, first, is_template, location);
         }
         let enclosing = self.scopes.current;
-        let is_template = self.pending_template;
-        self.pending_template = false;
         let identifier = name.and_then(|name| self.last_identifier(name));
         let qualified = name.is_some_and(|name| {
             let name = self.tree.names.get(name);
@@ -102,10 +102,11 @@ impl Parser<'_> {
         } else {
             identifier.and_then(|id| self.scopes.own(home, id))
         };
-        let scope = if let Some(scope) = existing.and_then(|binding| binding.scope)
-            && identifier
-                .is_some_and(|identifier| self.scopes.kind(scope) == ScopeKind::Class(identifier))
-            && !self.scopes.complete(scope)
+        let scope = if let Some(scope) = existing
+            .filter(|binding| {
+                identifier.is_some_and(|identifier| self.class_defined_later(*binding, identifier))
+            })
+            .and_then(|binding| binding.scope)
         {
             self.scopes.reopen(scope, enclosing)?;
             if is_template {
@@ -143,15 +144,15 @@ impl Parser<'_> {
                 {
                     self.link_specialization(identifier, primary, scope)?;
                 }
-            } else if !qualified
-                || existing.is_some_and(|previous| {
-                    matches!(previous.category, Category::Type | Category::TypeTemplate)
-                        && previous
-                            .scope
-                            .is_none_or(|scope| !self.scopes.complete(scope))
-                })
-            {
-                self.scopes.declare_in(home, identifier, binding);
+            } else if !qualified {
+                self.declare_class(identifier, is_template, scope);
+            } else if let Some(previous) = existing.filter(|previous| {
+                matches!(previous.category, Category::Type | Category::TypeTemplate)
+                    && (previous.scope.is_none() || self.class_defined_later(*previous, identifier))
+            }) {
+                let mut member = binding;
+                member.category = previous.category;
+                self.scopes.declare_in(home, identifier, member);
             }
             // The injected-class-name is visible to its own members and bodies.
             self.scopes.declare_in(scope, identifier, binding);
@@ -184,6 +185,12 @@ impl Parser<'_> {
         self.scopes.current = enclosing;
         let members = result?;
         let end_token = self.cursor.absolute_position()?;
+        self.scopes
+            .complete_class(scope, is_template || self.scopes.specialization(scope));
+        if self.class_depth == 0 {
+            self.speculation_boundary(|parser| parser.parse_deferred_bodies(first_deferred))?;
+            self.cursor.rewind_runs(runs);
+        }
         let trailing = if matches!(self.token()?.kind, TokenKind::Identifier(id) if matches!(self.cursor.name(id), b"__attribute__" | b"__attribute"))
         {
             self.collect_attributes(false)?
@@ -194,8 +201,6 @@ impl Parser<'_> {
         self.tree.attributes.extend(attributes);
         self.tree.attributes.extend(trailing);
         let attributes = self.tree.attributes.finish(start)?;
-        self.scopes
-            .complete_class(scope, is_template || self.scopes.specialization(scope));
         let class = self.tree.classes.add(ClassSyntax {
             packing: self.cursor.pack_at(first_token),
             tokens: super::ast::TokenSpan {
@@ -212,14 +217,59 @@ impl Parser<'_> {
             bases,
             members,
         })?;
-        if self.class_depth == 0 {
-            self.speculation_boundary(|parser| parser.parse_deferred_bodies(first_deferred))?;
-            self.cursor.rewind_runs(runs);
-        }
         Ok(Specifier {
             location,
             kind: SpecifierKind::Class(class),
         })
+    }
+    fn class_defined_later(
+        &self,
+        binding: Binding,
+        identifier: crate::lex::identifiers::NameId,
+    ) -> bool {
+        binding.scope.is_some_and(|scope| {
+            self.scopes.kind(scope) == ScopeKind::Class(identifier)
+                && !self.scopes.specialization(scope)
+                && matches!(
+                    binding.category,
+                    Category::Type | Category::TypeTemplate | Category::Value
+                )
+                && self.scopes.own(scope, identifier).is_none()
+        })
+    }
+    fn declare_class(
+        &mut self,
+        identifier: crate::lex::identifiers::NameId,
+        is_template: bool,
+        scope: ScopeId,
+    ) {
+        let home = self.scopes.declaration_scope();
+        if let Some(previous) = self.scopes.own(home, identifier)
+            && matches!(previous.category, Category::Type | Category::TypeTemplate)
+            && let Some(previous) = previous.scope.filter(|previous| *previous != scope)
+        {
+            let enclosing = self.scopes.current;
+            self.scopes.current = scope;
+            self.scopes.add_edge(previous);
+            self.scopes.current = enclosing;
+        }
+        self.scopes.declare_in(
+            home,
+            identifier,
+            Binding {
+                category: if is_template {
+                    Category::TypeTemplate
+                } else {
+                    Category::Type
+                },
+                scope: Some(scope),
+                pack: false,
+                parameter: false,
+                specialization: 0,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+            },
+        );
     }
     fn link_specialization(
         &mut self,
@@ -257,16 +307,15 @@ impl Parser<'_> {
         name: Name,
         friend: bool,
         first: bool,
+        is_template: bool,
         location: SourceOffset,
     ) -> Result<Specifier, ParseError> {
-        let is_template = self.pending_template;
-        self.pending_template = false;
         if let Some(identifier) = self
             .simple_name(name)
             .filter(|_| !self.name_has_arguments(name))
         {
-            let standalone = first && self.at(P::Semicolon)?;
-            let existing = if standalone {
+            let standalone = !is_template && first && self.at(P::Semicolon)?;
+            let existing = if standalone || (is_template && !friend) {
                 self.scopes.own(self.scopes.declaration_scope(), identifier)
             } else {
                 self.scopes.lookup_name(identifier, true)
