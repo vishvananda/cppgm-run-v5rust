@@ -157,16 +157,23 @@ impl<'tree> Analyzer<'tree> {
                 directive, target, ..
             } => self.using_declaration(directive, target, scope, location),
             ast::DeclKind::Alias { name, ty } => {
-                let exceptions =
-                    self.declarator_specifies_exceptions(self.tree.types.get(ty).declarator);
-                let ty = self.type_syntax(ty, scope)?;
+                let node = *self.tree.types.get(ty);
+                let exceptions = self.declarator_specifies_exceptions(node.declarator);
+                let specs = self.specifiers(node.specifiers, scope, false)?;
+                let alias_type = self.declarator(node.declarator, specs.ty, scope)?.ty;
+                super::record(&mut self.graph.type_facts, ty.index(), alias_type);
                 if exceptions {
                     return Err(Error::at(
                         location,
                         "an exception-specification in an alias-declaration",
                     ));
                 }
-                self.declare_alias(name, ty, scope, location).map(|_| ())
+                if let Some(declared) = specs.declared {
+                    self.name_unnamed_enum(declared, None)?;
+                    self.name_unnamed_class(declared, None);
+                }
+                self.declare_alias(name, alias_type, scope, location)
+                    .map(|_| ())
             }
             ast::DeclKind::Simple {
                 specifiers,
@@ -178,7 +185,7 @@ impl<'tree> Analyzer<'tree> {
                     .init_declarators
                     .get(declarators)
                     .first()
-                    .map(|init| self.declarator_name(Some(init.declarator)))
+                    .map(|init| self.simple_declarator_name(init.declarator))
                     .transpose()?
                     .flatten();
                 let naming = if self.graph.scope(scope).kind != ScopeKind::Class
@@ -188,14 +195,34 @@ impl<'tree> Analyzer<'tree> {
                 } else {
                     None
                 };
-                self.name_unnamed_enum(specs.ty, naming, scope)?;
+                if let Some(declared) = specs.declared {
+                    self.name_unnamed_enum(declared, naming)?;
+                    self.name_unnamed_class(declared, naming);
+                }
+                if declarators.is_empty() {
+                    self.anonymous_union(specs, scope, location, false)?;
+                }
                 for init in self.tree.init_declarators.get(declarators) {
                     self.declare_init(specs, *init, scope, location)?;
                 }
                 Ok(())
             }
             ast::DeclKind::Class(specifier) => {
-                self.specifier_type(specifier, scope, true).map(|_| ())
+                let ty = self.specifier_type(specifier, scope, true)?;
+                self.anonymous_union(
+                    super::specifiers::Specifiers {
+                        ty,
+                        declared: Some(ty),
+                        role: super::specifiers::DeclarationRole::Ordinary,
+                        is_extern: false,
+                        is_static: false,
+                        virtuality: super::specifiers::Virtuality::NonVirtual,
+                        constexpr: false,
+                    },
+                    scope,
+                    location,
+                    true,
+                )
             }
             ast::DeclKind::Function {
                 specifiers,
@@ -263,7 +290,7 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::Linkage { declarations, .. } => self.declarations(declarations, scope),
             ast::DeclKind::Enum { .. } => {
                 let ty = self.enum_type(id, scope, true)?;
-                self.name_unnamed_enum(ty, None, scope)
+                self.name_unnamed_enum(ty, None)
             }
             ast::DeclKind::StaticAssert { condition, message } => {
                 if message.is_some_and(|literal| {

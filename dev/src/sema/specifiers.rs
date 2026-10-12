@@ -18,12 +18,19 @@ pub(super) enum DeclarationRole {
     Ordinary,
     Typedef,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Virtuality {
+    NonVirtual,
+    Virtual,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
     pub ty: TypeId,
+    pub declared: Option<TypeId>,
     pub role: DeclarationRole,
     pub is_extern: bool,
     pub is_static: bool,
+    pub virtuality: Virtuality,
     pub constexpr: bool,
 }
 impl Analyzer<'_> {
@@ -37,6 +44,7 @@ impl Analyzer<'_> {
         let mut typedef = false;
         let mut is_extern = false;
         let mut is_static = false;
+        let mut virtuality = Virtuality::NonVirtual;
         let mut constexpr = false;
         let mut fundamental = Vec::new();
         for specifier in self.tree.specs.get(list) {
@@ -56,10 +64,8 @@ impl Analyzer<'_> {
                     Keyword::Extern => is_extern = true,
                     Keyword::Constexpr => constexpr = true,
                     Keyword::Static => is_static = true,
-                    Keyword::ThreadLocal
-                    | Keyword::Inline
-                    | Keyword::Virtual
-                    | Keyword::Register => (),
+                    Keyword::Virtual => virtuality = Virtuality::Virtual,
+                    Keyword::ThreadLocal | Keyword::Inline | Keyword::Register => (),
                     Keyword::Auto | Keyword::Friend | Keyword::Explicit | Keyword::Mutable => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
@@ -70,6 +76,7 @@ impl Analyzer<'_> {
             }
         }
         let mut ty = None;
+        let mut declared = None;
         for &specifier in self.tree.specs.get(list) {
             if matches!(specifier.kind, SpecifierKind::Keyword(_)) {
                 continue;
@@ -82,6 +89,12 @@ impl Analyzer<'_> {
                 ));
             }
             ty = Some(named);
+            if matches!(
+                specifier.kind,
+                SpecifierKind::Class(_) | SpecifierKind::Enum(_)
+            ) {
+                declared = Some(named);
+            }
         }
         let location = self
             .tree
@@ -101,6 +114,7 @@ impl Analyzer<'_> {
         let ty = self.graph.types.qualify(ty, cv)?;
         Ok(Specifiers {
             ty,
+            declared,
             role: if typedef {
                 DeclarationRole::Typedef
             } else {
@@ -108,6 +122,7 @@ impl Analyzer<'_> {
             },
             is_extern,
             is_static,
+            virtuality,
             constexpr,
         })
     }

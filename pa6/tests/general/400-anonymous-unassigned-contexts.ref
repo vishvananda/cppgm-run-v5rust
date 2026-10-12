@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function f function of (struct ) returning void
+    variable sizes array of 4 int
+    function result function of () returning struct 
+    function g function of () returning void
+    scope class 
+      variable a int
+    scope class 
+      variable a int
+    scope class 
+      variable a int
+    scope function result
+      scope block
+    scope function g
+      scope block
+        scope class 
+        scope class 
+          variable a int
+end translation unit

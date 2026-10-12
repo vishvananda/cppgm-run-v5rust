@@ -1,0 +1,19 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    variable sizes array of 16 int
+    scope class C
+      variable a int
+      variable b long int
+      variable c char
+      variable d char
+      scope class __anonymous_union_type__3_20
+        variable a int
+        variable b long int
+        variable c char
+        scope class __anonymous_union_type__5_15
+          variable a int
+          variable b long int
+end translation unit

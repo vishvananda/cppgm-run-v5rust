@@ -234,11 +234,11 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let class = self.graph.entity(entity);
-        if !class.complete || class.implicit_default.is_some() {
+        if !class.complete || class.implicit_default.is_some() || class.anonymous_class.is_some() {
             return Ok(());
         }
-        // User-declared constructors and anonymous classes stop in their owning
-        // declaration group before reaching this supported named-class demand.
+        // Types mode does not demand constructors for anonymous classes,
+        // including ones whose printed name was adopted from a typedef.
         let scope = class
             .scope
             .ok_or(Error::Invariant("complete class without scope"))?;

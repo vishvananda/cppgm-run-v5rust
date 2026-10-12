@@ -1,5 +1,6 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
 mod analyzer;
+mod anonymous_types;
 mod constants;
 mod declarations;
 mod declarators;

@@ -25,6 +25,54 @@ fn analyze(source: &[u8], check: impl FnOnce(&Graph, &mut Cursor<'_>)) {
     check(&graph, cursor);
 }
 #[test]
+fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
+    analyze(
+        b"struct C { union { int a; long b; }; char c; }; int n[sizeof(C)];",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"C").unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = graph.entity(class).scope.unwrap();
+            let members = &graph.entity(class).members;
+            assert_eq!(members.len(), 2);
+            let TypeKind::Class(union) = graph.types.get(graph.entity(members[0]).ty.unwrap()).kind
+            else {
+                panic!("unnamed storage must have the union's type");
+            };
+            let union_scope = graph.entity(union).scope.unwrap();
+            for spelling in [b"a".as_slice(), b"b".as_slice()] {
+                let name = cursor.intern_name(spelling).unwrap();
+                let outer = graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap());
+                let inner = graph.binding(graph.own(union_scope, name, Filter::Ordinary).unwrap());
+                assert_eq!(outer.entity, inner.entity);
+                assert_eq!(outer.ty, inner.ty);
+            }
+            assert_eq!(graph.entity(members[1]).member_offset, Some(8));
+        },
+    );
+}
+#[test]
+fn anonymous_names_remain_presentation_without_tag_or_constructor_publication() {
+    analyze(
+        b"using S=struct {}; S x; typedef enum {a} E; void f(){S();}",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"S").unwrap();
+            let binding = graph.binding(graph.own(graph.global, name, Filter::Prefix).unwrap());
+            let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
+                panic!("alias must retain its original class identity");
+            };
+            assert!(graph.entity(class).name.is_none());
+            assert!(graph.entity(class).anonymous_class.is_some());
+            assert!(graph.entity(class).implicit_default.is_none());
+            for spelling in [b"S".as_slice(), b"E".as_slice(), b"x".as_slice()] {
+                let name = cursor.intern_name(spelling).unwrap();
+                assert!(graph.scope(graph.global).index[&name].tag.is_none());
+            }
+        },
+    );
+}
+#[test]
 fn canonical_types_preserve_source_parameters_and_adjust_nested_functions() {
     let mut types = Types::default();
     let int = types.scalar(Scalar::Basic(FundamentalType::Int)).unwrap();

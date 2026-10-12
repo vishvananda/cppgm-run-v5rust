@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type P struct P
+    type-alias P pointer to const struct P
+    variable p pointer to const struct P
+    type E enum E
+    enumerator value enum E 2
+    type-alias E const enum E
+    variable e const enum E
+    scope class P
+      variable a int
+end translation unit

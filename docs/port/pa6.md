@@ -740,3 +740,187 @@ overrides retain their owning future dependencies. This audit does not require
 them to pass, reset a goal or edit Ralph state. The audit phase returns control
 to Ralph with the reviewed implementation committed and the ledger's
 last-audited revision advanced; full PA6 gates remain required for advancement.
+
+## Anonymous type/union implementation checkpoint (2026-10-12)
+
+Incoming clean HEAD: `42241603feadf96a3137e4669a39fbbd080edf12`.
+Stage base remains `70e745588987998ee1e5bde80b3861541eab753d`; last-audited
+commit remains `3140a2bbab5d8a42bfdba0259d0ee0a567439d4f`. This implementation
+entry does not advance that field or PA6. The preceding goal turn is progress:
+its committed checkpoint audit and retained gates establish the incoming
+111/121 fixed identities. No interrupted process was assumed live from a state
+file. This checkpoint completes the anonymous declaration/naming/injection
+group for types mode, including its related declaration and layout invariants.
+PA6 remains a partial assignment at 116/121 fixed cases.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete clone plan, PA6
+handout/scopes guide and current ledger. Consulted the frozen C++ revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5` directly, especially
+`analyzer_classes.cpp` (`class_specifier`, `class_body`,
+`anonymous_class_label`, `anonymous_union`, `name_unnamed_type`,
+`define_implicit_default_constructor`), `analyzer_declarations.cpp`
+(`simple_declaration`, `declare_typedef`), `analyzer.cpp`'s alias declaration,
+`analyzer_types.cpp`, and `semantic_dump.cpp`. The source map records these
+translated responsibilities and the still-pending wider owners.
+
+### Completed behavior and typed ownership
+
+- Unnamed classes share the existing class-body completion and deferred-body /
+  exception events with named classes. A compact Class TypeId names its single
+  EntityId, scope and ordered members. There is no extra syntax tree, class
+  body parser, token replay or owning spelling copy.
+- Specifiers retain the newly declared TypeId separately from the qualified
+  base/use type. Only a defining declaration assigns an unnamed type's display
+  name; reuse through an alias cannot rename it. The first unqualified simple
+  declarator names a namespace/block type; member objects leave it unnamed,
+  while a typedef may adopt its name. Derived/cv-qualified typedefs retain the
+  underlying declaration identity. Alias declarations finalize anonymous enum
+  ordinals and class labels before later uses.
+- Class-owned `AnonymousClass::Pending/Labeled(TokenSpan)` retains original
+  preprocessing token ordinals. A class-key-only anonymous declaration adds
+  one checked token to its exclusive end after the semicolon. Leading
+  specifiers leave the closing-brace end unchanged. Unnamed types in parameters,
+  type-id queries/casts/new and function return definitions retain the C++ blank
+  label until a naming declaration event, including the exact header space.
+  Generated labels are presentation only, never hash/lookup/equality keys.
+- Naming a placeholder changes its dump through the entity, without adding a
+  tag or injected-class-name binding. The same correction removes the prior
+  anonymous-enum naming routine's extra lookup publication. Typedef aliases
+  remain aliases; an elaborated anonymous typedef is rejected at the C++ owner.
+- Anonymous unions in global/named namespaces require static; an unnamed
+  namespace or block does not. A declarator-less anonymous struct/class outside
+  a class diagnoses that it declares nothing. Supported lone virtual/constexpr
+  specifiers preserve the diagnostic before storage/injection checks.
+- Injection walks only this anonymous class's printed bindings in source order,
+  skips hidden unnamed type placeholders, checks member kinds and direct
+  enclosing-scope conflicts, then adds bindings sharing each original EntityId
+  and TypeId. It never scans unrelated declarations. Class-scope injection adds
+  one hidden unnamed storage Variable EntityId to the enclosing class's member
+  list, rather than treating each injected alternative as separate storage.
+  Nested union/struct layout therefore follows the existing demand-only layout
+  dependency walk and caches. Namespace/block types-mode injection does not
+  demand semantic initialization/storage lowering.
+- Types mode suppresses implicit constructor-scope demand for every anonymous
+  class, including one named by a typedef, exactly as the C++ owner does.
+  Normal named-class demand, source-order emission, semantic completion and
+  layout lifetime rules are retained.
+
+Rust owners: new `dev/src/sema/anonymous_types.rs` owns declaration-point
+naming, label states, storage qualification and member injection;
+`declarations.rs` owns shared class creation/body completion; `specifiers.rs`
+retains declared-type and Virtuality facts; `analyzer.rs` routes simple/alias
+and class-only declarations. `graph.rs` owns anonymous provenance and typed
+storage identities; `enumerations.rs` owns anonymous enum naming without tag
+publication; `expressions.rs` owns constructor demand; `dump.rs` borrows these
+facts for exact output. `syntax/ast.rs` only removes now-unfulfilled dead-code
+expectations from already-retained token spans. The parser/token ownership and
+optimizer/code generator/register allocator are unchanged.
+
+Thirteen new required inputs and newly created oracle reference pairs are in
+`pa6/tests/general/400-anonymous-*.t`, executed by the existing full course
+lane. Existing frozen inputs/references/manifests and protected policy were
+unchanged. Two unit tests inspect shared injected member identity, one hidden
+storage slot and its measured member offset, lack of tag publication, retained
+anonymous identity and suppressed constructor demand. Strict debug/release
+unit suites pass. No dependencies, unsafe/FFI, process fallback, environment
+reads, fixture recognition, blanket lint allowances or mechanical splits were
+added. Failed declarations return structured errors and discard their unit
+rather than exposing partially injected state to a downstream phase.
+
+### Validation and exact preservation
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/port/pa6-anonymous/`.
+Candidate release cppgm SHA-256:
+`cabb29c73e184dc1b227f0cc3494e058b73244726a4ee909bea0671107e78017`.
+Frozen C++ tool SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command/check | Result | Evidence under artifact root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS | `build.log`; binary hash above |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` (`make test-pa6`) | FAIL, 116/121 fixed cases; five fewer failures | `stage.log`, `stage-summary.json`, `remaining-evidence.json`; raw traces under `/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa6/` |
+| `make course-pa6` | FAIL, 146/151, same five unfinished fixed cases; 13/13 new regressions pass | `course.log`, `regression-summary.json`; `/home/vishvananda/work/private/v5rust/artifacts/clone/course/pa6/test/{counts.txt,course-result.json,trace.jsonl}` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and full course lanes | `prior.log`; earlier course artifacts under `artifacts/clone/course/paN/test/` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, all 111 incoming passing identities | `preserve.log`; independent exact identity comparison in `stage-summary.json` |
+| `make lint` / required `python3 /home/vishvananda/work/v5rust-control/clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites and source audit | `quality.log` |
+| `make audit-rust` | PASS, 105 files, zero findings | `audit.log` |
+| Independent protected oracle probes | PASS, 87/87; new regressions also 13/13 exact matches | `probe-final.log`, `probe-summary.json`, `probes.jsonl`, `regression.log`, `regression-summary.json`, `regression-trace.jsonl`; oracle creation receipts in `regression-references.json` |
+| Supported scaling/resource probes | PASS, nine scaling inputs plus deep anonymous-union stack qualification | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+The independent identity comparison uses the accepted incoming audit's stage
+log and this checkpoint's complete stage log: exactly the same 121 fixed IDs,
+zero lost passes and five gains. The gained IDs, relative to `pa6/`, are:
+
+```text
+tests/general/100-namespace-nonstatic-anonymous-union-bad.t
+tests/general/200-anonymous-struct-declares-nothing-bad.t
+tests/spec/200-anonymous-type-typedefs.t
+tests/spec/200-namespace-anonymous-class-array-object.t
+tests/spec/200-namespace-anonymous-union-injected-members.t
+```
+
+The remaining exact fixed IDs are:
+
+```text
+tests/general/200-template-template-parameter.t
+tests/general/300-declaration-forms-valid.t
+tests/spec/200-template-parameter-scope.t
+tests/spec/300-template-template-inner-parameter-scope-bad.t
+tests/spec/300-using-declaration-template-id-bad.t
+```
+
+All five still exit 86 at an explicit missing owner. `remaining-evidence.json`
+links their protected raw candidate/oracle streams and artifacts. There is no
+waiver for a normal rejection, panic, signal or missing implementation. Course
+failure markers remain real failures. No oracle or harness defect was found.
+Full PA6 success, rather than this coherent partial checkpoint, remains required
+for advancement; Ralph owns the checkpoint/final audits and stage state.
+
+### Resource observations and next boundary
+
+Warm A/A calibration followed by ABBA and BAAB blocks retains each time/RSS
+observation and input/output/binary hash. Every sample's dump hash is checked;
+each input first passes the protected byte comparator. Wall time includes
+startup and dump I/O; peak RSS comes from `/usr/bin/time`. These are compiler
+cost observations, with ordinary host noise, not C++/Rust runtime equality or
+PA35 generated-code requirements. Injection combines separate namespaces,
+anonymous unions and qualified function-body lookup. Layout combines nested
+anonymous unions, one hidden storage slot, padding and repeated layout reads.
+Aliases combine anonymous class aliases, cv/pointer typedef adoption, reuse and
+size queries. The following table is generated from `measurements.json`.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| union-injection | 1000 | 18.50 / 10040 | 41.61 / 8748 |
+| union-injection | 4000 | 57.32 / 22724 | 114.95 / 23332 |
+| union-injection | 16000 | 225.99 / 75776 | 434.70 / 83792 |
+| anonymous-layout | 1000 | 28.13 / 12836 | 57.84 / 11456 |
+| anonymous-layout | 4000 | 100.93 / 36800 | 192.14 / 36076 |
+| anonymous-layout | 16000 | 407.97 / 129472 | 728.92 / 133704 |
+| anonymous-alias | 1000 | 23.94 / 12148 | 58.76 / 10732 |
+| anonymous-alias | 4000 | 82.85 / 31168 | 193.79 / 32556 |
+| anonymous-alias | 16000 | 324.37 / 105448 | 665.20 / 120904 |
+
+The 1,000-nested-anonymous-union workload starts at a 1 MiB stack and demands
+its containing class's layout. Judge the protected receipt:
+`match: true`, `stack_qualification.passed: true`, shared 16 MiB retry, both
+exits 0, identical streams and dump SHA-256
+`cbd73177643ddcaf84d2e89b9eda9e98089eae41ac418bd630d6c7e6734a5807`.
+`nested-summary.json` links retained initial/retry attempts. The genuine
+byte-budget guard remains unchanged; native exhaustion depths/diagnostic
+positions were not calibrated. Checkout/scratch usage is approximately 26 GiB,
+below the supplied 100 GiB capacity ceiling.
+
+The next independent boundary is template type/template-template parameter
+scopes and their declaration ownership/visibility (`analyzer.cpp`,
+`analyzer_templates.cpp`, template records and type-table/dump variants).
+`300-declaration-forms-valid.t` additionally stops at its constructor/special
+member owner. Anonymous naming/injection is no longer its blocker. Broader
+semantic storage/access paths and anonymous-union initialization lowering belong
+to the later semantic/lowering owners, as do inheritance, attributes/packing,
+bit-fields, full expressions/constexpr interpretation and template instantiation.
+The review should trace declaration-point versus lookup publication, pending
+versus assigned labels, shared injected member identity versus hidden storage,
+source-order diagnostics, layout demand and anonymous constructor suppression.
+No complete template-to-ELF or PA34 byte-equality proof is claimed here.

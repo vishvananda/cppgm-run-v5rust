@@ -1,0 +1,1 @@
+virtual union { int a; };

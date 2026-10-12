@@ -35,6 +35,14 @@ impl Graph {
             } else if let Some(name) = scope.name {
                 output.write_all(b" ")?;
                 write_name(cursor, name, output)?;
+            } else if let Some(anonymous) = scope
+                .owner
+                .and_then(|owner| self.entity(owner).anonymous_class)
+            {
+                output.write_all(b" ")?;
+                if let Some(tokens) = anonymous.label() {
+                    write_anonymous_class(tokens, output)?;
+                }
             } else if scope.kind == ScopeKind::Namespace {
                 output.write_all(if id == self.global {
                     b" <global>"
@@ -47,7 +55,8 @@ impl Graph {
                 let id = binding;
                 let binding = self.binding(id);
                 if binding.kind == BindingKind::Type
-                    && self.entity(binding.entity).enumeration.is_some()
+                    && (self.entity(binding.entity).enumeration.is_some()
+                        || self.entity(binding.entity).anonymous_class.is_some())
                     && self.entity(binding.entity).name.is_none()
                 {
                     continue;
@@ -179,6 +188,11 @@ impl Graph {
                     write!(output, "{} ", class_key(entity.key))?;
                     if let Some(name) = entity.name {
                         write_name(cursor, name, output)?;
+                    } else if let Some(tokens) = entity
+                        .anonymous_class
+                        .and_then(super::anonymous_types::AnonymousClass::label)
+                    {
+                        write_anonymous_class(tokens, output)?;
                     }
                 }
                 TypeKind::Enum(entity) => {
@@ -254,6 +268,16 @@ impl Graph {
         }
         Ok(())
     }
+}
+fn write_anonymous_class(
+    tokens: crate::syntax::ast::TokenSpan,
+    output: &mut (impl Write + ?Sized),
+) -> io::Result<()> {
+    write!(
+        output,
+        "__anonymous_union_type__{}_{}",
+        tokens.begin, tokens.end
+    )
 }
 fn class_key(key: Keyword) -> &'static str {
     match key {

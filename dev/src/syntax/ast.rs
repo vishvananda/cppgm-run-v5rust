@@ -19,21 +19,7 @@ pub(crate) type StmtId = Id<Statement>;
 pub(crate) type LambdaId = Id<Lambda>;
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct TokenSpan<T = u64> {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The first token ordinal is retained for later source identity"
-        )
-    )]
     pub begin: T,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The exclusive end token ordinal is retained for later source identity"
-        )
-    )]
     pub end: T,
 }
 #[derive(Clone, Copy, Debug)]
@@ -374,13 +360,6 @@ pub(crate) struct Base {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClassSyntax {
     pub packing: u32,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The class token interval is retained for later declaration identity and diagnostics"
-        )
-    )]
     pub tokens: TokenSpan,
     #[cfg_attr(
         not(test),

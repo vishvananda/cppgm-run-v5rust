@@ -36,7 +36,6 @@ impl Analyzer<'_> {
         &mut self,
         ty: TypeId,
         name: Option<crate::lex::identifiers::NameId>,
-        scope: ScopeId,
     ) -> Result<(), Error> {
         let TypeKind::Enum(entity) = self.graph.types.get(ty).kind else {
             return Ok(());
@@ -51,17 +50,6 @@ impl Analyzer<'_> {
         }
         if let Some(name) = name {
             self.graph.entity_mut(entity).name = Some(name);
-            self.graph.add_binding(
-                scope,
-                None,
-                Binding {
-                    kind: BindingKind::Type,
-                    name: Some(name),
-                    entity,
-                    ty: Some(ty),
-                    key: Keyword::Enum,
-                },
-            )?;
         } else {
             self.anonymous_enums = self
                 .anonymous_enums

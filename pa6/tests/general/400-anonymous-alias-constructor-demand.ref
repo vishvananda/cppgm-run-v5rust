@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias S struct __anonymous_union_type__3_6
+    type T struct T
+    type-alias T struct T
+    function f function of () returning void
+    scope class __anonymous_union_type__3_6
+    scope class T
+    scope function f
+      scope block
+end translation unit

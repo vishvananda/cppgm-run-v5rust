@@ -71,6 +71,8 @@ pub(super) struct Entity {
     pub members: Vec<EntityId>,
     pub layout: super::layout::LayoutState,
     pub member_offset: Option<u64>,
+    // Presentation provenance for an unnamed class, never a lookup key.
+    pub anonymous_class: Option<super::anonymous_types::AnonymousClass>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Binding {
@@ -221,6 +223,7 @@ impl Graph {
             members: Vec::new(),
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,
+            anonymous_class: None,
         });
         Ok(id)
     }

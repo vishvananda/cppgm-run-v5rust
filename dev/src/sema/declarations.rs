@@ -596,8 +596,8 @@ impl Analyzer<'_> {
             },
         )
     }
-    fn new_class(&mut self, key: Keyword, name: NameId) -> Result<EntityId, Error> {
-        let entity = self.graph.add_entity(None, Some(name), key)?;
+    fn new_class(&mut self, key: Keyword, name: Option<NameId>) -> Result<EntityId, Error> {
+        let entity = self.graph.add_entity(None, name, key)?;
         let ty = self
             .graph
             .types
@@ -678,7 +678,7 @@ impl Analyzer<'_> {
             if prefix.is_some() {
                 return Err(Error::at(node.location, "undeclared name"));
             }
-            self.new_class(key, key_name)?
+            self.new_class(key, Some(key_name))?
         };
         let ty = self
             .graph
@@ -705,9 +705,12 @@ impl Analyzer<'_> {
         if !node.bases.is_empty() {
             return Err(Error::Missing("class inheritance"));
         }
-        let name = node
-            .name
-            .ok_or(Error::Missing("anonymous class and union naming"))?;
+        let Some(name) = node.name else {
+            let entity = self.new_class(node.key, None)?;
+            self.graph.entity_mut(entity).anonymous_class =
+                Some(super::anonymous_types::AnonymousClass::Pending(node.tokens));
+            return self.define_class(node, entity, scope);
+        };
         let qualified_name = *self.tree.names.get(name);
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(scope);
@@ -745,7 +748,7 @@ impl Analyzer<'_> {
             }
             binding.entity
         } else {
-            self.new_class(node.key, key_name)?
+            self.new_class(node.key, Some(key_name))?
         };
         if self.graph.entity(entity).defined {
             return Err(Error::at(qualified_name.location, "class redefinition"));
@@ -756,6 +759,15 @@ impl Analyzer<'_> {
                 "class-key does not agree with an earlier declaration",
             ));
         }
+        self.define_class(node, entity, home)
+    }
+    fn define_class(
+        &mut self,
+        node: ast::ClassSyntax,
+        entity: EntityId,
+        home: ScopeId,
+    ) -> Result<TypeId, Error> {
+        let name = self.graph.entity(entity).name;
         let ty = self
             .graph
             .entity(entity)
@@ -766,7 +778,7 @@ impl Analyzer<'_> {
             Some(home),
             Binding {
                 kind: BindingKind::Type,
-                name: Some(key_name),
+                name,
                 entity,
                 ty: Some(ty),
                 key: node.key,
@@ -774,24 +786,26 @@ impl Analyzer<'_> {
         )?;
         let class = self
             .graph
-            .add_scope(ScopeKind::Class, home, Some(home), Some(key_name))?;
+            .add_scope(ScopeKind::Class, home, Some(home), name)?;
         self.graph.entity_mut(entity).scope = Some(class);
         self.graph.scope_mut(class).owner = Some(entity);
         if node.packing != 0 || !node.attributes.is_empty() {
             self.graph.entity_mut(entity).layout = super::layout::LayoutState::Unsupported;
         }
         self.graph.entity_mut(entity).defined = true;
-        self.graph.add_binding(
-            class,
-            None,
-            Binding {
-                kind: BindingKind::Type,
-                name: Some(key_name),
-                entity,
-                ty: Some(ty),
-                key: node.key,
-            },
-        )?;
+        if name.is_some() {
+            self.graph.add_binding(
+                class,
+                None,
+                Binding {
+                    kind: BindingKind::Type,
+                    name,
+                    entity,
+                    ty: Some(ty),
+                    key: node.key,
+                },
+            )?;
+        }
         self.class_depth += 1;
         self.declarations(node.members, class)?;
         self.class_depth -= 1;
