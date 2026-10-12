@@ -463,6 +463,30 @@ impl<'a> Parser<'a> {
         }
         self.tree.decl_lists.finish(start)
     }
+    pub(super) fn declare_value_declarator(
+        &mut self,
+        declarator: DeclaratorId,
+        pack: bool,
+        parameter: bool,
+    ) {
+        if let Some(name) = self.declarator_name(declarator)
+            && self.simple_name(name).is_some()
+            && let Some(identifier) = self.last_identifier(name)
+        {
+            self.scopes.declare(
+                identifier,
+                Binding {
+                    pack,
+                    parameter,
+                    category: Category::Value,
+                    scope: None,
+                    specialization: 0,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
+                },
+            );
+        }
+    }
     pub(super) fn declare_from_specifiers(
         &mut self,
         declarator: DeclaratorId,

@@ -39,6 +39,61 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn failed_namespace_and_template_heads_restore_the_enclosing_scope() {
+    for bytes in [
+        b"namespace N{int x=; }".as_slice(),
+        b"template<class T, +> int x;",
+    ] {
+        let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"declaration-scope-unwind").unwrap();
+        let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+            input,
+            NumberDialect::Cxx11,
+        )));
+        let enclosing = parser.scopes.current;
+        assert!(parser.declaration().is_err());
+        assert_eq!(parser.scopes.current, enclosing);
+        assert_eq!(parser.active_nesting(), 0);
+    }
+}
+
+#[test]
+fn template_initializer_types_are_ordinary_while_the_outer_variable_is_a_template() {
+    let source =
+        SourceBuffer::new(b"template<class T> int x=sizeof(struct word*);".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"initializer-template-demand").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let x = parser.cursor.intern_name(b"x").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    assert_eq!(
+        parser.scopes.lookup(x).unwrap().category,
+        Category::FunctionTemplate
+    );
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+    assert!(!parser.pending_template);
+}
+
+#[test]
+fn enum_defining_template_declarations_do_not_make_their_objects_templates() {
+    let source = SourceBuffer::new(b"template<class T> enum E{value} object;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"defined-type-template-facts").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let object = parser.cursor.intern_name(b"object").unwrap();
+    assert_eq!(
+        parser.scopes.lookup(object).unwrap().category,
+        Category::Value
+    );
+}
+
+#[test]
 fn qualified_bounds_share_their_block_and_store_the_effective_member_context() {
     let source = SourceBuffer::new(
         b"namespace N{} int (N::arr)[sizeof(struct ghost*)][sizeof(ghost)];".to_vec(),

@@ -7,6 +7,122 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: declaration context and special-member selection — 2026-10-12
+
+Entry/reviewed commit: `16e1b5bde71d7f24e6ad416360672895fbb2a90c` (clean).
+The base and last accepted partial audit above remain unchanged. The resulting
+commit and checkout status are recorded in `pa5-declaration-final/handoff.json`.
+**Full acceptance remains open.** The existing goal was observed as `blocked`
+by the goal tool during this continuation; it was not created, reset or edited.
+The requested audit work continued and made concrete source/behavior progress.
+
+All **17 due functions** in frozen `parser_declarations.cpp` were reviewed,
+including dispatch, namespace/using/static-assert/linkage, template heads and
+parameters, special members, simple/function declarations, publication,
+bit-fields and initializers. The seven structured-binding/deduction-guide
+functions remain later owning grammar, with their source classification in the
+census. Relevant specifier/name/scope/transaction owners were consulted directly.
+`reviewed-declaration-responsibilities.json` records the control-flow, failures,
+source/numeric facts, ownership and Rust owners. The navigation census now has
+**89 explicitly source-reviewed entries**; the remaining specifier, name,
+scope, state, AST and header responsibilities still need their final review.
+Neither inventory counts nor passing fixtures establish completeness.
+
+Findings resolved:
+
+- An initializer temporarily suspends pending-template context. Types declared
+  inside it publish ordinary categories, while the enclosing variable retains
+  its template category. Its stored effective member scope is entered only
+  when an initializer is demanded; both context and scope restore on Result
+  exits. Class, elaborated and enum specifier kinds now determine the enclosing
+  declaration's defines-type fact, suppressing an accompanying object's
+  erroneous template category without re-reading spelling or source text.
+- One private typed Value-publication helper owns ordinary parameter,
+  non-type-template parameter and bit-field publication. It distinguishes
+  declarator name presence from eligibility to publish an unqualified name.
+  Simple template-id names retain the frozen syntactic Value publication rule;
+  qualified non-type names retain their actual name-presence fact, preventing
+  an erroneous unnamed-int default-literal dump flag.
+- Qualified decltype destructor names select special-member parsing. A
+  constructor's final explicit template-id no longer incorrectly selects that
+  path. Lookup and rendering continue to consume the same owned Name ID.
+- Failed namespace bodies and template parameter heads restore their enclosing
+  scope before propagating errors. Three invariants cover this restoration,
+  initializer/template category isolation and enum-object category publication.
+
+The two entry sweeps measured **160/168 and 9/24**, improving to **168/168 and
+24/24**, resolving **23 real differences**. A further **12/12** defines-type
+combinations match. All **2141/2141** prior and **1982/1982** recent comparisons
+remain exact, totaling **4327/4327** ordinary-input raw status/stdout/stderr/full
+AST comparisons. `entry.json`, `special/entry.json`, final receipts and both
+probe-runner receipts preserve exact evidence. These gains are separate from
+fixed-manifest progress: its 193 entry passes remain 193, with no lost IDs.
+
+Six new required executed PA5 general cases and only their new expectations:
+`300-template-initializer-type-context`, `300-qualified-nontype-default-form`,
+`300-bitfield-template-id-publication-reject`, `300-decltype-destructor-names`,
+`300-constructor-template-id-reject`, and `300-enum-object-template-category-reject`.
+These preserve syntax-only parser facts without deciding later semantic validity.
+Compiler inputs were not formatted. Original references, fixtures, frozen C++,
+protected policy and Ralph state were unchanged.
+
+Architecture review: unit-owned compact typed names/declarators/scopes and
+transaction checkpoints remain the source of facts. No text transport/reparse,
+unsafe code, environment read in compiler sources, due-phase oracle subprocess,
+dependency, blanket allowance, mechanical split or new global cache was added.
+The scope overlay is demanded once per initializer and not cached across units.
+Existing deferred bodies, per-function backend lifetimes, optimizer and
+register allocator policies remain intact; PA35 work was excluded. Strict
+Clippy/rustfmt and the authoritative **87-file audit** report zero findings.
+Debug/release tests pass **123 library plus nine tool tests**.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-declaration-final/`.
+`metadata.json`, `progress.json`, `checks.json`, archived `results/`, `cases/`,
+`course/` and probe receipts retain source/tool hashes and passing/failing IDs.
+Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+All commands ran after the last production mutation:
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS strict Clippy/rustfmt, debug/release 123 library + nine tool tests; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 269/269, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+Resource observations are separate from equality. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+**36 serial warm whole invocations** after verification processes were terminal,
+at 1000/4000/16000 units, ordered oracle/oracle/oracle/candidate/candidate/oracle.
+Every run has exit 0 and identical full raw output/streams. Source/tool hashes,
+ASTs, RSS files and streams are retained. Median wall milliseconds include
+preprocessing, launch and I/O; RSS is maximum measured KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Template initializer type context | 37.09 / 113.78 / 384.81 | 14.61 / 45.91 / 181.27 | 8032 / 14196 / 44912 |
+| Qualified decltype special-member names | 27.49 / 59.59 / 234.53 | 9.17 / 23.93 / 84.35 | 8104 / 9232 / 27368 |
+
+C++ maximum RSS at 16k is respectively 43624 and 22644 KiB. These observations
+make no speed or generated-code equality claim. Storage remains below the
+107374182400-byte checkout/scratch ceiling; the exact sample is in `storage.txt`.
+
+`final-native.json` matches **45/48**. The exact unresolved IDs are
+`final-native/parentheses/4800` (C++ success, Rust rejection at column 4234),
+`final-native/known-templates/2400` (C++ success, Rust rejection at column 4752),
+and `final-native/known-templates/4800` (C++ rejection at column 7627, Rust at
+4752). All failures are normal located nesting diagnostics, not a signal,
+panic, timeout or status 86. The matching native byte-budget formula does not
+prove matching host frame consumption. Ordinary diagnostics remain strict;
+no budget calibration, fixture exclusion or acceptance-policy change was used.
+No reproducible oracle bug was established. Full acceptance and goal completion
+are withheld pending **the remaining source responsibilities and exact native
+rejection parity**.
+
 ## Full-stage audit continuation: declarator modes, scope facts and pointer grammar — 2026-10-12
 
 Entry/reviewed commit: `a13ab3e8b32cb2a563be20563aae9a96eae6444f` (clean).

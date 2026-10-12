@@ -427,23 +427,8 @@ impl Parser<'_> {
             } else {
                 None
             };
-            if let Some(declarator) = declarator
-                && let Some(name) = self.declarator_name(declarator)
-                && self.simple_name(name).is_some()
-                && let Some(identifier) = self.last_identifier(name)
-            {
-                self.scopes.declare(
-                    identifier,
-                    super::scopes::Binding {
-                        pack: false,
-                        category: Category::Value,
-                        parameter: false,
-                        scope: None,
-                        specialization: 0,
-                        alternatives: super::scopes::Categories::default(),
-                        guesses: super::scopes::Guesses::default(),
-                    },
-                );
+            if let Some(declarator) = declarator {
+                self.declare_value_declarator(declarator, false, false);
             }
             self.tree.parameters.push(Parameter {
                 location: parameter_location,

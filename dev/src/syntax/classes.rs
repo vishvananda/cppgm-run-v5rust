@@ -413,12 +413,16 @@ impl Parser<'_> {
             });
         };
         let special = if components.len() >= 2 {
-            matches!(last.kind, NameKind::Destructor(_) | NameKind::Conversion(_))
-                || matches!((components[components.len() - 2].kind, last.kind),
-                    (NameKind::Identifier(owner), NameKind::Identifier(last)) if owner == last)
+            matches!(
+                last.kind,
+                NameKind::Destructor(_) | NameKind::DestructorDecltype(_) | NameKind::Conversion(_)
+            ) || matches!((components[components.len() - 2].kind, last.kind),
+                    (NameKind::Identifier(owner), NameKind::Identifier(identifier)) if owner == identifier && last.arguments.is_none())
         } else if self.in_class() {
-            matches!(last.kind, NameKind::Destructor(_) | NameKind::Conversion(_))
-                || matches!((self.scopes.kind(self.scopes.declaration_scope()), last.kind),
+            matches!(
+                last.kind,
+                NameKind::Destructor(_) | NameKind::DestructorDecltype(_) | NameKind::Conversion(_)
+            ) || matches!((self.scopes.kind(self.scopes.declaration_scope()), last.kind),
                     (ScopeKind::Class(owner), NameKind::Identifier(last)) if owner == last)
         } else {
             false
@@ -506,7 +510,7 @@ impl Parser<'_> {
         let mut declarator = first;
         loop {
             if let Some(declarator) = declarator {
-                self.declare_declarator(declarator, false, None, super::storage::List::default());
+                self.declare_value_declarator(declarator, false, false);
             }
             self.expect(P::Colon)?;
             let width = self.assignment_expression()?;

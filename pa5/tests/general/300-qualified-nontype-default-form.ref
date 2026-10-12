@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier N::n
+          default-template-argument
+            literal 1
+    class-specifier C
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            ptr-operator OP_STAR:*
+            identifier N::p
+          default-template-argument
+            literal 0L
+    class-specifier P
+      class-key KW_STRUCT:struct
+end translation unit

@@ -24,7 +24,11 @@ impl Parser<'_> {
         self.cursor.advance()?;
         let enclosing = self.scopes.current;
         self.scopes.push_kind(ScopeKind::Template)?;
-        let parameters = self.template_parameter_clause()?;
+        let result = self.template_parameter_clause();
+        if result.is_err() {
+            self.scopes.current = enclosing;
+        }
+        let parameters = result?;
         let head = self.template_head.replace(parameters);
         self.pending_template = !parameters.parameters.is_empty();
         let result = self.declaration();
@@ -108,9 +112,7 @@ impl Parser<'_> {
         let pack = self.accept(P::Ellipsis)?;
         let declarator = self.declarator(Mode::Parameter)?;
         let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
-        let name = declarator
-            .and_then(|id| self.declarator_name(id))
-            .and_then(|name| self.simple_name(name));
+        let name = declarator.and_then(|id| self.declarator_name(id));
         let default = if self.accept(P::Assign)? {
             let value = self.assignment_expression()?;
             if name.is_none()
@@ -133,19 +135,8 @@ impl Parser<'_> {
         } else {
             None
         };
-        if let Some(name) = name {
-            self.scopes.declare(
-                name,
-                Binding {
-                    pack,
-                    alternatives: super::scopes::Categories::default(),
-                    guesses: super::scopes::Guesses::default(),
-                    specialization: 0,
-                    parameter: true,
-                    category: Category::Value,
-                    scope: None,
-                },
-            );
+        if let Some(declarator) = declarator {
+            self.declare_value_declarator(declarator, pack, true);
         }
         Ok(TemplateParameter {
             location,

@@ -177,9 +177,12 @@ impl Parser<'_> {
             self.scopes.add_edge(scope);
         }
         self.scopes.current = scope;
-        let declarations = self.declarations(true)?;
-        self.expect(P::RightBrace)?;
+        let result = self.declarations(true).and_then(|declarations| {
+            self.expect(P::RightBrace)?;
+            Ok(declarations)
+        });
         self.scopes.current = enclosing;
+        let declarations = result?;
         self.tree.declarations.add(Declaration {
             attributes,
             location,
@@ -716,8 +719,18 @@ impl Parser<'_> {
         })
     }
     fn simple_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        let pending_template = self.pending_template;
         let specifiers =
             self.specifier_sequence_with_leading(false, false, self.leading_attributes, None)?;
+        self.pending_template = pending_template
+            && !self.tree.specs.get(specifiers).iter().any(|specifier| {
+                matches!(
+                    specifier.kind,
+                    SpecifierKind::Class(_)
+                        | SpecifierKind::Elaborated { .. }
+                        | SpecifierKind::Enum(_)
+                )
+            });
         let typedef = self
             .tree
             .specs
@@ -795,20 +808,25 @@ impl Parser<'_> {
             if self.in_class() && self.at(P::Colon)? {
                 return self.bit_field(location, specifiers, Some(declarator));
             }
-            let enclosing = self.scopes.current;
-            if let Some(scope) = self.tree.declarators.get(declarator).member_scope {
-                self.scopes.member_context(scope)?;
-            }
-            let result = if matches!(
+            let initializer = if matches!(
                 self.punctuator()?,
                 Some(P::Assign | P::LeftBrace | P::LeftParen)
             ) {
-                self.initializer().map(Some)
+                let enclosing = self.scopes.current;
+                let pending_template = self.pending_template;
+                self.pending_template = false;
+                let result = (|| {
+                    if let Some(scope) = self.tree.declarators.get(declarator).member_scope {
+                        self.scopes.member_context(scope)?;
+                    }
+                    self.initializer()
+                })();
+                self.scopes.current = enclosing;
+                self.pending_template = pending_template;
+                Some(result?)
             } else {
-                Ok(None)
+                None
             };
-            self.scopes.current = enclosing;
-            let initializer = result?;
             self.tree.init_declarators.push(InitDeclarator {
                 tokens: super::ast::TokenSpan {
                     begin: first_token,
