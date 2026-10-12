@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function f function of () returning void
+    scope function f
+      scope block
+        variable a array of 2 int
+        scope block
+          variable n lvalue-reference to const int
+          scope block
+            variable x int
+end translation unit

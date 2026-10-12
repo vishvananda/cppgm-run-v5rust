@@ -25,6 +25,33 @@ fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     check(&mut graph, cursor);
 }
 #[test]
+fn control_and_handler_bindings_have_local_owners_and_do_not_leak() {
+    analyze(
+        b"void f(int n){if(int c=n){int a=c;}else int b=c;for(int i=0;i<n;++i){int j=i;}try{}catch(const int& e){int k=e;}}",
+        |graph, cursor| {
+            let f = cursor.intern_name(b"f").unwrap();
+            let binding = graph.own(graph.global, f, Filter::Ordinary).unwrap();
+            let function = graph.entity(graph.binding(binding).entity).scope.unwrap();
+            let body = graph.scope(function).children[0];
+            let children = &graph.scope(body).children;
+            assert_eq!(children.len(), 4);
+            let condition = children[0];
+            let handler = children[3];
+            for (owner, spelling) in [(condition, b"c".as_slice()), (handler, b"e".as_slice())] {
+                let name = cursor.intern_name(spelling).unwrap();
+                let binding = graph.own(owner, name, Filter::Ordinary).unwrap();
+                assert_eq!(graph.binding(binding).kind, BindingKind::Variable);
+                assert!(graph.own(body, name, Filter::Ordinary).is_none());
+                for &child in &graph.scope(owner).children {
+                    assert_eq!(graph.scope(child).parent, Some(owner));
+                    assert!(graph.scope(child).guarded);
+                    assert!(graph.own(child, name, Filter::Ordinary).is_none());
+                }
+            }
+        },
+    );
+}
+#[test]
 fn constructor_signatures_do_not_hide_the_injected_class_and_share_redeclaration_facts() {
     analyze(
         b"struct C{C(const int);C(long);C *next;};C::C(int p){} void f(){C();new C;}",

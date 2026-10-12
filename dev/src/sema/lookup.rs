@@ -151,11 +151,28 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn prefix(&mut self, name: Name, scope: ScopeId) -> Result<Option<ScopeId>, Error> {
+        let count = self
+            .tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .len()
+            .saturating_sub(1);
+        self.prefix_components(name, scope, count)
+    }
+    pub(super) fn prefix_components(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+        count: usize,
+    ) -> Result<Option<ScopeId>, Error> {
         let name = self.tree.names.get(name);
         self.lookup_location = name.location;
         let components = self.tree.name_lists.get(name.components);
         let mut prefix = name.global.then_some(self.graph.global);
-        for component in &components[..components.len().saturating_sub(1)] {
+        for component in components
+            .get(..count)
+            .ok_or(Error::Invariant("name prefix outside components"))?
+        {
             if component.arguments.is_some() {
                 return Err(Error::Missing("template specialization lookup"));
             }

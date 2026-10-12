@@ -583,13 +583,6 @@ pub(crate) enum ExprKind {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Statement {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
-        )
-    )]
     pub location: SourceOffset,
     pub kind: StmtKind,
 }
@@ -605,21 +598,7 @@ pub(crate) enum Condition {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum StmtKind {
     Ambiguous {
-        #[cfg_attr(
-            not(test),
-            expect(
-                dead_code,
-                reason = "The first conflicted syntax name is retained for later statement selection"
-            )
-        )]
         name: Name,
-        #[cfg_attr(
-            not(test),
-            expect(
-                dead_code,
-                reason = "The exact name component is retained for later statement selection"
-            )
-        )]
         component: u32,
         readings: List<StatementReading>,
     },

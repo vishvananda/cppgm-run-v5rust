@@ -237,76 +237,7 @@ impl<'tree> Analyzer<'tree> {
                 specifiers,
                 declarator,
                 body,
-            } => {
-                let specs = self.specifiers(specifiers, scope, false)?;
-                let info = self.declarator(Some(declarator), specs.ty, scope)?;
-                let name = info
-                    .name
-                    .ok_or(Error::Invariant("function definition without a name"))?;
-                let home = info.home.unwrap_or(self.declaration_scope(scope));
-                let location = self.declarator_location(declarator)?;
-                self.check_member_function_redeclaration(&info, home, location)?;
-                if info.home.is_some()
-                    && self
-                        .graph
-                        .own(home, name, super::lookup::Filter::Ordinary)
-                        .is_none()
-                {
-                    return Err(Error::at(
-                        location,
-                        "qualified definition does not match a declaration",
-                    ));
-                }
-                let exception_limit = self.graph.binding_limit();
-                let binding = self.declare_value(
-                    name,
-                    info.ty,
-                    super::declarations::ValueScope {
-                        home,
-                        print: info.home.unwrap_or(scope),
-                        head: self.active_template_head(scope),
-                    },
-                    BindingKind::Function,
-                    self.declarator_location(declarator)?,
-                )?;
-                super::record(
-                    &mut self.graph.declared_bindings,
-                    declarator.index(),
-                    binding,
-                );
-                let entity = self.graph.binding(binding).entity;
-                self.graph.entity_mut(entity).constexpr = specs.constexpr;
-                self.record_function_exceptions(
-                    entity,
-                    &info,
-                    info.lookup,
-                    location,
-                    exception_limit,
-                )?;
-                if self.graph.entity(entity).defined {
-                    return Err(Error::at(location, "redefinition of a function"));
-                }
-                self.graph.entity_mut(entity).defined = true;
-                let parameters = info
-                    .parameters
-                    .ok_or(Error::Invariant("function definition without parameters"))?;
-                let deferred = DeferredBody {
-                    entity,
-                    name,
-                    ty: info.ty,
-                    parameters,
-                    body,
-                    template_depth: self.template_depth,
-                    parent: info.lookup,
-                    print: if info.home.is_some() { home } else { scope },
-                };
-                if self.class_depth == 0 {
-                    self.function_body(deferred)
-                } else {
-                    self.deferred.push(deferred);
-                    Ok(())
-                }
-            }
+            } => self.function_definition(specifiers, declarator, body, scope, location),
             ast::DeclKind::Linkage {
                 language,
                 declarations,
@@ -365,11 +296,86 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::BitField { .. } => Err(Error::Missing("bit-field declarations")),
         }
     }
+    fn function_definition(
+        &mut self,
+        specifiers: List<ast::Specifier>,
+        declarator: ast::DeclaratorId,
+        body: ast::BodyId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let specs = self.specifiers(specifiers, scope, false)?;
+        let mut info = self.declarator(Some(declarator), specs.ty, scope)?;
+        self.function_specifier_type(specs, &mut info, scope)?;
+        let name = info
+            .name
+            .ok_or(Error::Invariant("function definition without a name"))?;
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        self.check_member_function_redeclaration(&info, home, location)?;
+        if info.home.is_some()
+            && self
+                .graph
+                .own(home, name, super::lookup::Filter::Ordinary)
+                .is_none()
+        {
+            return Err(Error::at(
+                location,
+                "qualified definition does not match a declaration",
+            ));
+        }
+        let exception_limit = self.graph.binding_limit();
+        let binding = self.declare_value(
+            name,
+            info.ty,
+            super::declarations::ValueScope {
+                home,
+                print: info.home.unwrap_or(scope),
+                head: self.active_template_head(scope),
+            },
+            BindingKind::Function,
+            location,
+            specs,
+        )?;
+        super::record(
+            &mut self.graph.declared_bindings,
+            declarator.index(),
+            binding,
+        );
+        let entity = self.graph.binding(binding).entity;
+        self.graph.entity_mut(entity).constexpr = specs.constexpr;
+        self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
+        if self.graph.entity(entity).defined {
+            return Err(Error::at(location, "redefinition of a function"));
+        }
+        self.graph.entity_mut(entity).defined = true;
+        let parameters = info
+            .parameters
+            .ok_or(Error::Invariant("function definition without parameters"))?;
+        let deferred = DeferredBody {
+            entity,
+            name,
+            ty: info.ty,
+            parameters,
+            body,
+            template_depth: self.template_depth,
+            parent: info.lookup,
+            print: if info.home.is_some() { home } else { scope },
+        };
+        if self.class_depth == 0 {
+            self.function_body(deferred)
+        } else {
+            self.deferred.push(deferred);
+            Ok(())
+        }
+    }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
         let saved = self.template_depth;
+        let saved_class_depth = self.class_depth;
         self.template_depth = body.template_depth;
+        self.class_depth = 0;
         let result = self.function_body_scopes(body);
         self.template_depth = saved;
+        self.class_depth = saved_class_depth;
         result
     }
     fn function_body_scopes(&mut self, body: DeferredBody) -> Result<(), Error> {
@@ -421,41 +427,21 @@ impl<'tree> Analyzer<'tree> {
         let ast::Body::Parsed(parsed) = self.tree.bodies.get(body.body) else {
             return Err(Error::Invariant("unparsed body at semantic boundary"));
         };
+        if parsed.handlers.is_some() && self.graph.entity(body.entity).constexpr {
+            return Err(Error::at(
+                self.tree.statements.get(parsed.compound).location,
+                "a constexpr function with a function-try-block",
+            ));
+        }
         // Types mode walks only the mem-initializer expressions. Target lookup,
         // subobject conversion and construction plans belong to semantic mode.
         for initializer in self.tree.mem_initializers.get(parsed.initializers) {
             self.initializer_names(initializer.initializer, scope, body.ty)?;
         }
-        if parsed.handlers.is_some() {
-            return Err(Error::Missing("function-try-block handler scopes"));
+        self.substatement(parsed.compound, scope)?;
+        if let Some(handlers) = parsed.handlers {
+            self.handlers(handlers, scope)?;
         }
-        self.statement(parsed.compound, scope)
-    }
-    fn statement(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
-        self.check_stack()?;
-        match self.tree.statements.get(id).kind {
-            ast::StmtKind::Compound(list) => {
-                let block = self
-                    .graph
-                    .add_scope(ScopeKind::Block, scope, Some(scope), None)?;
-                for &id in self.tree.stmt_lists.get(list) {
-                    self.statement(id, block)?;
-                }
-                Ok(())
-            }
-            ast::StmtKind::Declaration(decl) => self.declaration(decl, scope),
-            ast::StmtKind::Expression(operand)
-            | ast::StmtKind::Return(operand)
-            | ast::StmtKind::Throw(operand) => {
-                operand.map_or(Ok(()), |id| self.expression(id, scope))
-            }
-            ast::StmtKind::Break | ast::StmtKind::Continue | ast::StmtKind::Goto(_) => Ok(()),
-            ast::StmtKind::Label { body, .. }
-            | ast::StmtKind::Case { body, .. }
-            | ast::StmtKind::Default(body) => self.statement(body, scope),
-            _ => Err(Error::Missing(
-                "selection, iteration, handler and ambiguous statement scopes",
-            )),
-        }
+        Ok(())
     }
 }

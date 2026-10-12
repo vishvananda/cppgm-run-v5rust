@@ -50,6 +50,7 @@ pub(super) struct Scope {
     pub directives: Vec<ScopeEdge>,
     pub inline_members: Vec<ScopeEdge>,
     pub is_inline: bool,
+    pub guarded: bool,
     pub written_name: Option<crate::syntax::ast::Name>,
 }
 #[derive(Clone, Copy)]
@@ -61,6 +62,11 @@ pub(super) struct ScopeEdge {
 pub(super) enum DataMemberKind {
     Instance,
     Static,
+}
+#[derive(Clone, Copy)]
+pub(super) struct FunctionProperties {
+    pub internal_linkage: bool,
+    pub is_static: bool,
 }
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
@@ -76,6 +82,7 @@ pub(super) struct Entity {
     pub data_member: Option<DataMemberKind>,
     pub exceptions: super::exceptions::ExceptionState,
     pub constexpr: bool,
+    pub function: Option<FunctionProperties>,
     pub members: Vec<EntityId>,
     pub layout: super::layout::LayoutState,
     pub member_offset: Option<u64>,
@@ -110,6 +117,7 @@ pub(crate) struct Graph {
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
+    pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
     constructors: HashMap<(EntityId, TypeId), BindingId>,
@@ -142,6 +150,7 @@ impl Graph {
                 directives: Vec::new(),
                 inline_members: Vec::new(),
                 is_inline: false,
+                guarded: false,
                 written_name: None,
             }],
             entities: Vec::new(),
@@ -157,6 +166,7 @@ impl Graph {
             binding_labels: HashMap::new(),
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
+            statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
             constructors: HashMap::new(),
@@ -205,6 +215,7 @@ impl Graph {
             directives: Vec::new(),
             inline_members: Vec::new(),
             is_inline: false,
+            guarded: false,
             written_name: None,
         });
         if let Some(print) = print {
@@ -236,6 +247,7 @@ impl Graph {
             data_member: None,
             exceptions: super::exceptions::ExceptionState::Absent,
             constexpr: false,
+            function: None,
             members: Vec::new(),
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,

@@ -1,0 +1,2 @@
+// Frozen PA6 types-mode scope/declaration ownership regression.
+void f(int n){switch(n){case 1: {int x=n;}break;default:break;}}

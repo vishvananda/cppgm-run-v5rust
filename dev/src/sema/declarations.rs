@@ -277,7 +277,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         _location: SourceOffset,
     ) -> Result<(), Error> {
-        let info = self.declarator(Some(init.declarator), specs.ty, scope)?;
+        let mut info = self.declarator(Some(init.declarator), specs.ty, scope)?;
         let name = info
             .name
             .ok_or(Error::Invariant("init-declarator without a name"))?;
@@ -303,6 +303,7 @@ impl Analyzer<'_> {
             TypeKind::Function { .. }
         );
         if function {
+            self.function_specifier_type(specs, &mut info, scope)?;
             self.check_member_function_redeclaration(&info, home, location)?;
         }
         let mut ty = info.ty;
@@ -373,6 +374,7 @@ impl Analyzer<'_> {
             },
             kind,
             location,
+            specs,
         )?;
         super::record(
             &mut self.graph.declared_bindings,
@@ -562,9 +564,25 @@ impl Analyzer<'_> {
         context: ValueScope,
         kind: BindingKind,
         location: SourceOffset,
+        specs: Specifiers,
     ) -> Result<BindingId, Error> {
         let ValueScope { home, print, head } = context;
         self.check_template_parameter_name(print, name, location)?;
+        if kind == BindingKind::Variable
+            && self.graph.scope(home).guarded
+            && let Some(parent) = self.graph.scope(home).parent
+            && self
+                .graph
+                .scope(parent)
+                .index
+                .get(&name)
+                .is_some_and(|entry| entry.value.is_some())
+        {
+            return Err(Error::at(
+                location,
+                "redeclaration of a name of the enclosing construct",
+            ));
+        }
         let mut entity = None;
         if let Some(existing) = self.graph.own(home, name, Filter::Ordinary) {
             let binding = self.graph.binding(existing);
@@ -608,11 +626,24 @@ impl Analyzer<'_> {
                     } {
                         return Err(Error::Missing("ordinary/template function overload sets"));
                     }
-                    let a = self.graph.types.canonical_function(old)?;
-                    let b = self.graph.types.canonical_function(ty)?;
-                    if a != b {
-                        return Err(Error::Missing(
-                            "function overload sets and incompatible redeclaration diagnostics",
+                    self.check_function_type_agreement(old, ty, location)?;
+                    if specs.is_static
+                        && self.graph.scope(home).kind == ScopeKind::Namespace
+                        && self
+                            .graph
+                            .entity(binding.entity)
+                            .function
+                            .is_some_and(|props| !props.internal_linkage)
+                    {
+                        return Err(Error::at(
+                            location,
+                            "a static declaration of a function declared with external linkage",
+                        ));
+                    }
+                    if self.graph.entity(binding.entity).constexpr != specs.constexpr {
+                        return Err(Error::at(
+                            location,
+                            "declarations of a function that disagree on constexpr",
                         ));
                     }
                 } else if let Some(completed) = self.graph.types.complete_array(old, ty) {
@@ -628,6 +659,13 @@ impl Analyzer<'_> {
         } else {
             self.graph.add_entity(Some(ty), Some(name), Keyword::Int)?
         };
+        if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
+            self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+                internal_linkage: specs.is_static
+                    && self.graph.scope(home).kind == ScopeKind::Namespace,
+                is_static: specs.is_static,
+            });
+        }
         if kind == BindingKind::Function
             && let Some(head) = head
         {
@@ -644,6 +682,93 @@ impl Analyzer<'_> {
                 key: Keyword::Int,
             },
         )
+    }
+    fn check_function_type_agreement(
+        &mut self,
+        old: TypeId,
+        new: TypeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let a = self.graph.types.canonical_function(old)?;
+        let b = self.graph.types.canonical_function(new)?;
+        if a == b {
+            return Ok(());
+        }
+        if let (
+            TypeKind::Function {
+                parameters: ap,
+                variadic: av,
+                cv: ac,
+                reference: ar,
+                ..
+            },
+            TypeKind::Function {
+                parameters: bp,
+                variadic: bv,
+                cv: bc,
+                reference: br,
+                ..
+            },
+        ) = (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
+            && ap == bp
+            && av == bv
+            && ac == bc
+            && ar == br
+        {
+            return Err(Error::at(
+                location,
+                "functions that differ only in their return type",
+            ));
+        }
+        Err(Error::Missing(
+            "function overload sets and incompatible redeclaration diagnostics",
+        ))
+    }
+    pub(super) fn function_specifier_type(
+        &mut self,
+        specs: Specifiers,
+        info: &mut super::declarators::DeclaratorInfo,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        if !specs.constexpr || specs.is_static || self.graph.scope(home).kind != ScopeKind::Class {
+            return Ok(());
+        }
+        if info.home.is_some()
+            && let Some(binding) = info
+                .name
+                .and_then(|name| self.graph.own(home, name, Filter::Ordinary))
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .function
+                .is_some_and(|props| props.is_static)
+        {
+            return Ok(());
+        }
+        let TypeKind::Function {
+            result,
+            parameters,
+            variadic,
+            cv,
+            reference,
+        } = &self.graph.types.get(info.ty).kind
+        else {
+            return Ok(());
+        };
+        if cv.0 & Cv::CONST.0 == 0 {
+            info.ty = self.graph.types.intern(
+                TypeKind::Function {
+                    result: *result,
+                    parameters: parameters.clone(),
+                    variadic: *variadic,
+                    cv: Cv(cv.0 | Cv::CONST.0),
+                    reference: *reference,
+                },
+                Cv::default(),
+            )?;
+        }
+        Ok(())
     }
     fn new_class(&mut self, key: Keyword, name: Option<NameId>) -> Result<EntityId, Error> {
         let entity = self.graph.add_entity(None, name, key)?;
