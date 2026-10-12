@@ -27,6 +27,7 @@ impl Graph {
                 ScopeKind::Class => "class",
                 ScopeKind::Function => "function",
                 ScopeKind::Block => "block",
+                ScopeKind::TemplateParameters => "template-parameters",
             };
             write!(output, "scope {kind}")?;
             if let Some(name) = scope.written_name {
@@ -85,7 +86,17 @@ impl Graph {
                 }
                 output.write_all(b" ")?;
                 if binding.kind == BindingKind::Type {
-                    self.write_declared_type(id, tree, cursor, output)?;
+                    if self.entity(binding.entity).template_parameter.is_some() {
+                        self.write_type(
+                            binding
+                                .ty
+                                .ok_or_else(|| io::Error::other("parameter without type"))?,
+                            cursor,
+                            output,
+                        )?;
+                    } else {
+                        self.write_declared_type(id, tree, cursor, output)?;
+                    }
                 } else if binding.kind == BindingKind::Enumerator {
                     let declaration = self
                         .enum_declaration(id)
@@ -208,6 +219,16 @@ impl Graph {
                         entity.enumeration.and_then(|info| info.anonymous_ordinal)
                     {
                         write!(output, "__anonymous_enum{ordinal}")?;
+                    }
+                }
+                TypeKind::TemplateParameter { entity, template } => {
+                    output.write_all(if *template {
+                        b"template-parameter "
+                    } else {
+                        b"typename "
+                    })?;
+                    if let Some(name) = self.entity(*entity).name {
+                        write_name(cursor, name, output)?;
                     }
                 }
                 TypeKind::Pointer(element) => {

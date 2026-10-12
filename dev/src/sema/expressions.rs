@@ -227,7 +227,7 @@ impl Analyzer<'_> {
         Ok(Some(binding))
     }
     fn value_initialized_class(&mut self, ty: TypeId) -> Result<(), Error> {
-        if self.suppress_implicit {
+        if self.suppress_implicit || self.template_depth != 0 {
             return Ok(());
         }
         let TypeKind::Class(entity) = self.graph.types.get(ty).kind else {

@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope template-parameters
+      type T typename T
+      function identity function of (typename T) returning typename T
+    scope template-parameters
+      type U typename U
+      function identity function of (typename U) returning typename U
+      scope function identity
+        parameter value typename U
+        scope block
+end translation unit

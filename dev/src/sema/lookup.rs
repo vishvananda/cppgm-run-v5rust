@@ -181,6 +181,14 @@ impl Analyzer<'_> {
                 prefix = self.graph.entity(entity).scope;
             }
             if prefix.is_none() {
+                if binding.ty.is_some_and(|ty| {
+                    matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::TemplateParameter { .. }
+                    )
+                }) {
+                    return Err(Error::Missing("dependent qualified name lookup"));
+                }
                 return Err(Error::at(
                     component.location,
                     "name before :: is not a class, namespace or enumeration",

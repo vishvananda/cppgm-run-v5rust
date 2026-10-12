@@ -735,13 +735,20 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
-        let value = self
-            .constant_value(expr, scope, true)?
-            .ok_or(Error::Invariant("missing required bound"))?;
+        let value = self.constant_value(expr, scope, self.template_depth == 0)?;
+        let Some(value) = value else {
+            self.expression(expr, scope)?;
+            return Ok(0);
+        };
         let location = self.tree.expressions.get(expr).location;
         let kind = self
             .integral_kind(value.ty)
             .ok_or(Error::Invariant("nonintegral array bound"))?;
+        if self.template_depth != 0
+            && (value.bits == 0 || kind.signed && integral::signed(value.bits) < 0)
+        {
+            return Ok(0);
+        }
         let failure = if self.scoped_enum(value.ty) {
             Some("a scoped enumeration value is not an array bound")
         } else if kind.signed && integral::signed(value.bits) < 0 {

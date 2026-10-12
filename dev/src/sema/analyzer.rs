@@ -24,6 +24,9 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) deferred: Vec<DeferredBody>,
     pub(super) anonymous_enums: u32,
     pub(super) class_depth: usize,
+    pub(super) template_depth: usize,
+    pub(super) c_language: bool,
+    pub(super) template_head: Option<super::templates::HeadId>,
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) suppress_implicit: bool,
@@ -41,6 +44,7 @@ pub(super) struct DeferredBody {
     pub body: ast::BodyId,
     pub parent: ScopeId,
     pub print: ScopeId,
+    pub template_depth: usize,
 }
 impl<'tree> Analyzer<'tree> {
     pub(crate) fn new(
@@ -75,6 +79,9 @@ impl<'tree> Analyzer<'tree> {
             deferred: Vec::new(),
             anonymous_enums: 0,
             class_depth: 0,
+            template_depth: 0,
+            c_language: false,
+            template_head: None,
             constant_spine: Vec::new(),
             expression_work: Vec::new(),
             suppress_implicit: false,
@@ -234,7 +241,7 @@ impl<'tree> Analyzer<'tree> {
                 let name = info
                     .name
                     .ok_or(Error::Invariant("function definition without a name"))?;
-                let home = info.home.unwrap_or(scope);
+                let home = info.home.unwrap_or(self.declaration_scope(scope));
                 let location = self.declarator_location(declarator)?;
                 self.check_member_function_redeclaration(&info, home, location)?;
                 if info.home.is_some()
@@ -252,8 +259,11 @@ impl<'tree> Analyzer<'tree> {
                 let binding = self.declare_value(
                     name,
                     info.ty,
-                    home,
-                    home,
+                    super::declarations::ValueScope {
+                        home,
+                        print: info.home.unwrap_or(scope),
+                        head: self.active_template_head(scope),
+                    },
                     BindingKind::Function,
                     self.declarator_location(declarator)?,
                 )?;
@@ -264,7 +274,13 @@ impl<'tree> Analyzer<'tree> {
                 );
                 let entity = self.graph.binding(binding).entity;
                 self.graph.entity_mut(entity).constexpr = specs.constexpr;
-                self.record_function_exceptions(entity, &info, home, location, exception_limit)?;
+                self.record_function_exceptions(
+                    entity,
+                    &info,
+                    info.lookup,
+                    location,
+                    exception_limit,
+                )?;
                 if self.graph.entity(entity).defined {
                     return Err(Error::at(location, "redefinition of a function"));
                 }
@@ -277,8 +293,9 @@ impl<'tree> Analyzer<'tree> {
                     ty: info.ty,
                     parameters,
                     body,
-                    parent: home,
-                    print: home,
+                    template_depth: self.template_depth,
+                    parent: info.lookup,
+                    print: if info.home.is_some() { home } else { scope },
                 };
                 if self.class_depth == 0 {
                     self.function_body(deferred)
@@ -287,7 +304,17 @@ impl<'tree> Analyzer<'tree> {
                     Ok(())
                 }
             }
-            ast::DeclKind::Linkage { declarations, .. } => self.declarations(declarations, scope),
+            ast::DeclKind::Linkage {
+                language,
+                declarations,
+                ..
+            } => {
+                let saved = self.c_language;
+                self.c_language = self.literal_bytes.get(language) == b"C";
+                let result = self.declarations(declarations, scope);
+                self.c_language = saved;
+                result
+            }
             ast::DeclKind::Enum { .. } => {
                 let ty = self.enum_type(id, scope, true)?;
                 self.name_unnamed_enum(ty, None)
@@ -307,6 +334,9 @@ impl<'tree> Analyzer<'tree> {
                         "a static_assert message that is not a string literal",
                     ));
                 }
+                if self.template_depth != 0 {
+                    return self.expression(condition, scope);
+                }
                 let value = self
                     .constant_value(condition, scope, true)?
                     .ok_or(Error::Invariant("missing assertion value"))?;
@@ -321,8 +351,12 @@ impl<'tree> Analyzer<'tree> {
                 }
                 Ok(())
             }
-            ast::DeclKind::Template { .. } | ast::DeclKind::ExplicitInstantiation { .. } => {
-                Err(Error::Missing("template parameter scopes and declarations"))
+            ast::DeclKind::Template {
+                parameters,
+                declaration,
+            } => self.template_declaration(parameters, declaration, scope, location),
+            ast::DeclKind::ExplicitInstantiation { .. } => {
+                Err(Error::Missing("explicit template instantiation"))
             }
             ast::DeclKind::SpecialMember { .. } | ast::DeclKind::BitField { .. } => {
                 Err(Error::Missing("special member and bit-field declarations"))
@@ -330,6 +364,13 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        let saved = self.template_depth;
+        self.template_depth = body.template_depth;
+        let result = self.function_body_scopes(body);
+        self.template_depth = saved;
+        result
+    }
+    fn function_body_scopes(&mut self, body: DeferredBody) -> Result<(), Error> {
         let scope = self.graph.add_scope(
             ScopeKind::Function,
             body.parent,

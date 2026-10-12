@@ -82,6 +82,34 @@ impl Analyzer<'_> {
         }
         Ok(ty)
     }
+    fn check_enum_parameter_names(
+        &self,
+        name: Option<ast::Name>,
+        introduces: bool,
+        enumerators: crate::syntax::storage::List<ast::Enumerator>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        if self.template_depth == 0 {
+            return Ok(());
+        }
+        if let Some(name) = name {
+            let node = self.tree.names.get(name);
+            if !node.global && self.tree.name_lists.get(node.components).len() == 1 && introduces {
+                let last = self.tree.name_lists.get(node.components)[0];
+                if last.arguments.is_none() {
+                    self.check_template_parameter_name(
+                        scope,
+                        Self::component_name(last.kind)?,
+                        node.location,
+                    )?;
+                }
+            }
+        }
+        for enumerator in self.tree.enumerators.get(enumerators) {
+            self.check_template_parameter_name(scope, enumerator.name, enumerator.location)?;
+        }
+        Ok(())
+    }
     pub(super) fn enum_type(
         &mut self,
         id: ast::DeclId,
@@ -101,6 +129,7 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("enum syntax mismatch"));
         };
         let location = declaration.location;
+        self.check_enum_parameter_names(name, has_body || lone, enumerators, scope)?;
         let scoped = key.is_some();
         let underlying = underlying
             .map(|id| self.type_syntax(id, scope))
@@ -368,7 +397,21 @@ impl Analyzer<'_> {
         let mut previous = None;
         let mut values = Vec::new();
         for enumerator in self.tree.enumerators.get(enumerators) {
-            let value = if let Some(expr) = enumerator.value {
+            let value = if self.template_depth != 0 {
+                if let Some(expr) = enumerator.value {
+                    self.expression(expr, lookup)?;
+                }
+                if let Some(previous) = previous {
+                    self.next_enumerator(previous, info, enumerator.location)?
+                } else {
+                    Constant {
+                        bits: 0,
+                        ty: info
+                            .underlying
+                            .unwrap_or(self.graph.types.scalar(Scalar::Basic(F::Int))?),
+                    }
+                }
+            } else if let Some(expr) = enumerator.value {
                 let mut value = self
                     .constant_value(expr, lookup, true)?
                     .ok_or(Error::Invariant("enumerator constant"))?;

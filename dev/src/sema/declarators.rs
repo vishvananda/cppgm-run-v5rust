@@ -13,6 +13,7 @@ pub(super) struct DeclaratorInfo {
     pub ty: TypeId,
     pub name: Option<NameId>,
     pub home: Option<ScopeId>,
+    pub lookup: ScopeId,
     pub parameters: Option<ast::ParameterClause>,
     pub qualifiers: Option<crate::syntax::storage::List<ast::Qualifier>>,
 }
@@ -81,12 +82,20 @@ impl Analyzer<'_> {
             let node = self.tree.declarators.get(current);
             if let Some(named) = node.name {
                 home = self.prefix(named, scope)?;
-                after = home.unwrap_or(scope);
+                after = if let Some(home) = home {
+                    if self.active_template_head(scope).is_some() {
+                        self.qualified_template_scope(scope, home)?
+                    } else {
+                        home
+                    }
+                } else {
+                    scope
+                };
                 break;
             }
             probe = node.nested;
         }
-        if home.is_some_and(|home| !self.graph.encloses(scope, home)) {
+        if home.is_some_and(|home| !self.graph.encloses(self.declaration_scope(scope), home)) {
             return Err(Error::at(
                 self.tree
                     .declarators
@@ -184,6 +193,7 @@ impl Analyzer<'_> {
             ty,
             name,
             home,
+            lookup: after,
             parameters,
             qualifiers: function_qualifiers,
         })
@@ -211,6 +221,9 @@ impl Analyzer<'_> {
         let mut types = Vec::new();
         let parameters = self.tree.parameters.get(clause.parameters);
         for (index, parameter) in parameters.iter().enumerate() {
+            if let Some(name) = self.declarator_name(parameter.declarator)? {
+                self.check_template_parameter_name(scope, name, parameter.location)?;
+            }
             if prototype.is_none() && index != 0 && self.parameter_uses_values(*parameter) {
                 let created =
                     self.graph
@@ -355,9 +368,43 @@ impl Analyzer<'_> {
                 ) {
                     return Err(Error::at(spec.location, "name does not denote a type"));
                 }
-                binding
+                let entity = self.graph.entity(binding.entity);
+                if binding.kind == super::graph::BindingKind::Type
+                    && entity.template_head.is_some()
+                    && !entity.scope.is_some_and(|home| {
+                        entity.name.is_some_and(|name| {
+                            self.graph
+                                .own(home, name, super::lookup::Filter::Elaborated)
+                                == Some(found)
+                        })
+                    })
+                {
+                    return Err(Error::at(
+                        self.tree.names.get(name).location,
+                        "a class template name without a template argument list",
+                    ));
+                }
+                if binding.kind == super::graph::BindingKind::Alias
+                    && entity.template_head.is_some()
+                {
+                    return Err(Error::at(
+                        self.tree.names.get(name).location,
+                        "an alias template name without a template argument list",
+                    ));
+                }
+                let ty = binding
                     .ty
-                    .ok_or(Error::Invariant("type binding lacks a type"))
+                    .ok_or(Error::Invariant("type binding lacks a type"))?;
+                if matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::TemplateParameter { template: true, .. }
+                ) {
+                    return Err(Error::at(
+                        self.tree.names.get(name).location,
+                        "a template-name without a template argument list",
+                    ));
+                }
+                Ok(ty)
             }
             SpecifierKind::Class(id) => self.class_type(id, scope),
             SpecifierKind::Elaborated { key, name } => self.elaborated_type(key, name, scope, lone),

@@ -12,17 +12,17 @@ use crate::{
     types::FundamentalType,
 };
 
-fn analyze(source: &[u8], check: impl FnOnce(&Graph, &mut Cursor<'_>)) {
+fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     let source = SourceBuffer::new(source.to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"semantic-ownership").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();
     let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-    let graph = Analyzer::new(tree, cursor, StackBudget::default())
+    let mut graph = Analyzer::new(tree, cursor, StackBudget::default())
         .unwrap()
         .analyze(declarations)
         .unwrap();
-    check(&graph, cursor);
+    check(&mut graph, cursor);
 }
 #[test]
 fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
@@ -242,7 +242,7 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
 }
 #[test]
 fn missing_group_remains_distinct_from_a_language_rejection() {
-    let source = SourceBuffer::new(b"template<class T> struct C {};".to_vec()).unwrap();
+    let source = SourceBuffer::new(b"template<int N> struct C {};".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"missing-semantic-group").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();
@@ -511,4 +511,77 @@ fn failed_exception_query_restores_nested_worklists_and_context() {
     assert!(analyzer.constant_spine.is_empty());
     assert!(!analyzer.evaluating_noexcept);
     assert!(analyzer.graph.lookup_limit.is_none());
+}
+
+#[test]
+fn template_scope_printing_and_namespace_publication_share_entity_identity() {
+    use super::graph::ScopeKind;
+    analyze(
+        b"template<class T,template<class Inner>class TT>struct P{T x;};",
+        |graph, cursor| {
+            let p = cursor.intern_name(b"P").unwrap();
+            let t = cursor.intern_name(b"T").unwrap();
+            let inner = cursor.intern_name(b"Inner").unwrap();
+            let parameters = graph.scope(graph.global).children[0];
+            assert_eq!(graph.scope(parameters).kind, ScopeKind::TemplateParameters);
+            assert!(graph.own(graph.global, t, Filter::Ordinary).is_none());
+            assert!(graph.own(parameters, inner, Filter::Ordinary).is_none());
+            let binding = graph.own(graph.global, p, Filter::Elaborated).unwrap();
+            assert!(graph.scope(parameters).bindings.contains(&binding));
+            assert!(graph.own(parameters, p, Filter::Ordinary).is_none());
+            let entity = graph.binding(binding).entity;
+            let class = graph.entity(entity).scope.unwrap();
+            assert_eq!(graph.scope(class).parent, Some(parameters));
+            assert_eq!(graph.scope(parameters).children, vec![class]);
+            let x = cursor.intern_name(b"x").unwrap();
+            let member = graph.binding(graph.own(class, x, Filter::Ordinary).unwrap());
+            let parameter = graph.binding(graph.own(parameters, t, Filter::Ordinary).unwrap());
+            assert_eq!(member.ty, parameter.ty);
+            assert!(graph.entity(entity).template_head.is_some());
+            assert!(graph.entity(entity).implicit_default.is_none());
+        },
+    );
+}
+
+#[test]
+fn renamed_function_template_parameters_preserve_source_types_and_canonical_identity() {
+    analyze(
+        b"template<class T>void f(T);template<class U>void f(U p){}",
+        |graph, cursor| {
+            let scopes = &graph.scope(graph.global).children;
+            let first = graph.scope(scopes[0]).bindings[1];
+            let second = graph.scope(scopes[1]).bindings[1];
+            let first = graph.binding(first);
+            let second = graph.binding(second);
+            assert_eq!(first.entity, second.entity);
+            assert_ne!(first.ty, second.ty);
+            let a = graph.types.canonical_function(first.ty.unwrap()).unwrap();
+            let b = graph.types.canonical_function(second.ty.unwrap()).unwrap();
+            assert_eq!(a, b);
+            let f = cursor.intern_name(b"f").unwrap();
+            assert_eq!(
+                graph
+                    .binding(graph.own(graph.global, f, Filter::Ordinary).unwrap())
+                    .entity,
+                first.entity
+            );
+        },
+    );
+}
+
+#[test]
+fn positional_template_parameter_identity_includes_inner_head_shape() {
+    analyze(b"template<template<class>class A>struct P{};template<template<class X>class B>struct Q{};template<template<class,class>class C>struct R{};", |graph, _| {
+        let mut types = Vec::new();
+        for &scope in &graph.scope(graph.global).children {
+            let binding = graph.binding(graph.scope(scope).bindings[0]);
+            types.push(binding.ty.unwrap());
+        }
+        assert_ne!(types[0], types[1]);
+        let a = graph.types.canonical_function(types[0]).unwrap();
+        let b = graph.types.canonical_function(types[1]).unwrap();
+        let c = graph.types.canonical_function(types[2]).unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    });
 }

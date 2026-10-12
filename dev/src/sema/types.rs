@@ -49,6 +49,10 @@ pub(super) enum TypeKind {
     Scalar(Scalar),
     Class(EntityId),
     Enum(EntityId),
+    TemplateParameter {
+        entity: EntityId,
+        template: bool,
+    },
     Pointer(TypeId),
     Reference {
         element: TypeId,
@@ -80,8 +84,12 @@ pub(super) struct Types {
     fingerprints: RandomState,
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
+    parameter_entities: HashMap<EntityId, EntityId>,
 }
 impl Types {
+    pub(super) fn record_parameter_entity(&mut self, named: EntityId, canonical: EntityId) {
+        self.parameter_entities.insert(named, canonical);
+    }
     pub(super) fn get(&self, id: TypeId) -> &Type {
         &self.records[id.0 as usize]
     }
@@ -213,7 +221,10 @@ impl Types {
                         work.push((*result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
-                    TypeKind::Scalar(_) | TypeKind::Class(_) | TypeKind::Enum(_) => (),
+                    TypeKind::Scalar(_)
+                    | TypeKind::Class(_)
+                    | TypeKind::Enum(_)
+                    | TypeKind::TemplateParameter { .. } => (),
                 }
                 continue;
             }
@@ -250,6 +261,14 @@ impl Types {
                         reference,
                     }
                 }
+                TypeKind::TemplateParameter { entity, template } => TypeKind::TemplateParameter {
+                    entity: self
+                        .parameter_entities
+                        .get(&entity)
+                        .copied()
+                        .unwrap_or(entity),
+                    template,
+                },
                 other => other,
             };
             let canonical = self.intern(kind, node.cv)?;

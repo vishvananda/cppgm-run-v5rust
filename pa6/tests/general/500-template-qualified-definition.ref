@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope namespace N
+      type-alias Word int
+      type Box struct Box
+      scope template-parameters
+        type T typename T
+        type Box struct Box
+      scope class Box
+        variable value typename U
+        variable word int
+    scope template-parameters
+      type U typename U
+end translation unit

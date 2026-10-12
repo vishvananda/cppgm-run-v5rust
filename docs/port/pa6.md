@@ -924,3 +924,187 @@ The review should trace declaration-point versus lookup publication, pending
 versus assigned labels, shared injected member identity versus hidden storage,
 source-order diagnostics, layout demand and anonymous constructor suppression.
 No complete template-to-ELF or PA34 byte-equality proof is claimed here.
+
+## Template parameter ownership checkpoint
+
+Implementation entry HEAD: `a96e8b976715a73c97d6f95719549df176e5dd89`
+(clean, 116/121 fixed cases). Stage base and last-audited commit above are
+unchanged; implementation does not advance the audit marker. The interrupted
+continuation left no retained change or live tool handle; classify that
+continuation as no progress and take the next independent owner group. This
+checkpoint implements that group and remains a partial PA6 handoff.
+
+Read the repository guide, clone contract, architecture specification, Rust
+conversion plan, PA6 handout and scopes/types guide. Consulted frozen revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5` directly, particularly:
+
+- `analyzer.cpp`: template placement, parameter creation, inner parameter
+  visibility, default names, shadow diagnostics and pattern assertions.
+- `class_templates.cpp`, `template_names.cpp`, `type_table.cpp`: positional
+  canonical entities, typed head shapes, equivalent redeclarations, retained
+  defaults, duplicate-default and class pack/default ordering checks.
+- `analyzer_classes.cpp`, `analyzer_declarations.cpp`, `analyzer_types.cpp`:
+  namespace publication versus source printing, injected versus bare template
+  names, qualified namespace definition overlays, parameter shadow checks and
+  pattern array bounds/enumerator values.
+- `analyzer_bodies.cpp`, `analyzer_exceptions.cpp`, `semantic_dump.cpp`,
+  `entity_records.h`, `template_records.h`, `semantic_types.h`: body context,
+  constructor demand, later specification ownership and exact source views.
+
+### Completed behavior and data flow
+
+`dev/src/sema/templates.rs` owns private checked `HeadId`/`ShapeId` stores,
+parameter scopes, canonical position and structural shape indexes, declaration
+placement, shadow checks and head/default merging. A head borrows its original
+AST clause and retains each default's syntax `TypeId` and declaration `ScopeId`;
+it retains no tokens or rendered names. Defaults' syntax/scope fields have one
+narrow dead-code expectation because instantiation is still a later consumer.
+Published named parameters have distinct source `EntityId`s and types;
+canonicalization maps those to shared positional entities, preserving the
+source names of renamed declarations. Position keys include depth, pack state,
+index and inner template shape. The C++ index's intentional low-16-bit
+truncation is explicit; host store sizes and IDs are checked separately.
+
+`graph.rs` owns these stores and entity facts. `types.rs` memoizes canonical
+parameter composition through its existing DAG walk. `declarations.rs` and
+`analyzer.rs` distinguish namespace/class lookup ownership from source print
+ownership with typed `ValueScope` facts. `declarators.rs` retains its resolved
+lexical lookup scope for bodies and specification owners. Qualified namespace
+class/function template definitions use a hidden parent-linked parameter
+scope overlay containing only their named parameters and leading into their
+namespace; they do not copy all visible names. Declaration and lookup indexes
+remain separate from source-order bindings/children.
+
+Completed scope/declaration rules include named and unnamed type and
+template-template parameters; hidden inner lists that do not leak names or
+print scopes; duplicate and enclosing/nested shadow diagnostics; declaration
+placement in namespace/class/local/C-linkage contexts; defaults seeing only
+preceding parameters; template-template defaults naming actual templates;
+pack defaults and class pack/default order; compatible class forwards,
+renamed definitions and same-shape function redeclarations; exact mismatched
+class-head/default diagnostics; bare versus injected template-name type checks;
+and qualified namespace definition lookup/print order. Alias declarations keep
+head identity so their bare names are diagnosed as templates.
+
+`enumerations.rs` checks template parameter shadowing before publication and
+walks template enumerator initializers for names while retaining the C++
+pattern's sequential placeholder values. `constants.rs` preserves zero bounds
+for nonconstant/nonpositive pattern bounds after required name checks.
+`analyzer.rs` defers pattern assertions to name traversal; deferred bodies
+restore their recorded template depth. `expressions.rs` suppresses implicit
+constructor demand in patterns. `dump.rs` reads named facts for the exact
+`template-parameters`, `typename` and `template-parameter` forms.
+
+Three new unit tests inspect namespace publication versus print ownership,
+inner-scope isolation, shared member/parameter type identity, distinct source
+names versus positional canonical function identity, and inner-head shape in
+canonical keys. The older missing-owner test now uses a non-type parameter,
+which remains an explicit missing group. No AST is reparsed/copied, no semantic
+phase uses text transport, and no backend, optimizer or allocator code changes.
+No dependencies, unsafe/FFI, compiler fallback, environment reads, fixture
+recognition or blanket lint suppression were added. Errors are structured;
+a failed unit is discarded rather than consumed downstream.
+
+### Validation and fixed-case progress
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/port/pa6-templates/`.
+
+| Required command/check | Result | Evidence relative to root |
+| --- | --- | --- |
+| `make build` | PASS | `build.log` |
+| `make test-pa6` = required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | FAIL, **120/121**, four fewer fixed failures | `stage.log`, `incoming-stage.log`, `stage-summary.json`; raw invocation receipts under `artifacts/clone/cases/pa6/` |
+| `make course-pa6` | FAIL, **173/174**, same remaining fixed case | `course.log`; `artifacts/clone/course/pa6/test/{course.log,counts.txt,course-result.json,trace.jsonl}` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and complete course lanes | `prior.log`; earlier `artifacts/clone/course/paN/test/` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, 116/116 incoming passing identities | `preserve.log`; independent identity comparison in `stage-summary.json` |
+| `make lint` = required `clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites and source audit | `quality.log` |
+| `make audit-rust` | PASS, 106 implementation files, zero findings | `audit.log` |
+| New owning-lane regressions | PASS, 23/23 exact protected matches and course outcomes | `regression-trace.jsonl`, `regression-summary.json`, `regression-references.json` |
+| Independent oracle probes | 96/100 exact matches; four explicit missing later owners | `probe.log`, `probe-summary.json`, `probes.jsonl`; raw mismatch streams/files linked by receipts |
+| Wide parameter probe | PASS, 65,538 parameters, both exits 0 and exact dumps | `wide.log`, `wide-summary.json`, `wide-trace.jsonl` |
+| Supported scaling and stack qualification | PASS | `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json`, `measure.log` |
+
+The fixed manifest retains exactly the same 121 case identities. No incoming
+pass was lost, no case was removed and added tests do not count as progress.
+These four fixed cases changed from status 86 to exact oracle outcomes:
+
+```text
+tests/general/200-template-template-parameter.t
+tests/spec/200-template-parameter-scope.t
+tests/spec/300-template-template-inner-parameter-scope-bad.t
+tests/spec/300-using-declaration-template-id-bad.t
+```
+
+The only remaining fixed failure, relative to `pa6/`, is
+`tests/general/300-declaration-forms-valid.t`. Its earliest missing owner is
+explicit constructor/special-member declarations; candidate exit 86 remains
+an actual failure, including its course failure marker. Protected raw evidence:
+`artifacts/clone/cases/pa6/cc1c75b61a08d0b55e01/{trace.jsonl,course.log}`.
+The new `pa6/tests/general/500-template-*.t` inputs and their new oracle-only
+reference pairs supplement the existing executed course lane. Frozen inputs,
+reference files, manifests and checker policy were not modified.
+
+### Remaining dependency boundary and architecture review
+
+The next fixed-stage dependency is the explicit constructor in `holder`, its
+parameter/member initializer/body scopes and subsequent use. Consult
+`analyzer_declarations.cpp`'s special member/function declaration owners and
+`analyzer_classes.cpp`'s member-completion owners before translating it.
+Template parameter scopes are no longer a fixed-case blocker.
+
+Broader probes deliberately retain real missing owners, without a rejection
+waiver: `inner-qualify.cpp` needs dependent qualified name/type facts;
+`function-different-shape.cpp` and `function-template-ordinary.cpp` need indexed
+ordinary/template overload sets; `function-noexcept.cpp` needs template
+specification ownership/equivalence and demand. All four now exit 86 at those
+owners rather than emit an incorrect ordinary diagnostic. Non-type parameters,
+pack expansion/substitution, qualified members of specialized/dependent classes,
+full alias/variable template semantics, deduction, specialization and
+instantiation remain outside this completed group. Earlier ledger dependencies
+for full declaration/specifier, statement, layout and expression semantics
+still apply. No full PA6, template-to-ELF or PA34 proof is claimed.
+
+Architecture review should trace scope versus declaration versus print owner,
+source parameter versus positional identity, inner-list visibility, default
+binding before declaration, qualified overlay lifetime, and deferred body
+context/constructor suppression. The new indexes visit only queried heads,
+parameters and lexical parents; no whole-program scan, speculative
+instantiation, global invalidation or backend lifetime change was introduced.
+Ralph owns checkpoint/final audits and advancement.
+
+### Measured resource costs
+
+Final candidate cppgm SHA-256: `643f7b4e20a9835c400b084a06eea7b90587ac9afb26a9d431f4f942aff3c09b`.
+Frozen C++ tool SHA-256: `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+Warm A/A calibration precedes paired ABBA and BAAB blocks; retain every
+wall-time/RSS observation and binary/input/output hash in `measurements.json`.
+Every workload first passes the protected comparator, and every measurement
+checks its full dump hash. Timing includes process startup and output I/O;
+peak RSS is from `/usr/bin/time`. These are host-noise-sensitive compiler
+resource observations, not runtime equality or PA35 code-generation targets.
+The nine workloads combine type/default/member/function scopes, hidden inner
+heads and canonical shapes, and repeated namespace publication/head merging.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| template-type-members | 1000 | 34.47 / 17008 | 69.56 / 15612 |
+| template-type-members | 4000 | 132.51 / 51444 | 256.57 / 52936 |
+| template-type-members | 16000 | 529.41 / 187868 | 1059.67 / 203732 |
+| template-template-heads | 1000 | 14.46 / 10068 | 37.23 / 8744 |
+| template-template-heads | 4000 | 51.85 / 24096 | 101.01 / 23360 |
+| template-template-heads | 16000 | 170.28 / 77520 | 346.15 / 83588 |
+| template-redeclarations | 1000 | 21.91 / 12144 | 51.06 / 10696 |
+| template-redeclarations | 4000 | 69.92 / 33488 | 151.92 / 34344 |
+| template-redeclarations | 16000 | 334.07 / 116920 | 647.90 / 127380 |
+
+A fixed 600-nested-template-class input starts with a 1 MiB stack. The
+protected receipt reports `match: true`, `stack_qualification.passed: true`,
+a shared 16 MiB retry, both exits 0 and identical dump SHA-256
+`24b2ce77040c55c74e861e026e856a7fec86d515c55883f709699f744533c86b`.
+`nested-summary.json` links retained initial and retry attempts. The genuine
+byte-budget guard was preserved; native exhaustion depths and diagnostic
+positions were not calibrated. Filesystem usage is approximately 26 GiB of
+the supplied 100 GiB ceiling. The wide 65,538-parameter probe independently
+checks the target index-width boundary without a resource-cutoff comparison.

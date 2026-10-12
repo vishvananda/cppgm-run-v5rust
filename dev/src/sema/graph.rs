@@ -19,6 +19,7 @@ pub(super) enum ScopeKind {
     Class,
     Function,
     Block,
+    TemplateParameters,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum BindingKind {
@@ -73,6 +74,8 @@ pub(super) struct Entity {
     pub member_offset: Option<u64>,
     // Presentation provenance for an unnamed class, never a lookup key.
     pub anonymous_class: Option<super::anonymous_types::AnonymousClass>,
+    pub template_parameter: Option<super::templates::ParameterInfo>,
+    pub template_head: Option<super::templates::HeadId>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Binding {
@@ -84,6 +87,7 @@ pub(super) struct Binding {
 }
 pub(crate) struct Graph {
     pub(super) types: Types,
+    pub(super) templates: super::templates::Templates,
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
@@ -117,6 +121,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             types: Types::default(),
+            templates: super::templates::Templates::default(),
             scopes: vec![Scope {
                 kind: ScopeKind::Namespace,
                 parent: None,
@@ -224,6 +229,8 @@ impl Graph {
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,
             anonymous_class: None,
+            template_parameter: None,
+            template_head: None,
         });
         Ok(id)
     }

@@ -155,10 +155,6 @@ pub(crate) struct TemplateArgument {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TemplateParameter {
-    #[expect(
-        dead_code,
-        reason = "Template parameter location is retained for later semantic diagnostics"
-    )]
     pub location: SourceOffset,
     pub pack: bool,
     pub kind: TemplateParameterKind,
@@ -167,7 +163,7 @@ pub(crate) struct TemplateParameter {
 pub(crate) struct TemplateParameterClause {
     #[expect(
         dead_code,
-        reason = "Template head location is retained for later semantic diagnostics"
+        reason = "Template list location is retained for later specialization diagnostics"
     )]
     pub location: SourceOffset,
     pub parameters: List<TemplateParameter>,
@@ -267,13 +263,6 @@ pub(crate) struct ParameterClause {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Parameter {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The parameter declaration location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub specifiers: List<Specifier>,
     pub declarator: Option<DeclaratorId>,

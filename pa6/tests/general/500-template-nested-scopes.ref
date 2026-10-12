@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope template-parameters
+      type T typename T
+      type Outer struct Outer
+      scope class Outer
+        scope template-parameters
+          type U typename U
+          type Inner struct Inner
+          scope class Inner
+            variable outer typename T
+            variable inner typename U
+end translation unit

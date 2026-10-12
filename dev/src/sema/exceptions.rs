@@ -73,6 +73,11 @@ impl Analyzer<'_> {
                     matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
                 })
             });
+        if self.template_depth != 0 && qualifier.is_some() {
+            return Err(Error::Missing(
+                "template exception specification ownership and equivalence",
+            ));
+        }
         let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
         let operand = qualifier.and_then(|q| {
             if let QualifierKind::Noexcept(expr) = q.kind {

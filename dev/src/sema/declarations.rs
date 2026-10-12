@@ -15,6 +15,12 @@ use crate::{
         storage::List,
     },
 };
+#[derive(Clone, Copy)]
+pub(super) struct ValueScope {
+    pub home: ScopeId,
+    pub print: ScopeId,
+    pub head: Option<super::templates::HeadId>,
+}
 impl Analyzer<'_> {
     pub(super) fn namespace_definition(
         &mut self,
@@ -216,6 +222,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<BindingId, Error> {
+        self.check_template_parameter_name(scope, name, location)?;
+        let print = scope;
+        let scope = self.declaration_scope(scope);
         let mut entity = None;
         if let Some(existing) = self.graph.own(scope, name, Filter::Ordinary) {
             let binding = self.graph.binding(existing);
@@ -246,9 +255,12 @@ impl Analyzer<'_> {
             self.graph
                 .add_entity(Some(ty), Some(name), Keyword::Typedef)?
         };
+        if let Some(head) = self.active_template_head(print) {
+            self.merge_template_head(entity, head, location)?;
+        }
         self.graph.add_binding(
             scope,
-            Some(scope),
+            Some(print),
             Binding {
                 kind: BindingKind::Alias,
                 name: Some(name),
@@ -269,7 +281,7 @@ impl Analyzer<'_> {
         let name = info
             .name
             .ok_or(Error::Invariant("init-declarator without a name"))?;
-        let home = info.home.unwrap_or(scope);
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
         let location = self.declarator_location(init.declarator)?;
         if specs.role == DeclarationRole::Typedef {
             if self.declarator_specifies_exceptions(Some(init.declarator)) {
@@ -350,8 +362,11 @@ impl Analyzer<'_> {
         let binding = self.declare_value(
             name,
             ty,
-            home,
-            if info.home.is_some() { home } else { scope },
+            ValueScope {
+                home,
+                print: info.home.unwrap_or(scope),
+                head: self.active_template_head(scope),
+            },
             kind,
             location,
         )?;
@@ -363,7 +378,7 @@ impl Analyzer<'_> {
         let entity = self.graph.binding(binding).entity;
         if function {
             self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-            self.record_function_exceptions(entity, &info, home, location, exception_limit)?;
+            self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
         } else if self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static {
             let owner = self
                 .graph
@@ -524,11 +539,12 @@ impl Analyzer<'_> {
         &mut self,
         name: NameId,
         ty: TypeId,
-        home: ScopeId,
-        print: ScopeId,
+        context: ValueScope,
         kind: BindingKind,
         location: SourceOffset,
     ) -> Result<BindingId, Error> {
+        let ValueScope { home, print, head } = context;
+        self.check_template_parameter_name(print, name, location)?;
         let mut entity = None;
         if let Some(existing) = self.graph.own(home, name, Filter::Ordinary) {
             let binding = self.graph.binding(existing);
@@ -564,6 +580,14 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("value entity without type"))?;
                 if kind == BindingKind::Function {
+                    let previous = self.graph.entity(binding.entity).template_head;
+                    if match (head, previous) {
+                        (Some(a), Some(b)) => !self.same_template_shape(a, b),
+                        (None, None) => false,
+                        _ => true,
+                    } {
+                        return Err(Error::Missing("ordinary/template function overload sets"));
+                    }
                     let a = self.graph.types.canonical_function(old)?;
                     let b = self.graph.types.canonical_function(ty)?;
                     if a != b {
@@ -584,6 +608,11 @@ impl Analyzer<'_> {
         } else {
             self.graph.add_entity(Some(ty), Some(name), Keyword::Int)?
         };
+        if kind == BindingKind::Function
+            && let Some(head) = head
+        {
+            self.merge_template_head(entity, head, location)?;
+        }
         self.graph.add_binding(
             home,
             Some(print),
@@ -624,14 +653,18 @@ impl Analyzer<'_> {
             .last()
             .ok_or(Error::Invariant("empty class name"))?;
         let key_name = Self::component_name(last.kind)?;
+        if lone {
+            self.check_template_parameter_name(scope, key_name, node.location)?;
+        }
         let existing = if let Some(prefix) = prefix {
             self.qualified(prefix, key_name, Filter::Elaborated)?
         } else if lone {
-            self.graph.own(scope, key_name, Filter::Elaborated)
+            self.graph
+                .own(self.declaration_scope(scope), key_name, Filter::Elaborated)
         } else {
             self.unqualified(scope, key_name, Filter::Elaborated)?
         };
-        let mut declaration_home = scope;
+        let mut declaration_home = self.declaration_scope(scope);
         if !lone && existing.is_none() {
             while !matches!(
                 self.graph.scope(declaration_home).kind,
@@ -685,10 +718,17 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("class without type"))?;
+        if lone {
+            self.class_template_head(entity, scope, existing.is_some(), node.location)?;
+        }
         if lone || existing.is_none() {
             self.graph.add_binding(
                 declaration_home,
-                Some(declaration_home),
+                Some(if declaration_home == self.declaration_scope(scope) {
+                    scope
+                } else {
+                    declaration_home
+                }),
                 Binding {
                     kind: BindingKind::Type,
                     name: Some(key_name),
@@ -709,18 +749,21 @@ impl Analyzer<'_> {
             let entity = self.new_class(node.key, None)?;
             self.graph.entity_mut(entity).anonymous_class =
                 Some(super::anonymous_types::AnonymousClass::Pending(node.tokens));
-            return self.define_class(node, entity, scope);
+            return self.define_class(node, entity, scope, scope);
         };
         let qualified_name = *self.tree.names.get(name);
         let prefix = self.prefix(name, scope)?;
-        let home = prefix.unwrap_or(scope);
-        if prefix.is_some() && !self.graph.encloses(scope, home) {
+        let home = prefix.unwrap_or(self.declaration_scope(scope));
+        if prefix.is_some() && !self.graph.encloses(self.declaration_scope(scope), home) {
             return Err(Error::at(
                 qualified_name.location,
                 "class definition in a scope that does not enclose it",
             ));
         }
         let key_name = self.declarator_class_name(name)?;
+        if prefix.is_none() {
+            self.check_template_parameter_name(scope, key_name, qualified_name.location)?;
+        }
         let existing = self.graph.own(home, key_name, Filter::Elaborated);
         if prefix.is_some() && existing.is_none() {
             return Err(Error::at(
@@ -759,12 +802,20 @@ impl Analyzer<'_> {
                 "class-key does not agree with an earlier declaration",
             ));
         }
-        self.define_class(node, entity, home)
+        self.class_template_head(entity, scope, existing.is_some(), qualified_name.location)?;
+        let print = prefix.unwrap_or(scope);
+        let parent = if prefix.is_some() && self.active_template_head(scope).is_some() {
+            self.qualified_template_scope(scope, home)?
+        } else {
+            print
+        };
+        self.define_class(node, entity, parent, print)
     }
     fn define_class(
         &mut self,
         node: ast::ClassSyntax,
         entity: EntityId,
+        parent: ScopeId,
         home: ScopeId,
     ) -> Result<TypeId, Error> {
         let name = self.graph.entity(entity).name;
@@ -774,7 +825,7 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("class without type"))?;
         self.graph.add_binding(
-            home,
+            self.declaration_scope(home),
             Some(home),
             Binding {
                 kind: BindingKind::Type,
@@ -786,7 +837,7 @@ impl Analyzer<'_> {
         )?;
         let class = self
             .graph
-            .add_scope(ScopeKind::Class, home, Some(home), name)?;
+            .add_scope(ScopeKind::Class, parent, Some(home), name)?;
         self.graph.entity_mut(entity).scope = Some(class);
         self.graph.scope_mut(class).owner = Some(entity);
         if node.packing != 0 || !node.attributes.is_empty() {

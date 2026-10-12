@@ -15,6 +15,7 @@ mod layout;
 mod lookup;
 mod queries;
 mod specifiers;
+mod templates;
 mod types;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]

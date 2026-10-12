@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type Concrete struct Concrete
+    type Outer struct Outer
+    scope class Concrete
+    scope class Outer
+      scope template-parameters
+        type T typename T
+        function f function of () returning void
+        scope function f
+          scope block
+end translation unit
