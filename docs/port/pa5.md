@@ -5,7 +5,7 @@ Last audited commit: INITIAL
 
 ## Foundation checkpoint — 2026-10-12
 
-Implementation commit: introduced by this checkpoint (recorded below after commit).
+Implementation commit: `93d81e7b0cea8d13c7d8f0f3ffe74546077290b4`.
 PA5 remains a partial assignment. Implementation does not advance the audited
 commit or Ralph's stage. Entry revalidation found a clean checkout, no live
 compiler/check process to resume, and the `cppgm++` status-86 scaffold in every
