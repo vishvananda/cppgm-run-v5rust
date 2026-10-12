@@ -1,7 +1,7 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `1194a1aa75c2d54bc02db2c8753df6c71e0b010f` (ongoing full-stage audit; reviewed control/declaration fixes, acceptance withheld).
+Last audited commit: `dab1205c35f289a525d537ba323fa920b9de5092` (ongoing full-stage audit; special-member/name/head groups reviewed, acceptance withheld).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
@@ -1470,3 +1470,198 @@ still require that ownership classification before a full-stage signoff.
 This entry proves a coherent reviewed control/declaration increment and clean
 green gates; it does not prove all stage-owned C++ responsibilities complete,
 complete Ralph's goal, advance PA6, change acceptance policy or edit Ralph state.
+
+
+## Full-stage audit continuation: special-member ownership (2026-10-12)
+
+Incoming clean HEAD was `cf84f715cc03b3f893c43113f5dcb78a7d6261a6`.
+Stage base remains `70e745588987998ee1e5bde80b3861541eab753d`. The preceding
+turn is progress: its retained control/declaration commits, source review and
+fresh fixed/course/quality receipts are authoritative. This continuation
+reviewed and committed `dab1205c35f289a525d537ba323fa920b9de5092`; it does not
+advance PA6 or complete Ralph's existing full-stage audit goal. There is no
+fixed-manifest failure, but the remaining expression-key dependency below still
+prevents a full completeness claim.
+
+Consulted AGENTS.md, CLONE_CONTRACT.md, the PA6 handout/scopes guide, current
+ledger and source map, with the previously read spec/clone plan as the normative
+architecture. Read frozen C++ revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5` directly: `declared_name`,
+`special_member`, `declare_function`, `redeclare_function`, `default_definition`,
+`declare_typedef` and member overload checks in `analyzer_declarations.cpp`;
+body/completion controllers; `analyzer_types.cpp`'s parameter/prototype and
+declarator owners; `analyzer_exceptions.cpp`'s pending/fixed template and omitted
+destructor-specification branches; `template_dependence.cpp`,
+`template_fixed_expressions.cpp`, `template_placeholders.cpp`'s name/size keys;
+`analyzer_expressions.cpp`'s parameter-object and size typing;
+`constant_evaluator.cpp`, construction/destructor owners, semantic dump,
+entity/type records and syntax render views.
+
+### Completed related behavior and audit fixes
+
+- `sema/special_members.rs` replaces the constructor-only owner. A private
+  graph index uses class EntityId, MemberKind, canonical function TypeId and
+  optional interned ShapeId. Source parameter types remain on each binding.
+  Constructors, destructors and conversion functions cannot collide; identical
+  parameter signatures with different template heads or ordinary/template
+  categories retain distinct entities. Qualified definitions reuse the correct
+  entity/head and merge defaults by the existing template owner. No ordinary
+  overload search or instantiation is substituted for this declaration index.
+- Named type/template-template constructor and conversion template scopes,
+  renamed qualified definitions, class member-template contexts, canonical
+  parameter adjustment, shape/default disagreements, class redeclaration and
+  virtual-template/destructor-template diagnostics are translated. These close
+  the incoming `constructor-template`, `destructor-boundary` and
+  `conversion-boundary` probes; all 135 original constructor-owner probes now
+  match the frozen tool.
+- A conversion result and its suffixes consume one typed DeclaratorEnvironment;
+  no second lookup overlay is built for the same declaration. Name/type checks,
+  qualified namespace versus enclosure checks, static/virtual checks and later
+  suffix failures retain the owning C++ order and exact locations. A legacy
+  qualified-class probe exposed a changed diagnostic; its namespace-scope
+  diagnostic is restored and added to the executed lane.
+- Every special declaration's label borrows its original AST Name. A sparse
+  BindingId label map preserves per-declaration alias spellings; the first
+  entity's name remains the function-scope label. The shared syntax renderer
+  writes only the last component and removes conversion-label spaces exactly
+  as C++ does. No rendered name/type is used for semantic equality, indexing
+  or phase transport.
+- Conversion parameter rejection, cv/ref types, constexpr's C++11 const
+  qualification, adjusted compatible definitions, reference/cv overload
+  exclusions, delete/default and redefinition rules match Types mode. Existing
+  variants are queried through the type interner without publishing speculative
+  types; conversion parameter lists are empty, so these bounded qualification
+  probes clone no parameter allocation. Defaulted destructor bodies do not
+  demand later construction or cleanup plans.
+- The audit found additional ordinary declarations with written result types:
+  C++ Types mode accepts `int ~C()` and `int C()`. They now use the same typed
+  member factory rather than reach an internal-error path or hide the injected
+  class name. Non-template lookup signatures omit the result, while compatible
+  redeclarations compare it explicitly. Only the type-less special-member
+  entry sets the C++ user-constructor and copy-by-value facts; the written-type
+  entry preserves C++'s implicit-constructor-scope demand. Invalid special
+  typedef names and conversion functions with written return types follow
+  their exact owning diagnostics. These are frozen mode behaviors, not new
+  language rules or fixture-specific corrections.
+- Types mode does not synthesize subobject destructor facts. Its first omitted
+  destructor specification allows exceptions; a later omitted ordinary
+  declaration compares with implicit true, just as the frozen owner does.
+  Bare template noexcept/empty throw and literal true specifications retain
+  normal typed exception facts outside canonical function type identity.
+- `sema/template_exceptions.rs` retains a first noexcept pattern's original
+  ExprId, parameter clause, source TypeId, ScopeId and namespace ordinal. It
+  shares source-ordered unit-end validation with ordinary specifications.
+  Class-template members and operands naming their own/dependent parameters
+  wait for instantiation; fixed operands are validated in hidden prototypes.
+  The inherited 32-name/64-expression-depth own-name probe uses an iterative
+  AST worklist. Unbound/dependent names remain deferred as in the C++ fixedness
+  check, rather than receive an ordinary-mode rejection. Source binding types
+  remain distinct from adjusted parameter object types. A source function's
+  sizeof key failure precedes operand typing; array values read the adjusted
+  typed query. New forced-size/division and function/decltype probes verify the
+  distinction, not just an otherwise unobservable boolean result.
+
+Two new unit tests inspect kind/head-shape/signature isolation, distinct entities
+and shared compatible conversion definitions, original per-binding labels versus
+first-entity body labels, and retained template-specification environments without
+premature prototype demand. The source map assigns all new responsibilities and
+keeps the wider pending owners explicit. There are 110 primary plus one additional
+new `pa6/tests/general/800-special-*.t` inputs with oracle-generated reference
+pairs, executed by the original course target. Frozen inputs/reference files,
+oracle sources/binaries, protected policy and Ralph state are unchanged.
+
+Architecture review: one parsed AST, compact checked IDs, owned unit-local graph
+and immutable canonical type records; no syntax duplication or text reparsing.
+Declarators retain their original syntax name alongside semantic name identity.
+Head/default and declaration/print/lookup ownership remain separate. The new
+index and qualification queries touch only the requested member/signature and
+its finite qualification variants. Template probes allocate only bounded own-name
+storage and visited type dependencies; they never scan unrelated unit bindings.
+No semantic lookup result cache, incomplete memo key or global invalidation is
+introduced. Failed queries restore lookup limit, evaluation mode and template
+depth; failed units are discarded. Function bodies retain explicit completion
+and stack lifetimes. The new modules own coherent algorithms, not mechanical
+fragments, and pass the independent file/function/nesting audit. No unsafe/FFI,
+new dependency, compiler subprocess fallback, phase environment read, blanket
+lint allowance or fixture recognition is added. Optimizer, allocator, code
+emission and per-function backend policy/lifetimes remain untouched.
+
+### Fresh validation and preservation
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa6-special-members/`.
+Final candidate cppgm SHA-256:
+`be7d39b6401c8dd7eee3ab213ebf243e6800f6cd77172167c4063c08dc7dd539`.
+Frozen C++ cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command/check | Result | Evidence relative to root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | PASS, 121/121 unchanged fixed cases | `stage.log`, `stage-summary.json`, `fixed-traces/`; original `artifacts/clone/cases/pa6/` receipts |
+| `clone_check.py course pa6` (original full course target) | PASS, 370/370, no failed marker | `course.log`, `course-course-result.json`, `course-counts.txt`, `course-trace.jsonl`; `artifacts/clone/course/pa6/test/` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and full original course lanes | `prior.log`; `artifacts/clone/course/paN/test/` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, 121/121 incoming identities | `preserve.log`; unchanged stage identity set |
+| `make lint` = required `clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites and source audit | `quality-final.log` |
+| `make audit-rust` | PASS, 110 files, zero findings | `audit.log` |
+| New owning-lane regressions | PASS, 110+1 exact protected comparisons and course outcomes | `regression-summary.json`, `extra-regression.log`, corresponding traces and reference-generation receipts |
+| Expanded independent probes | 110/111 exact; one explicit remaining expression-key boundary | `probe-final.log`, `probe-summary.json`, `probes.jsonl`; initial/intermediate mismatch streams retained |
+| Legacy ownership probes | 64/64 constants, 67/67 exceptions, 87/87 anonymous types, 97/100 templates, 135/135 constructors | `legacy-summary.json`, `legacy-*/probe.log`, `legacy-*/probes.jsonl` |
+| Supported resource/scaling and stack probes | PASS | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+The fixed-manifest failure list is empty and all earlier passes are preserved.
+Supplementary case counts are not used as a completeness proof or as a
+fixed-manifest gain. No harness code changed, so the previous harness audit
+remains relevant; the original checker and all current compiler lanes ran
+unchanged. PA33-wide release/ownership and PA34 object/tool proof obligations
+remain at their due stages; no PA35 optimization objective is imposed.
+
+### Measured resource costs and next audit boundary
+
+Nine fixed supported inputs first pass the protected byte comparator. A/A
+calibration followed by ABBA and BAAB retains every wall-time/RSS observation,
+input/output/binary hash, and verifies each measured dump hash. Startup and
+output I/O are included; peak RSS comes from `/usr/bin/time`. Some validation
+ran concurrently, so these are noisy compiler resource observations, separate
+from exact generated output and not a runtime-equality or optimization gate.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| template-special-bodies | 1000 | 46.56 / 17712 | 105.18 / 17760 |
+| template-special-bodies | 4000 | 156.67 / 53004 | 338.07 / 60656 |
+| template-special-bodies | 16000 | 653.10 / 192308 | 1362.82 / 232308 |
+| conversion-variants | 1000 | 36.73 / 14940 | 78.76 / 13492 |
+| conversion-variants | 4000 | 122.21 / 42432 | 280.01 / 43732 |
+| conversion-variants | 16000 | 505.40 / 154232 | 1092.22 / 170228 |
+| template-constructor-shapes | 1000 | 28.48 / 14916 | 64.32 / 14216 |
+| template-constructor-shapes | 4000 | 104.85 / 44156 | 213.62 / 47344 |
+| template-constructor-shapes | 16000 | 433.13 / 158560 | 838.35 / 179616 |
+
+A fixed 700-nested-class input combines member templates, constructors,
+destructors and conversion bodies. From a 1 MiB initial stack, the protected
+receipt reports `match: true`, `stack_qualification.passed: true`, a shared
+16 MiB retry, both exits 0 and identical complete dump SHA-256
+`82273175354e29be683206c441bd91d47a6eb1f583bf968daf26561ee098a54d`.
+`nested-summary.json` links preserved initial/retry evidence. The genuine
+byte-budget guard is unchanged. Native exhaustion cutoffs and diagnostic
+positions were not calibrated or required to match.
+
+Full acceptance is still withheld. The precise expanded probe
+`constructor-template-expression-redeclaration-boundary.cpp` redeclares
+`noexcept(sizeof(T)==4)` under a renamed head; C++ succeeds and Rust exits 86
+at `template exception expression equivalence`. The first declaration is now
+retained correctly, but expression equivalence needs the reusable typed
+`decltype_words`/`name_words`/`size_words` responsibility in
+`template_placeholders.cpp`. Do not replace the missing key with rendered
+text, literal expression comparison, evaluation alone or a generic rejection.
+The next independent owner is that expression-key interface and its complete
+parameter/type/name context, followed by the remaining source-responsibility
+classification before full signoff. There are also real pending broader
+probes `inner-qualify`, `function-different-shape` and
+`function-template-ordinary`; their dependent qualified and ordinary/template
+overload owners are unchanged. Generic operator/special-name interfaces and
+other Missing sites still require review against the handout's due boundary.
+This committed increment closes the three incoming basic declaration probes
+and preserves every gate, but does not prove the complete original objective.
+Ralph's existing full-stage audit goal remains active; no state or acceptance
+policy was edited.
