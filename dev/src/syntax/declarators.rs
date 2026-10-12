@@ -262,17 +262,19 @@ impl Parser<'_> {
         definite: bool,
         member: Option<super::scopes::ScopeId>,
     ) -> Result<ParameterClause, ParseError> {
-        self.without_angle(|parser| {
-            let pending_attributes = parser.pending_attributes.take();
-            let leading_attributes = parser.leading_attributes;
-            parser.leading_attributes = List::default();
-            let pending = parser.pending_template;
-            parser.pending_template = false;
-            let result = parser.parameter_clause_inner(definite, member);
-            parser.pending_template = pending;
-            parser.pending_attributes = pending_attributes;
-            parser.leading_attributes = leading_attributes;
-            result
+        self.nested(|parser| {
+            parser.without_angle(|parser| {
+                let pending_attributes = parser.pending_attributes.take();
+                let leading_attributes = parser.leading_attributes;
+                parser.leading_attributes = List::default();
+                let pending = parser.pending_template;
+                parser.pending_template = false;
+                let result = parser.parameter_clause_inner(definite, member);
+                parser.pending_template = pending;
+                parser.pending_attributes = pending_attributes;
+                parser.leading_attributes = leading_attributes;
+                result
+            })
         })
     }
     fn parameter_clause_inner(

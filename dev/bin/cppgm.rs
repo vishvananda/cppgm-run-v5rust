@@ -13,6 +13,8 @@ use std::{
 };
 #[path = "source_tool/build_time.rs"]
 mod build_time;
+#[path = "source_tool/stack_limit.rs"]
+mod stack_limit;
 enum CliError {
     Message(String),
     Diagnostic(Vec<u8>),
@@ -99,6 +101,8 @@ fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let (destination, inputs) = invocation(&args)?;
     let values = build_time::query().map_err(CliError::Message)?;
+    let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
+        .map_err(CliError::Internal)?;
     let file = File::create(destination).ok().map(io::BufWriter::new);
     let failed = file.is_none();
     let mut output = Output { file, failed };
@@ -113,26 +117,32 @@ fn run() -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_ast(&source, path.as_bytes(), &values, &mut output, index + 1).map_err(|error| {
-            match error {
-                AstToolError::Missing(group) => CliError::Missing(group),
-                AstToolError::Internal(message) => CliError::Internal(message),
-                AstToolError::Diagnostic(bytes) => CliError::Diagnostic(bytes),
-                AstToolError::Output(_) => CliError::Output,
-                AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
-                    CliError::Missing(group)
-                }
-                AstToolError::Initialization(PreprocessError::Invariant(message)) => {
-                    CliError::Internal(message)
-                }
-                AstToolError::Initialization(error) => {
-                    let mut bytes = path.as_bytes().to_vec();
-                    bytes.push(b':');
-                    bytes.extend_from_slice(
-                        cppgm_rust::driver::preproc::describe(&source, &error).as_bytes(),
-                    );
-                    CliError::Diagnostic(bytes)
-                }
+        emit_ast(
+            &source,
+            path.as_bytes(),
+            &values,
+            &mut output,
+            index + 1,
+            stack_budget,
+        )
+        .map_err(|error| match error {
+            AstToolError::Missing(group) => CliError::Missing(group),
+            AstToolError::Internal(message) => CliError::Internal(message),
+            AstToolError::Diagnostic(bytes) => CliError::Diagnostic(bytes),
+            AstToolError::Output(_) => CliError::Output,
+            AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
+                CliError::Missing(group)
+            }
+            AstToolError::Initialization(PreprocessError::Invariant(message)) => {
+                CliError::Internal(message)
+            }
+            AstToolError::Initialization(error) => {
+                let mut bytes = path.as_bytes().to_vec();
+                bytes.push(b':');
+                bytes.extend_from_slice(
+                    cppgm_rust::driver::preproc::describe(&source, &error).as_bytes(),
+                );
+                CliError::Diagnostic(bytes)
             }
         })?;
     }

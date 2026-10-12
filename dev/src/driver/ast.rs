@@ -21,6 +21,7 @@ pub fn emit_ast(
     values: &PredefinedValues,
     output: &mut (impl std::io::Write + ?Sized),
     ordinal: usize,
+    stack_budget: crate::support::stack::StackBudget,
 ) -> Result<(), AstToolError> {
     let preprocessor = Preprocessor::with_options(
         source,
@@ -33,6 +34,7 @@ pub fn emit_ast(
     )
     .map_err(AstToolError::Initialization)?;
     let mut unit = SyntaxUnit::new(preprocessor);
+    unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {
         return Err(match error {
             ParseError::NotImplemented(group)

@@ -61,8 +61,13 @@ impl<'a> SyntaxUnit<'a> {
         if self.declarations.is_some() {
             return Ok(());
         }
+        let marker = 0u8;
+        self.parser.stack_base = Some(std::ptr::from_ref(&marker).addr());
         self.declarations = Some(self.parser.declarations(false)?);
         Ok(())
+    }
+    pub(crate) fn set_stack_budget(&mut self, budget: crate::support::stack::StackBudget) {
+        self.parser.stack_budget = budget;
     }
     pub(crate) fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
         self.parser.cursor.describe(error)

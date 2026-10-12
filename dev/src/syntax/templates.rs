@@ -27,7 +27,7 @@ impl Parser<'_> {
         let parameters = self.template_parameter_clause()?;
         let head = self.template_head.replace(parameters);
         self.pending_template = !parameters.parameters.is_empty();
-        let result = self.nested(Self::declaration);
+        let result = self.declaration();
         self.template_head = head;
         self.pending_template = false;
         self.scopes.current = enclosing;
@@ -49,7 +49,7 @@ impl Parser<'_> {
         if !self.accept_keyword(K::Template)? {
             return self.fail();
         }
-        let declaration = self.nested(Self::declaration)?;
+        let declaration = self.declaration()?;
         self.tree.declarations.add(Declaration {
             attributes: super::storage::List::default(),
             location,
@@ -68,7 +68,7 @@ impl Parser<'_> {
         let result = (|| {
             if !self.at(P::Greater)? {
                 loop {
-                    let parameter = self.nested(Self::template_parameter)?;
+                    let parameter = self.template_parameter()?;
                     self.tree.template_parameters.push(parameter);
                     if !self.accept(P::Comma)? {
                         break;
@@ -86,6 +86,7 @@ impl Parser<'_> {
         result
     }
     fn template_parameter(&mut self) -> Result<TemplateParameter, ParseError> {
+        self.stack_check()?;
         let location = self.location()?;
         if self.accept_keyword(K::Template)? {
             let enclosing = self.scopes.current;

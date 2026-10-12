@@ -39,6 +39,62 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn stack_budget_failures_are_terminal_and_transactions_restore_typed_state() {
+    use crate::support::stack::{StackBudget, StackLimit};
+    let source = SourceBuffer::new(b"int x;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"stack-transaction").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let start = parser.location().unwrap();
+    parser.stack_base = Some(0);
+    parser.stack_budget = StackBudget::from_limit(StackLimit::Bytes(0)).unwrap();
+    let failure = parser.attempt(Parser::declaration).unwrap_err();
+    assert!(
+        matches!(failure, ParseError::CommittedSyntax {location, message:"constructs nested too deeply"} if location==start)
+    );
+    assert_eq!(parser.active_nesting(), 0);
+    assert_eq!(parser.speculation, 0);
+    assert_eq!(parser.cursor.position, 0);
+    assert_eq!(parser.tree.declarations.mark(), 0);
+    parser.stack_base = None;
+    parser.stack_budget = StackBudget::default();
+    parser.declarations(false).unwrap();
+    assert_eq!(parser.active_nesting(), 0);
+}
+
+#[test]
+fn native_byte_budget_unwinds_before_exhausting_the_callers_stack() {
+    use crate::support::stack::{StackBudget, StackLimit};
+    let outcome = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(|| {
+            let mut bytes = b"int x=".to_vec();
+            bytes.extend(std::iter::repeat_n(b'(', 2000));
+            bytes.push(b'1');
+            bytes.extend(std::iter::repeat_n(b')', 2000));
+            bytes.push(b';');
+            let source = SourceBuffer::new(bytes).unwrap();
+            let input = Preprocessor::with_name(&source, b"physical-stack-budget").unwrap();
+            let mut unit = SyntaxUnit::new(input);
+            unit.set_stack_budget(StackBudget::from_limit(StackLimit::Bytes(128 << 10)).unwrap());
+            let error = unit.parse().unwrap_err();
+            assert!(matches!(
+                error,
+                ParseError::CommittedSyntax {
+                    message: "constructs nested too deeply",
+                    ..
+                }
+            ));
+            assert_eq!(unit.parser.active_nesting(), 0);
+            assert!(unit.parser.peak_nesting > 0);
+        })
+        .unwrap();
+    outcome.join().unwrap();
+}
+
+#[test]
 fn source_facts_preserve_specifier_initializer_and_declarator_boundaries() {
     use super::ast::{InitializerKind, SpecifierKind};
     let bytes = b"static const unsigned long left = 1, *right(2);";

@@ -3,6 +3,148 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: native nesting budget and boundary evidence — 2026-10-12
+
+Entry/reviewed commit: `7df821d6b52cfc823966917bd34b579cd1d8473d` (clean).
+Stage base and last accepted partial-audit commit above remain unchanged. The
+commit containing this entry is recorded in `pa5-nesting/handoff.json`.
+**Full acceptance remains open**, with the original goal active. The previous
+turn made verified progress by committing source facts and original packing
+observations. This continuation replaces the fixed nesting stub with real
+Rust budget enforcement, resolves the 300-parenthesis case, and exposes more
+precise remaining resource-boundary differences. It does not redefine success.
+
+Consulted frozen `support/stack_budget.h`, `syntax/parser_regions.h`,
+`parser.cpp`, parser state constructor, every C++ NestingGuard site in the
+expression/declaration/declarator/name/statement owners, and required driver,
+handout/grammar, repository contract/specification/plan and prior ledger.
+The oracle and protected acceptance policy are unchanged.
+
+Finding: the old Rust depth-256 status-86 path was not a successful C++
+rejection. `support/stack.rs` now owns the exact half-soft-limit arithmetic,
+256 MiB cap, 4 MiB unknown fallback and strict greater-than comparison in
+either stack direction. `dev/bin/source_tool/stack_limit.rs` reads Linux's
+current soft RLIMIT_STACK from `/proc/self/limits` and distinguishes finite,
+unlimited and unavailable values. The entry point converts it once to a typed
+StackBudget and passes it through `driver/ast.rs` to SyntaxUnit. No environment
+or process query moved into compiler phases; no FFI/dependency was added.
+
+SyntaxUnit records a numeric root stack address; `parser.rs` compares it with
+an actual local marker at each recursive boundary, using safe standard-library
+`from_ref(...).addr()` and `abs_diff`. The transient pointer is neither stored
+nor dereferenced; syntax remains in private typed stores and IDs. Exceeding the
+budget returns the located `constructs nested too deeply` CommittedSyntax
+failure, escaping every tentative reading like C++'s ParseError exception.
+Normal Result unwinding restores active nesting and transaction state.
+
+C++ logical nesting sites now have the corresponding Rust owners: declaration,
+statement, declarator, parameter clause, cast/unary operand, braced list,
+template argument list and individual argument. Removed duplicate declaration
+and assignment/template-parameter nesting levels, added the previously missing
+parameter-clause level. Assignment/throw and template-parameter recursion still
+check physical bytes without inventing C++ logical nesting levels; this keeps
+the safe Rust call chain guarded even where the oracle has no extra guard.
+The balanced-skip scratch remains iterative and does not demand grammar.
+
+Four new invariants cover half/cap/fallback, odd and zero limits, unlimited/max
+input, checked host conversion and address direction; the tool's soft/hard
+field selection and malformed/missing data; terminal failure escaping an
+attempt while typed stores/cursor/speculation restore; and a 64 KiB configured
+parse budget unwinding safely inside an 8 MiB test thread. Debug and release
+each pass **101 library plus nine tool tests**. Strict Clippy/rustfmt and the
+**86-file** authoritative audit pass with zero findings. The two new modules
+own host-limit collection and shared budget arithmetic, not mechanical chunks.
+No allowance, unsafe, C++ fallback, fixture recognition, acceptance exception,
+optimizer/register allocator change or PA35 target was added.
+
+Two new required executed cases in `pa5/tests/general/300-nesting-*.t` cover
+300 nested parentheses and 300 layers of unary/declarator/block/braced/template
+syntax. Only their new expectations were created; original fixtures/references
+and Ralph state remain unchanged. They extend the course suite without changing
+fixed-manifest progress or certifying the resource boundary.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-nesting/`.
+Metadata, entry/final receipts, `progress.json`, passing/failing ID lists,
+`cases/` and PA1–PA5 `course/` receipts preserve commands and results. Manifest
+hash remains `27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost, no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS; debug/release 101 library + nine tool tests, strict Clippy/rustfmt, source audit; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 240/240, no failed comparisons/marker; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 86 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; 193 retained; `preflight.log`, `preserve.log` |
+
+`validate.py` / `checks.json` record commands, exit status and elapsed costs.
+All **631/631** recent comparisons and **1510/1510** prior probes still match
+complete status/stdout/stderr/AST bytes. `new-regressions.json` retains both
+new strict course comparisons. `pending-probes.json` now resolves the earlier
+`deep-parenthesized-expression` with C++/Rust exit 0 and identical full output;
+category fixes remain preserved. The fold/statement-expression exploratory
+mismatches retain their established outside-PA5-grammar classification.
+
+**Resource-boundary fidelity is not complete.** `profile.py` sweeps six owning
+forms at 64, 128, 256, 300, 600, 1200, 2400 and 4800 layers, comparing raw bytes
+and retaining original outputs (JSON stores their hashes/lengths, not a
+normalization). `initial-native.json` matched 46/48 before guard-site alignment;
+`final-native.json` / `final-native/` match 45/48 after it. Neither compiler
+panics, signals or returns 86 in this sweep. The current soft limit is 8 MiB,
+with the same 4 MiB budget, but C++ and Rust consume different native frames:
+
+| Exact remaining case ID | C++ result | Rust result |
+| --- | --- | --- |
+| `final-native/parentheses/4800` | success | located budget rejection at column 3861 |
+| `final-native/known-templates/2400` | success | located budget rejection at column 3748 |
+| `final-native/known-templates/4800` | budget rejection at column 7627 | budget rejection at column 3748 |
+
+The byte-budget algorithm and terminal-error transport are implemented, but
+these complete-result differences are acceptance findings, not runtime-field
+exceptions. No limit was multiplied or depth calibrated to fixtures to hide
+them. `remaining-probe-ids.txt` preserves the exact next work. Their resolution
+still requires investigation of the actual frozen resource rejection behavior;
+matching a policy formula does not prove matching its externally visible bytes.
+
+`cpp-functions.txt` / `function-census.json` index **220** C++ functions and map
+responsibility groups to Rust owners. `census-scope.json` explicitly labels this
+as a navigation inventory: anonymous helpers and inline header functions are
+not enumerated and the final function-level audit is pending. Known extended
+forms absent from the owning grammar are classified separately. This is not a
+completion certificate or a source-owner count offered as proof of equivalence.
+
+Resource command: `python3` on this root's `measure.py`, after all validation
+and quality handles were terminal. Tool/input/output hashes, Linux/rustc 1.98.0,
+UTC/C and warm whole invocation conditions are recorded. Oracle A/A calibration
+then A/B/B/A blocks match all **36** complete ordinary-workload byte results;
+these are separate from the failing nesting-boundary sweep. Raw outputs,
+times/RSS and hashes are in `resources/`, `measurements.json` and `measure.log`.
+Measurements include preprocessing, host clock/limit collection and I/O on a
+shared host, not a PA35 generated-code objective.
+
+| Workload | Count | Rust mean ms | Rust max RSS KiB | C++ mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| budgeted-functions | 1000 | 42.10 | 8020 | 20.27 | 7220 |
+| budgeted-functions | 4000 | 122.85 | 13540 | 53.82 | 13512 |
+| budgeted-functions | 16000 | 442.21 | 43300 | 195.90 | 39296 |
+| budgeted-classes | 1000 | 42.53 | 8044 | 17.50 | 7220 |
+| budgeted-classes | 4000 | 108.07 | 14208 | 47.71 | 13568 |
+| budgeted-classes | 16000 | 376.13 | 46400 | 180.14 | 39136 |
+
+Fourfold 4000 -> 16000 growth takes about 3.5–3.6 times Rust wall time on these
+shallow functions/classes. Syntax and scope storage remain proportional to
+introduced work; the shared byte guard stores two numeric values per parser,
+not a frame/token history. Checkout/scratch occupy about 11 GiB of the 100 GiB
+budget, including raw deep dumps retained for failure evidence.
+
+Next dependency: investigate and resolve the three exact frozen resource-limit
+counterexamples, then finish per-function/header responsibility review against
+the authoritative PA5 grammar and required driver surface. Acceptance and goal
+completion remain unproven. The goal stays active; no Ralph state was edited.
+
 ## Full-stage audit continuation: source facts and packing observations — 2026-10-12
 
 Entry/reviewed commit: `eeb0e48954aaad0e00fbaadab74cd26328a2906a` (clean).

@@ -54,23 +54,24 @@ impl Parser<'_> {
         }
     }
     pub(super) fn assignment_expression(&mut self) -> Result<ExprId, ParseError> {
-        self.nested(|parser| {
-            if parser.keyword()? == Some(K::Throw) {
-                let location = parser.location()?;
-                parser.cursor.advance()?;
-                let operand = if parser.operand_start()? {
-                    Some(parser.assignment_expression()?)
-                } else {
-                    None
-                };
-                return parser.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::Throw(operand),
-                });
-            }
-            let left = parser.binary(3)?;
-            parser.assignment_rest(left)
-        })
+        // Assignment and throw recurse without adding a C++ nesting level.
+        // Check their physical frame budget before another recursive call.
+        self.stack_check()?;
+        if self.keyword()? == Some(K::Throw) {
+            let location = self.location()?;
+            self.cursor.advance()?;
+            let operand = if self.operand_start()? {
+                Some(self.assignment_expression()?)
+            } else {
+                None
+            };
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Throw(operand),
+            });
+        }
+        let left = self.binary(3)?;
+        self.assignment_rest(left)
     }
     pub(super) fn assignment_rest(&mut self, left: ExprId) -> Result<ExprId, ParseError> {
         let location = self.tree.expressions.get(left).location;

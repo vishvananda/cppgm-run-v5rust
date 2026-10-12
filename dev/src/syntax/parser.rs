@@ -40,6 +40,8 @@ pub(super) struct Parser<'a> {
     closers: Vec<P>,
     pub deferred_lambdas: u64,
     depth: u32,
+    pub stack_budget: crate::support::stack::StackBudget,
+    pub stack_base: Option<usize>,
     tentative_depth: usize,
     pub checkpoints: u64,
     pub rewinds: u64,
@@ -98,6 +100,8 @@ impl<'a> Parser<'a> {
             closers: Vec::new(),
             deferred_lambdas: 0,
             depth: 0,
+            stack_budget: crate::support::stack::StackBudget::default(),
+            stack_base: None,
             tentative_depth: 0,
             checkpoints: 0,
             rewinds: 0,
@@ -250,17 +254,32 @@ impl<'a> Parser<'a> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<T, ParseError> {
-        // Safe recursion boundary until the oracle's host stack-budget policy is ported.
-        if self.depth >= 256 {
-            return Err(ParseError::NotImplemented(
-                "host stack-budget nesting policy",
-            ));
-        }
+        self.stack_check()?;
         self.depth += 1;
         self.peak_nesting = self.peak_nesting.max(self.depth);
         let result = parse(self);
         self.depth -= 1;
         result
+    }
+    #[cfg(test)]
+    pub(super) fn active_nesting(&self) -> u32 {
+        self.depth
+    }
+    pub(super) fn stack_check(&mut self) -> Result<(), ParseError> {
+        // Only numeric stack-distance accounting uses an address. The pointer
+        // is never retained or dereferenced; all syntax still owns typed IDs.
+        let marker = 0u8;
+        let here = std::ptr::from_ref(&marker).addr();
+        let base = *self.stack_base.get_or_insert(here);
+        if self.stack_budget.exceeded(base, here) {
+            // Like the C++ ParseError exception, this failure escapes all
+            // tentative grammar alternatives instead of becoming a decline.
+            return Err(ParseError::CommittedSyntax {
+                location: self.location()?,
+                message: "constructs nested too deeply",
+            });
+        }
+        Ok(())
     }
     pub(super) fn attempt<T>(
         &mut self,
