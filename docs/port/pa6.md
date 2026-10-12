@@ -1,8 +1,9 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: INITIAL (PA6 has no audited implementation checkpoint yet).
-Implementation does not advance this field; Ralph owns checkpoint/final audits.
+Last audited commit: `3140a2bbab5d8a42bfdba0259d0ee0a567439d4f` (accepted partial checkpoint audit).
+Audit entries advance this field to the reviewed implementation revision;
+Ralph retains stage advancement and goal ownership.
 
 ## Declaration checkpoint contract and ownership
 
@@ -531,3 +532,211 @@ unused-specification validation and redeclaration demand order; dynamic type
 adjustment/completeness/set comparison; demanded layout memo/offset ownership,
 iterative dependency bounds and failure cleanup; and protected successful
 stack qualification. Stage base/last-audited fields stay unchanged.
+
+
+## Accepted partial checkpoint audit (2026-10-12)
+
+Audit target: `pa6 full-stage`, phase `checkpointAudit`. Audit scope is all
+three accepted checkpoints since the stage base, including fixes in reviewed
+implementation commit `3140a2bbab5d8a42bfdba0259d0ee0a567439d4f`. Incoming HEAD was
+`ba33bbc` and the checkout was clean. The prior checkpoint turn is classified
+as progress: its retained implementation and gate evidence established 111/121
+fixed cases. No interrupted/background work was assumed live without a tool
+handle. This entry supersedes historical checkpoint claims where an audit
+finding below corrected them; it certifies the reviewed partial checkpoint,
+without declaring PA6 complete or advancing the stage.
+
+Read the repository guide, clone contract, specification, clone plan, PA6
+handout/guide and this ledger. Reviewed the complete implementation diff from
+`70e745588987998ee1e5bde80b3861541eab753d` through the audited implementation
+revision, plus the source map. Consulted the frozen C++ owners at
+`/home/vishvananda/work/references/v5rust-cpp`, revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5`: `cppgm++.cpp`, semantic graph/entity
+records and dump, `analyzer.cpp`, `analyzer_types.cpp`,
+`analyzer_declarations.cpp`, `analyzer_classes.cpp`, `analyzer_bodies.cpp`,
+`lookup.cpp`, `type_table.cpp`, `constant_evaluator.cpp`,
+`integral_arithmetic.cpp`, `analyzer_exceptions.cpp`,
+`analyzer_exception_sets.cpp`, `analyzer_expressions.cpp`,
+`analyzer_conversions.cpp`, `analyzer_calls.cpp` and `layout.cpp`.
+Rust owners are the existing `dev/src/sema/` graph, lookup, types, specifiers,
+declarators, declarations, constants, integral, enumeration, query, exception,
+layout, expression and dump modules, plus the new `exception_operands.rs`.
+The driver/syntax interface diff remains a borrow of the single original AST.
+The source map records both new responsibilities and pending wider owners.
+
+### Findings and completed fixes
+
+1. **Class completion ordering.** Dynamic member specifications were evaluated
+   after deferred member bodies. With both `throw(Missing)` and a zero array
+   bound in a member body, Rust reported the body error first. Class completion
+   now resolves the specifications before draining bodies, matching the frozen
+   owner. Regression: `400-audit-dynamic-order-body.t`.
+2. **Type checking before noexcept evaluation.** Optional nonconstancy stopped
+   traversal of a skipped floating arithmetic/comma operand before an unknown
+   name; a nonconstant left operand also masked a later semantic error. Void
+   calls could become boolean constants, and mixed void/integer conditional
+   arms could produce an internal error. An iterative occurrence worklist now
+   checks the supported scalar operand tree in C++ source order, with the
+   conditional condition converted before its arms. Contextual bool, scoped
+   enum operations and conditional incompatibility report exact diagnostics.
+   Dense original-ExprId facts retain expression and arithmetic conversion
+   types; constant evaluation consumes them instead of deciding conversions
+   again. Nonselected arithmetic/calls remain unevaluated. Regressions cover
+   skipped unknown names, name-before-nonconstancy, void results, scoped enum
+   bool/comparison/condition rejection and incompatible conditional arms.
+3. **Parameter source versus object type.** Hidden exception prototypes used
+   adjusted types for both facts, changing `sizeof(decltype(a))` from 12 to 8
+   for `int a[3]`, and accepting a source function type's size. Prototype
+   bindings now retain declared types for decltype, while their entities retain
+   adjusted expression types. Body/source dump behavior remains the frozen
+   types-mode behavior. Regressions: both `proto-array-decltype` cases and
+   `noexcept-function-param`; a unit test inspects both typed identities.
+4. **Declaration publication point.** The saved namespace cutoff was taken
+   after publishing the function and prototype bindings, letting a first
+   declaration's specification see its own function. The cutoff is captured
+   before publication; class visibility remains complete-class lookup.
+   Regression: `400-audit-noexc-recursive.t` (exact undeclared-function error).
+5. **Call target and failure facts.** Nonconstant calls through a variable or
+   parameter reported the ordinary non-constexpr-function diagnostic. Dense
+   call facts now retain the selected BindingId, from which EntityId and kind
+   are read directly; evaluated indirect calls report the correct variable or
+   parameter diagnostic. Queries/evaluation reuse the recorded call result and
+   resolved name. The call-query parameter-vector clone was removed.
+6. **Anonymous namespace indexing.** Reopening scanned every printed child of
+   its owner, repeatedly visiting unrelated namespaces. A scope now records its
+   anonymous namespace identity directly. Source order still comes from the
+   existing child vector. Regression: `400-audit-namespace-reopening.t`; the
+   dedicated 1,000/4,000/16,000 reopen workload matches the oracle.
+7. **Type ownership and needless cloning.** The intern table duplicated every
+   function parameter vector in its record and owning hash-map key. A
+   randomized fingerprint index now names store-owned records, with dense
+   collision links and exact structural comparison. A forced-collision unit
+   test proves distinct identities and repeated interning reuse. Canonical
+   traversal borrows dependency vectors on its discovery step and returns a
+   completed root memo directly; no-op qualification/adjustment avoids rebuilding
+   a type. Body/prototype parameter traversal copies only individual TypeIds,
+   rather than entire parameter lists. No observable identity/order depends on
+   hash iteration or fingerprints.
+
+Seventeen required regressions and their new C++ reference pairs are in
+`pa6/tests/general/400-audit-*.t`, discovered by the assignment's existing full
+course lane. Existing frozen inputs, references, manifests and protected policy
+were unchanged by this audit. `regression-reference-receipts.json` retains
+creation diagnostics; `regression-summary.json` proves all 17 course invocations
+also match the protected byte comparator. Three new unit tests exercise the
+parameter ownership distinction, nested exception-query error cleanup and
+interning collisions. Failed queries restore the occurrence worklist,
+lookup cutoff and evaluation mode; fatal declaration failures discard their
+unit graph rather than exposing partial states to a downstream consumer.
+
+### Architecture and algorithm review
+
+The completed groups remain general algorithms over typed syntax, never
+filename recognition or embedded answers. Followed aliases, qualified scoped
+and unscoped enum definitions/imports, array completion and nested function
+parameters through checked IDs to entity-owned facts and source-facing dumps.
+Enum values retain their integral type until completion and then the enum
+identity; underlying selection and sequential widening follow the C++ candidate
+order. Integral operations preserve LP64 conversion/promotion/rank, sign
+extension, unsigned wrapping, signed undefined-operation rejection, shift
+limits and sign-bit left shift. Existing numeric/enum/string/prototype probes
+all still match, including deterministic diagnostics and emission order.
+
+Ordinary exception states stay outside canonical function types. A first result
+is memoized on its entity; redeclarations demand it, member throw sets wait for
+the outermost class event and unused ordinary noexcept operands are checked at
+unit end. Lookup follows lexical/indexed namespace edges with declaration
+ordinals, without snapshots or invalidating unrelated facts. Plain class layout
+walks only demanded member/dependency edges, detects cycles, retains offsets,
+checks the 2^60-byte limit and reuses completed layout results. Printing a class
+requires no layout or member-body demand. A failed layout rewinds active frames;
+already successful dependency layouts remain memoized. Unsupported layout and
+constexpr-call interpretation remain status 86 boundaries.
+
+One source/cursor/flat AST owns each unit. Dense semantic facts name original
+AST occurrences; the graph owns type/entity/scope stores and presentation order.
+The operand traversal is a semantic consumer of that AST, not a second parser,
+syntax copy or text transport. Fingerprint links allocate no per-collision node.
+Constant, exception and layout worklists use nested base/truncate ownership.
+No global semantic scans, polling retries, unsafe/FFI paths, production compiler
+subprocesses, new dependencies, blanket lint allowances, mechanical file splits
+or environment reads under `dev/src/` were added. Typed source limits pass the
+independent audit. Backend/optimizer/register allocator code and lifetimes were
+unchanged. No template-to-ELF or PA34 proof is claimed at this partial PA6
+boundary; those consumers are not implemented here.
+
+### Validation and preservation
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/port/pa6-audit/`.
+Candidate release cppgm SHA-256: `f0ca712d4f0cc43c90ad3dffcab998c0f214eea9911233cf8294f2650c9c2865`.
+Frozen C++ tool SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+All final gate, probe and measurement receipts refer to this candidate binary.
+
+| Command/check | Result | Evidence under artifact root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS | `build.log`; final binary hash above |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` (`make test-pa6`) | FAIL, 111/121 fixed identities, same 10 missing groups | `stage.log`, `stage-summary.json`, `remaining-evidence.json`; per-case raw traces under `/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa6/` |
+| `make course-pa6` | FAIL, 128/138 including 17/17 new regressions, same 10 unfinished cases | `course.log`, `regression-summary.json`; `/home/vishvananda/work/private/v5rust/artifacts/clone/course/pa6/test/counts.txt`, `course-result.json`, `trace.jsonl` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and full course lanes | `prior.log`; earlier course receipts under `/home/vishvananda/work/private/v5rust/artifacts/clone/course/paN/test/` |
+| `make lint` / required `python3 /home/vishvananda/work/v5rust-control/clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites, source audit | `quality.log` |
+| `make audit-rust` | PASS, 104 files, zero findings | `audit.log` |
+| `clone_check.py preserve pa6` | PASS, 111/111 | `preserve.log` |
+| stageProgressPreserved | PASS, zero lost identities, exactly the same 121 fixed cases and 10 failures | `stage-start.log`, `stage-summary.json` |
+| `make test-harness` | PASS | `harness.log` |
+| Independent protected probes | PASS, 92/92 reviewed-scope probes plus 64/64 constant and 67/67 exception probes | `probe-final.log`, `extra-final.log`, `edge-final.log`, corresponding summaries and raw `probes.jsonl`; `legacy-constants/` and `legacy-exceptions/` |
+| Protected resource/scaling probes | PASS, 12 supported inputs and nested-stack qualification | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+The general probe set also retains two explicitly unfinished dependency probes:
+`function-return-cv` (incompatible function redeclarations/overload owner) and
+`prototype-trailing` (deduced-type/trailing-return environment). They both remain
+status 86, as the incoming ledger already documented. They are not counted
+among the 223 matching reviewed-scope probes and are not new waived findings.
+The fixed ten remaining case IDs are listed immediately above this audit entry
+and again with exact receipts in `remaining-evidence.json`; all ten still exit
+86. No normal C++ rejection, panic, signal or internal error substitutes for a
+missing implementation. The course failure marker remains a real stage failure.
+Fixture counts alone are not the basis for this partial audit acceptance.
+
+### Measured costs and protected stack qualification
+
+Each of 12 supported inputs first passes the protected adapter, then A/A
+calibration, ABBA and BAAB blocks retain raw times/RSS and input/output/binary
+hashes. Each timed sample's dump hash is verified. Wall time includes startup
+and type-dump I/O; peak RSS comes from `/usr/bin/time`. These observations are
+compiler costs, not required C++/Rust runtime equality or PA35 budgets.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| exceptions | 1000 | 23.30 / 11480 | 56.51 / 9984 |
+| exceptions | 4000 | 83.15 / 26300 | 178.46 / 28304 |
+| exceptions | 16000 | 342.94 / 87212 | 692.78 / 104100 |
+| classes | 1000 | 44.07 / 16396 | 82.38 / 14312 |
+| classes | 4000 | 159.75 / 46460 | 301.67 / 46504 |
+| classes | 16000 | 621.32 / 167596 | 1134.71 / 177100 |
+| layout-chain | 1000 | 9.98 / 7260 | 26.73 / 8744 |
+| layout-chain | 4000 | 25.87 / 12864 | 55.43 / 11484 |
+| layout-chain | 16000 | 88.07 / 36616 | 167.02 / 35432 |
+| anonymous-reopen | 1000 | 9.30 / 6572 | 24.61 / 8756 |
+| anonymous-reopen | 4000 | 23.74 / 9996 | 55.69 / 10796 |
+| anonymous-reopen | 16000 | 67.39 / 24824 | 175.83 / 31664 |
+
+The 1,000-nested-class workload starts with a 1 MiB stack and demands a size
+query in a complete-class exception specification. Judge the protected receipt:
+`match: true`, `stack_qualification.passed: true`, shared 16 MiB retry, both exits
+0, identical streams and dump SHA-256
+`45af63c10ac0d5d142f7f6decc3c570f5be44ec7808b69c9b6f950b64c358aec`.
+`nested-summary.json` links the retained raw attempts and qualification evidence.
+Initial native cutoff/diagnostic differences were not treated as language
+mismatches; the genuine byte-budget guard is unchanged. Checkout/scratch usage
+was approximately 26 GiB, below the supplied 100 GiB capacity ceiling.
+
+The next boundary remains anonymous class/union naming/storage/injection,
+template type/template-template parameter scopes and special-member declarations.
+Broader expressions/conversions, interpreted pointer/floating/object/constexpr
+values, templates/instantiation, inheritance/attributes/bit-fields and exception
+overrides retain their owning future dependencies. This audit does not require
+them to pass, reset a goal or edit Ralph state. The audit phase returns control
+to Ralph with the reviewed implementation committed and the ledger's
+last-audited revision advanced; full PA6 gates remain required for advancement.
