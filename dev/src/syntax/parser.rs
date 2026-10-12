@@ -422,9 +422,15 @@ impl<'a> Parser<'a> {
         let bytes = self.cursor.absolute_position()?.to_le_bytes();
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
+    pub(super) fn discard_committed_angle_caches(&mut self) {
+        if self.tentative_depth == 0 {
+            self.angles.discard_caches();
+        }
+    }
     pub(super) fn declarations(&mut self, until_brace: bool) -> Result<List<DeclId>, ParseError> {
         let start = self.tree.decl_lists.begin();
         loop {
+            self.discard_committed_angle_caches();
             if until_brace && self.at(P::RightBrace)? {
                 break;
             }
@@ -441,6 +447,24 @@ impl<'a> Parser<'a> {
             }
         }
         self.tree.decl_lists.finish(start)
+    }
+    pub(super) fn declare_from_specifiers(
+        &mut self,
+        declarator: DeclaratorId,
+        specifiers: List<super::ast::Specifier>,
+    ) {
+        let typedef = self.tree.specs.get(specifiers).iter().any(|specifier| {
+            matches!(
+                specifier.kind,
+                super::ast::SpecifierKind::Keyword(K::Typedef)
+            )
+        });
+        self.declare_declarator(
+            declarator,
+            typedef,
+            self.specifier_scope(specifiers),
+            specifiers,
+        );
     }
     pub(super) fn declare_declarator(
         &mut self,

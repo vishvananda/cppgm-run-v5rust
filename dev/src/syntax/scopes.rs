@@ -176,6 +176,7 @@ pub(super) struct Scopes {
     next_identity: u64,
     categories: HashMap<(ScopeIdentity, NameId, NameId), Categories>,
     conflicts: bool,
+    member_conflicts: bool,
     uncertain: bool,
 }
 impl Default for Scopes {
@@ -215,6 +216,7 @@ impl Default for Scopes {
             next_identity: 1,
             categories: HashMap::new(),
             conflicts: false,
+            member_conflicts: false,
             uncertain: false,
         }
     }
@@ -250,6 +252,7 @@ impl Scopes {
             self.name_marks.resize(name.index() + 1, 0);
         }
         self.name_marks[name.index()] |= bits;
+        self.member_conflicts |= bits & 8 != 0;
     }
     fn record_member_category(&mut self, scope: ScopeId, name: NameId, category: Category) {
         let Some(key) = self.category_key(scope, name) else {
@@ -322,6 +325,9 @@ impl Scopes {
     }
     pub(super) fn uncertain(&self) -> bool {
         self.uncertain
+    }
+    pub(super) fn any_member_conflicts(&self) -> bool {
+        self.member_conflicts
     }
     pub(super) fn member_conflicts(&self, name: NameId) -> bool {
         self.name_marks

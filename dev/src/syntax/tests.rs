@@ -39,6 +39,72 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn condition_name_is_visible_in_its_initializer_and_block_scope_unwinds() {
+    let source = SourceBuffer::new(b"struct C{}; if(int C=sizeof(C)) {C *x;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"condition-publication").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let enclosing = parser.scopes.current;
+    let statement = parser
+        .statement_reading(
+            super::conflicts::StatementReader::Control,
+            super::storage::List::default(),
+        )
+        .unwrap();
+    let super::ast::StmtKind::If { condition, .. } = parser.tree.statements.get(statement).kind
+    else {
+        panic!("if statement")
+    };
+    let super::ast::Condition::Declaration { initializer, .. } = condition else {
+        panic!("condition declaration")
+    };
+    let InitializerKind::Assign(value) = initializer.kind else {
+        panic!("initializer")
+    };
+    assert!(matches!(
+        parser.tree.expressions.get(value).kind,
+        super::ast::ExprKind::Sizeof {
+            ty: None,
+            operand: Some(_),
+            ..
+        }
+    ));
+    assert_eq!(parser.scopes.current, enclosing);
+    let c = parser.cursor.intern_name(b"C").unwrap();
+    assert_eq!(parser.scopes.lookup(c).unwrap().category, Category::Type);
+}
+
+#[test]
+fn committed_statements_bound_angle_memo_storage_but_attempts_retain_queries() {
+    let source = SourceBuffer::new(format!("{{{}}}", "f<X>();".repeat(500)).into_bytes()).unwrap();
+    let input = Preprocessor::with_name(&source, b"statement-angle-lifetime").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.compound_statement().unwrap();
+    let (_, fences) = parser.angles.cached_queries();
+    assert!(fences > 0 && fences < 4);
+    let source = SourceBuffer::new(format!("{{{}}}", "f<X>();".repeat(20)).into_bytes()).unwrap();
+    let input = Preprocessor::with_name(&source, b"tentative-angle-lifetime").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let result: Option<()> = parser
+        .attempt(|parser| {
+            parser.compound_statement()?;
+            assert!(parser.angles.cached_queries().1 >= 20);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(result.is_none());
+}
+
+#[test]
 fn replay_exhaustion_uses_synthetic_eof_and_restores_the_physical_cursor() {
     let source = SourceBuffer::new(b"int x;".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"replay-end-location").unwrap();

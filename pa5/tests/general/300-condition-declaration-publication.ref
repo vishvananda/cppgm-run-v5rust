@@ -1,0 +1,73 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      if-statement
+        condition
+          condition-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier C
+            initializer
+              sizeof-expression
+                id-expression C
+        then
+          compound-statement
+            expression-statement
+              binary-expression OP_STAR:*
+                id-expression C
+                id-expression y
+      range-for-statement
+        range-declaration
+          decl-specifier-seq
+            decl-specifier KW_TYPEDEF:typedef
+            decl-specifier TT_IDENTIFIER:C
+          declarator
+            identifier alias
+        range-initializer
+          id-expression items
+        compound-statement
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier alias::word
+            init-declarator-list
+              init-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier p
+      try-block
+        compound-statement
+        handler
+          exception-declaration
+            decl-specifier-seq
+              decl-specifier KW_TYPEDEF:typedef
+              decl-specifier TT_IDENTIFIER:C
+            declarator
+              identifier alias
+          compound-statement
+            simple-declaration
+              decl-specifier-seq
+                decl-specifier alias::word
+              init-declarator-list
+                init-declarator
+                  declarator
+                    ptr-operator OP_STAR:*
+                    identifier p
+end translation unit

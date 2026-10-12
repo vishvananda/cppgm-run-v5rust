@@ -27,6 +27,16 @@ pub(super) struct Angles {
     open_base: usize,
     abandoned_error: Option<(u64, crate::support::source::SourceOffset)>,
 }
+impl Angles {
+    pub(super) fn discard_caches(&mut self) {
+        self.failed.clear();
+        self.fences.clear();
+    }
+    #[cfg(test)]
+    pub(super) fn cached_queries(&self) -> (usize, usize) {
+        (self.failed.len(), self.fences.len())
+    }
+}
 impl Parser<'_> {
     pub(super) fn without_angle<T>(
         &mut self,

@@ -5,6 +5,142 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+
+## Full-stage audit continuation: statement ownership and exact token demand — 2026-10-12
+
+Entry/reviewed commit: `55bbd78d05c24c41528f07ef1ca2fab14f14358e` (clean).
+Stage base and last accepted partial audit above remain unchanged. The new
+implementation/audit commit is recorded in `pa5-statement-audit/handoff.json`.
+**Full acceptance remains open**, with the existing goal active. The previous
+turn made verified expression/token-stream progress. This turn reviews the
+complete statement owner and resolves further non-fixture differences.
+
+Consulted repository instructions, contract/specification/plan, full owning
+handout/grammar, ledger/source map, all of frozen `parser_statements.cpp`,
+related declaration publication, declaration loop, scope/name-conflict headers
+and implementation, and the Rust statement/conflict/scope/angle owners.
+`reviewed-statement-responsibilities.json` records **17 due functions**;
+`additional-reviewed-responsibilities.json` records helper/header/adjacent
+responsibilities. Coroutine operations, asm and selection-init wrappers remain
+later grammar. The ordinary selection-head scan is due because it runs even
+for C++11 conditions and determines preprocessing/grammar failure order.
+
+Findings resolved:
+
+- Conditions require a type and gate tentative declaration parsing on an
+  attribute or declaration head, as C++ does. Declaration names are published
+  before their initializer, not after it. `declare_from_specifiers` reuses typed
+  typedef and scope facts for conditions, ranges and catch parameters; these
+  contexts no longer force every declarator into Value category. Alias/member
+  category queries therefore see the correct declaration and owner.
+- Control, for and catch scopes use Block rather than Ordinary. Their scoped
+  Results restore the enclosing scope on success and failure; compound scopes
+  also restore on every error. Catch parameter and outermost body still share
+  one block, and for scopes begin before their attributes are parsed. This
+  prevents elaborated tags escaping their control/handler scope.
+- Return and range values select a direct braced-list branch, preserving C++'s
+  comma boundary. A functional construction followed by comma remains the
+  ordinary expression branch. Range declaration attempts require a type and a
+  declaration head, while ordinary init/condition/iteration order and the
+  ambiguous-for-init compound wrapper remain unchanged.
+- The new monotonic `any_member_conflicts` fact gates early control tok(2)/tok(3)
+  demand in O(1), matching C++ without scanning all names per statement. On an
+  invalid control prefix this preserves grammar failure before an unread
+  preprocessing error. If/switch ordinary heads observe exactly the bounded
+  1024-token selection scan, signed delimiter depth and stopping tokens,
+  preserving a later preprocessing error before an earlier grammar error.
+- Committed compound items and declaration-sequence boundaries release failed
+  angle queries and delimiter fences only when no tentative parse is retained.
+  Speculative contexts keep them. Compound EOF is checked before another
+  recursive statement, matching C++'s failure ordering. The cache APIs remain
+  private and no semantic/class lookup cache was globally invalidated.
+
+Two independent ownership/demand invariants check initializer-visible shadowing
+and restored scope, and bounded committed memo storage versus retained tentative
+queries. Debug/release each pass **116 library plus nine tool tests**. Strict
+Clippy/rustfmt and the authoritative **87-file** source audit pass with no
+findings. A boolean branch lint was fixed by expressing the positive branch;
+no new suppression was added. No unsafe code, dependency, environment read,
+implementation subprocess, mechanical module, text reparsing, fixture
+recognition, optimizer/backend change or PA35 objective was introduced.
+Unit-owned syntax, compact IDs, structured errors and parse-once body demand
+remain intact. The member-conflict flag is monotonic like the frozen census,
+including speculative history; it is not a stale query cache.
+
+Five new required cases and only their new expectations live in the executed
+PA5 general lane: `300-condition-declaration-publication`,
+`300-return-braced-comma-reject`, `300-range-braced-comma-reject`,
+`300-control-prefix-demand-reject` and `300-selection-head-demand-reject`.
+Original fixtures/references, frozen oracle, policy and Ralph state remain
+unchanged. Syntax-only typedef forms retain C++'s category facts; their later
+semantic validity is not decided at PA5.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-statement-audit/`.
+`metadata.json`, `progress.json`, archived case/course receipts, raw probe
+outputs, passing/failing ID lists, `checks.json` and the updated census preserve
+commands/statuses/source/tool identities. Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost, no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS debug/release 116 library + nine tool tests, strict Clippy/rustfmt; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 257/257, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; all 193 retained; `preflight.log`, `preserve.log` |
+
+The owning sweep improved **295/466 to 466/466** (`entry.json`, `final.json`).
+The additional token-demand sweep improved **16/32 to 32/32**
+(`demand/entry.json`, `demand/final.json`). All **1225/1225** recent probes and
+**2141/2141** prior probes match (`recent-probes.json`, `prior-probes.json`).
+Together these are **3864/3864** strict raw status/stdout/stderr/full AST
+comparisons. New regression receipt matches all five. No normalization or
+fixture count establishes completeness; fixed-manifest progress remains the
+same 193 preserved IDs. The stale-binary exploratory receipt is explicitly
+named `stale-final` and is not evidence for the fixes.
+
+Resources are separate compile-work observations. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+36 serial warm whole invocations at 1000/4000/16000 units after all verification
+handles were terminal. Order is oracle/oracle/oracle/candidate/candidate/oracle.
+Every run matches complete raw outputs/status, with source/tool hashes, ASTs,
+streams and RSS files retained. Median wall milliseconds include preprocessing,
+launch and I/O; RSS is the maximum observed KiB. An initial unsupported timing
+input redeclared its callee as an ordinary function; the final query workload
+uses a distinct enclosing name and is supported by both compilers.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Condition/range/catch publication and block ownership | 58.56 / 190.24 / 708.93 | 27.05 / 86.25 / 332.28 | 8024 / 21256 / 74868 |
+| Committed unresolved-template query lifetimes | 21.60 / 36.36 / 89.06 | 7.92 / 14.47 / 37.25 | 8024 / 8024 / 12812 |
+
+C++ maximum RSS at 16k is respectively 62304 and 9332 KiB. Sampled costs grow
+subquadratically, without a speed target or generated-code optimization. The
+memo invariant directly establishes bounded committed query storage; process
+RSS alone does not. Checkout/scratch measured 12,890,755,239 bytes, below the
+107,374,182,400-byte shared ceiling.
+
+Acceptance is still withheld. `final-native.json` / `final-native/` match
+**45/48**, without panic/signal/86, and retain the same owned failures:
+
+| Owned failure ID | C++ | Rust |
+| --- | --- | --- |
+| `final-native/parentheses/4800` | exit 0 | exit 1, column 4234 |
+| `final-native/known-templates/2400` | exit 0 | exit 1, column 4795 |
+| `final-native/known-templates/4800` | exit 1, column 7627 | exit 1, column 4795 |
+
+The rejection text is `constructs nested too deeply`; its ordinary exit and
+location differences remain acceptance failures, not excluded resource
+statistics. No depth calibration, budget multiplier or exception hides them.
+The explicit function inventory now has **54** source-reviewed entries, but
+still leaves declaration/declarator/name/scope/state/AST/header responsibilities
+and exact native parity unproven. `census-scope.json` keeps full census and stage
+acceptance false. The full-stage goal remains active at that next boundary.
+
 ## Full-stage audit continuation: expression selection, angle regions and token-stream facts — 2026-10-12
 
 Entry/reviewed commit: `dedcb2b913d61ba860e8b4b74390a9d760166f99` (clean).
