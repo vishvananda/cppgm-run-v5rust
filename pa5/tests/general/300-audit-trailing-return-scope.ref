@@ -1,0 +1,46 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier word
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_AUTO:auto
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier value
+      trailing-return-type int(*)(intword)
+        type-id
+          type-specifier-seq
+            type-specifier KW_INT:int
+          abstract-declarator
+            nested-declarator
+              abstract-declarator
+                ptr-operator OP_STAR:*
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier word
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+end translation unit

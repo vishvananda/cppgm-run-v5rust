@@ -79,12 +79,13 @@ impl Parser<'_> {
                 location,
                 kind: NameKind::Identifier(identifier),
             });
+            let prefix_only = self.at(P::Scope)? && !self.at_ahead(P::Multiply, 1)?;
             let binding = if let Some(scope) = prefix {
-                self.scopes.lookup_in(scope, identifier)
+                self.scopes.lookup_in_name(scope, identifier, prefix_only)
             } else if qualified {
                 None
             } else {
-                self.scopes.lookup(identifier)
+                self.scopes.lookup_name(identifier, prefix_only)
             };
             if self.at(P::Less)?
                 && binding.is_none_or(|binding| binding.category != Category::Value)

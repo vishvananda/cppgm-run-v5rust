@@ -28,6 +28,7 @@ pub(super) struct Parser<'a> {
     pub peak_nesting: u32,
     furthest: SourceOffset,
     error_position: u64,
+    initialized: bool,
 }
 struct Checkpoint {
     position: usize,
@@ -54,10 +55,34 @@ impl<'a> Parser<'a> {
             peak_nesting: 0,
             furthest: SourceOffset(0),
             error_position: 0,
+            initialized: false,
         }
     }
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {
+        self.initialize()?;
         self.cursor.peek(0)
+    }
+    fn initialize(&mut self) -> Result<(), ParseError> {
+        if !self.initialized {
+            for (spelling, category) in [
+                (b"nullptr_t".as_slice(), Category::Type),
+                (b"__func__".as_slice(), Category::Value),
+                (b"__FUNCTION__".as_slice(), Category::Value),
+                (b"__PRETTY_FUNCTION__".as_slice(), Category::Value),
+            ] {
+                let name = self.cursor.intern_name(spelling)?;
+                self.scopes.declare_in(
+                    Scopes::global(),
+                    name,
+                    Binding {
+                        category,
+                        scope: None,
+                    },
+                );
+            }
+            self.initialized = true;
+        }
+        Ok(())
     }
     pub(super) fn location(&mut self) -> Result<SourceOffset, ParseError> {
         Ok(self.token()?.location)
@@ -153,6 +178,7 @@ impl<'a> Parser<'a> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<Option<T>, ParseError> {
+        self.initialize()?;
         let mark = Checkpoint {
             position: self.cursor.position,
             tree: self.tree.mark(),

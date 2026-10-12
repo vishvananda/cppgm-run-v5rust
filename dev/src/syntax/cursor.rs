@@ -250,6 +250,12 @@ impl<'a> Cursor<'a> {
     pub(super) fn name(&self, name: NameId) -> &[u8] {
         self.post.input().name_spelling(name)
     }
+    pub(super) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, ParseError> {
+        self.post
+            .input_mut()
+            .intern_name(spelling)
+            .map_err(ParseError::Preprocess)
+    }
     pub(super) fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
         match error {
             ParseError::Syntax { location, message } => {

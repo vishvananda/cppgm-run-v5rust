@@ -1,0 +1,54 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression ::C
+          argument-list
+      expression-statement
+        call-expression
+          id-expression ::C
+          braced-init-list
+      expression-statement
+        call-expression
+          id-expression C::word
+          argument-list
+      expression-statement
+        call-expression
+          id-expression C::word
+          braced-init-list
+      expression-statement
+        call-expression
+          id-expression decltype(value)
+          argument-list
+            literal 1
+      expression-statement
+        call-expression
+          id-expression decltype(value)
+          braced-init-list
+            literal 2
+end translation unit

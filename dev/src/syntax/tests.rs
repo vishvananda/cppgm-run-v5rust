@@ -13,6 +13,158 @@ use crate::{
 };
 
 #[test]
+fn rolled_back_import_can_be_inserted_again_without_leaking_lookup_state() {
+    let source =
+        SourceBuffer::new(b"namespace N { typedef int word; } using namespace N;".to_vec())
+            .unwrap();
+    let input = Preprocessor::with_name(&source, b"import-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    assert!(parser.scopes.lookup(word).is_none());
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert!(parser.scopes.lookup(word).is_none());
+    parser.declaration().unwrap();
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+    let predefined = parser.cursor.intern_name(b"nullptr_t").unwrap();
+    assert_eq!(
+        parser.scopes.lookup(predefined).unwrap().category,
+        Category::Type
+    );
+}
+
+#[test]
+fn forward_scope_parent_is_restored_when_its_definition_is_abandoned() {
+    let source = SourceBuffer::new(
+        b"struct C {typedef int word; struct X * p;}; struct X {void f(){word * p;}};".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"forward-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let x = parser.cursor.intern_name(b"X").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    let global = parser.scopes.current;
+    let scope = parser.scopes.lookup(x).unwrap().scope.unwrap();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert!(!parser.scopes.complete(scope));
+    parser.scopes.current = scope;
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+    parser.scopes.current = global;
+    parser.declaration().unwrap();
+    parser.scopes.current = scope;
+    assert!(parser.scopes.lookup(word).is_none());
+}
+
+#[test]
+fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
+    use super::scopes::{Binding, ScopeKind, Scopes};
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"lookup-depth").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    let missing = parser.cursor.intern_name(b"missing").unwrap();
+    let first = parser.scopes.push_kind(ScopeKind::AnonymousClass).unwrap();
+    parser.scopes.declare(
+        word,
+        Binding {
+            category: Category::Type,
+            scope: None,
+        },
+    );
+    let mut previous = first;
+    for _ in 0..10_000 {
+        parser.scopes.current = Scopes::global();
+        let scope = parser.scopes.push_kind(ScopeKind::AnonymousClass).unwrap();
+        parser.scopes.add_edge(previous);
+        previous = scope;
+    }
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+    parser.scopes.declare(
+        missing,
+        Binding {
+            category: Category::Value,
+            scope: None,
+        },
+    );
+    parser.scopes.current = first;
+    parser.scopes.add_edge(previous);
+    assert_eq!(
+        parser.scopes.lookup(missing).unwrap().category,
+        Category::Value
+    );
+    assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
+}
+
+#[test]
+fn primary_casts_retain_type_facts_even_when_dump_labels_are_calls() {
+    use super::ast::{Body, ExprKind, Specifier, StmtKind};
+    let source = SourceBuffer::new(
+        b"struct C {}; int value; void f(){ ::C(); typename C::word(); decltype(value)(1); Y(); }"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"cast-facts").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let declarations = tree.decl_lists.get(unit.declarations.unwrap());
+    let DeclKind::Function { body, .. } = tree.declarations.get(declarations[2]).kind else {
+        panic!("function");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound");
+    };
+    let statements = tree.stmt_lists.get(statements);
+    for (index, statement) in statements.iter().enumerate() {
+        let StmtKind::Expression(Some(expression)) = tree.statements.get(*statement).kind else {
+            panic!("expression statement");
+        };
+        let expression = tree.expressions.get(expression);
+        if index == 3 {
+            assert!(matches!(expression.kind, ExprKind::Call { .. }));
+        } else {
+            let ExprKind::FunctionalCast { specifiers, .. } = expression.kind else {
+                panic!("typed cast");
+            };
+            if index == 2 {
+                assert!(matches!(
+                    tree.specs.get(specifiers),
+                    [Specifier::Decltype(_)]
+                ));
+            } else {
+                assert!(matches!(tree.specs.get(specifiers), [Specifier::Named(_)]));
+            }
+        }
+    }
+}
+
+#[test]
 fn failed_outer_attempt_rewinds_committed_inner_scope_and_all_syntax() {
     let source = SourceBuffer::new(b"namespace N { using A = int; }".to_vec()).unwrap();
     let preprocessor = Preprocessor::with_name(&source, b"transaction").unwrap();

@@ -140,6 +140,9 @@ impl<I: PostTokenInput> PostTokenizer<I> {
     pub(crate) fn input(&self) -> &I {
         &self.input
     }
+    pub(crate) fn input_mut(&mut self) -> &mut I {
+        &mut self.input
+    }
     #[must_use]
     pub fn from_input(input: I, dialect: NumberDialect) -> Self {
         Self {

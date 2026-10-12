@@ -1,0 +1,99 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition First
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  namespace-definition Second
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  using-directive
+    target First
+  using-directive
+    target Second
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier imported
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+  class-specifier ValueBase
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier TypeBase
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier TypeLast
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name ValueBase
+      base-specifier
+        base-name TypeBase
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier f
+        parameter-clause
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier p
+  class-specifier ValueLast
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name TypeBase
+      base-specifier
+        base-name ValueBase
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier f
+        parameter-clause
+      compound-statement
+        expression-statement
+          binary-expression OP_STAR:*
+            id-expression word
+            id-expression p
+end translation unit

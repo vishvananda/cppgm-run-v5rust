@@ -214,6 +214,9 @@ impl<'a> Preprocessor<'a> {
     pub(crate) fn name_spelling(&self, name: NameId) -> &[u8] {
         self.names.bytes(name)
     }
+    pub(crate) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, PreprocessError> {
+        self.names.intern(spelling).map_err(PreprocessError::Limit)
+    }
     /// Snapshot all work demanded so far, including a failed operation's work.
     #[must_use]
     pub fn counters(&self) -> super::counters::PreprocessorCounters {

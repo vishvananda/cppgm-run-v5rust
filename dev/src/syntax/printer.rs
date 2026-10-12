@@ -902,7 +902,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 self.tasks.push(Task::Line(
                     "id-expression",
-                    Payload::Render(Render::Specs(specifiers)),
+                    Payload::Render(Render::CastType(specifiers)),
                     false,
                 ));
             }

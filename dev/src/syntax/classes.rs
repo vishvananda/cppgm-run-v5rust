@@ -59,13 +59,25 @@ impl Parser<'_> {
         }
         let enclosing = self.scopes.current;
         let identifier = name.and_then(|name| self.last_identifier(name));
-        let home = name
+        let qualified = name.is_some_and(|name| {
+            let name = self.tree.names.get(name);
+            name.global || self.tree.name_lists.get(name.components).len() > 1
+        });
+        let mut home = name
             .and_then(|name| self.tree.names.get(name).prefix_scope)
             .unwrap_or(enclosing);
+        if let Some(identifier) = identifier
+            && name.is_some_and(|name| self.tree.names.get(name).prefix_scope.is_some())
+        {
+            home = self.scopes.class_home(home, identifier);
+        }
         let existing = identifier.and_then(|id| self.scopes.own(home, id));
         let scope = if let Some(scope) = existing.and_then(|binding| binding.scope)
+            && identifier
+                .is_some_and(|identifier| self.scopes.kind(scope) == ScopeKind::Class(identifier))
             && !self.scopes.complete(scope)
         {
+            self.scopes.reopen(scope, home)?;
             scope
         } else {
             self.scopes.current = home;
@@ -80,7 +92,16 @@ impl Parser<'_> {
             scope: Some(scope),
         };
         if let Some(identifier) = identifier {
-            self.scopes.declare_in(home, identifier, binding);
+            if !qualified
+                || existing.is_some_and(|previous| {
+                    previous.category == Category::Type
+                        && previous
+                            .scope
+                            .is_none_or(|scope| !self.scopes.complete(scope))
+                })
+            {
+                self.scopes.declare_in(home, identifier, binding);
+            }
             // The injected-class-name is visible to its own members and bodies.
             self.scopes.declare_in(scope, identifier, binding);
         }
@@ -134,7 +155,7 @@ impl Parser<'_> {
             let existing = if standalone {
                 self.scopes.own(self.scopes.current, identifier)
             } else {
-                self.scopes.lookup(identifier)
+                self.scopes.lookup_name(identifier, true)
             };
             let scope = if let Some(scope) = existing.and_then(|binding| binding.scope) {
                 Some(scope)
@@ -215,6 +236,18 @@ impl Parser<'_> {
                 break;
             }
         }
+        if !(matches!(self.token()?.kind, TokenKind::Identifier(_))
+            || self.at(P::Scope)?
+            || (self.in_class()
+                && (self.keyword()? == Some(K::Operator)
+                    || (self.at(P::Complement)?
+                        && matches!(self.cursor.peek(1)?.kind, TokenKind::Identifier(_))))))
+        {
+            return Err(ParseError::Syntax {
+                location: self.location()?,
+                message: "syntax error",
+            });
+        }
         let (name, _) = self.name()?;
         if !self.at(P::LeftParen)? {
             return Err(ParseError::Syntax {
@@ -265,7 +298,9 @@ impl Parser<'_> {
         self.scopes.current = self
             .function_scope
             .ok_or(ParseError::Invariant("missing special member scope"))?;
+        let function_scope = self.function_scope;
         let result = self.function_qualifiers();
+        self.function_scope = function_scope;
         self.scopes.current = enclosing;
         let qualifiers = result?;
         let start = self.tree.suffixes.begin();
@@ -465,6 +500,9 @@ impl Parser<'_> {
         loop {
             let location = self.location()?;
             let name = self.type_name()?.0;
+            if !matches!(self.punctuator()?, Some(P::LeftBrace | P::LeftParen)) {
+                return self.fail();
+            }
             let initializer = self.initializer()?;
             let pack = self.accept(P::Ellipsis)?;
             self.tree.mem_initializers.push(MemInitializer {

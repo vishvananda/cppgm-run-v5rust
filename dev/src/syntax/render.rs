@@ -29,6 +29,7 @@ pub(super) enum Render {
     Expression(ExprId),
     Type(TypeId),
     Specs(List<Specifier>),
+    CastType(List<Specifier>),
     Specifier(Specifier),
     Declarator(DeclaratorId),
     Clause(ParameterClause),
@@ -147,6 +148,22 @@ impl<'a, 'source> Renderer<'a, 'source> {
             Render::Specs(specifiers) => {
                 for &specifier in self.tree.specs.get(specifiers).iter().rev() {
                     self.tasks.push(Render::Specifier(specifier));
+                }
+            }
+            Render::CastType(specifiers) => {
+                for (index, &specifier) in self.tree.specs.get(specifiers).iter().enumerate().rev()
+                {
+                    self.tasks.push(match specifier {
+                        Specifier::Keyword(word) => Render::Text(word.spelling()),
+                        Specifier::Named(name) => Render::Name(name, false),
+                        Specifier::Decltype(operand) => Render::Decltype(operand),
+                        _ => {
+                            return Err(std::io::Error::other("invalid functional cast specifier"));
+                        }
+                    });
+                    if index != 0 {
+                        self.tasks.push(Render::Text(" "));
+                    }
                 }
             }
             Render::Specifier(specifier) => self.specifier(specifier),

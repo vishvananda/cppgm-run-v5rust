@@ -3,6 +3,157 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: INITIAL
 
+## Accepted partial checkpoint audit — 2026-10-12
+
+Audit entry commit: `1e826f5d29b8007f034e6780216071ae7b75982c` (clean).
+`artifacts/pa5-checkpoint-audit/audit-metadata.json` retains the audit metadata.
+Reviewed the full diff from
+stage base `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43` through the three accepted
+implementation groups and the fixes in this audit. The reviewed implementation
+commit is recorded in the **Last audited commit** field above after committing
+this result. The earlier implementation turn is **progress**, established by
+its committed class/body group, 71 -> 114 matches and retained raw receipts;
+no compiler or gate process was live at audit entry.
+
+This certifies the accepted foundation, exception/allocation/name, and
+class/member/deferred-body groups as a **partial checkpoint**. It does not
+certify full PA5, demand missing grammar, or advance Ralph's stage. Read the
+repository guide, clone contract, specification, clone plan, PA5 README/parsing
+guide and all checkpoint entries. Consulted the frozen owners directly under
+`/home/vishvananda/work/references/v5rust-cpp` at contract revision
+`905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`.
+
+### Findings and fixes in completed behavior
+
+| Frozen C++ responsibility | Finding and Rust correction |
+| --- | --- |
+| `syntax/name_scopes.cpp::add_edge_at/search` | Rust searched base/import edges in insertion order, while C++ prepends edges. `scopes.rs` now searches in reverse insertion order, including equal-depth directive heap behavior. Conflicting type/value categories produce the same syntax as the frozen owner. |
+| `name_scopes.cpp::add_using_directive/search_level` | Every import was searched immediately in its declaring scope. Owned edges and nominated edges now carry separate typed facts; a directive is queued until lookup reaches its nearest common enclosing namespace. Inner variables correctly precede an outer nomination. |
+| `name_scopes.cpp::Found`, `parser_names.cpp::advance_prefix`, `parser_specifiers.cpp` elaborated lookup | Ordinary value bindings incorrectly stopped lookup before `::` and in elaborated class references. Prefix queries now skip a value with no retained type scope, and still find a class hidden by a same-scope object. Terminal name lookup remains ordinary lookup. |
+| `parser_state.cpp` initialization | The predeclared `nullptr_t` type and `__func__`/`__FUNCTION__`/`__PRETTY_FUNCTION__` value categories were absent. The parser interns and declares these once before a transaction can capture them, through the shared name owner. Local declarations still override the global categories. GNU registry/prelude work remains pending. |
+| `parser_expressions.cpp::primary_from_name`, `ast_printer.cpp` functional casts | Global-qualified and explicit-typename casts were rejected or stored as plain calls. They now share the typed primary-name decision; lone decltype casts retain a Decltype specifier. Unknown parenthesized lexical hints remain calls. The dedicated borrowed dump view omits typename and spaces keyword sequences exactly as C++, while the syntax retains the keyword. |
+| `parser_specifiers.cpp::parse_class_body`, `name_scopes.cpp::reopen` | A qualified definition failed to reuse a named inline namespace's forward scope; it also published new bindings where C++ only completes an existing forward. A class first mentioned inside another class retained that class as its parent after definition elsewhere. `classes.rs`/`scopes.rs` now preserve forward identity, select the owning inline namespace, distinguish unknown qualified definitions, and log/restore parent/depth when reopening. Enum scopes cannot be reused as class scopes. |
+| `parser_declarators.cpp` function/result contexts | A trailing return type containing a function declarator replaced the defining function's parameter scope. Ordinary and special-member suffix parsing now preserves that function scope across result parsing. |
+| `parser.cpp::parse_ctor_initializer`, `parser_declarations.cpp::parse_initializer/special_member_ahead` | Constructor mem-initializers accepted assignment syntax and could reach a printer failure instead of the owner's located syntax error. Default/delete initializers lacked the owner's delimiter condition, hiding a valid delete-expression initializer. Special-member prediction called fail on unrelated builtin declaration keywords, contaminating later deferred-body diagnostics. These boundaries now match the owner, including exact rejecting bytes. |
+| `name_scopes.cpp` category marks and base-edge repeat detection | The edge vector's contains scan made a wide base clause quadratic; recursive graph search could exhaust the Rust stack. Indexed edge identities now deduplicate in expected constant time and participate in undo. Reusable iterative DFS and per-name declared/member hints avoid unnecessary class walks and detect cycles. Hints survive rollback like the C++ marks and can never supply a binding. |
+
+All three original implementation groups were reviewed, including the AST
+entry/source loop, shared clock extraction, token vocabulary and suffix identity,
+cursor demand/capture, all node/list stores, declaration/specifier/declarator/name
+grammar, precedence and statement/handler paths, class completion and both
+iterative views. The existing per-group owner tables below remain the detailed
+responsibility census; `source-map.tsv` was corrected for these fixes and stale
+class/deferred coverage descriptions. No full-phase ownership claim was added.
+
+### Ownership, failure, order and demand audit
+
+Traced a derived class with inherited and later typedefs, an inline constructor,
+bit-fields, a nested class and a local class through preprocessing, compact name
+and scope identities, immutable member lists, BodyId capture and replay, and AST
+printing. Each captured primary run is copied once; nested replay uses a range
+of the same token slab. Each BodyId transitions from Deferred to Parsed once.
+Outermost class completion drives its queue in source order and releases runs;
+the AST holds only the parsed body. Print/render work stacks borrow the same
+tree. No semantic, template-instantiation, optimizer, register-allocation,
+lowering or backend work is demanded by this mode.
+
+Traced nested alternatives through successful inner commits and outer failure:
+nodes/list scratch, bindings, edge identities, completion, parent/depth, current
+and function scopes, class depth, deferred queues and run lengths all unwind.
+Stable source/name/literal owners survive retries. IDs from abandoned syntax do
+not escape a successful root. Query heap/DFS/visited storage is reset on its
+next query; category marks are conservative hints, not cached facts. Reopening
+a forward only changes its own logged parent/depth. Lookup uses indexed
+ScopeId/NameId bindings and explicit edges, never a global declaration scan.
+Declaration, handler, member, constructor and dump ordering comes from source
+lists, not randomized hash iteration. Production Rust names and external tool
+spellings remain compatible.
+
+No fixture recognition, oracle/C++ phase delegation, unsafe path, duplicate
+parser, text phase transport, deep syntax clone, per-node owning heap tree,
+mechanical file split, new dependency or new lint suppression was found. The
+clock helper remains the previously audited host time query at the bin boundary.
+Literal target bits remain the PA2 facts; syntax does not evaluate widths,
+array bounds, arithmetic or template values. Earlier numeric lanes and both
+debug/release literal invariants pass. The acknowledged host byte-stack policy,
+templates, attributes, lambdas and later hosted/driver surfaces remain explicit
+unimplemented boundaries, not certified behaviors.
+
+Four added Rust invariants cover import undo/reinsertion, forward parent undo,
+typed casts whose dump labels resemble calls, and a 10,000-edge category chain
+with a cycle. Existing body/run-release, complete nested rollback, bounded
+6,000-declaration pull-window and long-expression view tests still pass.
+Debug/release each pass 68 library plus eight tool tests. The authoritative
+source audit examines 77 files with zero findings.
+
+Eleven required regressions and their new expectation sidecars live in the
+executed PA5 `tests/general/300-audit-*.t` lane. Expectations were obtained from
+the frozen C++ executable for only these new files; no existing reference,
+fixture, protected manifest, policy, oracle source or Ralph state was changed.
+They cover category order/depth/prefixes, predefined names, casts, inline and
+elaborated forwards, result scope and initializer rejection/acceptance.
+
+### Validation and artifacts
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-checkpoint-audit/`.
+`start-results.json`, `pa1-results.json` through `pa5-results.json`,
+`progress.json`, `passed-case-ids.txt`, `failure-case-ids.txt` and
+`failure-index.json` retain entry/final case identities, exact failures, tool
+hashes and unchanged fixed manifest SHA-256
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+`cases/<case-digest>/` and `course/pa1/` through `course/pa5/` archive raw
+protected receipts. `new-regressions.json` retains the eleven strict course
+comparisons. Exact fixed passing and failing sets are unchanged: 114 passes,
+79 failures, zero gains and zero losses. The exact 79 failing case IDs listed
+in the preceding class checkpoint remain the current set; the audit's sorted
+failure-case-ids and per-case trace index are independent final evidence.
+
+| Command | Result and receipt |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` (`make test-pa5` route) | FAIL, exit 1, 114/193; `stage.log`, `pa5-results.json`; 79 future-group failures unchanged |
+| `make course-pa5` | FAIL, make exit 2/checker exit 1; 125/204 including 11/11 new passes, 79 failures; `course.log`, `course/pa5/test/counts.txt` and raw trace |
+| `make -C pa5 check TEST='tests/general/300-audit-*.t'` with protected Rust adapter, runner disabled and strict trace | PASS, 11/11; `regressions.log`, `new-regressions-trace.jsonl` |
+| protected `clone_check.py prior pa5` | PASS; fixed PA1–PA4 58/58, 26/26, 20/20, 106/106; full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived stage/course receipts |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, debug/release tests and source audit; `quality.log` |
+| `make audit-rust` | PASS, 77 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` | PASS; `preflight.log` |
+| protected `clone_check.py preserve pa5` | PASS, 114/114 accepted identities; `preserve.log`; `progress.json` separately proves 79 -> 79 failures with unchanged coverage |
+
+`probe.py` compares complete exit/stdout/stderr/AST bytes for 114 audit programs,
+including all sixteen four-namespace type/value combinations in global and
+nested directive contexts, valid typed syntax and malformed inputs. All match;
+`probes.json`, `probes.log`, `probes/` retain the evidence. The original 65-case
+pre-fix run exposed 13 mismatches, archived separately in `probes-before.json`
+and `probes-before/`. The prior 50 class and 32 exception/allocation scratch
+programs were rerun in isolated artifact subdirectories and all still match;
+their copied scripts, logs and raw receipts are retained. No oracle/harness
+defect was found.
+
+Resource commands: `python3` on this artifact root's `measure.py`. Warm whole
+invocations include preprocessing, the clock helper and dump I/O. Frozen tool
+and source/output hashes, Linux/rustc 1.98.0, C locale and UTC are recorded in
+`resource-metadata.json` and `measurements.json`; every invocation retains raw
+time/RSS/stdout/stderr/AST files. Oracle A/A calibration followed by A/B/B/A
+blocks proves exact equality on 36 invocations. Wide-base inputs stress the
+corrected edge repeat check and a lookup reaching the first base; ordinary
+functions provide a control. These are recorded observations, not a PA35 gate.
+
+| Workload | Units | Rust mean ms | Rust peak RSS KiB | C++ mean ms | C++ peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| wide bases | 1000 | 24.09 | 8104 | 8.30 | 5772 |
+| wide bases | 4000 | 38.22 | 8104 | 15.48 | 7888 |
+| wide bases | 16000 | 92.13 | 12740 | 52.54 | 16380 |
+| functions | 1000 | 25.43 | 8024 | 9.85 | 6512 |
+| functions | 4000 | 53.74 | 8032 | 27.47 | 8604 |
+| functions | 16000 | 152.68 | 19836 | 83.11 | 20604 |
+
+Checkout plus scratch occupied about 6.5 GiB of the shared 100 GiB allocation;
+the measurement imposed no capacity pressure. The next dependency boundary is
+unchanged: template parameter categories and typed template-id syntax, then
+attributes/lambdas and their retained facts/ambiguities. No pending PA5 group,
+future stage or PA34 proof is required for this partial checkpoint audit.
+
 ## Class/member and deferred-body checkpoint — 2026-10-12
 
 Entry commit: `4e9dbf23a05003f706080a8ba1cafb0a589e9bff` (clean).

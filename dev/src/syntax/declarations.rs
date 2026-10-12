@@ -172,7 +172,7 @@ impl Parser<'_> {
                 if let Some(scope) = binding.scope
                     && binding.category == Category::Namespace
                 {
-                    self.scopes.add_edge(scope);
+                    self.scopes.add_using_directive(scope);
                 }
             } else if let Some(name) = self.last_identifier(target) {
                 self.scopes.declare(name, binding);
@@ -379,7 +379,7 @@ impl Parser<'_> {
         }
         let enclosing = self.scopes.current;
         let scope = if has_body {
-            let scope = self.scopes.push()?;
+            let scope = self.scopes.push_kind(super::scopes::ScopeKind::Enum)?;
             self.scopes.current = enclosing;
             Some(scope)
         } else {
@@ -536,11 +536,13 @@ impl Parser<'_> {
     }
     pub(super) fn initializer(&mut self) -> Result<Initializer, ParseError> {
         if self.accept(P::Assign)? {
-            if self.accept_keyword(K::Default)? {
-                return Ok(Initializer::Default);
-            }
-            if self.accept_keyword(K::Delete)? {
-                return Ok(Initializer::Delete);
+            if self.at_ahead(P::Semicolon, 1)? || self.at_ahead(P::Comma, 1)? {
+                if self.accept_keyword(K::Default)? {
+                    return Ok(Initializer::Default);
+                }
+                if self.accept_keyword(K::Delete)? {
+                    return Ok(Initializer::Delete);
+                }
             }
             return Ok(Initializer::Assign(self.initializer_clause()?));
         }

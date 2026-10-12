@@ -1,0 +1,100 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition Imported
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  namespace-definition Prefix
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier ClassPrefix
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier word
+      compound-statement
+        using-directive
+          target Imported
+        expression-statement
+          binary-expression OP_STAR:*
+            id-expression word
+            id-expression p
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier Prefix
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier Prefix::word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier q
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier ClassPrefix
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier ClassPrefix::word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier r
+        simple-declaration
+          decl-specifier-seq
+            class-forward-declaration ClassPrefix
+              class-key KW_STRUCT:struct
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier s
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier ClassPrefix::word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier t
+end translation unit

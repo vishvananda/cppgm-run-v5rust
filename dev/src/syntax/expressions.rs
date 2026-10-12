@@ -468,16 +468,7 @@ impl Parser<'_> {
                 ExprKind::Literal(literal)
             }
             TokenKind::Identifier(_) => {
-                let (name, binding) = self.name()?;
-                if self.is_type_name(name, binding, false, false)
-                    && matches!(self.punctuator()?, Some(P::LeftParen | P::LeftBrace))
-                {
-                    let start = self.tree.specs.begin();
-                    self.tree.specs.push(Specifier::Named(name));
-                    let specifiers = self.tree.specs.finish(start)?;
-                    return self.functional_cast(location, specifiers);
-                }
-                ExprKind::Id(name)
+                return self.primary_name(location);
             }
             TokenKind::Simple(op) => match op.token.as_keyword() {
                 Some(keyword @ (K::True | K::False | K::Nullptr | K::This)) => {
@@ -488,19 +479,9 @@ impl Parser<'_> {
                     let specifiers = self.specifier_sequence(true, true)?;
                     return self.functional_cast(location, specifiers);
                 }
-                Some(K::Decltype) => {
-                    let (name, binding) = self.type_name()?;
-                    if self.is_type_name(name, binding, false, false)
-                        && matches!(self.punctuator()?, Some(P::LeftParen | P::LeftBrace))
-                    {
-                        let start = self.tree.specs.begin();
-                        self.tree.specs.push(Specifier::Named(name));
-                        let specifiers = self.tree.specs.finish(start)?;
-                        return self.functional_cast(location, specifiers);
-                    }
-                    ExprKind::Id(name)
+                Some(K::Decltype | K::Typename | K::Operator) => {
+                    return self.primary_name(location);
                 }
-                Some(K::Operator) => ExprKind::Id(self.name()?.0),
                 _ => match op.token.as_punctuator() {
                     Some(P::LeftParen) => {
                         self.cursor.advance()?;
@@ -508,7 +489,7 @@ impl Parser<'_> {
                         self.expect(P::RightParen)?;
                         ExprKind::Paren(inner)
                     }
-                    Some(P::Scope) => ExprKind::Id(self.name()?.0),
+                    Some(P::Scope) => return self.primary_name(location),
                     Some(P::LeftBrace) => return self.braced_list(),
                     Some(P::LeftBracket) => {
                         return Err(ParseError::NotImplemented(
@@ -521,6 +502,40 @@ impl Parser<'_> {
             TokenKind::End => return self.fail(),
         };
         self.tree.expressions.add(Expression { location, kind })
+    }
+    fn primary_name(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
+        let (name, binding) = self.name()?;
+        let node = *self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        let decltype = if !node.global
+            && components.len() == 1
+            && let super::ast::NameKind::Decltype(operand) = components[0].kind
+        {
+            Some(operand)
+        } else {
+            None
+        };
+        let known_type = node.typename_keyword
+            || decltype.is_some()
+            || binding.is_some_and(|binding| binding.category == super::scopes::Category::Type);
+        if (self.at(P::LeftParen)? && known_type)
+            || (self.at(P::LeftBrace)?
+                && (known_type || self.is_type_name(name, binding, false, false)))
+        {
+            let start = self.tree.specs.begin();
+            self.tree
+                .specs
+                .push(decltype.map_or(Specifier::Named(name), Specifier::Decltype));
+            let specifiers = self.tree.specs.finish(start)?;
+            return self.functional_cast(location, specifiers);
+        }
+        if decltype.is_some() || node.typename_keyword {
+            return self.fail();
+        }
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Id(name),
+        })
     }
     fn functional_cast(
         &mut self,

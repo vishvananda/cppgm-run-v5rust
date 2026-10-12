@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+        initializer
+          delete-expression
+            unary-expression OP_PLUS:+
+              literal 1
+end translation unit

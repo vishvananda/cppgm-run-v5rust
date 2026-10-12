@@ -137,7 +137,9 @@ impl Parser<'_> {
             if let Some(scope) = self.function_scope {
                 self.scopes.current = scope;
             }
+            let function_scope = self.function_scope;
             let result = self.function_qualifiers();
+            self.function_scope = function_scope;
             self.scopes.current = saved;
             let qualifiers = result?;
             self.tree.suffixes.push(Suffix::Function {
