@@ -1,7 +1,7 @@
 # PA5 port ledger
 
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
-Last audited commit: INITIAL
+Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 ## Accepted partial checkpoint audit — 2026-10-12
 
@@ -9,9 +9,9 @@ Audit entry commit: `1e826f5d29b8007f034e6780216071ae7b75982c` (clean).
 `artifacts/pa5-checkpoint-audit/audit-metadata.json` retains the audit metadata.
 Reviewed the full diff from
 stage base `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43` through the three accepted
-implementation groups and the fixes in this audit. The reviewed implementation
-commit is recorded in the **Last audited commit** field above after committing
-this result. The earlier implementation turn is **progress**, established by
+implementation groups and the fixes in this audit. Reviewed implementation commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`.
+The following ledger-only commit records this identity; no compiler or fixture
+change follows the reviewed implementation. The earlier implementation turn is **progress**, established by
 its committed class/body group, 71 -> 114 matches and retained raw receipts;
 no compiler or gate process was live at audit entry.
 
