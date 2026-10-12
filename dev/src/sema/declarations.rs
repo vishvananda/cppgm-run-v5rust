@@ -662,7 +662,8 @@ impl Analyzer<'_> {
         if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
             self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
                 internal_linkage: specs.is_static
-                    && self.graph.scope(home).kind == ScopeKind::Namespace,
+                    && self.graph.scope(home).kind == ScopeKind::Namespace
+                    || !self.c_language && self.internal_namespace(home),
                 is_static: specs.is_static,
             });
         }
@@ -682,6 +683,21 @@ impl Analyzer<'_> {
                 key: Keyword::Int,
             },
         )
+    }
+    fn internal_namespace(&self, mut scope: ScopeId) -> bool {
+        loop {
+            let current = self.graph.scope(scope);
+            if scope != self.graph.global
+                && current.kind == ScopeKind::Namespace
+                && current.name.is_none()
+            {
+                return true;
+            }
+            let Some(parent) = current.parent else {
+                return false;
+            };
+            scope = parent;
+        }
     }
     fn check_function_type_agreement(
         &mut self,
