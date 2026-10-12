@@ -151,21 +151,12 @@ impl Parser<'_> {
                 {
                     self.scopes.add_edge(scope);
                 }
-            } else if let Some(&name) = self
-                .tree
-                .name_lists
-                .get(self.tree.names.get(target).components)
-                .last()
-            {
+            } else if let Some(name) = self.last_identifier(target) {
                 self.scopes.declare(name, binding);
             }
         } else if !directive
             && self.tree.names.get(target).typename_keyword
-            && let Some(&name) = self
-                .tree
-                .name_lists
-                .get(self.tree.names.get(target).components)
-                .last()
+            && let Some(name) = self.last_identifier(target)
         {
             self.scopes.declare(
                 name,
@@ -260,18 +251,13 @@ impl Parser<'_> {
                         "class specifiers, member scopes and deferred bodies",
                     ));
                 }
-                Some(K::Decltype) if !has_type => {
-                    return Err(ParseError::NotImplemented(
-                        "decltype operands and qualified types",
-                    ));
-                }
                 _ if !has_type
                     && (matches!(self.token()?.kind, TokenKind::Identifier(_))
                         || self.at(P::Scope)?
-                        || self.keyword()? == Some(K::Typename)) =>
+                        || matches!(self.keyword()?, Some(K::Typename | K::Decltype))) =>
                 {
                     let named = self.attempt(|parser| {
-                        let (name, binding) = parser.name()?;
+                        let (name, binding) = parser.type_name()?;
                         let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
                         if !parser.is_type_name(name, binding, definite, followed) {
                             return parser.fail();
@@ -281,7 +267,17 @@ impl Parser<'_> {
                     let Some(name) = named else {
                         break;
                     };
-                    self.tree.specs.push(Specifier::Named(name));
+                    let node = self.tree.names.get(name);
+                    let specifier = if !node.global
+                        && self.tree.name_lists.get(node.components).len() == 1
+                        && let super::ast::NameKind::Decltype(operand) =
+                            self.tree.name_lists.get(node.components)[0].kind
+                    {
+                        Specifier::Decltype(operand)
+                    } else {
+                        Specifier::Named(name)
+                    };
+                    self.tree.specs.push(specifier);
                     has_type = true;
                 }
                 _ => break,
@@ -293,15 +289,32 @@ impl Parser<'_> {
         self.tree.specs.finish(start)
     }
     pub(super) fn type_id(&mut self, definite: bool) -> Result<TypeId, ParseError> {
+        self.type_id_in_mode(definite, super::declarators::Mode::Abstract)
+    }
+    pub(super) fn type_id_in_mode(
+        &mut self,
+        definite: bool,
+        mode: super::declarators::Mode,
+    ) -> Result<TypeId, ParseError> {
         let location = self.location()?;
         let specifiers = self.specifier_sequence(definite, true)?;
-        let declarator = self.declarator(super::declarators::Mode::Abstract)?;
+        let declarator = self.declarator(mode)?;
         let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
         self.tree.types.add(TypeSyntax {
             location,
             specifiers,
             declarator,
         })
+    }
+    pub(super) fn specifiers_have_type(&self, specifiers: List<Specifier>) -> bool {
+        self.tree
+            .specs
+            .get(specifiers)
+            .iter()
+            .any(|specifier| match specifier {
+                Specifier::Keyword(word) => Self::has_type_keyword(*word),
+                Specifier::Named(_) | Specifier::Enum(_) | Specifier::Decltype(_) => true,
+            })
     }
     fn enum_specifier(&mut self) -> Result<DeclId, ParseError> {
         let location = self.location()?;
@@ -428,13 +441,16 @@ impl Parser<'_> {
         loop {
             let declarator = self.declarator(super::declarators::Mode::Named)?;
             self.declare_declarator(declarator, typedef, self.specifier_scope(specifiers));
-            if self.is_function(declarator) && self.at(P::LeftBrace)? {
+            if self.is_function(declarator)
+                && (self.at(P::LeftBrace)? || self.keyword()? == Some(K::Try))
+            {
                 let enclosing = self.scopes.current;
                 self.scopes.current = self
                     .function_scope
                     .ok_or(ParseError::Invariant("missing function parameter scope"))?;
-                let body = self.compound_statement()?;
+                let result = self.function_body();
                 self.scopes.current = enclosing;
+                let body = result?;
                 return self.tree.declarations.add(Declaration {
                     location,
                     kind: DeclKind::Function {
@@ -443,11 +459,6 @@ impl Parser<'_> {
                         body,
                     },
                 });
-            }
-            if self.keyword()? == Some(K::Try) {
-                return Err(ParseError::NotImplemented(
-                    "function try blocks and handlers",
-                ));
             }
             let initializer = if matches!(
                 self.punctuator()?,

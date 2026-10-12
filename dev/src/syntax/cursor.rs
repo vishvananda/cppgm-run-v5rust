@@ -23,6 +23,7 @@ pub(super) struct Token {
     pub kind: TokenKind,
     pub location: SourceOffset,
     pub shift_half: u8,
+    pub suffix_name: Option<NameId>,
 }
 pub(super) struct Cursor<'a> {
     pub post: PostTokenizer<Preprocessor<'a>>,
@@ -73,6 +74,7 @@ impl<'a> Cursor<'a> {
         let mut token = Token {
             location: post.begin,
             shift_half: 0,
+            suffix_name: post.name,
             kind: TokenKind::End,
         };
         token.kind = match post.kind {

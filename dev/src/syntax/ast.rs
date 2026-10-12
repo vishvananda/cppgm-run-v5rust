@@ -18,8 +18,27 @@ pub(super) type StmtId = Id<Statement>;
 pub(super) struct QualifiedName {
     pub global: bool,
     pub typename_keyword: bool,
-    pub components: List<NameId>,
+    pub components: List<NameComponent>,
     pub binding: Option<Binding>,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct NameComponent {
+    #[expect(
+        dead_code,
+        reason = "Name component locations are retained for later qualified lookup diagnostics"
+    )]
+    pub location: SourceOffset,
+    pub kind: NameKind,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum NameKind {
+    Identifier(NameId),
+    Operator { op: Operator, array: bool },
+    LiteralOperator(NameId),
+    Conversion(TypeId),
+    Destructor(NameId),
+    DestructorDecltype(ExprId),
+    Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Operator {
@@ -46,6 +65,7 @@ pub(super) enum Specifier {
     Keyword(Keyword),
     Named(Name),
     Enum(DeclId),
+    Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TypeSyntax {
@@ -124,6 +144,24 @@ pub(super) struct Enumerator {
     pub value: Option<ExprId>,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) struct FunctionBody {
+    pub compound: StmtId,
+    pub handlers: Option<List<Handler>>,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ExceptionDeclaration {
+    Ellipsis,
+    Typed {
+        specifiers: List<Specifier>,
+        declarator: Option<DeclaratorId>,
+    },
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Handler {
+    pub exception: ExceptionDeclaration,
+    pub body: StmtId,
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Declaration {
     #[expect(
         dead_code,
@@ -142,7 +180,7 @@ pub(super) enum DeclKind {
     Function {
         specifiers: List<Specifier>,
         declarator: DeclaratorId,
-        body: StmtId,
+        body: FunctionBody,
     },
     Namespace {
         name: Option<NameId>,
@@ -251,6 +289,19 @@ pub(super) enum ExprKind {
         ty: Option<TypeId>,
         operand: Option<ExprId>,
     },
+    New {
+        global: bool,
+        placement: Option<List<ExprId>>,
+        parenthesized_type: bool,
+        ty: TypeId,
+        initializer: Option<Initializer>,
+    },
+    Delete {
+        global: bool,
+        array: bool,
+        operand: ExprId,
+    },
+    Throw(Option<ExprId>),
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Statement {
@@ -316,6 +367,10 @@ pub(super) enum StmtKind {
         body: StmtId,
     },
     Default(StmtId),
+    Try {
+        body: StmtId,
+        handlers: List<Handler>,
+    },
 }
 
 #[derive(Default)]
@@ -329,7 +384,7 @@ pub(super) struct Tree {
     pub decl_lists: Lists<DeclId>,
     pub expr_lists: Lists<ExprId>,
     pub stmt_lists: Lists<StmtId>,
-    pub name_lists: Lists<NameId>,
+    pub name_lists: Lists<NameComponent>,
     pub specs: Lists<Specifier>,
     pub pointers: Lists<Pointer>,
     pub cvs: Lists<Keyword>,
@@ -339,6 +394,7 @@ pub(super) struct Tree {
     pub type_lists: Lists<TypeId>,
     pub init_declarators: Lists<InitDeclarator>,
     pub enumerators: Lists<Enumerator>,
+    pub handlers: Lists<Handler>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct TreeMark {
@@ -361,6 +417,7 @@ pub(super) struct TreeMark {
     type_lists: ListMark,
     init_declarators: ListMark,
     enumerators: ListMark,
+    handlers: ListMark,
 }
 impl Tree {
     pub(super) fn mark(&self) -> TreeMark {
@@ -384,9 +441,10 @@ impl Tree {
             type_lists: self.type_lists.mark(),
             init_declarators: self.init_declarators.mark(),
             enumerators: self.enumerators.mark(),
+            handlers: self.handlers.mark(),
         }
     }
-    pub(super) fn rewind(&mut self, mark: TreeMark) {
+    pub(super) fn rewind(&mut self, mark: &TreeMark) {
         self.declarations.rewind(mark.declarations);
         self.expressions.rewind(mark.expressions);
         self.declarators.rewind(mark.declarators);
@@ -406,5 +464,6 @@ impl Tree {
         self.type_lists.rewind(mark.type_lists);
         self.init_declarators.rewind(mark.init_declarators);
         self.enumerators.rewind(mark.enumerators);
+        self.handlers.rewind(mark.handlers);
     }
 }

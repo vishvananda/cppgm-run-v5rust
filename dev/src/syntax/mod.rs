@@ -4,6 +4,7 @@ mod cursor;
 mod declarations;
 mod declarators;
 mod expressions;
+mod names;
 mod parser;
 mod printer;
 mod render;

@@ -2,7 +2,7 @@
 //! Shared cursor, transactions and name-category decisions.
 use super::{
     ParseError,
-    ast::{DeclId, DeclaratorId, Name, Operator, QualifiedName, Tree, TreeMark},
+    ast::{DeclId, DeclaratorId, Name, Operator, Tree, TreeMark},
     cursor::{Cursor, Token, TokenKind},
     scopes::{Binding, Category, ScopeId, ScopeMark, Scopes},
     storage::List,
@@ -159,7 +159,7 @@ impl<'a> Parser<'a> {
         self.tentative_depth -= 1;
         if result.is_err() {
             self.cursor.position = mark.position;
-            self.tree.rewind(mark.tree);
+            self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
             self.function_scope = mark.function_scope;
             self.rewinds += 1;
@@ -190,84 +190,6 @@ impl<'a> Parser<'a> {
             }
         }
         self.tree.decl_lists.finish(start)
-    }
-    pub(super) fn name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        let typename_keyword = self.accept_keyword(K::Typename)?;
-        let global = self.accept(P::Scope)?;
-        let start = self.tree.name_lists.begin();
-        let mut prefix = global.then_some(Scopes::global());
-        let mut qualified = global;
-        let binding = loop {
-            if self.keyword()? == Some(K::Operator) || self.at(P::Complement)? {
-                return Err(ParseError::NotImplemented(
-                    "operator and special-member names",
-                ));
-            }
-            let identifier = self.identifier()?;
-            self.tree.name_lists.push(identifier);
-            let binding = if let Some(scope) = prefix {
-                self.scopes.lookup_in(scope, identifier)
-            } else if qualified {
-                None
-            } else {
-                self.scopes.lookup(identifier)
-            };
-            if self.at(P::Less)?
-                && binding.is_none_or(|binding| binding.category != Category::Value)
-                && self.cursor.name(identifier).contains(&b'T')
-            {
-                return Err(ParseError::NotImplemented(
-                    "template-id name disambiguation",
-                ));
-            }
-            if !self.accept(P::Scope)? {
-                break binding;
-            }
-            qualified = true;
-            prefix = binding.and_then(|binding| binding.scope);
-        };
-        let components = self.tree.name_lists.finish(start)?;
-        let name = self.tree.names.add(QualifiedName {
-            global,
-            typename_keyword,
-            components,
-            binding,
-        })?;
-        Ok((name, binding))
-    }
-    pub(super) fn is_type_name(
-        &self,
-        name: Name,
-        binding: Option<Binding>,
-        definite: bool,
-        followed_by_identifier: bool,
-    ) -> bool {
-        let name = self.tree.names.get(name);
-        if name.typename_keyword {
-            return true;
-        }
-        if let Some(binding) = binding {
-            return binding.category == Category::Type;
-        }
-        let Some(&last) = self.tree.name_lists.get(name.components).last() else {
-            return false;
-        };
-        definite
-            || followed_by_identifier
-            || self
-                .cursor
-                .name(last)
-                .iter()
-                .any(|byte| matches!(byte, b'C' | b'Y' | b'E' | b'T'))
-    }
-    pub(super) fn simple_name(&self, name: Name) -> Option<NameId> {
-        let name = self.tree.names.get(name);
-        let components = self.tree.name_lists.get(name.components);
-        if !name.global && components.len() == 1 {
-            Some(components[0])
-        } else {
-            None
-        }
     }
     pub(super) fn declare_declarator(
         &mut self,
@@ -321,7 +243,7 @@ impl<'a> Parser<'a> {
                         return scope;
                     }
                 }
-                super::ast::Specifier::Keyword(_) => (),
+                super::ast::Specifier::Keyword(_) | super::ast::Specifier::Decltype(_) => (),
             }
         }
         None

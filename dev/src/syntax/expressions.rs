@@ -35,6 +35,19 @@ impl Parser<'_> {
     }
     pub(super) fn assignment_expression(&mut self) -> Result<ExprId, ParseError> {
         self.nested(|parser| {
+            if parser.keyword()? == Some(K::Throw) {
+                let location = parser.location()?;
+                parser.cursor.advance()?;
+                let operand = if parser.operand_start()? {
+                    Some(parser.assignment_expression()?)
+                } else {
+                    None
+                };
+                return parser.tree.expressions.add(Expression {
+                    location,
+                    kind: ExprKind::Throw(operand),
+                });
+            }
             let left = parser.binary(3)?;
             let location = parser.tree.expressions.get(left).location;
             if parser.accept(P::Question)? {
@@ -140,9 +153,12 @@ impl Parser<'_> {
         if self.at(P::Scope)?
             && matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_keyword(), Some(K::New | K::Delete)))
         {
-            return Err(ParseError::NotImplemented(
-                "allocation and deletion expressions",
-            ));
+            return if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::New))
+            {
+                self.new_expression()
+            } else {
+                self.delete_expression()
+            };
         }
         if matches!(
             self.punctuator()?,
@@ -187,9 +203,6 @@ impl Parser<'_> {
             }
         }
         match self.keyword()? {
-            Some(K::Operator) => Err(ParseError::NotImplemented(
-                "operator and special-member names",
-            )),
             Some(K::Sizeof) => self.sizeof_expression(location),
             Some(keyword @ (K::Alignof | K::Typeid | K::Noexcept)) => {
                 self.cursor.advance()?;
@@ -241,10 +254,8 @@ impl Parser<'_> {
                 })?;
                 self.postfix(expr)
             }
-            Some(K::New | K::Delete) => Err(ParseError::NotImplemented(
-                "allocation and deletion expressions",
-            )),
-            Some(K::Throw) => Err(ParseError::NotImplemented("throw expressions")),
+            Some(K::New) => self.new_expression(),
+            Some(K::Delete) => self.delete_expression(),
             _ => {
                 let primary = self.primary()?;
                 self.postfix(primary)
@@ -272,8 +283,120 @@ impl Parser<'_> {
             )
         ) || matches!(
             self.keyword()?,
-            Some(K::True | K::False | K::Nullptr | K::This | K::Sizeof | K::New | K::Delete)
+            Some(
+                K::True
+                    | K::False
+                    | K::Nullptr
+                    | K::This
+                    | K::Sizeof
+                    | K::New
+                    | K::Delete
+                    | K::Alignof
+                    | K::Noexcept
+                    | K::Typeid
+                    | K::StaticCast
+                    | K::DynamicCast
+                    | K::ReinterpretCast
+                    | K::ConstCast
+                    | K::Typename
+                    | K::Decltype
+                    | K::Operator
+            )
         ) || self.keyword()?.is_some_and(Self::has_type_keyword))
+    }
+    fn type_specifier_start(&mut self) -> Result<bool, ParseError> {
+        Ok(matches!(self.token()?.kind, TokenKind::Identifier(_))
+            || self.at(P::Scope)?
+            || matches!(
+                self.keyword()?,
+                Some(
+                    K::Const
+                        | K::Volatile
+                        | K::Typename
+                        | K::Decltype
+                        | K::Class
+                        | K::Struct
+                        | K::Union
+                        | K::Enum
+                )
+            )
+            || self.keyword()?.is_some_and(Self::has_type_keyword))
+    }
+    fn new_expression(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        let global = self.accept(P::Scope)?;
+        if !self.accept_keyword(K::New)? {
+            return self.fail();
+        }
+        let mut placement = None;
+        let mut parenthesized_type = false;
+        let mut ty = None;
+        if self.at(P::LeftParen)? {
+            ty = self.attempt(|parser| {
+                parser.cursor.advance()?;
+                let ty = parser.type_id(false)?;
+                parser.expect(P::RightParen)?;
+                if parser.type_specifier_start()? {
+                    // The oracle leaves this alternative without calling fail().
+                    return Err(ParseError::Syntax {
+                        location: parser.location()?,
+                        message: "syntax error",
+                    });
+                }
+                Ok(ty)
+            })?;
+            parenthesized_type = ty.is_some();
+            if ty.is_none() {
+                self.expect(P::LeftParen)?;
+                placement = Some(self.expression_list(P::RightParen)?);
+                if self.accept(P::LeftParen)? {
+                    ty = Some(self.type_id(true)?);
+                    parenthesized_type = true;
+                    self.expect(P::RightParen)?;
+                }
+            }
+        }
+        let ty = if let Some(ty) = ty {
+            ty
+        } else {
+            self.type_id_in_mode(true, super::declarators::Mode::New)?
+        };
+        let initializer = if matches!(self.punctuator()?, Some(P::LeftParen | P::LeftBrace)) {
+            Some(self.initializer()?)
+        } else {
+            None
+        };
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::New {
+                global,
+                placement,
+                parenthesized_type,
+                ty,
+                initializer,
+            },
+        })
+    }
+    fn delete_expression(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        let global = self.accept(P::Scope)?;
+        if !self.accept_keyword(K::Delete)? {
+            return self.fail();
+        }
+        let array = self.at(P::LeftBracket)? && self.at_ahead(P::RightBracket, 1)?;
+        if array {
+            self.cursor.advance()?;
+            self.cursor.advance()?;
+        }
+        let operand = self.unary()?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Delete {
+                global,
+                array,
+                operand,
+            },
+        })
     }
     fn sizeof_expression(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
         self.cursor.advance()?;
@@ -341,8 +464,18 @@ impl Parser<'_> {
                     return self.functional_cast(location, specifiers);
                 }
                 Some(K::Decltype) => {
-                    return Err(ParseError::NotImplemented("decltype functional casts"));
+                    let (name, binding) = self.type_name()?;
+                    if self.is_type_name(name, binding, false, false)
+                        && matches!(self.punctuator()?, Some(P::LeftParen | P::LeftBrace))
+                    {
+                        let start = self.tree.specs.begin();
+                        self.tree.specs.push(Specifier::Named(name));
+                        let specifiers = self.tree.specs.finish(start)?;
+                        return self.functional_cast(location, specifiers);
+                    }
+                    ExprKind::Id(name)
                 }
+                Some(K::Operator) => ExprKind::Id(self.name()?.0),
                 _ => match op.token.as_punctuator() {
                     Some(P::LeftParen) => {
                         self.cursor.advance()?;

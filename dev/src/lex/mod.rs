@@ -169,11 +169,9 @@ impl<I: PostTokenInput> PostTokenizer<I> {
             self.after_operator = is_operator(kind);
             return Ok(PostToken {
                 kind,
-                name: if kind == PostTokenKind::Identifier {
-                    name
-                } else {
-                    None
-                },
+                // The parser also needs the interned identity of adjacent
+                // keyword suffixes in literal-operator names (CWG 1473).
+                name,
                 begin,
                 end,
                 source: &self.split_suffix,

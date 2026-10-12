@@ -62,7 +62,7 @@ impl<T> Store<T> {
         self.data.truncate(mark);
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ListMark(usize, usize);
 pub(super) struct Lists<T> {
     data: Vec<T>,

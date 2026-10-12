@@ -2,9 +2,9 @@
 //! Iterative tree view, including arbitrarily long left-associated chains.
 use super::{
     ast::{
-        Condition, DeclId, DeclKind, DeclaratorId, Enumerator, ExprId, ExprKind, InitDeclarator,
-        Initializer, Name, Operator, Parameter, ParameterClause, Qualifier, Specifier, StmtId,
-        StmtKind, Suffix, Tree, TypeId,
+        Condition, DeclId, DeclKind, DeclaratorId, Enumerator, ExceptionDeclaration, ExprId,
+        ExprKind, Handler, InitDeclarator, Initializer, Name, NameKind, Operator, Parameter,
+        ParameterClause, Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
     },
     cursor::Cursor,
     render::{Render, Renderer, operator_spelling},
@@ -45,6 +45,7 @@ enum Task {
     ExpressionList(&'static str, List<ExprId>),
     InitDeclarator(InitDeclarator),
     Enumerator(Enumerator),
+    Handler(Handler),
 }
 pub(super) fn print(
     tree: &Tree,
@@ -110,6 +111,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 if !node.global
                     && !node.typename_keyword
                     && self.renderer.tree.name_lists.get(node.components).len() == 1
+                    && matches!(
+                        self.renderer.tree.name_lists.get(node.components)[0].kind,
+                        NameKind::Identifier(_)
+                    )
                 {
                     self.output.write_all(b" TT_IDENTIFIER:")?;
                     self.renderer.render(Render::Name(name, false));
@@ -207,6 +212,28 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.tasks.push(Task::Expression(value));
                 }
             }
+            Task::Handler(handler) => {
+                self.open("handler", Payload::None)?;
+                self.tasks.push(Task::Statement(handler.body));
+                self.tasks.push(Task::Close);
+                match handler.exception {
+                    ExceptionDeclaration::Ellipsis => {
+                        self.tasks
+                            .push(Task::Line("ellipsis", Payload::Text("..."), false));
+                    }
+                    ExceptionDeclaration::Typed {
+                        specifiers,
+                        declarator,
+                    } => {
+                        if let Some(declarator) = declarator {
+                            self.tasks.push(Task::Declarator(Some(declarator), false));
+                        }
+                        self.tasks.push(Task::Specs(specifiers, false));
+                    }
+                }
+                self.tasks
+                    .push(Task::Line("exception-declaration", Payload::None, true));
+            }
             Task::Condition(condition) => {
                 self.open("condition", Payload::None)?;
                 match condition {
@@ -256,7 +283,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 body,
             } => {
                 self.open("function-definition", Payload::None)?;
-                self.tasks.push(Task::Statement(body));
+                if let Some(handlers) = body.handlers {
+                    self.tasks.push(Task::Close);
+                    for &handler in self.renderer.tree.handlers.get(handlers).iter().rev() {
+                        self.tasks.push(Task::Handler(handler));
+                    }
+                    self.tasks.push(Task::Statement(body.compound));
+                    self.tasks
+                        .push(Task::Line("function-try-block", Payload::None, true));
+                } else {
+                    self.tasks.push(Task::Statement(body.compound));
+                }
                 self.tasks.push(Task::Declarator(Some(declarator), false));
                 self.tasks.push(Task::Specs(specifiers, false));
             }
@@ -350,7 +387,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             Payload::None,
         )?;
         for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
-            self.tasks.push(match specifier {
+            let task = match specifier {
                 Specifier::Keyword(word) => Task::Line(
                     if !types {
                         "decl-specifier"
@@ -362,17 +399,57 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     Payload::Keyword(word),
                     false,
                 ),
-                Specifier::Named(name) => Task::Line(
-                    if types { "type-name" } else { "decl-specifier" },
-                    if types {
-                        Payload::Name(name)
+                Specifier::Named(name) => {
+                    let node = self.renderer.tree.names.get(name);
+                    let components = self.renderer.tree.name_lists.get(node.components);
+                    if !node.global
+                        && components.len() >= 2
+                        && let NameKind::Decltype(operand) = components[0].kind
+                    {
+                        self.tasks.push(Task::Close);
+                        self.tasks.push(Task::Line(
+                            "qualified-type-name",
+                            Payload::Render(Render::NameRest(name)),
+                            false,
+                        ));
+                        self.tasks.push(Task::Expression(operand));
+                        Task::Line(
+                            if types {
+                                "decltype-specifier"
+                            } else {
+                                "decl-specifier"
+                            },
+                            Payload::Name(name),
+                            true,
+                        )
                     } else {
-                        Payload::NamedSpecifier(name)
-                    },
-                    false,
-                ),
+                        Task::Line(
+                            if types { "type-name" } else { "decl-specifier" },
+                            if types {
+                                Payload::Name(name)
+                            } else {
+                                Payload::NamedSpecifier(name)
+                            },
+                            false,
+                        )
+                    }
+                }
                 Specifier::Enum(decl) => Task::Declaration(decl),
-            });
+                Specifier::Decltype(operand) => {
+                    self.tasks.push(Task::Close);
+                    self.tasks.push(Task::Expression(operand));
+                    Task::Line(
+                        if types {
+                            "decltype-specifier"
+                        } else {
+                            "decl-specifier"
+                        },
+                        Payload::Render(Render::Decltype(operand)),
+                        true,
+                    )
+                }
+            };
+            self.tasks.push(task);
         }
         Ok(())
     }
@@ -661,6 +738,55 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.tasks.push(Task::Expression(operand));
                 }
             }
+            ExprKind::New {
+                global,
+                placement,
+                ty,
+                initializer,
+                ..
+            } => {
+                self.open("new-expression", Payload::None)?;
+                if let Some(initializer) = initializer {
+                    self.tasks.push(Task::Initializer(initializer));
+                }
+                self.tasks.push(Task::Type(ty));
+                if let Some(placement) = placement {
+                    self.tasks.push(Task::Close);
+                    self.tasks
+                        .push(Task::ExpressionList("paren-argument-list", placement));
+                    self.tasks.push(Task::Line(
+                        "placement",
+                        Payload::Render(Render::ParenthesizedList(placement)),
+                        true,
+                    ));
+                }
+                if global {
+                    self.tasks
+                        .push(Task::Line("global-scope", Payload::None, false));
+                }
+            }
+            ExprKind::Delete {
+                global,
+                array,
+                operand,
+            } => {
+                self.open("delete-expression", Payload::None)?;
+                self.tasks.push(Task::Expression(operand));
+                if array {
+                    self.tasks
+                        .push(Task::Line("array-delete", Payload::None, false));
+                }
+                if global {
+                    self.tasks
+                        .push(Task::Line("global-scope", Payload::None, false));
+                }
+            }
+            ExprKind::Throw(operand) => {
+                self.open("throw-expression", Payload::None)?;
+                if let Some(operand) = operand {
+                    self.tasks.push(Task::Expression(operand));
+                }
+            }
         }
         Ok(())
     }
@@ -785,6 +911,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             StmtKind::Default(body) => {
                 self.open("default-statement", Payload::None)?;
+                self.tasks.push(Task::Statement(body));
+            }
+            StmtKind::Try { body, handlers } => {
+                self.open("try-block", Payload::None)?;
+                for &handler in self.renderer.tree.handlers.get(handlers).iter().rev() {
+                    self.tasks.push(Task::Handler(handler));
+                }
                 self.tasks.push(Task::Statement(body));
             }
         }

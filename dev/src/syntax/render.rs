@@ -2,8 +2,8 @@
 //! Compact syntax labels are views; never a phase transport or lookup key.
 use super::{
     ast::{
-        DeclKind, DeclaratorId, ExprId, ExprKind, Initializer, Name, Operator, ParameterClause,
-        Qualifier, Specifier, Suffix, Tree, TypeId,
+        DeclKind, DeclaratorId, ExprId, ExprKind, Initializer, Name, NameComponent, NameKind,
+        Operator, ParameterClause, Qualifier, Specifier, Suffix, Tree, TypeId,
     },
     cursor::Cursor,
     storage::{List, Text},
@@ -15,6 +15,9 @@ pub(super) enum Render {
     Spelling(Text),
     Identifier(NameId),
     Name(Name, bool),
+    NameRest(Name),
+    Component(NameComponent, bool),
+    Decltype(ExprId),
     Expression(ExprId),
     Type(TypeId),
     Specs(List<Specifier>),
@@ -24,6 +27,7 @@ pub(super) enum Render {
     Qualifier(Qualifier),
     Initializer(Initializer),
     Operator(Operator),
+    ParenthesizedList(List<ExprId>),
 }
 pub(super) struct Renderer<'a, 'source> {
     pub tree: &'a Tree,
@@ -73,14 +77,16 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 if name.global {
                     self.text("::");
                 }
-                for (index, &component) in
-                    self.tree.name_lists.get(name.components).iter().enumerate()
-                {
-                    if index != 0 {
-                        self.text("::");
-                    }
-                    self.bytes.extend_from_slice(self.cursor.name(component));
-                }
+                self.components(name.components, 0, name.global);
+            }
+            Render::NameRest(name) => {
+                self.components(self.tree.names.get(name).components, 1, false);
+            }
+            Render::Component(component, qualified) => self.component(component.kind, qualified),
+            Render::Decltype(operand) => {
+                self.text("decltype(");
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Expression(operand));
             }
             Render::Operator(op) => self.text(operator_spelling(op)),
             Render::Type(ty) => {
@@ -211,6 +217,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 Initializer::Delete => self.text("=delete"),
             },
             Render::Expression(id) => self.expression(id),
+            Render::ParenthesizedList(list) => {
+                self.text("(");
+                self.tasks.push(Render::Text(")"));
+                self.list(list);
+            }
         }
     }
     fn specifier(&mut self, specifier: Specifier) {
@@ -223,7 +234,87 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
             Specifier::Named(name) => self.tasks.push(Render::Name(name, true)),
             Specifier::Enum(decl) => self.enumeration(decl),
+            Specifier::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
         }
+    }
+    fn components(&mut self, components: List<NameComponent>, start: usize, global: bool) {
+        let components = &self.tree.name_lists.get(components)[start..];
+        let qualified = global || components.len() > 1;
+        for (index, &component) in components.iter().enumerate().rev() {
+            self.tasks.push(Render::Component(component, qualified));
+            if index != 0 {
+                self.tasks.push(Render::Text("::"));
+            }
+        }
+    }
+    fn component(&mut self, kind: NameKind, qualified: bool) {
+        match kind {
+            NameKind::Identifier(name) => self.tasks.push(Render::Identifier(name)),
+            NameKind::LiteralOperator(name) => {
+                self.text("operator\"\"");
+                self.tasks.push(Render::Identifier(name));
+            }
+            NameKind::Operator { op, array } => {
+                self.text("operator");
+                let spelling = match op.token.as_punctuator() {
+                    Some(P::LeftParen) => "()",
+                    Some(P::LeftBracket) => "[]",
+                    _ => operator_spelling(op),
+                };
+                if qualified
+                    && spelling
+                        .as_bytes()
+                        .first()
+                        .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+                {
+                    self.text(" ");
+                }
+                self.text(spelling);
+                if array {
+                    self.text("[]");
+                }
+            }
+            NameKind::Conversion(ty) => {
+                self.text("operator");
+                if qualified && self.type_begins_word(ty) {
+                    self.text(" ");
+                }
+                self.tasks.push(Render::Type(ty));
+            }
+            NameKind::Destructor(name) => {
+                self.text("~");
+                self.tasks.push(Render::Identifier(name));
+            }
+            NameKind::DestructorDecltype(operand) => {
+                self.text("~");
+                self.tasks.push(Render::Decltype(operand));
+            }
+            NameKind::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
+        }
+    }
+    fn type_begins_word(&self, ty: TypeId) -> bool {
+        self.tree
+            .specs
+            .get(self.tree.types.get(ty).specifiers)
+            .first()
+            .is_some_and(|specifier| match specifier {
+                Specifier::Keyword(_) | Specifier::Enum(_) | Specifier::Decltype(_) => true,
+                Specifier::Named(name) => {
+                    let name = self.tree.names.get(*name);
+                    !name.global
+                        && self
+                            .tree
+                            .name_lists
+                            .get(name.components)
+                            .first()
+                            .is_some_and(|component| {
+                                matches!(
+                                    component.kind,
+                                    NameKind::Identifier(_) | NameKind::Decltype(_)
+                                )
+                            })
+                }
+            })
     }
     fn enumeration(&mut self, decl: super::ast::DeclId) {
         if let DeclKind::Enum {
@@ -404,6 +495,48 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 if let Some(ty) = ty {
                     self.tasks.push(Render::Type(ty));
                 } else if let Some(operand) = operand {
+                    self.tasks.push(Render::Expression(operand));
+                }
+            }
+            ExprKind::New {
+                global,
+                placement,
+                parenthesized_type,
+                ty,
+                initializer,
+            } => {
+                if global {
+                    self.text("::");
+                }
+                self.text("new");
+                if let Some(initializer) = initializer {
+                    self.tasks.push(Render::Initializer(initializer));
+                }
+                if parenthesized_type {
+                    self.tasks.push(Render::Text(")"));
+                }
+                self.tasks.push(Render::Type(ty));
+                if parenthesized_type {
+                    self.tasks.push(Render::Text("("));
+                }
+                if let Some(placement) = placement {
+                    self.tasks.push(Render::ParenthesizedList(placement));
+                }
+            }
+            ExprKind::Delete {
+                global,
+                array,
+                operand,
+            } => {
+                if global {
+                    self.text("::");
+                }
+                self.text(if array { "delete[]" } else { "delete" });
+                self.tasks.push(Render::Expression(operand));
+            }
+            ExprKind::Throw(operand) => {
+                self.text("throw");
+                if let Some(operand) = operand {
                     self.tasks.push(Render::Expression(operand));
                 }
             }

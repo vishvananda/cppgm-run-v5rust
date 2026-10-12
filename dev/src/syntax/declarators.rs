@@ -15,6 +15,8 @@ pub(super) enum Mode {
     Named,
     Parameter,
     Abstract,
+    New,
+    Conversion,
 }
 impl Parser<'_> {
     pub(super) fn declarator(&mut self, mode: Mode) -> Result<DeclaratorId, ParseError> {
@@ -42,18 +44,22 @@ impl Parser<'_> {
             self.tree.pointers.push(Pointer { op, cv });
         }
         let pointers = self.tree.pointers.finish(start)?;
-        let pack = self.at(P::Ellipsis)?
+        let pack = !matches!(mode, Mode::New | Mode::Conversion)
+            && self.at(P::Ellipsis)?
             && (mode != Mode::Parameter || !self.at_ahead(P::RightParen, 1)?);
         if pack {
             self.cursor.advance()?;
         }
         let mut name = None;
         let mut nested = None;
-        if self.at(P::LeftParen)? && self.nested_declarator_ahead(mode)? {
+        if !matches!(mode, Mode::New | Mode::Conversion)
+            && self.at(P::LeftParen)?
+            && self.nested_declarator_ahead(mode)?
+        {
             self.cursor.advance()?;
             nested = Some(self.declarator(mode)?);
             self.expect(P::RightParen)?;
-        } else if mode != Mode::Abstract
+        } else if matches!(mode, Mode::Named | Mode::Parameter)
             && (matches!(self.token()?.kind, TokenKind::Identifier(_))
                 || self.at(P::Scope)?
                 || self.at(P::Complement)?
@@ -70,6 +76,9 @@ impl Parser<'_> {
         }
         let suffix_start = self.tree.suffixes.begin();
         loop {
+            if mode == Mode::Conversion {
+                break;
+            }
             if self.accept(P::LeftBracket)? {
                 let bound = if self.at(P::RightBracket)? {
                     None
@@ -81,10 +90,19 @@ impl Parser<'_> {
                 self.tree.suffixes.push(Suffix::Array(bound));
                 continue;
             }
-            if !self.at(P::LeftParen)? {
+            if mode == Mode::New || !self.at(P::LeftParen)? {
                 break;
             }
-            let definite = mode != Mode::Named;
+            let definite = mode != Mode::Named
+                || name.is_some_and(|name| {
+                    self.tree
+                        .name_lists
+                        .get(self.tree.names.get(name).components)
+                        .last()
+                        .is_some_and(|component| {
+                            !matches!(component.kind, super::ast::NameKind::Identifier(_))
+                        })
+                });
             let Some(parameters) = self.attempt(|parser| parser.parameter_clause(definite))? else {
                 break;
             };
@@ -97,7 +115,7 @@ impl Parser<'_> {
         let suffixes = self.tree.suffixes.finish(suffix_start)?;
         self.tree.declarators.add(Declarator {
             location,
-            abstract_form: mode == Mode::Abstract,
+            abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
             pointers,
             pack,
             name,

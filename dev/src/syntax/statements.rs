@@ -1,17 +1,22 @@
 // Translated from syntax/parser_statements.cpp. See NOTICE.
 use super::{
     ParseError,
-    ast::{Condition, Statement, StmtId, StmtKind},
+    ast::{Condition, ExceptionDeclaration, FunctionBody, Handler, Statement, StmtId, StmtKind},
     cursor::TokenKind,
     parser::Parser,
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 impl Parser<'_> {
     pub(super) fn compound_statement(&mut self) -> Result<StmtId, ParseError> {
+        self.compound_in_scope(true)
+    }
+    fn compound_in_scope(&mut self, new_scope: bool) -> Result<StmtId, ParseError> {
         let location = self.location()?;
         self.expect(P::LeftBrace)?;
         let enclosing = self.scopes.current;
-        self.scopes.push()?;
+        if new_scope {
+            self.scopes.push()?;
+        }
         let start = self.tree.stmt_lists.begin();
         while !self.at(P::RightBrace)? {
             let statement = self.statement()?;
@@ -134,9 +139,10 @@ impl Parser<'_> {
             }
             Some(K::For) => self.for_statement()?,
             Some(K::Try) => {
-                return Err(ParseError::NotImplemented(
-                    "try statements and exception handlers",
-                ));
+                self.cursor.advance()?;
+                let body = self.compound_statement()?;
+                let handlers = self.handlers()?;
+                StmtKind::Try { body, handlers }
             }
             Some(K::Asm) => return Err(ParseError::NotImplemented("assembly statement syntax")),
             _ => {
@@ -152,6 +158,60 @@ impl Parser<'_> {
             }
         };
         self.tree.statements.add(Statement { location, kind })
+    }
+    pub(super) fn function_body(&mut self) -> Result<FunctionBody, ParseError> {
+        let try_block = self.accept_keyword(K::Try)?;
+        let compound = self.compound_statement()?;
+        let handlers = if try_block {
+            Some(self.handlers()?)
+        } else {
+            None
+        };
+        Ok(FunctionBody { compound, handlers })
+    }
+    fn handlers(&mut self) -> Result<super::storage::List<Handler>, ParseError> {
+        if self.keyword()? != Some(K::Catch) {
+            return self.fail();
+        }
+        let start = self.tree.handlers.begin();
+        while self.accept_keyword(K::Catch)? {
+            self.expect(P::LeftParen)?;
+            let enclosing = self.scopes.current;
+            self.scopes.push()?;
+            let result = self.handler();
+            self.scopes.current = enclosing;
+            self.tree.handlers.push(result?);
+        }
+        self.tree.handlers.finish(start)
+    }
+    fn handler(&mut self) -> Result<Handler, ParseError> {
+        let exception = if self.accept(P::Ellipsis)? {
+            ExceptionDeclaration::Ellipsis
+        } else {
+            let specifiers = self.specifier_sequence(false, false)?;
+            if !self.specifiers_have_type(specifiers) {
+                return self.fail();
+            }
+            let declarator = if let Some(declarator) =
+                self.attempt(|parser| parser.declarator(super::declarators::Mode::Parameter))?
+            {
+                declarator
+            } else {
+                self.declarator(super::declarators::Mode::Abstract)?
+            };
+            let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+            if let Some(declarator) = declarator {
+                self.declare_declarator(declarator, false, self.specifier_scope(specifiers));
+            }
+            ExceptionDeclaration::Typed {
+                specifiers,
+                declarator,
+            }
+        };
+        self.expect(P::RightParen)?;
+        // The catch parameter and the outermost body share one block scope.
+        let body = self.compound_in_scope(false)?;
+        Ok(Handler { exception, body })
     }
     fn condition(&mut self) -> Result<Condition, ParseError> {
         if let Some(condition) = self.attempt(|parser| {
