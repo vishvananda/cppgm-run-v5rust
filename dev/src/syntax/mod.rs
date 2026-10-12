@@ -7,6 +7,7 @@ mod cursor;
 mod declarations;
 mod declarators;
 mod expressions;
+mod lambdas;
 mod names;
 mod parser;
 mod printer;
@@ -25,6 +26,10 @@ use storage::List;
 #[derive(Debug)]
 pub(crate) enum ParseError {
     Syntax {
+        location: SourceOffset,
+        message: &'static str,
+    },
+    CommittedSyntax {
         location: SourceOffset,
         message: &'static str,
     },

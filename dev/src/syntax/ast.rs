@@ -16,6 +16,41 @@ pub(super) type Name = Id<QualifiedName>;
 pub(super) type BodyId = Id<Body>;
 pub(super) type ClassId = Id<ClassSyntax>;
 pub(super) type StmtId = Id<Statement>;
+pub(super) type LambdaId = Id<Lambda>;
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CaptureKind {
+    This,
+    Copy(NameId),
+    Reference(NameId),
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct LambdaCapture {
+    pub kind: CaptureKind,
+    pub pack: bool,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CaptureDefault {
+    Copy,
+    Reference,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum LambdaBody {
+    Deferred,
+    Parsed(StmtId),
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Lambda {
+    pub capture_default: Option<CaptureDefault>,
+    pub captures: List<LambdaCapture>,
+    pub parameters: Option<ParameterClause>,
+    pub is_mutable: bool,
+    pub exception: Option<Qualifier>,
+    pub trailing: Option<TypeId>,
+    pub attributes: List<Attribute>,
+    pub clause_token: u32,
+    pub body_token: u32,
+    pub body: LambdaBody,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AttributeKind {
     Alignas,
@@ -421,6 +456,7 @@ pub(super) struct Expression {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum ExprKind {
+    Lambda(LambdaId),
     PackExpansion(ExprId),
     SizeofPack(NameId),
     Id(Name),
@@ -569,6 +605,8 @@ pub(super) enum StmtKind {
 
 #[derive(Default)]
 pub(super) struct Tree {
+    pub lambdas: Store<Lambda>,
+    pub captures: Lists<LambdaCapture>,
     pub declarations: Store<Declaration>,
     pub expressions: Store<Expression>,
     pub declarators: Store<Declarator>,
@@ -600,6 +638,8 @@ pub(super) struct Tree {
 }
 #[derive(Clone, Copy)]
 pub(super) struct TreeMark {
+    lambdas: usize,
+    captures: ListMark,
     declarations: usize,
     expressions: usize,
     declarators: usize,
@@ -644,6 +684,8 @@ impl Tree {
 
     pub(super) fn mark(&self) -> TreeMark {
         TreeMark {
+            lambdas: self.lambdas.mark(),
+            captures: self.captures.mark(),
             declarations: self.declarations.mark(),
             expressions: self.expressions.mark(),
             declarators: self.declarators.mark(),
@@ -675,6 +717,8 @@ impl Tree {
         }
     }
     pub(super) fn rewind(&mut self, mark: &TreeMark) {
+        self.lambdas.rewind(mark.lambdas);
+        self.captures.rewind(mark.captures);
         self.declarations.rewind(mark.declarations);
         self.expressions.rewind(mark.expressions);
         self.declarators.rewind(mark.declarators);

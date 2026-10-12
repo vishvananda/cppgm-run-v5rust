@@ -385,7 +385,9 @@ impl Parser<'_> {
         }
         self.tree.qualifiers.finish(start)
     }
-    fn throw_types(&mut self) -> Result<super::storage::List<super::ast::TypeId>, ParseError> {
+    pub(super) fn throw_types(
+        &mut self,
+    ) -> Result<super::storage::List<super::ast::TypeId>, ParseError> {
         self.expect(P::LeftParen)?;
         let start = self.tree.type_lists.begin();
         if !self.at(P::RightParen)? {

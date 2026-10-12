@@ -39,7 +39,7 @@ struct Scope {
     edges: Vec<Edge>,
 }
 #[derive(Clone, Copy)]
-struct Edge {
+pub(super) struct Edge {
     target: ScopeId,
     at: Option<ScopeId>,
     dependent: bool,
@@ -65,10 +65,11 @@ impl Ord for Pending {
         self.depth.cmp(&other.depth)
     }
 }
-enum Change {
+#[derive(Clone, Copy)]
+pub(super) enum Change {
     Unnamed(ScopeId, Option<ScopeId>),
     Binding((ScopeId, NameId), Option<Binding>),
-    Edge(ScopeId),
+    Edge(ScopeId, Option<Edge>),
     Complete(ScopeId, bool),
     Member(ScopeId, Option<ScopeId>),
     Parent(ScopeId, Option<ScopeId>, u32),
@@ -346,7 +347,7 @@ impl Scopes {
                 at,
                 dependent,
             });
-            self.changes.push(Change::Edge(current));
+            self.changes.push(Change::Edge(current, None));
             self.changed();
         }
     }
@@ -541,38 +542,82 @@ impl Scopes {
             environment: self.environment,
         }
     }
+    // Swap a logged value, returning the inverse. Deferred bodies temporarily
+    // detach only changes made after their source position, never whole scopes.
+    fn exchange(&mut self, change: Change) -> Change {
+        match change {
+            Change::Unnamed(parent, value) => {
+                let old = if let Some(value) = value {
+                    self.unnamed.insert(parent, value)
+                } else {
+                    self.unnamed.remove(&parent)
+                };
+                Change::Unnamed(parent, old)
+            }
+            Change::Binding(key, value) => {
+                let old = if let Some(value) = value {
+                    self.bindings.insert(key, value)
+                } else {
+                    self.bindings.remove(&key)
+                };
+                Change::Binding(key, old)
+            }
+            Change::Member(scope, value) => Change::Member(
+                scope,
+                std::mem::replace(&mut self.records[scope.0 as usize].member_of, value),
+            ),
+            Change::Complete(scope, value) => Change::Complete(
+                scope,
+                std::mem::replace(&mut self.records[scope.0 as usize].complete, value),
+            ),
+            Change::Parent(scope, parent, depth) => {
+                let record = &mut self.records[scope.0 as usize];
+                Change::Parent(
+                    scope,
+                    std::mem::replace(&mut record.parent, parent),
+                    std::mem::replace(&mut record.depth, depth),
+                )
+            }
+            Change::Edge(scope, Some(edge)) => {
+                self.records[scope.0 as usize].edges.push(edge);
+                self.edge_targets
+                    .insert((scope, edge.target, edge.dependent));
+                Change::Edge(scope, None)
+            }
+            Change::Edge(scope, None) => {
+                let edge = self.records[scope.0 as usize].edges.pop();
+                if let Some(edge) = edge {
+                    self.edge_targets
+                        .remove(&(scope, edge.target, edge.dependent));
+                }
+                Change::Edge(scope, edge)
+            }
+        }
+    }
+    pub(super) fn log_position(&self) -> usize {
+        self.changes.len()
+    }
+    pub(super) fn detach(&mut self, position: usize, later: &mut Vec<Change>) {
+        later.clear();
+        while self.changes.len() > position {
+            if let Some(change) = self.changes.pop() {
+                later.push(self.exchange(change));
+            }
+        }
+        later.reverse();
+        self.changed();
+    }
+    pub(super) fn reattach(&mut self, later: &[Change]) {
+        for &change in later {
+            let inverse = self.exchange(change);
+            self.changes.push(inverse);
+        }
+        self.changed();
+    }
     pub(super) fn rewind(&mut self, mark: ScopeMark) {
         while self.changes.len() > mark.changes {
-            match self.changes.pop() {
-                Some(Change::Unnamed(parent, Some(old))) => {
-                    self.unnamed.insert(parent, old);
-                }
-                Some(Change::Unnamed(parent, None)) => {
-                    self.unnamed.remove(&parent);
-                }
-                Some(Change::Binding(key, Some(old))) => {
-                    self.bindings.insert(key, old);
-                }
-                Some(Change::Binding(key, None)) => {
-                    self.bindings.remove(&key);
-                }
-                Some(Change::Member(scope, old)) => {
-                    self.records[scope.0 as usize].member_of = old;
-                }
-                Some(Change::Complete(scope, old)) => {
-                    self.records[scope.0 as usize].complete = old;
-                }
-                Some(Change::Parent(scope, parent, depth)) => {
-                    self.records[scope.0 as usize].parent = parent;
-                    self.records[scope.0 as usize].depth = depth;
-                }
-                Some(Change::Edge(scope)) => {
-                    if let Some(edge) = self.records[scope.0 as usize].edges.pop() {
-                        self.edge_targets
-                            .remove(&(scope, edge.target, edge.dependent));
-                    }
-                }
-                None => break,
+            if let Some(change) = self.changes.pop() {
+                self.exchange(change);
             }
         }
         self.records.truncate(mark.scopes);

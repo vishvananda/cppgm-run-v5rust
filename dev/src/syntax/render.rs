@@ -14,6 +14,7 @@ use crate::lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Key
 #[derive(Clone, Copy)]
 pub(super) enum Render {
     Text(&'static str),
+    LambdaIntroducer(super::ast::LambdaId),
     TemplateClause(TemplateParameterClause),
     TemplateParameter(TemplateParameter),
     Declaration(DeclId),
@@ -75,8 +76,45 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
         }
     }
+    fn lambda_introducer(&mut self, id: super::ast::LambdaId) {
+        let lambda = self.tree.lambdas.get(id);
+        self.text("[");
+        self.tasks.push(Render::Text("]"));
+        for (index, capture) in self
+            .tree
+            .captures
+            .get(lambda.captures)
+            .iter()
+            .enumerate()
+            .rev()
+        {
+            if capture.pack {
+                self.tasks.push(Render::Text("..."));
+            }
+            match capture.kind {
+                super::ast::CaptureKind::This => self.tasks.push(Render::Text("this")),
+                super::ast::CaptureKind::Copy(name) => {
+                    self.tasks.push(Render::Identifier(name));
+                }
+                super::ast::CaptureKind::Reference(name) => {
+                    self.tasks.push(Render::Identifier(name));
+                    self.tasks.push(Render::Text("&"));
+                }
+            }
+            if index != 0 || lambda.capture_default.is_some() {
+                self.tasks.push(Render::Text(","));
+            }
+        }
+        if let Some(default) = lambda.capture_default {
+            self.tasks.push(Render::Text(match default {
+                super::ast::CaptureDefault::Copy => "=",
+                super::ast::CaptureDefault::Reference => "&",
+            }));
+        }
+    }
     fn expand(&mut self, task: Render) -> std::io::Result<()> {
         match task {
+            Render::LambdaIntroducer(id) => self.lambda_introducer(id),
             Render::TemplateClause(parameters) => {
                 let parameters = parameters.parameters;
                 self.text("template<");
@@ -291,7 +329,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 Initializer::Default => self.text("=default"),
                 Initializer::Delete => self.text("=delete"),
             },
-            Render::Expression(id) => self.expression(id),
+            Render::Expression(id) => self.expression(id)?,
             Render::ParenthesizedList(list) => {
                 self.text("(");
                 self.tasks.push(Render::Text(")"));
@@ -506,8 +544,29 @@ impl<'a, 'source> Renderer<'a, 'source> {
             self.tasks.push(Render::Text("enum "));
         }
     }
-    fn expression(&mut self, id: ExprId) {
+    fn expression(&mut self, id: ExprId) -> std::io::Result<()> {
         match self.tree.expressions.get(id).kind {
+            ExprKind::Lambda(id) => {
+                let lambda = self.tree.lambdas.get(id);
+                let super::ast::LambdaBody::Parsed(body) = lambda.body else {
+                    return Err(std::io::Error::other("unparsed deferred lambda body"));
+                };
+                self.tasks.push(Render::Statement(body));
+                if let Some(parameters) = lambda.parameters {
+                    if let Some(trailing) = lambda.trailing {
+                        self.tasks.push(Render::Type(trailing));
+                        self.tasks.push(Render::Text("->"));
+                    }
+                    if let Some(exception) = lambda.exception {
+                        self.tasks.push(Render::Qualifier(exception));
+                    }
+                    if lambda.is_mutable {
+                        self.tasks.push(Render::Text("mutable"));
+                    }
+                    self.tasks.push(Render::Clause(parameters));
+                }
+                self.tasks.push(Render::LambdaIntroducer(id));
+            }
             ExprKind::Id(name) => self.tasks.push(Render::Name(name, true)),
             ExprKind::SizeofPack(name) => {
                 self.text("sizeof...(");
@@ -691,6 +750,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 }
             }
         }
+        Ok(())
     }
 }
 pub(super) fn operator_spelling(op: Operator) -> &'static str {

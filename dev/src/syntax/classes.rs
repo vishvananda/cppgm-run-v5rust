@@ -167,8 +167,9 @@ impl Parser<'_> {
         self.class_depth += 1;
         let first_deferred = self.deferred.len();
         let runs = self.cursor.runs_mark();
-        let result = self.declarations(true).and_then(|members| {
-            self.expect(P::RightBrace)?;
+        let result = self.speculation_boundary(|parser| {
+            let members = parser.declarations(true)?;
+            parser.expect(P::RightBrace)?;
             Ok(members)
         });
         self.class_depth -= 1;
@@ -196,7 +197,7 @@ impl Parser<'_> {
             members,
         })?;
         if self.class_depth == 0 {
-            self.parse_deferred_bodies(first_deferred)?;
+            self.speculation_boundary(|parser| parser.parse_deferred_bodies(first_deferred))?;
             self.cursor.rewind_runs(runs);
         }
         Ok(Specifier::Class(class))
@@ -553,26 +554,6 @@ impl Parser<'_> {
             }
         }
         Ok(())
-    }
-    pub(super) fn skip_balanced(&mut self) -> Result<(), ParseError> {
-        let close = match self.punctuator()? {
-            Some(P::LeftParen) => P::RightParen,
-            Some(P::LeftBracket) => P::RightBracket,
-            Some(P::LeftBrace) => P::RightBrace,
-            _ => return self.fail(),
-        };
-        self.cursor.advance()?;
-        self.nested(|parser| {
-            while !parser.at(close)? {
-                match parser.punctuator()? {
-                    Some(P::LeftParen | P::LeftBracket | P::LeftBrace) => parser.skip_balanced()?,
-                    Some(P::RightParen | P::RightBracket | P::RightBrace) => return parser.fail(),
-                    _ if matches!(parser.token()?.kind, TokenKind::End) => return parser.fail(),
-                    _ => parser.cursor.advance()?,
-                }
-            }
-            parser.cursor.advance()
-        })
     }
     pub(super) fn ctor_initializers(&mut self) -> Result<List<MemInitializer>, ParseError> {
         self.expect(P::Colon)?;

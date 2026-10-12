@@ -513,11 +513,7 @@ impl Parser<'_> {
                     }
                     Some(P::Scope) => return self.primary_name(location),
                     Some(P::LeftBrace) => return self.braced_list(),
-                    Some(P::LeftBracket) => {
-                        return Err(ParseError::NotImplemented(
-                            "lambda expressions and deferred bodies",
-                        ));
-                    }
+                    Some(P::LeftBracket) => return self.lambda(),
                     _ => return self.fail(),
                 },
             },

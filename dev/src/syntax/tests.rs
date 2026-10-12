@@ -856,3 +856,188 @@ fn abandoned_elaborated_class_tags_preserve_enclosing_attribute_scratch() {
     assert_eq!(attributes.len(), 1);
     assert_eq!(attributes[0].kind, AttributeKind::Used);
 }
+
+#[test]
+fn lambda_facts_retain_capture_kinds_attributes_and_source_ordinals() {
+    use super::ast::{AttributeKind, CaptureDefault, CaptureKind, ExprKind, LambdaBody, Qualifier};
+    let source = SourceBuffer::new(
+        b"[=, &x, args..., this](int x) __attribute__((noinline)) mutable noexcept(x) [[gnu::used]] -> int { return x; }".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-facts").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let expression = parser.expression().unwrap();
+    let ExprKind::Lambda(id) = parser.tree.expressions.get(expression).kind else {
+        panic!("expected lambda");
+    };
+    let lambda = *parser.tree.lambdas.get(id);
+    assert!(matches!(lambda.capture_default, Some(CaptureDefault::Copy)));
+    let captures = parser.tree.captures.get(lambda.captures);
+    assert_eq!(captures.len(), 3);
+    assert!(matches!(captures[0].kind, CaptureKind::Reference(_)));
+    assert!(matches!(captures[1].kind, CaptureKind::Copy(_)) && captures[1].pack);
+    assert!(matches!(captures[2].kind, CaptureKind::This));
+    assert_eq!(
+        parser
+            .tree
+            .parameters
+            .get(lambda.parameters.unwrap().parameters)
+            .len(),
+        1
+    );
+    assert!(lambda.is_mutable && lambda.trailing.is_some());
+    assert!(matches!(
+        lambda.exception,
+        Some(Qualifier::Noexcept(Some(_)))
+    ));
+    let attributes = parser.tree.attributes.get(lambda.attributes);
+    assert_eq!(attributes.len(), 2);
+    assert_eq!(attributes[0].kind, AttributeKind::NoInline);
+    assert_eq!(attributes[1].kind, AttributeKind::Used);
+    assert_eq!(lambda.clause_token, 11);
+    assert!(lambda.body_token > lambda.clause_token);
+    assert!(matches!(lambda.body, LambdaBody::Parsed(_)));
+    assert!(parser.function_scope.is_none());
+}
+
+#[test]
+fn abandoned_lambda_attempt_never_demands_a_body_and_restores_scratch() {
+    use super::ast::{ExprKind, LambdaBody};
+    let source = SourceBuffer::new(b"[&x](int C){ C * y; }".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let lambdas = parser.tree.lambdas.mark();
+    let captures = parser.tree.captures.mark();
+    let statements = parser.tree.statements.mark();
+    parser.token().unwrap();
+    let scopes = parser.scopes.log_position();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            let expression = parser.expression()?;
+            let ExprKind::Lambda(id) = parser.tree.expressions.get(expression).kind else {
+                panic!("expected lambda");
+            };
+            assert!(matches!(
+                parser.tree.lambdas.get(id).body,
+                LambdaBody::Deferred
+            ));
+            assert_eq!(parser.tree.statements.mark(), statements);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.tree.lambdas.mark(), lambdas);
+    assert_eq!(parser.tree.captures.mark(), captures);
+    assert_eq!(parser.tree.statements.mark(), statements);
+    assert_eq!(parser.scopes.log_position(), scopes);
+    assert!(parser.lambdas.is_empty());
+    assert_eq!(parser.deferred_lambdas, 0);
+    parser.attempt(Parser::expression).unwrap().unwrap();
+    assert_eq!(parser.deferred_lambdas, 1);
+    assert!(parser.lambdas.is_empty());
+}
+
+#[test]
+fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
+    use super::ast::{ExprKind, LambdaBody, StmtKind};
+    use super::scopes::Binding;
+    let source = SourceBuffer::new(b"[] { C * y; }, [] { C * y; }".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-source-order").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let c = parser.cursor.intern_name(b"C").unwrap();
+    let type_binding = Binding {
+        category: Category::Type,
+        parameter: false,
+        scope: None,
+    };
+    parser.scopes.declare(c, type_binding);
+    let (first, second) = parser
+        .attempt(|parser| {
+            let first = parser.assignment_expression()?;
+            parser.expect(crate::lex::pp_lexer::Punctuator::Comma)?;
+            parser.scopes.declare(
+                c,
+                Binding {
+                    category: Category::Value,
+                    ..type_binding
+                },
+            );
+            let second = parser.assignment_expression()?;
+            parser.scopes.declare(c, type_binding);
+            Ok((first, second))
+        })
+        .unwrap()
+        .unwrap();
+    for (expression, declaration) in [(first, true), (second, false)] {
+        let ExprKind::Lambda(id) = parser.tree.expressions.get(expression).kind else {
+            panic!("expected lambda");
+        };
+        let LambdaBody::Parsed(body) = parser.tree.lambdas.get(id).body else {
+            panic!("expected parsed body");
+        };
+        let StmtKind::Compound(items) = parser.tree.statements.get(body).kind else {
+            panic!("expected compound");
+        };
+        let statement = parser.tree.stmt_lists.get(items)[0];
+        assert_eq!(
+            matches!(
+                parser.tree.statements.get(statement).kind,
+                StmtKind::Declaration(_)
+            ),
+            declaration
+        );
+    }
+    assert_eq!(parser.scopes.lookup(c).unwrap().category, Category::Type);
+    assert_eq!(parser.deferred_lambdas, 2);
+    assert!(parser.lambdas.is_empty());
+}
+
+#[test]
+fn committed_lambda_body_errors_cannot_be_swallowed_by_outer_attempts() {
+    let source = SourceBuffer::new(b"[]{ return x + ; }".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-committed-error").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let result = parser.attempt(Parser::expression);
+    assert!(matches!(result, Err(ParseError::CommittedSyntax { .. })));
+    assert_eq!(parser.deferred_lambdas, 1);
+    assert!(parser.lambdas.is_empty());
+    assert_eq!(parser.speculation, 0);
+}
+
+#[test]
+fn skipped_lambda_bodies_use_iterative_delimiter_scratch_without_grammar_demand() {
+    let nesting = 5000;
+    let mut bytes = b"[]{".to_vec();
+    bytes.extend(std::iter::repeat_n(b'(', nesting));
+    bytes.extend_from_slice(b"0");
+    bytes.extend(std::iter::repeat_n(b')', nesting));
+    bytes.extend_from_slice(b";}");
+    let source = SourceBuffer::new(bytes).unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-balanced-demand").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.expression()?;
+            assert!(parser.peak_nesting < 10);
+            assert_eq!(parser.tree.statements.mark(), 0);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert!(parser.lambdas.is_empty());
+    assert_eq!(parser.deferred_lambdas, 0);
+}

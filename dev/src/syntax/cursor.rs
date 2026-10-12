@@ -259,7 +259,8 @@ impl<'a> Cursor<'a> {
     }
     pub(super) fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
         match error {
-            ParseError::Syntax { location, message } => {
+            ParseError::Syntax { location, message }
+            | ParseError::CommittedSyntax { location, message } => {
                 self.post.input().describe(&PreprocessError::Directive {
                     location: *location,
                     message,

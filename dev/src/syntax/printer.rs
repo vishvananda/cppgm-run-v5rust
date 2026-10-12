@@ -929,8 +929,58 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         Ok(())
     }
+    fn lambda(&mut self, id: super::ast::LambdaId) -> io::Result<()> {
+        let lambda = *self.renderer.tree.lambdas.get(id);
+        let super::ast::LambdaBody::Parsed(body) = lambda.body else {
+            return Err(io::Error::other("unparsed deferred lambda body"));
+        };
+        self.open("lambda-expression", Payload::None)?;
+        self.tasks.push(Task::Statement(body));
+        if let Some(parameters) = lambda.parameters {
+            self.tasks.push(Task::Close);
+            if let Some(trailing) = lambda.trailing {
+                self.tasks.push(Task::Close);
+                self.tasks.push(Task::Type(trailing));
+                self.tasks
+                    .push(Task::Line("trailing-return-type", Payload::None, true));
+            }
+            if let Some(exception) = lambda.exception {
+                match exception {
+                    Qualifier::Noexcept(operand) => {
+                        self.tasks.push(Task::Close);
+                        if let Some(operand) = operand {
+                            self.tasks.push(Task::Expression(operand));
+                        }
+                        self.tasks
+                            .push(Task::Line("noexcept-specification", Payload::None, true));
+                    }
+                    Qualifier::Throw(_) => self.tasks.push(Task::Qualifier(exception)),
+                    _ => {
+                        return Err(io::Error::other("invalid lambda exception specification"));
+                    }
+                }
+            }
+            if lambda.is_mutable {
+                self.tasks.push(Task::Line(
+                    "lambda-specifier",
+                    Payload::Keyword(K::Mutable),
+                    false,
+                ));
+            }
+            self.tasks.push(Task::Clause(parameters));
+            self.tasks
+                .push(Task::Line("lambda-declarator", Payload::None, true));
+        }
+        self.tasks.push(Task::Line(
+            "lambda-introducer",
+            Payload::Render(Render::LambdaIntroducer(id)),
+            false,
+        ));
+        Ok(())
+    }
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
+            ExprKind::Lambda(id) => self.lambda(id)?,
             ExprKind::SizeofPack(name) => {
                 self.line("sizeof-pack-expression", Payload::Identifier(name), false)?;
             }

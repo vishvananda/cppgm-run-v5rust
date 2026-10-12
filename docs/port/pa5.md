@@ -3,6 +3,164 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Lambda syntax and commit-time body demand checkpoint — 2026-10-12
+
+Entry commit: `39528505e3b0f5955e215ecdbb5b35030e1479e4` (clean).
+Implementation commit: the commit containing this entry; the external
+`artifacts/pa5-lambdas/handoff.json` records its full ID. Stage base and
+last-audited commit above remain unchanged. The preceding goal turn is
+**progress**, established by the committed attribute group and 190/193 receipts.
+This implements the next coherent group: all three remaining fixed failures
+share `parser_expressions.cpp::parse_lambda` and stopped at status 86.
+This is a partial production-owner handoff with green PA5 stage/course lanes;
+Ralph owns checkpoint/final audits and advancement.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the full clone plan, PA5 README and
+parsing guide, and this ledger. Consulted the actual read-only C++ implementation
+at `/home/vishvananda/work/references/v5rust-cpp`; its HEAD remains the contract
+commit `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`. No oracle/harness defect was found.
+
+| C++ owner/responsibility | Rust owner and completed group |
+| --- | --- |
+| `parser_expressions.cpp::parse_lambda`, `ast_expressions.h::LambdaExpr/LambdaCapture` | `lambdas.rs`, `ast.rs`: capture defaults, this/copy/reference captures and packs; optional parameter clauses, mutable, both exception forms, before/after-specifier attributes, trailing types and original clause/body token ordinals |
+| `parser.cpp::parse_deferred_lambdas`, `parser_state.cpp::save/restore/commit/close` | `lambdas.rs`, `parser.rs`: tentative lambdas skip balanced bodies; outermost successful speculation demands each queued body once while its token window and scope log remain live; abandoned attempts discard queue targets and operands; body parse errors remain terminal |
+| `name_scopes.cpp::detach/reattach` | `scopes.rs`, `lambdas.rs`: reversible change descriptors detach only later binding/relationship/completion changes; reattach in source order around body demand; newly allocated scope identities remain valid; the whole environment is never copied |
+| `parser_regions.h::SpeculationBoundary`, `parser_specifiers.cpp` class-body boundary | `lambdas.rs`, `classes.rs`, `angles.rs`: speculation depth is distinct from retained transaction depth; class regions and committed lambda bodies isolate speculative lists, with nested bodies parsed through their own statement decisions |
+| `parser_statements.cpp::statement_starts_declaration/parse_statement_reading` | `statements.rs`, `parser.rs`: typed declaration/expression head prediction; unambiguous declarations commit directly, while functional-cast/declaration ambiguity gets bounded transactional lookahead; read-only probes always restore names, syntax and cursor without inventing a failure diagnostic |
+| `parser_state.cpp::skip_balanced`, `parser_declarators.cpp::parse_parameter_clause/parse_throw_types` | `parser.rs`, `declarators.rs`: one reusable iterative closer stack for skipped regions; existing typed parameter/default/throw-type parser is shared by lambdas |
+| `ast_printer.cpp::lambda`, `ast_render.cpp::lambda/lambda_introducer` | `printer.rs`, `render.rs`: borrowed iterative exact introducer/declarator/body views, lambda-specific noexcept wrapper, throw spelling and payload-free trailing-return wrapper; recognized attributes stay typed but are omitted like C++ |
+
+All lambda syntax lives in the existing translation-unit slabs and immutable
+list spans. Expressions refer to compact LambdaId; capture kinds carry interned
+NameId; declarators, exception operands, trailing types and attributes retain
+ExprId/TypeId facts. Bodies explicitly transition from Deferred to Parsed(StmtId).
+Original token ordinals are checked into u32, preserving future closure identity
+without deriving it from rendered names. No target evaluation, template
+instantiation, lowering or backend work is demanded by AST mode.
+
+A deferred entry borrows the retained cursor region and records its lexical
+ScopeId plus change-log position. After commit, later changes detach in reverse
+and reattach forward between source-ordered bodies. Body-local changes remain
+logged for any enclosing rollback. Speculation boundaries preserve the enclosing
+transaction's retention lifetime while allowing inner statement attempts to
+commit independently. The scratch change vector and delimiter stack retain
+capacity between queries. Completed lambda bodies keep syntax, not token runs.
+The existing class capture/replay owner and absolute token ordinals continue to
+work for local classes and late members inside lambdas.
+
+The first broader probe run found a diagnostic divergence for an unbalanced
+body: the candidate unnecessarily speculated over an unambiguous auto declaration
+and skipped ahead to a mismatched closer. Porting the C++ statement-head decision
+restored the oracle's earlier direct-body diagnostic. The same owner also avoids
+retaining complete ordinary declaration initializers for unnecessary speculation.
+Balanced skipping is now iterative like C++, independent of the parser's remaining
+host recursion policy. No unsafe, FFI/subprocess implementation, dependencies,
+fixture recognition, optimization or new lint suppression was introduced. Code
+generation, optimizer and register allocator sources are unchanged.
+
+Five new Rust invariants cover typed capture/default/attribute/operand facts and
+source ordinals; abandoned lambda attempts with no body demand or leaked scratch;
+source-position bindings across two queued bodies and later shadowing; terminal
+committed-body errors; and skipping 5000 nested delimiters without grammar demand
+or recursion growth. Debug and release each pass **79 library and eight tool tests**.
+Three new required cases and their own expectation sidecars are in the executed
+PA5 `tests/general/300-lambda-*.t` lane, covering attributes/exceptions/traits,
+ambiguity/nested bodies and a rejecting committed body. No existing fixture or
+reference, frozen manifest, protected checker/policy, oracle source or Ralph state
+changed. New passing cases do not contribute to fixed-manifest progress.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-lambdas/`.
+`entry.json`, `start-results.json`, final `pa1-results.json` through
+`pa5-results.json`, `progress.json`, passing/gained/failing identity lists and
+`failure-index.json` retain exact identities, manifest/tool hashes and validation.
+`start-failure-index.json` / `start-cases/<digest>/` preserve entry raw failure
+traces/diagnostics/AST differences; final `cases/<digest>/trace.jsonl` and
+`course/pa1/` through `course/pa5/` retain protected receipts. Raw comparisons
+for broader probes, new regressions and resources remain in their own directories.
+Fixed coverage stays **193**, with manifest SHA-256
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+**190 -> 193 passes; 3 -> 0 failures; three gains; zero lost identities**.
+
+| Command | Final result and receipt |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make test-pa5` | PASS: 193/193; `stage.log`, `pa5-results.json` |
+| required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS: 193/193, checker exit 0; `required-stage.log` |
+| `make course-pa5` | PASS: 214/214, zero failed comparisons and no failure marker; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS: fixed PA1–PA4 58/58, 26/26, 20/20, 106/106; full course 58/58, 28/28, 20/20, 112/112; `prior.log` and archived stage/course receipts |
+| `make lint` / protected `clone_quality.py` | PASS: rustfmt, strict Clippy, debug/release tests and companion audit; `quality.log` |
+| `make audit-rust` | PASS: 81 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` | PASS; `preflight.log` |
+| protected `clone_check.py preserve pa5` | PASS; `preserve.log`; `progress.json` independently proves all 190 entry passes are retained |
+
+`validate.py` / `checks.json` record exact commands, statuses and elapsed costs.
+`probe.py`, `probes.json`, `probes-final.log` and `probes/` retain all **135/135**
+full exit/stdout/stderr/AST comparisons: capture combinations, parameter packs,
+mutable/noexcept/throw, attributes, nested lambdas in operands/defaults/traits,
+angle regions, direct and speculative statements, source-position shadowing,
+late class members, malformed clauses and bodies. The isolated preceding
+attribute/template/audit probe scripts rerun **147/147**, **76/76** and **114/114**
+full comparisons, with their raw sources/receipts and `prior-*.log` files retained.
+All three new executed cases also match full bytes; `new-regressions.json` and
+`new-regressions/` preserve evidence. These comparisons prove the translated
+group's tested behavior, not every pending C++ implementation responsibility.
+
+Resource command: `python3` on this root's `measure.py`. Frozen input/output/tool
+hashes, rustc 1.98.0, Linux, UTC/C locale and warm whole-invocation conditions are
+recorded in `resource-metadata.json`, `measurements.json` and `resources/`.
+Oracle A/A calibration followed by A/B/B/A blocks match full status/stdout/stderr/
+AST bytes on all 54 invocations. Measurements include reading, preprocessing,
+the host clock helper and dump I/O on a shared host; no cold-cache or hardware-
+counter proof, or PA35 generated-code improvement requirement, is claimed.
+
+| Workload | Units | Rust mean ms | Rust peak RSS KiB | C++ mean ms | C++ peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| lambda-functions | 1000 | 41.22 | 8044 | 19.46 | 7220 |
+| lambda-functions | 4000 | 112.03 | 14168 | 61.57 | 14260 |
+| lambda-functions | 16000 | 419.95 | 46844 | 225.22 | 42072 |
+| speculative-lambda-declarations | 1000 | 39.92 | 8012 | 18.07 | 7176 |
+| speculative-lambda-declarations | 4000 | 125.94 | 12056 | 63.10 | 13580 |
+| speculative-lambda-declarations | 16000 | 431.18 | 42356 | 217.18 | 39132 |
+| ordinary-functions | 1000 | 26.22 | 8060 | 10.82 | 6524 |
+| ordinary-functions | 4000 | 65.20 | 8560 | 25.89 | 8628 |
+| ordinary-functions | 16000 | 193.33 | 21892 | 86.90 | 20596 |
+
+Lambda functions exercise captures, mutable/noexcept and calls; speculative
+lambda declarations exercise competing function/object readings and body-local
+typedefs. Ordinary functions provide a control. Fourfold 4000 -> 16000 input
+growth takes about 3.0–3.8 times Rust wall time in these observations, with syntax
+storage growing with introduced syntax. Checkout/scratch occupy about 7.4 GiB
+of the shared 100 GiB capacity (the filesystem's inaccessible lost+found is
+excluded). These are measured supported costs, not new acceptance policy.
+
+Exact newly passing fixed IDs:
+
+```text
+tests/general/100-lambda-cast.t
+tests/general/200-lambda-capture-forms.t
+tests/general/200-lambda-declarator.t
+```
+
+Exact remaining fixed IDs: **none**. PA5 fixed and course lanes are green.
+The next production dependency boundary is retained specialization-category
+conflicts and alternate statement readings in `name_conflicts.h`,
+`name_scopes.cpp`, `parser_names.cpp` and `parser_statements.cpp`, including
+sharing parsed lambda bodies across those retained readings. Dependent
+prefix/substitution approximations, remaining parameter/name/initializer source
+facts, hosted vocabulary/prelude/stats and the safe replacement for the oracle's
+host byte-stack policy still require owner audits/translation. Hosted C++20
+lambda template heads depend on that typed hosted grammar boundary. The current
+real grammar nesting boundary still explicitly returns status 86 at 256;
+iterative balanced skipping no longer consumes that budget. These are unfinished
+production responsibilities, not certified clone rejections.
+
+Architecture review should trace lambda body demand at outer commit, visibility
+while later changes detach, preservation of enclosing rollback, nested class/run
+lifetimes, typed source ordinals and iterative views. It should also assess the
+remaining conflict/hosted/source-fact/stack owners against the C++ implementation,
+rather than infer whole-PA5 completion solely from 193 passing cases. This entry
+does not advance last-audited commit or Ralph's stage.
+
 ## Attribute collection, appertainment and transactional owners checkpoint — 2026-10-12
 
 Entry commit: `a220356` (clean; full ID in `artifacts/pa5-attributes/entry.json`).

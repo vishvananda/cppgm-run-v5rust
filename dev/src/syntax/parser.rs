@@ -28,6 +28,11 @@ pub(super) struct Parser<'a> {
     pub angles: super::angles::Angles,
     pub class_depth: usize,
     pub deferred: Vec<super::classes::DeferredBody>,
+    pub lambdas: Vec<super::lambdas::DeferredLambda>,
+    pub lambda_changes: Vec<super::scopes::Change>,
+    pub speculation: usize,
+    closers: Vec<P>,
+    pub deferred_lambdas: u64,
     depth: u32,
     tentative_depth: usize,
     pub checkpoints: u64,
@@ -50,6 +55,7 @@ struct Checkpoint {
     pending_class_tags: List<super::ast::Attribute>,
     class_depth: usize,
     deferred: usize,
+    lambdas: usize,
     runs: usize,
 }
 impl<'a> Parser<'a> {
@@ -68,6 +74,11 @@ impl<'a> Parser<'a> {
             angles: super::angles::Angles::default(),
             class_depth: 0,
             deferred: Vec::new(),
+            lambdas: Vec::new(),
+            lambda_changes: Vec::new(),
+            speculation: 0,
+            closers: Vec::new(),
+            deferred_lambdas: 0,
             depth: 0,
             tentative_depth: 0,
             checkpoints: 0,
@@ -151,6 +162,33 @@ impl<'a> Parser<'a> {
             self.fail()
         }
     }
+    pub(super) fn skip_balanced(&mut self) -> Result<(), ParseError> {
+        // The oracle uses one reusable closer stack, independent of parser
+        // recursion. Only this balanced region is demanded, not its grammar.
+        self.closers.clear();
+        loop {
+            if matches!(self.token()?.kind, TokenKind::End) {
+                return self.fail();
+            }
+            match self.punctuator()? {
+                Some(P::LeftParen) => self.closers.push(P::RightParen),
+                Some(P::LeftBracket) => self.closers.push(P::RightBracket),
+                Some(P::LeftBrace) => self.closers.push(P::RightBrace),
+                Some(close @ (P::RightParen | P::RightBracket | P::RightBrace)) => {
+                    if self.closers.last() != Some(&close) {
+                        return self.fail();
+                    }
+                    self.closers.pop();
+                }
+                _ if self.closers.is_empty() => return self.fail(),
+                _ => (),
+            }
+            self.cursor.advance()?;
+            if self.closers.is_empty() {
+                return Ok(());
+            }
+        }
+    }
     pub(super) fn error_mark(&self) -> (u64, SourceOffset) {
         (self.error_position, self.furthest)
     }
@@ -206,6 +244,20 @@ impl<'a> Parser<'a> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<Option<T>, ParseError> {
+        self.transaction(true, parse)
+    }
+    // Lookahead returns a decision, never a syntax ID from its rewound store.
+    pub(super) fn lookahead<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Option<T>, ParseError> {
+        self.transaction(false, parse)
+    }
+    fn transaction<T>(
+        &mut self,
+        commit: bool,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Option<T>, ParseError> {
         self.initialize()?;
         let mark = Checkpoint {
             position: self.cursor.position,
@@ -220,14 +272,16 @@ impl<'a> Parser<'a> {
             pending_class_tags: self.pending_class_tags,
             class_depth: self.class_depth,
             deferred: self.deferred.len(),
+            lambdas: self.lambdas.len(),
             runs: self.cursor.runs_mark(),
         };
         self.cursor.retain();
         self.tentative_depth += 1;
+        self.speculation += 1;
         self.checkpoints += 1;
         let result = parse(self);
-        self.tentative_depth -= 1;
-        if result.is_err() {
+        self.speculation -= 1;
+        if result.is_err() || !commit {
             self.cursor.position = mark.position;
             self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
@@ -240,10 +294,21 @@ impl<'a> Parser<'a> {
             self.pending_class_tags = mark.pending_class_tags;
             self.class_depth = mark.class_depth;
             self.deferred.truncate(mark.deferred);
+            self.lambdas.truncate(mark.lambdas);
             self.cursor.rewind_runs(mark.runs);
             self.rewinds += 1;
         }
+        // The outer alternative has committed. Body failure is terminal:
+        // the same body occurs in every reading, so no enclosing fallback
+        // may turn this error into a different declaration/expression parse.
+        let bodies = if commit && result.is_ok() && self.speculation == 0 {
+            self.parse_deferred_lambdas(mark.lambdas)
+        } else {
+            Ok(())
+        };
+        self.tentative_depth -= 1;
         self.cursor.release();
+        bodies?;
         match result {
             Ok(value) => Ok(Some(value)),
             Err(ParseError::Syntax { .. }) => Ok(None),

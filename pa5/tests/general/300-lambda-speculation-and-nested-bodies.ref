@@ -1,0 +1,196 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+    class-specifier leaf
+      class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier leaf<([]{return2>1;}())>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier parse_nested
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:C
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier object
+            initializer
+              paren-initializer
+                call-expression
+                  id-expression int
+                  paren-argument-list
+                    call-expression
+                      lambda-expression
+                        lambda-introducer []
+                        compound-statement
+                          simple-declaration
+                            decl-specifier-seq
+                              decl-specifier KW_TYPEDEF:typedef
+                              decl-specifier KW_INT:int
+                            init-declarator-list
+                              init-declarator
+                                declarator
+                                  identifier local
+                          simple-declaration
+                            decl-specifier-seq
+                              decl-specifier TT_IDENTIFIER:local
+                            init-declarator-list
+                              init-declarator
+                                declarator
+                                  ptr-operator OP_STAR:*
+                                  identifier value
+                          return-statement
+                            literal 1
+                      argument-list
+      expression-statement
+        call-expression
+          id-expression C
+          argument-list
+            call-expression
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  return-statement
+                    call-expression
+                      lambda-expression
+                        lambda-introducer []
+                        compound-statement
+                          return-statement
+                            literal 1
+                      argument-list
+              argument-list
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier word
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_AUTO:auto
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier first
+            initializer
+              call-expression
+                lambda-expression
+                  lambda-introducer []
+                  compound-statement
+                    simple-declaration
+                      decl-specifier-seq
+                        decl-specifier TT_IDENTIFIER:word
+                      init-declarator-list
+                        init-declarator
+                          declarator
+                            ptr-operator OP_STAR:*
+                            identifier pointer
+                    return-statement
+                      literal 1
+                argument-list
+          init-declarator
+            declarator
+              identifier word
+            initializer
+              literal 1
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_AUTO:auto
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier second
+            initializer
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  class-specifier local
+                    class-key KW_STRUCT:struct
+                    special-member-definition local
+                      declarator
+                        identifier local
+                        parameter-clause
+                      ctor-initializer
+                        mem-initializer
+                          mem-initializer-id value
+                          paren-argument-list
+                            call-expression
+                              lambda-expression
+                                lambda-introducer []
+                                compound-statement
+                                  return-statement
+                                    sizeof-expression
+                                      type-id
+                                        type-specifier-seq
+                                          type-name late
+                              argument-list
+                      compound-statement
+                    simple-declaration
+                      decl-specifier-seq
+                        decl-specifier KW_INT:int
+                      init-declarator-list
+                        init-declarator
+                          declarator
+                            identifier value
+                    function-definition
+                      decl-specifier-seq
+                        decl-specifier KW_INT:int
+                      declarator
+                        identifier method
+                        parameter-clause
+                      compound-statement
+                        return-statement
+                          call-expression
+                            lambda-expression
+                              lambda-introducer []
+                              compound-statement
+                                simple-declaration
+                                  decl-specifier-seq
+                                    decl-specifier TT_IDENTIFIER:late
+                                  init-declarator-list
+                                    init-declarator
+                                      declarator
+                                        ptr-operator OP_STAR:*
+                                        identifier pointer
+                                return-statement
+                                  literal 1
+                            argument-list
+                    simple-declaration
+                      decl-specifier-seq
+                        decl-specifier KW_TYPEDEF:typedef
+                        decl-specifier KW_INT:int
+                      init-declarator-list
+                        init-declarator
+                          declarator
+                            identifier late
+                  return-statement
+                    lambda-expression
+                      lambda-introducer []
+                      compound-statement
+                        return-statement
+                          lambda-expression
+                            lambda-introducer []
+                            compound-statement
+                              return-statement
+                                literal 1
+end translation unit

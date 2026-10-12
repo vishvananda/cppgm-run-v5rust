@@ -6,7 +6,81 @@ use super::{
     parser::Parser,
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
+#[derive(Clone, Copy)]
+enum StatementHead {
+    Declaration,
+    TentativeDeclaration,
+    Expression,
+}
 impl Parser<'_> {
+    fn statement_head(&mut self) -> Result<StatementHead, ParseError> {
+        match self.keyword()? {
+            Some(word) if Self::is_specifier(word) && !Self::has_type_keyword(word) => {
+                return Ok(StatementHead::Declaration);
+            }
+            Some(
+                K::Auto
+                | K::Class
+                | K::Struct
+                | K::Union
+                | K::Enum
+                | K::Namespace
+                | K::Using
+                | K::StaticAssert
+                | K::Template,
+            ) => {
+                return Ok(StatementHead::Declaration);
+            }
+            Some(word) if Self::has_type_keyword(word) => {
+                return Ok(if self.at_ahead(P::LeftBrace, 1)? {
+                    StatementHead::Expression
+                } else if self.at_ahead(P::LeftParen, 1)? {
+                    StatementHead::TentativeDeclaration
+                } else {
+                    StatementHead::Declaration
+                });
+            }
+            Some(K::Typename | K::Decltype) => return Ok(StatementHead::TentativeDeclaration),
+            Some(_) => return Ok(StatementHead::Expression),
+            None => (),
+        }
+        if !matches!(self.token()?.kind, TokenKind::Identifier(_)) && !self.at(P::Scope)? {
+            return Ok(StatementHead::Expression);
+        }
+        let head = self.lookahead(|parser| {
+            let (name, binding) = parser.type_name()?;
+            let followed = matches!(parser.token()?.kind, TokenKind::Identifier(id) if !matches!(parser.cursor.name(id), b"final" | b"override"));
+            if !parser.is_type_name(name, binding, false, followed) || parser.at(P::LeftBrace)? {
+                Ok(StatementHead::Expression)
+            } else if parser.at(P::LeftParen)? {
+                Ok(StatementHead::TentativeDeclaration)
+            } else { Ok(StatementHead::Declaration) }
+        })?;
+        Ok(head.unwrap_or(StatementHead::Expression))
+    }
+    fn declaration_or_expression(
+        &mut self,
+        attributes: super::storage::List<super::ast::Attribute>,
+    ) -> Result<StmtKind, ParseError> {
+        match self.statement_head()? {
+            StatementHead::Declaration => {
+                return Ok(StmtKind::Declaration(
+                    self.declaration_with_attributes(attributes)?,
+                ));
+            }
+            StatementHead::TentativeDeclaration => {
+                if let Some(declaration) =
+                    self.attempt(|parser| parser.declaration_with_attributes(attributes))?
+                {
+                    return Ok(StmtKind::Declaration(declaration));
+                }
+            }
+            StatementHead::Expression => (),
+        }
+        let expression = self.expression()?;
+        self.expect(P::Semicolon)?;
+        Ok(StmtKind::Expression(Some(expression)))
+    }
     pub(super) fn compound_statement(&mut self) -> Result<StmtId, ParseError> {
         self.compound_in_scope(true)
     }
@@ -148,14 +222,8 @@ impl Parser<'_> {
             _ => {
                 if self.accept(P::Semicolon)? {
                     StmtKind::Expression(None)
-                } else if let Some(declaration) =
-                    self.attempt(|parser| parser.declaration_with_attributes(attributes))?
-                {
-                    StmtKind::Declaration(declaration)
                 } else {
-                    let expression = self.expression()?;
-                    self.expect(P::Semicolon)?;
-                    StmtKind::Expression(Some(expression))
+                    self.declaration_or_expression(attributes)?
                 }
             }
         };

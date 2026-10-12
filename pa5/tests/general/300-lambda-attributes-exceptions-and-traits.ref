@@ -1,0 +1,154 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier Args
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier parse_lambdas
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:Args
+            declarator
+              parameter-pack ...
+              identifier args
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier x
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier first
+              initializer
+                lambda-expression
+                  lambda-introducer [&,args...,this]
+                  lambda-declarator
+                    parameter-clause
+                      parameter-declaration
+                        decl-specifier-seq
+                          decl-specifier KW_INT:int
+                        declarator
+                          identifier C
+                    lambda-specifier KW_MUTABLE:mutable
+                    noexcept-specification
+                      id-expression C
+                    trailing-return-type
+                      type-id
+                        type-specifier-seq
+                          type-specifier KW_INT:int
+                  compound-statement
+                    expression-statement
+                      binary-expression OP_STAR:*
+                        id-expression C
+                        id-expression value
+                    return-statement
+                      id-expression C
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier second
+              initializer
+                lambda-expression
+                  lambda-introducer [=,&x]
+                  lambda-declarator
+                    parameter-clause
+                    function-qualifier throw(int,C*)
+                    trailing-return-type
+                      type-id
+                        type-specifier-seq
+                          type-name C
+                        abstract-declarator
+                          ptr-operator OP_STAR:*
+                  compound-statement
+                    return-statement
+                      keyword-literal KW_NULLPTR:nullptr
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier third
+              initializer
+                lambda-expression
+                  lambda-introducer []
+                  lambda-declarator
+                    parameter-clause
+                    noexcept-specification
+                      call-expression
+                        lambda-expression
+                          lambda-introducer []
+                          compound-statement
+                            return-statement
+                              literal 1
+                        argument-list
+                    trailing-return-type
+                      type-id
+                        type-specifier-seq
+                          decltype-specifier decltype([]{return1;}())
+                            call-expression
+                              lambda-expression
+                                lambda-introducer []
+                                compound-statement
+                                  return-statement
+                                    literal 1
+                              argument-list
+                  compound-statement
+                    return-statement
+                      literal 1
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier fourth
+              initializer
+                lambda-expression
+                  lambda-introducer []
+                  lambda-declarator
+                    parameter-clause
+                      parameter-declaration
+                        decl-specifier-seq
+                          decl-specifier KW_INT:int
+                        declarator
+                          identifier x
+                        default-argument
+                          initializer
+                            call-expression
+                              lambda-expression
+                                lambda-introducer []
+                                compound-statement
+                                  return-statement
+                                    literal 1
+                              argument-list
+                  compound-statement
+                    return-statement
+                      sizeof-expression
+                        lambda-expression
+                          lambda-introducer []
+                          compound-statement
+                            return-statement
+                              literal 1
+end translation unit
