@@ -7,6 +7,128 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: parser state and body boundaries — 2026-10-12
+
+Entry/reviewed commit: `6234a394ed322f7c8e0d1fd11b2dee4049cc9bc9` (clean).
+Base and last accepted partial audit above remain unchanged. The resulting
+commit and clean status are recorded in `pa5-state-final/handoff.json`.
+**Full acceptance remains open.** The existing goal was observed as blocked
+in this session; it was not reset, edited or marked complete.
+
+The full frozen `parser.cpp`, `parser_state.cpp`, `parser_regions.h` and state
+interfaces were consulted directly. **26 due navigation functions** were
+reviewed; statistics and GNU trait/typeof interfaces are classified as later
+owning surfaces. `reviewed-state-responsibilities.json` records control flow,
+failure/demand, numeric/source facts and Rust owners. The explicit source-review
+census reaches **195 entries**; AST/header/render owners, the speculative-list
+key compatibility finding and exact native rejection parity remain open.
+
+Findings resolved:
+
+- A class speculation boundary resets speculation/list-region state while
+  preserving its enclosing angle mode. Previously Rust cleared that mode,
+  accepting class `static_assert` operands that the frozen delimiter rules
+  reject. Deferred member bodies explicitly disable angle mode during replay
+  and restore it afterward. Lambda bodies retain their own angle boundary.
+- A constructor mem-initializer beginning with decltype contains exactly one
+  decltype name component. A private typed name builder consumes the operand
+  once; a following `::` remains for the owning initializer grammar to reject.
+  Ordinary type-name mem-initializers and parenthesized/braced operands remain.
+- Deferred lambda replay restores the saved parameter scope as well as the
+  function scope, source position, enclosing scope, pending template state and
+  shared-body region. A body-local function declaration cannot replace the
+  enclosing parameter-clause fact after commit.
+- Template/pack mention counters and the current parameter's starting count
+  now use the frozen **uint32** width with deliberate wrapping increments.
+  Checkpoints retain typed copies of those facts; no unsigned widening is
+  mistaken for target wrap behavior.
+
+Three invariants cover angle/speculation restoration on error, committed lambda
+parameter ownership, and mention-counter wrap at the target boundary. The
+primary sweep improves **47/50 to 50/50**; ctor IDs **24/36 to 36/36**, resolving
+**15 measured differences**. The cache-context sweep remains **72/72** after
+restoring frozen behavior. All **3462/3462** recent and **2141/2141** prior probes
+remain exact: **5761/5761** ordinary raw status/stdout/stderr/full AST
+comparisons. All final receipts were regenerated after the last production
+mutation; experimental receipts are retained separately.
+
+The complete-key review found an unresolved compatibility question.
+`cache-key-finding.json` and `cache-contexts/enhanced-metadata.json` retain the
+reproducer, temporary candidate/diff hashes and exact IDs. Adding selected
+category/alternative-reading context to the negative-list key changes eight
+cases, IDs **0, 1, 6, 7, 12, 13, 18, 19** in `cache-contexts/enhanced.json`, from
+C++ rejection to Rust acceptance. All use an undeclared template root and an
+alias of an unknown type. The owning handout excludes semantic resolution of
+ambiguous template arguments, but that boundary does not prove the general
+complete-key property. The experiment also changed 12 nested-failure diagnostic
+comparisons; it was fully reverted. Restored raw comparisons preserve all
+previous passes. No in-scope reproducible oracle bug, baseline correction,
+fixture exclusion or acceptance-policy change is claimed. **This finding is
+open**, separately from native frame parity; full acceptance is withheld.
+
+Three new required executed PA5 general cases and only their new expectations:
+`300-class-template-angle-static-assert-reject`,
+`300-class-template-angle-deferred-bodies`, and
+`300-decltype-ctor-id-qualification-reject`. Inputs were not formatted.
+Original fixtures/references, frozen C++, protected policy and Ralph state
+remain unchanged. Fixed manifest remains **193 entry/final passes**, no lost
+IDs and no fixed failures; additions and inventory counts do not certify it.
+
+Architecture review: typed unit-owned names, bodies, scopes, source intervals
+and counters carry facts directly. Bounded checkpoints restore stores/queues
+and do not copy a token stream; deferred body demand occurs while retained
+source/logs are live. No unsafe code, dependency, compiler-source environment
+read, implementation subprocess, blanket allowance, mechanical split,
+backend/optimizer/register allocator change or PA35 objective was introduced.
+Strict Clippy/rustfmt, debug/release **134 library plus nine tool tests**, and
+an **87-file authoritative audit** pass with zero findings.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-state-final/`.
+Metadata, progress, raw probes/case/course archives and `checks.json` retain
+source/tool hashes, exact commands, IDs and outcomes. Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+Final commands after the last production mutation:
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS strict Clippy/rustfmt, debug/release 134 library + nine tool tests; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS **286/286**, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+Resources stay separate from equality. `measure.py`, `measurements.json`,
+`resource-summary.json` and `resource-metadata.json` retain **36 serial warm
+whole invocations**, after verification handles were terminal, at
+1000/4000/16000 units, ordered
+oracle/oracle/oracle/candidate/candidate/oracle. All runs exit 0 and match full
+raw output/streams; source/tool hashes, ASTs, streams and RSS files are retained.
+Median wall milliseconds include preprocessing, launch and I/O; RSS is maximum
+measured KiB. Syntax-only workloads do not decide later semantic validity.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Class angle context and deferred body boundaries | 53.01 / 171.98 / 549.07 | 19.95 / 70.65 / 253.62 | 8104 / 18440 / 63060 |
+| Single decltype constructor initializer IDs | 29.31 / 68.89 / 197.45 | 11.63 / 25.60 / 87.81 | 8104 / 9988 / 28996 |
+
+C++ max RSS at 16k is respectively 60020 and 24112 KiB. No speed or
+code-generation objective is inferred. `storage.txt` records a shared-volume
+sample below the 107374182400-byte task ceiling.
+
+Final native comparisons improve **45/48 to 46/48** without budget calibration:
+`known-templates/2400` now matches C++ success. The source-derived integer width
+and boundary changes also changed generated Rust host frames; this is one
+observed cutoff gain, not a general physical-parity proof. Remaining exact IDs
+are `final-native/parentheses/4800` (C++ success, Rust rejection at column 4234)
+and `final-native/known-templates/4800` (C++ rejection at 7627, Rust at 4839).
+No signal, panic, timeout or status 86 was accepted. Ordinary diagnostics stay
+strict; no fixture tailoring, waiver or policy/baseline change was used.
+Full acceptance and goal completion remain withheld for **AST/header/render
+ownership, the open speculative-list key finding and exact native parity**.
+
 ## Full-stage audit continuation: scope ownership, memo eligibility and ordering — 2026-10-12
 
 Entry/reviewed commit: `48a6e9266e64667b26337c34f6c4966d7ee342f0` (clean).

@@ -39,6 +39,69 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn speculation_boundaries_preserve_enclosing_angle_mode() {
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-boundary-angle").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.angle = true;
+    parser.speculation = 1;
+    let result: Result<(), ParseError> = parser.speculation_boundary(|parser| {
+        assert!(parser.angle);
+        assert_eq!(parser.speculation, 0);
+        parser.decline_operand()
+    });
+    assert!(result.is_err());
+    assert!(parser.angle);
+    assert_eq!(parser.speculation, 1);
+}
+
+#[test]
+fn committed_lambda_bodies_restore_the_enclosing_parameter_scope() {
+    let source = SourceBuffer::new(
+        b"void f(int x); template<int N>struct P{}; P<([]{void helper(int v);return 0;}())> p;"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"lambda-parameter-scope").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let parameter = parser.parameter_scope.unwrap();
+    parser.declaration().unwrap();
+    assert_eq!(parser.parameter_scope, Some(parameter));
+    assert_eq!(parser.deferred_lambdas, 1);
+}
+
+#[test]
+fn template_and_pack_mention_counters_wrap_at_target_width() {
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"mention-counter-wrap").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.template_mentions = u32::MAX;
+    parser.pack_mentions = u32::MAX;
+    parser.observe_name_binding(Some(super::scopes::Binding {
+        category: Category::Type,
+        pack: true,
+        parameter: true,
+        scope: None,
+        specialization: 0,
+        alternatives: super::scopes::Categories::default(),
+        guesses: super::scopes::Guesses::default(),
+    }));
+    assert_eq!(parser.template_mentions, 0);
+    assert_eq!(parser.pack_mentions, 0);
+}
+
+#[test]
 fn name_boundaries_leave_scope_tokens_for_their_owning_grammar() {
     let source = SourceBuffer::new(b"C::+1".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"name-boundary").unwrap();

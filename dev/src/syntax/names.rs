@@ -355,6 +355,32 @@ impl Parser<'_> {
         self.expect(P::RightParen)?;
         Ok(operand)
     }
+    pub(super) fn single_decltype_name(&mut self) -> Result<Name, ParseError> {
+        let location = self.location()?;
+        let mentions = self.template_mentions;
+        self.cursor.advance()?;
+        let operand = self.decltype_operand()?;
+        let start = self.tree.name_lists.begin();
+        self.tree.name_lists.push(NameComponent {
+            location,
+            kind: NameKind::Decltype(operand),
+            template_keyword: false,
+            arguments: None,
+        });
+        let components = self.tree.name_lists.finish(start)?;
+        self.tree.names.add(QualifiedName {
+            location,
+            global: false,
+            typename_keyword: false,
+            components,
+            prefix_scope: None,
+            prefix_state: PrefixState::Unqualified,
+            prefix_template: super::ast::TemplatePrefix::Ordinary,
+            prefix_guesses: super::scopes::Guesses::default(),
+            mentions_parameters: self.template_mentions != mentions,
+            binding: None,
+        })
+    }
     pub(super) fn is_type_name(
         &self,
         name: Name,

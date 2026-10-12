@@ -625,7 +625,11 @@ impl Parser<'_> {
             self.scopes.current = entry.scope;
             self.cursor.push_run(entry.tokens);
             let result = self
-                .without_declaration_attributes(|parser| parser.function_body(entry.constructor))
+                .without_angle(|parser| {
+                    parser.without_declaration_attributes(|parser| {
+                        parser.function_body(entry.constructor)
+                    })
+                })
                 .and_then(|body| {
                     if matches!(self.token()?.kind, TokenKind::End) {
                         Ok(body)
@@ -691,7 +695,11 @@ impl Parser<'_> {
         loop {
             let location = self.location()?;
             let mentions = self.pack_mentions;
-            let name = self.type_name()?.0;
+            let name = if self.keyword()? == Some(K::Decltype) {
+                self.single_decltype_name()?
+            } else {
+                self.type_name()?.0
+            };
             if !matches!(self.punctuator()?, Some(P::LeftBrace | P::LeftParen)) {
                 return self.fail();
             }

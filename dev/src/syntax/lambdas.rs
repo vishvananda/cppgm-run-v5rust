@@ -167,7 +167,7 @@ impl Parser<'_> {
     ) -> Result<T, ParseError> {
         let saved = self.speculation;
         self.speculation = 0;
-        let result = self.without_angle(|parser| parser.speculative_list_boundary(parse));
+        let result = self.speculative_list_boundary(parse);
         self.speculation = saved;
         result
     }
@@ -179,6 +179,7 @@ impl Parser<'_> {
         let resume = self.cursor.position;
         let enclosing = self.scopes.current;
         let function = self.function_scope;
+        let parameter = self.parameter_scope;
         let pending = self.pending_template;
         let region = self.shared_lambdas.region.take();
         let base = self.lambdas[first].log;
@@ -221,6 +222,7 @@ impl Parser<'_> {
         self.cursor.position = resume;
         self.scopes.current = enclosing;
         self.function_scope = function;
+        self.parameter_scope = parameter;
         self.pending_template = pending;
         self.shared_lambdas.region = region;
         match result {
