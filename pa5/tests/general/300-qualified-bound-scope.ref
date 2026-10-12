@@ -1,0 +1,37 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              identifier N::arr
+          array-suffix
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  class-forward-declaration ghost
+                    class-key KW_STRUCT:struct
+                abstract-declarator
+                  ptr-operator OP_STAR:*
+          array-suffix
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  type-name ghost
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        sizeof-expression
+          id-expression ghost
+end translation unit

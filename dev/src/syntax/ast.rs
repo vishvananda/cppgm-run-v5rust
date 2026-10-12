@@ -272,6 +272,7 @@ pub(super) struct Pointer {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Declarator {
+    pub member_scope: Option<ScopeId>,
     #[cfg_attr(
         not(test),
         expect(

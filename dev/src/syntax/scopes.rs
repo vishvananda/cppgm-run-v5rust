@@ -437,7 +437,7 @@ impl Scopes {
         self.changed();
     }
     pub(super) fn member_context(&mut self, member: ScopeId) -> Result<ScopeId, ParseError> {
-        let scope = self.push()?;
+        let scope = self.push_kind(ScopeKind::Block)?;
         self.set_member(scope, member);
         Ok(scope)
     }

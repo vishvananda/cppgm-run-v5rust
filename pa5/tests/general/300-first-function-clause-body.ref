@@ -1,0 +1,34 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  class-specifier Y
+    class-key KW_STRUCT:struct
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier C
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier Y
+    compound-statement
+      expression-statement
+        sizeof-expression
+          id-expression C
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              type-name Y
+end translation unit

@@ -443,13 +443,14 @@ impl Parser<'_> {
         self.function_scope = None;
         let member = self.tree.names.get(name).prefix_scope;
         let parameters = self.parameter_clause_member(true, member)?;
-        self.scopes.current = self
-            .function_scope
-            .ok_or(ParseError::Invariant("missing special member scope"))?;
-        let function_scope = self.function_scope;
+        self.function_scope = self.parameter_scope;
+        if member.is_some() {
+            self.scopes.current = self
+                .parameter_scope
+                .ok_or(ParseError::Invariant("missing special member scope"))?;
+        }
         let attribute_start = self.tree.attributes.begin();
         let result = self.function_qualifiers_with_attributes(true);
-        self.function_scope = function_scope;
         self.scopes.current = enclosing;
         let qualifiers = result?;
         let attributes = self.tree.attributes.finish(attribute_start)?;
@@ -460,6 +461,7 @@ impl Parser<'_> {
         });
         let suffixes = self.tree.suffixes.finish(start)?;
         let declarator = self.tree.declarators.add(Declarator {
+            member_scope: member,
             attributes,
             location: self.tree.names.get(name).location,
             abstract_form: false,

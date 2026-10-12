@@ -7,7 +7,7 @@ use super::{
         TypeSyntax,
     },
     cursor::TokenKind,
-    parser::Parser,
+    parser::{DeclaratorContext, Parser},
     scopes::{Binding, Category},
     storage::List,
 };
@@ -754,9 +754,23 @@ impl Parser<'_> {
         }
         self.function_scope = None;
         let start = self.tree.init_declarators.begin();
+        let friend = self
+            .tree
+            .specs
+            .get(specifiers)
+            .iter()
+            .any(|specifier| matches!(specifier.kind, SpecifierKind::Keyword(K::Friend)));
         loop {
             let first_token = self.token_ordinal()?;
-            let declarator = self.declarator(super::declarators::Mode::Named)?;
+            let saved_context = self.declarator_context;
+            self.declarator_context = if friend {
+                DeclaratorContext::Friend
+            } else {
+                DeclaratorContext::Ordinary
+            };
+            let result = self.declarator(super::declarators::Mode::Named);
+            self.declarator_context = saved_context;
+            let declarator = result?;
             self.declare_declarator(
                 declarator,
                 typedef,
@@ -782,10 +796,7 @@ impl Parser<'_> {
                 return self.bit_field(location, specifiers, Some(declarator));
             }
             let enclosing = self.scopes.current;
-            if let Some(scope) = self
-                .declarator_name(declarator)
-                .and_then(|name| self.tree.names.get(name).prefix_scope)
-            {
+            if let Some(scope) = self.tree.declarators.get(declarator).member_scope {
                 self.scopes.member_context(scope)?;
             }
             let result = if matches!(

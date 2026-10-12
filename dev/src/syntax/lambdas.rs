@@ -88,7 +88,7 @@ impl Parser<'_> {
         if self.at(P::LeftParen)? {
             lambda.parameters = Some(self.parameter_clause_member(true, None)?);
             scope = self
-                .function_scope
+                .parameter_scope
                 .ok_or(ParseError::Invariant("missing lambda parameter scope"))?;
             let before = self.collect_attributes(false)?;
             lambda.is_mutable = self.accept_keyword(K::Mutable)?;

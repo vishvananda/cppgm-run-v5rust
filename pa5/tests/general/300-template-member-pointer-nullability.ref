@@ -1,0 +1,67 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+      template-declaration
+        template-parameter-clause
+          template-parameter-list
+            type-parameter
+              parameter-key KW_CLASS:class
+              identifier U
+        class-specifier Nested
+          class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier scalar
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          cv-qualifier KW_CONST:const
+          identifier cv
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator P<int>::*
+          identifier member
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              ptr-operator P<int>::*
+              identifier method
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator P<int>::template Nested<int>::*
+          identifier nested
+end translation unit

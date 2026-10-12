@@ -1,0 +1,36 @@
+1 translation units
+start translation unit 1
+translation-unit
+  namespace-definition N
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+    class-specifier C
+      class-key KW_STRUCT:struct
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_FRIEND:friend
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier N::f
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier C
+            function-qualifier noexcept(sizeof(C))
+              sizeof-expression
+                type-id
+                  type-specifier-seq
+                    type-name C
+end translation unit

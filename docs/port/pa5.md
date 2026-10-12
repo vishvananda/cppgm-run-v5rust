@@ -6,6 +6,146 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+
+## Full-stage audit continuation: declarator modes, scope facts and pointer grammar — 2026-10-12
+
+Entry/reviewed commit: `a13ab3e8b32cb2a563be20563aae9a96eae6444f` (clean).
+Stage base and last accepted partial audit above remain unchanged; the new
+implementation/audit commit is recorded in `pa5-declarator-audit/handoff.json`.
+**Full acceptance remains open**, with the existing goal active. The previous
+turn made verified statement ownership/demand progress. This continuation
+reviews all **18** functions in frozen `parser_declarators.cpp` and its three
+anonymous helpers, plus the relevant declaration, special-member, lambda,
+checkpoint, attribute and scope owners. Repository instructions, contract,
+specification/plan, full handout/grammar, ledger and source map were consulted.
+
+`reviewed-declarator-responsibilities.json` records per-function control-flow,
+failure/demand, numeric/source facts, modes, ownership and Rust responsibilities.
+`additional-reviewed-responsibilities.json` records adjacent/header helpers.
+The explicit navigation census now has **72** source-reviewed entries; remaining
+source groups and exact resource cutoffs are still unproved. Inventory counts
+and fixture counts do not certify them.
+
+Findings resolved:
+
+- Pointer lookahead now follows the exact unhosted token gate before scanning a
+  member pointer. It handles template argument delimiters and qualified
+  `template` components, stops on semicolon/brace/EOF, and checks host lookahead
+  increments. Actual pointer parsing consumes the name once rather than
+  rescanning the same predicate. All four unconditional nullability spellings
+  are skipped among cv/attributes, like C++.
+- Nested declarator/array decisions distinguish `[` from `[[`. Parenthesized
+  declarator names carry their effective class/namespace member context into
+  bounds and suffixes. A declarator stores that typed scope fact for its
+  initializer; the next phase does not reconstruct it from its spelling.
+- Array bounds after a qualified name share one lazily created Block lookup
+  scope. Tags introduced in one bound remain visible in the next and do not
+  escape it. Temporary member lookup overlays use Block, as the frozen helper
+  does, rather than Ordinary.
+- Parameter-clause scope is separate from function-body scope. Only the first
+  direct function derivation selects the body scope; a later clause cannot
+  replace it. Pointer/function-object declarators do not accidentally claim a
+  body scope. The scope, angle and declaration-attribute modes restore through
+  Result exits, and both scope facts participate in transaction rollback.
+- Ordinary unqualified qualifiers see the outer scope. Only a qualified first
+  clause enters its parameter/member scope; later suffixes receive neither
+  that member home nor an invented parameter lookup context. `noexcept` reads
+  outside template-angle mode. The frozen repeated qualifier loop is preserved
+  rather than imposing stricter standard-order validation.
+- The named friend lookup exception is an explicit Ordinary/Friend context,
+  scoped around every comma declarator. Namespace-qualified friends do not
+  invent a namespace-member context for their parameters or initializer.
+  Special-member and lambda consumers use the appropriate parameter/body fact.
+  Simple template-id parameter names also publish Value category after their
+  default argument, matching C++'s syntactic publication rule.
+- GNU asm-label attributes retain the keyword location, rather than the
+  following left parenthesis. Literal kind checks, payload, attribute order
+  and named/type suffix appertainment remain exact.
+
+Four invariants cover first-clause body scope versus later parameter scope,
+outer qualifier lookup and asm location, failed parameter scope restoration,
+and shared bound/block ownership with a stored effective member fact. Strict
+Clippy/rustfmt, debug/release **120 library plus nine tool tests**, and the
+**87-file** authoritative audit pass with zero findings. Clippy's bool and
+nesting findings were resolved with typed declarator context and an owning
+lazy-bound-scope helper, without suppression.
+
+Architecture review: Names/type IDs and declarator facts stay in private owned
+stores; lookahead is a token predicate, not syntax reparsing. Scoped context and
+scope IDs restore on failed attempts. The bound scope cache belongs to one
+suffix sequence and is keyed by its already selected member fact. No cross-unit
+cache, unsafe code, dependency, environment read, implementation subprocess,
+blanket allowance, mechanical split, backend/optimizer change or PA35 objective
+was added. The existing parse-once AST, deferred-body demand and backend
+boundaries remain intact.
+
+Six new required executed cases and only their new expectations are in the
+PA5 general lane: `300-template-member-pointer-nullability`,
+`300-function-qualifier-scope`, `300-first-function-clause-body`,
+`300-friend-namespace-lookup`, `300-qualified-bound-scope` and
+`300-friend-member-initializer-context`. Syntax-only forms retain frozen parser
+facts without deciding later semantic validity. Inputs were not formatted;
+original references/fixtures, oracle, policy and Ralph state remain unchanged.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-declarator-audit/`.
+Metadata, progress, raw case/course/probe receipts, passing/failing IDs and
+`checks.json` preserve source/tool identities, exact commands and status/output.
+Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, no lost IDs and no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS debug/release 120 library + nine tool tests, strict Clippy/rustfmt; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 263/263, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; all 193 retained; `preflight.log`, `preserve.log` |
+
+The primary sweep improved **78/191 to 191/191**, resolving 113 real differences
+(`entry.json`, `final.json`). All **68/68** additional context cases match
+(`contexts/final.json`). All **1723/1723** recent probes and **2141/2141** prior
+probes remain exact (`recent-probes.json`, `prior-probes.json`), totaling
+**4123/4123** raw status/stdout/stderr/full AST comparisons. New regression
+receipt matches all six. None of these results replaces source review or
+counts fixture additions as fixed-manifest progress.
+
+Resources remain separate observations of compiler work. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+36 serial warm whole invocations at 1000/4000/16000 units after verification
+handles were terminal, ordered oracle/oracle/oracle/candidate/candidate/oracle.
+All runs match complete raw bytes/status; source/tool hashes, ASTs, streams and
+RSS files are retained. Median wall milliseconds include preprocessing, launch
+and I/O; RSS is maximum measured KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Template member pointers, nullability and suffix lookup | 52.11 / 134.89 / 430.05 | 17.69 / 61.65 / 204.96 | 8032 / 12792 / 41532 |
+| Qualified/parenthesized function and body-scope selection | 62.25 / 207.63 / 819.22 | 28.28 / 92.36 / 379.46 | 8580 / 24780 / 89784 |
+
+C++ maximum RSS at 16k is respectively 40492 and 75356 KiB. Sampled growth is
+subquadratic; no speed or generated-code objective is inferred. Checkout and
+scratch measured 13,750,559,750 bytes against the 107,374,182,400-byte ceiling.
+
+Acceptance remains withheld: `final-native.json` / `final-native/` match
+**45/48**, without panic/signal/86, and preserve these exact owned failures:
+
+| Owned failure ID | C++ | Rust |
+| --- | --- | --- |
+| `final-native/parentheses/4800` | exit 0 | exit 1, column 4234 |
+| `final-native/known-templates/2400` | exit 0 | exit 1, column 4752 |
+| `final-native/known-templates/4800` | exit 1, column 7627 | exit 1, column 4752 |
+
+The rejection text is `constructs nested too deeply`; ordinary exit/location
+mismatches remain acceptance failures, not resource-statistics exceptions.
+No calibrated depth, multiplied budget, oracle replacement or gate exception
+was introduced. `census-scope.json` still marks the full census/acceptance false.
+The next boundary is the remaining declaration/specifier/name/scope/state/AST/
+header review and exact native rejection parity; the full-stage goal is active.
+
 ## Full-stage audit continuation: statement ownership and exact token demand — 2026-10-12
 
 Entry/reviewed commit: `55bbd78d05c24c41528f07ef1ca2fab14f14358e` (clean).

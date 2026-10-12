@@ -1,0 +1,93 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier C
+          function-qualifier noexcept(sizeof(C))
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  type-name C
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    declarator
+      nested-declarator
+        declarator
+          nested-declarator
+            declarator
+              identifier g
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier C
+    compound-statement
+      expression-statement
+        sizeof-expression
+          id-expression C
+  namespace-definition N
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+    class-specifier C
+      class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              identifier N::h
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier TT_IDENTIFIER:word
+              declarator
+                identifier value
+          function-qualifier noexcept(sizeof(C))
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  type-name C
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          nested-declarator
+            declarator
+              identifier N::values
+          array-suffix
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  type-name word
+          array-suffix
+            sizeof-expression
+              type-id
+                type-specifier-seq
+                  type-name word
+end translation unit

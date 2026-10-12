@@ -14,6 +14,11 @@ use crate::lex::{
 };
 use crate::support::source::SourceOffset;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum DeclaratorContext {
+    Ordinary,
+    Friend,
+}
 pub(super) struct Parser<'a> {
     pub cursor: Cursor<'a>,
     pub tree: Tree,
@@ -21,6 +26,8 @@ pub(super) struct Parser<'a> {
     pub conflicts: super::conflicts::NameConflicts,
     pub shared_lambdas: super::conflicts::SharedLambdas,
     pub function_scope: Option<ScopeId>,
+    pub parameter_scope: Option<ScopeId>,
+    pub declarator_context: DeclaratorContext,
     pub template_mentions: u64,
     pub pack_mentions: u64,
     pub parameter_pack_start: u64,
@@ -59,6 +66,8 @@ struct Checkpoint {
     tree: TreeMark,
     scopes: ScopeMark,
     function_scope: Option<ScopeId>,
+    parameter_scope: Option<ScopeId>,
+    declarator_context: DeclaratorContext,
     template_mentions: u64,
     pack_mentions: u64,
     parameter_pack_start: u64,
@@ -83,6 +92,8 @@ impl<'a> Parser<'a> {
             conflicts: super::conflicts::NameConflicts::default(),
             shared_lambdas: super::conflicts::SharedLambdas::default(),
             function_scope: None,
+            parameter_scope: None,
+            declarator_context: DeclaratorContext::Ordinary,
             template_mentions: 0,
             pack_mentions: 0,
             parameter_pack_start: 0,
@@ -354,6 +365,8 @@ impl<'a> Parser<'a> {
             tree: self.tree.mark(),
             scopes: self.scopes.mark(),
             function_scope: self.function_scope,
+            parameter_scope: self.parameter_scope,
+            declarator_context: self.declarator_context,
             template_mentions: self.template_mentions,
             pack_mentions: self.pack_mentions,
             parameter_pack_start: self.parameter_pack_start,
@@ -382,6 +395,8 @@ impl<'a> Parser<'a> {
             self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
             self.function_scope = mark.function_scope;
+            self.parameter_scope = mark.parameter_scope;
+            self.declarator_context = mark.declarator_context;
             self.template_mentions = mark.template_mentions;
             self.pack_mentions = mark.pack_mentions;
             self.parameter_pack_start = mark.parameter_pack_start;

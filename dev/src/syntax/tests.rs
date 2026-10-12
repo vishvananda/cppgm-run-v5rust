@@ -39,6 +39,121 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn qualified_bounds_share_their_block_and_store_the_effective_member_context() {
+    let source = SourceBuffer::new(
+        b"namespace N{} int (N::arr)[sizeof(struct ghost*)][sizeof(ghost)];".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"bound-context-ownership").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let declaration = parser.declaration().unwrap();
+    let DeclKind::Simple { declarators, .. } = parser.tree.declarations.get(declaration).kind
+    else {
+        panic!("simple")
+    };
+    let d = parser.tree.init_declarators.get(declarators)[0].declarator;
+    let node = parser.tree.declarators.get(d);
+    assert!(node.member_scope.is_some());
+    let super::ast::Suffix::Array(Some(bound)) = parser.tree.suffixes.get(node.suffixes)[1] else {
+        panic!("array")
+    };
+    assert!(matches!(
+        parser.tree.expressions.get(bound).kind,
+        super::ast::ExprKind::Sizeof { ty: Some(_), .. }
+    ));
+    let ghost = parser.cursor.intern_name(b"ghost").unwrap();
+    assert!(parser.scopes.lookup(ghost).is_none());
+}
+
+#[test]
+fn body_scope_is_selected_from_the_first_direct_function_clause() {
+    let source = SourceBuffer::new(b"int f(int C)(int Y);".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"function-clause-scope").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let body = parser.function_scope.unwrap();
+    let last = parser.parameter_scope.unwrap();
+    assert_ne!(body, last);
+    let c = parser.cursor.intern_name(b"C").unwrap();
+    let y = parser.cursor.intern_name(b"Y").unwrap();
+    assert_eq!(
+        parser.scopes.own(body, c).unwrap().category,
+        Category::Value
+    );
+    assert!(parser.scopes.own(body, y).is_none());
+    assert_eq!(
+        parser.scopes.own(last, y).unwrap().category,
+        Category::Value
+    );
+}
+
+#[test]
+fn ordinary_function_qualifiers_use_outer_names_and_asm_retains_keyword_location() {
+    let bytes = br#"struct C{}; void f(int C) noexcept(sizeof(C)); int x asm("symbol");"#;
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"qualifier-lookup-location").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let declaration = parser.declaration().unwrap();
+    let DeclKind::Simple { declarators, .. } = parser.tree.declarations.get(declaration).kind
+    else {
+        panic!("simple declaration")
+    };
+    let d = parser.tree.init_declarators.get(declarators)[0].declarator;
+    let super::ast::Suffix::Function { qualifiers, .. } = parser
+        .tree
+        .suffixes
+        .get(parser.tree.declarators.get(d).suffixes)[0]
+    else {
+        panic!("function suffix")
+    };
+    let QualifierKind::Noexcept(Some(value)) = parser.tree.qualifiers.get(qualifiers)[0].kind
+    else {
+        panic!("noexcept")
+    };
+    assert!(matches!(
+        parser.tree.expressions.get(value).kind,
+        super::ast::ExprKind::Sizeof { ty: Some(_), .. }
+    ));
+    let declaration = parser.declaration().unwrap();
+    let DeclKind::Simple { declarators, .. } = parser.tree.declarations.get(declaration).kind
+    else {
+        panic!("simple declaration")
+    };
+    let d = parser.tree.init_declarators.get(declarators)[0].declarator;
+    let attribute = parser
+        .tree
+        .attributes
+        .get(parser.tree.declarators.get(d).attributes)[0];
+    assert_eq!(attribute.location, source_offset(bytes, b"asm"));
+}
+
+#[test]
+fn failed_parameter_clause_restores_scope_and_transactional_parameter_identity() {
+    let source = SourceBuffer::new(b"(int x, +)".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"parameter-scope-unwind").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let outer = parser.scopes.current;
+    assert!(parser.parameter_clause_member(true, None).is_err());
+    assert_eq!(parser.scopes.current, outer);
+    assert!(parser.parameter_scope.is_none());
+    assert_eq!(parser.active_nesting(), 0);
+}
+
+#[test]
 fn condition_name_is_visible_in_its_initializer_and_block_scope_unwinds() {
     let source = SourceBuffer::new(b"struct C{}; if(int C=sizeof(C)) {C *x;}".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"condition-publication").unwrap();

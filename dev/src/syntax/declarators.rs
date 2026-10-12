@@ -7,7 +7,7 @@ use super::{
         Suffix,
     },
     cursor::TokenKind,
-    parser::Parser,
+    parser::{DeclaratorContext, Parser},
     scopes::Category,
     storage::List,
 };
@@ -27,18 +27,17 @@ impl Parser<'_> {
     fn declarator_inner(&mut self, mode: Mode) -> Result<DeclaratorId, ParseError> {
         let location = self.location()?;
         let start = self.tree.pointers.begin();
-        while matches!(
-            self.punctuator()?,
-            Some(P::Multiply | P::BitAnd | P::LogicalAnd)
-        ) || self.member_pointer_ahead(0)?
-        {
-            let class_name = if self.member_pointer_ahead(0)? {
+        while self.pointer_operator_ahead(0)? {
+            let class_name = if matches!(
+                self.punctuator()?,
+                Some(P::Multiply | P::BitAnd | P::LogicalAnd)
+            ) {
+                None
+            } else {
                 let name = self.type_name()?.0;
                 self.expect(P::Scope)?;
                 self.expect(P::Multiply)?;
                 Some(name)
-            } else {
-                None
             };
             let op = if class_name.is_some() {
                 Self::make_operator(P::Scope)?
@@ -49,6 +48,11 @@ impl Parser<'_> {
             if class_name.is_some() || op.token.as_punctuator() == Some(P::Multiply) {
                 loop {
                     self.skip_attributes()?;
+                    if matches!(self.token()?.kind, TokenKind::Identifier(name) if matches!(self.cursor.name(name), b"_Nonnull" | b"_Nullable" | b"_Null_unspecified" | b"_Nullable_result"))
+                    {
+                        self.cursor.advance()?;
+                        continue;
+                    }
                     if !matches!(self.keyword()?, Some(K::Const | K::Volatile)) {
                         break;
                     }
@@ -100,20 +104,32 @@ impl Parser<'_> {
             let attributes = self.collect_attributes(false)?;
             self.tree.attributes.extend(attributes);
         }
+        let declared_name = name.or_else(|| nested.and_then(|id| self.declarator_name(id)));
+        let member = declared_name.and_then(|name| {
+            let node = self.tree.names.get(name);
+            node.prefix_scope.filter(|&scope| {
+                node.prefix_state == super::ast::PrefixState::Known
+                    && !(self.declarator_context == DeclaratorContext::Friend
+                        && mode == Mode::Named
+                        && self.scopes.kind(scope) == super::scopes::ScopeKind::Namespace)
+            })
+        });
+        let names_directly = name.is_some() || nested.is_some_and(|id| self.names_directly(id));
+        let mut bound_scope = None;
         let suffix_start = self.tree.suffixes.begin();
         loop {
             if mode == Mode::Conversion {
                 break;
             }
-            if self.accept(P::LeftBracket)? {
+            if self.at(P::LeftBracket)? && !self.at_ahead(P::LeftBracket, 1)? {
+                self.cursor.advance()?;
                 let bound = if self.at(P::RightBracket)? {
                     None
                 } else {
                     let enclosing = self.scopes.current;
-                    if let Some(scope) =
-                        name.and_then(|name| self.tree.names.get(name).prefix_scope)
-                    {
-                        self.scopes.member_context(scope)?;
+                    if let Some(member) = member {
+                        let scope = self.bound_lookup_scope(member, &mut bound_scope)?;
+                        self.scopes.current = scope;
                     }
                     let result = self.without_angle(Self::expression);
                     self.scopes.current = enclosing;
@@ -138,18 +154,24 @@ impl Parser<'_> {
                             !matches!(component.kind, super::ast::NameKind::Identifier(_))
                         })
                 });
-            let member = name.and_then(|name| self.tree.names.get(name).prefix_scope);
-            let result = self.attempt(|parser| parser.parameter_clause_member(definite, member));
+            let first_suffix = self.tree.suffixes.begin() == suffix_start;
+            let lookup_member = member.filter(|_| first_suffix);
+            let result =
+                self.attempt(|parser| parser.parameter_clause_member(definite, lookup_member));
             let Some(parameters) = result? else {
                 break;
             };
-            let saved = self.scopes.current;
-            if let Some(scope) = self.function_scope {
-                self.scopes.current = scope;
+            let parameter_scope = self
+                .parameter_scope
+                .ok_or(ParseError::Invariant("missing parameter scope"))?;
+            if names_directly && first_suffix {
+                self.function_scope = Some(parameter_scope);
             }
-            let function_scope = self.function_scope;
+            let saved = self.scopes.current;
+            if lookup_member.is_some() {
+                self.scopes.current = parameter_scope;
+            }
             let result = self.function_qualifiers_with_attributes(mode == Mode::Named);
-            self.function_scope = function_scope;
             self.scopes.current = saved;
             let qualifiers = result?;
             self.tree.suffixes.push(Suffix::Function {
@@ -158,8 +180,9 @@ impl Parser<'_> {
             });
         }
         let suffixes = self.tree.suffixes.finish(suffix_start)?;
-        if mode == Mode::Named && self.accept_keyword(K::Asm)? {
+        if mode == Mode::Named && self.keyword()? == Some(K::Asm) {
             let location = self.location()?;
+            self.cursor.advance()?;
             self.expect(P::LeftParen)?;
             let expression = self.attribute_string()?;
             self.expect(P::RightParen)?;
@@ -177,6 +200,7 @@ impl Parser<'_> {
         }
         let attributes = self.tree.attributes.finish(attribute_start)?;
         self.tree.declarators.add(Declarator {
+            member_scope: member,
             attributes,
             location,
             abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
@@ -187,30 +211,99 @@ impl Parser<'_> {
             suffixes,
         })
     }
+    fn bound_lookup_scope(
+        &mut self,
+        member: super::scopes::ScopeId,
+        cached: &mut Option<super::scopes::ScopeId>,
+    ) -> Result<super::scopes::ScopeId, ParseError> {
+        if let Some(scope) = *cached {
+            return Ok(scope);
+        }
+        let scope = self.scopes.member_context(member)?;
+        *cached = Some(scope);
+        Ok(scope)
+    }
+    fn pointer_operator_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        let kind = self.cursor.peek(ahead)?.kind;
+        if matches!(kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd)))
+        {
+            return Ok(true);
+        }
+        if matches!(kind, TokenKind::Identifier(_))
+            || matches!(kind, TokenKind::Simple(op) if op.token.as_punctuator() == Some(P::Scope))
+        {
+            return self.member_pointer_ahead(ahead);
+        }
+        Ok(false)
+    }
     fn member_pointer_ahead(&mut self, mut ahead: usize) -> Result<bool, ParseError> {
         if self.at_ahead(P::Scope, ahead)? {
-            ahead += 1;
+            Self::advance_pointer_lookahead(&mut ahead)?;
         }
         loop {
+            if matches!(self.cursor.peek(ahead)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Template))
+            {
+                Self::advance_pointer_lookahead(&mut ahead)?;
+            }
             if !matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_)) {
                 return Ok(false);
             }
-            ahead += 1;
+            Self::advance_pointer_lookahead(&mut ahead)?;
+            if self.at_ahead(P::Less, ahead)? {
+                let mut depth = 0i64;
+                loop {
+                    let token = self.cursor.peek(ahead)?;
+                    let punct = match token.kind {
+                        TokenKind::End => return Ok(false),
+                        TokenKind::Simple(op) => op.token.as_punctuator(),
+                        _ => None,
+                    };
+                    match punct {
+                        Some(P::Semicolon | P::LeftBrace) => return Ok(false),
+                        Some(P::Less | P::LeftParen | P::LeftBracket) => depth += 1,
+                        Some(P::Greater | P::RightParen | P::RightBracket) => depth -= 1,
+                        _ => (),
+                    }
+                    Self::advance_pointer_lookahead(&mut ahead)?;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+            }
             if !self.at_ahead(P::Scope, ahead)? {
                 return Ok(false);
             }
-            ahead += 1;
+            Self::advance_pointer_lookahead(&mut ahead)?;
             if self.at_ahead(P::Multiply, ahead)? {
                 return Ok(true);
             }
         }
     }
+    fn advance_pointer_lookahead(ahead: &mut usize) -> Result<(), ParseError> {
+        *ahead = ahead
+            .checked_add(1)
+            .ok_or(ParseError::Limit("member pointer lookahead limit"))?;
+        Ok(())
+    }
+    fn names_directly(&self, id: DeclaratorId) -> bool {
+        let node = self.tree.declarators.get(id);
+        node.name.is_some()
+            || node.nested.is_some_and(|nested| {
+                let child = self.tree.declarators.get(nested);
+                child.pointers.is_empty()
+                    && child.suffixes.is_empty()
+                    && self.names_directly(nested)
+            })
+    }
     fn nested_declarator_ahead(&mut self, mode: Mode) -> Result<bool, ParseError> {
         if mode == Mode::Named || self.member_pointer_ahead(1)? {
             return Ok(true);
         }
-        if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd | P::LeftBracket | P::LeftParen)))
+        if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd | P::LeftParen)))
         {
+            return Ok(true);
+        }
+        if self.at_ahead(P::LeftBracket, 1)? && !self.at_ahead(P::LeftBracket, 2)? {
             return Ok(true);
         }
         if mode == Mode::Abstract {
@@ -279,7 +372,7 @@ impl Parser<'_> {
     }
     fn parameter_clause_inner(
         &mut self,
-        mut definite: bool,
+        definite: bool,
         member: Option<super::scopes::ScopeId>,
     ) -> Result<ParameterClause, ParseError> {
         let location = self.location()?;
@@ -289,6 +382,17 @@ impl Parser<'_> {
         if let Some(member) = member {
             self.scopes.set_member(scope, member);
         }
+        let result = self.parameter_clause_tail(definite, location);
+        self.scopes.current = enclosing;
+        let clause = result?;
+        self.parameter_scope = Some(scope);
+        Ok(clause)
+    }
+    fn parameter_clause_tail(
+        &mut self,
+        mut definite: bool,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<ParameterClause, ParseError> {
         let start = self.tree.parameters.begin();
         let mut ellipsis = false;
         let mut ellipsis_without_comma = false;
@@ -323,8 +427,23 @@ impl Parser<'_> {
             } else {
                 None
             };
-            if let Some(declarator) = declarator {
-                self.declare_declarator(declarator, false, None, super::storage::List::default());
+            if let Some(declarator) = declarator
+                && let Some(name) = self.declarator_name(declarator)
+                && self.simple_name(name).is_some()
+                && let Some(identifier) = self.last_identifier(name)
+            {
+                self.scopes.declare(
+                    identifier,
+                    super::scopes::Binding {
+                        pack: false,
+                        category: Category::Value,
+                        parameter: false,
+                        scope: None,
+                        specialization: 0,
+                        alternatives: super::scopes::Categories::default(),
+                        guesses: super::scopes::Guesses::default(),
+                    },
+                );
             }
             self.tree.parameters.push(Parameter {
                 location: parameter_location,
@@ -343,8 +462,6 @@ impl Parser<'_> {
         }
         self.expect(P::RightParen)?;
         let parameters = self.tree.parameters.finish(start)?;
-        self.scopes.current = enclosing;
-        self.function_scope = Some(scope);
         Ok(ParameterClause {
             location,
             parameters,
@@ -379,7 +496,7 @@ impl Parser<'_> {
                 Some(K::Noexcept) => {
                     self.cursor.advance()?;
                     let operand = if self.accept(P::LeftParen)? {
-                        let operand = self.expression()?;
+                        let operand = self.without_angle(Self::expression)?;
                         self.expect(P::RightParen)?;
                         Some(operand)
                     } else {
