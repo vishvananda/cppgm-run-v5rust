@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function C function of (array of 3 int) returning void
+      function C function of (pointer to int) returning void
+      scope function C
+        parameter p pointer to int
+        scope block
+end translation unit

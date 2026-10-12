@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    variable n array of 1 int
+    scope class C
+      variable x array of 3 int
+      variable x array of 3 int
+end translation unit

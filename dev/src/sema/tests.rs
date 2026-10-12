@@ -25,6 +25,82 @@ fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     check(&mut graph, cursor);
 }
 #[test]
+fn constructor_signatures_do_not_hide_the_injected_class_and_share_redeclaration_facts() {
+    analyze(
+        b"struct C{C(const int);C(long);C *next;};C::C(int p){} void f(){C();new C;}",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"C").unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = graph.entity(class).scope.unwrap();
+            let injected = graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap());
+            assert_eq!(injected.kind, BindingKind::Type);
+            assert_eq!(injected.entity, class);
+            assert!(graph.entity(class).user_constructor.is_some());
+            assert!(graph.entity(class).implicit_default.is_none());
+            let declarations: Vec<_> = graph
+                .scope(scope)
+                .bindings
+                .iter()
+                .copied()
+                .filter(|&id| graph.binding(id).kind == BindingKind::Function)
+                .collect();
+            assert_eq!(declarations.len(), 3);
+            let first = graph.binding(declarations[0]);
+            let second = graph.binding(declarations[1]);
+            let definition = graph.binding(declarations[2]);
+            assert_eq!(first.entity, definition.entity);
+            assert_ne!(first.entity, second.entity);
+            assert_ne!(first.ty, definition.ty);
+            let signature = graph.types.canonical_function(first.ty.unwrap()).unwrap();
+            assert_eq!(graph.constructor(class, signature), Some(declarations[2]));
+            assert!(graph.entity(first.entity).defined);
+            let body = graph.entity(first.entity).scope.unwrap();
+            assert_eq!(graph.scope(body).owner, Some(first.entity));
+            assert_eq!(graph.scope(body).parent, Some(scope));
+            assert!(!graph.entity(second.entity).defined);
+        },
+    );
+}
+#[test]
+fn qualified_static_definitions_preserve_member_identity_and_never_add_object_storage() {
+    analyze(
+        b"struct C{static int value;char field;};int C::value=2;int size[sizeof(C)];",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"C").unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = graph.entity(class).scope.unwrap();
+            let value = cursor.intern_name(b"value").unwrap();
+            let declarations: Vec<_> = graph
+                .scope(scope)
+                .bindings
+                .iter()
+                .copied()
+                .filter(|&id| graph.binding(id).name == Some(value))
+                .collect();
+            assert_eq!(declarations.len(), 2);
+            let declared = graph.binding(declarations[0]).entity;
+            assert_eq!(declared, graph.binding(declarations[1]).entity);
+            assert_eq!(
+                graph.entity(declared).data_member,
+                Some(super::graph::DataMemberKind::Static)
+            );
+            assert!(graph.entity(declared).defined);
+            let members = &graph.entity(class).members;
+            assert_eq!(members.len(), 1);
+            assert_eq!(
+                graph.entity(members[0]).data_member,
+                Some(super::graph::DataMemberKind::Instance)
+            );
+            assert_eq!(graph.entity(members[0]).member_offset, Some(0));
+            assert!(!members.contains(&declared));
+        },
+    );
+}
+#[test]
 fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
     analyze(
         b"struct C { union { int a; long b; }; char c; }; int n[sizeof(C)];",

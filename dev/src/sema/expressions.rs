@@ -234,7 +234,11 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let class = self.graph.entity(entity);
-        if !class.complete || class.implicit_default.is_some() || class.anonymous_class.is_some() {
+        if !class.complete
+            || class.user_constructor.is_some()
+            || class.implicit_default.is_some()
+            || class.anonymous_class.is_some()
+        {
             return Ok(());
         }
         // Types mode does not demand constructors for anonymous classes,

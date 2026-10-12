@@ -57,6 +57,11 @@ pub(super) struct ScopeEdge {
     pub target: ScopeId,
     pub introduced: usize,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DataMemberKind {
+    Instance,
+    Static,
+}
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
     pub scope: Option<ScopeId>,
@@ -67,6 +72,8 @@ pub(super) struct Entity {
     pub enumeration: Option<super::enumerations::EnumInfo>,
     pub constant: super::constants::ConstantState,
     pub implicit_default: Option<ScopeId>,
+    pub user_constructor: Option<BindingId>,
+    pub data_member: Option<DataMemberKind>,
     pub exceptions: super::exceptions::ExceptionState,
     pub constexpr: bool,
     pub members: Vec<EntityId>,
@@ -105,6 +112,7 @@ pub(crate) struct Graph {
     pub(super) expression_types: Vec<Option<TypeId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
+    constructors: HashMap<(EntityId, TypeId), BindingId>,
 }
 impl Graph {
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
@@ -151,6 +159,7 @@ impl Graph {
             expression_types: Vec::new(),
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
+            constructors: HashMap::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -223,6 +232,8 @@ impl Graph {
             enumeration: None,
             constant: super::constants::ConstantState::None,
             implicit_default: None,
+            user_constructor: None,
+            data_member: None,
             exceptions: super::exceptions::ExceptionState::Absent,
             constexpr: false,
             members: Vec::new(),
@@ -330,6 +341,20 @@ impl Graph {
     }
     pub(super) fn binding_limit(&self) -> usize {
         self.bindings.len()
+    }
+    // Constructors have their own lookup category. Their printed class name
+    // must never replace the injected type name in ordinary lookup.
+    pub(super) fn constructor(&self, class: EntityId, signature: TypeId) -> Option<BindingId> {
+        self.constructors.get(&(class, signature)).copied()
+    }
+    pub(super) fn record_constructor(
+        &mut self,
+        class: EntityId,
+        signature: TypeId,
+        binding: BindingId,
+    ) {
+        self.constructors.insert((class, signature), binding);
+        self.entity_mut(class).user_constructor = Some(binding);
     }
     pub(super) fn resolved_name(&self, name: crate::syntax::ast::Name) -> Option<BindingId> {
         self.resolved_names.get(name.index()).copied().flatten()

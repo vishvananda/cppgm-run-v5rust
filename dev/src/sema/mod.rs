@@ -2,6 +2,8 @@
 mod analyzer;
 mod anonymous_types;
 mod constants;
+mod constructors;
+mod data_members;
 mod declarations;
 mod declarators;
 mod dump;

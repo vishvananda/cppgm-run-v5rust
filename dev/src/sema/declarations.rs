@@ -339,7 +339,11 @@ impl Analyzer<'_> {
                 "qualified definition does not match a declaration",
             ));
         }
+        if !function {
+            self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
+        }
         if !function
+            && info.home.is_none()
             && self.graph.scope(home).kind == ScopeKind::Class
             && self
                 .graph
@@ -379,7 +383,18 @@ impl Analyzer<'_> {
         if function {
             self.graph.entity_mut(entity).constexpr |= specs.constexpr;
             self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
-        } else if self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static {
+        } else if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
+            self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
+                super::graph::DataMemberKind::Static
+            } else {
+                super::graph::DataMemberKind::Instance
+            });
+        }
+        if !function
+            && self.graph.scope(home).kind == ScopeKind::Class
+            && !specs.is_static
+            && info.home.is_none()
+        {
             let owner = self
                 .graph
                 .scope(home)
@@ -396,7 +411,7 @@ impl Analyzer<'_> {
             }
         }
         if !function
-            && self.graph.scope(home).kind != ScopeKind::Class
+            && (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some())
         {
             let entity = self.graph.binding(binding).entity;
@@ -405,8 +420,9 @@ impl Analyzer<'_> {
             }
             self.graph.entity_mut(entity).defined = true;
         }
-        let member = self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static;
-        let definition = self.graph.scope(home).kind != ScopeKind::Class
+        let member =
+            self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
+        let definition = (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some());
         if !function && (member || definition) {
             let entity = self.graph.binding(binding).entity;
@@ -417,13 +433,17 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("object without type"))?;
             self.check_object_type(object, member, location)?;
         }
+        if !function {
+            self.graph.entity_mut(entity).constexpr |= specs.constexpr;
+            self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
+        }
         if !function && let Some(initializer) = init.initializer {
-            self.initializer_names(initializer, home, ty)?;
+            self.initializer_names(initializer, info.lookup, ty)?;
             if !member {
                 self.record_constant_initializer(
                     self.graph.binding(binding).entity,
                     initializer,
-                    home,
+                    info.lookup,
                 )?;
             }
         }

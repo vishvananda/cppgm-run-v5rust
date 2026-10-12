@@ -1108,3 +1108,192 @@ byte-budget guard was preserved; native exhaustion depths and diagnostic
 positions were not calibrated. Filesystem usage is approximately 26 GiB of
 the supplied 100 GiB ceiling. The wide 65,538-parameter probe independently
 checks the target index-width boundary without a resource-cutoff comparison.
+
+
+## Explicit constructor and static-member definition checkpoint (2026-10-12)
+
+Implementation entry HEAD: `45d7cc47963df5098814bd240d38aa33a705e784` (clean, 120/121 fixed cases).
+Stage base remains `70e745588987998ee1e5bde80b3861541eab753d`; last-audited
+commit remains `3140a2bbab5d8a42bfdba0259d0ee0a567439d4f`. Implementation does
+not advance the audit marker or stage. The preceding accepted implementation
+turn is progress: its retained template ownership commit raised 116/121 to
+120/121. The incoming required progress failure correctly identified the one
+unchanged fixed failure; no live background work was inferred from a state file.
+This entry records a coherent implementation handoff with all current fixed
+and full course lanes green. Ralph owns the checkpoint/final audit and advancement.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete Rust clone plan,
+PA6 handout/scopes guide and stage ledger. Consulted frozen revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5` in
+`/home/vishvananda/work/references/v5rust-cpp`, especially:
+
+- `analyzer_declarations.cpp`: `special_member`, `declared_name`,
+  `declare_function`, `redeclare_function`, `new_function`, `default_definition`,
+  `declare_variable`, `earlier_variable` and `check_variable_specifiers`.
+- `analyzer_bodies.cpp`: body parameter publication, duplicate names,
+  types-mode constructor initializer traversal and default-name demand.
+- `analyzer_classes.cpp`: class completion/deferred-body order and
+  `define_implicit_default_constructor` suppression.
+- `analyzer_types.cpp`, `analyzer_copy.cpp`, `analyzer_initialization.cpp`:
+  suffix diagnostics, copy/move classification and the semantic versus types
+  mode distinction for defaults/initialization.
+- `semantic_dump.cpp`, graph/entity records and the already parsed special
+  member/function-body AST: source labels, ownership and output order.
+
+### Completed behavior and typed data flow
+
+`dev/src/sema/constructors.rs` owns the ordinary explicit constructor
+entry, class/name checks, signature publication/redeclarations, defaulted
+constructor recognition and body demand. A private graph index keyed by
+`(EntityId, canonical TypeId)` distinguishes constructor overload declarations
+and gives qualified definitions direct access to their earlier entity.
+Constructors have unnamed ordinary bindings with the class name on their entity
+for presentation; they cannot hide or replace the injected class type. The
+class retains a user-constructor `BindingId`, independently of its implicit
+constructor scope. These declarations suppress implicit default-scope demand
+for evaluated constructions, including deleted/defaulted/copy declarations.
+
+Source function types remain on each binding, while canonical parameter
+adjustment selects the shared function entity. Qualified definitions preserve
+source parameter names/cv/arrays/function forms and use their recorded lexical
+scope. Ordinary constructor declarations, multiple distinct signatures,
+compatible qualified definitions, delete/default state, constexpr agreement,
+class redeclaration/redefinition, by-value self-parameter and cv/ref diagnostics
+follow the C++ owner. Special specifier formation returns an optional written
+TypeId separately from its declarator base; constructors consume that typed
+fact rather than walking the specifiers again to infer whether a type was given.
+The ordinary function suffix now rejects a trailing return type without auto,
+including on constructors, before resolving that result type.
+
+The C++ types mode deliberately does not record/evaluate function default
+arguments or pure specifiers. Its by-value self diagnostic therefore applies
+only to a sole class-value parameter; a later parameter's written default is
+not consulted. Defaulted copy/move recognition accepts cv-qualified class
+references, including volatile, and does not demand semantic construction
+plans. These distinctions are translated behavior, not a language-policy change.
+
+`analyzer.rs` retains the function `EntityId` in its existing completion queue;
+function entities and body scopes have bidirectional typed ownership. Parameter
+bindings retain source types, named duplicates reject before initializer/body
+traversal, and unnamed parameters add no lookup name. Mem-initializer expressions
+run in complete-class function scope in source order before the compound body.
+Types mode does not resolve their target names or build subobject initialization
+plans. Ordinary specifications use the existing entity-owned exception state
+and completion events, preserving specification-before-body diagnostics.
+
+`data_members.rs` owns class-variable qualification/name/constexpr checks and
+static in-class initializer constraints. `graph.rs` records a typed
+`DataMemberKind::Instance/Static` fact. `declarations.rs` lets qualified static
+member definitions reuse their declaration's entity, preserves completed array
+and constant facts, records definition/redefinition and rejects non-static
+out-of-class definitions, repeated in-class initializers and forbidden static
+on the out-of-class definition. Qualified definitions never append an object
+storage slot. Their initializer uses the declarator's resolved lookup scope.
+The existing layout owner still walks only ordered instance-member dependencies
+when demanded; static definitions do not affect offsets or object size.
+
+Two new unit regressions inspect constructor signature/source-type identity,
+injected-name lookup, distinct overload entities, body owner links, implicit
+scope suppression, static definition identity and exclusion from object storage.
+Twenty-seven new inputs/reference pairs under `pa6/tests/general/600-*.t` are
+executed by the existing course lane. Their references were generated only by
+the frozen C++ tool; `regression-references.json` records each input/reference
+hash and oracle streams/status. Existing fixtures, references, fixed manifests,
+checker policy, oracle sources and Ralph state were unchanged.
+
+Architecture review: one borrowed AST, compact checked IDs, private typed
+store APIs, source order separate from indexed identity, no owning name text
+or syntax copies, and one completion event for each queued body remain.
+Constructor queries visit only the requested class/signature. No whole-unit
+scan, speculative instantiation, global invalidation, new dependency, unsafe,
+FFI, compiler subprocess fallback, phase environment read, mechanical split
+or blanket lint suppression was introduced. All errors use Result/structured
+errors; failed units are discarded. Source audit passes with 108 implementation
+files and no findings. Optimizer, code generator, allocator and backend lifetime
+code were not changed; this frontend checkpoint makes no object/PA34 proof claim.
+
+### Validation, fixed progress and evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/port/pa6-constructors/`.
+Final Rust cppgm SHA-256: `f47ff0a9796e5a39d6a044616be65ef7b11f6450cfe6fac473159e02dd3997d8`.
+Frozen C++ cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command/check | Result | Evidence relative to root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS, 9.82 s release build | `build.log` |
+| `make test-pa6` = required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | PASS, **121/121** | `stage.log`, `stage-summary.json`; raw receipts under `artifacts/clone/cases/pa6/` |
+| `make course-pa6` | PASS, **201/201**, no failed marker | `course.log`; `/home/vishvananda/work/private/v5rust/artifacts/clone/course/pa6/test/{counts.txt,course-result.json,trace.jsonl}` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and complete course lanes | `prior.log`; earlier `artifacts/clone/course/paN/test/` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, all 120 incoming passing identities | `preserve.log`, independent set proof in `stage-summary.json` |
+| `make lint` = required `clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites and source audit | `quality.log` |
+| `make audit-rust` | PASS, 108 files, zero findings | `audit.log` |
+| Independent protected probes | 131/135 exact; four explicit next-owner boundaries | `probe.log`, `probe-summary.json`, `probes.jsonl`; every mismatch links raw candidate/oracle diagnostics/files |
+| Final new regressions and suffix probes | PASS, 27/27 regressions plus 3/3 trailing-return probes | `final-extra-summary.json`, `final-extra-trace.jsonl`, oracle creation receipts in `regression-references.json` |
+| Supported scaling and stack qualification | PASS | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+The fixed manifest has exactly the same 121 case identities; no incoming pass
+was lost or case removed. Its sole incoming failure,
+`tests/general/300-declaration-forms-valid.t`, now matches exit, streams and
+complete dump bytes. It first needed explicit constructor declarations, then
+reached the qualified static data-member ownership rule in the same declaration
+owner. Raw case evidence:
+`/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa6/cc1c75b61a08d0b55e01/trace.jsonl`.
+Remaining fixed failing case IDs: **none**. Failure count decreased **1 to 0**;
+new tests did not count as progress. `stage-summary.json` retains the incoming,
+gained, preserved and current identity sets. Ralph reruns stageProgress and
+its audits; fixture counts alone do not certify the entire semantic implementation.
+No oracle or harness defect was found.
+
+### Resource measurements and next dependency boundary
+
+Warm A/A calibration followed by ABBA and BAAB blocks records every elapsed
+compile time/RSS sample and input/output/binary digest. Each input first passes
+the protected comparator; every measured invocation checks its complete dump
+hash. Times include process startup and type-dump I/O; RSS is `/usr/bin/time`
+peak KiB. These are compiler cost observations under host noise, not required
+C++/Rust runtime equality or PA35 generated-code optimization targets.
+Constructor bodies combine references, copy declarations, later type aliases
+and suppression. Qualified definitions combine adjusted signatures, static
+member definitions and demanded plain class layout. Signature fanout uses
+100/400/1,600 distinct array-reference signatures in one class, exercising the
+index without unrelated program scans.
+
+| Shape | Groups/signatures | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| constructor-bodies | 1000 | 37.55 / 15672 | 87.85 / 14980 |
+| constructor-bodies | 4000 | 142.44 / 45668 | 300.01 / 50160 |
+| constructor-bodies | 16000 | 555.20 / 166200 | 1097.88 / 190528 |
+| qualified-definitions | 1000 | 31.00 / 13572 | 70.37 / 12860 |
+| qualified-definitions | 4000 | 109.08 / 35360 | 237.27 / 40284 |
+| qualified-definitions | 16000 | 424.87 / 122836 | 909.16 / 152068 |
+| constructor-signatures | 100 | 4.77 / 5800 | 15.84 / 8748 |
+| constructor-signatures | 400 | 6.97 / 5828 | 19.71 / 8836 |
+| constructor-signatures | 1600 | 13.33 / 8600 | 33.13 / 8752 |
+
+A fixed 1,000-nested-class input with explicit constructor bodies starts with
+a 1 MiB stack. The protected receipt reports `match: true`,
+`stack_qualification.passed: true`, a shared **16 MiB** retry, both exits 0
+and identical dump SHA-256
+`358e13699e3a55684b1df6ffbdfcc655bbd6464778b603b871de3c55f5a4b6ee`.
+`nested-summary.json` links retained raw initial/retry attempts. The genuine
+byte-budget guard remains active; native exhaustion cutoffs and diagnostic
+positions were not calibrated. Filesystem usage is approximately 26 GiB of the
+supplied 100 GiB ceiling.
+
+This completed group covers ordinary explicit constructor declaration/body
+views and qualified static member definition ownership in types mode. Next
+boundaries remain separately owned: constructor templates need head/shape
+matching; destructors/conversion functions need typed special name/signature
+keys and presentation; function-try handlers need statement/exception scopes.
+The precise independent probe IDs are `constructor-template`,
+`destructor-boundary`, `conversion-boundary`, and `handler-boundary` under the
+evidence root. All four still exit 86 against a successful oracle; they are
+real unfinished groups, not waived rejections. Consult `declared_name`,
+`special_member`, copy/destructor owners and body handler traversal before
+porting them. Template specialization/instantiation, non-type parameters,
+full ordinary overload resolution, member initialization/construction plans,
+inheritance/extended layout, full statements and PA7 expression semantics
+retain their prior dependency boundaries. No full template-to-ELF or PA34
+claim is made. Stage base and last-audited commits stay unchanged.

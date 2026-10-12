@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    variable a array of 2 int
+    scope class C
+      variable x const int
+      variable x const int
+end translation unit

@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function C function of (int) returning void
+      variable next pointer to struct C
+      function f function of () returning void
+      scope function f
+        scope block
+          variable p pointer to struct C
+end translation unit

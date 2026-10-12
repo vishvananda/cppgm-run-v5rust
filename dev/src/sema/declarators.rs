@@ -200,7 +200,7 @@ impl Analyzer<'_> {
     }
     fn function_type(
         &mut self,
-        mut ty: TypeId,
+        ty: TypeId,
         clause: ast::ParameterClause,
         qualifiers: crate::syntax::storage::List<ast::Qualifier>,
         scope: ScopeId,
@@ -274,8 +274,8 @@ impl Analyzer<'_> {
                         RefKind::Rvalue
                     });
                 }
-                ast::QualifierKind::Trailing(result) => {
-                    ty = self.type_syntax(result, scope)?;
+                ast::QualifierKind::Trailing(_) => {
+                    return Err(Error::at(location, "a trailing return type needs auto"));
                 }
                 ast::QualifierKind::Noexcept(_) | ast::QualifierKind::Throw(_) => (),
                 ast::QualifierKind::Virt(_) => {

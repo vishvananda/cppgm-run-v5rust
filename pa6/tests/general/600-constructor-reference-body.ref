@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      variable x lvalue-reference to int
+      function C function of (lvalue-reference to int) returning void
+      scope function C
+        parameter p lvalue-reference to int
+        scope block
+end translation unit

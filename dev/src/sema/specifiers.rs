@@ -40,6 +40,23 @@ impl Analyzer<'_> {
         scope: ScopeId,
         lone: bool,
     ) -> Result<Specifiers, Error> {
+        self.specifiers_with_optional_type(list, scope, lone, false)
+            .map(|(specifiers, _)| specifiers)
+    }
+    pub(super) fn special_specifiers(
+        &mut self,
+        list: List<Specifier>,
+        scope: ScopeId,
+    ) -> Result<(Specifiers, Option<TypeId>), Error> {
+        self.specifiers_with_optional_type(list, scope, false, true)
+    }
+    fn specifiers_with_optional_type(
+        &mut self,
+        list: List<Specifier>,
+        scope: ScopeId,
+        lone: bool,
+        special: bool,
+    ) -> Result<(Specifiers, Option<TypeId>), Error> {
         let mut cv = Cv::default();
         let mut typedef = false;
         let mut is_extern = false;
@@ -66,6 +83,7 @@ impl Analyzer<'_> {
                     Keyword::Static => is_static = true,
                     Keyword::Virtual => virtuality = Virtuality::Virtual,
                     Keyword::ThreadLocal | Keyword::Inline | Keyword::Register => (),
+                    Keyword::Explicit if special => (),
                     Keyword::Auto | Keyword::Friend | Keyword::Explicit | Keyword::Mutable => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
@@ -104,27 +122,35 @@ impl Analyzer<'_> {
             .map_or(crate::support::source::SourceOffset(0), |spec| {
                 spec.location
             });
+        let has_written_type = ty.is_some() || !fundamental.is_empty();
         let ty = if let Some(ty) = ty {
             ty
         } else {
-            let scalar = fundamental_type(&fundamental)
-                .ok_or_else(|| Error::at(location, "invalid combination of type specifiers"))?;
+            let scalar = if special && fundamental.is_empty() {
+                Some(Scalar::Void)
+            } else {
+                fundamental_type(&fundamental)
+            }
+            .ok_or_else(|| Error::at(location, "invalid combination of type specifiers"))?;
             self.graph.types.scalar(scalar)?
         };
         let ty = self.graph.types.qualify(ty, cv)?;
-        Ok(Specifiers {
-            ty,
-            declared,
-            role: if typedef {
-                DeclarationRole::Typedef
-            } else {
-                DeclarationRole::Ordinary
+        Ok((
+            Specifiers {
+                ty,
+                declared,
+                role: if typedef {
+                    DeclarationRole::Typedef
+                } else {
+                    DeclarationRole::Ordinary
+                },
+                is_extern,
+                is_static,
+                virtuality,
+                constexpr,
             },
-            is_extern,
-            is_static,
-            virtuality,
-            constexpr,
-        })
+            has_written_type.then_some(ty),
+        ))
     }
 }
 fn fundamental_type(keys: &[Keyword]) -> Option<Scalar> {

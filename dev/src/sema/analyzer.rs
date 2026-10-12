@@ -38,6 +38,7 @@ pub(crate) struct Analyzer<'tree> {
 }
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
+    pub entity: super::graph::EntityId,
     pub name: crate::lex::identifiers::NameId,
     pub ty: TypeId,
     pub parameters: ast::ParameterClause,
@@ -136,7 +137,8 @@ impl<'tree> Analyzer<'tree> {
         }
         let specifiers = match declaration.kind {
             ast::DeclKind::Simple { specifiers, .. }
-            | ast::DeclKind::Function { specifiers, .. } => Some(specifiers),
+            | ast::DeclKind::Function { specifiers, .. }
+            | ast::DeclKind::SpecialMember { specifiers, .. } => Some(specifiers),
             _ => None,
         };
         if let Some(owner) = self.graph.scope(scope).owner
@@ -289,6 +291,7 @@ impl<'tree> Analyzer<'tree> {
                     .parameters
                     .ok_or(Error::Invariant("function definition without parameters"))?;
                 let deferred = DeferredBody {
+                    entity,
                     name,
                     ty: info.ty,
                     parameters,
@@ -358,9 +361,8 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::ExplicitInstantiation { .. } => {
                 Err(Error::Missing("explicit template instantiation"))
             }
-            ast::DeclKind::SpecialMember { .. } | ast::DeclKind::BitField { .. } => {
-                Err(Error::Missing("special member and bit-field declarations"))
-            }
+            ast::DeclKind::SpecialMember { .. } => self.special_member(id, scope),
+            ast::DeclKind::BitField { .. } => Err(Error::Missing("bit-field declarations")),
         }
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
@@ -377,6 +379,8 @@ impl<'tree> Analyzer<'tree> {
             Some(body.print),
             Some(body.name),
         )?;
+        self.graph.scope_mut(scope).owner = Some(body.entity);
+        self.graph.entity_mut(body.entity).scope = Some(scope);
         let count = self.graph.types.function_parameter_count(body.ty)?;
         for (index, parameter) in self
             .tree
@@ -388,6 +392,19 @@ impl<'tree> Analyzer<'tree> {
         {
             let ty = self.graph.types.function_parameter(body.ty, index)?;
             let name = self.declarator_name(parameter.declarator)?;
+            if let Some(name) = name
+                && self
+                    .graph
+                    .own(scope, name, super::lookup::Filter::Ordinary)
+                    .is_some()
+            {
+                let location = parameter
+                    .declarator
+                    .map(|id| self.declarator_location(id))
+                    .transpose()?
+                    .unwrap_or(parameter.location);
+                return Err(Error::at(location, "duplicate parameter name"));
+            }
             let entity = self.graph.add_entity(Some(ty), name, Keyword::Int)?;
             self.graph.add_binding(
                 scope,
@@ -404,6 +421,14 @@ impl<'tree> Analyzer<'tree> {
         let ast::Body::Parsed(parsed) = self.tree.bodies.get(body.body) else {
             return Err(Error::Invariant("unparsed body at semantic boundary"));
         };
+        // Types mode walks only the mem-initializer expressions. Target lookup,
+        // subobject conversion and construction plans belong to semantic mode.
+        for initializer in self.tree.mem_initializers.get(parsed.initializers) {
+            self.initializer_names(initializer.initializer, scope, body.ty)?;
+        }
+        if parsed.handlers.is_some() {
+            return Err(Error::Missing("function-try-block handler scopes"));
+        }
         self.statement(parsed.compound, scope)
     }
     fn statement(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
