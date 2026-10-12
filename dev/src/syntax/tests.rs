@@ -442,6 +442,54 @@ fn condition_name_is_visible_in_its_initializer_and_block_scope_unwinds() {
 }
 
 #[test]
+fn failed_template_lists_retry_under_another_category_reading() {
+    let source = SourceBuffer::new(b"using G=Unknown; <G::V*>".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"template-category-key").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.cursor.retain();
+    let position = parser.cursor.position;
+    parser.conflicts.active = true;
+    parser.conflicts.take = Some(Category::Value);
+    assert!(parser.optional_template_arguments(false).unwrap().is_none());
+    assert_eq!(parser.cursor.position, position);
+    let failures = parser.angles.cached_queries().0;
+    parser.angle = true;
+    assert!(parser.optional_template_arguments(false).unwrap().is_none());
+    assert_eq!(parser.angles.cached_queries().0, failures);
+    parser.conflicts.take = Some(Category::Type);
+    parser.conflicts.active = false;
+    assert!(parser.optional_template_arguments(false).unwrap().is_none());
+    assert_eq!(parser.cursor.position, position);
+    parser.conflicts.active = true;
+    let arguments = parser.optional_template_arguments(false).unwrap().unwrap();
+    assert!(matches!(
+        parser.tree.template_arguments.get(arguments)[0].kind,
+        super::ast::TemplateArgumentKind::Type(_)
+    ));
+    parser.cursor.release();
+}
+
+#[test]
+fn failed_member_template_lists_do_not_suppress_ordinary_lists() {
+    let source = SourceBuffer::new(b"<int> value".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"template-call-key").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.cursor.retain();
+    let position = parser.cursor.position;
+    assert!(parser.optional_template_arguments(true).unwrap().is_none());
+    assert_eq!(parser.cursor.position, position);
+    assert!(parser.optional_template_arguments(false).unwrap().is_some());
+    parser.cursor.release();
+}
+
+#[test]
 fn committed_statements_bound_angle_memo_storage_but_attempts_retain_queries() {
     let source = SourceBuffer::new(format!("{{{}}}", "f<X>();".repeat(500)).into_bytes()).unwrap();
     let input = Preprocessor::with_name(&source, b"statement-angle-lifetime").unwrap();

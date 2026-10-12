@@ -1,6 +1,6 @@
 // Translated from syntax/parser_state.cpp and parser_names.cpp. See NOTICE.
 //! Immutable delimiter fences and coordinated failure of nested speculative lists.
-use super::scopes::ScopeId;
+use super::scopes::{Category, ScopeId};
 use super::{
     ParseError,
     ast::{ExprKind, TemplateArgument, TemplateArgumentKind},
@@ -17,12 +17,21 @@ struct Fence {
     end: u64,
     found: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct TemplateListKey {
+    position: u64,
+    environment: u64,
+    scope: ScopeId,
+    category: Option<Category>,
+    alternatives_active: bool,
+    call_follows: bool,
+}
 #[derive(Default)]
 pub(super) struct Angles {
     fences: BTreeMap<u64, Fence>,
     scan_runs: Vec<Fence>,
-    failed: HashSet<(u64, u64, ScopeId, bool)>,
-    open: Vec<(u64, u64, ScopeId, bool)>,
+    failed: HashSet<TemplateListKey>,
+    open: Vec<TemplateListKey>,
     abandoning: bool,
     open_base: usize,
     abandoned_error: Option<(u64, crate::support::source::SourceOffset)>,
@@ -75,12 +84,17 @@ impl Parser<'_> {
         &mut self,
         call_follows: bool,
     ) -> Result<Option<List<TemplateArgument>>, ParseError> {
-        let key = (
-            self.cursor.absolute_position()?,
-            self.scopes.environment(),
-            self.scopes.current,
-            self.angle,
-        );
+        // Arguments establish their own angle mode. Name-category readings
+        // and the member-call requirement can change the result even when
+        // the token position and reversible scope environment are identical.
+        let key = TemplateListKey {
+            position: self.cursor.absolute_position()?,
+            environment: self.scopes.environment(),
+            scope: self.scopes.current,
+            category: self.conflicts.take,
+            alternatives_active: self.conflicts.active,
+            call_follows,
+        };
         if self.angles.abandoning
             || self.angles.failed.contains(&key)
             || !self.closing_angle_ahead()?
@@ -105,7 +119,7 @@ impl Parser<'_> {
             }
             Ok(arguments)
         })?;
-        if parsed.is_none() {
+        if !outermost && parsed.is_none() {
             for &open in &self.angles.open[self.angles.open_base..] {
                 self.angles.failed.insert(open);
             }
@@ -122,8 +136,18 @@ impl Parser<'_> {
                 self.restore_error(mark);
             }
             self.angles.abandoning = false;
+            if parsed.is_none() {
+                self.angles.failed.insert(key);
+            }
         } else if parsed.is_some() {
             self.angles.open.pop();
+        } else {
+            // Only the outermost speculative list may fall back to a value
+            // reading. A nested failure abandons every enclosing open list.
+            return Err(ParseError::Syntax {
+                location: self.location()?,
+                message: "syntax error",
+            });
         }
         Ok(parsed)
     }
