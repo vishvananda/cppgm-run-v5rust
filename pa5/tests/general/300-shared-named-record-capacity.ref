@@ -1,0 +1,1587 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier before_alias
+      parameter-clause
+    compound-statement
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+  alias-declaration A
+    type-id
+      type-specifier-seq
+        type-name P<C>
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier after_alias
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier A::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+end translation unit

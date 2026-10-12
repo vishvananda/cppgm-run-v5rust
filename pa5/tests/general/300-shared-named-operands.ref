@@ -1,0 +1,137 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier word
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier word
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+    class-specifier Q
+      class-key KW_STRUCT:struct
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      expression-statement
+        sizeof-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        type-trait-expression KW_TYPEID:typeid
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        type-trait-expression KW_ALIGNOF:alignof
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        parenthesized-expression
+          call-expression
+            id-expression P<P<C>>
+            argument-list
+              literal 1
+      expression-statement
+        cast-expression OP_LPAREN:
+          type-id
+            type-specifier-seq
+              type-name P<P<C>>
+          id-expression value
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              type-name C
+              vector-attribute 16
+                literal 16
+      expression-statement
+        type-trait-expression KW_TYPEID:typeid
+          type-id
+            type-specifier-seq
+              type-name P<C>
+              cv-qualifier KW_CONST:const
+            abstract-declarator
+              ptr-operator OP_STAR:*
+      expression-statement
+        member-expression OP_DOT:.
+          type-trait-expression KW_TYPEID:typeid
+            id-expression value
+          identifier member
+      expression-statement
+        sizeof-expression
+          subscript-expression
+            call-expression
+              id-expression P<C>
+              argument-list
+                literal 1
+            literal 0
+      expression-statement
+        sizeof-expression
+          subscript-expression
+            parenthesized-expression
+              id-expression value
+            literal 0
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier Q<(sizeof(P<(value>1)>))>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier greater_operand
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier Q<(noexcept(value>1))>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier greater_noexcept
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier Q<(sizeof((word)value))>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier cast_operand
+end translation unit

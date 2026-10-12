@@ -1,14 +1,30 @@
 // Translated from syntax/parser_expressions.cpp. See NOTICE.
 use super::{
     ParseError,
-    ast::{ExprId, ExprKind, Expression, Operator, Specifier},
+    ast::{ExprId, ExprKind, Expression, Operator, Specifier, TypeId},
     cursor::TokenKind,
     parser::Parser,
     storage::List,
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 use crate::support::source::SourceOffset;
+enum Operand {
+    Type(TypeId),
+    Expression(ExprId),
+}
 impl Parser<'_> {
+    pub(super) fn continue_assignment_expression(
+        &mut self,
+        primary: ExprId,
+    ) -> Result<ExprId, ParseError> {
+        let postfix = self.postfix(primary)?;
+        let binary = self.binary_rest(postfix, 3)?;
+        self.assignment_rest(binary)
+    }
+    fn continue_expression(&mut self, primary: ExprId) -> Result<ExprId, ParseError> {
+        let assignment = self.continue_assignment_expression(primary)?;
+        self.expression_rest(assignment)
+    }
     pub(super) fn expression(&mut self) -> Result<ExprId, ParseError> {
         let left = self.assignment_expression()?;
         self.expression_rest(left)
@@ -197,12 +213,14 @@ impl Parser<'_> {
             });
         }
         if self.at(P::LeftParen)? {
+            if self.name_starts_ahead(1)? {
+                return self.parenthesized_from_name(location);
+            }
             let cast = self.attempt(|parser| {
                 parser.cursor.advance()?;
-                let ty = parser.type_id(false)?;
-                parser.expect(P::RightParen)?;
-                if !parser.operand_start()? {
-                    return parser.fail();
+                let ty = parser.without_angle(|parser| parser.type_id(false))?;
+                if !parser.accept(P::RightParen)? || !parser.operand_start()? {
+                    return parser.decline_operand();
                 }
                 Ok(ty)
             })?;
@@ -221,34 +239,7 @@ impl Parser<'_> {
         match self.keyword()? {
             Some(K::Sizeof) => self.sizeof_expression(location),
             Some(keyword @ (K::Alignof | K::Typeid | K::Noexcept)) => {
-                self.cursor.advance()?;
-                self.expect(P::LeftParen)?;
-                let ty = if keyword == K::Noexcept {
-                    None
-                } else {
-                    self.attempt(|parser| {
-                        let ty = parser.type_id(false)?;
-                        if !parser.at(P::RightParen)? || parser.named_function_type(ty) {
-                            return parser.fail();
-                        }
-                        Ok(ty)
-                    })?
-                };
-                let operand = if ty.is_none() {
-                    Some(self.expression()?)
-                } else {
-                    None
-                };
-                self.expect(P::RightParen)?;
-                let expr = self.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::TypeTrait {
-                        keyword,
-                        ty,
-                        operand,
-                    },
-                })?;
-                self.postfix(expr)
+                self.type_trait(location, keyword)
             }
             Some(
                 keyword @ (K::StaticCast | K::DynamicCast | K::ReinterpretCast | K::ConstCast),
@@ -433,6 +424,125 @@ impl Parser<'_> {
                 .iter()
                 .any(|specifier| matches!(specifier, Specifier::Named(_)))
     }
+    fn name_starts_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        Ok(
+            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_))
+                || (self.at_ahead(P::Scope, ahead)?
+                    && matches!(self.cursor.peek(ahead + 1)?.kind, TokenKind::Identifier(_))),
+        )
+    }
+    fn decline_operand<T>(&mut self) -> Result<T, ParseError> {
+        // A successfully parsed type followed by the wrong delimiter declines
+        // the optional reading without recording a new furthest syntax error.
+        Err(ParseError::Syntax {
+            location: self.location()?,
+            message: "syntax error",
+        })
+    }
+    fn named_operand(&mut self) -> Result<Operand, ParseError> {
+        let location = self.location()?;
+        let (name, binding) = self.name()?;
+        if self.is_type_name(name, binding, false, false)
+            && let Some(ty) = self.attempt(|parser| {
+                let ty = parser.type_from_name(name, location)?;
+                parser.operand_type_end(ty)
+            })?
+        {
+            return Ok(Operand::Type(ty));
+        }
+        let primary = self.primary_from_name(name, binding, location)?;
+        Ok(Operand::Expression(self.continue_expression(primary)?))
+    }
+    fn operand_type(&mut self) -> Result<TypeId, ParseError> {
+        let ty = self.type_id(false)?;
+        self.operand_type_end(ty)
+    }
+    fn operand_type_end(&mut self, ty: TypeId) -> Result<TypeId, ParseError> {
+        if !self.at(P::RightParen)? || self.named_function_type(ty) {
+            return self.decline_operand();
+        }
+        Ok(ty)
+    }
+    fn parenthesized_from_name(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
+        self.cursor.advance()?;
+        let reading = self.without_angle(|parser| {
+            let start = parser.location()?;
+            let (name, binding) = parser.name()?;
+            if parser.is_type_name(name, binding, false, false)
+                && let Some(ty) = parser.attempt(|parser| {
+                    let ty = parser.type_from_name(name, start)?;
+                    if !parser.accept(P::RightParen)? || !parser.operand_start()? {
+                        return parser.decline_operand();
+                    }
+                    Ok(ty)
+                })?
+            {
+                return Ok(Operand::Type(ty));
+            }
+            let primary = parser.primary_from_name(name, binding, start)?;
+            let inner = parser.continue_expression(primary)?;
+            parser.expect(P::RightParen)?;
+            Ok(Operand::Expression(inner))
+        })?;
+        match reading {
+            Operand::Type(ty) => {
+                let operand = self.unary()?;
+                self.tree.expressions.add(Expression {
+                    location,
+                    kind: ExprKind::Cast {
+                        keyword: None,
+                        ty,
+                        operand,
+                    },
+                })
+            }
+            Operand::Expression(inner) => {
+                let paren = self.tree.expressions.add(Expression {
+                    location,
+                    kind: ExprKind::Paren(inner),
+                })?;
+                self.postfix(paren)
+            }
+        }
+    }
+    fn type_trait(&mut self, location: SourceOffset, keyword: K) -> Result<ExprId, ParseError> {
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let reading = self.without_angle(|parser| {
+            let named = parser.name_starts_ahead(0)?;
+            let reading = if keyword == K::Noexcept {
+                Operand::Expression(parser.expression()?)
+            } else if named {
+                parser.named_operand()?
+            } else {
+                let ty = parser.attempt(Self::operand_type)?;
+                if let Some(ty) = ty {
+                    Operand::Type(ty)
+                } else {
+                    Operand::Expression(parser.expression()?)
+                }
+            };
+            parser.expect(P::RightParen)?;
+            Ok(reading)
+        })?;
+        let (ty, operand) = match reading {
+            Operand::Type(ty) => (Some(ty), None),
+            Operand::Expression(expression) => (None, Some(expression)),
+        };
+        let expr = self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::TypeTrait {
+                keyword,
+                ty,
+                operand,
+            },
+        })?;
+        if keyword == K::Typeid {
+            self.postfix(expr)
+        } else {
+            Ok(expr)
+        }
+    }
     fn sizeof_expression(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
         self.cursor.advance()?;
         if self.accept(P::Ellipsis)? {
@@ -444,18 +554,52 @@ impl Parser<'_> {
                 kind: ExprKind::SizeofPack(name),
             });
         }
-        let parenthesized = self.at(P::LeftParen)?;
-        let ty = if parenthesized {
+        if self.at(P::LeftParen)? && self.name_starts_ahead(1)? {
+            let start = self.location()?;
+            self.cursor.advance()?;
+            let reading = self.without_angle(|parser| {
+                let reading = parser.named_operand()?;
+                parser.expect(P::RightParen)?;
+                Ok(reading)
+            })?;
+            let (ty, operand, parenthesized) = match reading {
+                Operand::Type(ty) => (Some(ty), None, false),
+                Operand::Expression(inner) => {
+                    let paren = self.tree.expressions.add(Expression {
+                        location: start,
+                        kind: ExprKind::Paren(inner),
+                    })?;
+                    let operand = self.postfix(paren)?;
+                    if let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind {
+                        (None, Some(inner), true)
+                    } else {
+                        (None, Some(operand), false)
+                    }
+                }
+            };
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Sizeof {
+                    ty,
+                    operand,
+                    parenthesized,
+                },
+            });
+        }
+        let mut parenthesized = false;
+        let ty = if self.at(P::LeftParen)? {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
-                let ty = parser.type_id(false)?;
+                let ty = parser.without_angle(|parser| parser.type_id(false))?;
                 if parser.named_function_type(ty) {
                     return Err(ParseError::Syntax {
                         location: parser.location()?,
                         message: "syntax error",
                     });
                 }
-                parser.expect(P::RightParen)?;
+                if !parser.accept(P::RightParen)? {
+                    return parser.decline_operand();
+                }
                 Ok(ty)
             })?
         } else {
@@ -463,8 +607,8 @@ impl Parser<'_> {
         };
         let operand = if ty.is_none() {
             let operand = self.unary()?;
-            if parenthesized && let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind
-            {
+            if let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind {
+                parenthesized = true;
                 Some(inner)
             } else {
                 Some(operand)

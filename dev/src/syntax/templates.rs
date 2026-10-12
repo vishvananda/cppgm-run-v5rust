@@ -3,9 +3,8 @@
 use super::{
     ParseError,
     ast::{
-        DeclId, DeclKind, Declaration, ExprKind, Name, Specifier, TemplateArgument,
-        TemplateArgumentKind, TemplateParameter, TemplateParameterClause, TemplateParameterKind,
-        TypeId, TypeSyntax,
+        DeclId, DeclKind, Declaration, ExprKind, Specifier, TemplateArgument, TemplateArgumentKind,
+        TemplateParameter, TemplateParameterClause, TemplateParameterKind,
     },
     cursor::TokenKind,
     declarators::Mode,
@@ -250,9 +249,7 @@ impl Parser<'_> {
                 TemplateArgumentKind::Type(ty)
             } else {
                 let primary = self.primary_from_name(name, binding, location)?;
-                let primary = self.postfix(primary)?;
-                let binary = self.binary_rest(primary, 3)?;
-                TemplateArgumentKind::Expression(self.assignment_rest(binary)?)
+                TemplateArgumentKind::Expression(self.continue_assignment_expression(primary)?)
             }
         } else {
             let ty = self.attempt(|parser| {
@@ -278,43 +275,5 @@ impl Parser<'_> {
         } else {
             self.fail()
         }
-    }
-    pub(super) fn type_from_name(
-        &mut self,
-        name: Name,
-        location: SourceOffset,
-    ) -> Result<TypeId, ParseError> {
-        let start = self.tree.specs.begin();
-        let node = self.tree.names.get(name);
-        let specifier = if !node.global
-            && self.tree.name_lists.get(node.components).len() == 1
-            && let super::ast::NameKind::Decltype(operand) =
-                self.tree.name_lists.get(node.components)[0].kind
-        {
-            Specifier::Decltype(operand)
-        } else {
-            Specifier::Named(name)
-        };
-        self.tree.specs.push(specifier);
-        while matches!(self.keyword()?, Some(K::Const | K::Volatile)) {
-            if let Some(word) = self.keyword()? {
-                self.tree.specs.push(Specifier::Keyword(word));
-            }
-            self.cursor.advance()?;
-        }
-        let specifiers = self.tree.specs.finish(start)?;
-        let declarator = self.declarator(Mode::Abstract)?;
-        let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
-        let specialization = if declarator.is_none() {
-            self.typedef_record(specifiers)
-        } else {
-            0
-        };
-        self.tree.types.add(TypeSyntax {
-            specialization,
-            location,
-            specifiers,
-            declarator,
-        })
     }
 }

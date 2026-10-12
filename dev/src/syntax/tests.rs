@@ -13,6 +13,82 @@ use crate::{
 };
 
 #[test]
+fn named_trait_and_cast_readings_share_names_and_do_not_consume_alias_records() {
+    use super::ast::{ExprKind, Specifier};
+    let source = SourceBuffer::new(
+        b"struct C{typedef int word;}; template<class T> struct P:T{}; sizeof(P<P<C>>(1)), typeid(P<P<C>>(1)), (P<P<C>>(1));"
+            .to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"shared-operands").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let names = parser.tree.names.mark();
+    let expression = parser.expression().unwrap();
+    assert_eq!(parser.tree.names.mark() - names, 9);
+    assert!(parser.specialization_records.is_empty());
+    let ExprKind::Binary { left, .. } = parser.tree.expressions.get(expression).kind else {
+        panic!("expected comma");
+    };
+    let ExprKind::Binary { left, .. } = parser.tree.expressions.get(left).kind else {
+        panic!("expected comma");
+    };
+    let ExprKind::Sizeof {
+        operand: Some(operand),
+        ty: None,
+        parenthesized: true,
+    } = parser.tree.expressions.get(left).kind
+    else {
+        panic!("expected expression operand");
+    };
+    let ExprKind::FunctionalCast { specifiers, .. } = parser.tree.expressions.get(operand).kind
+    else {
+        panic!("expected functional cast");
+    };
+    assert!(matches!(
+        parser.tree.specs.get(specifiers),
+        [Specifier::Named(_)]
+    ));
+}
+
+#[test]
+fn failed_type_reading_preserves_its_shared_name_and_rewinds_only_new_derivations() {
+    let source =
+        SourceBuffer::new(b"struct C{}; template<class T> struct P:T{}; P<P<C>> const *".to_vec())
+            .unwrap();
+    let input = Preprocessor::with_name(&source, b"shared-type-rewind").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let location = parser.location().unwrap();
+    let (name, _) = parser.name().unwrap();
+    let names = parser.tree.names.mark();
+    let types = parser.tree.types.mark();
+    let declarators = parser.tree.declarators.mark();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            let ty = parser.type_from_name(name, location)?;
+            assert_eq!(parser.tree.types.get(ty).specialization, 0);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.tree.names.mark(), names);
+    assert_eq!(parser.tree.types.mark(), types);
+    assert_eq!(parser.tree.declarators.mark(), declarators);
+    assert!(parser.specialization_records.is_empty());
+    let ty = parser.type_from_name(name, location).unwrap();
+    assert_eq!(parser.tree.names.mark(), names);
+    assert!(parser.tree.types.get(ty).declarator.is_some());
+}
+
+#[test]
 fn parameter_base_facts_and_alias_records_survive_commit_and_rewind_together() {
     use super::scopes::Scopes;
     let source = SourceBuffer::new(

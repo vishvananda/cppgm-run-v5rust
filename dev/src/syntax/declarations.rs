@@ -351,17 +351,21 @@ impl Parser<'_> {
         definite: bool,
         type_only: bool,
     ) -> Result<List<Specifier>, ParseError> {
-        self.specifier_sequence_with_leading(definite, type_only, List::default())
+        self.specifier_sequence_with_leading(definite, type_only, List::default(), None)
     }
     fn specifier_sequence_with_leading(
         &mut self,
         definite: bool,
         type_only: bool,
         leading: List<super::ast::Attribute>,
+        initial: Option<super::ast::Name>,
     ) -> Result<List<Specifier>, ParseError> {
         let start = self.tree.specs.begin();
         self.vector_specifiers(leading, false)?;
-        let mut has_type = false;
+        if let Some(name) = initial {
+            self.tree.specs.push(self.named_specifier(name));
+        }
+        let mut has_type = initial.is_some();
         let mut has_friend = false;
         loop {
             let attributes = self.collect_attributes(self.tree.specs.begin() != start)?;
@@ -410,17 +414,7 @@ impl Parser<'_> {
                     let Some(name) = named else {
                         break;
                     };
-                    let node = self.tree.names.get(name);
-                    let specifier = if !node.global
-                        && self.tree.name_lists.get(node.components).len() == 1
-                        && let super::ast::NameKind::Decltype(operand) =
-                            self.tree.name_lists.get(node.components)[0].kind
-                    {
-                        Specifier::Decltype(operand)
-                    } else {
-                        Specifier::Named(name)
-                    };
-                    self.tree.specs.push(specifier);
+                    self.tree.specs.push(self.named_specifier(name));
                     has_type = true;
                 }
                 _ => break,
@@ -433,6 +427,36 @@ impl Parser<'_> {
     }
     pub(super) fn type_id(&mut self, definite: bool) -> Result<TypeId, ParseError> {
         self.type_id_in_mode(definite, super::declarators::Mode::Abstract)
+    }
+    fn named_specifier(&self, name: super::ast::Name) -> Specifier {
+        let node = self.tree.names.get(name);
+        if !node.global
+            && self.tree.name_lists.get(node.components).len() == 1
+            && let super::ast::NameKind::Decltype(operand) =
+                self.tree.name_lists.get(node.components)[0].kind
+        {
+            Specifier::Decltype(operand)
+        } else {
+            Specifier::Named(name)
+        }
+    }
+    pub(super) fn type_from_name(
+        &mut self,
+        name: super::ast::Name,
+        location: SourceOffset,
+    ) -> Result<TypeId, ParseError> {
+        let specifiers =
+            self.specifier_sequence_with_leading(false, true, List::default(), Some(name))?;
+        let declarator = self.declarator(super::declarators::Mode::Abstract)?;
+        let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+        // The frozen shared-name builder does not set SpecifierInfo::type_name.
+        // It consequently records no alias specialization for this reading.
+        self.tree.types.add(TypeSyntax {
+            specialization: 0,
+            location,
+            specifiers,
+            declarator,
+        })
     }
     pub(super) fn type_id_in_mode(
         &mut self,
@@ -591,7 +615,7 @@ impl Parser<'_> {
     }
     fn simple_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
         let specifiers =
-            self.specifier_sequence_with_leading(false, false, self.leading_attributes)?;
+            self.specifier_sequence_with_leading(false, false, self.leading_attributes, None)?;
         let typedef = self
             .tree
             .specs

@@ -3,6 +3,124 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: shared named operands — 2026-10-12
+
+Entry/reviewed commit: `edaf54fa531a6d1dc3507d7d343cbc29f0fdbfaa` (clean).
+Stage base and last accepted partial-audit commit above are unchanged. The
+implementation/audit commit containing this entry is recorded externally in
+`pa5-shared-operands/handoff.json`. The previous goal turn is **progress**:
+its committed parameter-base fixes and receipts prove 193 fixed passes with
+concrete additional parity findings. This continuation resolves both pending
+record-capacity counterexamples and their shared grammar owner. **Full stage
+acceptance remains open**; Ralph's existing goal and stage are unchanged.
+
+The repository guide, clone contract, specification, clone plan, complete PA5
+handout/parsing guide, grammar, source map and historical ledger remain the
+audit requirements. Revalidated the worktree and preceding handoff. Consulted
+the actual frozen `parser_expressions.cpp`, `parser_declarators.cpp`,
+`parser_specifiers.cpp`, `parser_names.cpp`, parser/state and AST owners at
+`905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`; no oracle/harness defect was found.
+
+| Frozen C++ responsibility | Finding and Rust correction |
+| --- | --- |
+| `parser_declarators.cpp::parse_type_id_from_name/finish_type_id`, `parser_names.cpp::parse_template_argument` | Rust's shared-name type builder allocated an alias specialization record that C++ does not: C++ deliberately leaves `SpecifierInfo::type_name` unset in this builder. Nested template argument readings consumed the 255-record capacity and changed a later inherited alias declaration to multiplication. `declarations.rs::type_from_name` now uses the existing named syntax, ordinary owning specifier continuation and abstract declarator parser, with no alias record. `templates.rs` consumes that same builder. Both prior capacity failures now match; no speculative-slot workaround is retained. |
+| `parser_expressions.cpp::parse_sizeof_operand/parse_type_trait/parenthesized_from_name` | Rust reparsed a name and its argument syntax after a failed type reading. `expressions.rs` parses the name outside the transaction, then tentatively parses only its remaining derivations. Expression fallback consumes the same Name and full postfix/binary/assignment/comma continuation. Sizeof strips only an unchanged outer parenthesis; operand postfix suffixes retain their parenthesized node. Cast and trait delimiter regions restore the angle environment. |
+| `parser_expressions.cpp::parse_unary_expression/parse_postfix_expression` | The existing Rust path incorrectly allowed postfix calls, member access and subscripts on unparenthesized alignof/noexcept expressions. They now remain unary expressions; typeid retains its permitted postfix behavior. The broader generated sweep exposed 153 formerly accepted mismatches in this family, now rejected with exact diagnostics. |
+| Optional cast/type delimiter and operand checks | A complete tentative type followed by an unsuitable delimiter/operand called fail and contaminated the furthest diagnostic. The reading now declines without manufacturing a grammar failure, fixing both decltype/typename missing-cast-operand rejection locations. Failures inside the actual grammar still retain their original diagnostics. |
+
+This is syntax work in Rust, not semantic instantiation or later code-generation
+work. The shared Name and nested TypeId/ExprId arguments remain in the existing
+translation-unit slabs. A tentative type reading adds only specifiers and
+declarator/type records after its checkpoint; rewind preserves the Name allocated
+before it and removes discarded derivations. The owning specifier grammar handles
+cv qualifiers, recognized vector/attribute syntax and typed operands for both
+ordinary and shared-name type-ids; no duplicate miniature specifier parser remains
+in the template module. Continuations consume typed expressions, never rendered
+text. Ordinary aliases still retain their existing specialization records.
+
+Output ordering is the same source traversal. Literal numeric facts remain the
+PA2 owner; casts/traits do not evaluate target values. Existing function/class/
+lambda body demand and bounded token retention are preserved. No unsafe, C++
+fallback, dependency, fixture recognition, environment reads, mechanical file
+split or lint allowance was added. Optimizer and register allocator policy is
+unchanged. Two new invariants verify exactly nine names across three nested
+trait/cast operands, no spurious alias records, and abandoned type derivations
+leaving shared names/argument syntax live. Debug and release each pass **83
+library plus eight tool tests**. Five new required cases and only their new
+oracle expectations live in the executed `tests/general/300-shared-named-*.t`
+lane. Existing fixtures/references and protected policy are unchanged.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-shared-operands/`.
+`audit-metadata.json`, `start-results.json`, `pa1-results.json` through
+`pa5-results.json`, `progress.json`, passing/failing ID lists, archived `cases/`
+and `course/pa1/` through `course/pa5/` preserve commits, hashes and raw receipts.
+The fixed manifest remains SHA-256
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost identities, no fixed failures. Added cases and
+probes do not redefine fixed-manifest progress or prove the remaining owners.
+
+| Command | Result and artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make test-pa5` | PASS, 193/193; `stage.log` |
+| required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS, 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS, 223/223, zero failed comparisons/no marker; `course.log`, archived course receipt |
+| protected `clone_check.py prior pa5` | PASS; PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, debug/release tests and source audit; `quality.log` |
+| `make audit-rust` | PASS, 82 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, 193/193 preserved; `preflight.log`, `preserve.log`, independent `progress.json` |
+
+`validate.py` and `checks.json` record exact commands, statuses and elapsed costs.
+`probe.py`, `parameter-sources.json`, `operands-final.json`, `operands-final.log`
+and raw `operands-final/` compare **704/704** exit/stdout/stderr/AST results.
+They cover the previous 20 saturation cases, ordinary/nested/qualified names,
+arrays/function/pointer/vector type syntax, functional/C-style casts, traits,
+operand postfixes, angle delimiters, all four operators and malformed forms.
+The initial broader sweep independently exposed 155 failures (153 postfix
+acceptances and two diagnostics); its raw `operands.json`/`operands/` remain.
+`new-regressions.json` retains all five strict comparisons. Copied prior probes
+retain **806/806** additional full comparisons: 334 parameter-base, 147 attribute,
+114 earlier audit, 135 lambda and 76 template cases in `prior-probes/`.
+
+Resource command: `python3` on this root's `measure.py`. Metadata freezes tool
+and source/output hashes, Linux/rustc 1.98.0, UTC/C locale and warm whole
+invocations. Oracle A/A calibration then A/B/B/A blocks match all 54 complete
+byte comparisons. An initial run overlapped gate execution and showed timing
+variance; `resources-concurrent/`, `measurements-concurrent.json` and
+`measure-concurrent.log` retain it. The table reports the repeat after the
+validation process was confirmed terminal, with raw final observations under
+`resources/` and `measurements.json`. Both runs passed byte comparison. These
+include source I/O, preprocessing and clock query, and are observations on a
+shared host, not cold-cache/hardware-counter or PA35 optimization proof.
+
+| Workload | Functions | Rust mean ms | Rust max RSS KiB | C++ mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| named-trait-functions | 1000 | 46.25 | 8012 | 23.63 | 7884 |
+| named-trait-functions | 4000 | 137.09 | 14200 | 69.92 | 15660 |
+| named-trait-functions | 16000 | 453.22 | 49380 | 235.43 | 47336 |
+| named-cast-functions | 1000 | 39.93 | 8024 | 15.97 | 7208 |
+| named-cast-functions | 4000 | 102.01 | 12764 | 50.47 | 13620 |
+| named-cast-functions | 16000 | 345.49 | 40228 | 194.96 | 40308 |
+| ordinary-functions | 1000 | 25.01 | 8024 | 10.91 | 6480 |
+| ordinary-functions | 4000 | 53.56 | 8532 | 24.57 | 8628 |
+| ordinary-functions | 16000 | 163.85 | 24036 | 86.80 | 20600 |
+
+Fourfold 4000 -> 16000 input growth takes about 3.1–3.4 times Rust wall time in
+the final observations; syntax storage grows with introduced syntax. Checkout
+and scratch occupy about 8.1 GiB of the shared 100 GiB budget.
+
+The next dependency remains specialization category aggregation and dependent/
+approximate prefix facts (`name_scopes.cpp`, `parser_names.cpp`), followed by
+retained alternate statements/shared body ownership (`name_conflicts.h`,
+`parser_statements.cpp::read_statement`). Rerun `pending-probe.py`: exact IDs
+`specialization-namespace-type` (0 versus 1), `dependent-conflicting-category`
+(both 0, differing AST), and `deep-parenthesized-expression` (0 versus 86)
+still fail; raw `pending-probes.json` / `pending-probes/` prove those boundaries.
+The two earlier capacity failures are resolved. Remaining source facts, class
+search memo scaling and the safe host byte-stack policy still require owner
+work. Hosted-only and later driver/backend responsibilities keep their original
+stage boundaries. This entry does not certify full PA5 or complete Ralph's goal.
+
 ## Full-stage audit continuation: parameter-base lookup — 2026-10-12
 
 Audit entry commit: `60515ce4ddfa053abc38a50075e4479825f99171` (clean).
