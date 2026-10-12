@@ -2,6 +2,7 @@
 use super::{
     ParseError,
     ast::{Condition, ExceptionDeclaration, FunctionBody, Handler, Statement, StmtId, StmtKind},
+    conflicts::StatementReader,
     cursor::TokenKind,
     parser::Parser,
 };
@@ -85,6 +86,9 @@ impl Parser<'_> {
         self.compound_in_scope(true)
     }
     fn compound_in_scope(&mut self, new_scope: bool) -> Result<StmtId, ParseError> {
+        self.with_conflict_scope(|parser| parser.compound_reading(new_scope))
+    }
+    fn compound_reading(&mut self, new_scope: bool) -> Result<StmtId, ParseError> {
         let location = self.location()?;
         self.expect(P::LeftBrace)?;
         let enclosing = self.scopes.current;
@@ -125,21 +129,8 @@ impl Parser<'_> {
             });
         }
         let kind = match self.keyword()? {
-            Some(word @ (K::Return | K::Throw)) => {
-                self.cursor.advance()?;
-                let value = if self.at(P::Semicolon)? {
-                    None
-                } else if word == K::Return {
-                    Some(self.expression()?)
-                } else {
-                    Some(self.assignment_expression()?)
-                };
-                self.expect(P::Semicolon)?;
-                if word == K::Return {
-                    StmtKind::Return(value)
-                } else {
-                    StmtKind::Throw(value)
-                }
+            Some(K::Return | K::Throw) => {
+                return self.read_statement(StatementReader::Value, attributes);
             }
             Some(word @ (K::Break | K::Continue)) => {
                 self.cursor.advance()?;
@@ -170,34 +161,14 @@ impl Parser<'_> {
                 self.expect(P::Colon)?;
                 StmtKind::Default(self.statement()?)
             }
-            Some(word @ (K::If | K::While | K::Switch)) => {
-                self.cursor.advance()?;
-                self.expect(P::LeftParen)?;
-                let enclosing = self.scopes.current;
-                self.scopes.push()?;
-                let condition = self.condition()?;
-                self.expect(P::RightParen)?;
-                let body = self.statement()?;
-                let kind = if word == K::If {
-                    let else_branch = if self.accept_keyword(K::Else)? {
-                        Some(self.statement()?)
-                    } else {
-                        None
-                    };
-                    StmtKind::If {
-                        condition,
-                        then_branch: body,
-                        else_branch,
-                    }
+            Some(K::If | K::While | K::Switch | K::For) => {
+                let names_conflicted = matches!(self.cursor.peek(2)?.kind, TokenKind::Identifier(name) if self.scopes.member_conflicts(name))
+                    && (self.at_ahead(P::Less, 3)? || self.at_ahead(P::Scope, 3)?);
+                return if names_conflicted {
+                    self.read_statement(StatementReader::Control, attributes)
                 } else {
-                    StmtKind::ConditionalLoop {
-                        keyword: word,
-                        condition,
-                        body,
-                    }
+                    self.statement_reading(StatementReader::Control, attributes)
                 };
-                self.scopes.current = enclosing;
-                kind
             }
             Some(K::Do) => {
                 self.cursor.advance()?;
@@ -211,7 +182,6 @@ impl Parser<'_> {
                 self.expect(P::Semicolon)?;
                 StmtKind::Do { body, condition }
             }
-            Some(K::For) => self.for_statement()?,
             Some(K::Try) => {
                 self.cursor.advance()?;
                 let body = self.compound_statement()?;
@@ -223,11 +193,82 @@ impl Parser<'_> {
                 if self.accept(P::Semicolon)? {
                     StmtKind::Expression(None)
                 } else {
-                    self.declaration_or_expression(attributes)?
+                    return self.read_statement(StatementReader::Ordinary, attributes);
                 }
             }
         };
         self.tree.statements.add(Statement { location, kind })
+    }
+    pub(super) fn statement_reading(
+        &mut self,
+        reader: StatementReader,
+        attributes: super::storage::List<super::ast::Attribute>,
+    ) -> Result<StmtId, ParseError> {
+        let location = self.location()?;
+        let kind = match reader {
+            StatementReader::Ordinary => self.declaration_or_expression(attributes)?,
+            StatementReader::Value => self.value_statement()?,
+            StatementReader::Control => self.control_statement()?,
+        };
+        self.tree.statements.add(Statement { location, kind })
+    }
+    fn value_statement(&mut self) -> Result<StmtKind, ParseError> {
+        let word = self
+            .keyword()?
+            .ok_or(ParseError::Invariant("missing value statement keyword"))?;
+        Ok({
+            self.cursor.advance()?;
+            let value = if self.at(P::Semicolon)? {
+                None
+            } else if word == K::Return {
+                Some(self.expression()?)
+            } else {
+                Some(self.assignment_expression()?)
+            };
+            self.expect(P::Semicolon)?;
+            if word == K::Return {
+                StmtKind::Return(value)
+            } else {
+                StmtKind::Throw(value)
+            }
+        })
+    }
+    fn control_statement(&mut self) -> Result<StmtKind, ParseError> {
+        if self.keyword()? == Some(K::For) {
+            return self.for_statement();
+        }
+        let word = self
+            .keyword()?
+            .ok_or(ParseError::Invariant("missing control statement keyword"))?;
+        Ok({
+            self.cursor.advance()?;
+            self.expect(P::LeftParen)?;
+            let enclosing = self.scopes.current;
+            self.scopes.push()?;
+            let condition = self.condition()?;
+            self.expect(P::RightParen)?;
+            let body = self.statement()?;
+            let kind = if word == K::If {
+                let else_branch = if self.accept_keyword(K::Else)? {
+                    Some(self.statement()?)
+                } else {
+                    None
+                };
+                StmtKind::If {
+                    condition,
+                    then_branch: body,
+                    else_branch,
+                }
+            } else {
+                StmtKind::ConditionalLoop {
+                    keyword: word,
+                    condition,
+                    body,
+                }
+            };
+            self.scopes.current = enclosing;
+            kind
+        })
     }
     pub(super) fn function_body(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
         let try_block = self.accept_keyword(K::Try)?;
@@ -323,6 +364,7 @@ impl Parser<'_> {
         Ok(Condition::Expression(self.expression()?))
     }
     fn for_statement(&mut self) -> Result<StmtKind, ParseError> {
+        let location = self.location()?;
         self.cursor.advance()?;
         self.expect(P::LeftParen)?;
         let attributes = self.collect_attributes(false)?;
@@ -353,11 +395,14 @@ impl Parser<'_> {
         }
         let mut declaration = None;
         let mut init = None;
+        let mut readings = None;
         if !self.accept(P::Semicolon)? {
-            declaration = self.attempt(|parser| parser.declaration_with_attributes(attributes))?;
-            if declaration.is_none() {
-                init = Some(self.expression()?);
-                self.expect(P::Semicolon)?;
+            let first = self.read_statement(StatementReader::Ordinary, attributes)?;
+            match self.tree.statements.get(first).kind {
+                StmtKind::Declaration(decl) => declaration = Some(decl),
+                StmtKind::Expression(expression) => init = expression,
+                StmtKind::Ambiguous { .. } => readings = Some(first),
+                _ => return Err(ParseError::Invariant("invalid for-init reading")),
             }
         }
         let condition = if self.at(P::Semicolon)? {
@@ -374,12 +419,21 @@ impl Parser<'_> {
         self.expect(P::RightParen)?;
         let body = self.statement()?;
         self.scopes.current = enclosing;
-        Ok(StmtKind::For {
+        let kind = StmtKind::For {
             declaration,
             init,
             condition,
             iteration,
             body,
-        })
+        };
+        if let Some(readings) = readings {
+            let loop_statement = self.tree.statements.add(Statement { location, kind })?;
+            let start = self.tree.stmt_lists.begin();
+            self.tree.stmt_lists.push(readings);
+            self.tree.stmt_lists.push(loop_statement);
+            Ok(StmtKind::Compound(self.tree.stmt_lists.finish(start)?))
+        } else {
+            Ok(kind)
+        }
     }
 }

@@ -13,6 +13,313 @@ use crate::{
 };
 
 #[test]
+fn conflicting_statements_retain_typed_readings_and_share_one_lambda_body() {
+    use super::ast::{Body, ExprKind, LambdaBody, ReadingCategory, StmtKind};
+    let source = SourceBuffer::new(
+        b"template<class T> struct P{typedef int word;}; template<> struct P<int>{int word;}; void f(){P<int>::word ([](){return 1;}());}".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"conflicting-readings").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let parser = &unit.parser;
+    let tree = &parser.tree;
+    let declarations = tree.decl_lists.get(unit.declarations.unwrap());
+    let DeclKind::Function { body, .. } = tree.declarations.get(declarations[2]).kind else {
+        panic!("function");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("body");
+    };
+    let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+        panic!("compound");
+    };
+    let StmtKind::Ambiguous {
+        name,
+        component,
+        readings,
+    } = tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+    else {
+        panic!("ambiguous");
+    };
+    assert_eq!(component, 1);
+    assert_eq!(
+        tree.name_lists.get(tree.names.get(name).components).len(),
+        2
+    );
+    let readings = tree.statement_readings.get(readings);
+    assert_eq!(readings.len(), 2);
+    assert_eq!(readings[0].category, ReadingCategory::Type);
+    assert_eq!(readings[1].category, ReadingCategory::Value);
+    let mut bodies = Vec::new();
+    for reading in readings {
+        let StmtKind::Expression(Some(expr)) = tree.statements.get(reading.statement).kind else {
+            panic!("expression");
+        };
+        let (ExprKind::FunctionalCast { arguments, .. } | ExprKind::Call { arguments, .. }) =
+            tree.expressions.get(expr).kind
+        else {
+            panic!("call");
+        };
+        let ExprKind::Call { callee, .. } =
+            tree.expressions.get(tree.expr_lists.get(arguments)[0]).kind
+        else {
+            panic!("lambda call");
+        };
+        let ExprKind::Lambda(lambda) = tree.expressions.get(callee).kind else {
+            panic!("lambda");
+        };
+        let LambdaBody::Parsed(body) = tree.lambdas.get(lambda).body else {
+            panic!("parsed lambda");
+        };
+        bodies.push(body);
+    }
+    assert_eq!(bodies[0], bodies[1]);
+    assert_eq!(parser.deferred_lambdas, 1);
+    assert_eq!(parser.shared_lambdas.mark(), 0);
+    assert!(parser.shared_lambdas.region.is_none());
+}
+
+#[test]
+fn specialization_categories_are_keyed_by_lexical_home_and_survive_only_as_hints_on_undo() {
+    let source = SourceBuffer::new(
+        b"namespace A{template<class T>struct P{typedef int word;};template<>struct P<int>{int word;};} namespace B{template<class T>struct P{typedef int word;};template<>struct P<int>{typedef int word;};}".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"category-homes").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let a = parser.cursor.intern_name(b"A").unwrap();
+    let b = parser.cursor.intern_name(b"B").unwrap();
+    let p = parser.cursor.intern_name(b"P").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    let result: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            parser.fail()
+        })
+        .unwrap();
+    assert!(result.is_none());
+    assert!(parser.scopes.lookup(a).is_none());
+    assert!(parser.scopes.has_conflicts());
+    parser.declarations(false).unwrap();
+    let a = parser.scopes.lookup(a).unwrap().scope.unwrap();
+    let b = parser.scopes.lookup(b).unwrap().scope.unwrap();
+    let primary_a = parser
+        .scopes
+        .lookup_specialization(a, p, true, false)
+        .unwrap()
+        .scope
+        .unwrap();
+    let primary_b = parser
+        .scopes
+        .lookup_specialization(b, p, true, false)
+        .unwrap()
+        .scope
+        .unwrap();
+    let member_a = parser
+        .scopes
+        .lookup_specialization(primary_a, word, false, true)
+        .unwrap();
+    let member_b = parser
+        .scopes
+        .lookup_specialization(primary_b, word, false, true)
+        .unwrap();
+    assert!(member_a.alternatives.contains(Category::Value));
+    assert!(member_b.alternatives.is_empty());
+    assert!(parser.scopes.member_categories_differ(primary_a, word));
+    assert!(!parser.scopes.member_categories_differ(primary_b, word));
+}
+
+#[test]
+fn ambiguous_for_initializer_precedes_the_loop_in_its_owned_block() {
+    use super::ast::{Body, StmtKind};
+    let source = SourceBuffer::new(
+        b"template<class T>struct P{typedef int word;}; template<>struct P<int>{int word;}; void f(){for(P<int>::word *p=0;p;++p){}}".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"for-reading-owner").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let declaration = tree.decl_lists.get(unit.declarations.unwrap())[2];
+    let DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
+        panic!("function");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("body");
+    };
+    let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+        panic!("compound");
+    };
+    let first = tree.stmt_lists.get(items)[0];
+    let StmtKind::Compound(items) = tree.statements.get(first).kind else {
+        panic!("for-init block");
+    };
+    let items = tree.stmt_lists.get(items);
+    assert_eq!(items.len(), 2);
+    assert!(matches!(
+        tree.statements.get(items[0]).kind,
+        StmtKind::Ambiguous { .. }
+    ));
+    assert!(matches!(
+        tree.statements.get(items[1]).kind,
+        StmtKind::For {
+            declaration: None,
+            init: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn abandoned_reading_regions_drop_shared_handles_before_syntax_reuse() {
+    use super::conflicts::StatementReader;
+    let source = SourceBuffer::new(
+        b"template<class T>struct P{typedef int word;}; template<>struct P<int>{int word;}; P<int>::word ([](){return 1;}());".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"reading-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let statements = parser.tree.statements.mark();
+    let readings = parser.tree.statement_readings.mark();
+    let lambdas = parser.tree.lambdas.mark();
+    let result: Option<()> = parser
+        .attempt(|parser| {
+            parser.speculation_boundary(|parser| {
+                parser.read_statement(StatementReader::Ordinary, super::storage::List::default())
+            })?;
+            assert_eq!(parser.deferred_lambdas, 1);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(parser.tree.statements.mark(), statements);
+    assert_eq!(parser.tree.statement_readings.mark(), readings);
+    assert_eq!(parser.tree.lambdas.mark(), lambdas);
+    assert_eq!(parser.shared_lambdas.mark(), 0);
+    assert!(parser.shared_lambdas.region.is_none());
+    parser
+        .read_statement(StatementReader::Ordinary, super::storage::List::default())
+        .unwrap();
+    assert_eq!(parser.deferred_lambdas, 2);
+}
+
+#[test]
+fn qualified_member_definitions_complete_the_specializations_forward_identity() {
+    let source = SourceBuffer::new(
+        b"template<class T>struct P; template<>struct P<int>{struct Q;}; struct P<int>::Q{typedef int word;};".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"specialized-forward").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let p = parser.cursor.intern_name(b"P").unwrap();
+    let q = parser.cursor.intern_name(b"Q").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    let primary = parser.scopes.lookup(p).unwrap().scope.unwrap();
+    let forward = parser
+        .scopes
+        .lookup_specialization(primary, q, true, true)
+        .unwrap()
+        .scope
+        .unwrap();
+    assert!(!parser.scopes.complete(forward));
+    parser.declaration().unwrap();
+    assert!(parser.scopes.complete(forward));
+    assert_eq!(
+        parser
+            .scopes
+            .lookup_specialization(forward, word, false, false)
+            .unwrap()
+            .category,
+        Category::Type
+    );
+    assert_eq!(
+        parser
+            .scopes
+            .lookup_specialization(primary, q, true, true)
+            .unwrap()
+            .scope,
+        Some(forward)
+    );
+    parser.scopes.current = forward;
+    assert!(parser.scopes.current_instantiation(primary));
+}
+
+#[test]
+fn unnamed_parameter_packs_remain_distinct_from_varargs_despite_identical_dump_views() {
+    use super::ast::{Suffix, TemplateArgumentKind};
+    let source = SourceBuffer::new(
+        b"template<class...T>struct Wrapper{}; template<class...T>void f(T...); template<class T>void g(T...); template<class...T>void h(T...,Wrapper<T...>...);".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"pack-facts").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    for (index, expected) in [(1, [true]), (2, [false])] {
+        let declaration = tree.decl_lists.get(unit.declarations.unwrap())[index];
+        let DeclKind::Template { declaration, .. } = tree.declarations.get(declaration).kind else {
+            panic!("template");
+        };
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("declaration");
+        };
+        let declarator = tree.init_declarators.get(declarators)[0].declarator;
+        let Suffix::Function { parameters, .. } =
+            tree.suffixes.get(tree.declarators.get(declarator).suffixes)[0]
+        else {
+            panic!("function");
+        };
+        let parameter = tree.parameters.get(parameters.parameters)[0];
+        assert_eq!(
+            parameter
+                .declarator
+                .is_some_and(|declarator| tree.declarators.get(declarator).pack),
+            expected[0]
+        );
+        assert_eq!(parameters.ellipsis, !expected[0]);
+    }
+    let declaration = tree.decl_lists.get(unit.declarations.unwrap())[3];
+    let DeclKind::Template { declaration, .. } = tree.declarations.get(declaration).kind else {
+        panic!("template");
+    };
+    let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+        panic!("declaration");
+    };
+    let declarator = tree.init_declarators.get(declarators)[0].declarator;
+    let Suffix::Function { parameters, .. } =
+        tree.suffixes.get(tree.declarators.get(declarator).suffixes)[0]
+    else {
+        panic!("function");
+    };
+    let items = tree.parameters.get(parameters.parameters);
+    assert!(tree.declarators.get(items[0].declarator.unwrap()).pack);
+    assert!(items[1].declarator.is_none());
+    assert!(parameters.ellipsis);
+    let super::ast::Specifier::Named(name) = tree.specs.get(items[1].specifiers)[0] else {
+        panic!("name");
+    };
+    let arguments = tree.name_lists.get(tree.names.get(name).components)[0]
+        .arguments
+        .unwrap();
+    let TemplateArgumentKind::Type(ty) = tree.template_arguments.get(arguments)[0].kind else {
+        panic!("type argument");
+    };
+    assert!(
+        tree.declarators
+            .get(tree.types.get(ty).declarator.unwrap())
+            .pack
+    );
+}
+
+#[test]
 fn named_trait_and_cast_readings_share_names_and_do_not_consume_alias_records() {
     use super::ast::{ExprKind, Specifier};
     let source = SourceBuffer::new(
@@ -251,6 +558,9 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         word,
         Binding {
+            pack: false,
+            alternatives: super::scopes::Categories::default(),
+            guesses: super::scopes::Guesses::default(),
             specialization: 0,
             parameter: false,
             category: Category::Type,
@@ -268,6 +578,9 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         missing,
         Binding {
+            pack: false,
+            alternatives: super::scopes::Categories::default(),
+            guesses: super::scopes::Guesses::default(),
             specialization: 0,
             parameter: false,
             category: Category::Value,
@@ -790,6 +1103,9 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
     parser.scopes.declare(
         word,
         Binding {
+            pack: false,
+            alternatives: super::scopes::Categories::default(),
+            guesses: super::scopes::Guesses::default(),
             specialization: 0,
             category: Category::Value,
             scope: None,
@@ -809,6 +1125,9 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
     parser.scopes.declare(
         word,
         Binding {
+            pack: false,
+            alternatives: super::scopes::Categories::default(),
+            guesses: super::scopes::Guesses::default(),
             specialization: 0,
             category: Category::Type,
             scope: None,
@@ -1119,6 +1438,9 @@ fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
     )));
     let c = parser.cursor.intern_name(b"C").unwrap();
     let type_binding = Binding {
+        pack: false,
+        alternatives: super::scopes::Categories::default(),
+        guesses: super::scopes::Guesses::default(),
         specialization: 0,
         category: Category::Type,
         parameter: false,
@@ -1132,6 +1454,9 @@ fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
             parser.scopes.declare(
                 c,
                 Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     category: Category::Value,
                     ..type_binding

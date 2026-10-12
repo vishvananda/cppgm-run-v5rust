@@ -3,6 +3,129 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: category readings and pack facts — 2026-10-12
+
+Entry/reviewed commit: `f29a5ac9498abca8f5fb7d6661cd9decaf47a7dd` (clean).
+Stage base and last accepted partial-audit commit above remain unchanged.
+The commit containing this entry is recorded in `pa5-categories/handoff.json`.
+**Full acceptance remains open**; the existing goal is active. This increment
+resolves both previous category counterexamples and the connected C++ owners,
+with zero lost fixed-manifest identities. No policy or Ralph state changed.
+
+Consulted the frozen `name_scopes.*`, `name_conflicts.h`, `parser_names.cpp`,
+`parser_specifiers.cpp`, `parser_statements.cpp`, parser state/regions,
+`parser{,_declarations,_declarators,_expressions}.cpp`, AST/printer/render owners
+at `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`, under the already-read repository
+contract, specification, plan, complete handout/parsing guide and ledger.
+No oracle/harness defect was found.
+
+| C++ responsibility | Rust owner and completed behavior |
+| --- | --- |
+| Specialization category aggregation, based specializations, late primaries, namespace lookup tie order and class forwards (`name_scopes.cpp`) | `scopes.rs` retains typed category sets by stable lexical template home/name/member identity, includes primary categories, preserves conservative hints across rewinds, and excludes recycled scope slots from identity. Type/value hiding keeps the type's scope. Primary forward preference and earliest unfinished specialized forward, qualified member owner versus publication home, inline namespace templates and absent-primary-scope linking match C++. |
+| `resolve_component`, `advance_prefix`, `note_type_name` (`parser_names.cpp`) | `name_lookup.rs` owns the shared typed query context: known/unknown/dependent prefix, ordinary/specialization/dependent template kind, approximate/dependent guesses, concrete alias argument records, parameter-base queries, current instantiation and dependent conflicting-member rules. Declaration modes and namespace fallback retain their different decisions. Using declarations publish fresh category/scope facts; directives reject typename and trailing attributes. |
+| `name_conflicts.h`, `read_statement`, control guards and for-init readers | `conflicts.rs`, `names.rs`, `statements.rs` retain the first conflicted Name/component and up to four successful typed statement readings, in C++ category order, with equal consumed token range and distinct reading categories. Control bodies reset conflict selection; for-init ambiguity owns the same compound wrapper as C++. Printer/render select the first owned reading. No text transport or second semantic tree exists. |
+| Shared deferred lambda bodies (`parser.cpp`) | `lambdas.rs` shares one successful typed StmtId under the complete key (statement-reading region, absolute body token ordinal). Nested body readers use their own region; release/rollback removes handles before their syntax is discarded. Source-order scope detach/reattach and terminal committed body failure are preserved. |
+| Parameter-pack bindings/mention consumption (`parser_names.cpp`, template/declarator/expression/body owners) | Template bindings retain a pack fact. Observations occur at the same prefix/terminal lookup boundaries; parameter, argument, throw/base/constructor and expression expansions consume their mentions transactionally. Unnamed `T...` distinguishes an unexpanded template pack from C varargs even when the dump renders them identically. `expressions.rs` also stops a binary operand before an operator followed by fold ellipsis, fixing four rejection-location differences. Full fold syntax is still an unreviewed owner. |
+
+Architecture review: unit-owned flat stores and compact typed IDs remain the
+syntax owner. Alternatives retain their real trees, with shared lambda bodies;
+there is no deep clone or raw pointer graph. `Id<T>` equality compares only its
+compact index. Conservative hints have stable non-reused scope identity while
+active scope records remain compact and reversible. Category query keys separate
+same-named templates in distinct namespaces. Transactions rewind all added
+reading/list/pack/cache facts. Lambda success handles never escape the query
+region, and failed parses cannot leave cached discarded IDs. Deterministic
+output uses source traversal and default-first readings, not hash iteration.
+The new modules own distinct algorithms, not mechanical file chunks.
+
+Six additional invariants check alternative ownership/category/component,
+parse-once shared lambdas, scope identity after rollback, independent namespace
+keys, for-init wrapper ownership, specialized member forward ownership, aborted
+query cache cleanup and the stored pack/varargs distinction. Debug and release
+pass **89 library plus eight tool tests**. Two narrow non-test dead-code
+expectations preserve the ambiguous Name/component for later selection; the
+invariants inspect both. No blanket allowance, unsafe, dependency, fallback,
+fixture recognition or environment read in compiler code was added. Strict
+Clippy/rustfmt and the authoritative **84-file** audit pass with zero findings.
+Optimizer/register allocator policy is unchanged; no target evaluation changed.
+
+Eleven new required fixtures and only their new reference artifacts are in
+`pa5/tests/general/300-category-*.t`, the executed owning lane. Original frozen
+references are unchanged. The first course rerun exposed a symbolic status
+format error in the two newest references; those new files were corrected.
+`checks-before-final.json` and `course-before-final/` preserve the failed run;
+final `checks.json` and archived `course/pa5/` contain the successful rerun.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-categories/`.
+Metadata, start/final stage receipts, `progress.json`, passing/failing ID lists,
+`cases/` and `course/pa1/` through `course/pa5/` preserve the evidence. Manifest
+SHA-256 remains `27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+**193 entry/final passes, zero lost, zero fixed failures**. Supplemental probes
+and fixtures do not redefine that manifest or certify pending owners.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, debug/release tests, file audit; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 234/234, zero failed comparisons/no marker; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 84 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; 193/193 retained; `preflight.log`, `preserve.log` |
+
+`validate.py` / `checks.json` retain commands, exit status and wall costs.
+`probe.py`, `parameter-sources.json`, `broad-final.json` and raw `broad-final/`
+match **597/597** complete exit/stdout/stderr/AST comparisons. Coverage includes
+all four primary/specialization categories, dependent/typename/template and
+namespace contexts, late/based specializations, independent lexical homes,
+all control/for heads, shared/failed lambdas, qualified forwards and type/value
+hiding, forced equal-depth namespace import heap ties, absent primary scopes,
+all three kinds of template pack, nested/consumed expansions and invalid forms.
+Initial category evidence `entry.json` contains 24 mismatches in 169 programs;
+`broad-before-fold-boundary.json` preserves the four broader diagnostic findings.
+`new-regressions.json` holds eleven strict fixture comparisons. Final prior
+probes match **1510/1510**: 147 attributes, 114 earlier audit, 334 parameter
+bases, 135 lambdas, 704 shared operands and 76 template cases. Counts alone do
+not prove the retained facts; the invariants and owner review do that work.
+
+Resource command: `python3` on this root's `measure.py`, after final validation
+was terminal. Metadata freezes source/tool/output hashes, Linux/rustc 1.98.0,
+UTC/C locale. Oracle A/A calibration then A/B/B/A comparisons match all **54**
+complete byte results. These are warm whole invocation measurements, including
+preprocessing, clock query, source/output I/O, on a shared host. They measure
+parser work separately from generated-code equality and impose no PA35 target.
+Raw invocations, RSS and hashes are in `resources/` / `measurements.json`.
+
+| Workload | Functions | Rust mean ms | Rust max RSS KiB | C++ mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| category-statements | 1000 | 37.08 | 8020 | 15.14 | 6520 |
+| category-statements | 4000 | 100.97 | 10660 | 46.89 | 11508 |
+| category-statements | 16000 | 304.61 | 33924 | 131.96 | 30436 |
+| category-lambdas | 1000 | 50.13 | 8020 | 21.84 | 7944 |
+| category-lambdas | 4000 | 132.64 | 16280 | 55.93 | 14968 |
+| category-lambdas | 16000 | 448.34 | 54336 | 219.66 | 45236 |
+| category-for-init | 1000 | 45.97 | 8032 | 21.38 | 6516 |
+| category-for-init | 4000 | 139.53 | 12064 | 60.97 | 12788 |
+| category-for-init | 16000 | 512.49 | 38844 | 254.08 | 36788 |
+
+Fourfold growth from 4000 to 16000 functions takes roughly 3.0–3.7 times Rust
+wall time; storage grows with retained syntax. Shared deferred body demand is
+one per lambda source region, directly proved by the invariant. Checkout and
+scratch occupy approximately 8.2 GiB of the shared 100 GiB budget.
+
+`pending-probe.py` now resolves `specialization-namespace-type` and
+`dependent-conflicting-category` with identical complete results. The exact
+remaining case `deep-parenthesized-expression` still has C++ exit 0 / Rust 86
+at 300 parentheses; raw `pending-probes.json` / `pending-probes/` retain it.
+Next: review and port the host stack-budget boundary, inherited class lookup
+memo/scaling and missing source locations/token spans/pragma-pack observations.
+Full non-hosted grammar/driver ownership review remains necessary; folds and
+GNU/hosted owner boundaries must be established from the frozen implementation,
+not dismissed by fixture coverage. Future-stage semantic/backend work stays in
+its owning stage. This increment is progress, not full acceptance or a goal
+completion request.
+
 ## Full-stage audit continuation: shared named operands — 2026-10-12
 
 Entry/reviewed commit: `edaf54fa531a6d1dc3507d7d343cbc29f0fdbfaa` (clean).

@@ -1,0 +1,43 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-forward-declaration P
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+    class-specifier P<int>
+      class-key KW_STRUCT:struct
+      class-forward-declaration member
+        class-key KW_STRUCT:struct
+  class-specifier P<int>::member
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier P<int>::member::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier pointer
+end translation unit

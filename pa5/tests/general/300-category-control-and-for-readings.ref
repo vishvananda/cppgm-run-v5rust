@@ -1,0 +1,135 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier word
+  template-declaration
+    template-parameter-clause
+    class-specifier P<int>
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier word
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier range
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      if-statement
+        condition
+          condition-declaration
+            decl-specifier-seq
+              decl-specifier P<int>::word
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+            initializer
+              literal 0
+        then
+          compound-statement
+            simple-declaration
+              decl-specifier-seq
+                decl-specifier P<int>::word
+              init-declarator-list
+                init-declarator
+                  declarator
+                    ptr-operator OP_STAR:*
+                    identifier q
+      while-statement
+        condition
+          condition-declaration
+            decl-specifier-seq
+              decl-specifier P<int>::word
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+            initializer
+              literal 0
+        compound-statement
+          break-statement
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier P<int>::word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier p
+              initializer
+                literal 0
+        for-statement
+          for-init-statement
+          condition
+            id-expression p
+          iteration
+            unary-expression OP_INC:++
+              id-expression p
+          compound-statement
+            simple-declaration
+              decl-specifier-seq
+                decl-specifier P<int>::word
+              init-declarator-list
+                init-declarator
+                  declarator
+                    ptr-operator OP_STAR:*
+                    identifier q
+      range-for-statement
+        range-declaration
+          decl-specifier-seq
+            decl-specifier P<int>::word
+          declarator
+            identifier p
+        range-initializer
+          id-expression range
+        compound-statement
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier P<int>::word
+            init-declarator-list
+              init-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier q
+      switch-statement
+        condition
+          condition-declaration
+            decl-specifier-seq
+              decl-specifier P<int>::word
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+            initializer
+              literal 0
+        compound-statement
+          case-statement
+            literal 0
+            break-statement
+end translation unit

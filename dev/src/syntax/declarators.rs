@@ -64,7 +64,9 @@ impl Parser<'_> {
         let pointers = self.tree.pointers.finish(start)?;
         let pack = !matches!(mode, Mode::New | Mode::Conversion)
             && self.at(P::Ellipsis)?
-            && (mode != Mode::Parameter || !self.at_ahead(P::RightParen, 1)?);
+            && (mode != Mode::Parameter
+                || !self.at_ahead(P::RightParen, 1)?
+                || self.pack_mentions > self.parameter_pack_start);
         if pack {
             self.cursor.advance()?;
         }
@@ -83,7 +85,7 @@ impl Parser<'_> {
                 || self.at(P::Complement)?
                 || self.keyword()? == Some(K::Operator))
         {
-            name = Some(self.name()?.0);
+            name = Some(self.declarator_id()?.0);
             // Declarator-id attributes are collected below.
         } else if mode == Mode::Named
             || (mode == Mode::Parameter
@@ -291,6 +293,8 @@ impl Parser<'_> {
                 ellipsis = true;
                 break;
             }
+            let enclosing_pack_start = self.parameter_pack_start;
+            self.parameter_pack_start = self.pack_mentions;
             let specifiers = self.specifier_sequence(definite, false)?;
             definite = true;
             let declarator = if let Some(declarator) =
@@ -301,6 +305,10 @@ impl Parser<'_> {
                 self.declarator(Mode::Abstract)?
             };
             let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+            if declarator.is_some_and(|declarator| self.tree.declarators.get(declarator).pack) {
+                self.pack_mentions = self.parameter_pack_start;
+            }
+            self.parameter_pack_start = enclosing_pack_start;
             self.skip_attributes()?;
             let default = if self.accept(P::Assign)? {
                 Some(Initializer::Assign(self.initializer_clause()?))
@@ -392,7 +400,17 @@ impl Parser<'_> {
         let start = self.tree.type_lists.begin();
         if !self.at(P::RightParen)? {
             loop {
+                let mentions = self.pack_mentions;
                 let ty = self.type_id(true)?;
+                if self
+                    .tree
+                    .types
+                    .get(ty)
+                    .declarator
+                    .is_some_and(|declarator| self.tree.declarators.get(declarator).pack)
+                {
+                    self.pack_mentions = mentions;
+                }
                 self.tree.type_lists.push(ty);
                 if !self.accept(P::Comma)? {
                     break;

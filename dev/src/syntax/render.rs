@@ -1058,6 +1058,9 @@ impl Renderer<'_, '_> {
     }
     fn statement(&mut self, id: StmtId) {
         match self.tree.statements.get(id).kind {
+            StmtKind::Ambiguous { readings, .. } => self.tasks.push(Render::Statement(
+                self.tree.statement_readings.get(readings)[0].statement,
+            )),
             StmtKind::Compound(items) => {
                 self.tasks.push(Render::Text("}"));
                 for &item in self.tree.stmt_lists.get(items).iter().rev() {

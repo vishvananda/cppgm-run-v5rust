@@ -1179,6 +1179,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn statement(&mut self, id: StmtId) -> io::Result<()> {
         match self.renderer.tree.statements.get(id).kind {
+            StmtKind::Ambiguous { readings, .. } => self.tasks.push(Task::Statement(
+                self.renderer.tree.statement_readings.get(readings)[0].statement,
+            )),
             StmtKind::Compound(items) => {
                 self.open("compound-statement", Payload::None)?;
                 for &item in self.renderer.tree.stmt_lists.get(items).iter().rev() {

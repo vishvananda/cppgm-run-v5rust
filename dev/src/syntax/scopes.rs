@@ -7,20 +7,56 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub(super) enum Category {
-    Type,
-    TypeTemplate,
-    FunctionTemplate,
-    Value,
-    Namespace,
+    Value = 1,
+    Type = 2,
+    TypeTemplate = 3,
+    FunctionTemplate = 4,
+    Namespace = 5,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Categories(u8);
+impl Categories {
+    pub(super) fn one(category: Category) -> Self {
+        Self(1 << category as u8)
+    }
+    pub(super) fn contains(self, category: Category) -> bool {
+        self.0 & Self::one(category).0 != 0
+    }
+    pub(super) fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    pub(super) fn without(self, category: Category) -> Self {
+        Self(self.0 & !Self::one(category).0)
+    }
+    pub(super) fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+    pub(super) fn multiple(self) -> bool {
+        self.0.count_ones() > 1
+    }
+    pub(super) fn has_type(self) -> bool {
+        self.contains(Category::Type) || self.contains(Category::TypeTemplate)
+    }
+}
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Guesses {
+    pub approximate: bool,
+    pub dependent: bool,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Binding {
+    pub pack: bool,
     pub category: Category,
     pub parameter: bool,
     pub scope: Option<ScopeId>,
     pub specialization: u8,
+    pub alternatives: Categories,
+    pub guesses: Guesses,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct ScopeIdentity(u64);
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ParameterBase {
     pub index: u32,
@@ -37,6 +73,8 @@ pub(super) enum ScopeKind {
     Enum,
 }
 struct Scope {
+    identity: ScopeIdentity,
+    specialization: bool,
     kind: ScopeKind,
     complete: bool,
     parent: Option<ScopeId>,
@@ -81,6 +119,7 @@ pub(super) enum Change {
     Member(ScopeId, Option<ScopeId>),
     Parent(ScopeId, Option<ScopeId>, u32),
     ParameterBase(ScopeId, Option<ParameterBase>),
+    Specialization(ScopeId, bool),
 }
 #[derive(Clone, Copy)]
 pub(super) struct ScopeMark {
@@ -102,11 +141,17 @@ pub(super) struct Scopes {
     edge_targets: HashSet<(ScopeId, ScopeId, bool)>,
     name_marks: Vec<u8>,
     search_work: Vec<ScopeId>,
+    next_identity: u64,
+    categories: HashMap<(ScopeIdentity, NameId, NameId), Categories>,
+    conflicts: bool,
+    uncertain: bool,
 }
 impl Default for Scopes {
     fn default() -> Self {
         Self {
             records: vec![Scope {
+                identity: ScopeIdentity(0),
+                specialization: false,
                 kind: ScopeKind::Namespace,
                 complete: false,
                 parent: None,
@@ -126,10 +171,203 @@ impl Default for Scopes {
             edge_targets: HashSet::new(),
             name_marks: Vec::new(),
             search_work: Vec::new(),
+            next_identity: 1,
+            categories: HashMap::new(),
+            conflicts: false,
+            uncertain: false,
         }
     }
 }
 impl Scopes {
+    fn template_home(&self, scope: ScopeId) -> ScopeId {
+        let mut home = self.records[scope.0 as usize]
+            .parent
+            .unwrap_or(Self::global());
+        while self.kind(home) == ScopeKind::Template {
+            home = self.records[home.0 as usize]
+                .parent
+                .unwrap_or(Self::global());
+        }
+        home
+    }
+    fn category_key(
+        &self,
+        scope: ScopeId,
+        name: NameId,
+    ) -> Option<(ScopeIdentity, NameId, NameId)> {
+        let ScopeKind::Class(template) = self.kind(scope) else {
+            return None;
+        };
+        Some((
+            self.records[self.template_home(scope).0 as usize].identity,
+            template,
+            name,
+        ))
+    }
+    fn mark_name(&mut self, name: NameId, bits: u8) {
+        if name.index() >= self.name_marks.len() {
+            self.name_marks.resize(name.index() + 1, 0);
+        }
+        self.name_marks[name.index()] |= bits;
+    }
+    fn record_member_category(&mut self, scope: ScopeId, name: NameId, category: Category) {
+        let Some(key) = self.category_key(scope, name) else {
+            return;
+        };
+        let primary = self
+            .own(self.template_home(scope), key.1)
+            .and_then(|binding| binding.scope);
+        let initial = primary
+            .and_then(|scope| self.own(scope, name))
+            .map_or(Categories::default(), |binding| {
+                Categories::one(binding.category)
+            });
+        let bits = self.categories.entry(key).or_insert(initial);
+        let before = *bits;
+        *bits = bits.union(Categories::one(category));
+        if !before.multiple() && bits.multiple() {
+            self.conflicts = true;
+            self.mark_name(key.1, 8);
+        }
+    }
+    fn specialization_alternatives(
+        &mut self,
+        scope: ScopeId,
+        name: NameId,
+        prefix_only: bool,
+        found: Category,
+    ) -> Categories {
+        let Some(key) = self.category_key(scope, name) else {
+            return Categories::default();
+        };
+        let marks = self.name_marks.get(key.1.index()).copied().unwrap_or(0);
+        if !self.conflicts && marks & 32 == 0 {
+            return Categories::default();
+        }
+        let bits = self.categories.get(&key).copied();
+        let based = marks & 16 != 0;
+        let primary = if bits.is_some() || based {
+            self.own(scope, name)
+        } else {
+            None
+        };
+        if bits.is_none() && primary.is_none() {
+            return Categories::default();
+        }
+        let mut all = bits.unwrap_or_default();
+        if let Some(primary) = primary {
+            all = all.union(Categories::one(primary.category));
+        }
+        if based {
+            for index in (0..self.records[scope.0 as usize].edges.len()).rev() {
+                let target = self.records[scope.0 as usize].edges[index].target;
+                if self.records[target.0 as usize].specialization
+                    && !self.records[target.0 as usize].edges.is_empty()
+                {
+                    self.visited.clear();
+                    if let Some(binding) = self.search_with_bases(target, name, prefix_only, true) {
+                        all = all.union(Categories::one(binding.category));
+                    }
+                }
+            }
+        }
+        all.without(found)
+    }
+    pub(super) fn has_conflicts(&self) -> bool {
+        self.conflicts
+    }
+    pub(super) fn has_category_conflicts(&self) -> bool {
+        self.conflicts || self.uncertain
+    }
+    pub(super) fn uncertain(&self) -> bool {
+        self.uncertain
+    }
+    pub(super) fn member_conflicts(&self, name: NameId) -> bool {
+        self.name_marks
+            .get(name.index())
+            .is_some_and(|bits| bits & 8 != 0)
+    }
+    pub(super) fn note_uncertain(&mut self) {
+        self.uncertain = true;
+    }
+    pub(super) fn member_specialized(&self, scope: ScopeId, name: NameId) -> bool {
+        self.category_key(scope, name)
+            .is_some_and(|key| self.categories.contains_key(&key))
+    }
+    pub(super) fn member_categories_differ(&self, scope: ScopeId, name: NameId) -> bool {
+        self.category_key(scope, name)
+            .and_then(|key| self.categories.get(&key))
+            .is_some_and(|bits| {
+                self.own(scope, name)
+                    .map_or(*bits, |binding| {
+                        bits.union(Categories::one(binding.category))
+                    })
+                    .multiple()
+            })
+    }
+    pub(super) fn specialization(&self, scope: ScopeId) -> bool {
+        self.records[scope.0 as usize].specialization
+    }
+    pub(super) fn add_specialization(&mut self, primary: ScopeId, specialization: ScopeId) {
+        let saved = self.current;
+        self.current = primary;
+        self.add_edge(specialization);
+        self.current = saved;
+        let old = self.records[specialization.0 as usize].specialization;
+        self.changes
+            .push(Change::Specialization(specialization, old));
+        self.records[specialization.0 as usize].specialization = true;
+    }
+    pub(super) fn note_late_primary(&mut self, scope: ScopeId) {
+        if let ScopeKind::Class(name) = self.kind(scope)
+            && !self.records[scope.0 as usize].edges.is_empty()
+        {
+            self.mark_name(name, 32 | 8);
+            self.note_uncertain();
+        }
+    }
+    pub(super) fn note_specialization_base(&mut self, scope: ScopeId) {
+        if self.specialization(scope)
+            && let ScopeKind::Class(name) = self.kind(scope)
+        {
+            self.mark_name(name, 16 | 32 | 8);
+            self.note_uncertain();
+        }
+    }
+    pub(super) fn current_instantiation(&self, template: ScopeId) -> bool {
+        let mut scope = Some(self.current);
+        while let Some(current) = scope {
+            if current == template {
+                return true;
+            }
+            let mut member = self.records[current.0 as usize].member_of;
+            while let Some(class) = member.filter(|scope| {
+                matches!(
+                    self.kind(*scope),
+                    ScopeKind::Class(_) | ScopeKind::AnonymousClass
+                )
+            }) {
+                if class == template {
+                    return true;
+                }
+                member = self.records[class.0 as usize]
+                    .member_of
+                    .or(self.records[class.0 as usize].parent);
+            }
+            scope = self.records[current.0 as usize].parent;
+        }
+        false
+    }
+    pub(super) fn in_template_definition(&self) -> bool {
+        let mut scope = Some(self.current);
+        while let Some(current) = scope {
+            if self.kind(current) == ScopeKind::Template {
+                return true;
+            }
+            scope = self.records[current.0 as usize].parent;
+        }
+        false
+    }
     pub(super) fn environment(&self) -> u64 {
         self.environment
     }
@@ -180,13 +418,26 @@ impl Scopes {
     }
     pub(super) fn class_home(&self, mut home: ScopeId, name: NameId) -> ScopeId {
         let original = home;
+        if !self.class_forward(self.own(home, name), name) {
+            // Specialization edges are prepended by C++; visiting every edge
+            // and retaining the last forward selects the earliest unfinished
+            // member. The primary's own forward always wins.
+            let mut selected = None;
+            for edge in self.records[home.0 as usize].edges.iter().rev() {
+                if self.specialization(edge.target)
+                    && self.class_forward(self.own(edge.target, name), name)
+                {
+                    selected = Some(edge.target);
+                }
+            }
+            if let Some(selected) = selected {
+                return selected;
+            }
+        }
         // A qualified definition can complete a forward declaration in an
         // owned inline namespace. Using-directives do not own declarations.
         while self.kind(home) == ScopeKind::Namespace {
-            if self.own(home, name).is_some_and(|binding| {
-                binding.category == Category::Type
-                    && binding.scope.is_none_or(|scope| !self.complete(scope))
-            }) {
+            if self.class_forward(self.own(home, name), name) {
                 return home;
             }
             let inner = self.records[home.0 as usize]
@@ -206,6 +457,16 @@ impl Scopes {
         }
         original
     }
+    fn class_forward(&self, binding: Option<Binding>, name: NameId) -> bool {
+        binding.is_some_and(|binding| {
+            matches!(binding.category, Category::Type | Category::TypeTemplate)
+                && binding.scope.is_none_or(|scope| {
+                    self.kind(scope) == ScopeKind::Class(name)
+                        && !self.specialization(scope)
+                        && self.own(scope, name).is_none()
+                })
+        })
+    }
     pub(super) fn push(&mut self) -> Result<ScopeId, ParseError> {
         self.push_kind(ScopeKind::Ordinary)
     }
@@ -214,7 +475,14 @@ impl Scopes {
             u32::try_from(self.records.len())
                 .map_err(|_| ParseError::Limit("parser scope limit"))?,
         );
+        let identity = ScopeIdentity(self.next_identity);
+        self.next_identity = self
+            .next_identity
+            .checked_add(1)
+            .ok_or(ParseError::Limit("parser scope identity limit"))?;
         self.records.push(Scope {
+            identity,
+            specialization: false,
             kind,
             complete: false,
             parent: Some(self.current),
@@ -250,7 +518,7 @@ impl Scopes {
     }
     pub(super) fn pending_class(&self, scope: ScopeId) -> bool {
         matches!(self.kind(scope), ScopeKind::Class(name)
-            if self.records[scope.0 as usize].edges.is_empty() && self.own(scope, name).is_none())
+            if !self.specialization(scope) && self.records[scope.0 as usize].edges.is_empty() && self.own(scope, name).is_none())
     }
     pub(super) fn set_unnamed(&mut self, parent: ScopeId, scope: ScopeId) {
         let old = self.unnamed.insert(parent, scope);
@@ -288,6 +556,7 @@ impl Scopes {
         self.declare_in(self.current, name, binding);
     }
     pub(super) fn declare_in(&mut self, scope: ScopeId, name: NameId, binding: Binding) {
+        let category = binding.category;
         // Like the oracle's category-search hints, these bits survive rollback:
         // they can cause a search, but cannot supply an abandoned binding.
         if name.index() >= self.name_marks.len() {
@@ -323,10 +592,17 @@ impl Scopes {
                     && binding.scope.is_some())
             {
                 Binding {
+                    pack: false,
                     parameter: false,
                     category: Category::Value,
-                    scope: binding.scope.or(previous.scope),
+                    scope: if binding.category == Category::Value {
+                        previous.scope
+                    } else {
+                        binding.scope
+                    },
                     specialization: 0,
+                    alternatives: Categories::default(),
+                    guesses: Guesses::default(),
                 }
             } else if binding.category == previous.category && binding.scope.is_none() {
                 previous
@@ -337,6 +613,9 @@ impl Scopes {
         let old = self.bindings.insert(key, binding);
         self.changes.push(Change::Binding(key, old));
         self.changed();
+        if self.records[scope.0 as usize].specialization {
+            self.record_member_category(scope, name, category);
+        }
     }
     pub(super) fn add_edge(&mut self, scope: ScopeId) {
         self.add_edge_at(scope, None, false);
@@ -472,7 +751,15 @@ impl Scopes {
             return None;
         }
         self.visited.clear();
-        self.search_with_bases(scope, name, prefix_only, specialization)
+        let mut result = self.search_with_bases(scope, name, prefix_only, specialization)?;
+        if specialization {
+            result.alternatives =
+                self.specialization_alternatives(scope, name, prefix_only, result.category);
+            if !result.alternatives.is_empty() {
+                result.specialization = 0;
+            }
+        }
+        Some(result)
     }
     fn found(binding: Binding, prefix_only: bool) -> bool {
         !prefix_only
@@ -576,6 +863,10 @@ impl Scopes {
     // detach only changes made after their source position, never whole scopes.
     fn exchange(&mut self, change: Change) -> Change {
         match change {
+            Change::Specialization(scope, value) => Change::Specialization(
+                scope,
+                std::mem::replace(&mut self.records[scope.0 as usize].specialization, value),
+            ),
             Change::ParameterBase(scope, Some(base)) => {
                 self.records[scope.0 as usize].parameter_bases.push(base);
                 Change::ParameterBase(scope, None)

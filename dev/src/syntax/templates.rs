@@ -132,6 +132,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    pack,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: true,
                     category: Category::Value,
@@ -178,6 +181,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    pack,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: true,
                     category: if parameters.is_some() {
@@ -226,6 +232,7 @@ impl Parser<'_> {
         self.tree.template_arguments.finish(start)
     }
     fn template_argument(&mut self) -> Result<TemplateArgument, ParseError> {
+        let pack_mentions = self.pack_mentions;
         let location = self.location()?;
         let named = matches!(self.token()?.kind, TokenKind::Identifier(_))
             || self.at(P::Scope)?
@@ -264,6 +271,10 @@ impl Parser<'_> {
             }
         };
         let pack = self.accept(P::Ellipsis)?;
+        let type_pack = matches!(kind, TemplateArgumentKind::Type(ty) if self.tree.types.get(ty).declarator.is_some_and(|declarator| self.tree.declarators.get(declarator).pack));
+        if pack || type_pack {
+            self.pack_mentions = pack_mentions;
+        }
         Ok(TemplateArgument { kind, pack })
     }
     fn argument_end(&mut self) -> Result<(), ParseError> {

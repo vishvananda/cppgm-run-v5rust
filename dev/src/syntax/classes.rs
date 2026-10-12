@@ -41,7 +41,7 @@ impl Parser<'_> {
         self.cursor.advance()?;
         let attributes = self.collect_attributes(false)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
-            Some(self.type_name()?.0)
+            Some(self.declared_type_name()?.0)
         } else {
             None
         };
@@ -82,9 +82,8 @@ impl Parser<'_> {
             let name = self.tree.names.get(name);
             name.global || self.tree.name_lists.get(name.components).len() > 1
         });
-        let mut home = name
-            .and_then(|name| self.tree.names.get(name).prefix_scope)
-            .unwrap_or(self.scopes.declaration_scope());
+        let member_of = name.and_then(|name| self.tree.names.get(name).prefix_scope);
+        let mut home = member_of.unwrap_or(self.scopes.declaration_scope());
         if let Some(identifier) = identifier
             && name.is_some_and(|name| self.tree.names.get(name).prefix_scope.is_some())
         {
@@ -96,7 +95,7 @@ impl Parser<'_> {
         } else {
             None
         };
-        let existing = if specialization {
+        let existing = if specialization || (qualified && member_of.is_none()) {
             None
         } else {
             identifier.and_then(|id| self.scopes.own(home, id))
@@ -107,6 +106,9 @@ impl Parser<'_> {
             && !self.scopes.complete(scope)
         {
             self.scopes.reopen(scope, enclosing)?;
+            if is_template {
+                self.scopes.note_late_primary(scope);
+            }
             scope
         } else {
             self.scopes.current = enclosing;
@@ -116,10 +118,13 @@ impl Parser<'_> {
             self.scopes.current = enclosing;
             scope
         };
-        if qualified {
-            self.scopes.set_member(scope, home);
+        if let Some(member_of) = member_of {
+            self.scopes.set_member(scope, member_of);
         }
         let binding = Binding {
+            pack: false,
+            alternatives: super::scopes::Categories::default(),
+            guesses: super::scopes::Guesses::default(),
             specialization: 0,
             parameter: false,
             category: if is_template || name.is_some_and(|name| self.name_has_arguments(name)) {
@@ -131,14 +136,10 @@ impl Parser<'_> {
         };
         if let Some(identifier) = identifier {
             if specialization && !qualified {
-                if let Some(target) = primary
-                    .filter(|binding| binding.category == Category::TypeTemplate)
-                    .and_then(|binding| binding.scope)
+                if let Some(primary) =
+                    primary.filter(|binding| binding.category == Category::TypeTemplate)
                 {
-                    let saved = self.scopes.current;
-                    self.scopes.current = target;
-                    self.scopes.add_edge(scope);
-                    self.scopes.current = saved;
+                    self.link_specialization(identifier, primary, scope)?;
                 }
             } else if !qualified
                 || existing.is_some_and(|previous| {
@@ -206,6 +207,36 @@ impl Parser<'_> {
         }
         Ok(Specifier::Class(class))
     }
+    fn link_specialization(
+        &mut self,
+        identifier: crate::lex::identifiers::NameId,
+        primary: Binding,
+        specialization: ScopeId,
+    ) -> Result<(), ParseError> {
+        let target = if let Some(target) = primary.scope {
+            target
+        } else {
+            let enclosing = self.scopes.current;
+            let target = self.scopes.push_kind(ScopeKind::Class(identifier))?;
+            self.scopes.current = enclosing;
+            self.scopes.declare_in(
+                self.scopes.declaration_scope(),
+                identifier,
+                Binding {
+                    pack: false,
+                    category: Category::TypeTemplate,
+                    scope: Some(target),
+                    parameter: false,
+                    specialization: 0,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
+                },
+            );
+            target
+        };
+        self.scopes.add_specialization(target, specialization);
+        Ok(())
+    }
     fn elaborated_class(
         &mut self,
         key: K,
@@ -236,6 +267,9 @@ impl Parser<'_> {
                 None
             };
             let binding = Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
                 specialization: 0,
                 parameter: false,
                 category: if is_template {
@@ -279,13 +313,18 @@ impl Parser<'_> {
             if self.keyword()? == Some(K::Typename) {
                 return self.fail();
             }
+            let mentions = self.pack_mentions;
             let (name, binding) = self.type_name()?;
             let pack = self.accept(P::Ellipsis)?;
+            if pack {
+                self.pack_mentions = mentions;
+            }
             if let Some(base) = binding.and_then(|binding| binding.scope) {
                 let enclosing = self.scopes.current;
                 self.scopes.current = class;
                 self.scopes
                     .add_base(base, self.tree.names.get(name).mentions_parameters);
+                self.scopes.note_specialization_base(class);
                 self.scopes.current = enclosing;
             } else if primary
                 && self.tree.names.get(name).mentions_parameters
@@ -336,7 +375,7 @@ impl Parser<'_> {
                 message: "syntax error",
             });
         }
-        let (name, _) = self.name()?;
+        let (name, _) = self.declarator_id()?;
         if !self.at(P::LeftParen)? {
             return Err(ParseError::Syntax {
                 location: self.location()?,
@@ -574,12 +613,16 @@ impl Parser<'_> {
         let start = self.tree.mem_initializers.begin();
         loop {
             let location = self.location()?;
+            let mentions = self.pack_mentions;
             let name = self.type_name()?.0;
             if !matches!(self.punctuator()?, Some(P::LeftBrace | P::LeftParen)) {
                 return self.fail();
             }
             let initializer = self.initializer()?;
             let pack = self.accept(P::Ellipsis)?;
+            if pack {
+                self.pack_mentions = mentions;
+            }
             self.tree.mem_initializers.push(MemInitializer {
                 location,
                 name,

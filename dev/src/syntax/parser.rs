@@ -18,8 +18,12 @@ pub(super) struct Parser<'a> {
     pub cursor: Cursor<'a>,
     pub tree: Tree,
     pub scopes: Scopes,
+    pub conflicts: super::conflicts::NameConflicts,
+    pub shared_lambdas: super::conflicts::SharedLambdas,
     pub function_scope: Option<ScopeId>,
     pub template_mentions: u64,
+    pub pack_mentions: u64,
+    pub parameter_pack_start: u64,
     pub angle: bool,
     pub pending_template: bool,
     pub template_head: Option<super::ast::TemplateParameterClause>,
@@ -45,11 +49,15 @@ pub(super) struct Parser<'a> {
     initialized: bool,
 }
 struct Checkpoint {
+    conflict: Option<super::conflicts::StatementConflict>,
+    shared_lambdas: usize,
     position: usize,
     tree: TreeMark,
     scopes: ScopeMark,
     function_scope: Option<ScopeId>,
     template_mentions: u64,
+    pack_mentions: u64,
+    parameter_pack_start: u64,
     angle: bool,
     pending_template: bool,
     template_head: Option<super::ast::TemplateParameterClause>,
@@ -68,8 +76,12 @@ impl<'a> Parser<'a> {
             cursor,
             tree: Tree::default(),
             scopes: Scopes::default(),
+            conflicts: super::conflicts::NameConflicts::default(),
+            shared_lambdas: super::conflicts::SharedLambdas::default(),
             function_scope: None,
             template_mentions: 0,
+            pack_mentions: 0,
+            parameter_pack_start: 0,
             angle: false,
             pending_template: false,
             template_head: None,
@@ -112,6 +124,9 @@ impl<'a> Parser<'a> {
                     Scopes::global(),
                     name,
                     Binding {
+                        pack: false,
+                        alternatives: super::scopes::Categories::default(),
+                        guesses: super::scopes::Guesses::default(),
                         specialization: 0,
                         parameter: false,
                         category,
@@ -267,11 +282,15 @@ impl<'a> Parser<'a> {
     ) -> Result<Option<T>, ParseError> {
         self.initialize()?;
         let mark = Checkpoint {
+            conflict: self.conflicts.statement,
+            shared_lambdas: self.shared_lambdas.mark(),
             position: self.cursor.position,
             tree: self.tree.mark(),
             scopes: self.scopes.mark(),
             function_scope: self.function_scope,
             template_mentions: self.template_mentions,
+            pack_mentions: self.pack_mentions,
+            parameter_pack_start: self.parameter_pack_start,
             angle: self.angle,
             pending_template: self.pending_template,
             template_head: self.template_head,
@@ -291,11 +310,15 @@ impl<'a> Parser<'a> {
         let result = parse(self);
         self.speculation -= 1;
         if result.is_err() || !commit {
+            self.shared_lambdas.rewind(mark.shared_lambdas);
+            self.conflicts.statement = mark.conflict;
             self.cursor.position = mark.position;
             self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
             self.function_scope = mark.function_scope;
             self.template_mentions = mark.template_mentions;
+            self.pack_mentions = mark.pack_mentions;
+            self.parameter_pack_start = mark.parameter_pack_start;
             self.angle = mark.angle;
             self.pending_template = mark.pending_template;
             self.template_head = mark.template_head;
@@ -368,22 +391,26 @@ impl<'a> Parser<'a> {
             } else {
                 0
             };
-            self.scopes.declare_in(
-                self.scopes.declaration_scope(),
-                name,
-                Binding {
-                    specialization,
-                    parameter: false,
-                    category: if typedef {
-                        Category::Type
-                    } else if self.pending_template {
-                        Category::FunctionTemplate
-                    } else {
-                        Category::Value
-                    },
-                    scope: if plain_typedef { type_scope } else { None },
+            let mut binding = Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization,
+                parameter: false,
+                category: if typedef {
+                    Category::Type
+                } else if self.pending_template {
+                    Category::FunctionTemplate
+                } else {
+                    Category::Value
                 },
-            );
+                scope: if plain_typedef { type_scope } else { None },
+            };
+            if plain_typedef {
+                self.note_type_guesses(&mut binding, specifiers, false);
+            }
+            self.scopes
+                .declare_in(self.scopes.declaration_scope(), name, binding);
         }
     }
     pub(super) fn specifier_scope(

@@ -16,6 +16,7 @@ use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 pub(super) struct DeferredLambda {
     target: LambdaId,
     begin: usize,
+    absolute: u64,
     end: usize,
     scope: ScopeId,
     log: usize,
@@ -119,6 +120,7 @@ impl Parser<'_> {
         }
         if self.speculation > 0 {
             let begin = self.cursor.position;
+            let absolute = self.cursor.absolute_position()?;
             let log = self.scopes.log_position();
             if !self.at(P::LeftBrace)? {
                 return self.fail();
@@ -128,6 +130,7 @@ impl Parser<'_> {
             self.lambdas.push(DeferredLambda {
                 target,
                 begin,
+                absolute,
                 end: self.cursor.position,
                 scope,
                 log,
@@ -173,6 +176,7 @@ impl Parser<'_> {
         let enclosing = self.scopes.current;
         let function = self.function_scope;
         let pending = self.pending_template;
+        let region = self.shared_lambdas.region.take();
         let base = self.lambdas[first].log;
         let mut later = std::mem::take(&mut self.lambda_changes);
         self.scopes.detach(base, &mut later);
@@ -183,13 +187,20 @@ impl Parser<'_> {
                 let next = deferred.log - base;
                 self.scopes.reattach(&later[attached..next]);
                 attached = next;
-                self.cursor.position = deferred.begin;
-                self.deferred_lambdas += 1;
-                let body =
-                    self.speculation_boundary(|parser| parser.lambda_body(deferred.scope))?;
-                if self.cursor.position != deferred.end {
-                    return self.fail();
-                }
+                let body = if let Some(body) = self.shared_lambdas.lookup(region, deferred.absolute)
+                {
+                    body
+                } else {
+                    self.cursor.position = deferred.begin;
+                    self.deferred_lambdas += 1;
+                    let body =
+                        self.speculation_boundary(|parser| parser.lambda_body(deferred.scope))?;
+                    if self.cursor.position != deferred.end {
+                        return self.fail();
+                    }
+                    self.shared_lambdas.keep(region, deferred.absolute, body);
+                    body
+                };
                 let mut lambda = *self.tree.lambdas.get(deferred.target);
                 if !matches!(lambda.body, LambdaBody::Deferred) {
                     return Err(ParseError::Invariant("lambda body already parsed"));
@@ -207,6 +218,7 @@ impl Parser<'_> {
         self.scopes.current = enclosing;
         self.function_scope = function;
         self.pending_template = pending;
+        self.shared_lambdas.region = region;
         match result {
             Err(ParseError::Syntax { location, message }) => {
                 Err(ParseError::CommittedSyntax { location, message })

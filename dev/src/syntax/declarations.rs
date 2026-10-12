@@ -131,6 +131,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Namespace,
@@ -169,6 +172,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Namespace,
@@ -241,28 +247,44 @@ impl Parser<'_> {
             } else {
                 type_node.specialization
             };
-            self.scopes.declare_in(
-                self.scopes.declaration_scope(),
-                name,
-                Binding {
-                    specialization,
-                    parameter: false,
-                    category: if is_template {
-                        Category::TypeTemplate
-                    } else {
-                        Category::Type
-                    },
-                    scope,
+            let mut binding = Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization,
+                parameter: false,
+                category: if is_template {
+                    Category::TypeTemplate
+                } else {
+                    Category::Type
                 },
-            );
+                scope,
+            };
+            if is_template && self.tree.specs.get(type_node.specifiers).iter().any(|specifier| {
+                matches!(specifier, Specifier::Named(name) if { let node = self.tree.names.get(*name); node.prefix_state == super::ast::PrefixState::Known && (node.prefix_template != super::ast::TemplatePrefix::Ordinary) })
+            }) { binding.scope = None; }
+            self.note_type_guesses(&mut binding, type_node.specifiers, is_template);
+            self.scopes
+                .declare_in(self.scopes.declaration_scope(), name, binding);
             return self.tree.declarations.add(Declaration {
                 attributes,
                 location,
                 kind: DeclKind::Alias { name, ty },
             });
         }
-        let (target, binding) = self.name()?;
-        let attributes = self.collect_attributes(false)?;
+        let (target, binding) = if directive {
+            if self.keyword()? == Some(K::Typename) {
+                return self.fail();
+            }
+            self.type_name()?
+        } else {
+            self.declarator_id()?
+        };
+        let attributes = if directive {
+            List::default()
+        } else {
+            self.collect_attributes(false)?
+        };
         self.expect(P::Semicolon)?;
         if let Some(binding) = binding {
             if directive {
@@ -272,7 +294,18 @@ impl Parser<'_> {
                     self.scopes.add_using_directive(scope);
                 }
             } else if let Some(name) = self.last_identifier(target) {
-                self.scopes.declare(name, binding);
+                self.scopes.declare(
+                    name,
+                    Binding {
+                        pack: false,
+                        category: binding.category,
+                        scope: binding.scope,
+                        parameter: false,
+                        specialization: 0,
+                        alternatives: super::scopes::Categories::default(),
+                        guesses: super::scopes::Guesses::default(),
+                    },
+                );
             }
         } else if !directive
             && self.tree.names.get(target).typename_keyword
@@ -281,6 +314,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Type,
@@ -401,7 +437,7 @@ impl Parser<'_> {
                     let named = self.attempt(|parser| {
                         let (name, binding) = parser.type_name()?;
                         let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
-                        if !parser.is_type_name(name, binding, definite, followed) {
+                        if !parser.named_declaration_is_type(name, binding, definite, followed) {
                             // A category mismatch abandons this reading without
                             // recording a grammar failure in the frozen parser.
                             return Err(ParseError::Syntax {
@@ -549,6 +585,9 @@ impl Parser<'_> {
             self.scopes.declare(
                 simple,
                 Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Type,
@@ -573,6 +612,9 @@ impl Parser<'_> {
                         scope,
                         name,
                         Binding {
+                            pack: false,
+                            alternatives: super::scopes::Categories::default(),
+                            guesses: super::scopes::Guesses::default(),
                             specialization: 0,
                             parameter: false,
                             category: Category::Value,
@@ -584,6 +626,9 @@ impl Parser<'_> {
                     self.scopes.declare(
                         name,
                         Binding {
+                            pack: false,
+                            alternatives: super::scopes::Categories::default(),
+                            guesses: super::scopes::Guesses::default(),
                             specialization: 0,
                             parameter: false,
                             category: Category::Value,

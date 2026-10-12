@@ -1,5 +1,5 @@
 //! Source-faithful syntax, owned once in typed flat stores. See NOTICE.
-use super::scopes::{Binding, ScopeId};
+use super::scopes::{Binding, Category, Guesses, ScopeId};
 use super::storage::{Id, List, ListMark, Lists, Store, Text};
 use crate::lex::{
     PostTokenKind,
@@ -101,6 +101,8 @@ pub(super) struct QualifiedName {
     pub components: List<NameComponent>,
     pub prefix_scope: Option<ScopeId>,
     pub prefix_state: PrefixState,
+    pub prefix_template: TemplatePrefix,
+    pub prefix_guesses: Guesses,
     pub mentions_parameters: bool,
     pub binding: Option<Binding>,
 }
@@ -109,6 +111,13 @@ pub(super) enum PrefixState {
     Unqualified,
     Known,
     Unknown,
+    Dependent,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum TemplatePrefix {
+    #[default]
+    Ordinary,
+    Specialization,
     Dependent,
 }
 #[derive(Clone, Copy, Debug)]
@@ -554,6 +563,25 @@ pub(super) enum Condition {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum StmtKind {
+    Ambiguous {
+        #[cfg_attr(
+            not(test),
+            expect(
+                dead_code,
+                reason = "The first conflicted syntax name is retained for later statement selection"
+            )
+        )]
+        name: Name,
+        #[cfg_attr(
+            not(test),
+            expect(
+                dead_code,
+                reason = "The exact name component is retained for later statement selection"
+            )
+        )]
+        component: u32,
+        readings: List<StatementReading>,
+    },
     Compound(List<StmtId>),
     Expression(Option<ExprId>),
     Declaration(DeclId),
@@ -603,6 +631,28 @@ pub(super) enum StmtKind {
         handlers: List<Handler>,
     },
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ReadingCategory {
+    Value,
+    Type,
+    Template,
+    Unknown,
+}
+impl ReadingCategory {
+    pub(super) fn of(category: Option<Category>) -> Self {
+        match category {
+            Some(Category::Type) => Self::Type,
+            Some(Category::TypeTemplate | Category::FunctionTemplate) => Self::Template,
+            Some(Category::Value | Category::Namespace) => Self::Value,
+            None => Self::Unknown,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct StatementReading {
+    pub statement: StmtId,
+    pub category: ReadingCategory,
+}
 
 #[derive(Default)]
 pub(super) struct Tree {
@@ -616,6 +666,7 @@ pub(super) struct Tree {
     pub classes: Store<ClassSyntax>,
     pub bodies: Store<Body>,
     pub statements: Store<Statement>,
+    pub statement_readings: Lists<StatementReading>,
     pub decl_lists: Lists<DeclId>,
     pub expr_lists: Lists<ExprId>,
     pub stmt_lists: Lists<StmtId>,
@@ -649,6 +700,7 @@ pub(super) struct TreeMark {
     classes: usize,
     bodies: usize,
     statements: usize,
+    statement_readings: ListMark,
     decl_lists: ListMark,
     expr_lists: ListMark,
     stmt_lists: ListMark,
@@ -695,6 +747,7 @@ impl Tree {
             classes: self.classes.mark(),
             bodies: self.bodies.mark(),
             statements: self.statements.mark(),
+            statement_readings: self.statement_readings.mark(),
             decl_lists: self.decl_lists.mark(),
             expr_lists: self.expr_lists.mark(),
             stmt_lists: self.stmt_lists.mark(),
@@ -728,6 +781,7 @@ impl Tree {
         self.classes.rewind(mark.classes);
         self.bodies.rewind(mark.bodies);
         self.statements.rewind(mark.statements);
+        self.statement_readings.rewind(mark.statement_readings);
         self.decl_lists.rewind(mark.decl_lists);
         self.expr_lists.rewind(mark.expr_lists);
         self.stmt_lists.rewind(mark.stmt_lists);

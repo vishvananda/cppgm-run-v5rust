@@ -4,35 +4,48 @@ use super::{
     ParseError,
     ast::{ExprId, Name, NameComponent, NameKind, PrefixState, QualifiedName},
     cursor::TokenKind,
+    name_lookup::NamePrefix,
     parser::Parser,
-    scopes::{Binding, Category, Scopes},
+    scopes::{Binding, Category},
 };
 use crate::lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 
+#[derive(Clone, Copy)]
+enum NameMode {
+    Expression,
+    Type,
+    Member,
+    Declarator,
+    DeclaredType,
+}
+
 impl Parser<'_> {
     pub(super) fn name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        self.name_in_context(false, false)
+        self.name_in_context(NameMode::Expression)
     }
     pub(super) fn type_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        self.name_in_context(true, false)
+        self.name_in_context(NameMode::Type)
     }
     pub(super) fn member_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
-        self.name_in_context(false, true)
+        self.name_in_context(NameMode::Member)
     }
-    fn name_in_context(
-        &mut self,
-        type_context: bool,
-        member_context: bool,
-    ) -> Result<(Name, Option<Binding>), ParseError> {
+    pub(super) fn declarator_id(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        self.name_in_context(NameMode::Declarator)
+    }
+    pub(super) fn declared_type_name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
+        self.name_in_context(NameMode::DeclaredType)
+    }
+    fn name_in_context(&mut self, mode: NameMode) -> Result<(Name, Option<Binding>), ParseError> {
+        let type_context = matches!(mode, NameMode::Type | NameMode::DeclaredType);
+        let member_context = matches!(mode, NameMode::Member);
+        let declared = matches!(mode, NameMode::Declarator | NameMode::DeclaredType);
         let mentions = self.template_mentions;
         let typename_keyword = self.accept_keyword(K::Typename)?;
         let global = self.accept(P::Scope)?;
         let start = self.tree.name_lists.begin();
-        let mut prefix = global.then_some(Scopes::global());
+        let mut prefix = NamePrefix::new(global);
         let mut qualified = global;
-        let mut dependent_prefix = false;
-        let mut prefix_specialization = false;
-        let mut prefix_arguments = None;
+        let mut conflict = None;
         let binding = loop {
             let location = self.location()?;
             let template_keyword =
@@ -47,11 +60,13 @@ impl Parser<'_> {
                 });
                 if self.accept(P::Scope)? {
                     qualified = true;
-                    prefix = None;
-                    dependent_prefix = true;
+                    prefix.make_dependent(!self.scopes.in_template_definition());
                     continue;
                 }
                 break Some(Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Type,
@@ -60,7 +75,7 @@ impl Parser<'_> {
             }
             if !type_context && self.keyword()? == Some(K::Operator) {
                 let enclosing = self.scopes.current;
-                if let Some(scope) = prefix {
+                if let Some(scope) = prefix.scope {
                     self.scopes.member_context(scope)?;
                 }
                 let result = self.operator_name();
@@ -78,6 +93,9 @@ impl Parser<'_> {
                     arguments,
                 });
                 break Some(Binding {
+                    pack: false,
+                    alternatives: super::scopes::Categories::default(),
+                    guesses: super::scopes::Guesses::default(),
                     specialization: 0,
                     parameter: false,
                     category: Category::Value,
@@ -104,56 +122,11 @@ impl Parser<'_> {
                 break None;
             }
             let identifier = self.identifier()?;
+            let uses = self.conflicts.uses;
 
-            let prefix_only = self.at(P::Scope)? && !self.at_ahead(P::Multiply, 1)?;
-            let mut binding = if let Some(scope) = prefix {
-                let binding = self.scopes.lookup_specialization(
-                    scope,
-                    identifier,
-                    prefix_only,
-                    prefix_specialization,
-                );
-                if binding.is_none()
-                    && prefix_specialization
-                    && let Some(arguments) = prefix_arguments
-                {
-                    self.parameter_base_lookup(scope, arguments, identifier, prefix_only, 0)
-                } else {
-                    binding
-                }
-            } else if qualified {
-                None
-            } else {
-                self.scopes.lookup_name(identifier, prefix_only)
-            };
-            if !member_context && binding.is_some_and(|binding| binding.parameter) {
-                self.template_mentions = self.template_mentions.wrapping_add(1);
-            }
             let argument_mentions = self.template_mentions;
-            let arguments = if self.at(P::Less)? {
-                if template_keyword
-                    || binding.is_some_and(|binding| {
-                        matches!(
-                            binding.category,
-                            Category::TypeTemplate | Category::FunctionTemplate
-                        )
-                    }) && (qualified || !member_context)
-                {
-                    Some(self.template_arguments()?)
-                } else if member_context && !qualified {
-                    if self.scopes.ever_template(identifier) {
-                        self.optional_template_arguments(true)?
-                    } else {
-                        None
-                    }
-                } else if binding.is_none() && !dependent_prefix {
-                    self.optional_template_arguments(false)?
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let arguments =
+                self.arguments_for_name(identifier, &prefix, member_context, template_keyword)?;
             self.tree.name_lists.push(NameComponent {
                 location,
                 kind: NameKind::Identifier(identifier),
@@ -161,76 +134,69 @@ impl Parser<'_> {
                 arguments,
             });
             if self.at(P::Scope)? && self.at_ahead(P::Multiply, 1)? {
+                let binding = self.resolve_component(identifier, &prefix, false);
+                if !member_context {
+                    self.observe_name_binding(binding);
+                }
+                self.note_component_conflict(uses, start, &mut conflict)?;
                 break binding;
             }
             if !self.accept(P::Scope)? {
+                let binding = self.resolve_component(identifier, &prefix, false);
+                if !member_context {
+                    self.observe_name_binding(binding);
+                }
+                self.note_component_conflict(uses, start, &mut conflict)?;
                 break binding;
             }
-            // Before `::`, values hiding classes retain their class scope.
-            // The template-id choice above used ordinary lookup, like C++.
-            if !prefix_only {
-                binding = if let Some(scope) = prefix {
-                    let found = self.scopes.lookup_specialization(
-                        scope,
-                        identifier,
-                        true,
-                        prefix_specialization,
-                    );
-                    if found.is_none()
-                        && prefix_specialization
-                        && let Some(arguments) = prefix_arguments
-                    {
-                        self.parameter_base_lookup(scope, arguments, identifier, true, 0)
-                    } else {
-                        found
-                    }
-                } else if qualified {
-                    None
-                } else {
-                    self.scopes.lookup_name(identifier, true)
-                };
-            }
-            prefix_specialization = arguments.is_some()
-                && self.template_mentions == argument_mentions
-                && binding.is_some_and(|binding| binding.category == Category::TypeTemplate);
-            if arguments.is_none() && binding.is_some_and(|binding| binding.specialization != 0) {
-                prefix_specialization = true;
-            }
-            prefix_arguments = if prefix_specialization {
-                arguments.or_else(|| {
-                    binding.and_then(|binding| self.recorded_arguments(binding.specialization))
-                })
-            } else {
-                None
-            };
+            self.advance_name_prefix(
+                identifier,
+                arguments,
+                self.template_mentions != argument_mentions,
+                &mut prefix,
+                declared,
+            );
+            self.note_component_conflict(uses, start, &mut conflict)?;
             qualified = true;
-            prefix = binding
-                .and_then(|binding| binding.scope)
-                .filter(|scope| !self.scopes.pending_class(*scope));
-            dependent_prefix |= prefix.is_none()
-                && binding.is_some_and(|binding| {
-                    matches!(binding.category, Category::Type | Category::TypeTemplate)
-                });
         };
         let components = self.tree.name_lists.finish(start)?;
         let name = self.tree.names.add(QualifiedName {
             global,
             typename_keyword,
             components,
-            prefix_scope: prefix,
-            prefix_state: if !qualified {
-                PrefixState::Unqualified
-            } else if prefix.is_some() {
-                PrefixState::Known
-            } else if dependent_prefix {
-                PrefixState::Dependent
-            } else {
-                PrefixState::Unknown
+            prefix_scope: prefix.scope,
+            prefix_state: prefix.state,
+            prefix_template: prefix.template,
+            prefix_guesses: super::scopes::Guesses {
+                approximate: prefix.approximate,
+                dependent: prefix.state == PrefixState::Dependent,
             },
             mentions_parameters: self.template_mentions != mentions,
             binding,
         })?;
+        if self.conflicts.statement.is_none()
+            && let Some((component, category)) = conflict
+        {
+            self.conflicts.statement = Some(super::conflicts::StatementConflict {
+                name,
+                component,
+                category,
+            });
+        }
         Ok((name, binding))
+    }
+    fn note_component_conflict(
+        &self,
+        uses: u64,
+        start: usize,
+        conflict: &mut Option<(u32, Option<Category>)>,
+    ) -> Result<(), ParseError> {
+        if conflict.is_none() && self.conflicts.uses != uses {
+            let component = u32::try_from(self.tree.name_lists.begin() - start - 1)
+                .map_err(|_| ParseError::Limit("name component ordinal limit"))?;
+            *conflict = Some((component, self.conflicts.last));
+        }
+        Ok(())
     }
     fn operator_name(&mut self) -> Result<NameKind, ParseError> {
         self.cursor.advance()?;

@@ -157,7 +157,8 @@ impl Parser<'_> {
         minimum: u8,
     ) -> Result<ExprId, ParseError> {
         while let Some((op, precedence, width)) = self.binary_operator()? {
-            if precedence < minimum {
+            // An operator followed by the fold ellipsis ends this operand.
+            if precedence < minimum || self.at_ahead(P::Ellipsis, width)? {
                 break;
             }
             for _ in 0..width {
@@ -791,8 +792,10 @@ impl Parser<'_> {
         })
     }
     fn expanded_initializer(&mut self) -> Result<ExprId, ParseError> {
+        let mentions = self.pack_mentions;
         let element = self.initializer_clause()?;
         if self.accept(P::Ellipsis)? {
+            self.pack_mentions = mentions;
             let location = self.tree.expressions.get(element).location;
             self.tree.expressions.add(Expression {
                 location,

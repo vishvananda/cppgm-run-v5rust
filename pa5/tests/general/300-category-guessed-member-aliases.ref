@@ -1,0 +1,100 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_TYPEDEF:typedef
+          decl-specifier TT_IDENTIFIER:T
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier unknown
+      class-specifier member
+        class-key KW_STRUCT:struct
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_TYPEDEF:typedef
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier word
+  template-declaration
+    template-parameter-clause
+    class-specifier P<int>
+      class-key KW_STRUCT:struct
+      class-specifier member
+        class-key KW_STRUCT:struct
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier word
+  alias-declaration alias
+    type-id
+      type-specifier-seq
+        type-name P<int>::member
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier TT_IDENTIFIER:alias
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier alias_again
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    alias-declaration alias_template
+      type-id
+        type-specifier-seq
+          type-name P<T>::member
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier P<int>::member::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier direct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier alias::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier indirect
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier alias_again::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier typedef_chain
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression alias_template<int>::word
+          id-expression unknown_class
+end translation unit

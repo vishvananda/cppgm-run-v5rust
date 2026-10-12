@@ -1,0 +1,121 @@
+1 translation units
+start translation unit 1
+translation-unit
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    class-specifier Wrapper
+      class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier unnamed_pack
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  parameter-pack ...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier unnamed_varargs
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  parameter-pack ...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier consumed_pack
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  parameter-pack ...
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier Wrapper<T...>
+                declarator
+                  parameter-pack ...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier named_pack
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier TT_IDENTIFIER:T
+                declarator
+                  parameter-pack ...
+                  identifier values
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier nested_type_pack
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier decltype(T{})
+                    call-expression
+                      id-expression T
+                      braced-init-list
+                declarator
+                  parameter-pack ...
+end translation unit
