@@ -11,6 +11,7 @@ mod exception_operands;
 mod exceptions;
 mod expression_keys;
 mod expressions;
+mod function_names;
 mod graph;
 mod integral;
 mod layout;

@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operatornew function of (unsigned long int) returning pointer to void
+      function operatornew function of (unsigned long int) returning pointer to void
+      scope function operatornew
+        parameter n unsigned long int
+        scope block
+end translation unit

@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function operator""_x function of (unsigned long int) returning unsigned long int
+    function operator""_x function of (unsigned long int) returning unsigned long int
+    scope function operator""_x
+      parameter  unsigned long int
+      scope block
+end translation unit

@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operator= function of (lvalue-reference to const struct C) returning lvalue-reference to struct C
+end translation unit

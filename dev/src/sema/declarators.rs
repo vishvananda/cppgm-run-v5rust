@@ -14,6 +14,7 @@ pub(super) struct DeclaratorEnvironment {
     pub home: Option<ScopeId>,
     pub lookup: ScopeId,
     pub declaring: ScopeId,
+    pub declaration_location: Option<crate::support::source::SourceOffset>,
 }
 pub(super) struct DeclaratorInfo {
     pub ty: TypeId,
@@ -50,8 +51,14 @@ impl Analyzer<'_> {
                 return match last.kind {
                     ast::NameKind::Destructor(_)
                     | ast::NameKind::DestructorDecltype(_)
-                    | ast::NameKind::Conversion(_) => Ok(None),
-                    _ => Self::component_name(last.kind).map(Some),
+                    | ast::NameKind::Conversion(_)
+                    | ast::NameKind::Operator { .. }
+                    | ast::NameKind::LiteralOperator(_) => Ok(None),
+                    ast::NameKind::Decltype(_) => Err(Error::at(
+                        self.tree.names.get(name).location,
+                        "a decltype-specifier does not name a declaration",
+                    )),
+                    ast::NameKind::Identifier(name) => Ok(Some(name)),
                 };
             }
             id = node.nested;
@@ -115,6 +122,7 @@ impl Analyzer<'_> {
             home,
             lookup: after,
             declaring: self.declaration_scope(scope),
+            declaration_location: None,
         })
     }
     pub(super) fn declarator(
@@ -151,13 +159,16 @@ impl Analyzer<'_> {
             home,
             lookup: after,
             declaring,
+            declaration_location,
         } = environment;
         if home.is_some_and(|home| !self.graph.encloses(declaring, home)) {
             return Err(Error::at(
-                self.tree
-                    .declarators
-                    .get(id.ok_or(Error::Invariant("missing qualified declarator"))?)
-                    .location,
+                declaration_location.unwrap_or(
+                    self.tree
+                        .declarators
+                        .get(id.ok_or(Error::Invariant("missing qualified declarator"))?)
+                        .location,
+                ),
                 if self.graph.scope(declaring).kind == super::graph::ScopeKind::Namespace {
                     "qualified definition in a scope that does not enclose the member"
                 } else {

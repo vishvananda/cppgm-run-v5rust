@@ -1,0 +1,12 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope template-parameters
+      type T typename T
+      function operator""_x function of (typename T) returning int
+      scope function operator""_x
+        parameter n typename T
+        scope block
+          variable x typename T
+end translation unit

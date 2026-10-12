@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function operatornew function of (unsigned long int) returning pointer to void
+    function operatornew[] function of (unsigned long int) returning pointer to void
+    function operatordelete function of (pointer to void) returning void
+    function operatordelete[] function of (pointer to void) returning void
+end translation unit

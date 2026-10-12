@@ -3,6 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    function_names::ValueKey,
     graph::{BindingId, BindingKind, ScopeId, ScopeKind},
     types::TypeKind,
 };
@@ -43,7 +44,7 @@ impl Analyzer<'_> {
     fn inline_set(
         &self,
         scope: ScopeId,
-        name: NameId,
+        name: ValueKey,
         filter: Filter,
         visited: &mut HashSet<ScopeId>,
         members: &mut Vec<ScopeId>,
@@ -55,7 +56,7 @@ impl Analyzer<'_> {
                 continue;
             }
             members.push(current);
-            self.merge(&mut result, self.graph.own(current, name, filter))?;
+            self.merge(&mut result, self.graph.own_key(current, name, filter))?;
             frontier.extend(self.graph.visible_edges(current, true));
         }
         Ok(result)
@@ -66,8 +67,16 @@ impl Analyzer<'_> {
         name: NameId,
         filter: Filter,
     ) -> Result<Option<BindingId>, Error> {
+        self.qualified_key(scope, name.into(), filter)
+    }
+    pub(super) fn qualified_key(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<Option<BindingId>, Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
-            return Ok(self.graph.own(scope, name, filter));
+            return Ok(self.graph.own_key(scope, name, filter));
         }
         let mut visited = HashSet::new();
         let mut level = vec![scope];
@@ -234,7 +243,12 @@ impl Analyzer<'_> {
         if last.arguments.is_some() {
             return Err(Error::Missing("template specialization lookup"));
         }
-        let key = Self::component_name(last.kind)?;
+        let NameKind::Identifier(key) = last.kind else {
+            return Err(Error::at(
+                node.location,
+                "operator and special member names are not supported here",
+            ));
+        };
         let prefix = self.prefix(name, scope)?;
         let found = if let Some(prefix) = prefix {
             self.qualified(prefix, key, filter)?

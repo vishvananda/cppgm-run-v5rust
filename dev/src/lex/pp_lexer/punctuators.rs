@@ -2,7 +2,7 @@
 use super::{PpLexer, SourceChar, SourceError};
 
 /// Semantic identity shared by alternative spellings. No later phase must re-lex text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Punctuator {
     LeftBrace,
     RightBrace,

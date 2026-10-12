@@ -429,6 +429,8 @@ impl Analyzer<'_> {
         self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
             internal_linkage: false,
             is_static: specs.is_static,
+            special: None,
+            allocation: None,
         });
         let binding = self.graph.add_binding(
             owner,

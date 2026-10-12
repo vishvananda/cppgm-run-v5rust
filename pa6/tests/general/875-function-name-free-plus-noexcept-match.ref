@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    function operator+ function of (struct C, struct C) returning int
+    function operator+ function of (struct C, struct C) returning int
+    scope class C
+    scope function operator+
+      parameter  struct C
+      parameter  struct C
+      scope block
+end translation unit

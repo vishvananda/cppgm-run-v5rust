@@ -2,7 +2,7 @@
 //! Phase-7 keyword identity and presentation vocabulary.
 use crate::lex::pp_lexer::Punctuator;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Keyword {
     Alignas,
@@ -319,10 +319,10 @@ impl Keyword {
 }
 
 /// Canonical simple identity: hashes are invalid and new/delete are keywords.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SimpleToken(SimpleIdentity);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum SimpleIdentity {
     Keyword(Keyword),
     Punctuator(Punctuator),

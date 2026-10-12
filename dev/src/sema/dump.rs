@@ -30,7 +30,19 @@ impl Graph {
                 ScopeKind::TemplateParameters => "template-parameters",
             };
             write!(output, "scope {kind}")?;
-            if let Some(name) = scope.owner.and_then(|id| self.entity(id).special_name) {
+            if let Some(super::function_names::SpecialName::Operator { token, array }) = scope
+                .owner
+                .and_then(|id| self.entity(id).function)
+                .filter(|props| props.allocation.is_some())
+                .and_then(|props| props.special)
+            {
+                write!(
+                    output,
+                    " operator {}{}",
+                    token.spelling(),
+                    if array { "[]" } else { "" }
+                )?;
+            } else if let Some(name) = scope.owner.and_then(|id| self.entity(id).special_name) {
                 output.write_all(b" ")?;
                 crate::syntax::write_member_label(tree, cursor, name, output)?;
             } else if let Some(name) = scope.written_name {
@@ -82,6 +94,18 @@ impl Graph {
                     write_syntax_name(tree, cursor, name, output)?;
                 } else if let Some(name) = binding.name.or(self.entity(binding.entity).name) {
                     write_name(cursor, name, output)?;
+                } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
+                    self.entity(binding.entity)
+                        .function
+                        .filter(|props| props.allocation.is_some())
+                        .and_then(|props| props.special)
+                {
+                    write!(
+                        output,
+                        "operator{}{}",
+                        token.spelling(),
+                        if array { "[]" } else { "" }
+                    )?;
                 } else if let Some(ordinal) = self
                     .entity(binding.entity)
                     .enumeration

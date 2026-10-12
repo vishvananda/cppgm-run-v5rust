@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function operatornew function of (unsigned long int) returning pointer to void
+    scope function operator new
+      parameter n unsigned long int
+      scope block
+end translation unit

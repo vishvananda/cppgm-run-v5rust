@@ -30,6 +30,12 @@ pub(super) enum ExceptionState {
     Template(super::template_exceptions::TemplateException),
 }
 #[derive(Clone, Copy)]
+enum SpecificationMode {
+    Ordinary,
+    TemplateExpression,
+    TemplateCompatibility,
+}
+#[derive(Clone, Copy)]
 pub(super) struct PendingSpecification {
     entity: EntityId,
     qualifier: Option<Qualifier>,
@@ -38,7 +44,7 @@ pub(super) struct PendingSpecification {
     location: SourceOffset,
     first: bool,
     done: bool,
-    template: bool,
+    mode: SpecificationMode,
 }
 
 impl Analyzer<'_> {
@@ -75,6 +81,42 @@ impl Analyzer<'_> {
                     matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
                 })
             });
+        let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
+        let special = self
+            .graph
+            .entity(entity)
+            .function
+            .and_then(|props| props.special);
+        if self.graph.entity(entity).function.is_some_and(|props| {
+            props.allocation == Some(super::function_names::AllocationOrigin::Predeclared)
+        }) {
+            if matches!(
+                qualifier,
+                Some(Qualifier {
+                    kind: QualifierKind::Throw(_),
+                    ..
+                })
+            ) && self.template_depth == 0
+            {
+                self.exception_set(qualifier, info.lookup)?;
+            }
+            self.graph
+                .entity_mut(entity)
+                .function
+                .as_mut()
+                .ok_or(Error::Invariant("allocation facts lost"))?
+                .allocation = Some(super::function_names::AllocationOrigin::Declared);
+            return Ok(());
+        }
+        if first
+            && qualifier.is_none()
+            && special.is_some_and(super::function_names::SpecialName::deallocation)
+        {
+            qualifier = Some(Qualifier {
+                location,
+                kind: QualifierKind::Noexcept(None),
+            });
+        }
         if self.template_depth != 0 && qualifier.is_some_and(|q| {
             !matches!(q.kind, QualifierKind::Noexcept(None))
                 && !matches!(q.kind, QualifierKind::Throw(types) if types.is_empty())
@@ -88,11 +130,17 @@ impl Analyzer<'_> {
                 return self
                     .record_template_exception(entity, info, scope, operand, location, limit);
             }
-            return Err(Error::Missing(
-                "template exception specification ownership and equivalence",
-            ));
+            if matches!(
+                qualifier,
+                Some(Qualifier {
+                    kind: QualifierKind::Throw(_),
+                    ..
+                })
+            ) {
+                return self.record_template_throw(entity, qualifier, scope, location);
+            }
+            return Err(Error::Invariant("unexpected template specification"));
         }
-        let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
         if !first
             && self.template_depth != 0
             && matches!(
@@ -107,11 +155,12 @@ impl Analyzer<'_> {
         if !first
             && qualifier.is_none()
             && self.template_depth == 0
-            && self
-                .graph
-                .entity(entity)
-                .member_function
-                .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
+            && (special == Some(super::function_names::SpecialName::Destructor)
+                || self
+                    .graph
+                    .entity(entity)
+                    .member_function
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor))
         {
             // Types mode never synthesizes the subobjects' destructor facts.
             // The C++ omitted redeclaration therefore has the implicit true
@@ -187,7 +236,11 @@ impl Analyzer<'_> {
             location,
             first,
             done: false,
-            template: false,
+            mode: if self.template_depth == 0 && self.graph.entity(entity).template_head.is_none() {
+                SpecificationMode::Ordinary
+            } else {
+                SpecificationMode::TemplateCompatibility
+            },
         });
         if first {
             self.graph.entity_mut(entity).exceptions = ExceptionState::Pending(id);
@@ -219,7 +272,7 @@ impl Analyzer<'_> {
         if pending.done {
             return Ok(());
         }
-        if pending.template {
+        if matches!(pending.mode, SpecificationMode::TemplateExpression) {
             let ExceptionState::Template(pattern) = self.graph.entity(pending.entity).exceptions
             else {
                 return Err(Error::Invariant("missing template exception pattern"));
@@ -245,7 +298,12 @@ impl Analyzer<'_> {
             let ExceptionState::Value(first) = &self.graph.entity(pending.entity).exceptions else {
                 return Err(Error::Invariant("unresolved first exception specification"));
             };
-            if *first != result {
+            let incompatible = if matches!(pending.mode, SpecificationMode::Ordinary) {
+                *first != result
+            } else {
+                matches!(first, ExceptionSet::None) != matches!(result, ExceptionSet::None)
+            };
+            if incompatible {
                 return Err(Error::at(
                     pending.location,
                     "redeclaration with an incompatible exception-specification",
@@ -317,7 +375,7 @@ impl Analyzer<'_> {
             location,
             first: true,
             done: false,
-            template: true,
+            mode: SpecificationMode::TemplateExpression,
         });
         // Keep the queue's source order shared with ordinary specifications.
         if self.graph.entity(entity).template_head.is_none() {
@@ -331,6 +389,14 @@ impl Analyzer<'_> {
         &mut self,
         qualifier: Option<Qualifier>,
         scope: ScopeId,
+    ) -> Result<ExceptionSet, Error> {
+        self.exception_set_context(qualifier, scope, true)
+    }
+    fn exception_set_context(
+        &mut self,
+        qualifier: Option<Qualifier>,
+        scope: ScopeId,
+        complete: bool,
     ) -> Result<ExceptionSet, Error> {
         match qualifier.map(|q| q.kind) {
             None => Ok(ExceptionSet::All),
@@ -379,7 +445,9 @@ impl Analyzer<'_> {
                         ));
                     }
                     let ty = self.graph.types.parameter(ty)?;
-                    self.check_complete_throw_type(ty, location)?;
+                    if complete {
+                        self.check_complete_throw_type(ty, location)?;
+                    }
                     adjusted.push(self.graph.types.canonical_function(ty)?);
                 }
                 adjusted.sort_unstable();
@@ -392,6 +460,38 @@ impl Analyzer<'_> {
             }
             _ => Err(Error::Invariant("invalid exception qualifier")),
         }
+    }
+    fn record_template_throw(
+        &mut self,
+        entity: EntityId,
+        qualifier: Option<Qualifier>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        match &self.graph.entity(entity).exceptions {
+            ExceptionState::Value(ExceptionSet::None) => {
+                return Err(Error::at(
+                    location,
+                    "redeclaration with an incompatible exception-specification",
+                ));
+            }
+            ExceptionState::Template(_) | ExceptionState::Value(_) => return Ok(()),
+            ExceptionState::Absent => (),
+            ExceptionState::Pending(_) | ExceptionState::Evaluating => {
+                return Err(Error::Invariant(
+                    "pending ordinary specification under template head",
+                ));
+            }
+        }
+        // A class template's ordinary member waits for its instantiation;
+        // a function template records its written adjusted types immediately.
+        let set = if self.graph.entity(entity).template_head.is_some() {
+            self.exception_set_context(qualifier, scope, false)?
+        } else {
+            ExceptionSet::All
+        };
+        self.graph.entity_mut(entity).exceptions = ExceptionState::Value(set);
+        Ok(())
     }
     fn check_complete_throw_type(
         &self,

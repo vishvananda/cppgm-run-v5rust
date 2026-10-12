@@ -70,7 +70,7 @@ impl<'tree> Analyzer<'tree> {
                 key: Keyword::Typedef,
             },
         )?;
-        Ok(Self {
+        let mut analyzer = Self {
             literal_bytes: &cursor.spellings,
             tree,
             graph,
@@ -91,7 +91,9 @@ impl<'tree> Analyzer<'tree> {
             evaluating_noexcept: false,
             layout_work: Vec::new(),
             exception_work: Vec::new(),
-        })
+        };
+        analyzer.predeclare_allocations()?;
+        Ok(analyzer)
     }
     pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
         let marker = 0u8;
@@ -333,7 +335,9 @@ impl<'tree> Analyzer<'tree> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let specs = self.specifiers(specifiers, scope, false)?;
-        let mut info = self.declarator(Some(declarator), specs.ty, scope)?;
+        let mut environment = self.declarator_environment(Some(declarator), scope)?;
+        environment.declaration_location = Some(location);
+        let mut info = self.declarator_in(Some(declarator), specs.ty, environment)?;
         if let Some((class, kind)) = self.declared_member(&info, scope)? {
             return self.complete_special_member(
                 class,
@@ -353,42 +357,21 @@ impl<'tree> Analyzer<'tree> {
                 },
             );
         }
-        self.function_specifier_type(specs, &mut info, scope)?;
         if self.conversion_declarator(&info) {
             return Err(Error::at(
                 location,
                 "a conversion function with a return type",
             ));
         }
-        let name = info
-            .name
-            .ok_or(Error::Invariant("function definition without a name"))?;
-        let home = info.home.unwrap_or(self.declaration_scope(scope));
-        self.check_member_function_redeclaration(&info, home, location)?;
-        if info.home.is_some()
-            && self
-                .graph
-                .own(home, name, super::lookup::Filter::Ordinary)
-                .is_none()
-        {
-            return Err(Error::at(
-                location,
-                "qualified definition does not match a declaration",
-            ));
-        }
         let exception_limit = self.graph.binding_limit();
-        let binding = self.declare_value(
-            name,
-            info.ty,
-            super::declarations::ValueScope {
-                home,
-                print: info.home.unwrap_or(scope),
-                head: self.active_template_head(scope),
-            },
-            BindingKind::Function,
-            location,
+        let binding = self.declare_function_value(
+            &mut info,
             specs,
+            scope,
+            location,
+            super::function_names::Definition::Body,
         )?;
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
         super::record(
             &mut self.graph.declared_bindings,
             declarator.index(),
@@ -406,7 +389,7 @@ impl<'tree> Analyzer<'tree> {
             .ok_or(Error::Invariant("function definition without parameters"))?;
         let deferred = DeferredBody {
             entity,
-            name: Some(name),
+            name: info.name,
             ty: info.ty,
             parameters,
             body,

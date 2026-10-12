@@ -39,7 +39,10 @@ pub(crate) fn write_member_label(
         .last()
         .ok_or_else(|| std::io::Error::other("empty special member name"))?;
     let mut renderer = render::Renderer::new(tree, cursor);
-    renderer.render(render::Render::Component(component, true))?;
+    renderer.render(render::Render::Component(
+        component,
+        !matches!(component.kind, ast::NameKind::Operator { .. }),
+    ))?;
     if matches!(component.kind, ast::NameKind::Conversion(_)) {
         renderer.bytes.retain(|&byte| byte != b' ');
     }

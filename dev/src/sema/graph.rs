@@ -67,6 +67,8 @@ pub(super) enum DataMemberKind {
 pub(super) struct FunctionProperties {
     pub internal_linkage: bool,
     pub is_static: bool,
+    pub special: Option<super::function_names::SpecialName>,
+    pub allocation: Option<super::function_names::AllocationOrigin>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum MemberKind {
@@ -138,8 +140,53 @@ pub(crate) struct Graph {
     call_bindings: Vec<Option<BindingId>>,
     member_functions: HashMap<MemberKey, BindingId>,
     prototype_parameters: HashMap<EntityId, usize>,
+    special_values: HashMap<(ScopeId, super::function_names::SpecialName), BindingId>,
 }
 impl Graph {
+    pub(super) fn own_key(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        filter: super::lookup::Filter,
+    ) -> Option<BindingId> {
+        match key {
+            super::function_names::ValueKey::Identifier(name) => self.own(scope, name, filter),
+            super::function_names::ValueKey::Special(_) => self.value_binding(scope, key),
+        }
+    }
+    pub(super) fn value_binding(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+    ) -> Option<BindingId> {
+        match key {
+            super::function_names::ValueKey::Identifier(name) => {
+                self.own(scope, name, super::lookup::Filter::Ordinary)
+            }
+            super::function_names::ValueKey::Special(name) => self
+                .special_values
+                .get(&(scope, name))
+                .copied()
+                .filter(|id| {
+                    self.scope(scope).kind != ScopeKind::Namespace
+                        || self
+                            .lookup_limit
+                            .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+                }),
+        }
+    }
+    pub(super) fn record_special_value(
+        &mut self,
+        scope: ScopeId,
+        name: super::function_names::SpecialName,
+        binding: BindingId,
+    ) {
+        if let Some(old) = self.special_values.insert((scope, name), binding)
+            && self.binding(old).entity == self.binding(binding).entity
+        {
+            self.ordinals[binding.0 as usize] = self.ordinals[old.0 as usize];
+        }
+    }
     pub(super) fn record_prototype_parameter(&mut self, entity: EntityId, index: usize) {
         self.prototype_parameters.insert(entity, index);
     }
@@ -195,6 +242,7 @@ impl Graph {
             call_bindings: Vec::new(),
             member_functions: HashMap::new(),
             prototype_parameters: HashMap::new(),
+            special_values: HashMap::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
