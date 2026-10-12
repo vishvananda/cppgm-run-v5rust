@@ -55,6 +55,12 @@ facts it introduced. A checkpoint must cover all of that state; restoring
 only the token position can make a later alternative see declarations that
 never happened.
 
+If you memoize a failed speculative parse, include the context that can change
+its result. A token position and scope environment alone do not distinguish
+alternative type/value readings of a name. Template-list attempts also differ
+when a member name requires a following call or qualifier. Reuse a failure only
+under the same context; preserve retries under another reading.
+
 Use prediction to avoid trying every production everywhere. Expression
 parsing can use precedence climbing or another approach that preserves the
 required tree. Give assignment and conditional expressions their right

@@ -3711,3 +3711,13 @@ tests/general/200-member-template-parameter-value-vs-template-name.t
 ```text
 tests/general/200-mock-template-name-angle-forms.t
 ```
+
+
+## Oracle refresh for resumed audit — 2026-10-12
+
+The run owner authorized cppgm-extended `0fe8e3b4bde9929c2419fb7906028df83bb17de5` as the new frozen baseline
+and restarted this stage. See `docs/port/baseline.md` for the cache context fix,
+new PA5 cases, refreshed integrity policy, and upstream validation. Recheck the
+previous audit findings and implement the new context behavior before stage
+acceptance. Historical blocked-goal and old-oracle findings above remain
+records of the earlier attempt, not a claim about the refreshed reference.

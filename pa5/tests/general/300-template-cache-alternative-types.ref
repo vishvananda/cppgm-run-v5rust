@@ -1,0 +1,36 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration G
+    type-id
+      type-specifier-seq
+        type-name Unknown
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier foo<G::V*>
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier pointer
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier foo<G::V&>
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier reference
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier foo<G::V*value>
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier expression
+end translation unit

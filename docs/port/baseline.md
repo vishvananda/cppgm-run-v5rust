@@ -1,5 +1,28 @@
 # Frozen preparation baseline
 
+## Current oracle refresh — 2026-10-12
+
+The current reference is cppgm-extended `0fe8e3b4bde9929c2419fb7906028df83bb17de5` (PR #65, merged).
+It fixes speculative template failures being reused across different name
+interpretations. The key now includes the selected conflict category,
+alternative-reading mode, and following-call requirement. Argument parsing
+sets angle mode itself; the incoming mode is excluded to preserve linear
+failed-list work.
+
+The three new PA5 fixtures and their generated references are added to the
+protected manifest: the stage now has 196 frozen cases. Existing cases and
+comparison policy are retained. All nine tools and source hashes are refreshed
+with the reference. Previous C1/C2 receipts below are historical and cannot
+certify the new source; the PA34 checker invalidates them by seed hash and
+must rebuild its complete proof. Existing live PA5 findings must be rechecked
+against this revision; this refresh does not certify the Rust implementation.
+
+Upstream validation: CI passed GCC/libstdc++ and clang/libc++ on Ubuntu 24.04
+and 26.04, full strict tests, debug-info, self-hosting, export and inception.
+Fresh before/after PA35 release checks passed 17/17 with 100 generated seeds
+in both course and student builds. Paired hardware-counter instruction changes
+are consistent with zero; all measured output objects are byte-identical.
+
 Prepared 2026-10-11; refreshed to cppgm-extended commit
 `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1` after correcting the PA33 test harness.
 Compiler sources and all nine oracle binaries retain their original hashes

@@ -6,7 +6,7 @@ return status 86 until implemented.
 
 Read [CLONE_CONTRACT.md](CLONE_CONTRACT.md), [AGENTS.md](AGENTS.md),
 [the conversion plan](docs/rust-clone-plan.md) and [ROADMAP.md](ROADMAP.md).
-The C++ oracle is pinned to commit 905bd7e4412a2d77d88694fe6abc7f3e1c27bce1.
+The C++ oracle is pinned to commit 0fe8e3b4bde9929c2419fb7906028df83bb17de5.
 The original handouts, tests, regressions, architecture specification and
 attribution are retained. See [NOTICE](NOTICE).
 
