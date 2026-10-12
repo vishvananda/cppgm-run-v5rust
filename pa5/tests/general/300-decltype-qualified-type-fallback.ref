@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  alias-declaration X
+    type-id
+      type-specifier-seq
+        decltype-specifier decltype(C())::Unknown
+          call-expression
+            id-expression C
+            argument-list
+          qualified-type-name Unknown
+  alias-declaration Y
+    type-id
+      type-specifier-seq
+        decltype-specifier decltype(C())::template Q<int>
+          call-expression
+            id-expression C
+            argument-list
+          qualified-type-name template Q<int>
+end translation unit

@@ -473,7 +473,8 @@ impl Parser<'_> {
                         && matches!(self.token()?.kind, TokenKind::Identifier(name) if self.complex_types.contains(&Some(name)));
                     let named = self.attempt(|parser| {
                         let (name, binding) = parser.type_name()?;
-                        let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
+                        let followed = matches!(parser.token()?.kind, TokenKind::Identifier(identifier)
+                            if !matches!(parser.cursor.name(identifier), b"final" | b"override"));
                         if !parser.named_declaration_is_type(name, binding, definite, followed) {
                             // A category mismatch abandons this reading without
                             // recording a grammar failure in the frozen parser.

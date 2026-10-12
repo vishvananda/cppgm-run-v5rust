@@ -1,0 +1,27 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier decltype(C())
+        call-expression
+          id-expression C
+          argument-list
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier ::operator int
+          parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier decltype(C())
+        call-expression
+          id-expression C
+          argument-list
+    declarator
+      identifier ::operator int
+      parameter-clause
+    compound-statement
+end translation unit

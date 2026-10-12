@@ -39,6 +39,62 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn name_boundaries_leave_scope_tokens_for_their_owning_grammar() {
+    let source = SourceBuffer::new(b"C::+1".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"name-boundary").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let (name, _) = parser.name().unwrap();
+    assert_eq!(
+        parser
+            .tree
+            .name_lists
+            .get(parser.tree.names.get(name).components)
+            .len(),
+        1
+    );
+    assert!(parser.at(crate::lex::pp_lexer::Punctuator::Scope).unwrap());
+}
+
+#[test]
+fn simple_operator_names_do_not_allocate_a_conversion_lookup_scope() {
+    let source = SourceBuffer::new(b"struct C{}; C::operator+".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"operator-scope-demand").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let environment = parser.scopes.environment();
+    parser.name().unwrap();
+    assert_eq!(parser.scopes.environment(), environment);
+}
+
+#[test]
+fn decltype_prefixes_do_not_invent_conflicted_categories() {
+    let source = SourceBuffer::new(b"struct C{}; decltype(C())::Unknown".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"decltype-prefix-facts").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    parser.conflicts.active = true;
+    parser.conflicts.uses = u32::MAX;
+    let (name, binding) = parser.name().unwrap();
+    assert!(binding.is_none());
+    assert_eq!(
+        parser.tree.names.get(name).prefix_state,
+        super::ast::PrefixState::Dependent
+    );
+    assert_eq!(parser.conflicts.uses, u32::MAX);
+    assert!(parser.guessed_component(None).is_none());
+    assert_eq!(parser.conflicts.uses, 0);
+}
+
+#[test]
 fn class_attributes_do_not_inherit_the_declared_templates_category() {
     let source =
         SourceBuffer::new(b"template<class T> struct alignas(sizeof(struct Word*)) C{};".to_vec())

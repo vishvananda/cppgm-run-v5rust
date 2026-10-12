@@ -21,7 +21,7 @@ pub(super) struct NameConflicts {
     pub take: Option<Category>,
     pub seen: Categories,
     pub statement: Option<StatementConflict>,
-    pub uses: u64,
+    pub uses: u32,
     pub last: Option<Category>,
 }
 #[derive(Clone, Copy)]

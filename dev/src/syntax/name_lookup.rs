@@ -245,7 +245,12 @@ impl Parser<'_> {
         definite: bool,
         followed: bool,
     ) -> bool {
+        let node = self.tree.names.get(name);
         self.is_type_name(name, binding, definite, followed)
+            || (binding.is_none()
+                && definite
+                && !(node.prefix_state != PrefixState::Unqualified && node.mentions_parameters)
+                && self.last_identifier(name).is_some())
             || (self.scopes.kind(self.scopes.declaration_scope())
                 == super::scopes::ScopeKind::Namespace
                 && self.tree.names.get(name).prefix_state == PrefixState::Known

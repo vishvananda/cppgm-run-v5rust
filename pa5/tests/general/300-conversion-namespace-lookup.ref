@@ -1,0 +1,31 @@
+1 translation units
+start translation unit 1
+translation-unit
+  alias-declaration T
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+  namespace-definition N
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier T
+  special-member-declaration N::operator T
+    declarator
+      identifier N::operator T
+      parameter-clause
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression N::operator T
+          argument-list
+end translation unit

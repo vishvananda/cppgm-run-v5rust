@@ -90,9 +90,10 @@ impl Parser<'_> {
                     template_keyword,
                     arguments: None,
                 });
-                if self.accept(P::Scope)? {
+                if self.scope_continues_name(false)? {
+                    self.cursor.advance()?;
                     qualified = true;
-                    prefix.make_dependent(!self.scopes.in_template_definition());
+                    prefix.make_dependent(false);
                     continue;
                 }
                 break Some(Binding {
@@ -106,13 +107,14 @@ impl Parser<'_> {
                 });
             }
             if !type_context && self.keyword()? == Some(K::Operator) {
-                let enclosing = self.scopes.current;
-                if let Some(scope) = prefix.scope {
-                    self.scopes.member_context(scope)?;
-                }
-                let result = self.operator_name();
-                self.scopes.current = enclosing;
-                let kind = result?;
+                let member = prefix.scope.filter(|scope| {
+                    matches!(
+                        self.scopes.kind(*scope),
+                        super::scopes::ScopeKind::Class(_)
+                            | super::scopes::ScopeKind::AnonymousClass
+                    )
+                });
+                let kind = self.operator_name(member)?;
                 let arguments = if self.at(P::Less)? && !matches!(kind, NameKind::Conversion(_)) {
                     self.attempt(Self::template_arguments)?
                 } else {
@@ -140,11 +142,12 @@ impl Parser<'_> {
                 } else {
                     NameKind::Destructor(self.identifier()?)
                 };
-                let arguments = if self.at(P::Less)? {
-                    Some(self.template_arguments()?)
-                } else {
-                    None
-                };
+                let arguments =
+                    if !matches!(kind, NameKind::DestructorDecltype(_)) && self.at(P::Less)? {
+                        Some(self.template_arguments()?)
+                    } else {
+                        None
+                    };
                 self.tree.name_lists.push(NameComponent {
                     location,
                     kind,
@@ -165,7 +168,7 @@ impl Parser<'_> {
                 template_keyword,
                 arguments,
             });
-            if self.at(P::Scope)? && self.at_ahead(P::Multiply, 1)? {
+            if !self.scope_continues_name(true)? {
                 let binding = self.resolve_component(identifier, &prefix, false);
                 if !member_context {
                     self.observe_name_binding(binding);
@@ -173,14 +176,7 @@ impl Parser<'_> {
                 self.note_component_conflict(uses, start, &mut conflict)?;
                 break binding;
             }
-            if !self.accept(P::Scope)? {
-                let binding = self.resolve_component(identifier, &prefix, false);
-                if !member_context {
-                    self.observe_name_binding(binding);
-                }
-                self.note_component_conflict(uses, start, &mut conflict)?;
-                break binding;
-            }
+            self.cursor.advance()?;
             self.advance_name_prefix(
                 identifier,
                 arguments,
@@ -220,18 +216,39 @@ impl Parser<'_> {
     }
     fn note_component_conflict(
         &self,
-        uses: u64,
+        uses: u32,
         start: usize,
         conflict: &mut Option<(u32, Option<Category>)>,
     ) -> Result<(), ParseError> {
         if conflict.is_none() && self.conflicts.uses != uses {
             let component = u32::try_from(self.tree.name_lists.begin() - start - 1)
                 .map_err(|_| ParseError::Limit("name component ordinal limit"))?;
-            *conflict = Some((component, self.conflicts.last));
+            // The frozen signed component field uses negative values as
+            // unpublished sentinels, including ordinals with the sign bit set.
+            if i32::try_from(component).is_ok() {
+                *conflict = Some((component, self.conflicts.last));
+            }
         }
         Ok(())
     }
-    fn operator_name(&mut self) -> Result<NameKind, ParseError> {
+    fn scope_continues_name(&mut self, operator: bool) -> Result<bool, ParseError> {
+        if !self.at(P::Scope)? {
+            return Ok(false);
+        }
+        Ok(match self.cursor.peek(1)?.kind {
+            TokenKind::Identifier(_) => true,
+            TokenKind::Simple(op) => {
+                op.token.as_punctuator() == Some(P::Complement)
+                    || op.token.as_keyword() == Some(K::Template)
+                    || (operator && op.token.as_keyword() == Some(K::Operator))
+            }
+            _ => false,
+        })
+    }
+    fn operator_name(
+        &mut self,
+        member: Option<super::scopes::ScopeId>,
+    ) -> Result<NameKind, ParseError> {
         self.cursor.advance()?;
         if matches!(self.keyword()?, Some(K::New | K::Delete)) {
             let op = self.operator()?;
@@ -322,10 +339,15 @@ impl Parser<'_> {
                 array: false,
             });
         }
-        Ok(NameKind::Conversion(self.type_id_in_mode(
-            true,
-            super::declarators::Mode::Conversion,
-        )?))
+        let enclosing = self.scopes.current;
+        let result = (|| {
+            if let Some(member) = member {
+                self.scopes.member_context(member)?;
+            }
+            self.type_id_in_mode(true, super::declarators::Mode::Conversion)
+        })();
+        self.scopes.current = enclosing;
+        Ok(NameKind::Conversion(result?))
     }
     pub(super) fn decltype_operand(&mut self) -> Result<ExprId, ParseError> {
         self.expect(P::LeftParen)?;

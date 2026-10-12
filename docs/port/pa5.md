@@ -7,6 +7,126 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: name boundaries, lookup demand and target facts — 2026-10-12
+
+Entry/reviewed commit: `ada9bf729c7aa944820a3db4c7c66feee10f77aa` (clean).
+Base and last accepted partial audit above remain unchanged. The resulting
+commit/clean status is recorded in `pa5-name-final/handoff.json`.
+**Full acceptance remains open.** The existing goal was observed as blocked in
+this session; it was not created/reset or marked complete, and Ralph state
+was not edited. The requested source audit continued with concrete fixes.
+
+The full frozen `parser_names.cpp` was consulted: **25 navigation entries**,
+three additional multiline owners (`typedef_record`, `specialization_record`,
+`prefix_guesses`) and two anonymous helpers. `reviewed-name-responsibilities.json`
+and `additional-reviewed-responsibilities.json` record modes, control flow,
+source/numeric facts, failure/demand, lookup/order and Rust ownership. The
+explicit source-review census now has **133 entries**. Broader scope/state,
+AST/header ownership and the complete cache-context proof still need final
+review; navigation counts do not establish completeness.
+
+Findings resolved:
+
+- An identifier's `::` continues only when the next token actually starts a
+  component; it otherwise remains for the owning grammar to diagnose. A
+  decltype prefix has its narrower continuation set, excluding an operator
+  name. This preserves the frozen reading that takes the decltype specifier
+  followed by a global operator declarator, and exact failure locations.
+- A decltype destructor does not consume template arguments. Ordinary
+  destructor template arguments remain supported. A decltype prefix retains
+  the frozen nonuncertain dependent state, preventing invented category
+  alternatives outside template definitions.
+- Conversion-type lookup overlays are demanded only for known class prefixes
+  and only after a conversion name is selected. Namespace/enum prefixes and
+  ordinary overloadable operator names do not allocate that scope. Lookup
+  context restores through Result exits; one owned Name/TypeId is consumed.
+- Required named-type fallback distinguishes dependence on actual template
+  parameters from a merely dependent/unknown prefix. Nondependent decltype
+  qualifications can supply a required type. A following `final`/`override`
+  identifier no longer provides an invented type hint for an unknown name.
+- Conflict uses wrap at the frozen **uint32** width. Component ordinals keep
+  checked host conversion and the frozen signed field's unpublished sentinel
+  behavior when the sign bit is set, with no blanket allowance.
+
+Three invariants verify scope-token ownership, absence of an unnecessary
+operator conversion scope, and decltype category isolation plus the target
+counter wrap. All name/specialization facts remain compact typed handles and
+owned slices. Parameter-base substitution retains source order, type/pack
+positions, the depth-eight bound and one-byte specialization capacity (255).
+Statement readings retain typed categories; syntax text is neither a cache
+key nor transport between phases. Negative-list/angle memo context proof is
+explicitly retained for the remaining state audit. No unsafe code, dependency,
+compiler-source environment read, implementation subprocess, broad lint
+allowance, mechanical split, backend/optimizer/register allocator change or
+PA35 work was added.
+
+The primary sweep improved **81/111 to 111/111**; context/fallback sweep
+improved **104/128 to 128/128**, resolving **54 measured differences**. A
+further **75/75** coordinated nested-template/operator failure cases match.
+All **2635/2635** recent and **2141/2141** prior probes remain exact, totaling
+**5090/5090** ordinary-input raw status/stdout/stderr/full AST comparisons.
+`contexts/before-fallback.json` retains the frozen intermediate candidate
+identity/diff hash; final receipts ran after the last production mutation.
+Earlier checks/timings and a test-only Clippy assertion correction remain
+archived; `checks.json` and final `quality.log` are all green. Fixed-manifest
+progress stays **193 entry/final passes**, no lost IDs and no fixed failures.
+Fixture additions do not count as fixed-manifest gains or full acceptance.
+
+Six new required executed PA5 general cases and only their new expectations:
+`300-name-scope-boundary-reject`, `300-decltype-destructor-arguments-reject`,
+`300-conversion-namespace-lookup`, `300-decltype-scope-operator-declarator`,
+`300-decltype-qualified-type-fallback`, and `300-unknown-type-final-hint-reject`.
+Syntax-only forms preserve parsing facts without deciding later semantic
+validity. Inputs were not formatted. Original fixtures/references, frozen
+oracle, protected policy and Ralph state remain unchanged.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-name-final/`.
+`metadata.json`, `progress.json`, `checks.json`, raw probes and archived
+`results/`, `cases/`, `course/` preserve tool identities, status/bytes and exact
+passing/failing IDs. Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+All final commands ran after the last production mutation:
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS strict Clippy/rustfmt, debug/release **129 library + nine tool tests**; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS **283/283**, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS **87 files**, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+Resources are separate observations of compiler work. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+**36 serial warm whole invocations**, after verification processes were
+terminal, at 1000/4000/16000 units, ordered
+oracle/oracle/oracle/candidate/candidate/oracle. Every run exits 0 and matches
+full raw output/streams. Source/tool hashes, ASTs, streams and RSS files are
+retained. Median wall milliseconds include preprocessing, launch and I/O;
+RSS is maximum measured KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Decltype qualification boundaries and required type facts | 42.35 / 108.40 / 328.49 | 15.94 / 52.74 / 161.74 | 8104 / 12096 / 40272 |
+| Namespace versus class conversion lookup demand | 53.24 / 133.93 / 410.58 | 21.66 / 68.68 / 204.56 | 7992 / 17076 / 59892 |
+
+C++ maximum RSS at 16k is respectively 34084 and 51512 KiB. No speed or
+code-generation equality objective is inferred. `storage.txt` records a
+shared-volume sample below the 107374182400-byte task ceiling.
+
+The final native sweep remains **45/48**. IDs are
+`final-native/parentheses/4800` (C++ success, Rust normal nesting rejection at
+4234), `final-native/known-templates/2400` (C++ success, Rust rejection at
+4752), and `final-native/known-templates/4800` (C++ rejection at 7627, Rust at
+4752). No signal, panic, timeout or status 86 was accepted. Common guard
+arithmetic does not prove host frame parity; ordinary diagnostics remain
+strict. No calibration, fixture exclusion, waiver, policy/baseline change or
+reproducible oracle bug was used. Full acceptance and goal completion remain
+withheld pending **scope/state/AST/header responsibilities, complete cache
+context proof and exact native rejection parity**.
+
 ## Full-stage audit continuation: specifier contexts, class ownership and demand — 2026-10-12
 
 Entry/reviewed commit: `3196d267b25c3bad48ce7d999e318fb02e4a9210` (clean).
