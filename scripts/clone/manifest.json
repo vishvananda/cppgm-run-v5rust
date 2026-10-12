@@ -31995,7 +31995,7 @@
     "dev/clippy.toml": "1876ffe4dc1bd441c40c21b89324238a49e6cb576fc5dbdf5eb843b50f993e71",
     "scripts/clone/clone_adapter.py": "417c927d38eb2400924d7b9b61ef3b5a326076b13b5f1516bb6294861956daf6",
     "scripts/clone/clone_common.py": "80e2b6e9015a37b619f892a4aac55066b788a68ad1672e130f9f801981ff910f",
-    "scripts/clone/test_clone_harness.py": "2183773d97ed59b4c43f25f35e951d8d788c03498f1c62d45cfc46558a1fec2e",
+    "scripts/clone/test_clone_harness.py": "52b4f913294ca7d7b622ac71c76ef3725f5beae8cdaf38016119f9c47c2b7de8",
     "scripts/clone/rust_audit.py": "69f3aa804ee449697326aed3561e49fa312e0dcf4b426d2988c105ef6a1118df",
     "scripts/clone/clone_check.py": "855fcf118e4a5042207159fa9dbe8668bc5354c5da4bca5299381cdd1e493b1e",
     "scripts/clone/clone_bootstrap.py": "18dd826049d04a913f2833821d6453ba5bc216f5c36c68e9df2e519ca6628ed3",
