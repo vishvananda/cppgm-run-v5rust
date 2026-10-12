@@ -1,0 +1,112 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier base
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier inherit
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        declarator
+          identifier syntax
+          parameter-clause
+        compound-statement
+          expression-statement
+            binary-expression OP_STAR:*
+              id-expression word
+              id-expression not_substituted
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    class-specifier unexpanded
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier no_parameters
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+          pack-expansion OP_DOTS:...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier inherit_twice
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+        base-specifier
+          base-name T
+  alias-declaration pointer
+    type-id
+      type-specifier-seq
+        type-name inherit<base*>
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression inherit<base*>::word
+          id-expression pointer_is_not_a_class
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression inherit<const base>::word
+          id-expression qualified_is_not_a_lone_name
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression inherit<base&>::word
+          id-expression reference_is_not_a_class
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression unexpanded<base>::word
+          id-expression pack_must_match
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression no_parameters<base>::word
+          id-expression nonpack_must_match
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier inherit_twice<base>::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier duplicate_base
+end translation unit

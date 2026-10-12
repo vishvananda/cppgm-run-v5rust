@@ -19,6 +19,12 @@ pub(super) struct Binding {
     pub category: Category,
     pub parameter: bool,
     pub scope: Option<ScopeId>,
+    pub specialization: u8,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ParameterBase {
+    pub index: u32,
+    pub pack: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ScopeKind {
@@ -37,6 +43,7 @@ struct Scope {
     member_of: Option<ScopeId>,
     depth: u32,
     edges: Vec<Edge>,
+    parameter_bases: Vec<ParameterBase>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Edge {
@@ -73,6 +80,7 @@ pub(super) enum Change {
     Complete(ScopeId, bool),
     Member(ScopeId, Option<ScopeId>),
     Parent(ScopeId, Option<ScopeId>, u32),
+    ParameterBase(ScopeId, Option<ParameterBase>),
 }
 #[derive(Clone, Copy)]
 pub(super) struct ScopeMark {
@@ -105,6 +113,7 @@ impl Default for Scopes {
                 member_of: None,
                 depth: 0,
                 edges: Vec::new(),
+                parameter_bases: Vec::new(),
             }],
             bindings: HashMap::new(),
             unnamed: HashMap::new(),
@@ -215,6 +224,7 @@ impl Scopes {
                 .checked_add(1)
                 .ok_or(ParseError::Limit("parser scope depth limit"))?,
             edges: Vec::new(),
+            parameter_bases: Vec::new(),
         });
         self.current = id;
         self.changed();
@@ -222,6 +232,25 @@ impl Scopes {
     }
     pub(super) fn unnamed(&self, scope: ScopeId) -> Option<ScopeId> {
         self.unnamed.get(&scope).copied()
+    }
+    pub(super) fn parameter_bases(&self, scope: ScopeId) -> &[ParameterBase] {
+        &self.records[scope.0 as usize].parameter_bases
+    }
+    pub(super) fn add_parameter_base(&mut self, scope: ScopeId, base: ParameterBase) {
+        let bases = &mut self.records[scope.0 as usize].parameter_bases;
+        if bases
+            .iter()
+            .any(|old| old.index == base.index && old.pack == base.pack)
+        {
+            return;
+        }
+        bases.push(base);
+        self.changes.push(Change::ParameterBase(scope, None));
+        self.changed();
+    }
+    pub(super) fn pending_class(&self, scope: ScopeId) -> bool {
+        matches!(self.kind(scope), ScopeKind::Class(name)
+            if self.records[scope.0 as usize].edges.is_empty() && self.own(scope, name).is_none())
     }
     pub(super) fn set_unnamed(&mut self, parent: ScopeId, scope: ScopeId) {
         let old = self.unnamed.insert(parent, scope);
@@ -297,6 +326,7 @@ impl Scopes {
                     parameter: false,
                     category: Category::Value,
                     scope: binding.scope.or(previous.scope),
+                    specialization: 0,
                 }
             } else if binding.category == previous.category && binding.scope.is_none() {
                 previous
@@ -546,6 +576,13 @@ impl Scopes {
     // detach only changes made after their source position, never whole scopes.
     fn exchange(&mut self, change: Change) -> Change {
         match change {
+            Change::ParameterBase(scope, Some(base)) => {
+                self.records[scope.0 as usize].parameter_bases.push(base);
+                Change::ParameterBase(scope, None)
+            }
+            Change::ParameterBase(scope, None) => {
+                Change::ParameterBase(scope, self.records[scope.0 as usize].parameter_bases.pop())
+            }
             Change::Unnamed(parent, value) => {
                 let old = if let Some(value) = value {
                     self.unnamed.insert(parent, value)

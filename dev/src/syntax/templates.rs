@@ -25,8 +25,10 @@ impl Parser<'_> {
         let enclosing = self.scopes.current;
         self.scopes.push_kind(ScopeKind::Template)?;
         let parameters = self.template_parameter_clause()?;
+        let head = self.template_head.replace(parameters);
         self.pending_template = !parameters.parameters.is_empty();
         let result = self.nested(Self::declaration);
+        self.template_head = head;
         self.pending_template = false;
         self.scopes.current = enclosing;
         let declaration = result?;
@@ -131,6 +133,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    specialization: 0,
                     parameter: true,
                     category: Category::Value,
                     scope: None,
@@ -176,6 +179,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    specialization: 0,
                     parameter: true,
                     category: if parameters.is_some() {
                         Category::TypeTemplate
@@ -301,7 +305,13 @@ impl Parser<'_> {
         let specifiers = self.tree.specs.finish(start)?;
         let declarator = self.declarator(Mode::Abstract)?;
         let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+        let specialization = if declarator.is_none() {
+            self.typedef_record(specifiers)
+        } else {
+            0
+        };
         self.tree.types.add(TypeSyntax {
+            specialization,
             location,
             specifiers,
             declarator,

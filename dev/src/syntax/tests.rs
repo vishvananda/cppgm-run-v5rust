@@ -13,6 +13,91 @@ use crate::{
 };
 
 #[test]
+fn parameter_base_facts_and_alias_records_survive_commit_and_rewind_together() {
+    use super::scopes::Scopes;
+    let source = SourceBuffer::new(
+        b"struct C {typedef int word;}; template<class T> struct P:T{}; using A=P<C>; typedef A B;"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"parameter-base-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let p = parser.cursor.intern_name(b"P").unwrap();
+    let a = parser.cursor.intern_name(b"A").unwrap();
+    let b = parser.cursor.intern_name(b"B").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            parser.declaration()?;
+            parser.declaration()?;
+            assert!(parser.scopes.lookup(a).unwrap().specialization != 0);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert!(parser.scopes.lookup(p).is_none());
+    assert!(parser.scopes.lookup(a).is_none());
+    assert!(parser.scopes.lookup(b).is_none());
+    assert!(parser.specialization_records.is_empty());
+    assert!(parser.template_head.is_none());
+    parser.declaration().unwrap();
+    let scope = parser.scopes.lookup(p).unwrap().scope.unwrap();
+    assert_eq!(parser.scopes.parameter_bases(scope).len(), 1);
+    assert_eq!(parser.scopes.parameter_bases(scope)[0].index, 0);
+    assert!(!parser.scopes.parameter_bases(scope)[0].pack);
+    parser.declaration().unwrap();
+    parser.declaration().unwrap();
+    let record = parser.scopes.lookup(a).unwrap().specialization;
+    assert_eq!(parser.scopes.lookup(b).unwrap().specialization, record);
+    let arguments = parser.recorded_arguments(record).unwrap();
+    assert_eq!(
+        parser
+            .parameter_base_lookup(scope, arguments, word, false, 0)
+            .unwrap()
+            .category,
+        Category::Type
+    );
+    parser.scopes.current = scope;
+    // Unqualified lookup in the template never substitutes its base.
+    assert!(parser.scopes.lookup(word).is_none());
+    parser.scopes.current = Scopes::global();
+    let mut later = Vec::new();
+    parser.scopes.detach(0, &mut later);
+    assert!(parser.scopes.parameter_bases(scope).is_empty());
+    parser.scopes.reattach(&later);
+    assert_eq!(parser.scopes.parameter_bases(scope).len(), 1);
+    assert!(parser.scopes.lookup(b).is_some());
+}
+
+#[test]
+fn parameter_base_order_packs_and_record_capacity_are_explicit() {
+    let mut bytes = b"struct C {typedef int word;}; struct D {int word;}; template<class... T> struct P:T...{};".to_vec();
+    for index in 0..256 {
+        bytes.extend_from_slice(format!("using A{index}=P<C>;").as_bytes());
+    }
+    let source = SourceBuffer::new(bytes).unwrap();
+    let input = Preprocessor::with_name(&source, b"parameter-base-records").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declarations(false).unwrap();
+    assert_eq!(parser.specialization_records.len(), 255);
+    let a254 = parser.cursor.intern_name(b"A254").unwrap();
+    let a255 = parser.cursor.intern_name(b"A255").unwrap();
+    assert_eq!(parser.scopes.lookup(a254).unwrap().specialization, 255);
+    assert_eq!(parser.scopes.lookup(a255).unwrap().specialization, 0);
+    let p = parser.cursor.intern_name(b"P").unwrap();
+    let scope = parser.scopes.lookup(p).unwrap().scope.unwrap();
+    assert!(parser.scopes.parameter_bases(scope)[0].pack);
+}
+
+#[test]
 fn rolled_back_import_can_be_inserted_again_without_leaking_lookup_state() {
     let source =
         SourceBuffer::new(b"namespace N { typedef int word; } using namespace N;".to_vec())
@@ -90,6 +175,7 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         word,
         Binding {
+            specialization: 0,
             parameter: false,
             category: Category::Type,
             scope: None,
@@ -106,6 +192,7 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     parser.scopes.declare(
         missing,
         Binding {
+            specialization: 0,
             parameter: false,
             category: Category::Value,
             scope: None,
@@ -627,6 +714,7 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
     parser.scopes.declare(
         word,
         Binding {
+            specialization: 0,
             category: Category::Value,
             scope: None,
             parameter: false,
@@ -645,6 +733,7 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
     parser.scopes.declare(
         word,
         Binding {
+            specialization: 0,
             category: Category::Type,
             scope: None,
             parameter: false,
@@ -954,6 +1043,7 @@ fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
     )));
     let c = parser.cursor.intern_name(b"C").unwrap();
     let type_binding = Binding {
+        specialization: 0,
         category: Category::Type,
         parameter: false,
         scope: None,
@@ -966,6 +1056,7 @@ fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
             parser.scopes.declare(
                 c,
                 Binding {
+                    specialization: 0,
                     category: Category::Value,
                     ..type_binding
                 },

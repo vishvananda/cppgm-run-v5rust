@@ -280,7 +280,12 @@ impl Parser<'_> {
             };
             let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
             if let Some(declarator) = declarator {
-                self.declare_declarator(declarator, false, self.specifier_scope(specifiers));
+                self.declare_declarator(
+                    declarator,
+                    false,
+                    self.specifier_scope(specifiers),
+                    specifiers,
+                );
             }
             ExceptionDeclaration::Typed {
                 specifiers,
@@ -306,7 +311,7 @@ impl Parser<'_> {
                 });
             }
             let initializer = parser.initializer()?;
-            parser.declare_declarator(declarator, false, None);
+            parser.declare_declarator(declarator, false, None, super::storage::List::default());
             Ok(Condition::Declaration {
                 specifiers,
                 declarator,
@@ -332,7 +337,7 @@ impl Parser<'_> {
                     message: "syntax error",
                 });
             }
-            parser.declare_declarator(declarator, false, None);
+            parser.declare_declarator(declarator, false, None, super::storage::List::default());
             Ok((specifiers, declarator))
         })? {
             let range = self.expression()?;

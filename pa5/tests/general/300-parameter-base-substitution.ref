@@ -1,0 +1,158 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier base
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier other
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier inherit
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          parameter-pack ...
+          identifier T
+    class-specifier inherit_pack
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name T
+          pack-expansion OP_DOTS:...
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier N
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier U
+    class-specifier second_parameter
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name U
+        base-specifier
+          base-name T
+  alias-declaration inherited
+    type-id
+      type-specifier-seq
+        type-name inherit<base>
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_TYPEDEF:typedef
+      decl-specifier TT_IDENTIFIER:inherited
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier inherited_again
+  alias-declaration nested
+    type-id
+      type-specifier-seq
+        type-name inherit<inherited_again>
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier syntax
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier inherit<base>::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier pointer
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier inherited::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier alias_pointer
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier inherited_again::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier typedef_pointer
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier nested::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier nested_pointer
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier inherit_pack<base,other>::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier first_is_type
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression inherit_pack<other,base>::word
+          id-expression first_is_value
+      expression-statement
+        binary-expression OP_STAR:*
+          id-expression second_parameter<0,base,other>::word
+          id-expression ordinary_bases_first
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_AUTO:auto
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier body
+            initializer
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  simple-declaration
+                    decl-specifier-seq
+                      decl-specifier inherit<base>::word
+                    init-declarator-list
+                      init-declarator
+                        declarator
+                          ptr-operator OP_STAR:*
+                          identifier lambda_pointer
+end translation unit

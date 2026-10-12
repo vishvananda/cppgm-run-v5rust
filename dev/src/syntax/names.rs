@@ -32,6 +32,7 @@ impl Parser<'_> {
         let mut qualified = global;
         let mut dependent_prefix = false;
         let mut prefix_specialization = false;
+        let mut prefix_arguments = None;
         let binding = loop {
             let location = self.location()?;
             let template_keyword =
@@ -51,6 +52,7 @@ impl Parser<'_> {
                     continue;
                 }
                 break Some(Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Type,
                     scope: None,
@@ -76,6 +78,7 @@ impl Parser<'_> {
                     arguments,
                 });
                 break Some(Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Value,
                     scope: None,
@@ -103,13 +106,21 @@ impl Parser<'_> {
             let identifier = self.identifier()?;
 
             let prefix_only = self.at(P::Scope)? && !self.at_ahead(P::Multiply, 1)?;
-            let binding = if let Some(scope) = prefix {
-                self.scopes.lookup_specialization(
+            let mut binding = if let Some(scope) = prefix {
+                let binding = self.scopes.lookup_specialization(
                     scope,
                     identifier,
                     prefix_only,
                     prefix_specialization,
-                )
+                );
+                if binding.is_none()
+                    && prefix_specialization
+                    && let Some(arguments) = prefix_arguments
+                {
+                    self.parameter_base_lookup(scope, arguments, identifier, prefix_only, 0)
+                } else {
+                    binding
+                }
             } else if qualified {
                 None
             } else {
@@ -155,11 +166,47 @@ impl Parser<'_> {
             if !self.accept(P::Scope)? {
                 break binding;
             }
+            // Before `::`, values hiding classes retain their class scope.
+            // The template-id choice above used ordinary lookup, like C++.
+            if !prefix_only {
+                binding = if let Some(scope) = prefix {
+                    let found = self.scopes.lookup_specialization(
+                        scope,
+                        identifier,
+                        true,
+                        prefix_specialization,
+                    );
+                    if found.is_none()
+                        && prefix_specialization
+                        && let Some(arguments) = prefix_arguments
+                    {
+                        self.parameter_base_lookup(scope, arguments, identifier, true, 0)
+                    } else {
+                        found
+                    }
+                } else if qualified {
+                    None
+                } else {
+                    self.scopes.lookup_name(identifier, true)
+                };
+            }
             prefix_specialization = arguments.is_some()
                 && self.template_mentions == argument_mentions
                 && binding.is_some_and(|binding| binding.category == Category::TypeTemplate);
+            if arguments.is_none() && binding.is_some_and(|binding| binding.specialization != 0) {
+                prefix_specialization = true;
+            }
+            prefix_arguments = if prefix_specialization {
+                arguments.or_else(|| {
+                    binding.and_then(|binding| self.recorded_arguments(binding.specialization))
+                })
+            } else {
+                None
+            };
             qualified = true;
-            prefix = binding.and_then(|binding| binding.scope);
+            prefix = binding
+                .and_then(|binding| binding.scope)
+                .filter(|scope| !self.scopes.pending_class(*scope));
             dependent_prefix |= prefix.is_none()
                 && binding.is_some_and(|binding| {
                     matches!(binding.category, Category::Type | Category::TypeTemplate)

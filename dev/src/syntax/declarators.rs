@@ -308,7 +308,7 @@ impl Parser<'_> {
                 None
             };
             if let Some(declarator) = declarator {
-                self.declare_declarator(declarator, false, None);
+                self.declare_declarator(declarator, false, None, super::storage::List::default());
             }
             self.tree.parameters.push(Parameter {
                 specifiers,

@@ -120,6 +120,7 @@ impl Parser<'_> {
             self.scopes.set_member(scope, home);
         }
         let binding = Binding {
+            specialization: 0,
             parameter: false,
             category: if is_template || name.is_some_and(|name| self.name_has_arguments(name)) {
                 Category::TypeTemplate
@@ -158,7 +159,10 @@ impl Parser<'_> {
             self.tree.names.replace(name, node);
         }
         let bases = if self.accept(P::Colon)? {
-            self.base_clause(scope)?
+            self.base_clause(
+                scope,
+                is_template && !specialization && identifier.is_some(),
+            )?
         } else {
             List::default()
         };
@@ -232,6 +236,7 @@ impl Parser<'_> {
                 None
             };
             let binding = Binding {
+                specialization: 0,
                 parameter: false,
                 category: if is_template {
                     Category::TypeTemplate
@@ -257,7 +262,7 @@ impl Parser<'_> {
         }
         Ok(Specifier::Elaborated { key, name })
     }
-    fn base_clause(&mut self, class: ScopeId) -> Result<List<Base>, ParseError> {
+    fn base_clause(&mut self, class: ScopeId, primary: bool) -> Result<List<Base>, ParseError> {
         let start = self.tree.bases.begin();
         loop {
             let location = self.location()?;
@@ -271,6 +276,9 @@ impl Parser<'_> {
                 None
             };
             let is_virtual = virtual_first || self.accept_keyword(K::Virtual)?;
+            if self.keyword()? == Some(K::Typename) {
+                return self.fail();
+            }
             let (name, binding) = self.type_name()?;
             let pack = self.accept(P::Ellipsis)?;
             if let Some(base) = binding.and_then(|binding| binding.scope) {
@@ -279,6 +287,12 @@ impl Parser<'_> {
                 self.scopes
                     .add_base(base, self.tree.names.get(name).mentions_parameters);
                 self.scopes.current = enclosing;
+            } else if primary
+                && self.tree.names.get(name).mentions_parameters
+                && !self.name_has_arguments(name)
+                && let Some(identifier) = self.simple_name(name)
+            {
+                self.record_parameter_base(class, identifier, pack)?;
             }
             self.tree.bases.push(Base {
                 location,
@@ -429,7 +443,7 @@ impl Parser<'_> {
         let mut declarator = first;
         loop {
             if let Some(declarator) = declarator {
-                self.declare_declarator(declarator, false, None);
+                self.declare_declarator(declarator, false, None, super::storage::List::default());
             }
             self.expect(P::Colon)?;
             let width = self.assignment_expression()?;

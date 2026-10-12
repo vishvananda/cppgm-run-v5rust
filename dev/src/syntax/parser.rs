@@ -22,6 +22,8 @@ pub(super) struct Parser<'a> {
     pub template_mentions: u64,
     pub angle: bool,
     pub pending_template: bool,
+    pub template_head: Option<super::ast::TemplateParameterClause>,
+    pub specialization_records: Vec<List<super::ast::TemplateArgument>>,
     pub pending_attributes: Option<usize>,
     pub leading_attributes: List<super::ast::Attribute>,
     pub pending_class_tags: List<super::ast::Attribute>,
@@ -50,6 +52,8 @@ struct Checkpoint {
     template_mentions: u64,
     angle: bool,
     pending_template: bool,
+    template_head: Option<super::ast::TemplateParameterClause>,
+    specialization_records: usize,
     pending_attributes: Option<usize>,
     leading_attributes: List<super::ast::Attribute>,
     pending_class_tags: List<super::ast::Attribute>,
@@ -68,6 +72,8 @@ impl<'a> Parser<'a> {
             template_mentions: 0,
             angle: false,
             pending_template: false,
+            template_head: None,
+            specialization_records: Vec::new(),
             pending_attributes: None,
             leading_attributes: List::default(),
             pending_class_tags: List::default(),
@@ -106,6 +112,7 @@ impl<'a> Parser<'a> {
                     Scopes::global(),
                     name,
                     Binding {
+                        specialization: 0,
                         parameter: false,
                         category,
                         scope: None,
@@ -267,6 +274,8 @@ impl<'a> Parser<'a> {
             template_mentions: self.template_mentions,
             angle: self.angle,
             pending_template: self.pending_template,
+            template_head: self.template_head,
+            specialization_records: self.specialization_records.len(),
             pending_attributes: self.pending_attributes,
             leading_attributes: self.leading_attributes,
             pending_class_tags: self.pending_class_tags,
@@ -289,6 +298,9 @@ impl<'a> Parser<'a> {
             self.template_mentions = mark.template_mentions;
             self.angle = mark.angle;
             self.pending_template = mark.pending_template;
+            self.template_head = mark.template_head;
+            self.specialization_records
+                .truncate(mark.specialization_records);
             self.pending_attributes = mark.pending_attributes;
             self.leading_attributes = mark.leading_attributes;
             self.pending_class_tags = mark.pending_class_tags;
@@ -340,16 +352,27 @@ impl<'a> Parser<'a> {
         declarator: DeclaratorId,
         typedef: bool,
         type_scope: Option<ScopeId>,
+        specifiers: List<super::ast::Specifier>,
     ) {
         if let Some(name) = self
             .declarator_name(declarator)
             .filter(|name| !self.name_has_arguments(*name))
             .and_then(|name| self.simple_name(name))
         {
+            let plain_typedef = typedef
+                && self.tree.declarators.get(declarator).pointers.is_empty()
+                && self.tree.declarators.get(declarator).suffixes.is_empty()
+                && self.tree.declarators.get(declarator).nested.is_none();
+            let specialization = if plain_typedef {
+                self.typedef_record(specifiers)
+            } else {
+                0
+            };
             self.scopes.declare_in(
                 self.scopes.declaration_scope(),
                 name,
                 Binding {
+                    specialization,
                     parameter: false,
                     category: if typedef {
                         Category::Type
@@ -358,15 +381,7 @@ impl<'a> Parser<'a> {
                     } else {
                         Category::Value
                     },
-                    scope: if typedef
-                        && self.tree.declarators.get(declarator).pointers.is_empty()
-                        && self.tree.declarators.get(declarator).suffixes.is_empty()
-                        && self.tree.declarators.get(declarator).nested.is_none()
-                    {
-                        type_scope
-                    } else {
-                        None
-                    },
+                    scope: if plain_typedef { type_scope } else { None },
                 },
             );
         }

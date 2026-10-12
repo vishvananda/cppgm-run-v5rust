@@ -3,6 +3,156 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: parameter-base lookup — 2026-10-12
+
+Audit entry commit: `60515ce4ddfa053abc38a50075e4479825f99171` (clean).
+Reviewed this entry against the stage base above and frozen oracle
+`905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`. The implementation/audit commit
+containing this entry is recorded in external `pa5-full-audit/handoff.json`.
+The preceding goal turn is **progress**, proven by its committed lambda group
+and archived 193/193 receipts. This continuation fixes an unfinished parser
+responsibility beyond those fixtures. **Full PA5 acceptance remains unproven**;
+the last accepted partial-audit identity above and Ralph stage are unchanged.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the full clone plan, full PA5
+README/parsing guide, shared grammar, source map and historical ledger. Consulted
+the actual read-only C++ name/scope, specifier, declaration, type/declarator,
+statement/conflict and parser-region owners. No oracle or harness defect was
+found. PA33 release-wide ownership/debug obligations and PA34 bootstrap are
+future-stage gates; PA35 optimization targets are excluded.
+
+### Findings resolved and responsibility review
+
+| C++ owner | Finding and Rust owner |
+| --- | --- |
+| `parser_names.cpp::record_parameter_base/parameter_base_lookup/argument_class` | `parameter_bases.rs`, `classes.rs`, `scopes.rs`: type-parameter bases had no substitution lookup. `P<C>::word * p;` dumped multiplication even when C declares word as a type. Primary heads now record typed parameter positions and matching pack flags; concrete template-id prefixes search retained type arguments after ordinary members/bases. Packs search arguments in index order, duplicate bases are suppressed, lone-class argument restrictions and the oracle's depth > 8 approximation boundary are preserved. |
+| `parser_names.cpp::typedef_record/specialization_record`, `parser_declarators.cpp::parse_type_id`, `parser_declarations.cpp::parse_using/declare_declarator` | `parameter_bases.rs`, `declarations.rs`, `templates.rs`, `parser.rs`, `ast.rs`: aliases and typedef chains discarded specialization arguments. Type-ids and plain typedef bindings now retain one-byte record identities pointing to immutable typed argument spans, with the frozen 255-record limit. Pointer/array/function/nested declarators do not gain class identity; alias templates omit the ordinary alias record. |
+| `parser_names.cpp::advance_prefix/resolve_component` | `names.rs`, `scopes.rs`: known class prefixes now carry concrete argument handles or alias records to missing-member lookup, and pending forward classes remain dependent. Prefix queries after a template-id retain the class hidden by a value without changing the earlier ordinary template-id decision. |
+| `parser_specifiers.cpp::parse_base_clause` | `classes.rs`: Rust incorrectly accepted `typename` at the start of a base name. It now rejects at that token with the frozen diagnostic bytes. |
+| `parser_specifiers.cpp::parse_named_type_specifier` | `declarations.rs`: declining a known value as a type incorrectly recorded a grammar failure after the name. The optional reading now declines without updating the furthest diagnostic, fixing hidden-template and ordinary known-value rejection locations. |
+| `parser_regions.h`, `parser_state.cpp` transactions and deferred changes | `parser.rs`, `scopes.rs`: template-head ownership, specialization record lengths and parameter-base changes participate in nested rewind. Deferred body detach/reattach reverses only the affected scope facts, preserving existing token and body lifetimes. |
+
+The reviewed lookup uses compact ScopeId/NameId indices and scope-owned position
+records; it does not scan a translation unit's templates or copy visible frames.
+The active template head is saved/restored around nested definitions. Arguments
+remain TypeId/ExprId facts in the existing syntax owner, not reparsed text.
+Argument-class lookup reads structured name components through parser-category
+indices, as the frozen syntactic approximation does; semantic instantiation is
+not demanded. Type-id records borrow already parsed immutable argument spans.
+Syntax/scope rollback removes their relationships before discarded IDs can escape;
+the record table rewinds with its syntax lists. The limited recursive substitution
+walk is separate from grammar nesting and never exceeds the frozen nine levels.
+
+Unqualified lookup in a primary template does not substitute its parameter base.
+Ordinary members and other bases precede this fallback; parameter positions and
+pack argument order control its tie breaks. Source lists continue to control all
+dump bytes. Literal values remain the PA2 typed numeric facts; no evaluation,
+target arithmetic, optimizer, allocator or backend policy was changed. Production
+execution remains entirely in Rust; oracle executions in the receipts only
+compare independent outputs. No unsafe code, dependency, environment read,
+fixture tailoring, blanket allowance or mechanical source split was introduced.
+
+Two added invariants verify committed-inner/abandoned-outer rollback of heads,
+bindings, argument records and scopes; source-position detach/reattach of base
+facts; unqualified lookup isolation; alias sharing; matching pack metadata; and
+the exact 255-record capacity. Debug and release pass **81 library plus eight
+tool tests** each. Four required regressions and only their new expectation
+sidecars live in the executed `tests/general/300-parameter-base-*.t` lane.
+No existing fixture/reference, manifest, protected checker/policy, oracle source
+or Ralph state was modified.
+
+### Validation and resources
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-full-audit/`.
+`audit-metadata.json`, `start-results.json`, `pa1-results.json` through
+`pa5-results.json`, `progress.json`, exact passing/failing ID lists, archived
+`cases/` and `course/pa1/` through `course/pa5/` retain review identities,
+manifest/tool hashes and raw traces. The fixed manifest SHA-256 remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+The same 193 entry passes are retained, with zero losses; fixed failing IDs: none.
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make test-pa5` | PASS, 193/193; `stage.log` |
+| required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS, 193/193, exit 0; `required-stage.log`, `pa5-results.json` |
+| `make course-pa5` | PASS, 218/218, zero failed comparisons/no failure marker; `course.log`, archived `course/pa5/test/course-result.json` |
+| protected `clone_check.py prior pa5` | PASS; fixed PA1–PA4 58/58, 26/26, 20/20, 106/106; full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived stage/course receipts |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, debug/release tests, source audit; `quality.log` |
+| `make audit-rust` | PASS, 82 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, preservation 193/193; `preflight.log`, `preserve.log`, independent `progress.json` |
+
+`validate.py` / `checks.json` retain exact command/status/elapsed observations.
+`probe.py` / `parameters-final.json` retain **334/334** full status/stdout/stderr/
+AST comparisons, including scalar/pack positions, argument restrictions,
+ordinary-base priority, aliases, nested substitution, depth boundaries, forward
+completion, lambdas and rejecting clauses. Entry probes independently exposed
+eleven mismatches among the first 62 cases. The broader sweep exposed 36
+additional base-typename failures before that correction. `new-regressions.json`
+retains full bytes for all four new cases. Copied prior probe scripts retain
+**147/147 attributes, 114/114 earlier audit, 135/135 lambdas and 76/76 templates**
+comparisons in `prior-probes/`. Added passing programs do not count toward fixed
+manifest progress or prove ownership of the pending groups below.
+
+`measure.py` / `resource-metadata.json` / `measurements.json` retain frozen tool,
+source/output hashes, rustc 1.98.0, Linux, UTC/C locale and warm whole-invocation
+conditions. Oracle A/A calibration plus A/B/B/A blocks match full bytes on all
+54 invocations. Resource costs include reading, preprocessing, clock query and
+dump I/O on a shared host; no cold-cache, hardware-counter or PA35 gate is claimed.
+
+| Workload | Units | Rust mean ms | Rust max RSS KiB | C++ mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| parameter-base-functions | 1000 | 57.32 | 8044 | 20.77 | 7216 |
+| parameter-base-functions | 4000 | 128.93 | 11380 | 64.60 | 13552 |
+| parameter-base-functions | 16000 | 417.23 | 33920 | 210.59 | 41012 |
+| pack-base-functions | 1000 | 40.83 | 8020 | 18.50 | 7160 |
+| pack-base-functions | 4000 | 124.22 | 12044 | 55.96 | 13564 |
+| pack-base-functions | 16000 | 397.96 | 38136 | 216.76 | 39604 |
+| alias-base-functions | 1000 | 34.10 | 8012 | 14.30 | 6524 |
+| alias-base-functions | 4000 | 74.88 | 10676 | 38.55 | 10744 |
+| alias-base-functions | 16000 | 246.85 | 32504 | 121.80 | 27636 |
+
+Fourfold 4000 -> 16000 growth takes about 3.2–3.3 times Rust wall time in these
+observations; storage grows with retained syntax. Alias inputs exercise record
+saturation too. Checkout/scratch use about 7.6 GiB of the shared 100 GiB budget.
+
+### Remaining acceptance evidence and next boundary
+
+The green fixed/course checks do not certify full stage ownership. Fresh raw
+counterexamples in `pending-probe.py`, `pending-probes.json` and `pending-probes/`
+prove remaining due parser gaps with exact IDs:
+
+- `specialization-namespace-type`: primary value versus specialization type;
+  oracle accepts namespace `P<int>::word *p;`, Rust rejects (0 versus 1).
+- `dependent-conflicting-category`: dependent `P<T>::word *p;` is an expression
+  under conflicting member categories; both accept but Rust dumps a declaration.
+- `deep-parenthesized-expression`: 300 parentheses; oracle accepts and Rust
+  reports the unported nesting boundary (0 versus 86).
+- `capacity-probes/14` and `capacity-probes/15`: 255/256 repeated nested
+  `sizeof(P<P<C>>(1))` operands followed by an inherited alias member statement;
+  both accept, but alias record saturation changes Rust's final declaration to
+  multiplication. The independent 20-case `capacity-probes/parameters.json`
+  sweep passes 18/20. Trait alternatives currently parse names again where C++
+  shares a name outside its tentative type reading, changing record consumption.
+  `parser_expressions.cpp::parse_sizeof_operand/parse_type_trait` and the current
+  `expressions.rs` owner need that parse-once correction. Preserving abandoned
+  record slots alone was probed and rejected because it increased mismatches;
+  safe transactional record rollback is retained until the grammar owner is
+  translated. This is an open parity finding, not a claimed exact capacity audit.
+
+The next coherent dependency is `name_scopes.cpp` category aggregation and
+`parser_names.cpp` dependent/approximate prefix facts, followed by
+`name_conflicts.h` / `parser_statements.cpp::read_statement` retained alternate
+readings and shared body ownership. C++ `AmbiguousStmt` retains several typed
+readings even where PA5 prints only the first; the Rust statement model still
+cannot represent that fact. Remaining source/specifier/parameter/initializer
+metadata and the safe replacement for the frozen byte-stack budget need review
+and implementation before full acceptance. Class search memo scaling is also
+unfinished. Hosted-only syntax/prelude/statistics and later driver modes retain
+their future owning-stage boundaries; no future semantic or backend stage is
+pulled into PA5 to make the current receipts green. The full-stage goal remains
+active and neither the assignment nor Ralph phase is marked complete.
+
 ## Lambda syntax and commit-time body demand checkpoint — 2026-10-12
 
 Entry commit: `39528505e3b0f5955e215ecdbb5b35030e1479e4` (clean).

@@ -131,6 +131,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Namespace,
                     scope: binding.and_then(|binding| binding.scope),
@@ -168,6 +169,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Namespace,
                     scope: Some(scope),
@@ -228,16 +230,22 @@ impl Parser<'_> {
                 type_node.specifiers = self.tree.specs.finish(start)?;
                 self.tree.types.replace(ty, type_node);
             }
-            let type_node = self.tree.types.get(ty);
+            let type_node = *self.tree.types.get(ty);
             let scope = if type_node.declarator.is_none() {
                 self.specifier_scope(type_node.specifiers)
             } else {
                 None
             };
+            let specialization = if is_template {
+                0
+            } else {
+                type_node.specialization
+            };
             self.scopes.declare_in(
                 self.scopes.declaration_scope(),
                 name,
                 Binding {
+                    specialization,
                     parameter: false,
                     category: if is_template {
                         Category::TypeTemplate
@@ -273,6 +281,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 name,
                 Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Type,
                     scope: None,
@@ -389,7 +398,12 @@ impl Parser<'_> {
                         let (name, binding) = parser.type_name()?;
                         let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
                         if !parser.is_type_name(name, binding, definite, followed) {
-                            return parser.fail();
+                            // A category mismatch abandons this reading without
+                            // recording a grammar failure in the frozen parser.
+                            return Err(ParseError::Syntax {
+                                location: parser.location()?,
+                                message: "syntax error",
+                            });
                         }
                         Ok(name)
                     })?;
@@ -429,7 +443,13 @@ impl Parser<'_> {
         let specifiers = self.specifier_sequence(definite, true)?;
         let declarator = self.declarator(mode)?;
         let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
+        let specialization = if declarator.is_none() {
+            self.typedef_record(specifiers)
+        } else {
+            0
+        };
         self.tree.types.add(TypeSyntax {
+            specialization,
             location,
             specifiers,
             declarator,
@@ -481,6 +501,7 @@ impl Parser<'_> {
             let location = self.location()?;
             let specifiers = self.specifier_sequence(true, true)?;
             Some(self.tree.types.add(TypeSyntax {
+                specialization: 0,
                 location,
                 specifiers,
                 declarator: None,
@@ -504,6 +525,7 @@ impl Parser<'_> {
             self.scopes.declare(
                 simple,
                 Binding {
+                    specialization: 0,
                     parameter: false,
                     category: Category::Type,
                     scope,
@@ -527,6 +549,7 @@ impl Parser<'_> {
                         scope,
                         name,
                         Binding {
+                            specialization: 0,
                             parameter: false,
                             category: Category::Value,
                             scope: None,
@@ -537,6 +560,7 @@ impl Parser<'_> {
                     self.scopes.declare(
                         name,
                         Binding {
+                            specialization: 0,
                             parameter: false,
                             category: Category::Value,
                             scope: None,
@@ -606,7 +630,12 @@ impl Parser<'_> {
         let start = self.tree.init_declarators.begin();
         loop {
             let declarator = self.declarator(super::declarators::Mode::Named)?;
-            self.declare_declarator(declarator, typedef, self.specifier_scope(specifiers));
+            self.declare_declarator(
+                declarator,
+                typedef,
+                self.specifier_scope(specifiers),
+                specifiers,
+            );
             if self.is_function(declarator)
                 && (self.at(P::LeftBrace)? || self.keyword()? == Some(K::Try))
             {

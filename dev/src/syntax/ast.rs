@@ -208,6 +208,7 @@ pub(super) enum Specifier {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TypeSyntax {
+    pub specialization: u8,
     #[expect(
         dead_code,
         reason = "Source location retained for later semantic diagnostics on this typed syntax node"
