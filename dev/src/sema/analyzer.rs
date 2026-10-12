@@ -15,13 +15,16 @@ use crate::{
 };
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
     pub(super) tree: &'tree Tree,
     pub(super) graph: Graph,
     pub(super) stack_budget: StackBudget,
     pub(super) stack_base: usize,
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredBody>,
+    pub(super) anonymous_enums: u32,
     pub(super) class_depth: usize,
+    pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) suppress_implicit: bool,
 }
@@ -37,7 +40,7 @@ pub(super) struct DeferredBody {
 impl<'tree> Analyzer<'tree> {
     pub(crate) fn new(
         tree: &'tree Tree,
-        cursor: &mut Cursor<'_>,
+        cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
     ) -> Result<Self, Error> {
         let name = cursor
@@ -58,13 +61,16 @@ impl<'tree> Analyzer<'tree> {
             },
         )?;
         Ok(Self {
+            literal_bytes: &cursor.spellings,
             tree,
             graph,
             stack_budget,
             stack_base: 0,
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
+            anonymous_enums: 0,
             class_depth: 0,
+            constant_spine: Vec::new(),
             expression_work: Vec::new(),
             suppress_implicit: false,
         })
@@ -124,6 +130,22 @@ impl<'tree> Analyzer<'tree> {
                 declarators,
             } => {
                 let specs = self.specifiers(specifiers, scope, declarators.is_empty())?;
+                let first_name = self
+                    .tree
+                    .init_declarators
+                    .get(declarators)
+                    .first()
+                    .map(|init| self.declarator_name(Some(init.declarator)))
+                    .transpose()?
+                    .flatten();
+                let naming = if self.graph.scope(scope).kind != ScopeKind::Class
+                    || specs.role == super::specifiers::DeclarationRole::Typedef
+                {
+                    first_name
+                } else {
+                    None
+                };
+                self.name_unnamed_enum(specs.ty, naming, scope)?;
                 for init in self.tree.init_declarators.get(declarators) {
                     self.declare_init(specs, *init, scope, location)?;
                 }
@@ -192,12 +214,39 @@ impl<'tree> Analyzer<'tree> {
                 }
             }
             ast::DeclKind::Linkage { declarations, .. } => self.declarations(declarations, scope),
-            ast::DeclKind::Enum { .. } => Err(Error::Missing(
-                "enumeration declarations and integral constant evaluation",
-            )),
-            ast::DeclKind::StaticAssert { .. } => Err(Error::Missing(
-                "static assertion integral constant evaluation",
-            )),
+            ast::DeclKind::Enum { .. } => {
+                let ty = self.enum_type(id, scope, true)?;
+                self.name_unnamed_enum(ty, None, scope)
+            }
+            ast::DeclKind::StaticAssert { condition, message } => {
+                if message.is_some_and(|literal| {
+                    matches!(
+                        literal.kind,
+                        crate::lex::PostTokenKind::String {
+                            suffix: Some(_),
+                            ..
+                        }
+                    )
+                }) {
+                    return Err(Error::at(
+                        location,
+                        "a static_assert message that is not a string literal",
+                    ));
+                }
+                let value = self
+                    .constant_value(condition, scope, true)?
+                    .ok_or(Error::Invariant("missing assertion value"))?;
+                if self.scoped_enum(value.ty) {
+                    return Err(Error::at(
+                        self.tree.expressions.get(condition).location,
+                        "a scoped enumeration value does not convert to bool",
+                    ));
+                }
+                if value.bits == 0 {
+                    return Err(Error::at(location, "static assertion failed"));
+                }
+                Ok(())
+            }
             ast::DeclKind::Template { .. } | ast::DeclKind::ExplicitInstantiation { .. } => {
                 Err(Error::Missing("template parameter scopes and declarations"))
             }

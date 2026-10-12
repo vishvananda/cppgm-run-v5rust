@@ -194,7 +194,7 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
 }
 #[test]
 fn missing_group_remains_distinct_from_a_language_rejection() {
-    let source = SourceBuffer::new(b"enum E { x };".to_vec()).unwrap();
+    let source = SourceBuffer::new(b"template<class T> struct C {};".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"missing-semantic-group").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();
@@ -265,4 +265,87 @@ fn initialization_completes_arrays_and_definition_checks_reject_incomplete_objec
             .analyze(declarations);
         assert!(matches!(result, Err(Error::Diagnostic { message, .. }) if message == diagnostic));
     }
+}
+
+#[test]
+fn enum_aliases_and_using_bindings_share_finished_constant_identity() {
+    use super::constants::ConstantState;
+    analyze(b"namespace N { enum class E : unsigned char { A=255 }; } using N::E; using N::E::A; const E value = A;", |graph, cursor| {
+        let name = cursor.intern_name(b"E").unwrap();
+        let e = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
+        let enum_scope = graph.entity(e.entity).scope.unwrap();
+        let name = cursor.intern_name(b"A").unwrap();
+        let original = graph.binding(graph.own(enum_scope, name, Filter::Ordinary).unwrap());
+        let imported = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
+        assert_eq!(original.entity, imported.entity);
+        let ConstantState::Value(value) = graph.entity(imported.entity).constant else { panic!("missing enumerator value"); };
+        assert_eq!(value.bits, 255);
+        assert_eq!(Some(value.ty), e.ty);
+        let name = cursor.intern_name(b"value").unwrap();
+        let object = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
+        let ConstantState::Value(object) = graph.entity(object.entity).constant else { panic!("missing object value"); };
+        assert_eq!(object.ty, value.ty);
+        assert_eq!(object.bits, value.bits);
+        assert!(graph.constant_facts.iter().flatten().any(|fact| fact.ty == value.ty));
+    });
+}
+
+#[test]
+fn prototype_queries_keep_source_arrays_and_parameter_object_cv() {
+    analyze(b"int f(int values[4], int (&bytes)[sizeof(values)], const int value, decltype(value) copy);", |graph, cursor| {
+        let name = cursor.intern_name(b"f").unwrap();
+        let function = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
+        let TypeKind::Function { parameters, .. } = &graph.types.get(function.ty.unwrap()).kind else { panic!("missing function type"); };
+        assert!(matches!(graph.types.get(parameters[0]).kind, TypeKind::Array { bound: 4, .. }));
+        let TypeKind::Reference { element, .. } = graph.types.get(parameters[1]).kind else { panic!("missing reference parameter"); };
+        assert!(matches!(graph.types.get(element).kind, TypeKind::Array { bound: 8, .. }));
+        assert_eq!(graph.types.get(parameters[2]).cv, Cv::CONST);
+        assert_eq!(parameters[2], parameters[3]);
+    });
+}
+
+#[test]
+fn target_integral_operations_distinguish_wrap_from_undefined_results() {
+    use super::integral::IntegralKind;
+    use crate::lex::pp_lexer::Punctuator as P;
+    for bits in [8, 16, 32, 64] {
+        let unsigned = IntegralKind {
+            bits,
+            signed: false,
+        };
+        let signed = IntegralKind { bits, signed: true };
+        let mask = u64::MAX >> (64 - bits);
+        assert_eq!(unsigned.operation(P::Add, mask, 1), Some((0, true)));
+        assert_eq!(
+            signed.operation(P::Add, mask >> 1, 1),
+            Some((signed.minimum().cast_unsigned(), false))
+        );
+        assert_eq!(
+            signed.operation(P::Divide, signed.minimum().cast_unsigned(), u64::MAX),
+            Some((0, false))
+        );
+        assert_eq!(
+            signed.shift(P::ShiftLeft, 1, u64::from(bits - 1), signed),
+            (signed.minimum().cast_unsigned(), true)
+        );
+        assert_eq!(
+            signed.shift(P::ShiftLeft, 1, u64::from(bits), signed),
+            (0, false)
+        );
+        assert!(!unsigned.represents(u64::MAX, signed));
+    }
+}
+
+#[test]
+fn decoded_string_elements_keep_character_width_and_signedness() {
+    use super::constants::ConstantState;
+    analyze(b"const int narrow = \"\\xff\"[0]; const int wide = u\"\\xff\"[0]; const int zero = \"ab\"[2];", |graph, cursor| {
+        for (name, bits) in [(b"narrow".as_slice(), u64::MAX), (b"wide", 255), (b"zero", 0)] {
+            let name = cursor.intern_name(name).unwrap();
+            let object = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
+            let ConstantState::Value(value) = graph.entity(object.entity).constant else { panic!("missing character value"); };
+            assert_eq!(value.bits, bits);
+            assert!(matches!(graph.types.get(value.ty).kind, TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))));
+        }
+    });
 }

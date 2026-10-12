@@ -210,13 +210,6 @@ pub(crate) struct Literal {
     pub kind: PostTokenKind,
     pub spelling: Text,
     pub token_form: bool,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Phase-7 decoded bytes retained for semantic literal analysis"
-        )
-    )]
     pub data: Text,
     #[expect(
         dead_code,
@@ -370,13 +363,6 @@ pub(crate) struct InitDeclarator {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Enumerator {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The enumerator location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub name: NameId,
     pub value: Option<ExprId>,

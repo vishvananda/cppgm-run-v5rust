@@ -179,7 +179,7 @@ impl Analyzer<'_> {
                 "a using-declaration cannot name a template-id",
             ));
         }
-        let binding =
+        let target_id =
             self.lookup(target, scope, Filter::Ordinary)
                 .map_err(|error| match error {
                     Error::Diagnostic {
@@ -188,7 +188,7 @@ impl Analyzer<'_> {
                     } => Error::at(location, "undeclared name in a using-declaration"),
                     other => other,
                 })?;
-        let binding = self.graph.binding(binding);
+        let binding = self.graph.binding(target_id);
         if matches!(
             binding.kind,
             BindingKind::Namespace | BindingKind::NamespaceAlias
@@ -208,7 +208,11 @@ impl Analyzer<'_> {
                 "using-declaration conflicts with an earlier declaration",
             ));
         }
-        self.graph.add_binding(scope, Some(scope), binding)?;
+        let declaration = self.graph.enum_declaration(target_id);
+        let id = self.graph.add_binding(scope, Some(scope), binding)?;
+        if let Some(declaration) = declaration {
+            self.graph.record_enum_declaration(id, declaration);
+        }
         Ok(())
     }
     pub(super) fn declare_alias(
@@ -376,6 +380,13 @@ impl Analyzer<'_> {
         }
         if !function && let Some(initializer) = init.initializer {
             self.initializer_names(initializer, home, ty)?;
+            if !member {
+                self.record_constant_initializer(
+                    self.graph.binding(binding).entity,
+                    initializer,
+                    home,
+                )?;
+            }
         }
         Ok(())
     }
@@ -474,13 +485,21 @@ impl Analyzer<'_> {
                 BindingKind::Namespace | BindingKind::NamespaceAlias | BindingKind::Alias
             ) || (matches!(
                 binding.kind,
-                BindingKind::Variable | BindingKind::Function | BindingKind::Parameter
+                BindingKind::Variable
+                    | BindingKind::Function
+                    | BindingKind::Parameter
+                    | BindingKind::Enumerator
             ) && binding.kind != kind)
             {
                 return Err(Error::at(
                     location,
                     if kind == BindingKind::Function {
                         "function conflicts with an earlier declaration"
+                    } else if matches!(
+                        binding.kind,
+                        BindingKind::Function | BindingKind::Parameter | BindingKind::Enumerator
+                    ) {
+                        "redeclaration of a name in the same scope"
                     } else {
                         "variable name conflicts with an earlier declaration"
                     },
@@ -542,7 +561,7 @@ impl Analyzer<'_> {
         lone: bool,
     ) -> Result<TypeId, Error> {
         if key == Keyword::Enum {
-            return Err(Error::Missing("elaborated enumeration types"));
+            return self.elaborated_enum(name, scope);
         }
         let node = *self.tree.names.get(name);
         let prefix = self.prefix(name, scope)?;
@@ -580,6 +599,16 @@ impl Analyzer<'_> {
                     node.location,
                     if binding.kind == BindingKind::Alias {
                         "elaborated type specifier names a typedef"
+                    } else {
+                        "elaborated type specifier names a different kind of type"
+                    },
+                ));
+            }
+            if self.graph.entity(binding.entity).enumeration.is_some() {
+                return Err(Error::at(
+                    node.location,
+                    if lone {
+                        "class name redeclared as a different kind of type"
                     } else {
                         "elaborated type specifier names a different kind of type"
                     },
@@ -650,6 +679,16 @@ impl Analyzer<'_> {
                 return Err(Error::at(
                     qualified_name.location,
                     "type name conflicts with an earlier declaration",
+                ));
+            }
+            if self.graph.entity(binding.entity).enumeration.is_some() {
+                return Err(Error::at(
+                    qualified_name.location,
+                    if prefix.is_some() {
+                        "qualified class definition does not match a declaration"
+                    } else {
+                        "class name redeclared as a different kind of type"
+                    },
                 ));
             }
             binding.entity

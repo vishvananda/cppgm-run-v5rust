@@ -45,6 +45,7 @@ pub(super) enum RefKind {
 pub(super) enum TypeKind {
     Scalar(Scalar),
     Class(EntityId),
+    Enum(EntityId),
     Pointer(TypeId),
     Reference {
         element: TypeId,
@@ -132,6 +133,13 @@ impl Types {
     pub(super) fn pointer(&mut self, element: TypeId) -> Result<TypeId, Error> {
         self.intern(TypeKind::Pointer(element), Cv::default())
     }
+    pub(super) fn parameter_object(&mut self, id: TypeId) -> Result<TypeId, Error> {
+        match self.get(id).kind {
+            TypeKind::Array { element, .. } => self.pointer(element),
+            TypeKind::Function { .. } => self.pointer(id),
+            _ => Ok(id),
+        }
+    }
     pub(super) fn parameter(&mut self, id: TypeId) -> Result<TypeId, Error> {
         match self.get(id).kind {
             TypeKind::Array { element, .. } => self.pointer(element),
@@ -166,7 +174,7 @@ impl Types {
                         work.push((result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
-                    TypeKind::Scalar(_) | TypeKind::Class(_) => (),
+                    TypeKind::Scalar(_) | TypeKind::Class(_) | TypeKind::Enum(_) => (),
                 }
                 continue;
             }

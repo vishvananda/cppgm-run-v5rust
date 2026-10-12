@@ -12,6 +12,7 @@ use std::io::{self, Write};
 impl Graph {
     pub(crate) fn print(
         &self,
+        tree: &crate::syntax::ast::Tree,
         cursor: &Cursor<'_>,
         output: &mut (impl Write + ?Sized),
     ) -> io::Result<()> {
@@ -22,12 +23,16 @@ impl Graph {
             indent(output, depth)?;
             let kind = match scope.kind {
                 ScopeKind::Namespace => "namespace",
+                ScopeKind::Enum => "enum",
                 ScopeKind::Class => "class",
                 ScopeKind::Function => "function",
                 ScopeKind::Block => "block",
             };
             write!(output, "scope {kind}")?;
-            if let Some(name) = scope.name {
+            if let Some(name) = scope.written_name {
+                output.write_all(b" ")?;
+                write_syntax_name(tree, cursor, name, output)?;
+            } else if let Some(name) = scope.name {
                 output.write_all(b" ")?;
                 write_name(cursor, name, output)?;
             } else if scope.kind == ScopeKind::Namespace {
@@ -39,25 +44,54 @@ impl Graph {
             }
             writeln!(output)?;
             for &binding in &scope.bindings {
-                let binding = self.binding(binding);
+                let id = binding;
+                let binding = self.binding(id);
+                if binding.kind == BindingKind::Type
+                    && self.entity(binding.entity).enumeration.is_some()
+                    && self.entity(binding.entity).name.is_none()
+                {
+                    continue;
+                }
                 let label = match binding.kind {
                     BindingKind::Type => "type",
                     BindingKind::Alias => "type-alias",
                     BindingKind::Variable => "variable",
                     BindingKind::Function => "function",
+                    BindingKind::Enumerator => "enumerator",
                     BindingKind::Parameter => "parameter",
                     BindingKind::Namespace | BindingKind::NamespaceAlias => continue,
                 };
                 indent(output, depth + 1)?;
                 write!(output, "{label} ")?;
-                if let Some(name) = binding.name {
+                if let Some(&name) = self.binding_labels.get(&id) {
+                    write_syntax_name(tree, cursor, name, output)?;
+                } else if let Some(name) = binding.name.or(self.entity(binding.entity).name) {
                     write_name(cursor, name, output)?;
+                } else if let Some(ordinal) = self
+                    .entity(binding.entity)
+                    .enumeration
+                    .and_then(|info| info.anonymous_ordinal)
+                {
+                    write!(output, "__anonymous_enum{ordinal}")?;
                 }
                 output.write_all(b" ")?;
                 if binding.kind == BindingKind::Type {
-                    write!(output, "{} ", class_key(binding.key))?;
-                    if let Some(name) = self.entity(binding.entity).name {
-                        write_name(cursor, name, output)?;
+                    self.write_declared_type(id, tree, cursor, output)?;
+                } else if binding.kind == BindingKind::Enumerator {
+                    let declaration = self
+                        .enum_declaration(id)
+                        .ok_or_else(|| io::Error::other("enumerator without declaration"))?;
+                    self.write_declared_type(declaration, tree, cursor, output)?;
+                    let super::constants::ConstantState::Value(value) =
+                        self.entity(binding.entity).constant
+                    else {
+                        return Err(io::Error::other("enumerator without value"));
+                    };
+                    let signed = self.integral_kind(value.ty).is_some_and(|kind| kind.signed);
+                    if signed {
+                        write!(output, " {}", super::integral::signed(value.bits))?;
+                    } else {
+                        write!(output, " {}", value.bits)?;
                     }
                 } else {
                     let ty = if binding.kind == BindingKind::Variable {
@@ -74,6 +108,42 @@ impl Graph {
                 writeln!(output)?;
             }
             stack.extend(scope.children.iter().rev().map(|&id| (id, depth + 1)));
+        }
+        Ok(())
+    }
+    fn write_declared_type(
+        &self,
+        id: super::graph::BindingId,
+        tree: &crate::syntax::ast::Tree,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+    ) -> io::Result<()> {
+        let binding = self.binding(id);
+        if binding.key == Keyword::Enum {
+            output.write_all(
+                if self
+                    .entity(binding.entity)
+                    .enumeration
+                    .is_some_and(|info| info.scoped)
+                {
+                    b"enum class "
+                } else {
+                    b"enum "
+                },
+            )?;
+        } else {
+            write!(output, "{} ", class_key(binding.key))?;
+        }
+        if let Some(&name) = self.binding_labels.get(&id) {
+            write_syntax_name(tree, cursor, name, output)?;
+        } else if let Some(name) = self.entity(binding.entity).name {
+            write_name(cursor, name, output)?;
+        } else if let Some(ordinal) = self
+            .entity(binding.entity)
+            .enumeration
+            .and_then(|info| info.anonymous_ordinal)
+        {
+            write!(output, "__anonymous_enum{ordinal}")?;
         }
         Ok(())
     }
@@ -109,6 +179,21 @@ impl Graph {
                     write!(output, "{} ", class_key(entity.key))?;
                     if let Some(name) = entity.name {
                         write_name(cursor, name, output)?;
+                    }
+                }
+                TypeKind::Enum(entity) => {
+                    let entity = self.entity(*entity);
+                    output.write_all(if entity.enumeration.is_some_and(|info| info.scoped) {
+                        b"enum class "
+                    } else {
+                        b"enum "
+                    })?;
+                    if let Some(name) = entity.name {
+                        write_name(cursor, name, output)?;
+                    } else if let Some(ordinal) =
+                        entity.enumeration.and_then(|info| info.anonymous_ordinal)
+                    {
+                        write!(output, "__anonymous_enum{ordinal}")?;
                     }
                 }
                 TypeKind::Pointer(element) => {
@@ -187,6 +272,28 @@ fn write_name(
 fn indent(output: &mut (impl Write + ?Sized), depth: usize) -> io::Result<()> {
     for _ in 0..depth {
         output.write_all(b"  ")?;
+    }
+    Ok(())
+}
+
+fn write_syntax_name(
+    tree: &crate::syntax::ast::Tree,
+    cursor: &Cursor<'_>,
+    name: crate::syntax::ast::Name,
+    output: &mut (impl Write + ?Sized),
+) -> io::Result<()> {
+    let name = tree.names.get(name);
+    if name.global {
+        output.write_all(b"::")?;
+    }
+    for (index, component) in tree.name_lists.get(name.components).iter().enumerate() {
+        if index != 0 {
+            output.write_all(b"::")?;
+        }
+        let crate::syntax::ast::NameKind::Identifier(id) = component.kind else {
+            return Err(io::Error::other("unsupported enum display name"));
+        };
+        write_name(cursor, id, output)?;
     }
     Ok(())
 }

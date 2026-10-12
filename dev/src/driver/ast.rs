@@ -64,7 +64,8 @@ pub fn emit_unit(
         let analysis = crate::sema::Analyzer::new(tree, cursor, stack_budget)
             .and_then(|analyzer| analyzer.analyze(declarations));
         Some(analysis.map_err(|error| match error {
-            crate::sema::Error::Diagnostic { location, message } => {
+            crate::sema::Error::Diagnostic { location, message }
+            | crate::sema::Error::NonConstant { location, message } => {
                 match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
                     Err(error) => AstToolError::Initialization(error),
@@ -81,10 +82,12 @@ pub fn emit_unit(
     };
     writeln!(output, "start translation unit {ordinal}").map_err(AstToolError::Output)?;
     if let Some(graph) = graph {
-        let (_, cursor, _) = unit
+        let (tree, cursor, _) = unit
             .semantic_inputs()
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
-        graph.print(cursor, output).map_err(AstToolError::Output)?;
+        graph
+            .print(tree, cursor, output)
+            .map_err(AstToolError::Output)?;
     } else {
         unit.print(output).map_err(AstToolError::Output)?;
     }

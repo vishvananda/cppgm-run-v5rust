@@ -6,8 +6,8 @@ use super::{
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{
-    lex::{PostTokenKind, identifiers::NameId, pp_lexer::Punctuator, vocabulary::Keyword},
-    syntax::ast::{self, ExprKind, SpecifierKind},
+    lex::{identifiers::NameId, pp_lexer::Punctuator, vocabulary::Keyword},
+    syntax::ast::{self, SpecifierKind},
 };
 pub(super) struct DeclaratorInfo {
     pub ty: TypeId,
@@ -148,7 +148,7 @@ impl Analyzer<'_> {
                             return Err(Error::at(node.location, message));
                         }
                         let bound = bound
-                            .map(|bound| self.literal_bound(bound))
+                            .map(|bound| self.array_bound(bound, after))
                             .transpose()?
                             .unwrap_or(0);
                         ty = self
@@ -194,11 +194,28 @@ impl Analyzer<'_> {
                 "function returning an array or function",
             ));
         }
+        // Earlier parameter objects are needed only when a later parameter's
+        // type may name a value. Ordinary prototypes allocate no semantic scope.
+        let mut prototype = None;
         let mut types = Vec::new();
-        for parameter in self.tree.parameters.get(clause.parameters) {
-            let specs = self.specifiers(parameter.specifiers, scope, false)?;
-            let info = self.declarator(parameter.declarator, specs.ty, scope)?;
+        let parameters = self.tree.parameters.get(clause.parameters);
+        for (index, parameter) in parameters.iter().enumerate() {
+            if prototype.is_none() && index != 0 && self.parameter_uses_values(*parameter) {
+                let created =
+                    self.graph
+                        .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
+                for (previous, &ty) in parameters[..index].iter().zip(&types) {
+                    self.declare_parameter_object(*previous, ty, created)?;
+                }
+                prototype = Some(created);
+            }
+            let lookup = prototype.unwrap_or(scope);
+            let specs = self.specifiers(parameter.specifiers, lookup, false)?;
+            let info = self.declarator(parameter.declarator, specs.ty, lookup)?;
             types.push(info.ty);
+            if let Some(prototype) = prototype {
+                self.declare_parameter_object(*parameter, info.ty, prototype)?;
+            }
         }
         if types.len() == 1
             && !clause.ellipsis
@@ -256,58 +273,62 @@ impl Analyzer<'_> {
         )?;
         Ok(ty)
     }
+    fn parameter_uses_values(&self, parameter: ast::Parameter) -> bool {
+        let mut declarator = parameter.declarator;
+        while let Some(id) = declarator {
+            let node = self.tree.declarators.get(id);
+            if self.tree.suffixes.get(node.suffixes).iter().any(|suffix| {
+                matches!(suffix, ast::Suffix::Array(Some(bound)) if !matches!(self.tree.expressions.get(*bound).kind, ast::ExprKind::Literal(_)))
+            }) { return true; }
+            declarator = node.nested;
+        }
+        self.tree
+            .specs
+            .get(parameter.specifiers)
+            .iter()
+            .any(|specifier| match specifier.kind {
+                SpecifierKind::Decltype(_) => true,
+                SpecifierKind::Named(name) => self
+                    .tree
+                    .name_lists
+                    .get(self.tree.names.get(name).components)
+                    .iter()
+                    .any(|component| {
+                        component.arguments.is_some()
+                            || matches!(component.kind, ast::NameKind::Decltype(_))
+                    }),
+                _ => false,
+            })
+    }
+    fn declare_parameter_object(
+        &mut self,
+        parameter: ast::Parameter,
+        ty: TypeId,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        if let Some(name) = self.declarator_name(parameter.declarator)? {
+            let adjusted = self.graph.types.parameter_object(ty)?;
+            let entity = self
+                .graph
+                .add_entity(Some(adjusted), Some(name), Keyword::Int)?;
+            self.graph.add_binding(
+                scope,
+                None,
+                super::graph::Binding {
+                    kind: super::graph::BindingKind::Parameter,
+                    name: Some(name),
+                    entity,
+                    ty: Some(adjusted),
+                    key: Keyword::Int,
+                },
+            )?;
+        }
+        Ok(())
+    }
     pub(super) fn cv(keys: &[Keyword]) -> Cv {
         Cv(keys.iter().fold(0, |bits, key| {
             bits | if *key == Keyword::Const { 1 } else { 2 }
         }))
-    }
-    fn literal_bound(&self, id: ast::ExprId) -> Result<u64, Error> {
-        let expr = self.tree.expressions.get(id);
-        let ExprKind::Literal(literal) = expr.kind else {
-            return Err(Error::Missing("array-bound integral constant evaluation"));
-        };
-        let (PostTokenKind::Literal { ty, data, .. }
-        | PostTokenKind::Character {
-            ty,
-            data,
-            suffix_begin: None,
-            ..
-        }) = literal.kind
-        else {
-            return Err(Error::Missing("array-bound integral constant evaluation"));
-        };
-
-        if matches!(
-            ty,
-            crate::types::FundamentalType::Float
-                | crate::types::FundamentalType::Double
-                | crate::types::FundamentalType::LongDouble
-        ) {
-            return Err(Error::at(
-                expr.location,
-                "floating-point constant evaluation is not supported here",
-            ));
-        }
-        let mut bytes = [0u8; 8];
-        let data = data.as_slice();
-        let count = data.len().min(8);
-        bytes[..count].copy_from_slice(&data[..count]);
-        let bound = u64::from_le_bytes(bytes);
-        let signed = matches!(
-            ty,
-            crate::types::FundamentalType::Char
-                | crate::types::FundamentalType::WcharT
-                | crate::types::FundamentalType::Int
-                | crate::types::FundamentalType::LongInt
-                | crate::types::FundamentalType::LongLongInt
-        );
-        if signed && count != 0 && data[count - 1] & 0x80 != 0 {
-            return Err(Error::at(expr.location, "negative array bound"));
-        }
-        if bound == 0 {
-            return Err(Error::at(expr.location, "array bound is zero"));
-        }
-        Ok(bound)
     }
     pub(super) fn specifier_type(
         &mut self,
@@ -331,10 +352,8 @@ impl Analyzer<'_> {
             }
             SpecifierKind::Class(id) => self.class_type(id, scope),
             SpecifierKind::Elaborated { key, name } => self.elaborated_type(key, name, scope, lone),
-            SpecifierKind::Enum(_) => Err(Error::Missing(
-                "enumeration declarations and integral constant evaluation",
-            )),
-            SpecifierKind::Decltype(_) => Err(Error::Missing("decltype semantic facts")),
+            SpecifierKind::Enum(id) => self.enum_type(id, scope, lone),
+            SpecifierKind::Decltype(expr) => self.decltype_type(expr, scope),
             SpecifierKind::Vector { .. } => Err(Error::Missing("vector types")),
             SpecifierKind::Keyword(_) => {
                 Err(Error::Invariant("keyword reached named-type dispatcher"))

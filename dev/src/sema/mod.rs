@@ -1,17 +1,25 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
 mod analyzer;
+mod constants;
 mod declarations;
 mod declarators;
 mod dump;
+mod enumerations;
 mod expressions;
 mod graph;
+mod integral;
 mod lookup;
+mod queries;
 mod specifiers;
 mod types;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]
 pub(crate) enum Error {
     Diagnostic {
+        location: SourceOffset,
+        message: &'static str,
+    },
+    NonConstant {
         location: SourceOffset,
         message: &'static str,
     },

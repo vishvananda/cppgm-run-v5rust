@@ -15,6 +15,7 @@ pub(super) struct BindingId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ScopeKind {
     Namespace,
+    Enum,
     Class,
     Function,
     Block,
@@ -28,6 +29,7 @@ pub(super) enum BindingKind {
     Variable,
     Function,
     Parameter,
+    Enumerator,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Entry {
@@ -45,6 +47,7 @@ pub(super) struct Scope {
     pub directives: Vec<ScopeId>,
     pub inline_members: Vec<ScopeId>,
     pub is_inline: bool,
+    pub written_name: Option<crate::syntax::ast::Name>,
 }
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
@@ -53,6 +56,8 @@ pub(super) struct Entity {
     pub key: Keyword,
     pub defined: bool,
     pub complete: bool,
+    pub enumeration: Option<super::enumerations::EnumInfo>,
+    pub constant: super::constants::ConstantState,
     pub implicit_default: Option<ScopeId>,
 }
 #[derive(Clone, Copy)]
@@ -73,9 +78,23 @@ pub(crate) struct Graph {
     pub(super) declarator_types: Vec<Option<TypeId>>,
     pub(super) declared_bindings: Vec<Option<BindingId>>,
     pub(super) type_facts: Vec<Option<TypeId>>,
+    enum_declarations: Vec<Option<BindingId>>,
+    pub(super) binding_labels: HashMap<BindingId, crate::syntax::ast::Name>,
+    pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
 }
 impl Graph {
+    pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
+        let ty = if let super::types::TypeKind::Enum(entity) = self.types.get(ty).kind {
+            self.entity(entity).enumeration?.underlying?
+        } else {
+            ty
+        };
+        let super::types::TypeKind::Scalar(scalar) = self.types.get(ty).kind else {
+            return None;
+        };
+        super::integral::IntegralKind::of(scalar)
+    }
     pub(super) fn new() -> Self {
         Self {
             types: Types::default(),
@@ -89,6 +108,7 @@ impl Graph {
                 directives: Vec::new(),
                 inline_members: Vec::new(),
                 is_inline: false,
+                written_name: None,
             }],
             entities: Vec::new(),
             bindings: Vec::new(),
@@ -97,6 +117,9 @@ impl Graph {
             declared_bindings: Vec::new(),
             type_facts: Vec::new(),
             resolved_names: Vec::new(),
+            enum_declarations: Vec::new(),
+            binding_labels: HashMap::new(),
+            constant_facts: Vec::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -110,6 +133,12 @@ impl Graph {
     }
     pub(super) fn entity_mut(&mut self, id: EntityId) -> &mut Entity {
         &mut self.entities[id.0 as usize]
+    }
+    pub(super) fn enum_declaration(&self, id: BindingId) -> Option<BindingId> {
+        self.enum_declarations.get(id.0 as usize).copied().flatten()
+    }
+    pub(super) fn record_enum_declaration(&mut self, id: BindingId, declaration: BindingId) {
+        super::record(&mut self.enum_declarations, id.0 as usize, declaration);
     }
     pub(super) fn binding(&self, id: BindingId) -> Binding {
         self.bindings[id.0 as usize]
@@ -134,6 +163,7 @@ impl Graph {
             directives: Vec::new(),
             inline_members: Vec::new(),
             is_inline: false,
+            written_name: None,
         });
         if let Some(print) = print {
             self.scope_mut(print).children.push(id);
@@ -157,6 +187,8 @@ impl Graph {
             key,
             defined: false,
             complete: false,
+            enumeration: None,
+            constant: super::constants::ConstantState::None,
             implicit_default: None,
         });
         Ok(id)

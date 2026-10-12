@@ -175,7 +175,8 @@ impl Analyzer<'_> {
             prefix = entity.scope;
             if prefix.is_none()
                 && let Some(ty) = binding.ty
-                && let TypeKind::Class(entity) = self.graph.types.get(ty).kind
+                && let TypeKind::Class(entity) | TypeKind::Enum(entity) =
+                    self.graph.types.get(ty).kind
             {
                 prefix = self.graph.entity(entity).scope;
             }
