@@ -1,5 +1,117 @@
 # PA5 port ledger
 
+## Full-stage acceptance audit — 2026-10-12
+
+**PA5 full-stage acceptance is complete under the current clone contract.**
+Entry/reviewed commit: `00d3909f1b3c0fa2a86141d3fb6cf146e0f35560`, clean.
+Audited implementation: `7994409fb702c847b0e464d94095d6d740c3bc23`, including
+cache-context fix `c41a49683c1b3900fcdca00a0d438179c610a321`. Stage base remains
+`d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`; frozen C++ remains
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5`. The resulting audit commit and clean
+checkout are recorded in `pa5-acceptance-final/handoff.json`. Ralph retains stage
+advancement and state ownership; this audit completes only its existing goal.
+
+The owner-authorized qualification below supersedes historical requirements to
+match physical C++ stack cutoffs. It was applied through the protected adapter,
+without editing acceptance policy, oracle sources/tools, frozen fixtures or
+compiler code in this final audit. The temporary out-of-line argument experiment
+from the immediately preceding investigation regressed two accepted 3600-level
+cases and was fully reverted; the restored binary is byte-identical to the
+retained implementation. No depth calibration or C++ frame imitation remains.
+
+Completeness is based on the owning README/parsing guide/grammar, repository
+contract/specification/plan, source map and the direct C++/Rust responsibility
+reviews recorded throughout this ledger. The refreshed implementation changes
+only the previously reviewed context and lifetime owners. The final census has
+**257 due functions source-reviewed and accepted**, with **25 later grammar or
+interface entries explicitly classified**. Inline/header/anonymous helpers,
+AST facts, stores, token ownership and the driver are reviewed separately;
+those counts alone are not a completeness argument. `function-census.json`,
+`reviewed-views-responsibilities.json`, `reviewed-state-responsibilities.json`,
+`reviewed-scope-responsibilities.json`, the current source map and
+`acceptance-audit.json` retain the behavior/ownership reasoning.
+
+| Due C++ responsibilities | Rust owners and accepted behavior |
+| --- | --- |
+| `cppgm++.cpp`, `syntax_unit.*`, `parse_token_stream.*` | `bin/cppgm.rs`, `driver/ast.rs`, `syntax/mod.rs`, `cursor.rs`: required flags, source argv order and unit wrappers; one in-process PA1–PA4/phase-7/parser path; located failures, source/literal/name ownership, linked shift halves, bounded pull windows, original-ordinal body capture/replay, synthetic EOF and output failure behavior |
+| `parser_declarations.cpp`, `parser_specifiers.cpp`, `parser_declarators.cpp` | `declarations.rs`, `classes.rs`, `declarators.rs`, `templates.rs`, `attributes.rs`: namespaces/aliases/using/typedef, ordinary/function/static_assert declarations; class/struct/union/enum/scoped-enum members/access/bit-fields/bases/ctor syntax; pointer/reference/member-pointer/array/function declarators, cv/ref/exception/default/trailing syntax and distinct parameter pack versus clause ellipsis |
+| `parser_names.cpp`, `name_scopes.*`, `name_conflicts.h` | `names.rs`, `name_lookup.rs`, `scopes.rs`, `parameter_bases.rs`, `conflicts.rs`, `angles.rs`: declaration-owned name categories take precedence over lexical hints; type/non-type/template-template parameter replacement; dependent logical arguments, operator/literal template IDs, instantiation/specialization syntax; exact lookup/context/heap ordering, complete positive/negative keys and bounded category readings |
+| `parser_expressions.cpp`, `parser_statements.cpp` | `expressions.rs`, `statements.rs`, `lambdas.rs`: all due structured expressions/type-ids/casts/new/delete/traits/lambdas/braces; assignment/conditional/right and binary/left associativity; ordinary/control/range/loop/label/jump/return/throw/try/catch statements; shared named readings, declaration preference, angle scope, source order and demand |
+| `parser.cpp`, `parser_state.*`, `parser_regions.h`, `scratch_list.h` | `parser.rs`, `classes.rs`, `lambdas.rs`, `storage.rs`: exhaustive rollback of typed store/list/context/scope marks, parser-owned reusable LIFO checkpoints, explicit deferred class/lambda demand and terminal failures, committed memo/query release, target uint32 wrap/low32 truncation and checked host sizes |
+| `ast*.h`, `ast_printer.*`, `ast_render.*` | `ast.rs`, `storage.rs`, `printer.rs`, `render.rs`: compact typed facts/IDs, private owned slabs and immutable child ranges; borrowed iterative views, exact node labels/payloads/indentation/child order and written-versus-canonical spellings; first ambiguous reading; no rendered-text transport or semantic keys |
+| `support/stack_budget.h` | `support/stack.rs` and tool-boundary `stack_limit.rs`: genuine half-soft-limit/cap/fallback/distance guard, structured terminal unwind and restored query storage; resource cases pass protected exact successful larger-stack reruns |
+
+Ordinary rejection diagnostics, source offsets, target counters, pack/name
+publication, declaration/expression preference and ordering/ties remain strict.
+The refreshed failure key records position/environment/current ScopeId/selected
+Category/active alternatives/member-call demand. Argument lists establish angle
+mode themselves. Nested speculative failure propagates immediately, restores
+its first abandoned diagnostic mark and leaves only the outermost fallback.
+All owning behavior groups are complete; **no unqualified failing case remains**.
+Earlier fixes and every previously passing case are retained.
+
+Architecture review confirms parse-once ownership, interned names and compact
+typed syntax/scope IDs, shared named readings, bounded transactional retention,
+owned stores with complete marks, explicit deferred-body demand, complete cache
+keys and targeted invalidation. Temporary marks retain lengths/IDs rather than
+copying tokens/trees/environments. No hot output string becomes a lookup fact.
+Sources and syntax remain unit-owned; query contents are released while capacity
+is reused. Backend per-function lifetimes, semantic instantiation, hosted GNU/
+fold/asm/coroutine/selection-init/structured-binding/guide syntax, telemetry CLI
+and whole-implementation ownership are later assignment dependencies, not hidden
+successful PA5 stubs. PA33's release/debug/census obligation is not due at PA5;
+optimizer/backend policies remain unchanged and PA35 targets are excluded.
+
+Final evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa5-acceptance-final/`.
+
+| Command / evidence | Accepted result |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` and `make test-pa5` | PASS fixed 196/196; `stage.log`, `make-stage.log`, `results/pa5.json` |
+| `make course-pa5` | PASS original full course plus retained owning regressions, 296/296; no failed comparison counts or marker; `course.log`, archived course receipt |
+| protected `prior pa5` | PASS PA1–PA4 differential 58/26/20/106 and full course 58/28/20/112; `prior.log`, archived results/course/cases |
+| `make lint` / `clone_quality.py` | PASS rustfmt, strict all-target/all-feature locked Clippy, debug/release 137 library + nine tool tests, authoritative source audit; `quality.log` |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log`, post-ledger audit |
+| protected `preflight pa5`, `preserve pa5` | PASS input/oracle/tool routing integrity and 196/196 required passing identities; respective logs |
+| `make test-harness` | PASS 28 tests, including strict guard classification, output restoration, hard-limit handling and successful exact retry requirements; `harness.log` |
+
+Fresh ordinary source-derived comparisons are **6099/6099** strict complete
+exit/stdout/stderr/full-AST matches: recent 3462, prior 2141, state 158, view 98,
+and context combinations 240. The required deep-input fixtures remain in PA5's
+executed general lane; original fixtures/reference files are unchanged.
+
+`qualify.py` invokes the protected adapter for **111/111** resource probes:
+48 original native forms, 25 extended forms, 36 cases at explicit 512 KiB through
+16 MiB stack limits, and two additional deep non-type arguments (8000 parentheses
+and 12000 unary operands). **78** results match without qualification;
+**33** qualified at a common **16 MiB** rerun. Every qualification has
+`passed=true`, both exits 0, no differences, matching streams/deterministic
+counters and every generated file. Original candidate exit/streams/files remain
+visible to callers. `qualified-probes.json`, `qualification-summary.json` and
+per-case `trace.jsonl` / `stack-qualifications/` retain both original and retry
+bytes. This closes every historical resource case; no exhaustion location was
+normalized into a successful language result. A normal rejection, crash, panic,
+timeout, status 86 or failed qualification would still fail the protected checks.
+
+Resource measurements are separate from equality. After gate/probe handles
+were terminal, 36 serial warm whole invocations (A/A then ABBA, UTC/C) cover
+ordinary/nested category retries at 1000/4000/16000 functions. All results match.
+Rust median ms are **80.607/235.272/835.160** and
+**106.043/286.220/1176.121**; max RSS at 16000 is **80724/95188 KiB**, versus C++
+**66484/78324 KiB**. Fourfold 4000->16000 growth costs about 3.55/4.11 times
+Rust wall time. Input/tool/output hashes, raw time/RSS, platform and invocation
+conditions are retained in `resource-metadata.json`, `measurements.json`,
+`resource-summary.json`, `resources/`; protected qualification timing and raw
+runs remain separate. No speed or generated-code optimization target is inferred.
+Shared checkout/scratch storage stays below 100 GiB (`storage.txt`).
+
+**Next dependency boundary: PA6 scope/binding/canonical type analysis consuming
+this typed syntax directly.** Stage advancement remains Ralph's responsibility.
+The acceptance matrix, immutable input/tool hashes, complete review records,
+commands/artifacts, clean commit and existing-goal completion are recorded in
+`acceptance-audit.json`, `audit-metadata.json` and `handoff.json`.
+
 ## Owner-authorized stack qualification — 2026-10-12
 
 The run owner approved the resource-boundary exception in CLONE_CONTRACT.md.
@@ -17,7 +129,7 @@ C++ rejection column. Finish the remaining stage audit under the current
 contract; this policy update itself does not certify the stage.
 
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
-Last audited commit: `7994409fb702c847b0e464d94095d6d740c3bc23` (partial audit; full acceptance open)
+Last audited commit: `00d3909f1b3c0fa2a86141d3fb6cf146e0f35560` (full PA5 audit accepted; implementation `7994409fb702c847b0e464d94095d6d740c3bc23`)
 
 
 
