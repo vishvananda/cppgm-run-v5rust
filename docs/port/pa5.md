@@ -1,11 +1,133 @@
 # PA5 port ledger
 
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
-Last audited commit: `c41a49683c1b3900fcdca00a0d438179c610a321` (resumed partial audit; full acceptance open)
+Last audited commit: `7994409fb702c847b0e464d94095d6d740c3bc23` (partial audit; full acceptance open)
 
 
 
 
+
+## Native lifetime audit: owned checkpoints and parenthesized operands — 2026-10-12
+
+Entry/reviewed commit: `f7b8f156bc046e8a670d19e9e0058374361f5008` (clean).
+Audited implementation: `7994409fb702c847b0e464d94095d6d740c3bc23`. The stage base and authorized
+frozen C++ `0fe8e3b4bde9929c2419fb7906028df83bb17de5` remain unchanged.
+The preceding goal turn was progress: the cache-context commits restored the
+required exact gate and course checks; this continuation revalidated that state.
+**Full PA5 acceptance remains open on native template rejection parity.** The
+existing goal is left active; Ralph state/goals and acceptance policy were not
+edited. This does not redefine acceptance around the newly passing cases.
+
+Directly reviewed C++ `parser_state.h/cpp` save/restore/commit/close and checkpoint
+ownership, `parser_regions.h` tentative/nesting/deferred-body lifetimes,
+`parser_expressions.cpp` cast/parenthesized/unary/primary productions and
+`support/stack_budget.h`. Compared them with Rust `parser.rs`, `expressions.rs`,
+`TreeMark`, store/list rollback and deferred lambda owners. The error variant is
+already compact; boxing errors would not address the retained checkpoint cost.
+The preceding full handout/contract/spec/plan and unchanged-owner audit remain
+applicable; the refreshed function census records this continuation's owners.
+
+Changes and completeness reasoning:
+
+- `ParserState::Checkpoint/save/restore/commit` -> `parser.rs`: complete
+  tree/scope/context marks now live in reusable private parser-owned LIFO
+  storage. Construction is a short-lived `begin_transaction` frame, explicitly
+  kept out of recursive grammar calls with a justified `inline(never)` attribute.
+  Rollback borrows the current mark; no pointer/reference crosses recursion or
+  vector growth. Nested tentative queries retain their own marks, then release
+  contents in order. Capacity is reused, without an allocation per query or
+  copying the tree/token stream/name environment. Every prior marked fact and
+  target counter rule is preserved.
+- `Tentative::commit/close` and deferred lambda demand -> `transaction`: the
+  mark and retained cursor remain live through committed deferred body parsing,
+  including its nested transactions. Both are released before terminal errors
+  propagate. Tests cover inner commit followed by outer rollback, 1000 sequential
+  queries with stable capacity, terminal budget unwind and empty checkpoint
+  storage. Existing deep rollback/body tests also remain green.
+- `parse_cast_expression/parse_parenthesized_or_cast` -> `expressions.rs`:
+  one logical nesting guard dispatches a dedicated parenthesized/cast owner.
+  Shared named reading and tentative type continuation preserve their demand;
+  ordinary parentheses retain only a location and child ID across recursion.
+  Postfix continuation, angle restoration, child order and syntax facts are
+  unchanged. Direct primary demand from attributes retains its existing owner.
+- Two required regressions now execute in the earliest owning PA5 course lane:
+  `300-deep-parenthesized-template-argument.t` (4800 parentheses), and
+  `300-deep-template-id-arguments.t` (3600 known template names). The prior Rust
+  binary rejects both; frozen C++ and current Rust produce equal complete
+  results. Their template-name dumps keep expected files compact (10087/11268
+  bytes). Only these new expectations were generated from the frozen oracle;
+  existing fixtures/references and the fixed manifest remain unchanged.
+
+Architecture: one owned typed source/syntax pipeline, private typed IDs/stores,
+parse-once shared names and bounded transactional reads remain intact. The new
+stack holds marks only for active queries and no syntax nodes or copied source.
+Temporary mark construction does not stay live across a recursive parse.
+`frame-lifetime-evidence.json` records the template argument-list local frame
+shrinking from 0x418 to 0x138 bytes in the current release binary; those bytes
+are observations, not a logical-depth threshold or runtime resource model.
+No unsafe code, allowance, C++ fallback, fixture recognition, environment read
+in a phase, optimizer/register allocator change or PA35 target was introduced.
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa5-checkpoint-lifetimes/`.
+
+| Validation | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build-experiment.log`, `build-parentheses.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS unchanged 196/196; `stage.log`, `results/pa5.json` |
+| `make course-pa5` | PASS 296/296 (original 294 plus two executed regressions), no failed counts/marker; `course.log`, archived course receipt |
+| protected `prior pa5` | PASS PA1–PA4 differential 58/26/20/106 and course 58/28/20/112; `prior.log`, archived receipts |
+| `make lint` | PASS rustfmt, strict Clippy and debug/release 137 library + nine tool tests; `quality.log` |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `preflight pa5`, `preserve pa5` | PASS integrity/routing and 194/194 required case identities; respective logs |
+
+`checks.json` / `validate-final.log` record command exits/costs; archived
+`results/`, `course/`, `cases/`, `new-regressions.json`, source hashes and census
+retain the current evidence. All **6099/6099** inherited ordinary complete
+status/stdout/stderr/AST comparisons still match, as do both new required cases.
+
+The six-form native sweep improves **46/48 -> 47/48** with every prior exact case
+retained. `cast-native/parentheses/4800` now has C++/Rust exit 0 and equal full
+AST bytes. A wider same-source before/oracle/current sweep of ordinary,
+assignment and conditional parentheses, known and qualified templates at
+3000/3600/4000/4800/6000 improves **9/25 -> 19/25**, with no exact result lost.
+It resolves ten additional supported native cases, including template levels
+3000/3600. `cast-native.json`, `extended-native.json`, invocation files and the
+archived prior binary retain these observations. No panic, signal, timeout or
+status 86 was counted as a match.
+
+**Exact remaining cases** (`remaining-native-cases.json`):
+
+| Case IDs | C++ | Current Rust |
+| --- | --- | --- |
+| `cast-native/known-templates/4800` | exit 1, column 7627 | exit 1, column 8351 |
+| `extended-native/known-templates/4000` | exit 1, column 7627 | exit 0 |
+| `extended-native/known-templates/4800`, `/6000` | exit 1, column 7627 | exit 1, column 8351 |
+| `extended-native/qualified-templates/4000` | exit 1, column 22837 | exit 0 |
+| `extended-native/qualified-templates/4800`, `/6000` | exit 1, column 22837 | exit 1, column 25009 |
+
+These share the unresolved native template byte-budget boundary. The half-limit,
+cap, fallback, strict comparison and terminal diagnostic rule are preserved,
+but reducing Rust's frame cost also moves its rejection past the C++ boundary.
+The wider sweep deliberately retains those acceptance and ordinary diagnostic
+differences. Runtime-statistic exemptions do not cover them. No calibrated
+threshold, limit multiplier, diagnostic normalization or oracle/policy change
+was used. The next dependency is full frozen template rejection parity, followed
+by a requirement-by-requirement full acceptance audit; fixture and valid-input
+gains alone do not certify that boundary.
+
+Resource observations remain separate from equality. After validation/probe
+handles were terminal, `measure.py` ran 36 serial warm whole invocations on
+ordinary/nested category retries at 1000/4000/16000 functions (A/A then ABBA,
+UTC/C). Every exit/stream/full output matches. Current binaries match recorded
+hashes after final gates. Rust median ms are **89.491/240.871/845.575** and
+**98.781/287.971/1098.917**; 16000-function max RSS is **81436/94716 KiB**, versus
+C++ **66440/78324 KiB**. Fourfold growth from 4000->16000 costs about 3.51/3.82
+in Rust time on these inputs. Shared-host observations do not prove a speedup
+against the preceding run. Raw times/RSS, input/tool/output hashes and platform
+are in `measurements.json`, `resource-summary.json`, `resource-metadata.json`
+and `resources/`. Storage remains below the shared 100 GiB ceiling. Final
+implementation/documentation commits and clean checkout are in `handoff.json`.
 
 ## Resumed full-stage audit: complete template-list context — 2026-10-12
 
