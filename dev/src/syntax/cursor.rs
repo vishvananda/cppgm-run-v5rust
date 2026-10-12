@@ -45,6 +45,7 @@ pub(super) struct Cursor<'a> {
     window: Vec<Token>,
     pack_changes: Vec<PackChange>,
     last_pack: u32,
+    null_literal: Option<Literal>,
     runs: Vec<Token>,
     replay: Vec<Replay>,
     pub peak_run_tokens: usize,
@@ -63,6 +64,7 @@ impl<'a> Cursor<'a> {
             window: Vec::new(),
             pack_changes: Vec::new(),
             last_pack: 0,
+            null_literal: None,
             runs: Vec::new(),
             replay: Vec::new(),
             peak_run_tokens: 0,
@@ -111,6 +113,12 @@ impl<'a> Cursor<'a> {
             PostTokenError::Text(_) => ParseError::Limit("text literal implementation limit"),
         })?;
         self.tokens_read += 1;
+        let alias = if matches!(post.kind, PostTokenKind::Identifier) {
+            crate::lex::gnu_keywords::syntax_keyword(post.source)
+        } else {
+            None
+        };
+        let null = matches!(post.kind, PostTokenKind::Identifier) && post.source == b"__null";
         let mut token = Token {
             location: post.begin,
             shift_half: 0,
@@ -135,10 +143,19 @@ impl<'a> Cursor<'a> {
                         | b"not_eq"
                 ),
             }),
-            PostTokenKind::Identifier => TokenKind::Identifier(
-                post.name
-                    .ok_or(ParseError::Invariant("missing parser identifier"))?,
-            ),
+            PostTokenKind::Identifier => {
+                if let Some(crate::lex::gnu_keywords::SyntaxKeyword::Keyword(keyword)) = alias {
+                    TokenKind::Simple(Operator {
+                        token: SimpleToken::keyword(keyword),
+                        alternative: false,
+                    })
+                } else {
+                    TokenKind::Identifier(
+                        post.name
+                            .ok_or(ParseError::Invariant("missing parser identifier"))?,
+                    )
+                }
+            }
             PostTokenKind::Invalid => {
                 return Err(ParseError::Syntax {
                     location: post.begin,
@@ -168,6 +185,37 @@ impl<'a> Cursor<'a> {
                 .ok_or(ParseError::Limit("packing token ordinal limit"))?;
             self.pack_changes.push(PackChange { ordinal, alignment });
             self.last_pack = alignment;
+        }
+        if matches!(
+            alias,
+            Some(crate::lex::gnu_keywords::SyntaxKeyword::Ignored)
+        ) {
+            return Ok(());
+        }
+        if null {
+            // The reserved name denotes a synthetic 0L token in the oracle.
+            // Its immutable spelling and target bytes are owned only once.
+            let literal = if let Some(literal) = self.null_literal {
+                literal
+            } else {
+                let ty = crate::types::FundamentalType::LongInt;
+                let data = crate::lex::floating::ScalarBytes::integer(ty, 0);
+                let literal = Literal {
+                    kind: PostTokenKind::Literal {
+                        form: crate::lex::LiteralForm::Integer,
+                        ty,
+                        data,
+                    },
+                    spelling: self.spellings.add(b"0L")?,
+                    token_form: false,
+                    data: self.spellings.add(data.as_slice())?,
+                    suffix: self.spellings.add(b"")?,
+                };
+                self.null_literal = Some(literal);
+                literal
+            };
+            token.kind = TokenKind::Literal(literal);
+            token.suffix_name = None;
         }
         if matches!(token.kind, TokenKind::Simple(Operator { token: simple, .. }) if simple.as_punctuator() == Some(Punctuator::ShiftRight))
         {

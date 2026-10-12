@@ -39,6 +39,232 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn enum_forward_declarations_preserve_existing_type_member_scope() {
+    let source = SourceBuffer::new(b"enum E {value}; enum E; enum E:int;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"enum-forward-owner").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let name = parser.cursor.intern_name(b"E").unwrap();
+    let binding = parser.scopes.lookup(name).unwrap();
+    assert!(binding.scope.is_some());
+    let environment = parser.scopes.environment();
+    for _ in 0..2 {
+        parser.declaration().unwrap();
+        let current = parser.scopes.lookup(name).unwrap();
+        assert_eq!(current.category, binding.category);
+        assert_eq!(current.scope, binding.scope);
+        assert_eq!(parser.scopes.environment(), environment);
+    }
+}
+
+#[test]
+fn template_enclosed_enum_names_and_unscoped_enumerators_use_declaration_home() {
+    for key in ["enum", "enum class", "enum struct"] {
+        let source =
+            SourceBuffer::new(format!("template<class T> {key} word {{member}};").into_bytes())
+                .unwrap();
+        let input = Preprocessor::with_name(&source, b"enum-template-owner").unwrap();
+        let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+            input,
+            NumberDialect::Cxx11,
+        )));
+        parser.declaration().unwrap();
+        let name = parser.cursor.intern_name(b"word").unwrap();
+        let member = parser.cursor.intern_name(b"member").unwrap();
+        let binding = parser
+            .scopes
+            .own(super::scopes::Scopes::global(), name)
+            .unwrap();
+        assert_eq!(binding.category, Category::Type);
+        let scope = binding.scope.unwrap();
+        assert_eq!(
+            parser.scopes.own(scope, member).unwrap().category,
+            Category::Value
+        );
+        assert_eq!(
+            parser
+                .scopes
+                .own(super::scopes::Scopes::global(), member)
+                .is_some(),
+            key == "enum"
+        );
+    }
+}
+
+#[test]
+fn enum_template_id_does_not_overwrite_the_primary_template_binding() {
+    let source =
+        SourceBuffer::new(b"template<class T> struct P {}; enum P<int>{value};".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"enum-template-id-owner").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let name = parser.cursor.intern_name(b"P").unwrap();
+    let binding = parser.scopes.lookup(name).unwrap();
+    parser.declaration().unwrap();
+    let current = parser.scopes.lookup(name).unwrap();
+    assert_eq!(current.category, Category::TypeTemplate);
+    assert_eq!(current.scope, binding.scope);
+}
+
+#[test]
+fn known_keyword_dispatch_and_namespace_reopening_do_not_speculate_or_republish() {
+    let source = SourceBuffer::new(b"namespace N{} namespace N{}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"namespace-publication").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let environment = parser.scopes.environment();
+    let checkpoints = parser.checkpoints;
+    parser.declaration().unwrap();
+    assert_eq!(parser.scopes.environment(), environment);
+    assert_eq!(parser.checkpoints, checkpoints);
+    assert_eq!(checkpoints, 0);
+}
+
+#[test]
+fn predefined_extended_type_groups_keep_sign_and_complex_continuations() {
+    let source =
+        SourceBuffer::new(b"unsigned __int128 *a; _Complex __float128 b;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"extended-specifiers").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let roots = tree.decl_lists.get(unit.declarations.unwrap());
+    for declaration in roots {
+        let DeclKind::Simple { specifiers, .. } = tree.declarations.get(*declaration).kind else {
+            panic!("simple declaration")
+        };
+        let specs = tree.specs.get(specifiers);
+        assert_eq!(specs.len(), 2);
+        let SpecifierKind::Named(name) = specs[1].kind else {
+            panic!("named extended type")
+        };
+        assert!(
+            tree.names
+                .get(name)
+                .binding
+                .is_some_and(|binding| binding.category == Category::Type)
+        );
+    }
+}
+
+#[test]
+fn attributed_empty_declarations_keep_the_unconsumed_attribute_start() {
+    let bytes = b"[[unknown]]; __attribute__((used));";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"attributed-empty").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let roots = tree.decl_lists.get(unit.declarations.unwrap());
+    assert_eq!(roots.len(), 2);
+    assert_eq!(
+        tree.declarations.get(roots[0]).location,
+        source_offset(bytes, b"[[")
+    );
+    assert_eq!(
+        tree.declarations.get(roots[1]).location,
+        source_offset(bytes, b"__attribute__")
+    );
+    assert!(
+        roots
+            .iter()
+            .all(|id| matches!(tree.declarations.get(*id).kind, DeclKind::Empty))
+    );
+}
+
+#[test]
+fn namespace_alias_lookahead_and_type_mode_reject_without_publishing_a_binding() {
+    for bytes in [
+        b"namespace [[gnu::abi_tag(\"v\")]] Alias=N;".as_slice(),
+        b"namespace Alias=typename C;",
+        b"namespace Alias=::operator+;",
+    ] {
+        let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"alias-boundary").unwrap();
+        let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+            input,
+            NumberDialect::Cxx11,
+        )));
+        let alias = parser.cursor.intern_name(b"Alias").unwrap();
+        let outcome = parser.attempt(Parser::declaration).unwrap();
+        assert!(outcome.is_none());
+        assert_eq!(parser.cursor.position, 0);
+        assert!(
+            parser
+                .scopes
+                .own(super::scopes::Scopes::global(), alias)
+                .is_none()
+        );
+        assert_eq!(parser.tree.declarations.mark(), 0);
+    }
+}
+
+#[test]
+fn syntax_keyword_overlays_leave_the_shared_phase_seven_tool_unchanged() {
+    use crate::lex::{PostTokenKind, vocabulary::Keyword};
+    let source = SourceBuffer::new(b"__inline __restrict__ __null".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"keyword-overlay").unwrap();
+    let mut post = PostTokenizer::from_input(input, NumberDialect::Cxx11);
+    for _ in 0..3 {
+        assert!(matches!(
+            post.next_token().unwrap().kind,
+            PostTokenKind::Identifier
+        ));
+    }
+    let input = Preprocessor::with_name(&source, b"keyword-overlay").unwrap();
+    let mut cursor = Cursor::new(PostTokenizer::from_input(input, NumberDialect::Cxx11));
+    let first = cursor.peek(0).unwrap();
+    assert!(
+        matches!(first.kind, TokenKind::Simple(op) if op.token.as_keyword()==Some(Keyword::Inline))
+    );
+    let second = cursor.peek(1).unwrap();
+    assert!(matches!(second.kind, TokenKind::Literal(_)));
+    assert_eq!(
+        second.location,
+        source_offset(b"__inline __restrict__ __null", b"__null")
+    );
+    assert!(matches!(cursor.peek(2).unwrap().kind, TokenKind::End));
+    assert_eq!(cursor.tokens_read, 4);
+}
+
+#[test]
+fn synthetic_null_literals_share_owned_spelling_and_typed_target_data() {
+    use crate::lex::{LiteralForm, PostTokenKind};
+    use crate::types::FundamentalType;
+    let source = SourceBuffer::new(b"__null __null".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"null-literal").unwrap();
+    let mut cursor = Cursor::new(PostTokenizer::from_input(input, NumberDialect::Cxx11));
+    let TokenKind::Literal(first) = cursor.peek(0).unwrap().kind else {
+        panic!("literal")
+    };
+    let TokenKind::Literal(second) = cursor.peek(1).unwrap().kind else {
+        panic!("literal")
+    };
+    assert!(
+        matches!(first.kind, PostTokenKind::Literal {form:LiteralForm::Integer,ty:FundamentalType::LongInt,data} if data.as_slice()==[0;8])
+    );
+    assert_eq!(cursor.spellings.get(first.spelling), b"0L");
+    assert_eq!(cursor.spellings.get(first.data), [0; 8]);
+    assert!(std::ptr::eq(
+        cursor.spellings.get(first.spelling).as_ptr(),
+        cursor.spellings.get(second.spelling).as_ptr()
+    ));
+    assert!(std::ptr::eq(
+        cursor.spellings.get(first.data).as_ptr(),
+        cursor.spellings.get(second.data).as_ptr()
+    ));
+}
+
+#[test]
 fn stack_budget_failures_are_terminal_and_transactions_restore_typed_state() {
     use crate::support::stack::{StackBudget, StackLimit};
     let source = SourceBuffer::new(b"int x;".to_vec()).unwrap();

@@ -17,7 +17,7 @@ pub struct ScalarBytes {
 }
 
 impl ScalarBytes {
-    pub(super) fn integer(ty: FundamentalType, value: u64) -> Self {
+    pub(crate) fn integer(ty: FundamentalType, value: u64) -> Self {
         let mut bytes = [0; 16];
         bytes[..8].copy_from_slice(&value.to_le_bytes());
         Self {

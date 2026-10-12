@@ -1,0 +1,80 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_THREAD_LOCAL:thread_local
+      decl-specifier KW_SIGNED:signed
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_INLINE:inline
+      decl-specifier KW_CONST:const
+      decl-specifier KW_INT:int
+    declarator
+      identifier f
+      parameter-clause
+        parameter-declaration
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            ptr-operator OP_STAR:*
+            identifier p
+    compound-statement
+      return-statement
+        binary-expression OP_PLUS:+
+          type-trait-expression KW_ALIGNOF:alignof
+            type-id
+              type-specifier-seq
+                type-specifier KW_INT:int
+          literal 0L
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:__int128
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier wide
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier TT_IDENTIFIER:__int128
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier unsigned_wide
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier TT_IDENTIFIER:_Complex
+      decl-specifier TT_IDENTIFIER:__float128
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier complex_wide
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier g
+      parameter-clause
+    compound-statement
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              type-name __int128
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              type-name _Float32x
+      expression-statement
+        call-expression
+          id-expression _Float16
+          argument-list
+            literal 1
+end translation unit

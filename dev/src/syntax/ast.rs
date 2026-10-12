@@ -214,9 +214,12 @@ pub(super) struct Literal {
     pub kind: PostTokenKind,
     pub spelling: Text,
     pub token_form: bool,
-    #[expect(
-        dead_code,
-        reason = "Phase-7 decoded bytes retained for semantic literal analysis"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Phase-7 decoded bytes retained for semantic literal analysis"
+        )
     )]
     pub data: Text,
     #[expect(
@@ -508,13 +511,6 @@ pub(super) struct Handler {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Declaration {
     pub attributes: List<Attribute>,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The declaration location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub kind: DeclKind,
 }

@@ -1,0 +1,69 @@
+1 translation units
+start translation unit 1
+translation-unit
+  enum-specifier E
+    enumerator value
+  enum-specifier E
+  enum-specifier E
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    enum-specifier word
+      enumerator member
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    enum-specifier scoped_word
+      enum-key KW_CLASS:class
+      enumerator member
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier P
+      class-key KW_STRUCT:struct
+  enum-specifier P<int>
+    enumerator other
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier TT_IDENTIFIER:scoped_word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier q
+      expression-statement
+        sizeof-expression
+          type-id
+            type-specifier-seq
+              type-name P<int>
+      expression-statement
+        sizeof-expression
+          id-expression E::value
+end translation unit

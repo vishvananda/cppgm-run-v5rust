@@ -3,6 +3,151 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+
+## Full-stage audit continuation: declaration dispatch, GNU initialization and enum ownership — 2026-10-12
+
+Entry/reviewed commit: `bbabb409cd76f046cb599ba2ddbe784f5250e4a8` (clean).
+The stage base and last accepted partial-audit commit above remain unchanged;
+the new implementation/audit commit is recorded in
+`pa5-declaration-audit/handoff.json`. **Full acceptance remains open**. This
+continuation fixes additional source-owner gaps beyond the frozen fixtures.
+The existing goal remains active; no Ralph state or acceptance policy changed.
+
+Read the repository instructions, contract/specification/plan, full handout and
+owning grammar, source map and ledger, and consulted frozen
+`parser_declarations.cpp`, `parser_specifiers.cpp`, `parser_state.cpp`,
+`gnu_names.h`, `parse_token_stream.h`, `lex/gnu_builtins.{h,cpp}`, the statement
+owner and native-budget owners directly. `reviewed-responsibilities.json`
+records ten specific responsibility groups and their Rust owners. This is a
+source/control-flow review supported by raw comparisons, not a claim that a
+navigation inventory or passing counts complete the implementation census.
+
+Findings resolved:
+
+- `declarations.rs` now dispatches known declaration keywords before probing
+  special members, selects namespace aliases before collecting namespace
+  attributes, and uses the Type name mode for alias targets. Operator,
+  destructor and initial `typename` targets fail at the frozen token. Reopened
+  named/unnamed namespaces retain their scope without republishing a binding;
+  inline/unnamed nominations remain ordered as before.
+- Linkage dispatch requires a string literal, including user-defined strings,
+  rather than any literal. Numeric/character literals follow the ordinary
+  declaration failure path. String spelling interiors, braced/single-child
+  order and inherited declaration contexts remain exact. Attributed empty
+  declarations retain their unconsumed entry location, while ordinary
+  declarations retain their recomputed specifier start.
+- Parser construction unconditionally remaps GNU reserved names, even without
+  hosted mode. `lex/gnu_keywords.rs` owns all 17 keyword/drop entries.
+  `syntax/cursor.rs` observes original token ordinals and packing before
+  dropping spellings, and builds `__null` as typed target LongInt zero with
+  shared immutable `0L` spelling/data. Ordinary PA2 phase-seven tools continue
+  to produce identifier tokens. No literal spelling is reparsed.
+- `parser.rs` publishes all 14 extended/complex/bfloat type categories alongside
+  the four existing predefined names, before transactions. Compact immutable
+  NameId groups select exactly the ten extended types and three complex
+  spellings. `declarations.rs` reproduces sign-only/complex-only transitions
+  through cv, ordinary and attribute specifiers. Reserved identity checks
+  apply regardless of user shadowing, as in C++.
+- `enum_specifier` now uses declared Type name mode; forward declarations keep
+  an existing Type/member scope; definitions and unscoped enumerators publish
+  at declaration home rather than a temporary template scope. A template-id
+  enum head does not replace its primary template binding. Attribute filtering,
+  enumerator source/value order, underlying specifier grammar, scoped member
+  ownership and trailing-comma facts were compared directly.
+- The malformed asm keyword/optional-volatile/left-delimiter prefix follows
+  ordinary parsing failures; valid assembly bodies remain an explicit later
+  grammar path. This does not implement an opaque successful assembly node.
+
+Architecture review: syntax, literal data and names remain owned per unit;
+private typed stores and compact IDs cross grammar boundaries. Namespace/enum
+publication uses reversible scope APIs, preserving transaction rollback and
+query revisions. The synthetic null cache is per Cursor, immutable, and has
+no environment-sensitive key or cross-unit lifetime. Reserved NameId groups
+are bounded parser metadata initialized once. Deferred bodies still demand
+syntax only at their existing commit boundary. Backend lifetimes and optimizer
+policies are untouched. No unsafe code, dependency, subprocess fallback,
+fixture recognition, text round trip, environment read in compiler phases,
+blanket allowance, mechanical split or PA35 objective was introduced.
+`Declaration.location` now has a production reader, removing its old dead-code
+expectation; the existing future semantic `Literal.data` expectation is narrow
+and excluded where invariants read that field.
+
+Nine added invariants cover namespace publication/speculation, empty source
+locations, alias rollback, phase-seven versus syntax remapping, shared typed
+null storage, extended specifier facts, retained forward enum scope,
+declaration-home enum publication and primary-template identity preservation.
+Seven new required cases and only their new expectations live in the executed
+`pa5/tests/general/300-{declaration-*,parser-gnu-initialization,enum-*}` lane.
+Original inputs/references and protected manifest remain unchanged.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-declaration-audit/`;
+additional raw GNU and enum entry evidence is in sibling `pa5-gnu-init/` and
+`pa5-enum-audit/`. `metadata.json`, `progress.json`, retained case/course
+receipts, passing/failing ID lists and `checks.json` record exact invocations,
+source/tool identities and commands. Fixed manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost, no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS debug/release 110 library + nine tool tests, strict Clippy/rustfmt; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 247/247, zero failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; all 193 retained; `preflight.log`, `preserve.log` |
+
+Raw declaration entry comparisons were 66/139, GNU initialization 45/116 and
+enum ownership 102/130. Final declaration/GNU/continuation sweep is **479/479**
+(`final.json`), enum sweep **130/130** (`pa5-enum-audit/final.json`), and all
+**2141/2141** prior probes still match (`prior-probes.json`). Every comparison
+includes status/stdout/stderr/full AST bytes; no normalization proves equality.
+All seven new fixture comparisons match (`new-regressions.json` and enum
+sibling receipt). Earlier passing fixed IDs remain identical. These findings
+reduce real non-fixture defects without claiming new passing fixtures are
+fixed-manifest progress.
+
+Resources are separate compiler observations, not generated-code objectives.
+`measure.py` / `measurements.json` / `resource-summary.json` retain 54 warm
+whole-invocation runs with oracle/oracle/oracle/candidate/candidate/oracle
+order at 1000/4000/16000 independent units. Final timing runs were serial after
+validation/probes completed; the earlier concurrent run is archived separately
+and is not the table's evidence. All runs match complete output bytes/status,
+with tool/source hashes, raw streams and ASTs retained. Median wall milliseconds
+include preprocessing, process launch and I/O; RSS is maximum observed KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| GNU aliases/ignored tokens/typed null and extended types | 42.01 / 110.08 / 357.30 | 18.24 / 52.31 / 177.40 | 8020 / 12124 / 38164 |
+| Namespace reopening/alias publication | 32.40 / 74.68 / 238.64 | 11.49 / 28.54 / 110.99 | 8032 / 9992 / 31052 |
+| Forward/template enum publication and member queries | 44.65 / 135.72 / 511.95 | 18.49 / 66.59 / 237.90 | 8024 / 19600 / 68564 |
+
+C++ maximum RSS respectively reaches 34664, 24484 and 57844 KiB at 16k.
+The sampled growth is subquadratic, without a claimed speed target. Scratch
+and checkout together remain well below the 100 GiB ceiling.
+
+Acceptance is still withheld. `final-native.json` / `final-native/` reproduce
+45/48 raw native-budget comparisons and these exact remaining IDs:
+
+| Owned failure ID | C++ | Rust |
+| --- | --- | --- |
+| `final-native/parentheses/4800` | exit 0 | exit 1, column 3861 |
+| `final-native/known-templates/2400` | exit 0 | exit 1, column 3748 |
+| `final-native/known-templates/4800` | exit 1, column 7627 | exit 1, column 3748 |
+
+Rejections say `constructs nested too deeply`; neither compiler panics, signals
+or returns 86 in the native sweep. Native frame layout changes the frozen
+cutoff even with identical budget arithmetic. These ordinary diagnostic/exit
+mismatches are acceptance failures, not excluded runtime statistics; no
+calibrated depth, multiplied budget or new exception hides them. No frozen
+oracle defect is established. The next dependency boundary remains exact
+native rejection parity and final per-function/header responsibility review.
+`census-scope.json` explicitly keeps full census/acceptance false. Hosted-only
+CLI/statistics and GNU trait/statement-expression/asm/modern grammar remain
+outside the owning PA5 grammar; unconditional constructor facts above are due.
+
 ## Full-stage audit continuation: native nesting budget and boundary evidence — 2026-10-12
 
 Entry/reviewed commit: `7df821d6b52cfc823966917bd34b579cd1d8473d` (clean).

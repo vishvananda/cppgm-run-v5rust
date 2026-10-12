@@ -49,6 +49,8 @@ pub(super) struct Parser<'a> {
     furthest: SourceOffset,
     error_position: u64,
     initialized: bool,
+    pub extended_types: [Option<NameId>; 10],
+    pub complex_types: [Option<NameId>; 3],
 }
 struct Checkpoint {
     conflict: Option<super::conflicts::StatementConflict>,
@@ -109,6 +111,8 @@ impl<'a> Parser<'a> {
             furthest: SourceOffset(0),
             error_position: 0,
             initialized: false,
+            extended_types: [None; 10],
+            complex_types: [None; 3],
         }
     }
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {
@@ -117,13 +121,48 @@ impl<'a> Parser<'a> {
     }
     fn initialize(&mut self) -> Result<(), ParseError> {
         if !self.initialized {
+            let mut extended = 0;
+            let mut complex = 0;
             for (spelling, category) in [
                 (b"nullptr_t".as_slice(), Category::Type),
                 (b"__func__".as_slice(), Category::Value),
                 (b"__FUNCTION__".as_slice(), Category::Value),
                 (b"__PRETTY_FUNCTION__".as_slice(), Category::Value),
+                (b"__int128".as_slice(), Category::Type),
+                (b"__int128_t".as_slice(), Category::Type),
+                (b"__uint128_t".as_slice(), Category::Type),
+                (b"_Float16".as_slice(), Category::Type),
+                (b"_Float32".as_slice(), Category::Type),
+                (b"_Float64".as_slice(), Category::Type),
+                (b"_Float128".as_slice(), Category::Type),
+                (b"_Float32x".as_slice(), Category::Type),
+                (b"_Float64x".as_slice(), Category::Type),
+                (b"__float128".as_slice(), Category::Type),
+                (b"_Complex".as_slice(), Category::Type),
+                (b"__complex__".as_slice(), Category::Type),
+                (b"__complex".as_slice(), Category::Type),
+                (b"__bf16".as_slice(), Category::Type),
             ] {
                 let name = self.cursor.intern_name(spelling)?;
+                if matches!(
+                    spelling,
+                    b"__int128"
+                        | b"__int128_t"
+                        | b"__uint128_t"
+                        | b"_Float16"
+                        | b"_Float32"
+                        | b"_Float64"
+                        | b"_Float128"
+                        | b"_Float32x"
+                        | b"_Float64x"
+                        | b"__float128"
+                ) {
+                    self.extended_types[extended] = Some(name);
+                    extended += 1;
+                } else if matches!(spelling, b"_Complex" | b"__complex__" | b"__complex") {
+                    self.complex_types[complex] = Some(name);
+                    complex += 1;
+                }
                 self.scopes.declare_in(
                     Scopes::global(),
                     name,

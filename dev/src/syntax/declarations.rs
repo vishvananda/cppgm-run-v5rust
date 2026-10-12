@@ -22,6 +22,7 @@ impl Parser<'_> {
         leading: List<super::ast::Attribute>,
     ) -> Result<DeclId, ParseError> {
         self.nested(|parser| {
+            let location = parser.location()?;
             let pending = parser.pending_attributes;
             let saved_leading = parser.leading_attributes;
             let saved_tags = parser.pending_class_tags;
@@ -45,6 +46,10 @@ impl Parser<'_> {
                     parser.tree.attributes.finish(start)?
                 };
                 let mut node = *parser.tree.declarations.get(declaration);
+                if matches!(node.kind, DeclKind::Empty) {
+                    node.location = location;
+                    parser.tree.declarations.replace(declaration, node);
+                }
                 if matches!(
                     node.kind,
                     DeclKind::Simple { .. }
@@ -87,15 +92,6 @@ impl Parser<'_> {
                 kind: DeclKind::Access(access),
             });
         }
-        if matches!(
-            self.scopes.kind(self.scopes.declaration_scope()),
-            super::scopes::ScopeKind::Namespace
-                | super::scopes::ScopeKind::Class(_)
-                | super::scopes::ScopeKind::AnonymousClass
-        ) && let Some((specifiers, name)) = self.attempt(Self::special_member_head)?
-        {
-            return self.special_member(location, specifiers, name);
-        }
         match self.keyword()? {
             Some(K::Namespace) => self.namespace(location, false),
             Some(K::Inline) if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Namespace)) =>
@@ -105,7 +101,7 @@ impl Parser<'_> {
             }
             Some(K::Using) => self.using_declaration(location),
             Some(K::StaticAssert) => self.static_assert(location),
-            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(_)) => {
+            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(literal) if matches!(literal.kind, crate::lex::PostTokenKind::String { .. })) => {
                 self.linkage(location)
             }
             Some(K::Template) if self.at_ahead(P::Less, 1)? => self.template_declaration(location),
@@ -113,40 +109,31 @@ impl Parser<'_> {
             Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Template)) => {
                 self.explicit_instantiation(location)
             }
-            _ => self.simple_declaration(location),
+            _ => {
+                if matches!(
+                    self.scopes.kind(self.scopes.declaration_scope()),
+                    super::scopes::ScopeKind::Namespace
+                        | super::scopes::ScopeKind::Class(_)
+                        | super::scopes::ScopeKind::AnonymousClass
+                ) && let Some((specifiers, name)) = self.attempt(Self::special_member_head)?
+                {
+                    return self.special_member(location, specifiers, name);
+                }
+                self.simple_declaration(location)
+            }
         }
     }
     fn namespace(&mut self, location: SourceOffset, inline: bool) -> Result<DeclId, ParseError> {
         self.cursor.advance()?;
+        if matches!(self.token()?.kind, TokenKind::Identifier(_)) && self.at_ahead(P::Assign, 1)? {
+            return self.namespace_alias(location);
+        }
         let attributes = self.collect_attributes(false)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) {
             Some(self.identifier()?)
         } else {
             None
         };
-        if let Some(name) = name
-            && self.accept(P::Assign)?
-        {
-            let (target, binding) = self.name()?;
-            self.expect(P::Semicolon)?;
-            self.scopes.declare(
-                name,
-                Binding {
-                    pack: false,
-                    alternatives: super::scopes::Categories::default(),
-                    guesses: super::scopes::Guesses::default(),
-                    specialization: 0,
-                    parameter: false,
-                    category: Category::Namespace,
-                    scope: binding.and_then(|binding| binding.scope),
-                },
-            );
-            return self.tree.declarations.add(Declaration {
-                attributes: super::storage::List::default(),
-                location,
-                kind: DeclKind::NamespaceAlias { name, target },
-            });
-        }
         let trailing = self.collect_attributes(false)?;
         let start = self.tree.attributes.begin();
         self.tree.attributes.extend(attributes);
@@ -169,7 +156,7 @@ impl Parser<'_> {
             self.scopes.push_kind(super::scopes::ScopeKind::Namespace)?
         };
         self.scopes.current = enclosing;
-        if let Some(name) = name {
+        if let Some(name) = name.filter(|_| existing.is_none()) {
             self.scopes.declare(
                 name,
                 Binding {
@@ -183,7 +170,7 @@ impl Parser<'_> {
                 },
             );
         }
-        if name.is_none() {
+        if name.is_none() && existing.is_none() {
             self.scopes.set_unnamed(enclosing, scope);
         }
         if name.is_none() || inline {
@@ -201,6 +188,32 @@ impl Parser<'_> {
                 inline,
                 declarations,
             },
+        })
+    }
+    fn namespace_alias(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        let name = self.identifier()?;
+        self.expect(P::Assign)?;
+        if self.keyword()? == Some(K::Typename) {
+            return self.fail();
+        }
+        let (target, binding) = self.type_name()?;
+        self.expect(P::Semicolon)?;
+        self.scopes.declare(
+            name,
+            Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization: 0,
+                parameter: false,
+                category: Category::Namespace,
+                scope: binding.and_then(|binding| binding.scope),
+            },
+        );
+        self.tree.declarations.add(Declaration {
+            attributes: List::default(),
+            location,
+            kind: DeclKind::NamespaceAlias { name, target },
         })
     }
     fn using_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
@@ -403,6 +416,8 @@ impl Parser<'_> {
             self.tree.specs.push(self.named_specifier(name, location));
         }
         let mut has_type = initial.is_some();
+        let mut sign_only = false;
+        let mut complex_only = false;
         let mut has_friend = false;
         loop {
             let attributes = self.collect_attributes(self.tree.specs.begin() != start)?;
@@ -415,6 +430,11 @@ impl Parser<'_> {
                             || Self::has_type_keyword(word)
                             || matches!(word, K::Const | K::Volatile)) =>
                 {
+                    if Self::has_type_keyword(word) {
+                        sign_only =
+                            (!has_type || sign_only) && matches!(word, K::Signed | K::Unsigned);
+                        complex_only = false;
+                    }
                     has_type |= Self::has_type_keyword(word);
                     has_friend |= word == K::Friend;
                     self.cursor.advance()?;
@@ -437,11 +457,17 @@ impl Parser<'_> {
                     self.tree.specs.push(specifier);
                     has_type = true;
                 }
-                _ if !has_type
+                _ if (!has_type
+                    || matches!(self.token()?.kind, TokenKind::Identifier(name)
+                    if self.complex_types.contains(&Some(name))
+                        || (sign_only && self.extended_types[0] == Some(name))
+                        || (complex_only && self.extended_types.contains(&Some(name)))))
                     && (matches!(self.token()?.kind, TokenKind::Identifier(_))
                         || self.at(P::Scope)?
                         || matches!(self.keyword()?, Some(K::Typename | K::Decltype))) =>
                 {
+                    let complex = !has_type
+                        && matches!(self.token()?.kind, TokenKind::Identifier(name) if self.complex_types.contains(&Some(name)));
                     let named = self.attempt(|parser| {
                         let (name, binding) = parser.type_name()?;
                         let followed = matches!(parser.token()?.kind, TokenKind::Identifier(_));
@@ -460,6 +486,8 @@ impl Parser<'_> {
                     };
                     self.tree.specs.push(self.named_specifier(name, location));
                     has_type = true;
+                    sign_only = false;
+                    complex_only = complex;
                 }
                 _ => break,
             }
@@ -566,7 +594,7 @@ impl Parser<'_> {
         }
         let attributes = self.tree.attributes.finish(start)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
-            Some(self.name()?.0)
+            Some(self.declared_type_name()?.0)
         } else {
             None
         };
@@ -587,6 +615,7 @@ impl Parser<'_> {
             return self.fail();
         }
         let enclosing = self.scopes.current;
+        let members = self.scopes.declaration_scope();
         let scope = if has_body {
             let scope = self.scopes.push_kind(super::scopes::ScopeKind::Enum)?;
             self.scopes.current = enclosing;
@@ -594,8 +623,17 @@ impl Parser<'_> {
         } else {
             None
         };
-        if let Some(simple) = name.and_then(|name| self.simple_name(name)) {
-            self.scopes.declare(
+        if let Some(simple) = name
+            .filter(|&name| !self.name_has_arguments(name))
+            .and_then(|name| self.simple_name(name))
+            && (has_body
+                || !self
+                    .scopes
+                    .lookup_name(simple, true)
+                    .is_some_and(|binding| binding.category == Category::Type))
+        {
+            self.scopes.declare_in(
+                members,
                 simple,
                 Binding {
                     pack: false,
@@ -641,7 +679,8 @@ impl Parser<'_> {
                     );
                 }
                 if key.is_none() {
-                    self.scopes.declare(
+                    self.scopes.declare_in(
+                        members,
                         name,
                         Binding {
                             pack: false,
