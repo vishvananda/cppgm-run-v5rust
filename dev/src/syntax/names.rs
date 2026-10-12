@@ -44,7 +44,13 @@ impl Parser<'_> {
                 });
             }
             if !type_context && self.keyword()? == Some(K::Operator) {
-                let kind = self.operator_name()?;
+                let enclosing = self.scopes.current;
+                if let Some(scope) = prefix {
+                    self.scopes.current = scope;
+                }
+                let result = self.operator_name();
+                self.scopes.current = enclosing;
+                let kind = result?;
                 if self.at(P::Less)? && !matches!(kind, NameKind::Conversion(_)) {
                     return Err(ParseError::NotImplemented("operator template-id arguments"));
                 }
@@ -88,6 +94,9 @@ impl Parser<'_> {
                     "template-id name disambiguation",
                 ));
             }
+            if self.at(P::Scope)? && self.at_ahead(P::Multiply, 1)? {
+                break binding;
+            }
             if !self.accept(P::Scope)? {
                 break binding;
             }
@@ -99,6 +108,7 @@ impl Parser<'_> {
             global,
             typename_keyword,
             components,
+            prefix_scope: prefix,
             binding,
         })?;
         Ok((name, binding))

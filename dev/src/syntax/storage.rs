@@ -55,6 +55,9 @@ impl<T> Store<T> {
     pub(super) fn get(&self, id: Id<T>) -> &T {
         &self.data[id.0 as usize]
     }
+    pub(super) fn replace(&mut self, id: Id<T>, value: T) {
+        self.data[id.0 as usize] = value;
+    }
     pub(super) fn mark(&self) -> usize {
         self.data.len()
     }

@@ -28,10 +28,23 @@ impl Parser<'_> {
         while matches!(
             self.punctuator()?,
             Some(P::Multiply | P::BitAnd | P::LogicalAnd)
-        ) {
-            let op = self.operator()?;
+        ) || self.member_pointer_ahead(0)?
+        {
+            let class_name = if self.member_pointer_ahead(0)? {
+                let name = self.type_name()?.0;
+                self.expect(P::Scope)?;
+                self.expect(P::Multiply)?;
+                Some(name)
+            } else {
+                None
+            };
+            let op = if class_name.is_some() {
+                Self::make_operator(P::Scope)?
+            } else {
+                self.operator()?
+            };
             let cv_start = self.tree.cvs.begin();
-            if op.token.as_punctuator() == Some(P::Multiply) {
+            if class_name.is_some() || op.token.as_punctuator() == Some(P::Multiply) {
                 while matches!(self.keyword()?, Some(K::Const | K::Volatile)) {
                     if let Some(word) = self.keyword()? {
                         self.tree.cvs.push(word);
@@ -41,7 +54,7 @@ impl Parser<'_> {
             }
             self.attributes_boundary()?;
             let cv = self.tree.cvs.finish(cv_start)?;
-            self.tree.pointers.push(Pointer { op, cv });
+            self.tree.pointers.push(Pointer { op, class_name, cv });
         }
         let pointers = self.tree.pointers.finish(start)?;
         let pack = !matches!(mode, Mode::New | Mode::Conversion)
@@ -83,7 +96,15 @@ impl Parser<'_> {
                 let bound = if self.at(P::RightBracket)? {
                     None
                 } else {
-                    Some(self.expression()?)
+                    let enclosing = self.scopes.current;
+                    if let Some(scope) =
+                        name.and_then(|name| self.tree.names.get(name).prefix_scope)
+                    {
+                        self.scopes.current = scope;
+                    }
+                    let result = self.expression();
+                    self.scopes.current = enclosing;
+                    Some(result?)
                 };
                 self.expect(P::RightBracket)?;
                 self.attributes_boundary()?;
@@ -103,10 +124,22 @@ impl Parser<'_> {
                             !matches!(component.kind, super::ast::NameKind::Identifier(_))
                         })
                 });
-            let Some(parameters) = self.attempt(|parser| parser.parameter_clause(definite))? else {
+            let enclosing = self.scopes.current;
+            if let Some(scope) = name.and_then(|name| self.tree.names.get(name).prefix_scope) {
+                self.scopes.current = scope;
+            }
+            let result = self.attempt(|parser| parser.parameter_clause(definite));
+            self.scopes.current = enclosing;
+            let Some(parameters) = result? else {
                 break;
             };
-            let qualifiers = self.function_qualifiers()?;
+            let saved = self.scopes.current;
+            if let Some(scope) = self.function_scope {
+                self.scopes.current = scope;
+            }
+            let result = self.function_qualifiers();
+            self.scopes.current = saved;
+            let qualifiers = result?;
             self.tree.suffixes.push(Suffix::Function {
                 parameters,
                 qualifiers,
@@ -123,8 +156,26 @@ impl Parser<'_> {
             suffixes,
         })
     }
+    fn member_pointer_ahead(&mut self, mut ahead: usize) -> Result<bool, ParseError> {
+        if self.at_ahead(P::Scope, ahead)? {
+            ahead += 1;
+        }
+        loop {
+            if !matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_)) {
+                return Ok(false);
+            }
+            ahead += 1;
+            if !self.at_ahead(P::Scope, ahead)? {
+                return Ok(false);
+            }
+            ahead += 1;
+            if self.at_ahead(P::Multiply, ahead)? {
+                return Ok(true);
+            }
+        }
+    }
     fn nested_declarator_ahead(&mut self, mode: Mode) -> Result<bool, ParseError> {
-        if mode == Mode::Named {
+        if mode == Mode::Named || self.member_pointer_ahead(1)? {
             return Ok(true);
         }
         if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd | P::LeftBracket | P::LeftParen)))
@@ -175,7 +226,10 @@ impl Parser<'_> {
         }
         (!node.pointers.is_empty()).then_some(false)
     }
-    fn parameter_clause(&mut self, mut definite: bool) -> Result<ParameterClause, ParseError> {
+    pub(super) fn parameter_clause(
+        &mut self,
+        mut definite: bool,
+    ) -> Result<ParameterClause, ParseError> {
         self.expect(P::LeftParen)?;
         let enclosing = self.scopes.current;
         let scope = self.scopes.push()?;
@@ -230,7 +284,9 @@ impl Parser<'_> {
             ellipsis_without_comma,
         })
     }
-    fn function_qualifiers(&mut self) -> Result<super::storage::List<Qualifier>, ParseError> {
+    pub(super) fn function_qualifiers(
+        &mut self,
+    ) -> Result<super::storage::List<Qualifier>, ParseError> {
         let start = self.tree.qualifiers.begin();
         loop {
             self.attributes_boundary()?;

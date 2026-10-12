@@ -109,6 +109,9 @@ fn aliases_retain_enum_member_categories_and_unnamed_namespaces_reopen() {
     let DeclKind::Function { body, .. } = unit.parser.tree.declarations.get(root[2]).kind else {
         panic!("function");
     };
+    let super::ast::Body::Parsed(body) = *unit.parser.tree.bodies.get(body) else {
+        panic!("parsed body");
+    };
     let super::ast::StmtKind::Compound(items) = unit.parser.tree.statements.get(body.compound).kind
     else {
         panic!("body");
@@ -152,6 +155,9 @@ fn handlers_share_parameter_scope_restore_siblings_and_rewind_nested_lists() {
     let declaration = parser.declaration().unwrap();
     let DeclKind::Function { body, .. } = parser.tree.declarations.get(declaration).kind else {
         panic!("function");
+    };
+    let super::ast::Body::Parsed(body) = *parser.tree.bodies.get(body) else {
+        panic!("parsed body");
     };
     let handlers = parser.tree.handlers.get(body.handlers.unwrap());
     assert_eq!(handlers.len(), 2);
@@ -203,6 +209,9 @@ fn allocation_modes_retain_type_parentheses_placement_and_initializers() {
         .kind
     else {
         panic!("function");
+    };
+    let super::ast::Body::Parsed(body) = *tree.bodies.get(body) else {
+        panic!("parsed body");
     };
     let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
         panic!("body");
@@ -292,4 +301,96 @@ fn qualified_special_names_and_decltype_render_from_typed_components() {
     ] {
         assert!(output.windows(label.len()).any(|window| window == label));
     }
+}
+
+#[test]
+fn class_completion_parses_each_body_with_later_member_categories() {
+    use super::ast::{Body, Specifier, StmtKind};
+    let source = SourceBuffer::new(b"struct Base { typedef int inherited; }; struct Outer : Base { void f() { Slot * p; inherited q; struct Local { void g() { Later value; } typedef int Later; }; } struct Slot {}; };".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-completion").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let root = tree.decl_lists.get(unit.declarations.unwrap());
+    let DeclKind::Class(Specifier::Class(outer)) = tree.declarations.get(root[1]).kind else {
+        panic!("outer class");
+    };
+    let members = tree.decl_lists.get(tree.classes.get(outer).members);
+    let DeclKind::Function { body, .. } = tree.declarations.get(members[0]).kind else {
+        panic!("inline method");
+    };
+    let Body::Parsed(body) = *tree.bodies.get(body) else {
+        panic!("completed body");
+    };
+    let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+        panic!("body");
+    };
+    assert_eq!(tree.stmt_lists.get(items).len(), 3);
+    assert!(
+        tree.stmt_lists
+            .get(items)
+            .iter()
+            .all(|&id| matches!(tree.statements.get(id).kind, StmtKind::Declaration(_)))
+    );
+    assert_eq!(unit.parser.cursor.runs_mark(), 0);
+    assert!(unit.parser.deferred.is_empty());
+    assert!(unit.parser.scopes.complete(tree.classes.get(outer).scope));
+}
+
+#[test]
+fn failed_class_attempt_rewinds_bodies_scope_completion_and_all_member_lists() {
+    let source = SourceBuffer::new(
+        b"struct C { C() : field{1} {} void f() { later * p; } int field:3; struct later {}; };"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"class-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let classes = parser.tree.classes.mark();
+    let bodies = parser.tree.bodies.mark();
+    let fields = parser.tree.bit_fields.mark();
+    let initializers = parser.tree.mem_initializers.mark();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.attempt(Parser::declaration)?.unwrap();
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.tree.classes.mark(), classes);
+    assert_eq!(parser.tree.bodies.mark(), bodies);
+    assert_eq!(parser.tree.bit_fields.mark(), fields);
+    assert_eq!(parser.tree.mem_initializers.mark(), initializers);
+    assert_eq!(parser.class_depth, 0);
+    assert!(parser.deferred.is_empty());
+    assert_eq!(parser.cursor.runs_mark(), 0);
+    let TokenKind::Identifier(name) = parser.cursor.peek(1).unwrap().kind else {
+        panic!("class name");
+    };
+    assert!(parser.scopes.lookup(name).is_none());
+    parser.declaration().unwrap();
+    let scope = parser.scopes.lookup(name).unwrap().scope.unwrap();
+    assert!(parser.scopes.complete(scope));
+}
+
+#[test]
+fn successive_classes_release_body_tokens_and_keep_the_pull_window_bounded() {
+    let mut bytes = Vec::new();
+    for index in 0..2000 {
+        bytes.extend_from_slice(
+            format!("struct C{index} {{ void f() {{ Later p; }} typedef int Later; }};\n")
+                .as_bytes(),
+        );
+    }
+    let source = SourceBuffer::new(bytes).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-scaling").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    assert_eq!(unit.parser.tree.bodies.mark(), 2000);
+    assert_eq!(unit.parser.cursor.runs_mark(), 0);
+    assert!(unit.parser.cursor.peak_run_tokens < 10);
+    assert!(unit.parser.cursor.peak_window < 4120);
 }

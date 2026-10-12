@@ -16,7 +16,17 @@ pub(super) struct Binding {
     pub category: Category,
     pub scope: Option<ScopeId>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScopeKind {
+    Ordinary,
+    Namespace,
+    Block,
+    Class(NameId),
+    AnonymousClass,
+}
 struct Scope {
+    kind: ScopeKind,
+    complete: bool,
     parent: Option<ScopeId>,
     edges: Vec<ScopeId>,
 }
@@ -24,6 +34,7 @@ enum Change {
     Unnamed(ScopeId, Option<ScopeId>),
     Binding((ScopeId, NameId), Option<Binding>),
     Edge(ScopeId),
+    Complete(ScopeId, bool),
 }
 #[derive(Clone, Copy)]
 pub(super) struct ScopeMark {
@@ -43,6 +54,8 @@ impl Default for Scopes {
     fn default() -> Self {
         Self {
             records: vec![Scope {
+                kind: ScopeKind::Namespace,
+                complete: false,
                 parent: None,
                 edges: Vec::new(),
             }],
@@ -58,12 +71,28 @@ impl Scopes {
     pub(super) fn global() -> ScopeId {
         ScopeId(0)
     }
+    pub(super) fn kind(&self, scope: ScopeId) -> ScopeKind {
+        self.records[scope.0 as usize].kind
+    }
+    pub(super) fn complete(&self, scope: ScopeId) -> bool {
+        self.records[scope.0 as usize].complete
+    }
+    pub(super) fn complete_class(&mut self, scope: ScopeId) {
+        let old = self.records[scope.0 as usize].complete;
+        self.changes.push(Change::Complete(scope, old));
+        self.records[scope.0 as usize].complete = true;
+    }
     pub(super) fn push(&mut self) -> Result<ScopeId, ParseError> {
+        self.push_kind(ScopeKind::Ordinary)
+    }
+    pub(super) fn push_kind(&mut self, kind: ScopeKind) -> Result<ScopeId, ParseError> {
         let id = ScopeId(
             u32::try_from(self.records.len())
                 .map_err(|_| ParseError::Limit("parser scope limit"))?,
         );
         self.records.push(Scope {
+            kind,
+            complete: false,
             parent: Some(self.current),
             edges: Vec::new(),
         });
@@ -77,6 +106,16 @@ impl Scopes {
         let old = self.unnamed.insert(parent, scope);
         self.changes.push(Change::Unnamed(parent, old));
     }
+    pub(super) fn enclosing_declaration_scope(&self) -> ScopeId {
+        let mut scope = self.current;
+        while !matches!(self.kind(scope), ScopeKind::Namespace | ScopeKind::Block) {
+            let Some(parent) = self.records[scope.0 as usize].parent else {
+                break;
+            };
+            scope = parent;
+        }
+        scope
+    }
     pub(super) fn own(&self, scope: ScopeId, name: NameId) -> Option<Binding> {
         self.bindings.get(&(scope, name)).copied()
     }
@@ -85,6 +124,22 @@ impl Scopes {
     }
     pub(super) fn declare_in(&mut self, scope: ScopeId, name: NameId, binding: Binding) {
         let key = (scope, name);
+        let binding = self.own(scope, name).map_or(binding, |previous| {
+            if (binding.category == Category::Value && previous.category == Category::Type)
+                || (previous.category == Category::Value
+                    && binding.category == Category::Type
+                    && binding.scope.is_some())
+            {
+                Binding {
+                    category: Category::Value,
+                    scope: binding.scope.or(previous.scope),
+                }
+            } else if binding.category == previous.category && binding.scope.is_none() {
+                previous
+            } else {
+                binding
+            }
+        });
         let old = self.bindings.insert(key, binding);
         self.changes.push(Change::Binding(key, old));
     }
@@ -146,6 +201,9 @@ impl Scopes {
                 }
                 Some(Change::Binding(key, None)) => {
                     self.bindings.remove(&key);
+                }
+                Some(Change::Complete(scope, old)) => {
+                    self.records[scope.0 as usize].complete = old;
                 }
                 Some(Change::Edge(scope)) => {
                     self.records[scope.0 as usize].edges.pop();

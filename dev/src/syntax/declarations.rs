@@ -25,6 +25,29 @@ impl Parser<'_> {
                 kind: DeclKind::Empty,
             });
         }
+        if self.in_class()
+            && matches!(self.keyword()?, Some(K::Public | K::Protected | K::Private))
+            && self.at_ahead(P::Colon, 1)?
+        {
+            let access = self
+                .keyword()?
+                .ok_or(ParseError::Invariant("missing access keyword"))?;
+            self.cursor.advance()?;
+            self.cursor.advance()?;
+            return self.tree.declarations.add(Declaration {
+                location,
+                kind: DeclKind::Access(access),
+            });
+        }
+        if matches!(
+            self.scopes.kind(self.scopes.current),
+            super::scopes::ScopeKind::Namespace
+                | super::scopes::ScopeKind::Class(_)
+                | super::scopes::ScopeKind::AnonymousClass
+        ) && let Some((specifiers, name)) = self.attempt(Self::special_member_head)?
+        {
+            return self.special_member(location, specifiers, name);
+        }
         match self.keyword()? {
             Some(K::Namespace) => self.namespace(location, false),
             Some(K::Inline) if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if op.token.as_keyword() == Some(K::Namespace)) =>
@@ -82,7 +105,7 @@ impl Parser<'_> {
         let scope = if let Some(scope) = existing {
             scope
         } else {
-            self.scopes.push()?
+            self.scopes.push_kind(super::scopes::ScopeKind::Namespace)?
         };
         self.scopes.current = enclosing;
         if let Some(name) = name {
@@ -228,6 +251,7 @@ impl Parser<'_> {
     ) -> Result<List<Specifier>, ParseError> {
         let start = self.tree.specs.begin();
         let mut has_type = false;
+        let mut has_friend = false;
         loop {
             self.attributes_boundary()?;
             match self.keyword()? {
@@ -238,6 +262,7 @@ impl Parser<'_> {
                             || matches!(word, K::Const | K::Volatile)) =>
                 {
                     has_type |= Self::has_type_keyword(word);
+                    has_friend |= word == K::Friend;
                     self.cursor.advance()?;
                     self.tree.specs.push(Specifier::Keyword(word));
                 }
@@ -247,9 +272,10 @@ impl Parser<'_> {
                     has_type = true;
                 }
                 Some(K::Class | K::Struct | K::Union) if !has_type => {
-                    return Err(ParseError::NotImplemented(
-                        "class specifiers, member scopes and deferred bodies",
-                    ));
+                    let specifier =
+                        self.class_specifier(has_friend, self.tree.specs.begin() == start)?;
+                    self.tree.specs.push(specifier);
+                    has_type = true;
                 }
                 _ if !has_type
                     && (matches!(self.token()?.kind, TokenKind::Identifier(_))
@@ -313,7 +339,11 @@ impl Parser<'_> {
             .iter()
             .any(|specifier| match specifier {
                 Specifier::Keyword(word) => Self::has_type_keyword(*word),
-                Specifier::Named(_) | Specifier::Enum(_) | Specifier::Decltype(_) => true,
+                Specifier::Named(_)
+                | Specifier::Enum(_)
+                | Specifier::Class(_)
+                | Specifier::Elaborated { .. }
+                | Specifier::Decltype(_) => true,
             })
     }
     fn enum_specifier(&mut self) -> Result<DeclId, ParseError> {
@@ -425,8 +455,17 @@ impl Parser<'_> {
             .iter()
             .any(|specifier| matches!(specifier, Specifier::Keyword(K::Typedef)));
         if self.accept(P::Semicolon)? {
-            if let [Specifier::Enum(enumeration)] = self.tree.specs.get(specifiers) {
-                return Ok(*enumeration);
+            if let [specifier] = self.tree.specs.get(specifiers) {
+                match *specifier {
+                    Specifier::Enum(enumeration) if !self.in_class() => return Ok(enumeration),
+                    Specifier::Class(_) | Specifier::Elaborated { .. } => {
+                        return self.tree.declarations.add(Declaration {
+                            location,
+                            kind: DeclKind::Class(*specifier),
+                        });
+                    }
+                    _ => (),
+                }
             }
             return self.tree.declarations.add(Declaration {
                 location,
@@ -436,6 +475,9 @@ impl Parser<'_> {
                 },
             });
         }
+        if self.in_class() && self.at(P::Colon)? {
+            return self.bit_field(location, specifiers, None);
+        }
         self.function_scope = None;
         let start = self.tree.init_declarators.begin();
         loop {
@@ -444,13 +486,7 @@ impl Parser<'_> {
             if self.is_function(declarator)
                 && (self.at(P::LeftBrace)? || self.keyword()? == Some(K::Try))
             {
-                let enclosing = self.scopes.current;
-                self.scopes.current = self
-                    .function_scope
-                    .ok_or(ParseError::Invariant("missing function parameter scope"))?;
-                let result = self.function_body();
-                self.scopes.current = enclosing;
-                let body = result?;
+                let body = self.finish_function_body(self.in_class(), false)?;
                 return self.tree.declarations.add(Declaration {
                     location,
                     kind: DeclKind::Function {
@@ -460,14 +496,26 @@ impl Parser<'_> {
                     },
                 });
             }
-            let initializer = if matches!(
+            if self.in_class() && self.at(P::Colon)? {
+                return self.bit_field(location, specifiers, Some(declarator));
+            }
+            let enclosing = self.scopes.current;
+            if let Some(scope) = self
+                .declarator_name(declarator)
+                .and_then(|name| self.tree.names.get(name).prefix_scope)
+            {
+                self.scopes.current = scope;
+            }
+            let result = if matches!(
                 self.punctuator()?,
                 Some(P::Assign | P::LeftBrace | P::LeftParen)
             ) {
-                Some(self.initializer()?)
+                self.initializer().map(Some)
             } else {
-                None
+                Ok(None)
             };
+            self.scopes.current = enclosing;
+            let initializer = result?;
             self.tree.init_declarators.push(InitDeclarator {
                 declarator,
                 initializer,

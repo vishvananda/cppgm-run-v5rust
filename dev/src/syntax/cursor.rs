@@ -25,10 +25,23 @@ pub(super) struct Token {
     pub shift_half: u8,
     pub suffix_name: Option<NameId>,
 }
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TokenRun {
+    begin: u32,
+    end: u32,
+    absolute: u64,
+}
+struct Replay {
+    run: TokenRun,
+    resume: usize,
+}
 pub(super) struct Cursor<'a> {
     pub post: PostTokenizer<Preprocessor<'a>>,
     pub spellings: TextStore,
     window: Vec<Token>,
+    runs: Vec<Token>,
+    replay: Vec<Replay>,
+    pub peak_run_tokens: usize,
     pub position: usize,
     retained: usize,
     base: u64,
@@ -42,6 +55,9 @@ impl<'a> Cursor<'a> {
             post,
             spellings: TextStore::default(),
             window: Vec::new(),
+            runs: Vec::new(),
+            replay: Vec::new(),
+            peak_run_tokens: 0,
             position: 0,
             retained: 0,
             base: 0,
@@ -55,6 +71,14 @@ impl<'a> Cursor<'a> {
             .position
             .checked_add(ahead)
             .ok_or(ParseError::Limit("parser lookahead limit"))?;
+        if let Some(replay) = self.replay.last() {
+            let run = replay.run;
+            return Ok(if index < (run.end - run.begin) as usize {
+                self.runs[run.begin as usize + index]
+            } else {
+                self.end_token()
+            });
+        }
         while self.window.len() <= index {
             if let Some(end) = self.end {
                 return Ok(end);
@@ -63,6 +87,14 @@ impl<'a> Cursor<'a> {
         }
         self.peak_window = self.peak_window.max(self.window.len());
         Ok(self.window[index])
+    }
+    fn end_token(&self) -> Token {
+        self.end.unwrap_or(Token {
+            kind: TokenKind::End,
+            location: SourceOffset(0),
+            shift_half: 0,
+            suffix_name: None,
+        })
     }
     fn pull(&mut self) -> Result<(), ParseError> {
         let post = self.post.next_token().map_err(|error| match error {
@@ -133,7 +165,9 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
     pub(super) fn absolute_position(&self) -> Result<u64, ParseError> {
-        self.base
+        self.replay
+            .last()
+            .map_or(self.base, |replay| replay.run.absolute)
             .checked_add(
                 u64::try_from(self.position)
                     .map_err(|_| ParseError::Limit("parser position limit"))?,
@@ -141,6 +175,12 @@ impl<'a> Cursor<'a> {
             .ok_or(ParseError::Limit("parser position limit"))
     }
     pub(super) fn advance(&mut self) -> Result<(), ParseError> {
+        if let Some(replay) = self.replay.last() {
+            if self.position < (replay.run.end - replay.run.begin) as usize {
+                self.position += 1;
+            }
+            return Ok(());
+        }
         if self.position < self.window.len()
             && !matches!(self.window[self.position].kind, TokenKind::End)
         {
@@ -151,6 +191,54 @@ impl<'a> Cursor<'a> {
             self.base = self.absolute_position()?;
             self.position = 0;
         }
+        Ok(())
+    }
+    pub(super) fn runs_mark(&self) -> usize {
+        self.runs.len()
+    }
+    pub(super) fn rewind_runs(&mut self, mark: usize) {
+        self.runs.truncate(mark);
+    }
+    pub(super) fn capture(&mut self, start: usize, absolute: u64) -> Result<TokenRun, ParseError> {
+        let begin = u32::try_from(self.runs.len())
+            .map_err(|_| ParseError::Limit("deferred token limit"))?;
+        let count = u32::try_from(self.position - start)
+            .map_err(|_| ParseError::Limit("deferred token limit"))?;
+        let end = begin
+            .checked_add(count)
+            .ok_or(ParseError::Limit("deferred token limit"))?;
+        if let Some(replay) = self.replay.last() {
+            let offset = replay.run.begin;
+            let start =
+                u32::try_from(start).map_err(|_| ParseError::Limit("deferred token limit"))?;
+            return Ok(TokenRun {
+                begin: offset + start,
+                end: offset + start + count,
+                absolute,
+            });
+        }
+        let tokens = &self.window[start..self.position];
+        self.runs.extend_from_slice(tokens);
+        self.peak_run_tokens = self.peak_run_tokens.max(self.runs.len());
+        Ok(TokenRun {
+            begin,
+            end,
+            absolute,
+        })
+    }
+    pub(super) fn push_run(&mut self, run: TokenRun) {
+        self.replay.push(Replay {
+            run,
+            resume: self.position,
+        });
+        self.position = 0;
+    }
+    pub(super) fn pop_run(&mut self) -> Result<(), ParseError> {
+        let replay = self
+            .replay
+            .pop()
+            .ok_or(ParseError::Invariant("missing deferred token run"))?;
+        self.position = replay.resume;
         Ok(())
     }
     pub(super) fn retain(&mut self) {

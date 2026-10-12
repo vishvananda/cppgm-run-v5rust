@@ -15,7 +15,7 @@ impl Parser<'_> {
         self.expect(P::LeftBrace)?;
         let enclosing = self.scopes.current;
         if new_scope {
-            self.scopes.push()?;
+            self.scopes.push_kind(super::scopes::ScopeKind::Block)?;
         }
         let start = self.tree.stmt_lists.begin();
         while !self.at(P::RightBrace)? {
@@ -159,15 +159,24 @@ impl Parser<'_> {
         };
         self.tree.statements.add(Statement { location, kind })
     }
-    pub(super) fn function_body(&mut self) -> Result<FunctionBody, ParseError> {
+    pub(super) fn function_body(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
         let try_block = self.accept_keyword(K::Try)?;
-        let compound = self.compound_statement()?;
+        let initializers = if constructor && self.at(P::Colon)? {
+            self.ctor_initializers()?
+        } else {
+            super::storage::List::default()
+        };
+        let compound = self.compound_in_scope(false)?;
         let handlers = if try_block {
             Some(self.handlers()?)
         } else {
             None
         };
-        Ok(FunctionBody { compound, handlers })
+        Ok(FunctionBody {
+            initializers,
+            compound,
+            handlers,
+        })
     }
     fn handlers(&mut self) -> Result<super::storage::List<Handler>, ParseError> {
         if self.keyword()? != Some(K::Catch) {

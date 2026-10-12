@@ -2,9 +2,10 @@
 //! Iterative tree view, including arbitrarily long left-associated chains.
 use super::{
     ast::{
-        Condition, DeclId, DeclKind, DeclaratorId, Enumerator, ExceptionDeclaration, ExprId,
-        ExprKind, Handler, InitDeclarator, Initializer, Name, NameKind, Operator, Parameter,
-        ParameterClause, Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
+        Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId,
+        Enumerator, ExceptionDeclaration, ExprId, ExprKind, FunctionBody, Handler, InitDeclarator,
+        Initializer, MemInitializer, Name, NameKind, Operator, Parameter, ParameterClause,
+        Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
     },
     cursor::Cursor,
     render::{Render, Renderer, operator_spelling},
@@ -46,6 +47,11 @@ enum Task {
     InitDeclarator(InitDeclarator),
     Enumerator(Enumerator),
     Handler(Handler),
+    Body(BodyId),
+    OwnedSpecifier(Specifier),
+    Base(Base),
+    BitField(BitField),
+    MemInitializer(MemInitializer),
 }
 pub(super) fn print(
     tree: &Tree,
@@ -117,7 +123,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     )
                 {
                     self.output.write_all(b" TT_IDENTIFIER:")?;
-                    self.renderer.render(Render::Name(name, false));
+                    self.renderer.render(Render::Name(name, false))?;
                     self.output.write_all(&self.renderer.bytes)?;
                     None
                 } else {
@@ -131,7 +137,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
         };
         if let Some(task) = task {
-            self.renderer.render(task);
+            self.renderer.render(task)?;
             if !self.renderer.bytes.is_empty() {
                 if !matches!(payload, Payload::Virt(_)) {
                     self.output.write_all(b" ")?;
@@ -152,6 +158,82 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn execute(&mut self, task: Task) -> io::Result<()> {
         match task {
+            Task::Body(id) => {
+                let Body::Parsed(body) = *self.renderer.tree.bodies.get(id) else {
+                    return Err(io::Error::other("unparsed deferred function body"));
+                };
+                self.function_body(body)?;
+            }
+            Task::OwnedSpecifier(specifier) => match specifier {
+                Specifier::Class(id) => self.class(id)?,
+                Specifier::Elaborated { key, name } => {
+                    self.open("class-forward-declaration", Payload::Name(name))?;
+                    self.tasks
+                        .push(Task::Line("class-key", Payload::Keyword(key), false));
+                }
+                _ => return Err(io::Error::other("invalid owned class specifier")),
+            },
+            Task::Base(base) => {
+                self.open("base-specifier", Payload::None)?;
+                if base.pack {
+                    self.tasks.push(Task::Line(
+                        "pack-expansion",
+                        Payload::Operator(
+                            super::parser::Parser::make_operator(
+                                crate::lex::pp_lexer::Punctuator::Ellipsis,
+                            )
+                            .map_err(|_| io::Error::other("invalid ellipsis operator"))?,
+                        ),
+                        false,
+                    ));
+                }
+                self.tasks
+                    .push(Task::Line("base-name", Payload::Name(base.name), false));
+                if base.is_virtual && !base.virtual_first {
+                    self.tasks
+                        .push(Task::Line("virtual", Payload::Keyword(K::Virtual), false));
+                }
+                if let Some(access) = base.access {
+                    self.tasks.push(Task::Line(
+                        "access-specifier",
+                        Payload::Keyword(access),
+                        false,
+                    ));
+                }
+                if base.virtual_first {
+                    self.tasks
+                        .push(Task::Line("virtual", Payload::Keyword(K::Virtual), false));
+                }
+            }
+            Task::BitField(field) => {
+                self.open("bit-field-declarator", Payload::None)?;
+                self.tasks.push(Task::Expression(field.width));
+                if let Some(declarator) = field.declarator {
+                    self.tasks.push(Task::Declarator(Some(declarator), false));
+                }
+            }
+            Task::MemInitializer(member) => {
+                self.open("mem-initializer", Payload::None)?;
+                if member.pack {
+                    self.tasks.push(Task::Line(
+                        "pack-expansion",
+                        Payload::Text("OP_DOTS:..."),
+                        false,
+                    ));
+                }
+                match member.initializer {
+                    Initializer::Braced(expr) => self.tasks.push(Task::Expression(expr)),
+                    Initializer::Parenthesized(args) => self
+                        .tasks
+                        .push(Task::ExpressionList("paren-argument-list", args)),
+                    _ => return Err(io::Error::other("invalid constructor initializer")),
+                }
+                self.tasks.push(Task::Line(
+                    "mem-initializer-id",
+                    Payload::Name(member.name),
+                    false,
+                ));
+            }
             Task::Close => self.depth -= 1,
             Task::Line(label, payload, open) => self.line(label, payload, open)?,
             Task::Declaration(id) => self.declaration(id)?,
@@ -254,6 +336,62 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn declaration(&mut self, id: DeclId) -> io::Result<()> {
         match self.renderer.tree.declarations.get(id).kind {
+            DeclKind::Class(specifier) => self.tasks.push(Task::OwnedSpecifier(specifier)),
+            DeclKind::Access(access) => {
+                self.line("access-specifier", Payload::Keyword(access), false)?;
+            }
+            DeclKind::BitField {
+                specifiers,
+                declarators,
+            } => {
+                self.open("bit-field-declaration", Payload::None)?;
+                for &field in self.renderer.tree.bit_fields.get(declarators).iter().rev() {
+                    self.tasks.push(Task::BitField(field));
+                }
+                self.tasks.push(Task::Specs(specifiers, false));
+            }
+            DeclKind::SpecialMember {
+                specifiers,
+                name,
+                declarator,
+                initializer,
+                body,
+            } => {
+                self.open(
+                    if body.is_some() {
+                        "special-member-definition"
+                    } else {
+                        "special-member-declaration"
+                    },
+                    Payload::Name(name),
+                )?;
+                if let Some(body) = body {
+                    self.tasks.push(Task::Body(body));
+                }
+                if let Some(initializer) = initializer {
+                    self.tasks.push(Task::Initializer(initializer));
+                }
+                self.tasks.push(Task::Declarator(Some(declarator), false));
+                if !specifiers.is_empty() {
+                    self.tasks.push(Task::Close);
+                    for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
+                        let Specifier::Keyword(word) = specifier else {
+                            return Err(io::Error::other("invalid member specifier"));
+                        };
+                        self.tasks.push(Task::Line(
+                            "specifier",
+                            if word == K::Explicit {
+                                Payload::Text("explicit")
+                            } else {
+                                Payload::Keyword(word)
+                            },
+                            false,
+                        ));
+                    }
+                    self.tasks
+                        .push(Task::Line("member-specifiers", Payload::None, true));
+                }
+            }
             DeclKind::Empty => self.line("empty-declaration", Payload::None, false)?,
             DeclKind::Simple {
                 specifiers,
@@ -283,17 +421,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 body,
             } => {
                 self.open("function-definition", Payload::None)?;
-                if let Some(handlers) = body.handlers {
-                    self.tasks.push(Task::Close);
-                    for &handler in self.renderer.tree.handlers.get(handlers).iter().rev() {
-                        self.tasks.push(Task::Handler(handler));
-                    }
-                    self.tasks.push(Task::Statement(body.compound));
-                    self.tasks
-                        .push(Task::Line("function-try-block", Payload::None, true));
-                } else {
-                    self.tasks.push(Task::Statement(body.compound));
-                }
+                self.tasks.push(Task::Body(body));
                 self.tasks.push(Task::Declarator(Some(declarator), false));
                 self.tasks.push(Task::Specs(specifiers, false));
             }
@@ -434,6 +562,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         )
                     }
                 }
+                Specifier::Class(_) | Specifier::Elaborated { .. } => {
+                    Task::OwnedSpecifier(specifier)
+                }
                 Specifier::Enum(decl) => Task::Declaration(decl),
                 Specifier::Decltype(operand) => {
                     self.tasks.push(Task::Close);
@@ -511,9 +642,75 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             self.tasks.push(Task::Line(
                 "ptr-operator",
-                Payload::Operator(pointer.op),
+                pointer
+                    .class_name
+                    .map_or(Payload::Operator(pointer.op), |name| {
+                        Payload::Render(Render::MemberPointer(name))
+                    }),
                 false,
             ));
+        }
+        Ok(())
+    }
+    fn class(&mut self, id: ClassId) -> io::Result<()> {
+        let class = *self.renderer.tree.classes.get(id);
+        self.open(
+            "class-specifier",
+            class.name.map_or(Payload::None, Payload::Name),
+        )?;
+        for &member in self
+            .renderer
+            .tree
+            .decl_lists
+            .get(class.members)
+            .iter()
+            .rev()
+        {
+            self.tasks.push(Task::Declaration(member));
+        }
+        if !class.bases.is_empty() {
+            self.tasks.push(Task::Close);
+            for &base in self.renderer.tree.bases.get(class.bases).iter().rev() {
+                self.tasks.push(Task::Base(base));
+            }
+            self.tasks
+                .push(Task::Line("base-clause", Payload::None, true));
+        }
+        if class.final_specifier {
+            self.tasks.push(Task::Line(
+                "class-virt-specifier",
+                Payload::Text("TT_IDENTIFIER:final"),
+                false,
+            ));
+        }
+        self.tasks
+            .push(Task::Line("class-key", Payload::Keyword(class.key), false));
+        Ok(())
+    }
+    fn function_body(&mut self, body: FunctionBody) -> io::Result<()> {
+        if body.handlers.is_some() {
+            self.open("function-try-block", Payload::None)?;
+        }
+        if let Some(handlers) = body.handlers {
+            for &handler in self.renderer.tree.handlers.get(handlers).iter().rev() {
+                self.tasks.push(Task::Handler(handler));
+            }
+        }
+        self.tasks.push(Task::Statement(body.compound));
+        if !body.initializers.is_empty() {
+            self.tasks.push(Task::Close);
+            for &member in self
+                .renderer
+                .tree
+                .mem_initializers
+                .get(body.initializers)
+                .iter()
+                .rev()
+            {
+                self.tasks.push(Task::MemInitializer(member));
+            }
+            self.tasks
+                .push(Task::Line("ctor-initializer", Payload::None, true));
         }
         Ok(())
     }

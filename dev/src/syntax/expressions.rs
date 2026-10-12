@@ -212,7 +212,7 @@ impl Parser<'_> {
                 } else {
                     self.attempt(|parser| {
                         let ty = parser.type_id(false)?;
-                        if !parser.at(P::RightParen)? {
+                        if !parser.at(P::RightParen)? || parser.named_function_type(ty) {
                             return parser.fail();
                         }
                         Ok(ty)
@@ -398,6 +398,25 @@ impl Parser<'_> {
             },
         })
     }
+    fn named_function_type(&self, ty: super::ast::TypeId) -> bool {
+        let ty = self.tree.types.get(ty);
+        let Some(declarator) = ty.declarator else {
+            return false;
+        };
+        let declarator = self.tree.declarators.get(declarator);
+        declarator.pointers.is_empty()
+            && declarator.nested.is_none()
+            && matches!(
+                self.tree.suffixes.get(declarator.suffixes).first(),
+                Some(super::ast::Suffix::Function { .. })
+            )
+            && self
+                .tree
+                .specs
+                .get(ty.specifiers)
+                .iter()
+                .any(|specifier| matches!(specifier, Specifier::Named(_)))
+    }
     fn sizeof_expression(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
         self.cursor.advance()?;
         if self.at(P::Ellipsis)? {
@@ -408,6 +427,12 @@ impl Parser<'_> {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
                 let ty = parser.type_id(false)?;
+                if parser.named_function_type(ty) {
+                    return Err(ParseError::Syntax {
+                        location: parser.location()?,
+                        message: "syntax error",
+                    });
+                }
                 parser.expect(P::RightParen)?;
                 Ok(ty)
             })?

@@ -3,6 +3,303 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: INITIAL
 
+## Class/member and deferred-body checkpoint — 2026-10-12
+
+Entry commit: `4e9dbf23a05003f706080a8ba1cafb0a589e9bff` (clean).
+Implementation commit: the commit containing this checkpoint entry. Stage base
+and last-audited commit above remain unchanged. The preceding implementation
+turn is **progress**, evidenced by its committed exception/allocation group and
+63 -> 71 exact matches. The supplied later stageProgress receipt repeated
+71 -> 71; entry revalidation found no live compiler/check process to resume.
+This entry ports the next coherent group. It is a partial PA5 handoff; Ralph
+owns checkpoint/final audits and advancement.
+
+Read `AGENTS.md`, `CLONE_CONTRACT.md`, `spec.md`, `docs/rust-clone-plan.md`,
+`pa5/README.md`, `pa5/parsing.md` and this stage ledger. Inspected the actual
+frozen C++ implementation at `/home/vishvananda/work/references/v5rust-cpp`,
+contract commit `905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`.
+
+| C++ owner consulted | Rust owner and completed responsibility |
+| --- | --- |
+| `syntax/parser_specifiers.cpp`, `ast_declarations.h`, `ast_types.h` | `syntax/classes.rs`, `declarations.rs`, `ast.rs`: class/struct/union keys, forward and elaborated types, definitions, final, ordered bases/access/virtual/pack syntax and class-owned member lists |
+| `syntax/name_scopes.cpp`, `parser_specifiers.cpp`, `parser_names.cpp` | `syntax/scopes.rs`, `classes.rs`, `names.rs`: class scope allocation/reopening/completion, injected names, known base edges, qualified nested definitions, friend elaborated declarations and value hiding that retains the class/enum scope |
+| `syntax/parser_declarations.cpp`, `parser_declarators.cpp` | `syntax/classes.rs`, `declarations.rs`, `declarators.rs`: ordinary members/access labels, named/unnamed bit-fields, constructors/destructors/conversions, default/delete, definite special-member parameter clauses, member pointers and member-enum simple-declaration wrappers |
+| `syntax/parser.cpp`, `parse_token_stream.*`, `parser_state.*`, `parser_regions.h` | `syntax/classes.rs`, `cursor.rs`, `parser.rs`, `ast.rs`: capture balanced member bodies, queue on outermost class completion, parse each body once into its BodyId, ordered nested replay and local-class completion, constructor mem-initializers and function-try bodies |
+| `syntax/parser_names.cpp`, `parser_declarators.cpp`, `parser_declarations.cpp` | `syntax/names.rs`, `declarators.rs`, `declarations.rs`: retained prefix ScopeId; qualified member conversion-result, parameters, exception/result suffixes, bounds, initializers and body lookups |
+| `syntax/parser_expressions.cpp`, `parser_declarations.cpp` | `syntax/expressions.rs`, `classes.rs`: named function-type alternatives in sizeof/typeid/alignof, silent decline of nonconversion special-member names and exact rejection location |
+| `syntax/ast_printer.cpp`, `ast_render.cpp` | `syntax/printer.rs`, `render.rs`: exact iterative class/base/member/special-member/constructor/member-pointer dumps and compact typed declaration/statement/body/handler views |
+
+The tree retains one owning representation, with compact ClassId/BodyId and
+immutable list spans. Base and constructor initializer records retain locations
+and typed names/operands. A captured member Body starts Deferred and can transition to Parsed
+only once through a checked store API; printing rejects an unresolved state.
+Qualified names retain their known prefix scope rather than reconstructing it
+from spelling. Lookup remains indexed by ScopeId/NameId and explicit edges.
+Declaration and body traversal use source lists, not hash iteration.
+
+The pull cursor copies a primary body token run once. Local-class bodies already
+inside a replay borrow subranges of that same slab. Runs retain original absolute
+token ordinals, nest through resume frames and are released after the owning
+outermost class has parsed its queue. Completed syntax bodies retain no token
+runs. A failed speculation rewinds every new class/body/list slab, scope binding,
+base edge, completion mutation, deferred queue, token-run length and parser class
+context, including committed inner alternatives. No whole-unit pre-tokenization,
+text phase transport, per-node heap tree or speculative semantic/backend demand
+was introduced. The optimizer, register allocator and code generator are untouched.
+
+Three new executed Rust invariant tests cover late member/base categories with
+nested local-class replay, rollback of a completed class and all constructor/
+bit-field/body/scope state, and 2000 successive classes with token release and a
+bounded pull window. The latter retains fewer than 10 body tokens at once and a
+window under 4120; the previous 6000-declaration/long-chain invariants still pass.
+Debug/release pass all 64 library and eight tool tests. No dependencies or broad
+lint suppressions were added. New dead-code expectations are confined to source
+locations retained for later semantic diagnostics. The source audit reports
+77 files and zero findings.
+
+Artifacts: `/home/vishvananda/work/private/v5rust/artifacts/pa5-classes/`.
+`entry.json`, `start-results.json`, `progress.json`, `pa1-results.json` through
+`pa5-results.json`, `passed-case-ids.txt` and `failure-index.json` preserve the
+entry, final tool hashes, unchanged manifest identity and exact passing/failing
+case IDs. `cases/<case-digest>/trace.jsonl` archives protected traces and raw
+mismatch diagnostics/ASTs; `course/pa1/` through `course/pa5/` retain complete
+course receipts. No fixture, oracle, reference, checker, policy or Ralph state
+was changed. No cases were added to or removed from the 193-case fixed manifest.
+
+| Validation command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make test-pa5` (required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5`) | 114/193 exact matches, 79 failures; checker exit 1 / make exit 2; `stage.log`, `pa5-results.json` and archived traces |
+| `make course-pa5` | FAIL, 114/193, failure marker retained; checker exit 1 / make exit 2; `course.log`, `course/pa5/test/counts.txt`, `course-result.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa5` | PASS; PA1–PA4 fixed counts 58/58, 26/26, 20/20, 106/106 and full course counts 58/58, 28/28, 20/20, 112/112; `prior.log` and archived per-stage receipts |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, debug/release tests and companion audit; `quality.log` |
+| `make audit-rust` | PASS, 77 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` | PASS; `preflight.log` |
+| protected `clone_check.py preserve pa5` | PASS, 71/71 prior identities; `preserve.log`; `progress.json` independently proves 122 -> 79 failures, 43 gains and zero losses on the same manifest |
+
+PA5 differential and course checks remain failing; status 86 is still an explicit
+missing implementation, never an accepted rejecting compiler. This checkpoint
+satisfies the implementation phase's coherent-group partial handoff, not full
+assignment completion or stage advancement. No oracle/harness defect was found.
+
+Additional owner validation: run `python3` on the artifact directory's
+`differential.py`. All 50 scratch programs match full exit/stdout/stderr/AST
+bytes, including malformed class members/bases/bodies, nested deferred/local
+classes, inherited/later typedefs, class-name hiding and forward reopening,
+qualified nested/special/static members, member pointers, bit-fields and
+constructor/function-try bodies. `differential.json`, `differential.log` and
+`differential/` retain sources and raw receipts. These supplement the frozen
+manifest and do not count as checkpoint progress.
+
+Resource evidence: run the artifact directory's `measure.py`. Oracle A/A
+calibration followed by A/B/B/A blocks compare exact stdout/stderr/exit/full
+ASTs on all 54 invocations. Fixed sources contain 1000/4000/16000 ordinary
+functions, class pairs with inheritance/constructor/bit-fields/later typedefs,
+or methods within one class that defer until its final typedef. Binary hashes,
+Linux/rustc 1.98.0, C locale and UTC are in `resource-metadata.json`; source/output
+hashes, wall time and RSS observations are in `measurements.json`, with raw
+`.time`, `.stdout`, `.stderr` and `.ast` files. Measurements are warm whole
+invocations including preprocessing, the clock helper and dump I/O; they are
+not cold-cache or hardware-counter proof and impose no PA35 target.
+
+| Workload | Units | Rust mean ms | Rust peak RSS KiB | C++ mean ms | C++ peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| functions | 1000 | 25.24 | 8004 | 10.30 | 6476 |
+| functions | 4000 | 54.19 | 8036 | 26.92 | 8584 |
+| functions | 16000 | 170.67 | 20540 | 90.35 | 21244 |
+| classes | 1000 | 54.89 | 8032 | 27.25 | 9924 |
+| classes | 4000 | 175.50 | 17024 | 101.29 | 23308 |
+| classes | 16000 | 661.60 | 60904 | 397.99 | 77884 |
+| members | 1000 | 37.81 | 8020 | 14.63 | 7188 |
+| members | 4000 | 100.02 | 13608 | 43.80 | 13540 |
+| members | 16000 | 303.58 | 48808 | 142.48 | 39720 |
+
+Storage grows with introduced syntax and the owning class's pending bodies.
+Runs release at each class boundary; a single large class retains its bodies
+until the required completion event. The 4000 -> 16000 measurements are
+observations of that supported boundary, not permission for broader hot-path
+work or changed code-generation policy.
+
+Next dependency boundary: translate template declarations and parameter
+categories (`parser_declarations.cpp`, `parser_names.cpp`, `parser_state.cpp`,
+`name_scopes.cpp`), then typed template arguments/angle fences and dependent
+qualified lookups. These are the earliest divergence in 69 remaining cases,
+including template-member bodies now reaching that owner. Attribute collection
+and retained facts account for three cases; lambda/deferred speculation for
+three; unresolved template-id calls for three; mock template-id disambiguation
+for one. Qualified template special-member definitions require the template
+owner before using the completed ordinary class/body path.
+
+Remaining production surfaces also include complete dependent/conflict/namespace
+nomination rules, attributes and special-member explicit conditions, packs,
+retained ambiguous readings, hosted extensions/stats/prelude/pack observations,
+and the host byte-stack budget. The existing safe recursion limit still returns
+86 at depth 256. These are documented unfinished owners, not clone rejections.
+Before semantic integration, finish the earlier foundation's parameter/name/
+initializer source metadata and ambiguity facts. No later phase should infer
+missing facts from these dumps.
+
+Architecture review should inspect typed prefix/member scope flow, class-forward
+and value-hiding merge/undo, ordering and one-time completion of BodyId targets,
+nested token-run alias lifetimes, complete rollback, and flat iterative views.
+It should verify responsibility/size limits and not infer full PA5 completion
+from 114 matches. This ledger does not advance the last-audited commit.
+
+Exact newly passing fixed case IDs (43):
+
+```text
+tests/general/100-known-function-name-with-type-marker.t
+tests/general/100-late-nested-class-type-in-inline-member.t
+tests/general/100-member-declarations.t
+tests/general/100-special-member-definitions.t
+tests/general/100-typedef-anonymous-union.t
+tests/general/100-typedef-shadows-outer-value-in-member-function.t
+tests/general/100-typedef-struct-union.t
+tests/general/200-braced-return.t
+tests/general/200-builtin-function-style-cast-member-body.t
+tests/general/200-class-definition-missing-semicolon-bad.t
+tests/general/200-constructor-declaration-identifier-parameter.t
+tests/general/200-decltype-base-and-mem-initializer.t
+tests/general/200-elaborated-enum-member-declarators.t
+tests/general/200-empty-brace-scalar-init.t
+tests/general/200-extern-c-class-declaration.t
+tests/general/200-friend-type-declaration.t
+tests/general/200-function-throw-typed-specification.t
+tests/general/200-function-try-and-exception-declarators.t
+tests/general/200-function-virt-and-noexcept-suffixes.t
+tests/general/200-global-qualified-pointer-conversion.t
+tests/general/200-global-struct-paren-declaration.t
+tests/general/200-member-pointer-const-function-declarator.t
+tests/general/200-member-pointer-data-declarator.t
+tests/general/200-member-pointer-function-declarator.t
+tests/general/200-member-relational-logical.t
+tests/general/200-nested-unary-call-arguments.t
+tests/general/200-parenthesized-function-style-cast-mem-init.t
+tests/general/200-qualified-base-and-ctor-init.t
+tests/general/200-qualified-conversion-operator-definition.t
+tests/general/200-qualified-nonconversion-operator-missing-return-type-bad.t
+tests/general/200-qualified-result-parenthesized-member-pointer-declarator.t
+tests/general/200-sizeof-elaborated-class-type-id.t
+tests/general/200-sizeof-functional-cast-expressions.t
+tests/general/200-sizeof-qualified-value-call-expression.t
+tests/general/200-sizeof-zero-arg-functional-cast.t
+tests/general/200-typeid-postfix-member-suffix.t
+tests/general/200-zero-width-bit-field-declaration.t
+tests/general/300-call-argument-prevents-function-declaration.t
+tests/general/300-declaration-expression-intake.t
+tests/general/300-function-object-ambiguity.t
+tests/general/300-local-typedef-shadows-value-qualified-type.t
+tests/spec/200-bit-field-declaration.t
+tests/spec/200-class-bases-and-ctor-init.t
+```
+
+Current exact remaining fixed-manifest failures, clustered by earliest raw
+trace divergence; `failure-index.json` links each to source and archived evidence:
+
+### attributes and retained facts (3)
+
+```text
+tests/general/100-balanced-attributes.t
+tests/general/200-trailing-parameter-carries-dependency-attribute.t
+tests/general/200-trailing-parameter-vendor-attribute.t
+```
+
+### template declarations and parameter categories (69)
+
+```text
+tests/general/100-class-alignas-after-class-key.t
+tests/general/100-decltype-qualified-id-expression.t
+tests/general/100-dependent-logical-template-argument.t
+tests/general/100-function-type-template-argument-leading-named-parameter.t
+tests/general/100-member-operator-name-call.t
+tests/general/100-parameter-clause-trailing-ellipsis.t
+tests/general/100-parameter-shadows-template-comparison.t
+tests/general/100-parameter-shadows-template-strict-comparison.t
+tests/general/100-template-argument-paren-greater-nested.t
+tests/general/100-template-template-parameter-name-reuse.t
+tests/general/100-unary-forms.t
+tests/general/200-attributed-partial-specialization-current-class-constructor.t
+tests/general/200-attributed-virtual-destructor-member.t
+tests/general/200-casts-typeid-construction.t
+tests/general/200-decltype-less-partial-specialization.t
+tests/general/200-dependent-member-template-call.t
+tests/general/200-dependent-sizeof-pointer-type-id.t
+tests/general/200-dependent-template-id-names.t
+tests/general/200-dependent-template-keyword-nested-angle.t
+tests/general/200-forward-unknown-nested-template-in-ctor-body.t
+tests/general/200-friend-function-template-declaration.t
+tests/general/200-inline-namespace-template-visibility-base.t
+tests/general/200-malformed-template-parameter-clause.t
+tests/general/200-member-relational-ignores-using-template.t
+tests/general/200-member-template-if-less-template-call.t
+tests/general/200-member-template-parameter-value-vs-template-name.t
+tests/general/200-namespace-alias-using-directive-imported-template-id-type.t
+tests/general/200-nested-qualified-template-id-template-args.t
+tests/general/200-nested-template-return-assignment-operator.t
+tests/general/200-operator-less-followed-by-operator-greater.t
+tests/general/200-pack-base-initializers.t
+tests/general/200-parenthesized-qualified-function-template-call.t
+tests/general/200-partial-specialization-current-class-constructor.t
+tests/general/200-placement-new-identifier-led-initializer.t
+tests/general/200-placement-new-pack-init.t
+tests/general/200-postfix-template-suffixes.t
+tests/general/200-qualified-base-member-call.t
+tests/general/200-qualified-base-template-id-logical-argument-value-shadow.t
+tests/general/200-qualified-call-direct-initializer.t
+tests/general/200-qualified-call-member-body.t
+tests/general/200-qualified-member-comparison-template-arg.t
+tests/general/200-qualified-template-id-parameters.t
+tests/general/200-relational-qualified-template-static-calls.t
+tests/general/200-reopened-namespace-template-function-template-name.t
+tests/general/200-template-class-body.t
+tests/general/200-template-conditional-simple-type-shift-return.t
+tests/general/200-template-function-body.t
+tests/general/200-template-function-type-alias-declaration.t
+tests/general/200-template-function-type-alias-pack-declaration.t
+tests/general/200-template-id-function-pointer-argument.t
+tests/general/200-template-id-function-pointer-initializer.t
+tests/general/200-template-id-return-type-inline.t
+tests/general/200-template-id-value-if-condition.t
+tests/general/200-template-member-definition-inherited-typedef-cast.t
+tests/general/200-template-qualified-conversion-operator-dependent-result.t
+tests/general/200-template-qualified-inline-attribute-constructor-definition.t
+tests/general/200-template-qualified-inline-constructor-definition.t
+tests/general/200-using-declaration-imported-template-id-type.t
+tests/general/200-using-directive-imported-template-id-type.t
+tests/general/300-nested-angle-and-shift.t
+tests/general/300-operator-template-calls.t
+tests/general/300-value-comparisons-in-template-arguments.t
+tests/spec/100-template-class.t
+tests/spec/100-template-parameters.t
+tests/spec/200-explicit-instantiation-declaration.t
+tests/spec/200-explicit-specialization-syntax.t
+tests/spec/200-non-type-template-parameters.t
+tests/spec/200-qualified-special-member-definition.t
+tests/spec/300-template-id-less-expression.t
+```
+
+### lambda expressions and deferred bodies (3)
+
+```text
+tests/general/100-lambda-cast.t
+tests/general/200-lambda-capture-forms.t
+tests/general/200-lambda-declarator.t
+```
+
+### unresolved template-id calls (3)
+
+```text
+tests/general/100-template-condition.t
+tests/general/200-switch-case-qualified-template-id-call.t
+tests/general/200-switch-case-template-id-call.t
+```
+
+### template-id name disambiguation (1)
+
+```text
+tests/general/200-mock-template-name-angle-forms.t
+```
+
 ## Exception/allocation and connected names checkpoint — 2026-10-12
 
 Entry commit: `064a6a51fa51717d27ffddfe9349dae560dbdf73` (clean).

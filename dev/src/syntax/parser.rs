@@ -19,6 +19,8 @@ pub(super) struct Parser<'a> {
     pub tree: Tree,
     pub scopes: Scopes,
     pub function_scope: Option<ScopeId>,
+    pub class_depth: usize,
+    pub deferred: Vec<super::classes::DeferredBody>,
     depth: u32,
     tentative_depth: usize,
     pub checkpoints: u64,
@@ -32,6 +34,9 @@ struct Checkpoint {
     tree: TreeMark,
     scopes: ScopeMark,
     function_scope: Option<ScopeId>,
+    class_depth: usize,
+    deferred: usize,
+    runs: usize,
 }
 impl<'a> Parser<'a> {
     pub(super) fn new(cursor: Cursor<'a>) -> Self {
@@ -40,6 +45,8 @@ impl<'a> Parser<'a> {
             tree: Tree::default(),
             scopes: Scopes::default(),
             function_scope: None,
+            class_depth: 0,
+            deferred: Vec::new(),
             depth: 0,
             tentative_depth: 0,
             checkpoints: 0,
@@ -151,6 +158,9 @@ impl<'a> Parser<'a> {
             tree: self.tree.mark(),
             scopes: self.scopes.mark(),
             function_scope: self.function_scope,
+            class_depth: self.class_depth,
+            deferred: self.deferred.len(),
+            runs: self.cursor.runs_mark(),
         };
         self.cursor.retain();
         self.tentative_depth += 1;
@@ -162,6 +172,9 @@ impl<'a> Parser<'a> {
             self.tree.rewind(&mark.tree);
             self.scopes.rewind(mark.scopes);
             self.function_scope = mark.function_scope;
+            self.class_depth = mark.class_depth;
+            self.deferred.truncate(mark.deferred);
+            self.cursor.rewind_runs(mark.runs);
             self.rewinds += 1;
         }
         self.cursor.release();
@@ -185,7 +198,7 @@ impl<'a> Parser<'a> {
             }
             let declaration = self.declaration()?;
             self.tree.decl_lists.push(declaration);
-            if self.tentative_depth == 0 {
+            if self.tentative_depth == 0 && self.class_depth == 0 {
                 self.scopes.settle();
             }
         }
@@ -242,6 +255,15 @@ impl<'a> Parser<'a> {
                     {
                         return scope;
                     }
+                }
+                super::ast::Specifier::Class(id) => return Some(self.tree.classes.get(*id).scope),
+                super::ast::Specifier::Elaborated { name, .. } => {
+                    return self
+                        .tree
+                        .names
+                        .get(*name)
+                        .binding
+                        .and_then(|binding| binding.scope);
                 }
                 super::ast::Specifier::Keyword(_) | super::ast::Specifier::Decltype(_) => (),
             }

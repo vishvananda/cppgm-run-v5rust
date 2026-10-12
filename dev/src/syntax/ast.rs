@@ -13,12 +13,15 @@ pub(super) type ExprId = Id<Expression>;
 pub(super) type DeclaratorId = Id<Declarator>;
 pub(super) type TypeId = Id<TypeSyntax>;
 pub(super) type Name = Id<QualifiedName>;
+pub(super) type BodyId = Id<Body>;
+pub(super) type ClassId = Id<ClassSyntax>;
 pub(super) type StmtId = Id<Statement>;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct QualifiedName {
     pub global: bool,
     pub typename_keyword: bool,
     pub components: List<NameComponent>,
+    pub prefix_scope: Option<ScopeId>,
     pub binding: Option<Binding>,
 }
 #[derive(Clone, Copy, Debug)]
@@ -65,6 +68,8 @@ pub(super) enum Specifier {
     Keyword(Keyword),
     Named(Name),
     Enum(DeclId),
+    Class(ClassId),
+    Elaborated { key: Keyword, name: Name },
     Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
@@ -80,6 +85,7 @@ pub(super) struct TypeSyntax {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Pointer {
     pub op: Operator,
+    pub class_name: Option<Name>,
     pub cv: List<Keyword>,
 }
 #[derive(Clone, Copy, Debug)]
@@ -144,7 +150,56 @@ pub(super) struct Enumerator {
     pub value: Option<ExprId>,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum Body {
+    Deferred,
+    Parsed(FunctionBody),
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Base {
+    #[expect(
+        dead_code,
+        reason = "Base source location is retained for later access and inheritance diagnostics"
+    )]
+    pub location: SourceOffset,
+    pub name: Name,
+    pub access: Option<Keyword>,
+    pub is_virtual: bool,
+    pub virtual_first: bool,
+    pub pack: bool,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ClassSyntax {
+    #[expect(
+        dead_code,
+        reason = "Class key source location is retained for later declaration diagnostics"
+    )]
+    pub location: SourceOffset,
+    pub key: Keyword,
+    pub name: Option<Name>,
+    pub scope: ScopeId,
+    pub final_specifier: bool,
+    pub bases: List<Base>,
+    pub members: List<DeclId>,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BitField {
+    pub declarator: Option<DeclaratorId>,
+    pub width: ExprId,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct MemInitializer {
+    #[expect(
+        dead_code,
+        reason = "Initializer source location is retained for later constructor analysis"
+    )]
+    pub location: SourceOffset,
+    pub name: Name,
+    pub initializer: Initializer,
+    pub pack: bool,
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct FunctionBody {
+    pub initializers: List<MemInitializer>,
     pub compound: StmtId,
     pub handlers: Option<List<Handler>>,
 }
@@ -180,8 +235,21 @@ pub(super) enum DeclKind {
     Function {
         specifiers: List<Specifier>,
         declarator: DeclaratorId,
-        body: FunctionBody,
+        body: BodyId,
     },
+    Class(Specifier),
+    SpecialMember {
+        specifiers: List<Specifier>,
+        name: Name,
+        declarator: DeclaratorId,
+        initializer: Option<Initializer>,
+        body: Option<BodyId>,
+    },
+    BitField {
+        specifiers: List<Specifier>,
+        declarators: List<BitField>,
+    },
+    Access(Keyword),
     Namespace {
         name: Option<NameId>,
         inline: bool,
@@ -380,6 +448,8 @@ pub(super) struct Tree {
     pub declarators: Store<Declarator>,
     pub types: Store<TypeSyntax>,
     pub names: Store<QualifiedName>,
+    pub classes: Store<ClassSyntax>,
+    pub bodies: Store<Body>,
     pub statements: Store<Statement>,
     pub decl_lists: Lists<DeclId>,
     pub expr_lists: Lists<ExprId>,
@@ -394,6 +464,9 @@ pub(super) struct Tree {
     pub type_lists: Lists<TypeId>,
     pub init_declarators: Lists<InitDeclarator>,
     pub enumerators: Lists<Enumerator>,
+    pub bases: Lists<Base>,
+    pub bit_fields: Lists<BitField>,
+    pub mem_initializers: Lists<MemInitializer>,
     pub handlers: Lists<Handler>,
 }
 #[derive(Clone, Copy)]
@@ -403,6 +476,8 @@ pub(super) struct TreeMark {
     declarators: usize,
     types: usize,
     names: usize,
+    classes: usize,
+    bodies: usize,
     statements: usize,
     decl_lists: ListMark,
     expr_lists: ListMark,
@@ -417,9 +492,24 @@ pub(super) struct TreeMark {
     type_lists: ListMark,
     init_declarators: ListMark,
     enumerators: ListMark,
+    bases: ListMark,
+    bit_fields: ListMark,
+    mem_initializers: ListMark,
     handlers: ListMark,
 }
 impl Tree {
+    pub(super) fn complete_body(
+        &mut self,
+        id: BodyId,
+        body: FunctionBody,
+    ) -> Result<(), super::ParseError> {
+        if !matches!(self.bodies.get(id), Body::Deferred) {
+            return Err(super::ParseError::Invariant("function body already parsed"));
+        }
+        self.bodies.replace(id, Body::Parsed(body));
+        Ok(())
+    }
+
     pub(super) fn mark(&self) -> TreeMark {
         TreeMark {
             declarations: self.declarations.mark(),
@@ -427,6 +517,8 @@ impl Tree {
             declarators: self.declarators.mark(),
             types: self.types.mark(),
             names: self.names.mark(),
+            classes: self.classes.mark(),
+            bodies: self.bodies.mark(),
             statements: self.statements.mark(),
             decl_lists: self.decl_lists.mark(),
             expr_lists: self.expr_lists.mark(),
@@ -441,6 +533,9 @@ impl Tree {
             type_lists: self.type_lists.mark(),
             init_declarators: self.init_declarators.mark(),
             enumerators: self.enumerators.mark(),
+            bases: self.bases.mark(),
+            bit_fields: self.bit_fields.mark(),
+            mem_initializers: self.mem_initializers.mark(),
             handlers: self.handlers.mark(),
         }
     }
@@ -450,6 +545,8 @@ impl Tree {
         self.declarators.rewind(mark.declarators);
         self.types.rewind(mark.types);
         self.names.rewind(mark.names);
+        self.classes.rewind(mark.classes);
+        self.bodies.rewind(mark.bodies);
         self.statements.rewind(mark.statements);
         self.decl_lists.rewind(mark.decl_lists);
         self.expr_lists.rewind(mark.expr_lists);
@@ -464,6 +561,9 @@ impl Tree {
         self.type_lists.rewind(mark.type_lists);
         self.init_declarators.rewind(mark.init_declarators);
         self.enumerators.rewind(mark.enumerators);
+        self.bases.rewind(mark.bases);
+        self.bit_fields.rewind(mark.bit_fields);
+        self.mem_initializers.rewind(mark.mem_initializers);
         self.handlers.rewind(mark.handlers);
     }
 }

@@ -2,8 +2,9 @@
 //! Compact syntax labels are views; never a phase transport or lookup key.
 use super::{
     ast::{
-        DeclKind, DeclaratorId, ExprId, ExprKind, Initializer, Name, NameComponent, NameKind,
-        Operator, ParameterClause, Qualifier, Specifier, Suffix, Tree, TypeId,
+        Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId, ExceptionDeclaration,
+        ExprId, ExprKind, Handler, Initializer, Name, NameComponent, NameKind, Operator,
+        ParameterClause, Qualifier, Specifier, StmtId, StmtKind, Suffix, Tree, TypeId,
     },
     cursor::Cursor,
     storage::{List, Text},
@@ -12,6 +13,13 @@ use crate::lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Key
 #[derive(Clone, Copy)]
 pub(super) enum Render {
     Text(&'static str),
+    Declaration(DeclId),
+    Statement(StmtId),
+    Condition(Condition),
+    Handler(Handler),
+    Body(BodyId),
+    Class(ClassId),
+    MemberPointer(Name),
     Spelling(Text),
     Identifier(NameId),
     Name(Name, bool),
@@ -44,12 +52,13 @@ impl<'a, 'source> Renderer<'a, 'source> {
             tasks: Vec::new(),
         }
     }
-    pub(super) fn render(&mut self, task: Render) {
+    pub(super) fn render(&mut self, task: Render) -> std::io::Result<()> {
         self.bytes.clear();
         self.tasks.push(task);
         while let Some(task) = self.tasks.pop() {
-            self.expand(task);
+            self.expand(task)?;
         }
+        Ok(())
     }
     fn text(&mut self, text: &str) {
         self.bytes.extend_from_slice(text.as_bytes());
@@ -62,8 +71,47 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
         }
     }
-    fn expand(&mut self, task: Render) {
+    fn expand(&mut self, task: Render) -> std::io::Result<()> {
         match task {
+            Render::Declaration(id) => self.declaration(id),
+            Render::Statement(id) => self.statement(id),
+            Render::Condition(condition) => self.condition(condition),
+            Render::Handler(handler) => self.handler(handler),
+            Render::Class(id) => self.class(id),
+            Render::MemberPointer(name) => {
+                self.tasks.push(Render::Text("::*"));
+                self.tasks.push(Render::Name(name, false));
+            }
+            Render::Body(id) => {
+                let Body::Parsed(body) = *self.tree.bodies.get(id) else {
+                    return Err(std::io::Error::other("unparsed deferred function body"));
+                };
+                if let Some(handlers) = body.handlers {
+                    for &handler in self.tree.handlers.get(handlers).iter().rev() {
+                        self.tasks.push(Render::Handler(handler));
+                    }
+                }
+                self.tasks.push(Render::Statement(body.compound));
+                for (index, &member) in self
+                    .tree
+                    .mem_initializers
+                    .get(body.initializers)
+                    .iter()
+                    .enumerate()
+                    .rev()
+                {
+                    if member.pack {
+                        self.tasks.push(Render::Text("..."));
+                    }
+                    self.tasks.push(Render::Initializer(member.initializer));
+                    self.tasks.push(Render::Name(member.name, true));
+                    self.tasks
+                        .push(Render::Text(if index == 0 { ":" } else { "," }));
+                }
+                if body.handlers.is_some() {
+                    self.tasks.push(Render::Text("try"));
+                }
+            }
             Render::Text(text) => self.text(text),
             Render::Spelling(text) => self
                 .bytes
@@ -140,7 +188,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
                         self.tasks.push(Render::Text(" "));
                         self.tasks.push(Render::Text(cv.spelling()));
                     }
-                    self.tasks.push(Render::Operator(pointer.op));
+                    self.tasks.push(
+                        pointer
+                            .class_name
+                            .map_or(Render::Operator(pointer.op), Render::MemberPointer),
+                    );
                 }
             }
             Render::Clause(clause) => {
@@ -223,6 +275,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 self.list(list);
             }
         }
+        Ok(())
     }
     fn specifier(&mut self, specifier: Specifier) {
         match specifier {
@@ -233,6 +286,12 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 self.tasks.push(Render::Text(word.spelling()));
             }
             Specifier::Named(name) => self.tasks.push(Render::Name(name, true)),
+            Specifier::Class(id) => self.tasks.push(Render::Class(id)),
+            Specifier::Elaborated { key, name } => {
+                self.tasks.push(Render::Name(name, true));
+                self.tasks.push(Render::Text(" "));
+                self.tasks.push(Render::Text(key.spelling()));
+            }
             Specifier::Enum(decl) => self.enumeration(decl),
             Specifier::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
         }
@@ -298,7 +357,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
             .get(self.tree.types.get(ty).specifiers)
             .first()
             .is_some_and(|specifier| match specifier {
-                Specifier::Keyword(_) | Specifier::Enum(_) | Specifier::Decltype(_) => true,
+                Specifier::Keyword(_)
+                | Specifier::Enum(_)
+                | Specifier::Decltype(_)
+                | Specifier::Class(_)
+                | Specifier::Elaborated { .. } => true,
                 Specifier::Named(name) => {
                     let name = self.tree.names.get(*name);
                     !name.global
@@ -561,5 +624,361 @@ pub(super) fn operator_spelling(op: Operator) -> &'static str {
         }
     } else {
         op.token.spelling()
+    }
+}
+
+impl Renderer<'_, '_> {
+    fn class(&mut self, id: ClassId) {
+        let class = *self.tree.classes.get(id);
+        self.tasks.push(Render::Text("}"));
+        for &member in self.tree.decl_lists.get(class.members).iter().rev() {
+            self.tasks.push(Render::Declaration(member));
+        }
+        self.tasks.push(Render::Text("{"));
+        for (index, &base) in self.tree.bases.get(class.bases).iter().enumerate().rev() {
+            if base.pack {
+                self.tasks.push(Render::Text("..."));
+            }
+            self.tasks.push(Render::Name(base.name, true));
+            if base.is_virtual && !base.virtual_first {
+                self.tasks.push(Render::Text("virtual"));
+            }
+            if let Some(access) = base.access {
+                self.tasks.push(Render::Text(access.spelling()));
+            }
+            if base.virtual_first {
+                self.tasks.push(Render::Text("virtual"));
+            }
+            self.tasks
+                .push(Render::Text(if index == 0 { ":" } else { "," }));
+        }
+        if class.final_specifier {
+            self.tasks.push(Render::Text("final"));
+        }
+        if let Some(name) = class.name {
+            self.tasks.push(Render::Name(name, true));
+        }
+        self.tasks.push(Render::Text(" "));
+        self.tasks.push(Render::Text(class.key.spelling()));
+    }
+    fn declaration(&mut self, id: DeclId) {
+        match self.tree.declarations.get(id).kind {
+            DeclKind::Empty => self.tasks.push(Render::Text(";")),
+            DeclKind::Class(specifier) => {
+                self.tasks.push(Render::Text(";"));
+                self.tasks.push(Render::Specifier(specifier));
+            }
+            DeclKind::Enum { .. } => {
+                self.tasks.push(Render::Text(";"));
+                self.enumeration(id);
+            }
+            DeclKind::Access(access) => {
+                self.tasks.push(Render::Text(":"));
+                self.tasks.push(Render::Text(access.spelling()));
+            }
+            DeclKind::Simple {
+                specifiers,
+                declarators,
+            } => {
+                self.tasks.push(Render::Text(";"));
+                for (index, &init) in self
+                    .tree
+                    .init_declarators
+                    .get(declarators)
+                    .iter()
+                    .enumerate()
+                    .rev()
+                {
+                    if let Some(initializer) = init.initializer {
+                        self.tasks.push(Render::Initializer(initializer));
+                    }
+                    self.tasks.push(Render::Declarator(init.declarator));
+                    if index != 0 {
+                        self.tasks.push(Render::Text(","));
+                    }
+                }
+                self.tasks.push(Render::Specs(specifiers));
+            }
+            DeclKind::Function {
+                specifiers,
+                declarator,
+                body,
+            } => {
+                self.tasks.push(Render::Body(body));
+                self.tasks.push(Render::Declarator(declarator));
+                self.tasks.push(Render::Specs(specifiers));
+            }
+            DeclKind::SpecialMember {
+                specifiers,
+                declarator,
+                initializer,
+                body,
+                ..
+            } => {
+                if let Some(body) = body {
+                    self.tasks.push(Render::Body(body));
+                } else {
+                    self.tasks.push(Render::Text(";"));
+                    if let Some(initializer) = initializer {
+                        self.tasks.push(Render::Initializer(initializer));
+                    }
+                }
+                self.tasks.push(Render::Declarator(declarator));
+                self.tasks.push(Render::Specs(specifiers));
+            }
+            DeclKind::BitField {
+                specifiers,
+                declarators,
+            } => {
+                self.tasks.push(Render::Text(";"));
+                for (index, &field) in self
+                    .tree
+                    .bit_fields
+                    .get(declarators)
+                    .iter()
+                    .enumerate()
+                    .rev()
+                {
+                    self.tasks.push(Render::Expression(field.width));
+                    self.tasks.push(Render::Text(":"));
+                    if let Some(declarator) = field.declarator {
+                        self.tasks.push(Render::Declarator(declarator));
+                    }
+                    if index != 0 {
+                        self.tasks.push(Render::Text(","));
+                    }
+                }
+                self.tasks.push(Render::Specs(specifiers));
+            }
+            DeclKind::Namespace {
+                name,
+                inline,
+                declarations,
+            } => {
+                self.tasks.push(Render::Text("}"));
+                for &member in self.tree.decl_lists.get(declarations).iter().rev() {
+                    self.tasks.push(Render::Declaration(member));
+                }
+                self.tasks.push(Render::Text("{"));
+                if let Some(name) = name {
+                    self.tasks.push(Render::Identifier(name));
+                }
+                self.tasks.push(Render::Text(if inline {
+                    "inlinenamespace"
+                } else {
+                    "namespace"
+                }));
+            }
+            DeclKind::NamespaceAlias { name, target } => {
+                self.tasks.push(Render::Text(";"));
+                self.tasks.push(Render::Name(target, true));
+                self.tasks.push(Render::Text("="));
+                self.tasks.push(Render::Identifier(name));
+                self.tasks.push(Render::Text("namespace"));
+            }
+            DeclKind::Using { directive, target } => {
+                self.tasks.push(Render::Text(";"));
+                self.tasks.push(Render::Name(target, true));
+                self.tasks.push(Render::Text(if directive {
+                    "usingnamespace"
+                } else if self.tree.names.get(target).typename_keyword {
+                    "usingtypename "
+                } else {
+                    "using"
+                }));
+            }
+            DeclKind::Alias { name, ty } => {
+                self.tasks.push(Render::Text(";"));
+                self.tasks.push(Render::Type(ty));
+                self.tasks.push(Render::Text("="));
+                self.tasks.push(Render::Identifier(name));
+                self.tasks.push(Render::Text("using"));
+            }
+            DeclKind::StaticAssert { condition, message } => {
+                self.tasks.push(Render::Text(");"));
+                if let Some(message) = message {
+                    self.tasks.push(Render::Spelling(message.spelling));
+                    self.tasks.push(Render::Text(","));
+                }
+                self.tasks.push(Render::Expression(condition));
+                self.tasks.push(Render::Text("static_assert("));
+            }
+            DeclKind::Linkage {
+                language,
+                declarations,
+                ..
+            } => {
+                self.tasks.push(Render::Text("}"));
+                for &member in self.tree.decl_lists.get(declarations).iter().rev() {
+                    self.tasks.push(Render::Declaration(member));
+                }
+                self.tasks.push(Render::Text("\"{"));
+                self.tasks.push(Render::Spelling(language));
+                self.tasks.push(Render::Text("extern\""));
+            }
+        }
+    }
+    fn handler(&mut self, handler: Handler) {
+        self.tasks.push(Render::Statement(handler.body));
+        self.tasks.push(Render::Text(")"));
+        match handler.exception {
+            ExceptionDeclaration::Ellipsis => self.tasks.push(Render::Text("...")),
+            ExceptionDeclaration::Typed {
+                specifiers,
+                declarator,
+            } => {
+                if let Some(declarator) = declarator {
+                    self.tasks.push(Render::Declarator(declarator));
+                }
+                self.tasks.push(Render::Specs(specifiers));
+            }
+        }
+        self.tasks.push(Render::Text("catch("));
+    }
+    fn condition(&mut self, condition: Condition) {
+        match condition {
+            Condition::Expression(expr) => self.tasks.push(Render::Expression(expr)),
+            Condition::Declaration {
+                specifiers,
+                declarator,
+                initializer,
+            } => {
+                self.tasks.push(Render::Initializer(initializer));
+                self.tasks.push(Render::Declarator(declarator));
+                self.tasks.push(Render::Specs(specifiers));
+            }
+        }
+    }
+    fn statement(&mut self, id: StmtId) {
+        match self.tree.statements.get(id).kind {
+            StmtKind::Compound(items) => {
+                self.tasks.push(Render::Text("}"));
+                for &item in self.tree.stmt_lists.get(items).iter().rev() {
+                    self.tasks.push(Render::Statement(item));
+                }
+                self.tasks.push(Render::Text("{"));
+            }
+            StmtKind::Declaration(decl) => self.tasks.push(Render::Declaration(decl)),
+            StmtKind::Expression(expr) => {
+                self.tasks.push(Render::Text(";"));
+                if let Some(expr) = expr {
+                    self.tasks.push(Render::Expression(expr));
+                }
+            }
+            StmtKind::Return(expr) | StmtKind::Throw(expr) => {
+                self.tasks.push(Render::Text(";"));
+                if let Some(expr) = expr {
+                    self.tasks.push(Render::Expression(expr));
+                }
+                self.tasks.push(Render::Text(
+                    if matches!(self.tree.statements.get(id).kind, StmtKind::Return(_)) {
+                        "return"
+                    } else {
+                        "throw"
+                    },
+                ));
+            }
+            StmtKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                if let Some(branch) = else_branch {
+                    self.tasks.push(Render::Statement(branch));
+                    self.tasks.push(Render::Text("else"));
+                }
+                self.tasks.push(Render::Statement(then_branch));
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Condition(condition));
+                self.tasks.push(Render::Text("if("));
+            }
+            StmtKind::ConditionalLoop {
+                keyword,
+                condition,
+                body,
+            } => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Condition(condition));
+                self.tasks.push(Render::Text("("));
+                self.tasks.push(Render::Text(keyword.spelling()));
+            }
+            StmtKind::Do { body, condition } => {
+                self.tasks.push(Render::Text(");"));
+                self.tasks.push(Render::Expression(condition));
+                self.tasks.push(Render::Text("while("));
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text("do"));
+            }
+            StmtKind::For {
+                declaration,
+                init,
+                condition,
+                iteration,
+                body,
+            } => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text(")"));
+                if let Some(expr) = iteration {
+                    self.tasks.push(Render::Expression(expr));
+                }
+                self.tasks.push(Render::Text(";"));
+                if let Some(condition) = condition {
+                    self.tasks.push(Render::Condition(condition));
+                }
+                if let Some(decl) = declaration {
+                    self.tasks.push(Render::Declaration(decl));
+                } else {
+                    self.tasks.push(Render::Text(";"));
+                    if let Some(expr) = init {
+                        self.tasks.push(Render::Expression(expr));
+                    }
+                }
+                self.tasks.push(Render::Text("for("));
+            }
+            StmtKind::RangeFor {
+                specifiers,
+                declarator,
+                range,
+                body,
+            } => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Expression(range));
+                self.tasks.push(Render::Text(":"));
+                self.tasks.push(Render::Declarator(declarator));
+                self.tasks.push(Render::Specs(specifiers));
+                self.tasks.push(Render::Text("for("));
+            }
+            StmtKind::Break => self.tasks.push(Render::Text("break;")),
+            StmtKind::Continue => self.tasks.push(Render::Text("continue;")),
+            StmtKind::Goto(name) => {
+                self.tasks.push(Render::Text(";"));
+                self.tasks.push(Render::Identifier(name));
+                self.tasks.push(Render::Text("goto"));
+            }
+            StmtKind::Label { name, body } => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text(":"));
+                self.tasks.push(Render::Identifier(name));
+            }
+            StmtKind::Case { value, body } => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text(":"));
+                self.tasks.push(Render::Expression(value));
+                self.tasks.push(Render::Text("case"));
+            }
+            StmtKind::Default(body) => {
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text("default:"));
+            }
+            StmtKind::Try { body, handlers } => {
+                for &handler in self.tree.handlers.get(handlers).iter().rev() {
+                    self.tasks.push(Render::Handler(handler));
+                }
+                self.tasks.push(Render::Statement(body));
+                self.tasks.push(Render::Text("try"));
+            }
+        }
     }
 }
