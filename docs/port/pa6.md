@@ -1,7 +1,7 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `dab1205c35f289a525d537ba323fa920b9de5092` (ongoing full-stage audit; special-member/name/head groups reviewed, acceptance withheld).
+Last audited commit: `7f072acb50466fec690d20f600694e61fc1cb737` (ongoing full-stage audit; template exception keys and alias-template declaration groups reviewed, acceptance withheld).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
@@ -1665,3 +1665,195 @@ This committed increment closes the three incoming basic declaration probes
 and preserves every gate, but does not prove the complete original objective.
 Ralph's existing full-stage audit goal remains active; no state or acceptance
 policy was edited.
+
+
+## Template expression keys and alias-template declaration audit
+
+Reviewed incoming documentation revision `26ffd7f00c9f8614346da413f6d41d8be7a0336a`
+and implementation `dab1205c35f289a525d537ba323fa920b9de5092`, then audited
+implementation `7f072acb50466fec690d20f600694e61fc1cb737`. The stage base remains
+`70e745588987998ee1e5bde80b3861541eab753d`. This entry closes the incoming
+constructor-template expression-equivalence boundary; full-stage acceptance
+is still withheld pending the remaining responsibility review and fixes.
+
+Read the repository contract, specification, clone plan, PA6 handout and
+scope/type guide, ledger and source map in this ongoing audit. Consulted the
+frozen C++ source at `0fe8e3b4bde9929c2419fb7906028df83bb17de5`, especially
+`template_placeholders.cpp::decltype_words/name_words/parameter_word/resolution_words/size_words`,
+`analyzer_exceptions.cpp::record_noexcept/check_fixed_template_noexcept`,
+`analyzer_types.cpp::prototype_scope/declarator`,
+`template_names.cpp::declare_alias_template`,
+`class_templates.cpp::check_template_defaults`,
+`analyzer.cpp::namespace_alias/alias_declaration`,
+`lookup.cpp::DesignateOne`, and `analyzer_declarations.cpp::declare_typedef`.
+Dependence and unevaluated-value rules were checked directly in
+`template_dependence.cpp`, `template_packs.cpp` and `constant_evaluator.cpp`.
+The source map records the translated slice and remaining owners separately.
+
+### Findings fixed and completeness of this increment
+
+- Template noexcept operands now compare typed structural keys in the two
+  declarators' hidden prototype scopes. Both prototypes use the first entity's
+  source parameter types, and source parameters key by clause position. Types
+  use canonical IDs; ordinary declarations use entity IDs; free names use
+  interned name IDs. Integral/character/boolean literal values normalize by
+  type and value. Other literals keep lexical spelling. Parentheses,
+  canonical operators, assignment/postfix distinctions, ordered children,
+  call counts, casts, member spelling, allocation/deletion and initializer
+  forms retain their C++ comparison roles. Equal evaluated results do not
+  imply equivalent operands. Unsupported C++ key forms remain explicitly
+  unknown; unported dependent qualified types, packs and non-type arguments
+  remain explicit boundaries.
+- Size-query keys preserve the source binding type before parameter adjustment.
+  A fixed expression-form size query may key by its value, while a type-id
+  query retains canonical type identity. Source function-type size failures
+  and source array extents retain their reference control-flow positions.
+  Both prototypes, comparison timing and first-specification facts remain
+  separate from the later unit-end validation queue.
+- The first array bound of a new-expression is removed through a borrowed
+  declarator suffix view. Neither the AST nor the original declarator's dense
+  type fact is overwritten by that view's query result.
+- Namespace aliases now have distinct declaration EntityIds for name keys,
+  while sharing target ScopeIds. Lookup still merges aliases naming the same
+  namespace, as `DesignateOne` requires. The first fresh stage run exposed
+  `tests/general/200-namespace-type-convergence.t` after identity separation;
+  target-based lookup convergence restored that case. Its initial failure
+  receipt and later exact passes are retained.
+- Alias templates now publish hidden lookup bindings, independently of
+  ordinary typedef presentation. Namespace redeclarations compare head shape
+  and canonical aliased type, keep the first binding/head/defaults and return
+  before rechecking new defaults, exactly as the frozen implementation does.
+  Class duplicates, declaration conflicts, inline class/enum definitions,
+  default ordering and source parameter adjustment have independent probes.
+  The CPP-accepted repeated or different default behavior was preserved;
+  frozen code and references were not corrected.
+- Typedefs naming an injected class name reject before publication. Diagnostics
+  use the root declarator start, including a leading pointer operator;
+  ordinary `using C=C` and differently named aliases preserve their C++ results.
+- Own-name collection's 32-name limit now counts the dependent named function
+  parameters actually added, rather than limiting how many parameter
+  declarations are examined. A dependent parameter after 40 ordinary
+  parameters correctly suppresses premature source-function-size checking.
+
+Rust owners are `sema/expression_keys.rs`, `sema/name_keys.rs`,
+`sema/template_exceptions.rs`, `sema/templates.rs` and their existing
+`exceptions`, `declarators`, `declarations`, `graph`, `lookup` and `analyzer`
+interfaces. Keys are ephemeral and environment-local: no expression-ID-only
+key cache can reuse facts from another prototype. A private sparse graph API
+provides parameter positions without repeatedly scanning a clause. Published
+IDs remain checked and unit-local; original source types remain distinct from
+adjusted object/signature types. Syntax is parsed once and borrowed throughout;
+there is no rendered-expression reparsing or C++ production fallback. Ordinary
+and alias-template factories share the owning default-order algorithm while
+retaining their different redeclaration policies. New code is safe Rust, uses
+structured Results, stays within source/function/nesting limits and adds no
+lint allowance. Backend/optimizer policies were not changed.
+
+Added 121 oracle-derived cases in the original executed
+`pa6/tests/general/850-expression-*.t` lane: 79 key/dependence cases, seven
+injected-name typedef cases and 35 alias-template declaration cases. New refs
+and statuses are documented by artifact receipts; existing frozen refs and
+gate policy are unchanged. Supplementary counts are not a completeness proof
+or a fixed-manifest gain.
+
+### Validation and retained evidence
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa6-expression-keys/`.
+The candidate cppgm++ SHA-256 is
+`473d449cfeee37febe99710a680ad7cf8ea148211c05683fd1b03f94f3f92d05`;
+the frozen C++ tool remains
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command or independent review | Result | Evidence under the artifact root |
+| --- | --- | --- |
+| `make build` | PASS | `build-final.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | 121/121 exact | `stage-final.log`, `stage-summary.json`, `fixed-traces/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa6` | 491/491; no failure marker | `course-final.log`, `course-course-result.json`, `course-counts.txt`, `course-trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa6` | PA1–PA5 exact gates and full original course lanes PASS | `prior-final.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa6` | PASS | `preflight-final.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa6` | 121/121 preserved | `preserve-final.log` |
+| `make lint` / required `clone_quality.py` | fmt, strict Clippy, debug/release unit suites and file audit PASS | `quality-final.log` |
+| `make audit-rust` | 112 files; zero findings | `audit-final.log` |
+| Original special-member probes | 111/111 exact | `special-final.log`; original `pa6-special-members/probes.jsonl` |
+| New key probes | 79/81 exact; two explicit dependent qualification boundaries | `probe-final.log`, `probe-summary.json`, `probes.jsonl` |
+| Alias-template probes | 35/35 exact | `alias-probes-final.log`, `alias-summary.json`, `alias-probes.jsonl` |
+| Legacy ownership probes | constants 64/64, exceptions 67/67, anonymous types 87/87, templates 97/100, constructors 135/135 | `legacy-summary.json`, `legacy-*.log`, `legacy-*.jsonl` |
+| New executed regression inputs | 121/121 exact on the reviewed implementation and full course lane | `regression-references.json`, `typedef-references.json`, `extra-regression-references.json`, corresponding traces and `all-regressions-final-summary.json` |
+
+The fixed-manifest failing case list is empty. Fresh receipts, rather than
+old probe-summary files, produced the normalized legacy summaries. All prior
+passing cases remain passing. No harness code changed. PA33's full
+release/ownership census and PA34's complete object/tool fixed-point proof
+remain their due obligations; no PA35 optimization objective was imposed.
+
+### Resource observations and protected native-stack proof
+
+Six supported fixed workloads pass byte comparison before measurement. A/A
+calibration followed by ABBA and BAAB retains every wall-time/RSS observation,
+input/output/binary hash, and verifies the dump hash after every measured
+invocation. Startup and dump I/O are included; peak RSS uses `/usr/bin/time`.
+Some quality validation overlapped these observations, so host noise remains;
+these are compiler resource measurements, separate from output equality.
+`measurements.json`, `measurement-probes.jsonl` and `measure-final.log` retain
+results; `initial-resource-observations/` preserves the first run's log,
+comparison receipts and raw RSS samples.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| prototype-expression-keys | 1000 | 44.38 / 16384 | 97.89 / 17768 |
+| prototype-expression-keys | 4000 | 146.47 / 47896 | 316.75 / 61372 |
+| prototype-expression-keys | 16000 | 572.13 / 171936 | 1252.22 / 234928 |
+| alias-expression-keys | 1000 | 35.05 / 15680 | 87.37 / 16348 |
+| alias-expression-keys | 4000 | 129.19 / 44152 | 286.31 / 56212 |
+| alias-expression-keys | 16000 | 529.12 / 160952 | 1123.75 / 215668 |
+
+The fixed 1200-unary-operator template-key probe starts at a 1 MiB native
+stack. Its first Rust guard report was unlocated and therefore failed the
+protected qualifier; that raw mismatch remains under
+`mismatches/5ecadad088e54be690264984b8e9f258/`. The key boundary now supplies
+its original operand location to the existing genuine byte-budget guard.
+No guard threshold, physical recursion cutoff or C++ diagnostic position was
+calibrated, and no protected policy changed. The final receipt is
+`match: true`, `stack_qualification.passed: true`, with a shared 16 MiB retry,
+both exits 0, no stream/artifact differences and complete dump SHA-256
+`c7d6e2d7432b749126de257f296cb9f2da95ffb44218607d77372e68cf4969b8`.
+`nested-summary.json` links all retained initial/retry evidence. The original
+small-stack exits are retained rather than treated as successful compilation.
+
+### Remaining acceptance boundary
+
+The incoming exact constructor-template redeclaration now succeeds and all
+111 special-member probes match. Full acceptance remains withheld:
+`dependent-qualified-value` and `dependent-qualified-type` still exit 86
+against C++ success. The legacy `inner-qualify`,
+`function-different-shape` and `function-template-ordinary` probes remain
+explicit unresolved boundaries; overload/instantiation features must be
+classified against the handout rather than certified from these counts.
+
+A separate 27-case responsibility census (`boundaries.py`, `boundary-final.log`,
+`boundary-summary.json`, `boundaries.jsonl`) has five exact matches and 22
+remaining mismatches. Exact unresolved IDs are:
+
+- `function-template-throw-fixed`, `function-template-throw-dependent`,
+  `constructor-template-throw-fixed`, `function-template-throw-redeclare`,
+  `function-template-noexcept-qualified-value`;
+- `operator-free-plus`, `operator-free-new`, `operator-free-delete`,
+  `operator-member-plus`, `operator-member-subscript`, `operator-member-call`,
+  `operator-literal`, `destructor-namespace-written-type`;
+- `class-inheritance-simple`, `class-inheritance-unknown`, `class-bit-field`,
+  `new-runtime-array-names`, `new-runtime-array-unknown`, `new-array-class-demand`,
+  `member-pointer-declaration`, `function-trailing-return`,
+  `variable-placeholder-auto`.
+
+The newly found injected-name typedef mismatch is fixed and absent from that
+list. The namespace written-type destructor currently reaches status 70,
+which is not an acceptable matched rejection. The next dependency is the
+shared declaration-name identity/factory interface for ordinary operator,
+literal and nonmember special labels, then nonempty template throw-set
+ownership and the remaining responsibility classification. Declaration
+collection must be distinguished from later overload resolution, expression
+typing, class layout and instantiation; do not simply declare all these
+probes out of scope. Rust Missing paths, full source responsibility coverage
+and architecture still need review before stage signoff. Ralph's existing
+full-stage audit goal stays active; no Ralph state, goal or acceptance policy
+was created, reset or advanced.
