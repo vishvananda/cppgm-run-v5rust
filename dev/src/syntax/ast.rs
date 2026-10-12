@@ -16,6 +16,49 @@ pub(super) type Name = Id<QualifiedName>;
 pub(super) type BodyId = Id<Body>;
 pub(super) type ClassId = Id<ClassSyntax>;
 pub(super) type StmtId = Id<Statement>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AttributeKind {
+    Alignas,
+    NoInline,
+    Packed,
+    AsmLabel,
+    Weak,
+    Section,
+    AbiTag,
+    Pure,
+    Const,
+    UsingIfExists,
+    NoUniqueAddress,
+    VectorSize,
+    ExtVectorType,
+    ExcludeFromExplicitInstantiation,
+    AlwaysInline,
+    GnuInline,
+    Used,
+    NoReturn,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AttributeForm {
+    Standard,
+    Gnu,
+    Alignment,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AttributeSite {
+    Entity,
+    Type,
+    Class,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Attribute {
+    pub kind: AttributeKind,
+    pub location: SourceOffset,
+    pub form: AttributeForm,
+    pub site: AttributeSite,
+    pub continued: bool,
+    pub expression: Option<ExprId>,
+    pub ty: Option<TypeId>,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct QualifiedName {
     pub global: bool,
@@ -126,6 +169,7 @@ pub(super) enum Specifier {
     Class(ClassId),
     Elaborated { key: Keyword, name: Name },
     Decltype(ExprId),
+    Vector { extended: bool, operand: ExprId },
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TypeSyntax {
@@ -145,6 +189,14 @@ pub(super) struct Pointer {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Declarator {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Retained attributes are consumed by later semantic analysis"
+        )
+    )]
+    pub attributes: List<Attribute>,
     #[expect(
         dead_code,
         reason = "Source location retained for later semantic diagnostics on this typed syntax node"
@@ -224,6 +276,14 @@ pub(super) struct Base {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ClassSyntax {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Retained attributes are consumed by later semantic analysis"
+        )
+    )]
+    pub attributes: List<Attribute>,
     #[expect(
         dead_code,
         reason = "Class key source location is retained for later declaration diagnostics"
@@ -273,6 +333,7 @@ pub(super) struct Handler {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Declaration {
+    pub attributes: List<Attribute>,
     #[expect(
         dead_code,
         reason = "Source location retained for later semantic diagnostics on this typed syntax node"
@@ -535,6 +596,7 @@ pub(super) struct Tree {
     pub handlers: Lists<Handler>,
     pub template_parameters: Lists<TemplateParameter>,
     pub template_arguments: Lists<TemplateArgument>,
+    pub attributes: Lists<Attribute>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct TreeMark {
@@ -565,6 +627,7 @@ pub(super) struct TreeMark {
     handlers: ListMark,
     template_parameters: ListMark,
     template_arguments: ListMark,
+    attributes: ListMark,
 }
 impl Tree {
     pub(super) fn complete_body(
@@ -608,6 +671,7 @@ impl Tree {
             handlers: self.handlers.mark(),
             template_parameters: self.template_parameters.mark(),
             template_arguments: self.template_arguments.mark(),
+            attributes: self.attributes.mark(),
         }
     }
     pub(super) fn rewind(&mut self, mark: &TreeMark) {
@@ -638,5 +702,6 @@ impl Tree {
         self.handlers.rewind(mark.handlers);
         self.template_parameters.rewind(mark.template_parameters);
         self.template_arguments.rewind(mark.template_arguments);
+        self.attributes.rewind(mark.attributes);
     }
 }

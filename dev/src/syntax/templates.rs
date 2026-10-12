@@ -31,6 +31,7 @@ impl Parser<'_> {
         self.scopes.current = enclosing;
         let declaration = result?;
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::Template {
                 parameters,
@@ -48,6 +49,7 @@ impl Parser<'_> {
         }
         let declaration = self.nested(Self::declaration)?;
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::ExplicitInstantiation {
                 is_extern,
@@ -273,7 +275,11 @@ impl Parser<'_> {
             self.fail()
         }
     }
-    fn type_from_name(&mut self, name: Name, location: SourceOffset) -> Result<TypeId, ParseError> {
+    pub(super) fn type_from_name(
+        &mut self,
+        name: Name,
+        location: SourceOffset,
+    ) -> Result<TypeId, ParseError> {
         let start = self.tree.specs.begin();
         let node = self.tree.names.get(name);
         let specifier = if !node.global

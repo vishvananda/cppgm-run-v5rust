@@ -302,6 +302,15 @@ impl<'a, 'source> Renderer<'a, 'source> {
     }
     fn specifier(&mut self, specifier: Specifier) {
         match specifier {
+            Specifier::Vector { extended, operand } => {
+                self.tasks.push(Render::Text(")))"));
+                self.tasks.push(Render::Expression(operand));
+                self.tasks.push(Render::Text(if extended {
+                    "__attribute__((__ext_vector_type__("
+                } else {
+                    "__attribute__((__vector_size__("
+                }));
+            }
             Specifier::Keyword(word) => {
                 if matches!(word, K::Const | K::Volatile) {
                     self.tasks.push(Render::Text(" "));
@@ -425,6 +434,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
             .get(self.tree.types.get(ty).specifiers)
             .first()
             .is_some_and(|specifier| match specifier {
+                Specifier::Vector { .. } => false,
                 Specifier::Keyword(_)
                 | Specifier::Enum(_)
                 | Specifier::Decltype(_)

@@ -34,7 +34,7 @@ impl Parser<'_> {
         self.nested(Self::statement_inner)
     }
     fn statement_inner(&mut self) -> Result<StmtId, ParseError> {
-        self.attributes_boundary()?;
+        let attributes = self.collect_attributes(false)?;
         let location = self.location()?;
         if self.at(P::LeftBrace)? {
             return self.compound_statement();
@@ -148,7 +148,9 @@ impl Parser<'_> {
             _ => {
                 if self.accept(P::Semicolon)? {
                     StmtKind::Expression(None)
-                } else if let Some(declaration) = self.attempt(Self::declaration)? {
+                } else if let Some(declaration) =
+                    self.attempt(|parser| parser.declaration_with_attributes(attributes))?
+                {
                     StmtKind::Declaration(declaration)
                 } else {
                     let expression = self.expression()?;
@@ -223,6 +225,7 @@ impl Parser<'_> {
         Ok(Handler { exception, body })
     }
     fn condition(&mut self) -> Result<Condition, ParseError> {
+        self.collect_attributes(false)?;
         if let Some(condition) = self.attempt(|parser| {
             let specifiers = parser.specifier_sequence(false, false)?;
             let declarator = parser.declarator(super::declarators::Mode::Named)?;
@@ -249,6 +252,7 @@ impl Parser<'_> {
     fn for_statement(&mut self) -> Result<StmtKind, ParseError> {
         self.cursor.advance()?;
         self.expect(P::LeftParen)?;
+        let attributes = self.collect_attributes(false)?;
         let enclosing = self.scopes.current;
         self.scopes.push()?;
         if let Some((specifiers, declarator)) = self.attempt(|parser| {
@@ -277,7 +281,7 @@ impl Parser<'_> {
         let mut declaration = None;
         let mut init = None;
         if !self.accept(P::Semicolon)? {
-            declaration = self.attempt(Self::declaration)?;
+            declaration = self.attempt(|parser| parser.declaration_with_attributes(attributes))?;
             if declaration.is_none() {
                 init = Some(self.expression()?);
                 self.expect(P::Semicolon)?;

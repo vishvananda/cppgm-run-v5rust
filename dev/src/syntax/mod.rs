@@ -1,6 +1,7 @@
 //! Parse-once source syntax over the shared preprocessing and phase-7 owners.
 mod angles;
 mod ast;
+mod attributes;
 mod classes;
 mod cursor;
 mod declarations;

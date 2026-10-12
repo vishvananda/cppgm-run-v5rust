@@ -102,6 +102,10 @@ impl<T: Copy> Lists<T> {
             marker: PhantomData,
         })
     }
+    pub(super) fn extend(&mut self, list: List<T>) {
+        self.scratch
+            .extend_from_slice(&self.data[list.begin as usize..list.end as usize]);
+    }
     pub(super) fn get(&self, list: List<T>) -> &[T] {
         &self.data[list.begin as usize..list.end as usize]
     }

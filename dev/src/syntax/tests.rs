@@ -689,3 +689,170 @@ fn relational_angle_fences_bound_speculation_on_long_undeclared_chains() {
     unit.print(&mut output).unwrap();
     assert!(output.ends_with(b"id-expression a4096\n"));
 }
+
+#[test]
+fn attributes_retain_typed_operands_sites_and_owner_order() {
+    use super::ast::{AttributeForm, AttributeKind, AttributeSite, Specifier};
+    let source = SourceBuffer::new(br#"
+        struct C {};
+        [[gnu::abi_tag("lead")]] alignas(C*) int [[gnu::vector_size(16)]] values[3] [[gnu::aligned(32)]];
+        struct [[gnu::abi_tag("class")]] D { [[noreturn]] void f(int [[gnu::aligned(8)]] a) [[gnu::noinline]] noexcept; };
+        [[gnu::abi_tag("declaration")]] struct [[gnu::abi_tag("forward")]] F;
+        [[gnu::noinline]] void g(){ if(int [[gnu::aligned(8)]] n=1){} }
+    "#.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"attribute-owners").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.declaration().unwrap();
+    let declaration = parser.declaration().unwrap();
+    let node = parser.tree.declarations.get(declaration);
+    let attributes = parser.tree.attributes.get(node.attributes);
+    assert_eq!(attributes.len(), 2);
+    assert_eq!(attributes[0].kind, AttributeKind::AbiTag);
+    assert_eq!(attributes[0].form, AttributeForm::Standard);
+    assert_eq!(attributes[1].kind, AttributeKind::Alignas);
+    assert!(attributes[1].ty.is_some());
+    assert!(attributes[1].expression.is_none());
+    let DeclKind::Simple {
+        specifiers,
+        declarators,
+    } = node.kind
+    else {
+        panic!("expected object");
+    };
+    assert!(matches!(
+        parser.tree.specs.get(specifiers)[1],
+        Specifier::Vector {
+            extended: false,
+            ..
+        }
+    ));
+    let declarator = parser.tree.init_declarators.get(declarators)[0].declarator;
+    let attributes = parser
+        .tree
+        .attributes
+        .get(parser.tree.declarators.get(declarator).attributes);
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].site, AttributeSite::Type);
+    assert!(attributes[0].expression.is_some());
+    let declaration = parser.declaration().unwrap();
+    let DeclKind::Class(Specifier::Class(class)) = parser.tree.declarations.get(declaration).kind
+    else {
+        panic!("expected class");
+    };
+    let class = parser.tree.classes.get(class);
+    assert_eq!(parser.tree.attributes.get(class.attributes).len(), 1);
+    let member = parser
+        .tree
+        .declarations
+        .get(parser.tree.decl_lists.get(class.members)[0]);
+    assert_eq!(parser.tree.attributes.get(member.attributes).len(), 1);
+    assert_eq!(
+        parser.tree.attributes.get(member.attributes)[0].kind,
+        AttributeKind::NoReturn
+    );
+    let DeclKind::Simple { declarators, .. } = member.kind else {
+        panic!("expected member declaration");
+    };
+    let declarator = parser.tree.init_declarators.get(declarators)[0].declarator;
+    let attributes = parser
+        .tree
+        .attributes
+        .get(parser.tree.declarators.get(declarator).attributes);
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].kind, AttributeKind::NoInline);
+    assert_eq!(attributes[0].site, AttributeSite::Type);
+    let declaration = parser.declaration().unwrap();
+    let node = parser.tree.declarations.get(declaration);
+    assert!(matches!(node.kind, DeclKind::Simple { .. }));
+    let attributes = parser.tree.attributes.get(node.attributes);
+    assert_eq!(attributes.len(), 2);
+    assert_eq!(attributes[0].site, AttributeSite::Class);
+    assert_eq!(attributes[1].site, AttributeSite::Entity);
+    let declaration = parser.declaration().unwrap();
+    let node = parser.tree.declarations.get(declaration);
+    assert_eq!(parser.tree.attributes.get(node.attributes).len(), 1);
+    assert_eq!(
+        parser.tree.attributes.get(node.attributes)[0].kind,
+        AttributeKind::NoInline
+    );
+}
+
+#[test]
+fn failed_nested_attribute_declarations_restore_all_storage_and_scratch() {
+    let source = SourceBuffer::new(br#"
+        [[gnu::abi_tag("a", "b")]] struct [[gnu::packed]] C { alignas(int*) int x; void f(){ [[gnu::used]] int y; } };
+        using word [[gnu::vector_size(16)]] = int;
+    "#.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"attribute-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let mark = parser.tree.attributes.mark();
+    let expressions = parser.tree.expressions.mark();
+    let names = parser.tree.names.mark();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.declaration()?;
+            assert!(parser.attempt(Parser::declaration)?.is_some());
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.tree.attributes.mark(), mark);
+    assert_eq!(parser.tree.expressions.mark(), expressions);
+    assert_eq!(parser.tree.names.mark(), names);
+    assert_eq!(parser.tree.attributes.begin(), 0);
+    assert!(parser.pending_attributes.is_none());
+    assert!(parser.leading_attributes.is_empty());
+    assert!(parser.deferred.is_empty());
+    let c = parser.cursor.intern_name(b"C").unwrap();
+    let word = parser.cursor.intern_name(b"word").unwrap();
+    assert!(parser.scopes.lookup(c).is_none());
+    assert!(parser.scopes.lookup(word).is_none());
+    parser.declaration().unwrap();
+    let declaration = parser.declaration().unwrap();
+    assert_eq!(parser.tree.attributes.begin(), 0);
+    assert!(parser.scopes.lookup(c).is_some());
+    assert!(parser.scopes.lookup(word).is_some());
+    let DeclKind::Alias { ty, .. } = parser.tree.declarations.get(declaration).kind else {
+        panic!("expected alias");
+    };
+    assert!(matches!(
+        parser.tree.specs.get(parser.tree.types.get(ty).specifiers)[1],
+        super::ast::Specifier::Vector { .. }
+    ));
+}
+
+#[test]
+fn abandoned_elaborated_class_tags_preserve_enclosing_attribute_scratch() {
+    use super::ast::AttributeKind;
+    let source =
+        SourceBuffer::new(b"[[gnu::used]] struct [[gnu::aligned(16)]] F;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-tag-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let leading = parser.collect_attributes(false).unwrap();
+    parser.tree.attributes.extend(leading);
+    parser.pending_attributes = Some(0);
+    let mark = parser.tree.attributes.mark();
+    let outcome: Option<()> = parser
+        .attempt(|parser| {
+            parser.class_specifier(false, true)?;
+            assert!(parser.pending_class_attributes());
+            parser.fail()
+        })
+        .unwrap();
+    assert!(outcome.is_none());
+    assert_eq!(parser.tree.attributes.mark(), mark);
+    assert!(!parser.pending_class_attributes());
+    let retained = parser.tree.attributes.finish(0).unwrap();
+    let attributes = parser.tree.attributes.get(retained);
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].kind, AttributeKind::Used);
+}

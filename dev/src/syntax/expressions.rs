@@ -10,7 +10,10 @@ use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 use crate::support::source::SourceOffset;
 impl Parser<'_> {
     pub(super) fn expression(&mut self) -> Result<ExprId, ParseError> {
-        let mut left = self.assignment_expression()?;
+        let left = self.assignment_expression()?;
+        self.expression_rest(left)
+    }
+    pub(super) fn expression_rest(&mut self, mut left: ExprId) -> Result<ExprId, ParseError> {
         while self.accept(P::Comma)? {
             let right = self.assignment_expression()?;
             let location = self.tree.expressions.get(left).location;
@@ -478,7 +481,7 @@ impl Parser<'_> {
             },
         })
     }
-    fn primary(&mut self) -> Result<ExprId, ParseError> {
+    pub(super) fn primary(&mut self) -> Result<ExprId, ParseError> {
         let token = self.token()?;
         let location = token.location;
         let kind = match token.kind {

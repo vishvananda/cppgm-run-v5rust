@@ -22,6 +22,9 @@ pub(super) struct Parser<'a> {
     pub template_mentions: u64,
     pub angle: bool,
     pub pending_template: bool,
+    pub pending_attributes: Option<usize>,
+    pub leading_attributes: List<super::ast::Attribute>,
+    pub pending_class_tags: List<super::ast::Attribute>,
     pub angles: super::angles::Angles,
     pub class_depth: usize,
     pub deferred: Vec<super::classes::DeferredBody>,
@@ -42,6 +45,9 @@ struct Checkpoint {
     template_mentions: u64,
     angle: bool,
     pending_template: bool,
+    pending_attributes: Option<usize>,
+    leading_attributes: List<super::ast::Attribute>,
+    pending_class_tags: List<super::ast::Attribute>,
     class_depth: usize,
     deferred: usize,
     runs: usize,
@@ -56,6 +62,9 @@ impl<'a> Parser<'a> {
             template_mentions: 0,
             angle: false,
             pending_template: false,
+            pending_attributes: None,
+            leading_attributes: List::default(),
+            pending_class_tags: List::default(),
             angles: super::angles::Angles::default(),
             class_depth: 0,
             deferred: Vec::new(),
@@ -206,6 +215,9 @@ impl<'a> Parser<'a> {
             template_mentions: self.template_mentions,
             angle: self.angle,
             pending_template: self.pending_template,
+            pending_attributes: self.pending_attributes,
+            leading_attributes: self.leading_attributes,
+            pending_class_tags: self.pending_class_tags,
             class_depth: self.class_depth,
             deferred: self.deferred.len(),
             runs: self.cursor.runs_mark(),
@@ -223,6 +235,9 @@ impl<'a> Parser<'a> {
             self.template_mentions = mark.template_mentions;
             self.angle = mark.angle;
             self.pending_template = mark.pending_template;
+            self.pending_attributes = mark.pending_attributes;
+            self.leading_attributes = mark.leading_attributes;
+            self.pending_class_tags = mark.pending_class_tags;
             self.class_depth = mark.class_depth;
             self.deferred.truncate(mark.deferred);
             self.cursor.rewind_runs(mark.runs);
@@ -321,7 +336,9 @@ impl<'a> Parser<'a> {
                         .binding
                         .and_then(|binding| binding.scope);
                 }
-                super::ast::Specifier::Keyword(_) | super::ast::Specifier::Decltype(_) => (),
+                super::ast::Specifier::Keyword(_)
+                | super::ast::Specifier::Decltype(_)
+                | super::ast::Specifier::Vector { .. } => (),
             }
         }
         None
@@ -372,17 +389,6 @@ impl<'a> Parser<'a> {
                     | K::Const
                     | K::Volatile
             )
-    }
-    pub(super) fn attributes_boundary(&mut self) -> Result<(), ParseError> {
-        if self.keyword()? == Some(K::Alignas)
-            || (self.at(P::LeftBracket)? && self.at_ahead(P::LeftBracket, 1)?)
-            || matches!(self.token()?.kind, TokenKind::Identifier(name) if matches!(self.cursor.name(name), b"__attribute__" | b"__attribute"))
-        {
-            return Err(ParseError::NotImplemented(
-                "attribute syntax and retained attribute facts",
-            ));
-        }
-        Ok(())
     }
     pub(super) fn make_operator(punct: P) -> Result<Operator, ParseError> {
         Ok(Operator {

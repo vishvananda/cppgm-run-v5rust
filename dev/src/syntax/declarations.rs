@@ -14,13 +14,59 @@ use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 use crate::support::source::SourceOffset;
 impl Parser<'_> {
     pub(super) fn declaration(&mut self) -> Result<DeclId, ParseError> {
-        self.nested(Self::declaration_inner)
+        self.declaration_with_attributes(List::default())
+    }
+    pub(super) fn declaration_with_attributes(
+        &mut self,
+        leading: List<super::ast::Attribute>,
+    ) -> Result<DeclId, ParseError> {
+        self.nested(|parser| {
+            let pending = parser.pending_attributes;
+            let saved_leading = parser.leading_attributes;
+            let saved_tags = parser.pending_class_tags;
+            parser.pending_class_tags = List::default();
+            let start = parser.tree.attributes.begin();
+            parser.pending_attributes = Some(start);
+            let result = (|| {
+                let first = parser.tree.attributes.begin();
+                parser.tree.attributes.extend(leading);
+                let attributes = parser.collect_attributes(false)?;
+                parser.tree.attributes.extend(attributes);
+                parser.leading_attributes = parser.tree.attributes.finish(first)?;
+                parser.tree.attributes.extend(parser.leading_attributes);
+                let declaration = parser.declaration_inner()?;
+                let attributes = parser.tree.attributes.finish(start)?;
+                let attributes = if parser.pending_class_tags.is_empty() {
+                    attributes
+                } else {
+                    parser.tree.attributes.extend(parser.pending_class_tags);
+                    parser.tree.attributes.extend(attributes);
+                    parser.tree.attributes.finish(start)?
+                };
+                let mut node = *parser.tree.declarations.get(declaration);
+                if matches!(
+                    node.kind,
+                    DeclKind::Simple { .. }
+                        | DeclKind::Function { .. }
+                        | DeclKind::SpecialMember { .. }
+                        | DeclKind::BitField { .. }
+                ) {
+                    node.attributes = attributes;
+                    parser.tree.declarations.replace(declaration, node);
+                }
+                Ok(declaration)
+            })();
+            parser.pending_attributes = pending;
+            parser.leading_attributes = saved_leading;
+            parser.pending_class_tags = saved_tags;
+            result
+        })
     }
     fn declaration_inner(&mut self) -> Result<DeclId, ParseError> {
-        self.attributes_boundary()?;
         let location = self.location()?;
         if self.accept(P::Semicolon)? {
             return self.tree.declarations.add(Declaration {
+                attributes: super::storage::List::default(),
                 location,
                 kind: DeclKind::Empty,
             });
@@ -35,6 +81,7 @@ impl Parser<'_> {
             self.cursor.advance()?;
             self.cursor.advance()?;
             return self.tree.declarations.add(Declaration {
+                attributes: super::storage::List::default(),
                 location,
                 kind: DeclKind::Access(access),
             });
@@ -70,6 +117,7 @@ impl Parser<'_> {
     }
     fn namespace(&mut self, location: SourceOffset, inline: bool) -> Result<DeclId, ParseError> {
         self.cursor.advance()?;
+        let attributes = self.collect_attributes(false)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) {
             Some(self.identifier()?)
         } else {
@@ -89,11 +137,16 @@ impl Parser<'_> {
                 },
             );
             return self.tree.declarations.add(Declaration {
+                attributes: super::storage::List::default(),
                 location,
                 kind: DeclKind::NamespaceAlias { name, target },
             });
         }
-        self.attributes_boundary()?;
+        let trailing = self.collect_attributes(false)?;
+        let start = self.tree.attributes.begin();
+        self.tree.attributes.extend(attributes);
+        self.tree.attributes.extend(trailing);
+        let attributes = self.tree.attributes.finish(start)?;
         self.expect(P::LeftBrace)?;
         let enclosing = self.scopes.current;
         let existing = name
@@ -132,6 +185,7 @@ impl Parser<'_> {
         self.expect(P::RightBrace)?;
         self.scopes.current = enclosing;
         self.tree.declarations.add(Declaration {
+            attributes,
             location,
             kind: DeclKind::Namespace {
                 name,
@@ -147,12 +201,33 @@ impl Parser<'_> {
         let directive = self.accept_keyword(K::Namespace)?;
         if !directive
             && matches!(self.token()?.kind, TokenKind::Identifier(_))
-            && self.at_ahead(P::Assign, 1)?
+            && (self.at_ahead(P::Assign, 1)? || self.at_attribute(1)?)
         {
             let name = self.identifier()?;
-            self.cursor.advance()?;
+            let attributes = self.collect_attributes(false)?;
+            self.expect(P::Assign)?;
             let ty = self.type_id(true)?;
             self.expect(P::Semicolon)?;
+            if self
+                .tree
+                .attributes
+                .get(attributes)
+                .iter()
+                .any(|attribute| {
+                    matches!(
+                        attribute.kind,
+                        super::ast::AttributeKind::VectorSize
+                            | super::ast::AttributeKind::ExtVectorType
+                    )
+                })
+            {
+                let mut type_node = *self.tree.types.get(ty);
+                let start = self.tree.specs.begin();
+                self.tree.specs.extend(type_node.specifiers);
+                self.vector_specifiers(attributes, false)?;
+                type_node.specifiers = self.tree.specs.finish(start)?;
+                self.tree.types.replace(ty, type_node);
+            }
             let type_node = self.tree.types.get(ty);
             let scope = if type_node.declarator.is_none() {
                 self.specifier_scope(type_node.specifiers)
@@ -173,11 +248,13 @@ impl Parser<'_> {
                 },
             );
             return self.tree.declarations.add(Declaration {
+                attributes,
                 location,
                 kind: DeclKind::Alias { name, ty },
             });
         }
         let (target, binding) = self.name()?;
+        let attributes = self.collect_attributes(false)?;
         self.expect(P::Semicolon)?;
         if let Some(binding) = binding {
             if directive {
@@ -203,6 +280,7 @@ impl Parser<'_> {
             );
         }
         self.tree.declarations.add(Declaration {
+            attributes,
             location,
             kind: DeclKind::Using { directive, target },
         })
@@ -226,6 +304,7 @@ impl Parser<'_> {
         self.expect(P::RightParen)?;
         self.expect(P::Semicolon)?;
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::StaticAssert { condition, message },
         })
@@ -249,6 +328,7 @@ impl Parser<'_> {
             self.tree.decl_lists.finish(start)?
         };
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::Linkage {
                 language,
@@ -262,11 +342,21 @@ impl Parser<'_> {
         definite: bool,
         type_only: bool,
     ) -> Result<List<Specifier>, ParseError> {
+        self.specifier_sequence_with_leading(definite, type_only, List::default())
+    }
+    fn specifier_sequence_with_leading(
+        &mut self,
+        definite: bool,
+        type_only: bool,
+        leading: List<super::ast::Attribute>,
+    ) -> Result<List<Specifier>, ParseError> {
         let start = self.tree.specs.begin();
+        self.vector_specifiers(leading, false)?;
         let mut has_type = false;
         let mut has_friend = false;
         loop {
-            self.attributes_boundary()?;
+            let attributes = self.collect_attributes(self.tree.specs.begin() != start)?;
+            self.vector_specifiers(attributes, !type_only)?;
             match self.keyword()? {
                 Some(word)
                     if Self::is_specifier(word)
@@ -352,6 +442,7 @@ impl Parser<'_> {
             .iter()
             .any(|specifier| match specifier {
                 Specifier::Keyword(word) => Self::has_type_keyword(*word),
+                Specifier::Vector { .. } => false,
                 Specifier::Named(_)
                 | Specifier::Enum(_)
                 | Specifier::Class(_)
@@ -369,7 +460,18 @@ impl Parser<'_> {
         } else {
             None
         };
-        self.attributes_boundary()?;
+        let attributes = self.collect_attributes(false)?;
+        let start = self.tree.attributes.begin();
+        for index in 0..self.tree.attributes.get(attributes).len() {
+            let attribute = self.tree.attributes.get(attributes)[index];
+            if attribute.kind == super::ast::AttributeKind::AbiTag
+                || (attribute.kind == super::ast::AttributeKind::NoReturn
+                    && attribute.form == super::ast::AttributeForm::Standard)
+            {
+                self.tree.attributes.push(attribute);
+            }
+        }
+        let attributes = self.tree.attributes.finish(start)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
             Some(self.name()?.0)
         } else {
@@ -413,7 +515,7 @@ impl Parser<'_> {
         if has_body {
             while !self.at(P::RightBrace)? {
                 let name = self.identifier()?;
-                self.attributes_boundary()?;
+                self.skip_attributes()?;
                 let value = if self.accept(P::Assign)? {
                     Some(self.assignment_expression()?)
                 } else {
@@ -450,6 +552,7 @@ impl Parser<'_> {
         }
         let enumerators = self.tree.enumerators.finish(start)?;
         self.tree.declarations.add(Declaration {
+            attributes,
             location,
             kind: DeclKind::Enum {
                 scope,
@@ -463,7 +566,8 @@ impl Parser<'_> {
         })
     }
     fn simple_declaration(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
-        let specifiers = self.specifier_sequence(false, false)?;
+        let specifiers =
+            self.specifier_sequence_with_leading(false, false, self.leading_attributes)?;
         let typedef = self
             .tree
             .specs
@@ -474,8 +578,11 @@ impl Parser<'_> {
             if let [specifier] = self.tree.specs.get(specifiers) {
                 match *specifier {
                     Specifier::Enum(enumeration) if !self.in_class() => return Ok(enumeration),
-                    Specifier::Class(_) | Specifier::Elaborated { .. } => {
+                    Specifier::Class(_) | Specifier::Elaborated { .. }
+                        if !self.pending_class_attributes() =>
+                    {
                         return self.tree.declarations.add(Declaration {
+                            attributes: super::storage::List::default(),
                             location,
                             kind: DeclKind::Class(*specifier),
                         });
@@ -484,6 +591,7 @@ impl Parser<'_> {
                 }
             }
             return self.tree.declarations.add(Declaration {
+                attributes: super::storage::List::default(),
                 location,
                 kind: DeclKind::Simple {
                     specifiers,
@@ -505,6 +613,7 @@ impl Parser<'_> {
                 self.pending_template = false;
                 let body = self.finish_function_body(self.in_class(), false)?;
                 return self.tree.declarations.add(Declaration {
+                    attributes: super::storage::List::default(),
                     location,
                     kind: DeclKind::Function {
                         specifiers,
@@ -545,6 +654,7 @@ impl Parser<'_> {
         self.expect(P::Semicolon)?;
         let declarators = self.tree.init_declarators.finish(start)?;
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::Simple {
                 specifiers,

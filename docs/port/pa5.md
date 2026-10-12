@@ -3,6 +3,159 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Attribute collection, appertainment and transactional owners checkpoint — 2026-10-12
+
+Entry commit: `a220356` (clean; full ID in `artifacts/pa5-attributes/entry.json`).
+Implementation commit: the commit containing this entry; the external
+`artifacts/pa5-attributes/handoff.json` records its full ID. Stage base and
+last-audited commit above are unchanged. The preceding turn is **progress**:
+its committed template group and authoritative receipts established 182/193.
+This entry implements the next coherent group, reducing its eleven failures to
+three. This is a partial assignment handoff; Ralph owns audits and advancement.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the full clone plan, PA5 README and
+parsing guide, and this ledger. Consulted the actual read-only C++ source at
+`/home/vishvananda/work/references/v5rust-cpp`; its HEAD matches contract commit
+`905bd7e4412a2d77d88694fe6abc7f3e1c27bce1`. No oracle/harness defect was found.
+
+| C++ owner/responsibility | Rust owner and completed behavior |
+| --- | --- |
+| `parser_state.cpp::at_attribute/skip_attributes` | `attributes.rs`, shared `classes.rs::skip_balanced`: detect standard `[[...]]`, alignas and both GNU spellings; preserve the oracle's balanced skip grammar at pointer/base/trailing-parameter/abstract-function positions |
+| `parser_specifiers.cpp::collect_attribute_specifiers/gnu_attribute/parse_alignment_operand` | `attributes.rs`, `ast.rs`: full recognized attribute vocabulary, balanced unknown groups, standard GNU namespaces/reserved spellings, noreturn's no-operand rule, typed alignment type/expression alternatives, string section/ABI-tag operands and continued tag grouping |
+| `parser_specifiers.cpp::vector_specifiers/leading_vector_specifiers`, class/enum attribute ownership | `declarations.rs`, `classes.rs`, `attributes.rs`: vector specifiers and alias type extension; class-key/post-body GNU attributes, enum filtering, elaborated-class tag precedence and standalone declaration selection |
+| `parser_declarations.cpp::parse_declaration/try_special_member/parse_namespace/parse_using/parse_simple_or_function` | `declarations.rs`, `classes.rs`: declaration-local leading/pending spans, special-member attributes, namespace/alias/using retention and explicit function-body environment isolation |
+| `parser_declarators.cpp::parse_ptr_operator/parse_declarator_into/parse_function_qualifiers/parse_parameter` | `declarators.rs`, `attributes.rs`: pointer skipping among cv qualifiers, entity/type suffix appertainment, typed GNU asm-label literals, named versus abstract qualifier attributes and parameter environment isolation |
+| `parser_statements.cpp::parse_statement/parse_condition/parse_for` | `statements.rs`: pass collected statement/for-init attributes to declarations; drop leading condition/range attributes like C++; nested declarations own their spans |
+| `ast_types.h`, `ast_declarations.h`, `parser_regions.h` | `ast.rs`, `parser.rs`, `storage.rs`: located attributes with AttributeKind/Form/Site enums, ExprId/TypeId operands and compact immutable spans; complete rollback of storage, scratch and attribute environment handles |
+| `ast_printer.cpp`, `ast_render.cpp` | `printer.rs`, `render.rs`: exact vector-attribute node and canonical compact vector spelling; ordinary attributes are omitted from these PA5 views as in C++ |
+
+Attributes remain in the existing unit-owned flat syntax stores. Alignment
+name operands are parsed once and shared by their tentative type and expression
+readings; no rendered spelling is a semantic key or phase transport. Recognized
+operands use the shared expression/type parser, with delimiter regions restoring
+angle context. Unknown attribute tokens are consumed through bounded demand and
+balanced skipping, without retaining a parallel source tree. Source traversal
+and attribute argument order determine all views.
+
+Nested owners save compact list handles and scratch boundaries. Parser attempts
+rewind attribute operands, list data/scratch, leading/pending/class-tag handles,
+names/scopes and existing deferred state together. Elaborated-class tags use a
+separate immutable span until the declaration commits; they never splice into
+an enclosing scratch prefix that an attempt would have to restore. Function
+bodies and parameters isolate their declaration attribute environment. Nothing
+adds semantic analysis, instantiation, optimizer, register allocator or native
+emission demand to AST mode. No unsafe, dependencies, implementation fallback,
+fixture recognition, new optimization or blanket lint suppression was added.
+Two field-local non-test dead-code expectations retain class/declarator facts
+for semantic consumers; invariant tests consume those fields directly.
+
+Three new Rust invariants verify typed operands/owner order/appertainment and
+function-body isolation; nested committed-then-abandoned declarations restoring
+all attribute storage and bindings; and abandoned elaborated-class tags
+preserving enclosing scratch. Debug and release each pass 74 library and eight
+tool tests. Three new `.t` regressions and their own oracle expectation sidecars
+live in the executed PA5 `tests/general/300-attribute-*.t` lane. No existing
+fixture/reference, protected manifest/checker/policy, oracle source or Ralph
+state changed.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-attributes/`.
+`entry.json`, `start-results.json`, final `pa1-results.json` through
+`pa5-results.json`, `progress.json`, passing/gained/failing case lists and
+`failure-index.json` retain identities and hashes. Archived `cases/<digest>/`
+contain protected traces and raw stdout/stderr/AST bytes; `course/pa1/` through
+`course/pa5/` retain full course receipts. The fixed manifest SHA-256 remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+Coverage stays 193: **182 -> 190 passes; 11 -> 3 failures; eight gains; zero
+losses**. Added passing regressions do not count toward fixed-manifest progress.
+
+| Command | Result and receipt |
+| --- | --- |
+| `make build` | PASS; `build-final.log` |
+| `make test-pa5` | FAIL: 190/193, make exit 2; `stage.log`, `pa5-results.json` |
+| required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | FAIL: 190/193, checker exit 1; `required-stage.log`; all three remaining cases stop at the lambda implementation boundary |
+| `make course-pa5` | FAIL: 208/211, including all three new regressions; three failed comparisons; `course.log`, `course/pa5/test/counts.txt`, raw trace and retained failure marker |
+| protected `clone_check.py prior pa5` | PASS: fixed PA1–PA4 58/58, 26/26, 20/20, 106/106; full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived stage/course receipts |
+| `make lint` / protected `clone_quality.py` | PASS: rustfmt, strict Clippy, debug/release tests and source audit; `quality-final.log` |
+| `make audit-rust` | PASS: 80 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` | PASS; `preflight.log` |
+| protected `clone_check.py preserve pa5` | PASS: 182/182 accepted identities; `preserve.log`; `progress.json` independently proves unchanged coverage and zero losses |
+
+`validate.py` records exact commands, exit statuses and elapsed seconds in
+`checks.json`. `probe.py` compares full exit/stdout/stderr/AST on 147 generated
+programs; all match. These cover every recognized attribute form, valid and
+malformed typed operands, placement at declaration/specifier/class/parameter/
+function sites, pointer skipping, class bases, aliases/vectors, GNU asm labels,
+namespace tags, conditions/loops/catches and unknown balanced clauses. Raw
+sources/bytes live in `probes/`, with `probes.json` and `probes-final.log`.
+`prior-template/probe.py` and `audit-probe.py` rerun the preceding 76 and 114
+programs; all match, including the formerly pending attribute probe. Their
+sources/raw receipts and `prior-template.log` / `prior-audit.log` are archived
+separately. All three new executed fixtures also match full exit/stdout/stderr/AST
+bytes; `new-regressions.json` and `new-regressions/` retain these comparisons.
+These comparisons support the translated group, not completion of
+all remaining production owners.
+
+Resource command: `python3` on this artifact root's `measure.py`. Frozen input
+and final tool hashes, rustc 1.98.0, Linux, UTC/C locale and warm whole-invocation
+conditions are recorded in `resource-metadata.json`, `measurements.json` and
+`resources/`. Oracle A/A calibration then A/B/B/A blocks match full status,
+stdout/stderr and AST bytes on all 54 invocations. Observations include source
+reading, preprocessing, the host clock helper and dump I/O on a shared host;
+no cold-cache, hardware-counter or PA35 performance gate is claimed.
+
+| Workload | Units | Rust mean ms | Rust peak RSS KiB | C++ mean ms | C++ peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| attribute-declarations | 1000 | 32.00 | 8020 | 11.34 | 5812 |
+| attribute-declarations | 4000 | 74.91 | 8036 | 29.18 | 8568 |
+| attribute-declarations | 16000 | 212.89 | 19812 | 109.67 | 18420 |
+| attributed-classes | 1000 | 30.96 | 8012 | 12.91 | 6540 |
+| attributed-classes | 4000 | 90.65 | 8532 | 38.63 | 9972 |
+| attributed-classes | 16000 | 296.26 | 24732 | 158.78 | 25948 |
+| ordinary-functions | 1000 | 24.73 | 8004 | 10.00 | 6476 |
+| ordinary-functions | 4000 | 62.06 | 8004 | 23.56 | 8628 |
+| ordinary-functions | 16000 | 170.85 | 21924 | 83.55 | 20620 |
+
+Attribute declarations combine typed alignas, specifier vectors and array
+alignment; attributed classes combine class tags, function/parameter attributes
+and noexcept. Ordinary functions are the control. Fourfold 4000 -> 16000 input
+growth takes about 2.8–3.3 times Rust wall time here, with syntax storage growing
+with introduced syntax. Checkout/scratch occupy about 7.0 GiB of the shared
+100 GiB capacity. These are measured costs, not a new code-generation target.
+
+Exact newly passing fixed IDs (all eight attribute-owner failures):
+
+```text
+tests/general/100-balanced-attributes.t
+tests/general/100-class-alignas-after-class-key.t
+tests/general/200-attributed-partial-specialization-current-class-constructor.t
+tests/general/200-attributed-virtual-destructor-member.t
+tests/general/200-forward-unknown-nested-template-in-ctor-body.t
+tests/general/200-template-qualified-inline-attribute-constructor-definition.t
+tests/general/200-trailing-parameter-carries-dependency-attribute.t
+tests/general/200-trailing-parameter-vendor-attribute.t
+```
+
+Next dependency boundary: lambda capture/declarator/body syntax and deferred
+speculation in `parser_expressions.cpp`, `parser.cpp` and `parser_regions.h`.
+The exact remaining fixed IDs are:
+
+```text
+tests/general/100-lambda-cast.t
+tests/general/200-lambda-capture-forms.t
+tests/general/200-lambda-declarator.t
+```
+
+Those three cases still return status 86, not a valid matching C++ rejection.
+The current full PA5 stage and course lanes remain failing. Remaining production
+owners beyond these cases are the prior checkpoint's specialization-category
+conflict aggregation, dependent prefix/substitution approximations, retained
+ambiguous readings, remaining source facts, hosted vocabulary/prelude/stats and
+host byte-stack policy (the safe nesting boundary still returns 86 at 256).
+No PA5 completion or last-audited-commit advancement is claimed. Review should
+trace attribute operand reuse, declaration/body/parameter isolation, class-tag
+ordering at commit, complete scratch rollback and bounded token demand, rather
+than infer ownership from passing fixture counts.
+
 ## Template syntax, parameter environments and angle regions checkpoint — 2026-10-12
 
 Entry commit: `6704b7ae65e7a3f6ca7c8c1535f10ed2c33be80b` (clean). Implementation commit: the commit

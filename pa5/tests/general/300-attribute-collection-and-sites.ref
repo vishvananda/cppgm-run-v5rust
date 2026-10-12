@@ -1,0 +1,88 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+      vector-attribute 16
+        literal 16
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier values
+          array-suffix
+            literal 3
+  alias-declaration lanes
+    type-id
+      type-specifier-seq
+        type-specifier KW_INT:int
+        vector-attribute 4
+          literal 4
+  namespace-definition N
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier item
+  class-specifier D
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier x
+            function-qualifier noexcept
+    special-member-definition ~D
+      member-specifiers
+        specifier KW_VIRTUAL:virtual
+      declarator
+        identifier ~D
+        parameter-clause
+        function-qualifier noexcept
+      compound-statement
+  simple-declaration
+    decl-specifier-seq
+      class-forward-declaration F
+        class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier symbol
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier x
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier y
+      expression-statement
+end translation unit

@@ -8,6 +8,7 @@ use super::{
     cursor::TokenKind,
     parser::Parser,
     scopes::Category,
+    storage::List,
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,14 +46,18 @@ impl Parser<'_> {
             };
             let cv_start = self.tree.cvs.begin();
             if class_name.is_some() || op.token.as_punctuator() == Some(P::Multiply) {
-                while matches!(self.keyword()?, Some(K::Const | K::Volatile)) {
+                loop {
+                    self.skip_attributes()?;
+                    if !matches!(self.keyword()?, Some(K::Const | K::Volatile)) {
+                        break;
+                    }
                     if let Some(word) = self.keyword()? {
                         self.tree.cvs.push(word);
                         self.cursor.advance()?;
                     }
                 }
             }
-            self.attributes_boundary()?;
+            self.skip_attributes()?;
             let cv = self.tree.cvs.finish(cv_start)?;
             self.tree.pointers.push(Pointer { op, class_name, cv });
         }
@@ -79,13 +84,18 @@ impl Parser<'_> {
                 || self.keyword()? == Some(K::Operator))
         {
             name = Some(self.name()?.0);
-            self.attributes_boundary()?;
+            // Declarator-id attributes are collected below.
         } else if mode == Mode::Named
             || (mode == Mode::Parameter
                 && self.at(P::LeftParen)?
                 && (self.at_ahead(P::RightParen, 1)? || self.at_ahead(P::Ellipsis, 1)?))
         {
             return self.fail();
+        }
+        let attribute_start = self.tree.attributes.begin();
+        if name.is_some() {
+            let attributes = self.collect_attributes(false)?;
+            self.tree.attributes.extend(attributes);
         }
         let suffix_start = self.tree.suffixes.begin();
         loop {
@@ -107,7 +117,8 @@ impl Parser<'_> {
                     Some(result?)
                 };
                 self.expect(P::RightBracket)?;
-                self.attributes_boundary()?;
+                let attributes = self.collect_attributes(true)?;
+                self.tree.attributes.extend(attributes);
                 self.tree.suffixes.push(Suffix::Array(bound));
                 continue;
             }
@@ -134,7 +145,7 @@ impl Parser<'_> {
                 self.scopes.current = scope;
             }
             let function_scope = self.function_scope;
-            let result = self.function_qualifiers();
+            let result = self.function_qualifiers_with_attributes(mode == Mode::Named);
             self.function_scope = function_scope;
             self.scopes.current = saved;
             let qualifiers = result?;
@@ -144,7 +155,26 @@ impl Parser<'_> {
             });
         }
         let suffixes = self.tree.suffixes.finish(suffix_start)?;
+        if mode == Mode::Named && self.accept_keyword(K::Asm)? {
+            let location = self.location()?;
+            self.expect(P::LeftParen)?;
+            let expression = self.attribute_string()?;
+            self.expect(P::RightParen)?;
+            self.tree.attributes.push(super::ast::Attribute {
+                kind: super::ast::AttributeKind::AsmLabel,
+                location,
+                expression: Some(expression),
+                ty: None,
+                form: super::ast::AttributeForm::Gnu,
+                site: super::ast::AttributeSite::Entity,
+                continued: false,
+            });
+            let attributes = self.collect_attributes(false)?;
+            self.tree.attributes.extend(attributes);
+        }
+        let attributes = self.tree.attributes.finish(attribute_start)?;
         self.tree.declarators.add(Declarator {
+            attributes,
             location,
             abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
             pointers,
@@ -230,10 +260,15 @@ impl Parser<'_> {
         member: Option<super::scopes::ScopeId>,
     ) -> Result<ParameterClause, ParseError> {
         self.without_angle(|parser| {
+            let pending_attributes = parser.pending_attributes.take();
+            let leading_attributes = parser.leading_attributes;
+            parser.leading_attributes = List::default();
             let pending = parser.pending_template;
             parser.pending_template = false;
             let result = parser.parameter_clause_inner(definite, member);
             parser.pending_template = pending;
+            parser.pending_attributes = pending_attributes;
+            parser.leading_attributes = leading_attributes;
             result
         })
     }
@@ -266,7 +301,7 @@ impl Parser<'_> {
                 self.declarator(Mode::Abstract)?
             };
             let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
-            self.attributes_boundary()?;
+            self.skip_attributes()?;
             let default = if self.accept(P::Assign)? {
                 Some(Initializer::Assign(self.initializer_clause()?))
             } else {
@@ -299,12 +334,24 @@ impl Parser<'_> {
             ellipsis_without_comma,
         })
     }
-    pub(super) fn function_qualifiers(
+    pub(super) fn function_qualifiers_with_attributes(
         &mut self,
+        keep: bool,
     ) -> Result<super::storage::List<Qualifier>, ParseError> {
         let start = self.tree.qualifiers.begin();
         loop {
-            self.attributes_boundary()?;
+            if keep {
+                let attributes = self.collect_attributes(false)?;
+                for index in 0..self.tree.attributes.get(attributes).len() {
+                    let mut attribute = self.tree.attributes.get(attributes)[index];
+                    if attribute.form == super::ast::AttributeForm::Standard {
+                        attribute.site = super::ast::AttributeSite::Type;
+                    }
+                    self.tree.attributes.push(attribute);
+                }
+            } else {
+                self.skip_attributes()?;
+            }
             let qualifier = match self.keyword()? {
                 Some(word @ (K::Const | K::Volatile)) => {
                     self.cursor.advance()?;

@@ -632,6 +632,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         )?;
         for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
             let task = match specifier {
+                Specifier::Vector { operand, .. } => {
+                    self.tasks.push(Task::Close);
+                    self.tasks.push(Task::Expression(operand));
+                    Task::Line(
+                        "vector-attribute",
+                        Payload::Render(Render::Expression(operand)),
+                        true,
+                    )
+                }
                 Specifier::Keyword(word) => Task::Line(
                     if !types {
                         "decl-specifier"

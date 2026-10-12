@@ -1,0 +1,43 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier C
+    class-key KW_STRUCT:struct
+  class-specifier D
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name C
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          cv-qualifier KW_CONST:const
+          identifier pointer
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier f
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              default-argument
+                initializer
+                  literal 1
+  empty-declaration
+  empty-declaration
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier x
+end translation unit

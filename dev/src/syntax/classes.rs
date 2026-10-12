@@ -39,7 +39,7 @@ impl Parser<'_> {
             .keyword()?
             .ok_or(ParseError::Invariant("missing class key"))?;
         self.cursor.advance()?;
-        self.attributes_boundary()?;
+        let attributes = self.collect_attributes(false)?;
         let name = if matches!(self.token()?.kind, TokenKind::Identifier(_)) || self.at(P::Scope)? {
             Some(self.type_name()?.0)
         } else {
@@ -55,6 +55,23 @@ impl Parser<'_> {
             let Some(name) = name else {
                 return self.fail();
             };
+            let start = self.tree.attributes.begin();
+            for index in 0..self.tree.attributes.get(attributes).len() {
+                let mut attribute = self.tree.attributes.get(attributes)[index];
+                if attribute.kind == super::ast::AttributeKind::AbiTag
+                    || (attribute.kind == super::ast::AttributeKind::Alignas
+                        && attribute.form != super::ast::AttributeForm::Alignment)
+                    || (attribute.kind == super::ast::AttributeKind::NoReturn
+                        && attribute.form == super::ast::AttributeForm::Standard)
+                {
+                    attribute.site = super::ast::AttributeSite::Class;
+                    self.tree.attributes.push(attribute);
+                }
+            }
+            let tags = self.tree.attributes.finish(start)?;
+            if self.pending_attributes.is_some() {
+                self.pending_class_tags = tags;
+            }
             return self.elaborated_class(key, name, friend, first);
         }
         let enclosing = self.scopes.current;
@@ -157,8 +174,19 @@ impl Parser<'_> {
         self.class_depth -= 1;
         self.scopes.current = enclosing;
         let members = result?;
+        let trailing = if matches!(self.token()?.kind, TokenKind::Identifier(id) if matches!(self.cursor.name(id), b"__attribute__" | b"__attribute"))
+        {
+            self.collect_attributes(false)?
+        } else {
+            List::default()
+        };
+        let start = self.tree.attributes.begin();
+        self.tree.attributes.extend(attributes);
+        self.tree.attributes.extend(trailing);
+        let attributes = self.tree.attributes.finish(start)?;
         self.scopes.complete_class(scope);
         let class = self.tree.classes.add(ClassSyntax {
+            attributes,
             location,
             key,
             name,
@@ -232,7 +260,7 @@ impl Parser<'_> {
         let start = self.tree.bases.begin();
         loop {
             let location = self.location()?;
-            self.attributes_boundary()?;
+            self.skip_attributes()?;
             let virtual_first = self.accept_keyword(K::Virtual)?;
             let access = if matches!(self.keyword()?, Some(K::Public | K::Protected | K::Private)) {
                 let access = self.keyword()?;
@@ -268,7 +296,8 @@ impl Parser<'_> {
     pub(super) fn special_member_head(&mut self) -> Result<(List<Specifier>, Name), ParseError> {
         let start = self.tree.specs.begin();
         loop {
-            self.attributes_boundary()?;
+            let attributes = self.collect_attributes(false)?;
+            self.append_pending_attributes(attributes);
             if let Some(
                 word
                 @ (K::Inline | K::Virtual | K::Explicit | K::Constexpr | K::Friend | K::Static),
@@ -342,10 +371,12 @@ impl Parser<'_> {
             .function_scope
             .ok_or(ParseError::Invariant("missing special member scope"))?;
         let function_scope = self.function_scope;
-        let result = self.function_qualifiers();
+        let attribute_start = self.tree.attributes.begin();
+        let result = self.function_qualifiers_with_attributes(true);
         self.function_scope = function_scope;
         self.scopes.current = enclosing;
         let qualifiers = result?;
+        let attributes = self.tree.attributes.finish(attribute_start)?;
         let start = self.tree.suffixes.begin();
         self.tree.suffixes.push(Suffix::Function {
             parameters,
@@ -353,6 +384,7 @@ impl Parser<'_> {
         });
         let suffixes = self.tree.suffixes.finish(start)?;
         let declarator = self.tree.declarators.add(Declarator {
+            attributes,
             location,
             abstract_form: false,
             pointers: List::default(),
@@ -375,6 +407,7 @@ impl Parser<'_> {
             Some(self.finish_function_body(in_class, true)?)
         };
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::SpecialMember {
                 specifiers,
@@ -412,6 +445,7 @@ impl Parser<'_> {
         self.expect(P::Semicolon)?;
         let declarators = self.tree.bit_fields.finish(start)?;
         self.tree.declarations.add(Declaration {
+            attributes: super::storage::List::default(),
             location,
             kind: DeclKind::BitField {
                 specifiers,
@@ -447,7 +481,8 @@ impl Parser<'_> {
         }
         let enclosing = self.scopes.current;
         self.scopes.current = scope;
-        let result = self.function_body(constructor);
+        let result =
+            self.without_declaration_attributes(|parser| parser.function_body(constructor));
         self.scopes.current = enclosing;
         self.tree.bodies.add(Body::Parsed(result?))
     }
@@ -458,13 +493,15 @@ impl Parser<'_> {
             let enclosing = self.scopes.current;
             self.scopes.current = entry.scope;
             self.cursor.push_run(entry.tokens);
-            let result = self.function_body(entry.constructor).and_then(|body| {
-                if matches!(self.token()?.kind, TokenKind::End) {
-                    Ok(body)
-                } else {
-                    self.fail()
-                }
-            });
+            let result = self
+                .without_declaration_attributes(|parser| parser.function_body(entry.constructor))
+                .and_then(|body| {
+                    if matches!(self.token()?.kind, TokenKind::End) {
+                        Ok(body)
+                    } else {
+                        self.fail()
+                    }
+                });
             self.cursor.pop_run()?;
             self.scopes.current = enclosing;
             self.tree.complete_body(entry.target, result?)?;
@@ -517,7 +554,7 @@ impl Parser<'_> {
         }
         Ok(())
     }
-    fn skip_balanced(&mut self) -> Result<(), ParseError> {
+    pub(super) fn skip_balanced(&mut self) -> Result<(), ParseError> {
         let close = match self.punctuator()? {
             Some(P::LeftParen) => P::RightParen,
             Some(P::LeftBracket) => P::RightBracket,
