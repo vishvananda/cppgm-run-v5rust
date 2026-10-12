@@ -99,7 +99,7 @@ this checkpoint as evidence of PA7 expression typing or later code generation.
 
 Artifact root:
 `/home/vishvananda/work/private/v5rust/artifacts/port/pa6-declarations/`.
-Candidate implementation commit: recorded in `handoff.json` after the implementation commit.
+Candidate implementation commit: `8096793b39602b581016324c8143b1163e923213`.
 Candidate release `cppgm` SHA-256: `c34fc6acae6544f405605e20cb601c4dce56e76dc861f1caf207087ebc6ecbcd`.
 Frozen C++ tool SHA-256: `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
 The final checkout/commit receipt is `handoff.json` in that artifact directory.
