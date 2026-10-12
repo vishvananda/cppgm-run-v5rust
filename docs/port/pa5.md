@@ -7,6 +7,125 @@ Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
 
+## Full-stage audit continuation: scope ownership, memo eligibility and ordering — 2026-10-12
+
+Entry/reviewed commit: `48a6e9266e64667b26337c34f6c4966d7ee342f0` (clean).
+Base and last accepted partial audit above remain unchanged; the resulting
+commit/clean status is in `pa5-scope-final/handoff.json`.
+**Full acceptance remains open.** The existing goal was observed as blocked
+in this session; no goal/state reset or completion claim was made.
+
+The full frozen `name_scopes.cpp` and `name_scopes.h` were consulted directly:
+**36 navigation functions** plus table/epoch/category/heap helpers and inline
+interfaces. `reviewed-scope-responsibilities.json` and
+`additional-reviewed-responsibilities.json` record merge/category rules,
+lookup control flow, order, demand, source/numeric facts, cache/log lifetimes
+and Rust owners. The explicit source-review census now has **169 entries**;
+state, AST/header owners, speculative-list context proof and exact native
+rejection parity remain unproved. Counts do not establish completeness.
+
+Two source findings resolved even though current compiler sweeps had no
+measured raw-byte failure:
+
+- In a member-class lookup context, only a class scope selects its `member_of`
+  instead of its lexical parent. An intermediate function/block scope follows
+  its lexical parent. A private owning helper preserves this exact traversal;
+  a constructed scope-graph invariant distinguishes the old and new behavior.
+- Frozen class completion initializes memo eligibility before inspecting its
+  edges. A self-base therefore sees that initialized flag. Rust previously
+  inspected the stale flag and rejected otherwise eligible kept searches.
+  The typed predicate now preserves that behavior without transient mutation.
+  A cyclic/self-base invariant proves lookup termination and reuse of the
+  other base's successful search, separately from source AST equality.
+
+Lookup review covers own-before-edge and newest-edge-first order, template
+parent skipping, member context and nominated namespace home, dependent base
+selection, cycle protection, and specialization/primary category aggregation.
+Category marks remain monotonic hints; guesses never fabricate stored bindings.
+Bindings/edges have bounded inverse logs. Detach/reattach preserves source
+order and fresh environments without copying visible declarations. Opaque
+scope identities never recycle when compact slots are reused.
+
+Kept searches have complete scope/name/prefix/specialization keys and explicit
+name/graph revision dependencies. Root query visit state is reset; private
+work buffers perform iterative graph traversal. Declaration/undo/edge changes
+invalidate the actual named/graph consumers; unchanged names stay warm.
+Overflow evicts affected entries rather than reviving stale facts. The memo
+limit retains the unique binding/tombstone census, renews existing keys when
+full, and declines new keys. The remaining speculative-template-list memo
+context belongs to the state audit, not this completed kept-search review.
+
+Namespace nomination ties were checked against frozen GCC 15.2.0 compiler
+identity and `/usr/include/c++/15/bits/stl_heap.h`, plus the
+[pinned Rust heap source](https://raw.githubusercontent.com/rust-lang/rust/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/alloc/src/collections/binary_heap/mod.rs).
+Both push/pop algorithms retain the equal parent on push and choose the equal
+right child before upward repair on pop. Nomination depths remain immutable
+during a lookup. All **450/450** directive permutations match raw output.
+
+The member-context sweep remains **27/27** and cycle/self-base cases match
+**36/36**, making **513/513** new ordinary probes. All **2949/2949** recent and
+**2141/2141** prior probes remain exact: **5603/5603** raw
+status/stdout/stderr/full AST comparisons. No raw-case gain is claimed for
+the two derived source fixes. No new required fixture was added; the two
+ownership/query-work invariants execute in the normal Rust quality lane.
+Fixed manifest remains **193 entry/final passes**, no lost IDs and no fixed
+failures. Inputs were not formatted; original fixtures/references, frozen C++,
+protected policy and Ralph state remain unchanged.
+
+No unsafe code, dependency, compiler-source environment read, implementation
+subprocess, broad lint allowance, mechanical split, backend/optimizer/register
+allocator change or PA35 objective was introduced. Lookup reads typed facts
+rather than rendered names or syntax. Scope IDs and cached results stay
+unit-owned; per-function backend lifetimes remain untouched. Strict
+Clippy/rustfmt, debug/release **131 library plus nine tool tests**, and the
+**87-file authoritative audit** pass with zero findings.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-scope-final/`.
+Metadata, progress, raw probe/case/course archives and `checks.json` retain
+source/tool hashes, exact commands, IDs and outcomes. Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`.
+All final commands ran after the last production mutation:
+
+| Command | Result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS strict Clippy/rustfmt, debug/release 131 library + nine tool tests; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS **283/283**, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full courses 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+Resource observations stay separate from equality. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json` retain
+**36 serial warm whole invocations**, after verification processes were
+terminal, at 1000/4000/16000 units, ordered
+oracle/oracle/oracle/candidate/candidate/oracle. Every run exits 0 and matches
+full raw output/streams. Source/tool hashes, ASTs, streams and RSS files remain.
+Median wall milliseconds include preprocessing, launch and I/O; RSS is maximum
+measured KiB. Syntax-only workloads do not decide later semantic validity.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Member/class/function context paths | 63.55 / 170.25 / 596.78 | 22.48 / 78.11 / 298.48 | 8024 / 21920 / 77824 |
+| Deferred namespace directive ordering | 55.33 / 159.15 / 539.84 | 19.32 / 53.19 / 207.83 | 8012 / 21244 / 75524 |
+
+C++ maximum RSS at 16k is respectively 60188 and 47056 KiB. No speed or
+generated-code objective is inferred. `storage.txt` records a shared-volume
+sample below the 107374182400-byte task ceiling.
+
+`final-native.json` remains **45/48**. Exact IDs are
+`final-native/parentheses/4800` (C++ success, Rust nesting rejection at 4234),
+`final-native/known-templates/2400` (C++ success, Rust at 4752), and
+`final-native/known-templates/4800` (C++ rejection at 7627, Rust at 4752).
+No signal, panic, timeout or status 86 was accepted. Equal byte-budget
+arithmetic does not prove host frame parity. Ordinary diagnostics stay strict;
+no calibration, fixture exclusion, waiver or baseline/policy change was made.
+No reproducible oracle bug was established. Full acceptance and goal completion
+remain withheld for **state/AST/header owners, speculative-list context proof
+and exact native rejection parity**.
+
 ## Full-stage audit continuation: name boundaries, lookup demand and target facts — 2026-10-12
 
 Entry/reviewed commit: `ada9bf729c7aa944820a3db4c7c66feee10f77aa` (clean).

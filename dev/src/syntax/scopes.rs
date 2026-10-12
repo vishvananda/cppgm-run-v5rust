@@ -451,7 +451,7 @@ impl Scopes {
             && record.edges.iter().all(|edge| {
                 let target = &self.records[edge.target.0 as usize];
                 matches!(target.kind, ScopeKind::Class(_) | ScopeKind::AnonymousClass)
-                    && target.memo
+                    && (edge.target == scope || target.memo)
                     && !edge.dependent
             });
         self.changes
@@ -774,9 +774,7 @@ impl Scopes {
                     {
                         return Some(binding);
                     }
-                    let next = self.records[member.0 as usize]
-                        .member_of
-                        .or(self.records[member.0 as usize].parent);
+                    let next = self.class_context_parent(member);
                     let Some(next) = next else {
                         break;
                     };
@@ -786,6 +784,14 @@ impl Scopes {
             current = self.records[scope.0 as usize].parent;
         }
         None
+    }
+    fn class_context_parent(&self, scope: ScopeId) -> Option<ScopeId> {
+        let record = &self.records[scope.0 as usize];
+        if matches!(record.kind, ScopeKind::Class(_) | ScopeKind::AnonymousClass) {
+            record.member_of.or(record.parent)
+        } else {
+            record.parent
+        }
     }
     fn search_home(
         &mut self,
@@ -1211,6 +1217,57 @@ mod tests {
         }
         scopes.complete_class(scope, false);
         scope
+    }
+    #[test]
+    fn self_base_completion_keeps_eligible_searches_without_revisiting_other_bases() {
+        let mut names = Identifiers::default();
+        let base_name = names.intern(b"Base").unwrap();
+        let self_name = names.intern(b"Self").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let mut scopes = Scopes::default();
+        let base = class(&mut scopes, base_name, None);
+        scopes.declare_in(base, word, binding(Category::Type, None));
+        scopes.current = Scopes::global();
+        let owner = scopes.push_kind(ScopeKind::Class(self_name)).unwrap();
+        scopes.add_base(base, false);
+        scopes.add_base(owner, false);
+        scopes.complete_class(owner, false);
+        assert_eq!(
+            scopes
+                .lookup_specialization(owner, word, false, false)
+                .unwrap()
+                .category,
+            Category::Type
+        );
+        let visits = scopes.search_visits;
+        for _ in 0..16 {
+            assert_eq!(
+                scopes
+                    .lookup_specialization(owner, word, false, false)
+                    .unwrap()
+                    .category,
+                Category::Type
+            );
+        }
+        assert_eq!(scopes.search_visits - visits, 16);
+    }
+    #[test]
+    fn member_class_context_uses_lexical_parents_of_intermediate_functions() {
+        let mut names = Identifiers::default();
+        let owner_name = names.intern(b"Owner").unwrap();
+        let local_name = names.intern(b"Local").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let mut scopes = Scopes::default();
+        scopes.declare_in(Scopes::global(), word, binding(Category::Value, None));
+        let owner = class(&mut scopes, owner_name, None);
+        scopes.declare_in(owner, word, binding(Category::Type, None));
+        scopes.current = Scopes::global();
+        let function = scopes.push().unwrap();
+        scopes.set_member(function, owner);
+        let local = scopes.push_kind(ScopeKind::Class(local_name)).unwrap();
+        scopes.current = Scopes::global();
+        scopes.member_context(local).unwrap();
+        assert_eq!(scopes.lookup(word).unwrap().category, Category::Value);
     }
     #[test]
     fn inherited_searches_scale_and_unrelated_mutations_keep_them_warm() {
