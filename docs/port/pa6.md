@@ -1,7 +1,7 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `7f072acb50466fec690d20f600694e61fc1cb737` (ongoing full-stage audit; template exception keys and alias-template declaration groups reviewed, acceptance withheld).
+Last audited commit: `b635af3fa3484170186c324c243bf339a17f86dd` (ongoing full-stage audit; callable identities and template throw ownership reviewed, acceptance withheld).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
@@ -1857,3 +1857,175 @@ probes out of scope. Rust Missing paths, full source responsibility coverage
 and architecture still need review before stage signoff. Ralph's existing
 full-stage audit goal stays active; no Ralph state, goal or acceptance policy
 was created, reset or advanced.
+
+
+## Callable declaration identities and template throw-set audit
+
+Reviewed incoming documentation `3832475785e817a0692f31e7a25d75014a9ca048`
+and implementation `7f072acb50466fec690d20f600694e61fc1cb737`, then audited
+implementation `b635af3fa3484170186c324c243bf339a17f86dd`. Stage base remains
+`70e745588987998ee1e5bde80b3861541eab753d`. This increment closes the incoming
+ordinary operator/literal/nonmember-label factory and nonempty template throw
+boundaries. It is not a full-stage acceptance claim.
+
+The ongoing audit read the contract, spec, clone plan, complete handout,
+scope/type guide, ledger and source map. Direct frozen C++ review included
+`analyzer_declarations.cpp::declared_name/declare_function/new_function/redeclare_function/declare_declarator/default_definition`,
+`analyzer.cpp::predeclare_allocation/using_declaration`,
+`analyzer_bodies.cpp::function_body/check_id_expression`,
+`analyzer_types.cpp::lookup_name/declarator_target`,
+`analyzer_exceptions.cpp::record_throw_specification/check_redeclared_exceptions/pending_noexcept`,
+`analyzer_exception_sets.cpp::resolve_throw_specification`, and
+`analyzer.h`'s analyzer defaults. Source revision remains
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5`; neither source nor gate policy changed.
+
+### Reviewed behavior and fixes
+
+- `function_names.rs` owns typed `ValueKey` and `SpecialName` identities for
+  canonical operator token plus array flag, literal suffix NameId and shared
+  destructor identity. Lookup never keys on rendered labels. The graph owns
+  a private sparse `(ScopeId, SpecialName)` index, compatible redeclarations
+  retain their first visibility ordinal, and qualified special-name lookup
+  uses the existing inline/directive namespace walk. No unrelated declaration
+  scan or incomplete result cache was introduced.
+- Callable declarations and definitions use the same value factory, declaration
+  checks and typed `Definition` context. Body/default/delete definitions retain
+  redefinition and deleted-first-declaration ordering before linkage/constexpr
+  checks. Generic function qualifiers and qualified static-member diagnostics
+  now share their reference control-flow boundary. Defaults remain name-only
+  analysis in Types mode; copy/move assignment defaultability uses result and
+  parameter class/reference facts without synthesizing backend bodies.
+- Source binding labels retain the original final AST component; function scopes
+  retain the first entity label. Alternative operator spelling keys alike while
+  its source label remains observable. Allocation declaration labels omit a
+  space; predeclared global allocation entity scope labels contain it. Qualified
+  target failures in definitions use declaration-start location, independently
+  of declarator-id/root locations used by declaration diagnostics.
+- Four standard global allocation/deallocation functions are language-required
+  hidden predeclarations. Typed `AllocationOrigin::Predeclared/Declared` facts
+  distinguish the first written declaration. Its noexcept operand is not
+  evaluated by the reference; its dynamic throw types are still checked for
+  completeness. Later specifications compare normally. Initial probes corrected
+  the mistaken use of the native driver's default: Types mode's analyzer
+  `exceptions_` default is **true**. No driver policy or environment read was
+  added to the semantic phase. Class allocation operators retain implicit static
+  function properties while their source constexpr declarator formation remains
+  unchanged, including C++11 implicit const behavior.
+- A function template's first dynamic throw specification records adjusted
+  canonical types immediately, even in a class being defined. First rvalue
+  references reject, while completeness checks are skipped for function templates.
+  Ordinary class-template members retain instantiation deferral. Later template
+  throw types are neither resolved nor compared: only the nonthrowing category
+  is compared, and a pending template noexcept operand retains its deferral.
+  `SpecificationMode` explicitly distinguishes ordinary, template compatibility
+  and template expression work. Ordinary/template paths reuse the same type
+  adjustment algorithm and preserve ordinary unit/class queue order.
+- Special names remain original structured syntax, parse-once ownership and
+  compact IDs are preserved, and the suffix-view architecture from the prior
+  increment is unchanged. New code is safe Rust with Results, private store APIs
+  and narrow typed state. No lint allowance, C++ implementation fallback,
+  optimizer/backend policy change or fixture recognition was added.
+
+Rust owners are `sema/function_names.rs` and the existing `declarations`,
+`analyzer`, `declarators`, `graph`, `lookup`, `exceptions` and `dump` owners.
+Lexical token enums now supply Hash consistently with their existing canonical
+Eq identities; rendering remains a source-facing syntax view. Source map rows
+record the reviewed slice and later expression/overload/initialization owners.
+
+### Validation and artifacts
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa6-function-names/`.
+Candidate cppgm++ SHA-256:
+`4b5940f97494d41a7dca2894562792636258bd77b8182fe256e41b7cae812bbe`. Frozen C++ tool remains
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command/review | Result | Evidence under artifact root |
+| --- | --- | --- |
+| `make build` | PASS | `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | 121/121 exact | `stage-final.log`, `stage-summary.json`, `fixed-traces/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa6` | 648/648; no failure marker | `course.log`, `course-course-result.json`, `course-counts.txt`, `course-trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa6` | PA1–PA5 exact gates and full original courses PASS | `prior.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa6` | 121/121 preserved | `preserve.log` |
+| `make lint` / required `clone_quality.py` | fmt, strict Clippy, debug/release suites and source audit PASS | `quality-final.log` |
+| `make audit-rust` | 113 files; zero findings | `audit-current.log` |
+| Callable declaration probes | 123 exact; four reproducible frozen-oracle crashes separately reported | `probe-final.log`, `probe-summary.json`, `probes.jsonl`, `oracle-crashes.json` |
+| Template throw probes | 34/34 exact | `throw-probes-final.log`, `throw-summary.json`, `throw-probes.jsonl` |
+| Earlier special-member probes | 111/111 exact | `special.log`; original `pa6-special-members/probes.jsonl` |
+| Earlier expression-key probes | 79/81 exact; only the prior two dependent-qualified boundaries remain | `keys.log`; original `pa6-expression-keys/probes.jsonl` |
+| Executed new regression lane | 157/157 exact | `regression-summary.json`, `regression-references.json`, `regressions.jsonl` |
+
+Added 157 new oracle-derived `pa6/tests/general/875-function-name-*.t` inputs
+and new refs/statuses in the original executed course lane. Existing frozen
+inputs/refs are unchanged. The stage failing case list is empty; every prior
+passing case remains passing. Supplementary counts are evidence, not the
+completion criterion. No harness code changed. PA33-wide responsibility and
+release/debug proof, PA34 object/tool fixed-point equality and the exclusion of
+PA35 objectives remain as recorded in the contract.
+
+### Resource observations
+
+Six supported fixed workloads compare exactly before measurement. Warm A/A
+calibration followed by ABBA/BAAB preserves individual wall/RSS observations,
+input/output/binary hashes and verifies the full dump hash after each invocation.
+Startup and dump I/O are included; some host validation activity may contribute
+noise. These costs are separate from externally visible bytes, not a runtime
+performance-equality or optimizer gate. `measure.py`, `measurements.json`,
+`measure-trace.jsonl` and `measure.log` retain the experiment.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| operator-identities | 1000 | 31.90 / 13576 | 86.22 / 13488 |
+| operator-identities | 4000 | 111.81 / 37496 | 261.46 / 43796 |
+| operator-identities | 16000 | 500.90 / 133236 | 970.81 / 164060 |
+| template-throw-sets | 1000 | 55.02 / 19140 | 120.33 / 19172 |
+| template-throw-sets | 4000 | 185.95 / 57064 | 375.10 / 66100 |
+| template-throw-sets | 16000 | 677.98 / 213268 | 1291.35 / 255868 |
+
+A fixed 700-nested-class input combines operator bodies and function-template
+throw sets. From a 1 MiB initial native stack, the protected comparator reports
+`match: true`, `stack_qualification.passed: true`, a shared 16 MiB retry, both
+exits 0 and no stream/artifact differences. Complete successful dump SHA-256:
+`5e451d0b4f011a5ccb119ece1d4975885ccc20aac24ab7586f55ce7409e5e81a`.
+`nested-summary.json` links preserved initial/retry evidence. Genuine guards
+remain unchanged; native cutoff depths and diagnostic positions were not
+calibrated or required to match.
+
+### Baseline failures and remaining acceptance boundary
+
+Four malformed namespace destructor redeclaration inputs reproducibly crash
+frozen C++ with SIGSEGV (three direct replays each, empty streams):
+`namespace-destructor-duplicate`, `namespace-destructor-first-true`,
+`namespace-destructor-first-false`, `namespace-destructor-qualified`.
+Their minimal sources, returns and raw comparator evidence are preserved in
+`oracle-crashes.json` and `probes.jsonl` mismatch directories. The source is
+outside valid C++ destructor placement; the reference's implicit-destructor
+redeclared-specification path assumes a class owner there. Rust preserves
+safe first-declaration/factory behavior and never reproduces that invalid
+memory access. These are **baseline issues**, not matched rejections or
+qualified native exhaustion. They were not added as oracle-success/rejection
+fixtures; no frozen code, policy or reference was changed. Full clone signoff
+must not silently count such probes as passes.
+
+The earlier 27-case responsibility census now has 17 exact matches; all eight
+incoming name/factory gaps and four template throw gaps are closed, including
+`destructor-namespace-written-type` (previously Rust status 70). Ten exact
+remaining IDs are:
+
+- `function-template-noexcept-qualified-value`;
+- `class-inheritance-simple`, `class-inheritance-unknown`, `class-bit-field`;
+- `new-runtime-array-names`, `new-runtime-array-unknown`, `new-array-class-demand`;
+- `member-pointer-declaration`, `function-trailing-return`,
+  `variable-placeholder-auto`.
+
+`boundaries.log` and the original `pa6-expression-keys/boundaries.jsonl` retain
+their current receipts. The separate key cases `dependent-qualified-value`
+and `dependent-qualified-type`, and legacy `inner-qualify`,
+`function-different-shape`, `function-template-ordinary`, remain unresolved.
+The next dependency is a typed dependent qualified-name/type interface, then
+continued source responsibility classification and fixes for class/declarator
+and name-only allocation work. Do not equate declaration collection with later
+expression typing, overload resolution, layout or instantiation, or classify
+all remaining probes away without direct handout/source evidence. Full-stage
+acceptance and Ralph's existing goal remain open; no goal or Ralph state was
+created, reset, paused, advanced or replaced.
