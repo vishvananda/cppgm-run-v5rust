@@ -1,11 +1,130 @@
 # PA5 port ledger
 
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
-Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
+Last audited commit: `c41a49683c1b3900fcdca00a0d438179c610a321` (resumed partial audit; full acceptance open)
 
 
 
 
+
+## Resumed full-stage audit: complete template-list context — 2026-10-12
+
+Entry/reviewed baseline: `ba7e6b08533844fea4b77372c36254554c13c233` (clean).
+Audited implementation: `c41a49683c1b3900fcdca00a0d438179c610a321`.
+The authorized frozen oracle is
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5`. Stage base remains
+`d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`.
+**Required checks now pass; PA5 full acceptance remains open.** The two native
+stack-boundary counterexamples below still prevent completing the existing
+phase goal. Ralph state, goals, frozen files and protected policy were not
+changed. Historical blocked entries describe the earlier oracle/run.
+
+Read the repository contract/specification/plan, full PA5 handout/parsing guide,
+source map and ledger. The refreshed oracle implementation differs from the
+previous reviewed snapshot only in `parser_names.cpp` and `parser_state.h`.
+Their full context-key change and speculative-list control flow were directly
+compared with Rust `angles.rs`, `name_lookup.rs`, `templates.rs`, `conflicts.rs`,
+`parser.rs` and `scopes.rs`. The unchanged owners retain the preceding
+function/header/AST/driver review; fresh broad differential probes validate
+that inherited evidence against both current binaries. The refreshed
+`function-census.json` retains the 282-entry navigation inventory, updates the
+changed owners, and keeps later grammar/interface and native-boundary findings
+explicit. Counts alone do not prove completeness.
+
+Resolved findings and owning responsibilities:
+
+- `ParserState::TemplateListKey/template_list_key` -> private Rust
+  `angles.rs::TemplateListKey`: absolute position, reversible scope environment,
+  current ScopeId, selected typed Category, alternative-reading activity and
+  member-call requirement. Incoming angle mode is excluded because argument
+  parsing establishes its own mode. The old category-key compatibility finding
+  is superseded by the authorized oracle fix, not an acceptance exception.
+- `parse_name_component`, `template_list_failed_before`,
+  `remember_failed_template_lists` -> `names.rs`, `name_lookup.rs`, `angles.rs`:
+  ordinary and member attempts use distinct complete keys; changing a reading
+  retries the same '<' without unrelated environment mutations. Hash membership
+  has no output-order or tie-break dependence; immutable delimiter fences still
+  use ordered predecessor queries, and committed regions release memo contents.
+- `abandon_template_lists`, `try_outermost_template_arguments` -> `angles.rs`:
+  nested failure immediately propagates, records all enclosing open lists and
+  retains the first abandoned diagnostic mark. Only the outermost speculative
+  list falls back. An ordinary outer failure retains its own diagnostic progress;
+  abandoned nested progress restores the saved mark. Typed syntax/scope rollback
+  remains owned by the existing transaction rather than copying tokens or trees.
+- Two unit invariants exercise category and active-reading retries, incoming
+  angle reuse, same-position restoration and member-call versus ordinary demand.
+  The upstream owning PA5 fixtures supply required executed regressions:
+  `300-template-cache-alternative-types.t`,
+  `300-template-cache-nested-alternatives.t`, and the retained rejection
+  `300-template-cache-invalid-argument.t`. No fixture/reference was edited.
+
+Architecture review retains one Rust preprocessing/phase-7/parser pipeline per
+source and one owned typed syntax tree, compact name/scope/node/list IDs,
+private transactional slab/list APIs, bounded pull windows and explicit deferred
+body demand. No AST dump is phase transport or a lookup key. Name publication,
+source child order, deliberate target counters/truncation and checked host-size
+allocation are retained. Configuration and OS queries remain at the tool
+boundary. The due `--emit-ast` path directly invokes Rust phases; C++ tools only
+compare/evaluate in the documented harness. Semantic instantiation, per-function
+backend lifetimes and the implementation-wide PA33 census remain future owners;
+no optimizer/register allocation policy or PA35 objective was introduced.
+
+Validation artifacts live at
+`/home/vishvananda/work/private/v5rust/artifacts/pa5-acceptance-resumed/`:
+
+| Command / evidence | Result |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS, 196/196; `stage.log`, `results/pa5.json` |
+| `make course-pa5` | PASS original full 294/294, no failed comparison or marker; `course.log`, `course/pa5/test/course-result.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa5` | PASS PA1–PA4 differential 58/26/20/106 and course 58/28/20/112; `prior.log`, archived `results/` and `course/` |
+| `make lint` | PASS rustfmt, strict Clippy, debug/release 136 library + nine tool tests; `quality.log` |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `preflight pa5`, `preserve pa5` | PASS routing/input integrity and 194/194 required passing identities; respective logs |
+
+`checks.json` records exact commands, exits and elapsed times. Fresh ordinary
+comparisons match **6099/6099** complete status/stdout/stderr/AST results:
+3462 recent, 2141 earlier, 158 state, 98 view and 240 new context-combination
+probes. The latter cover nested undeclared roots, pointer/reference/function/
+array type arguments, expression arguments, call/qualification suffixes and
+member-call demand. New probe counts are supplementary evidence, not fixed-gate
+progress. `oracle-implementation-refresh.diff`, `audit-metadata.json`, updated
+census and `acceptance-audit.json` retain the source/requirement audit.
+
+Native boundary sweep: **46/48** complete results match across six constructs
+at 64/128/256/300/600/1200/2400/4800 layers. Every previously matching native
+case remains matched; no signal, panic, timeout or status 86 was accepted.
+Exact remaining IDs, under the common 8 MiB soft stack limit:
+
+| Case ID | Frozen C++ | Rust |
+| --- | --- | --- |
+| `native/parentheses/4800` | exit 0 and complete AST | exit 1, nesting diagnostic at column 4234 |
+| `native/known-templates/4800` | exit 1, nesting diagnostic at column 7627 | exit 1, nesting diagnostic at column 4839 |
+
+`native.json`, original invocation files and `native-frame-evidence.json`
+retain this evidence. Direct source and binary prologue inspection confirms
+that identical half-limit/cap/fallback/distance arithmetic sees different
+native call-frame layouts: for example, C++ assignment reserves 0x38 local
+bytes, Rust assignment 0xd0, before saved registers/return addresses; the Rust
+argument-list frame reserves 0x418 local bytes. These are host observations,
+not proposed logical-depth thresholds. Ordinary acceptance and diagnostic
+bytes are still unequal. No limit multiplier, calibrated depth, diagnostic
+normalization or policy exclusion was used. **Next dependency: resolve these
+actual native rejection boundaries and rerun the full acceptance audit.**
+
+Resource observations are separate from that equality finding. After validation
+and inherited probe handles completed, `measure.py` ran 36 serial warm whole
+invocations (A/A then ABBA) on category retries and nested retries at
+1000/4000/16000 functions. All exits/streams/full ASTs match; tool/input hashes,
+Linux/rustc 1.98.0, UTC/C, stack limit and raw `/usr/bin/time` RSS are retained in
+`resource-metadata.json`, `measurements.json`, `resource-summary.json` and
+`resources/`. Rust median ms are **70.247/234.680/894.211** for ordinary retries
+and **87.576/303.104/1114.655** for nested retries; max RSS at 16000 is
+**81508/95132 KiB**, versus C++ **66500/78332 KiB**. Fourfold 4000->16000 growth
+costs roughly 3.81/3.68 times Rust wall time on these supported fixed inputs.
+No throughput or generated-code optimization target is inferred. Storage is
+within the shared 100 GiB ceiling. Implementation and evidence are committed;
+`handoff.json` records the resulting documentation commit and clean checkout.
 
 ## Full-stage audit continuation: AST ownership, rendering and keyword boundaries — 2026-10-12
 
