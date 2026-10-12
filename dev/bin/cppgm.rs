@@ -1,6 +1,6 @@
 // Translated from cppgm++.cpp's AST invocation and source loop. See NOTICE.
 use cppgm_rust::{
-    driver::ast::{AstToolError, emit_ast},
+    driver::ast::{AstToolError, EmitMode, emit_unit},
     preprocess::error::PreprocessError,
     support::source::SourceBuffer,
 };
@@ -54,7 +54,10 @@ fn path_error(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
     CliError::Diagnostic(bytes)
 }
 fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsStr>), CliError> {
-    if !args.iter().any(|arg| arg == "--emit-ast") {
+    if !args
+        .iter()
+        .any(|arg| arg == "--emit-ast" || arg == "--emit-types")
+    {
         return Err(CliError::Missing("source compiler modes beyond --emit-ast"));
     }
     let mut output = None;
@@ -63,7 +66,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
     while index < args.len() {
         let arg = &args[index];
         index += 1;
-        if arg == "--emit-ast" {
+        if arg == "--emit-ast" || arg == "--emit-types" {
             continue;
         }
         if arg == "-o" {
@@ -99,6 +102,18 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
 }
 fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let ast = args.iter().any(|arg| arg == "--emit-ast");
+    let types = args.iter().any(|arg| arg == "--emit-types");
+    if ast && types {
+        return Err(CliError::Message(
+            "multiple --emit-* options provided".to_owned(),
+        ));
+    }
+    let mode = if types {
+        EmitMode::Types
+    } else {
+        EmitMode::Ast
+    };
     let (destination, inputs) = invocation(&args)?;
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
@@ -117,13 +132,14 @@ fn run() -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_ast(
+        emit_unit(
             &source,
             path.as_bytes(),
             &values,
             &mut output,
             index + 1,
             stack_budget,
+            mode,
         )
         .map_err(|error| match error {
             AstToolError::Missing(group) => CliError::Missing(group),

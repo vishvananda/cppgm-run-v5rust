@@ -1,10 +1,10 @@
 //! Parse-once source syntax over the shared preprocessing and phase-7 owners.
 mod angles;
-mod ast;
+pub(crate) mod ast;
 mod attributes;
 mod classes;
 mod conflicts;
-mod cursor;
+pub(crate) mod cursor;
 mod declarations;
 mod declarators;
 mod expressions;
@@ -17,7 +17,7 @@ mod printer;
 mod render;
 mod scopes;
 mod statements;
-mod storage;
+pub(crate) mod storage;
 mod templates;
 
 use crate::lex::{PostTokenizer, number::NumberDialect};
@@ -71,6 +71,14 @@ impl<'a> SyntaxUnit<'a> {
     }
     pub(crate) fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
         self.parser.cursor.describe(error)
+    }
+    pub(crate) fn semantic_inputs(
+        &mut self,
+    ) -> Result<(&ast::Tree, &mut cursor::Cursor<'a>, List<DeclId>), ParseError> {
+        let declarations = self
+            .declarations
+            .ok_or(ParseError::Invariant("missing parsed translation unit"))?;
+        Ok((&self.parser.tree, &mut self.parser.cursor, declarations))
     }
     pub(crate) fn print(
         &self,

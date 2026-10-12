@@ -1,5 +1,5 @@
 //! Distinct numeric and text types and the frozen x86-64 literal representation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum FundamentalType {
     Char,

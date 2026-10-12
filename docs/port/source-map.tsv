@@ -2,7 +2,7 @@ cpp_source	rust_owner	status
 dev/abimangle-scaffold.cpp		pending
 dev/abimangle.cpp		pending
 dev/cppgm++-scaffold.cpp		pending
-dev/cppgm++.cpp	dev/bin/cppgm.rs,dev/bin/source_tool/build_time.rs,dev/src/driver/ast.rs	partial overall; PA5 responsibilities complete: PA5 AST invocation, per-file source/syntax ownership, output order/failure and exact located errors; other emit/driver/hosted/options/statistics paths pending
+dev/cppgm++.cpp	dev/bin/cppgm.rs,dev/bin/source_tool/build_time.rs,dev/src/driver/ast.rs	partial overall; PA5 responsibilities complete: PA5 AST invocation, per-file source/syntax ownership, output order/failure and exact located errors; other emit/driver/hosted/options/statistics paths pending; PA6 typed --emit-types mode, duplicate emit-option rejection and parse-once semantic/dump source loop translated; partial assignment boundary recorded in docs/port/pa6.md
 dev/lowir-scaffold.cpp		pending
 dev/lowir.cpp		pending
 dev/lowir2native-scaffold.cpp		pending
@@ -271,20 +271,20 @@ dev/src/preprocess/tokens/pp_token_emitter.cpp	dev/src/driver/pptoken.rs	complet
 dev/src/preprocess/tokens/pp_token_emitter.h	dev/src/driver/pptoken.rs	complete
 dev/src/sema/aggregates.h		pending
 dev/src/sema/analysis_records.h		pending
-dev/src/sema/analyzer.cpp		pending
-dev/src/sema/analyzer.h		pending
+dev/src/sema/analyzer.cpp	dev/src/sema/analyzer.rs,dev/src/sema/declarations.rs,dev/src/sema/graph.rs	partial: PA6 declaration dispatch and unit-private graph, namespace creation/reopening/aliases and using edges; complete-class body queue; template/enumeration/constant/extended declaration groups remain explicit missing boundaries
+dev/src/sema/analyzer.h	dev/src/sema/analyzer.rs,dev/src/sema/mod.rs	partial: borrowed syntax analyzer, typed Result errors, byte-budget stack guard, explicit body/expression worklists; remaining semantic/demand interfaces pending
 dev/src/sema/analyzer_access.cpp		pending
 dev/src/sema/analyzer_asm.cpp		pending
 dev/src/sema/analyzer_bindings.cpp		pending
-dev/src/sema/analyzer_bodies.cpp		pending
+dev/src/sema/analyzer_bodies.cpp	dev/src/sema/analyzer.rs,dev/src/sema/expressions.rs	partial: function/block scopes, typed parameter declarations and iterative PA6 name-only expression walk with exact operand order; callee allowances, unevaluated contexts and class-initializer suppression; scalar new-expression type names and implicit class demand; selection/iteration/handler/ambiguous statement scopes, runtime new-array bounds and later semantic expression typing pending
 dev/src/sema/analyzer_builtins.cpp		pending
 dev/src/sema/analyzer_calls.cpp		pending
-dev/src/sema/analyzer_classes.cpp		pending
+dev/src/sema/analyzer_classes.cpp	dev/src/sema/declarations.rs,dev/src/sema/expressions.rs	partial: named class and compatible class-key declarations, forward/elaborated type lookup and nearest namespace/block home, injected names and complete-class member bodies; named implicit default-constructor scope demand deduplicated at evaluated value-initialization; anonymous types, enums, templates, bases, layout and special members pending
 dev/src/sema/analyzer_constexpr.cpp		pending
 dev/src/sema/analyzer_construction.cpp		pending
 dev/src/sema/analyzer_conversions.cpp		pending
 dev/src/sema/analyzer_copy.cpp		pending
-dev/src/sema/analyzer_declarations.cpp		pending
+dev/src/sema/analyzer_declarations.cpp	dev/src/sema/declarations.rs,dev/src/sema/analyzer.rs	partial: aliases, source declaration order, shared variable/function entity identity, array completion from redeclaration/braced/string initialization, explicit definition/completeness checks and qualified namespace definitions; function body parameter source types; linkage/overload/member/default-argument/specifier rules remain incomplete
 dev/src/sema/analyzer_exception_sets.cpp		pending
 dev/src/sema/analyzer_exceptions.cpp		pending
 dev/src/sema/analyzer_expressions.cpp		pending
@@ -299,7 +299,7 @@ dev/src/sema/analyzer_operators.cpp		pending
 dev/src/sema/analyzer_range_for.cpp		pending
 dev/src/sema/analyzer_rtti.cpp		pending
 dev/src/sema/analyzer_traits.cpp		pending
-dev/src/sema/analyzer_types.cpp		pending
+dev/src/sema/analyzer_types.cpp	dev/src/sema/specifiers.rs,dev/src/sema/declarators.rs,dev/src/sema/lookup.rs,dev/src/sema/types.rs	partial: fundamental combinations/cv, named types and structured qualified prefixes; declarator-derived pointer/reference/array/function source types, nested canonical parameter adjustment and positive integral literal bounds; decltype, constants, exceptions, prototype/default-argument scopes, member pointers and extended types pending
 dev/src/sema/analyzer_virtual.cpp		pending
 dev/src/sema/asm_statements.cpp		pending
 dev/src/sema/asm_statements.h		pending
@@ -307,7 +307,7 @@ dev/src/sema/binding_records.h		pending
 dev/src/sema/class_templates.cpp		pending
 dev/src/sema/constant_complex.cpp		pending
 dev/src/sema/constant_construction.cpp		pending
-dev/src/sema/constant_evaluator.cpp		pending
+dev/src/sema/constant_evaluator.cpp	dev/src/sema/declarators.rs	partial: decoded phase-7 integral/character literal array bounds and exact zero/negative rejection; general evaluator, promotions, checked target arithmetic, enumerators, sizeof/alignof/decltype, const/reference object values and assertions are the next group
 dev/src/sema/constant_evaluator.h		pending
 dev/src/sema/constant_expressions.cpp		pending
 dev/src/sema/constant_frames.h		pending
@@ -318,7 +318,7 @@ dev/src/sema/constant_values.h		pending
 dev/src/sema/conversions.cpp		pending
 dev/src/sema/conversions.h		pending
 dev/src/sema/declaration_records.h		pending
-dev/src/sema/entity_records.h		pending
+dev/src/sema/entity_records.h	dev/src/sema/graph.rs	partial: shared type/value/class/namespace entity facts, explicit definition/class-completion/implicit-constructor state; remaining entity kinds/owner-linkage/layout/template/constant facts pending
 dev/src/sema/expression_facts.h		pending
 dev/src/sema/function_records.h		pending
 dev/src/sema/function_templates.cpp		pending
@@ -326,17 +326,17 @@ dev/src/sema/instantiation_context.h		pending
 dev/src/sema/integral_arithmetic.cpp		pending
 dev/src/sema/integral_arithmetic.h		pending
 dev/src/sema/layout.cpp		pending
-dev/src/sema/lookup.cpp		pending
-dev/src/sema/lookup.h		pending
+dev/src/sema/lookup.cpp	dev/src/sema/lookup.rs,dev/src/sema/graph.rs	partial: scope/name indexes with ordinary/type/tag/namespace distinction, lexical lookup and directive nomination at common namespace, qualified inline/directive graph walks and cycle suppression proportional to visited edges; class bases/templates/ADL/overload sets and context-limited lookup pending
+dev/src/sema/lookup.h	dev/src/sema/lookup.rs,dev/src/sema/graph.rs	partial: typed lookup filters and unit-local scope/entity/binding IDs; future lookup contexts/overload sets pending
 dev/src/sema/placeholder_words.h		pending
 dev/src/sema/pretty_function.cpp		pending
 dev/src/sema/pretty_function.h		pending
 dev/src/sema/primary_bases.cpp		pending
-dev/src/sema/semantic_dump.cpp		pending
-dev/src/sema/semantic_dump.h		pending
-dev/src/sema/semantic_graph.h		pending
-dev/src/sema/semantic_types.h		pending
-dev/src/sema/semantic_unit.h		pending
+dev/src/sema/semantic_dump.cpp	dev/src/sema/dump.rs	partial: exact supported scope headers, declared class-key/source parameter views and completed variable entity type; iterative scope/type rendering; enum/template/extended spellings pending
+dev/src/sema/semantic_dump.h	dev/src/sema/dump.rs	partial: borrowed PA6 graph/type dump view; remaining type variants pending
+dev/src/sema/semantic_graph.h	dev/src/sema/graph.rs	partial: private indexed scope/entity/binding stores, separate print order and lookup edges; dense AST-indexed declarator/type/name/binding facts; later semantic records pending
+dev/src/sema/semantic_types.h	dev/src/sema/types.rs	partial: PA6 scalar, class, pointer, reference, array and function variants with compact type/entity IDs, cv/ref qualifiers and raw source parameter types; integral constants and extended/template type vocabulary pending
+dev/src/sema/semantic_unit.h	dev/src/sema/graph.rs,dev/src/sema/analyzer.rs	partial: one semantic graph per parsed unit, borrowed AST and unit-local type interning/canonical memos/worklists; complete semantic demand, body facts and statistics pending
 dev/src/sema/semantics_dump.cpp		pending
 dev/src/sema/semantics_dump.h		pending
 dev/src/sema/statement_facts.h		pending
@@ -351,8 +351,8 @@ dev/src/sema/template_packs.h		pending
 dev/src/sema/template_placeholders.cpp		pending
 dev/src/sema/template_records.h		pending
 dev/src/sema/template_specializations.cpp		pending
-dev/src/sema/type_table.cpp		pending
-dev/src/sema/type_table.h		pending
+dev/src/sema/type_table.cpp	dev/src/sema/types.rs	partial: immutable structural interning, cv-qualified arrays/reference collapsing and source/canonical function distinction; iterative memoized canonical DAG walk and iterative array qualification; enum/template/extended types pending
+dev/src/sema/type_table.h	dev/src/sema/types.rs	partial: private typed table API and checked compact type IDs; remaining type factories pending
 dev/src/sema/variable_templates.cpp		pending
 dev/src/sema/vtable_records.h		pending
 dev/src/support/file_handle.h		pending
@@ -400,8 +400,8 @@ dev/src/syntax/parser_specifiers.cpp	dev/src/syntax/declarations.rs,dev/src/synt
 dev/src/syntax/parser_state.cpp	dev/src/syntax/parser.rs,dev/src/syntax/ast.rs,dev/src/syntax/scopes.rs,dev/src/syntax/angles.rs,dev/src/syntax/attributes.rs,dev/src/syntax/lambdas.rs,dev/src/syntax/parameter_bases.rs,dev/src/syntax/name_lookup.rs,dev/src/syntax/conflicts.rs	partial overall; PA5 responsibilities complete: transactions/predefined categories/template mentions/angle caches and attributes; lambda queue rollback and outermost commit demand while tokens/name logs remain live, read-only decision probes, reusable iterative balanced delimiter stack; typed name conflicts and pack mention transactions translated; hosted statistics pending; parameter-base type/pack positions, bounded typed argument substitution and alias/typedef specialization records with transactional ownership translated; shared names survive tentative type-derivation rollback; failed delimiter/operand decisions do not invent furthest diagnostics; all unconditional extended-type categories and compact reserved-type groups initialized once before transactions; independent parameter scope and typed Ordinary/Friend declarator context with complete transaction restoration; shared Value publication helper distinguishes declarator name presence from unqualified publication eligibility; 15 due state functions source reviewed, typed uint32 pack/template/parameter mention counters use deliberate wrap, complete transactional/context ownership retained; old-oracle category-key finding is superseded by the authorized context fix; complete speculative-list failure key now includes typed selected category, active alternatives and member-call demand, with ordinary versus nested failure marks and bounded region lifetimes; save/restore/commit storage lifetime reviewed against checkpoint owner: complete tree/scope/context marks in reusable LIFO storage, no map/tree/token clones, empty after terminal propagation and nested outer rollback
 dev/src/syntax/parser_state.h	dev/src/syntax/parser.rs,dev/src/syntax/ast.rs,dev/src/syntax/angles.rs,dev/src/syntax/attributes.rs,dev/src/syntax/lambdas.rs,dev/src/syntax/parameter_bases.rs,dev/src/syntax/name_lookup.rs,dev/src/syntax/conflicts.rs	partial overall; PA5 responsibilities complete: unit-owned typed syntax/body/head/argument/attribute/lambda storage and reversible environments; deferred lambda targets/token intervals/scope log positions and speculation state; complete typed conflicts and shared-body region lifetimes translated; statistics pending; parameter-base type/pack positions, bounded typed argument substitution and alias/typedef specialization records with transactional ownership translated; refreshed baseline TemplateListKey translated with private typed category/active/call context; angle excluded because arguments establish it; header equality/order inputs source reviewed; unit-private reusable checkpoint stack keeps contents only during active queries, reuses capacity and never exposes pointers across recursive parse calls
 dev/src/syntax/parser_statements.cpp	dev/src/syntax/statements.rs,dev/src/syntax/attributes.rs	partial overall; PA5 responsibilities complete: ordinary statements/conditions/loops/handlers; typed declaration/expression head prediction, unambiguous declaration commit and bounded ambiguous lookahead; collected attributes and body isolation; category alternatives retained in owned statement lists, control guards and independent for-init readers translated; selection initializers/structured bindings/asm pending; 17 due functions reviewed: block-owned header/handler scopes and Result restoration, gated type-required condition/range attempts, typed declaration-before-initializer publication, braced return/range boundaries, exact selection-head/prefix demand and committed memo lifetimes translated; selection-init/coroutine/asm productions remain later grammar
-dev/src/syntax/scratch_list.h	dev/src/syntax/storage.rs	partial overall; PA5 responsibilities complete: reusable nested scratch and immutable typed list slices with transactional truncation; later syntax consumers pending; complete due syntax allocation review: checked immutable list slabs, nested scratch and exhaustive transactional store marks
-dev/src/syntax/syntax_unit.cpp	dev/src/syntax/mod.rs,dev/src/driver/ast.rs	partial overall; PA5 responsibilities complete: one preprocessing/post-token/cursor/tree owner per source, parse-once root and lazy structured diagnostic view; hosted prelude/deferred consumers/statistics pending; unit/source/output lifetime source review complete for required PA5 mode; later syntax/telemetry interfaces remain classified
-dev/src/syntax/syntax_unit.h	dev/src/syntax/mod.rs	partial overall; PA5 responsibilities complete: unit-private typed AST owner with borrowed print API; future semantic interface and counters pending
+dev/src/syntax/scratch_list.h	dev/src/syntax/storage.rs	partial overall; PA5 responsibilities complete: reusable nested scratch and immutable typed list slices with transactional truncation; later syntax consumers pending; complete due syntax allocation review: checked immutable list slabs, nested scratch and exhaustive transactional store marks; PA6 read-only typed AST/list/ID view and original-node-indexed semantic consumers translated; parser-only guesses/bindings remain syntax-private
+dev/src/syntax/syntax_unit.cpp	dev/src/syntax/mod.rs,dev/src/driver/ast.rs	partial overall; PA5 responsibilities complete: one preprocessing/post-token/cursor/tree owner per source, parse-once root and lazy structured diagnostic view; hosted prelude/deferred consumers/statistics pending; unit/source/output lifetime source review complete for required PA5 mode; later syntax/telemetry interfaces remain classified; PA6 read-only typed AST/list/ID view and original-node-indexed semantic consumers translated; parser-only guesses/bindings remain syntax-private
+dev/src/syntax/syntax_unit.h	dev/src/syntax/mod.rs	partial overall; PA5 responsibilities complete: unit-private typed AST owner with borrowed print API; future semantic interface and counters pending; PA6 read-only typed AST/list/ID view and original-node-indexed semantic consumers translated; parser-only guesses/bindings remain syntax-private
 dev/src/types/fundamental_type.cpp	dev/src/types/fundamental.rs	partial: all PA2 numeric/text type names/sizes and literal integer bounds; remaining type properties deferred
 dev/src/types/fundamental_type.h	dev/src/types/fundamental.rs	partial: thirteen distinct PA2 numeric/text identities; semantic/extended types deferred

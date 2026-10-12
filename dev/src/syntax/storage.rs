@@ -3,7 +3,12 @@ use super::ParseError;
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub(super) struct Id<T>(u32, PhantomData<fn() -> T>);
+pub(crate) struct Id<T>(u32, PhantomData<fn() -> T>);
+impl<T> Id<T> {
+    pub(crate) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 impl<T> Copy for Id<T> {}
 impl<T> PartialEq for Id<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -17,7 +22,7 @@ impl<T> Clone for Id<T> {
     }
 }
 #[derive(Debug)]
-pub(super) struct List<T> {
+pub(crate) struct List<T> {
     begin: u32,
     end: u32,
     marker: PhantomData<fn() -> T>,
@@ -38,12 +43,12 @@ impl<T> Default for List<T> {
     }
 }
 impl<T> List<T> {
-    pub(super) fn is_empty(self) -> bool {
+    pub(crate) fn is_empty(self) -> bool {
         self.begin == self.end
     }
 }
 
-pub(super) struct Store<T> {
+pub(crate) struct Store<T> {
     data: Vec<T>,
 }
 impl<T> Default for Store<T> {
@@ -52,28 +57,28 @@ impl<T> Default for Store<T> {
     }
 }
 impl<T> Store<T> {
-    pub(super) fn add(&mut self, value: T) -> Result<Id<T>, ParseError> {
+    pub(crate) fn add(&mut self, value: T) -> Result<Id<T>, ParseError> {
         let index =
             u32::try_from(self.data.len()).map_err(|_| ParseError::Limit("syntax store limit"))?;
         self.data.push(value);
         Ok(Id(index, PhantomData))
     }
-    pub(super) fn get(&self, id: Id<T>) -> &T {
+    pub(crate) fn get(&self, id: Id<T>) -> &T {
         &self.data[id.0 as usize]
     }
-    pub(super) fn replace(&mut self, id: Id<T>, value: T) {
+    pub(crate) fn replace(&mut self, id: Id<T>, value: T) {
         self.data[id.0 as usize] = value;
     }
-    pub(super) fn mark(&self) -> usize {
+    pub(crate) fn mark(&self) -> usize {
         self.data.len()
     }
-    pub(super) fn rewind(&mut self, mark: usize) {
+    pub(crate) fn rewind(&mut self, mark: usize) {
         self.data.truncate(mark);
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct ListMark(usize, usize);
-pub(super) struct Lists<T> {
+pub(crate) struct ListMark(usize, usize);
+pub(crate) struct Lists<T> {
     data: Vec<T>,
     scratch: Vec<T>,
 }
@@ -86,13 +91,13 @@ impl<T> Default for Lists<T> {
     }
 }
 impl<T: Copy> Lists<T> {
-    pub(super) fn begin(&self) -> usize {
+    pub(crate) fn begin(&self) -> usize {
         self.scratch.len()
     }
-    pub(super) fn push(&mut self, value: T) {
+    pub(crate) fn push(&mut self, value: T) {
         self.scratch.push(value);
     }
-    pub(super) fn finish(&mut self, start: usize) -> Result<List<T>, ParseError> {
+    pub(crate) fn finish(&mut self, start: usize) -> Result<List<T>, ParseError> {
         let begin =
             u32::try_from(self.data.len()).map_err(|_| ParseError::Limit("syntax list limit"))?;
         let count = u32::try_from(self.scratch.len() - start)
@@ -108,33 +113,33 @@ impl<T: Copy> Lists<T> {
             marker: PhantomData,
         })
     }
-    pub(super) fn extend(&mut self, list: List<T>) {
+    pub(crate) fn extend(&mut self, list: List<T>) {
         self.scratch
             .extend_from_slice(&self.data[list.begin as usize..list.end as usize]);
     }
-    pub(super) fn get(&self, list: List<T>) -> &[T] {
+    pub(crate) fn get(&self, list: List<T>) -> &[T] {
         &self.data[list.begin as usize..list.end as usize]
     }
-    pub(super) fn mark(&self) -> ListMark {
+    pub(crate) fn mark(&self) -> ListMark {
         ListMark(self.data.len(), self.scratch.len())
     }
-    pub(super) fn rewind(&mut self, mark: ListMark) {
+    pub(crate) fn rewind(&mut self, mark: ListMark) {
         self.data.truncate(mark.0);
         self.scratch.truncate(mark.1);
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct Text {
+pub(crate) struct Text {
     begin: u32,
     end: u32,
 }
 #[derive(Default)]
-pub(super) struct TextStore {
+pub(crate) struct TextStore {
     bytes: Vec<u8>,
 }
 impl TextStore {
-    pub(super) fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
+    pub(crate) fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
         let begin = u32::try_from(self.bytes.len())
             .map_err(|_| ParseError::Limit("syntax spelling limit"))?;
         let count =
@@ -145,7 +150,7 @@ impl TextStore {
         self.bytes.extend_from_slice(bytes);
         Ok(Text { begin, end })
     }
-    pub(super) fn unquote(text: Text) -> Text {
+    pub(crate) fn unquote(text: Text) -> Text {
         Text {
             begin: text.begin.saturating_add(1).min(text.end),
             end: text
@@ -154,7 +159,7 @@ impl TextStore {
                 .max(text.begin.saturating_add(1).min(text.end)),
         }
     }
-    pub(super) fn get(&self, text: Text) -> &[u8] {
+    pub(crate) fn get(&self, text: Text) -> &[u8] {
         &self.bytes[text.begin as usize..text.end as usize]
     }
 }

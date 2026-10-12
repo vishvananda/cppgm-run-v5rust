@@ -8,17 +8,17 @@ use crate::lex::{
 };
 use crate::support::source::SourceOffset;
 
-pub(super) type DeclId = Id<Declaration>;
-pub(super) type ExprId = Id<Expression>;
-pub(super) type DeclaratorId = Id<Declarator>;
-pub(super) type TypeId = Id<TypeSyntax>;
-pub(super) type Name = Id<QualifiedName>;
-pub(super) type BodyId = Id<Body>;
-pub(super) type ClassId = Id<ClassSyntax>;
-pub(super) type StmtId = Id<Statement>;
-pub(super) type LambdaId = Id<Lambda>;
+pub(crate) type DeclId = Id<Declaration>;
+pub(crate) type ExprId = Id<Expression>;
+pub(crate) type DeclaratorId = Id<Declarator>;
+pub(crate) type TypeId = Id<TypeSyntax>;
+pub(crate) type Name = Id<QualifiedName>;
+pub(crate) type BodyId = Id<Body>;
+pub(crate) type ClassId = Id<ClassSyntax>;
+pub(crate) type StmtId = Id<Statement>;
+pub(crate) type LambdaId = Id<Lambda>;
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct TokenSpan<T = u64> {
+pub(crate) struct TokenSpan<T = u64> {
     #[cfg_attr(
         not(test),
         expect(
@@ -37,28 +37,28 @@ pub(super) struct TokenSpan<T = u64> {
     pub end: T,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum CaptureKind {
+pub(crate) enum CaptureKind {
     This,
     Copy(NameId),
     Reference(NameId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct LambdaCapture {
+pub(crate) struct LambdaCapture {
     pub kind: CaptureKind,
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum CaptureDefault {
+pub(crate) enum CaptureDefault {
     Copy,
     Reference,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum LambdaBody {
+pub(crate) enum LambdaBody {
     Deferred,
     Parsed(StmtId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Lambda {
+pub(crate) struct Lambda {
     pub capture_default: Option<CaptureDefault>,
     pub captures: List<LambdaCapture>,
     pub parameters: Option<ParameterClause>,
@@ -71,7 +71,7 @@ pub(super) struct Lambda {
     pub body: LambdaBody,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AttributeKind {
+pub(crate) enum AttributeKind {
     Alignas,
     NoInline,
     Packed,
@@ -92,19 +92,19 @@ pub(super) enum AttributeKind {
     NoReturn,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AttributeForm {
+pub(crate) enum AttributeForm {
     Standard,
     Gnu,
     Alignment,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AttributeSite {
+pub(crate) enum AttributeSite {
     Entity,
     Type,
     Class,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Attribute {
+pub(crate) struct Attribute {
     pub kind: AttributeKind,
     pub location: SourceOffset,
     pub form: AttributeForm,
@@ -114,45 +114,41 @@ pub(super) struct Attribute {
     pub ty: Option<TypeId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct QualifiedName {
+pub(crate) struct QualifiedName {
     pub location: SourceOffset,
     pub global: bool,
     pub typename_keyword: bool,
     pub components: List<NameComponent>,
-    pub prefix_scope: Option<ScopeId>,
+    pub(super) prefix_scope: Option<ScopeId>,
     pub prefix_state: PrefixState,
     pub prefix_template: TemplatePrefix,
-    pub prefix_guesses: Guesses,
+    pub(super) prefix_guesses: Guesses,
     pub mentions_parameters: bool,
-    pub binding: Option<Binding>,
+    pub(super) binding: Option<Binding>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PrefixState {
+pub(crate) enum PrefixState {
     Unqualified,
     Known,
     Unknown,
     Dependent,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum TemplatePrefix {
+pub(crate) enum TemplatePrefix {
     #[default]
     Ordinary,
     Specialization,
     Dependent,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct NameComponent {
-    #[expect(
-        dead_code,
-        reason = "Name component locations are retained for later qualified lookup diagnostics"
-    )]
+pub(crate) struct NameComponent {
     pub location: SourceOffset,
     pub kind: NameKind,
     pub template_keyword: bool,
     pub arguments: Option<List<TemplateArgument>>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum NameKind {
+pub(crate) enum NameKind {
     Identifier(NameId),
     Operator { op: Operator, array: bool },
     LiteralOperator(NameId),
@@ -162,17 +158,17 @@ pub(super) enum NameKind {
     Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum TemplateArgumentKind {
+pub(crate) enum TemplateArgumentKind {
     Type(TypeId),
     Expression(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TemplateArgument {
+pub(crate) struct TemplateArgument {
     pub kind: TemplateArgumentKind,
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TemplateParameter {
+pub(crate) struct TemplateParameter {
     #[expect(
         dead_code,
         reason = "Template parameter location is retained for later semantic diagnostics"
@@ -182,7 +178,7 @@ pub(super) struct TemplateParameter {
     pub kind: TemplateParameterKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TemplateParameterClause {
+pub(crate) struct TemplateParameterClause {
     #[expect(
         dead_code,
         reason = "Template head location is retained for later semantic diagnostics"
@@ -191,7 +187,7 @@ pub(super) struct TemplateParameterClause {
     pub parameters: List<TemplateParameter>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum TemplateParameterKind {
+pub(crate) enum TemplateParameterKind {
     Type {
         key: Keyword,
         name: Option<NameId>,
@@ -205,12 +201,12 @@ pub(super) enum TemplateParameterKind {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Operator {
+pub(crate) struct Operator {
     pub token: SimpleToken,
     pub alternative: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Literal {
+pub(crate) struct Literal {
     pub kind: PostTokenKind,
     pub spelling: Text,
     pub token_form: bool,
@@ -229,19 +225,12 @@ pub(super) struct Literal {
     pub suffix: Text,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Specifier {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The owning syntax location is retained for later semantic diagnostics"
-        )
-    )]
+pub(crate) struct Specifier {
     pub location: SourceOffset,
     pub kind: SpecifierKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum SpecifierKind {
+pub(crate) enum SpecifierKind {
     Keyword(Keyword),
     Named(Name),
     Enum(DeclId),
@@ -251,7 +240,7 @@ pub(super) enum SpecifierKind {
     Vector { extended: bool, operand: ExprId },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct TypeSyntax {
+pub(crate) struct TypeSyntax {
     pub specialization: u8,
     #[cfg_attr(
         not(test),
@@ -265,14 +254,14 @@ pub(super) struct TypeSyntax {
     pub declarator: Option<DeclaratorId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Pointer {
+pub(crate) struct Pointer {
     pub op: Operator,
     pub class_name: Option<Name>,
     pub cv: List<Keyword>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Declarator {
-    pub member_scope: Option<ScopeId>,
+pub(crate) struct Declarator {
+    pub(super) member_scope: Option<ScopeId>,
     #[cfg_attr(
         not(test),
         expect(
@@ -281,13 +270,6 @@ pub(super) struct Declarator {
         )
     )]
     pub attributes: List<Attribute>,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
-        )
-    )]
     pub location: SourceOffset,
     pub abstract_form: bool,
     pub pointers: List<Pointer>,
@@ -297,7 +279,7 @@ pub(super) struct Declarator {
     pub suffixes: List<Suffix>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Suffix {
+pub(crate) enum Suffix {
     Array(Option<ExprId>),
     Function {
         parameters: ParameterClause,
@@ -305,7 +287,7 @@ pub(super) enum Suffix {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct ParameterClause {
+pub(crate) struct ParameterClause {
     #[cfg_attr(
         not(test),
         expect(
@@ -319,7 +301,7 @@ pub(super) struct ParameterClause {
     pub ellipsis_without_comma: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Parameter {
+pub(crate) struct Parameter {
     #[cfg_attr(
         not(test),
         expect(
@@ -333,7 +315,7 @@ pub(super) struct Parameter {
     pub default: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Qualifier {
+pub(crate) struct Qualifier {
     #[cfg_attr(
         not(test),
         expect(
@@ -345,7 +327,7 @@ pub(super) struct Qualifier {
     pub kind: QualifierKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum QualifierKind {
+pub(crate) enum QualifierKind {
     Cv(Keyword),
     Ref(Operator),
     Noexcept(Option<ExprId>),
@@ -354,7 +336,7 @@ pub(super) enum QualifierKind {
     Virt(NameId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Initializer {
+pub(crate) struct Initializer {
     #[cfg_attr(
         not(test),
         expect(
@@ -366,7 +348,7 @@ pub(super) struct Initializer {
     pub kind: InitializerKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum InitializerKind {
+pub(crate) enum InitializerKind {
     Assign(ExprId),
     Braced(ExprId),
     Parenthesized(List<ExprId>),
@@ -374,7 +356,7 @@ pub(super) enum InitializerKind {
     Delete,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct InitDeclarator {
+pub(crate) struct InitDeclarator {
     #[cfg_attr(
         not(test),
         expect(
@@ -387,7 +369,7 @@ pub(super) struct InitDeclarator {
     pub initializer: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Enumerator {
+pub(crate) struct Enumerator {
     #[cfg_attr(
         not(test),
         expect(
@@ -400,12 +382,12 @@ pub(super) struct Enumerator {
     pub value: Option<ExprId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Body {
+pub(crate) enum Body {
     Deferred,
     Parsed(FunctionBody),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Base {
+pub(crate) struct Base {
     #[expect(
         dead_code,
         reason = "Base source location is retained for later access and inheritance diagnostics"
@@ -418,7 +400,7 @@ pub(super) struct Base {
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct ClassSyntax {
+pub(crate) struct ClassSyntax {
     #[cfg_attr(
         not(test),
         expect(
@@ -461,18 +443,18 @@ pub(super) struct ClassSyntax {
     pub location: SourceOffset,
     pub key: Keyword,
     pub name: Option<Name>,
-    pub scope: ScopeId,
+    pub(super) scope: ScopeId,
     pub final_specifier: bool,
     pub bases: List<Base>,
     pub members: List<DeclId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct BitField {
+pub(crate) struct BitField {
     pub declarator: Option<DeclaratorId>,
     pub width: ExprId,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct MemInitializer {
+pub(crate) struct MemInitializer {
     #[expect(
         dead_code,
         reason = "Initializer source location is retained for later constructor analysis"
@@ -483,7 +465,7 @@ pub(super) struct MemInitializer {
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct FunctionBody {
+pub(crate) struct FunctionBody {
     #[cfg_attr(
         not(test),
         expect(
@@ -497,7 +479,7 @@ pub(super) struct FunctionBody {
     pub handlers: Option<List<Handler>>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum ExceptionDeclaration {
+pub(crate) enum ExceptionDeclaration {
     Ellipsis,
     Typed {
         specifiers: List<Specifier>,
@@ -505,18 +487,18 @@ pub(super) enum ExceptionDeclaration {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Handler {
+pub(crate) struct Handler {
     pub exception: ExceptionDeclaration,
     pub body: StmtId,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Declaration {
+pub(crate) struct Declaration {
     pub attributes: List<Attribute>,
     pub location: SourceOffset,
     pub kind: DeclKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum DeclKind {
+pub(crate) enum DeclKind {
     Template {
         parameters: TemplateParameterClause,
         declaration: DeclId,
@@ -590,12 +572,12 @@ pub(super) enum DeclKind {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Expression {
+pub(crate) struct Expression {
     pub location: SourceOffset,
     pub kind: ExprKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum ExprKind {
+pub(crate) enum ExprKind {
     Lambda(LambdaId),
     PackExpansion(ExprId),
     SizeofPack(NameId),
@@ -674,7 +656,7 @@ pub(super) enum ExprKind {
     Throw(Option<ExprId>),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Statement {
+pub(crate) struct Statement {
     #[cfg_attr(
         not(test),
         expect(
@@ -686,7 +668,7 @@ pub(super) struct Statement {
     pub kind: StmtKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Condition {
+pub(crate) enum Condition {
     Expression(ExprId),
     Declaration {
         specifiers: List<Specifier>,
@@ -695,7 +677,7 @@ pub(super) enum Condition {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum StmtKind {
+pub(crate) enum StmtKind {
     Ambiguous {
         #[cfg_attr(
             not(test),
@@ -765,7 +747,7 @@ pub(super) enum StmtKind {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ReadingCategory {
+pub(crate) enum ReadingCategory {
     Value,
     Type,
     Template,
@@ -782,13 +764,13 @@ impl ReadingCategory {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct StatementReading {
+pub(crate) struct StatementReading {
     pub statement: StmtId,
     pub category: ReadingCategory,
 }
 
 #[derive(Default)]
-pub(super) struct Tree {
+pub(crate) struct Tree {
     pub lambdas: Store<Lambda>,
     pub captures: Lists<LambdaCapture>,
     pub declarations: Store<Declaration>,
@@ -822,7 +804,7 @@ pub(super) struct Tree {
     pub attributes: Lists<Attribute>,
 }
 #[derive(Clone, Copy)]
-pub(super) struct TreeMark {
+pub(crate) struct TreeMark {
     lambdas: usize,
     captures: ListMark,
     declarations: usize,
@@ -856,7 +838,7 @@ pub(super) struct TreeMark {
     attributes: ListMark,
 }
 impl Tree {
-    pub(super) fn complete_body(
+    pub(crate) fn complete_body(
         &mut self,
         id: BodyId,
         body: FunctionBody,
@@ -868,7 +850,7 @@ impl Tree {
         Ok(())
     }
 
-    pub(super) fn mark(&self) -> TreeMark {
+    pub(crate) fn mark(&self) -> TreeMark {
         TreeMark {
             lambdas: self.lambdas.mark(),
             captures: self.captures.mark(),
@@ -903,7 +885,7 @@ impl Tree {
             attributes: self.attributes.mark(),
         }
     }
-    pub(super) fn rewind(&mut self, mark: &TreeMark) {
+    pub(crate) fn rewind(&mut self, mark: &TreeMark) {
         self.lambdas.rewind(mark.lambdas);
         self.captures.rewind(mark.captures);
         self.declarations.rewind(mark.declarations);

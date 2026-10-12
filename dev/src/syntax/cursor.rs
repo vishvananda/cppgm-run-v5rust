@@ -39,9 +39,9 @@ struct Replay {
     run: TokenRun,
     resume: usize,
 }
-pub(super) struct Cursor<'a> {
+pub(crate) struct Cursor<'a> {
     pub post: PostTokenizer<Preprocessor<'a>>,
-    pub spellings: TextStore,
+    pub(crate) spellings: TextStore,
     window: Vec<Token>,
     pack_changes: Vec<PackChange>,
     last_pack: u32,
@@ -327,10 +327,10 @@ impl<'a> Cursor<'a> {
     pub(super) fn release(&mut self) {
         self.retained -= 1;
     }
-    pub(super) fn name(&self, name: NameId) -> &[u8] {
+    pub(crate) fn name(&self, name: NameId) -> &[u8] {
         self.post.input().name_spelling(name)
     }
-    pub(super) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, ParseError> {
+    pub(crate) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, ParseError> {
         self.post
             .input_mut()
             .intern_name(spelling)

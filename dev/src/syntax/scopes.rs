@@ -5,7 +5,7 @@ use crate::lex::identifiers::NameId;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct ScopeId(u32);
+pub(crate) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub(super) enum Category {
