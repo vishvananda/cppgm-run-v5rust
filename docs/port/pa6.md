@@ -1,7 +1,7 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `3140a2bbab5d8a42bfdba0259d0ee0a567439d4f` (accepted partial checkpoint audit).
+Last audited commit: `1194a1aa75c2d54bc02db2c8753df6c71e0b010f` (ongoing full-stage audit; reviewed control/declaration fixes, acceptance withheld).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
@@ -1297,3 +1297,176 @@ full ordinary overload resolution, member initialization/construction plans,
 inheritance/extended layout, full statements and PA7 expression semantics
 retain their prior dependency boundaries. No full template-to-ELF or PA34
 claim is made. Stage base and last-audited commits stay unchanged.
+
+
+## Full-stage acceptance audit: control/declaration findings (2026-10-12)
+
+Audit target: `pa6 full-stage`, phase `audit`. Incoming clean implementation
+revision was `7e93f70` (explicit constructors/static members), following stage
+base `70e745588987998ee1e5bde80b3861541eab753d`. The previous goal turn is
+progress: that retained commit and its fixed/course receipts establish 121/121
+fixed cases. The interrupted tool notice did not establish a live process;
+this audit began with a clean checkout and fresh command handles.
+Reviewed implementation revisions are `18b0cd7e6b6c0455eb2cc5dfa03156d1bac9f7d7`
+and `1194a1aa75c2d54bc02db2c8753df6c71e0b010f`, plus the earlier ownership
+checkpoints since the prior audit marker. **Full-stage acceptance remains
+unproven.** Green fixtures do not close the remaining declaration owners below;
+Ralph's existing full-stage goal remains active and stage state is unchanged.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete PA6 handout and
+scopes/types guide, clone plan, source map and historical stage ledger.
+Consulted the frozen C++ owners directly at revision
+`0fe8e3b4bde9929c2419fb7906028df83bb17de5`, including `cppgm++.cpp`,
+`analyzer.cpp`, `analyzer_bodies.cpp`, `analyzer_handlers.cpp`,
+`analyzer_range_for.cpp`, `analyzer_declarations.cpp`, `analyzer_types.cpp`,
+`analyzer_exceptions.cpp`, `semantic_dump.cpp`, graph/entity/type records,
+`type_table.cpp`, lookup and template-head owners. The review follows the
+Types branch, separating its name/scope/declaration responsibilities from
+later expression conversion, template instantiation and control-flow semantics.
+
+### Findings fixed and source responsibilities
+
+1. Selection/iteration/handler statements and function-try bodies returned
+   status 86 although C++ Types mode builds their block scopes and declarations.
+   `sema/statements.rs` now owns if/switch/while/do/for, declared-type range-for,
+   conditions, guarded substatements, try/catch and original-AST statement
+   selection. Condition declarations reuse the ordinary declaration/type
+   owner. Range names precede the range variable's type lookup and publication;
+   catch bindings use their own enclosing block, followed by their compound
+   body. Catch-all ordering and constexpr function-try rejection match the
+   owning C++ diagnostics. Return/throw/control-flow validation remains the
+   later semantic mode's responsibility, exactly as in C++ Types mode.
+2. Case labels silently skipped their operand names. Their expression walk now
+   precedes the labeled statement, preserving source-order failures without
+   imposing a later constant-expression case-conversion rule.
+3. Outermost function, controlled-statement and handler blocks allowed variables
+   to redeclare their parameters/condition/exception names. Typed guarded-block
+   metadata checks the immediate construct's value index. Nested blocks still
+   permit shadowing; type-name behavior follows the C++ variable-only check.
+4. Function declarations ignored constexpr disagreement, and return-type-only
+   differences reached an unfinished overload owner. Canonical adjusted
+   parameter/cv/ref/varargs comparisons now select the exact ordinary
+   redeclaration diagnostic. Constexpr agreement remains an entity fact outside
+   canonical function type identity. Ordinary definition diagnostics use the
+   function declaration's entry location, rather than its later declarator-id.
+5. C++11 constexpr non-static member functions lacked their implicit const
+   function qualifier. A typed function-specifier operation composes that type
+   once; static member declarations/qualified definitions retain their static
+   type. Source types and canonical adjusted signatures remain distinct.
+6. A static function declaration following external linkage was accepted.
+   Optional typed function properties now retain linkage/static facts. The
+   supplemental revision preserves internal linkage inherited through unnamed
+   namespaces, including nested named namespaces, while C-linkage functions
+   retain the C++ external-linkage rule. No rendered name or output spelling
+   participates in linkage or type identity.
+7. Function bodies now explicitly reset and restore enclosing class depth,
+   following the C++ local-class completion boundary. Constexpr function-try
+   rejection occurs before mem-initializer names. Function-definition analysis
+   moved into its owning helper to keep the declaration dispatcher within the
+   existing source/function limits, without adding lint allowances.
+
+Rust owners are `sema/{statements,analyzer,declarations,graph,lookup,types}.rs`;
+`syntax/ast.rs` removes only dead-code expectations on facts now consumed.
+The source map records statement/body/handler/range and declaration ownership,
+plus the wider unported responsibilities. Fifty-eight new oracle-derived
+`pa6/tests/general/700-audit-*.t` cases and reference pairs run in the existing
+course lane. Existing frozen fixtures/references/checker/oracle policy were
+unchanged. Reference creation streams/hashes and all exact regression receipts
+are retained separately. One graph ownership test checks local condition/catch
+identity, parent edges, guarded blocks and absence of leakage.
+
+Architecture review: one borrowed parsed AST and unit-local graph; checked
+compact IDs and immutable canonical type records; dense selected-reading facts
+refer to original StmtIds, never a replacement semantic syntax tree. Scoped
+lookup follows indexed names/edges; the prefix helper borrows a bounded original
+component slice. Selection is retained as a fact, not reused as a cache across
+changed instantiation environments. No new semantic result cache or incomplete
+cache key is introduced. Block/catch/range binding publication and print order
+remain distinct. Demand, layout/constant/exception state and per-unit ownership
+are preserved. Stack checks protect recursive statement/compound traversal;
+long expression spines retain the existing iterative walk. Errors are structured
+Results; failed units are discarded. No unsafe/FFI, dependencies, compiler
+subprocess fallback, fixture recognition, phase environment reads, parser
+replay, mechanical split, blanket lint expectation or backend policy change
+was introduced. Optimizer/code generator/allocator and per-function backend
+lifetimes remain untouched.
+
+### Fresh gates, exact preservation and evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa6-full-audit/`.
+Final candidate cppgm SHA-256:
+`6d83bcfd8b4d279c41b99de907e625b6b1713cfadc0636fd4e3770a79b13ec78`.
+Frozen C++ cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command/check | Result | Evidence relative to root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6` | PASS, 121/121 unchanged fixed IDs | `stage.log`, `stage-incoming.log`, `stage-summary.json`, `fixed-traces/`; original receipts under `artifacts/clone/cases/pa6/` |
+| `clone_check.py course pa6` (original full `make course-pa6` lane) | PASS, 259/259, no failed marker | `course.log`, `course-result.json`, `course-counts.txt`, `course-trace.jsonl`; `artifacts/clone/course/pa6/test/` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 fixed and full course lanes | `prior.log`; `artifacts/clone/course/paN/test/` |
+| `clone_check.py preflight pa6` | PASS, protected inputs/oracle/routing | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, 121/121 incoming passing IDs | `preserve.log`; unchanged stage identity set in `stage-summary.json` |
+| `make lint` = `python3 /home/vishvananda/work/v5rust-control/clone_quality.py` | PASS, rustfmt, strict Clippy, debug/release unit suites and source audit | `quality.log` |
+| `make audit-rust` | PASS, 109 files, zero findings | `audit.log` |
+| `make test-harness` | PASS | `harness.log` |
+| New owning-lane regressions | PASS, 55+3 exact comparisons and original course outcomes | `regression-summary.json`, `extra-regression-summary.json`, corresponding traces and reference-creation receipts |
+| Independent control/declaration probes | 58/61 exact; three explicit later/unported dependency probes retained | `probe-final.log`, `probe-summary.json`, `probes.jsonl` and each mismatch's raw evidence |
+| Reviewed legacy groups | 64/64 constants, 67/67 exceptions, 87/87 anonymous types, 96/100 templates, 132/135 constructors | `legacy-summary.json`, `legacy-*/probe.log`, `legacy-*/probes.jsonl`; unfinished probe receipts retained |
+| Supported scaling and protected stack qualification | PASS | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+The exact fixed-stage failing-case list is empty. New regressions supplement
+coverage, never redefine the fixed manifest or count as a fixed-stage gain.
+PA33's implementation-wide ownership census/debug/backend release obligations
+and PA34 object/tool fixed-point equality remain their later milestones; this
+PA6 audit imposes no PA35 generated-code optimization targets.
+
+### Resource observations and unresolved acceptance boundary
+
+Every supported scaling input first matches the protected comparator. Warm A/A
+calibration then ABBA/BAAB retains every time/RSS observation and binary/input/
+output hash; each measured dump hash is checked. Wall time includes startup
+and dump I/O, RSS comes from `/usr/bin/time`. Validation overlapped this run,
+so timings include host contention and are observations, not a performance
+threshold or a C++/Rust runtime-equality requirement.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| control-scopes | 1000 | 39.77 / 14972 | 91.15 / 16376 |
+| control-scopes | 4000 | 142.00 / 40788 | 282.65 / 56648 |
+| control-scopes | 16000 | 541.80 / 146024 | 1106.58 / 216088 |
+| handler-scopes | 1000 | 19.72 / 10768 | 49.45 / 10736 |
+| handler-scopes | 4000 | 69.14 / 25528 | 156.39 / 31196 |
+| handler-scopes | 16000 | 274.20 / 85824 | 570.67 / 116196 |
+
+The 800-nested-if probe starts with a 1 MiB stack. Its protected receipt reports
+`match: true`, `stack_qualification.passed: true`, a shared 16 MiB retry,
+both exits 0 and identical full dump SHA-256
+`3e4ffc6e91b056252b549d420706366bb8632e38e521e3bc59732020a47e2a57`.
+`nested-summary.json` links preserved initial and retry attempts. The genuine
+byte-budget safety guard remains active. Native exhaustion cutoffs and
+positions were neither required to match nor calibrated. Storage usage is
+approximately 27 GiB of the supplied 100 GiB ceiling (`du` could not read the
+filesystem's inaccessible lost+found directory).
+
+Full acceptance is still withheld for concrete successful-oracle declaration
+paths: `constructor-template`, `destructor-boundary`, `conversion-boundary`
+in `legacy-constructors/`. Each still exits 86 at its existing typed ownership
+boundary, versus C++ exit 0. They are not waived language rejections. The former
+`handler-boundary` now matches. The next independent dependency is typed
+special-member names/signature/label ownership and constructor template-head
+matching: consult `declared_name`, `special_member`, `declare_function`,
+`default_definition`, implicit exception ownership and dump labels directly.
+
+Additional independent later-boundary probes remain recorded, without shrinking
+the acceptance claim: `range-auto-boundary` needs placeholder deduction;
+template `inner-qualify`, `function-different-shape`,
+`function-template-ordinary` and `function-noexcept` need dependent qualified
+facts, ordinary/template overload indexing, or template exception ownership.
+The handout excludes expression typing, overload resolution and template
+instantiation/disambiguation; their owning later semantics remain distinct
+from the outstanding PA6 declaration responsibilities. Remaining Missing sites
+still require that ownership classification before a full-stage signoff.
+This entry proves a coherent reviewed control/declaration increment and clean
+green gates; it does not prove all stage-owned C++ responsibilities complete,
+complete Ralph's goal, advance PA6, change acceptance policy or edit Ralph state.
