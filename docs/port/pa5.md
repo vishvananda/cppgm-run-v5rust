@@ -1,5 +1,21 @@
 # PA5 port ledger
 
+## Owner-authorized stack qualification — 2026-10-12
+
+The run owner approved the resource-boundary exception in CLONE_CONTRACT.md.
+Physical native stack exhaustion cutoffs and diagnostic columns do not need
+C++ frame-layout parity. Qualify affected audit probes with the protected
+adapter: a same-input larger-stack rerun must succeed in both implementations
+and match streams, deterministic counters and every output file. Retain the
+raw `stack_qualification` receipt and evidence. Ordinary rejections, crashes,
+panics, timeouts and failed qualification remain defects. Do not calibrate a
+logical threshold or change the real byte-budget safety guard.
+
+Historical stack-boundary blockers below are superseded by this authorized
+policy when they qualify. They are not still-open requirements to match a
+C++ rejection column. Finish the remaining stage audit under the current
+contract; this policy update itself does not certify the stage.
+
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `7994409fb702c847b0e464d94095d6d740c3bc23` (partial audit; full acceptance open)
 

@@ -53,6 +53,21 @@ Diagnostic spelling, ordering, target integer overflow, floating bits,
 padding, symbols, relocations, MIR and emitted ELF bytes are observable.
 No canonicalization, stripping or equivalent-code substitution proves identity.
 
+Native stack exhaustion is an implementation resource boundary, not a language
+result. Its cutoff and diagnostic position need not match compiled C++ frames.
+The protected comparator recognizes only exit 1 with the standalone
+`constructs nested too deeply` guard diagnostic from `cppgm++`. It reruns both
+tools with the same larger stack (16/32/64 MiB, subject to the host hard limit).
+Qualification requires both to succeed with identical exit/streams, deterministic
+counters and generated files; raw attempts are retained. A normal rejection,
+panic, signal, timeout or unqualified exhaustion still fails. Original course
+checker requirements and PA34 object/tool equality remain required. For audit
+probes use the protected adapter and its `stack_qualification` receipt, rather
+than raw comparison of exhaustion locations. Judge the receipt's `match`:
+the adapter preserves the candidate's original exit/streams/files for callers.
+Keep a genuine byte-budget safety
+guard; do not calibrate rejection depths or imitate C++ frame sizes.
+
 Runtime measurements are recorded, not required to be equal: only numeric
 `*_ms`, `peak_rss_kb`, arena-storage and peak token-run storage fields on
 recognized statistics lines are excluded from byte comparison. Field names,

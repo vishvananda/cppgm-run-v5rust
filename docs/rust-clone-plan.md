@@ -1,3 +1,7 @@
+> Current acceptance policy: apply CLONE_CONTRACT.md's protected stack
+> qualification to native resource exhaustion. Match exact successful results
+> at a shared larger stack; do not imitate C++ physical exhaustion cutoffs.
+
 # Safe Rust compiler clone analysis and conversion plan
 
 Build a safe Rust implementation of all nine tools that preserves the current

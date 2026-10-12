@@ -91,3 +91,12 @@ binaries. Evidence lives
 under `/home/vishvananda/work/private/v5rust/artifacts/observer/`.
 The first implementation's compiler files, fixtures and source ledger were
 not changed by this gate update.
+
+## Owner-authorized resource policy — 2026-10-12
+
+The C++ revision and fixed fixture manifest are unchanged. The protected
+comparator now qualifies native stack-guard results by bounded same-input,
+same-stack reruns requiring exact successful outputs, rather than matching
+physical exhaustion columns. Raw runs are retained; ordinary course checker
+requirements and the PA34 byte-equality proof remain required. The harness,
+contract, prompt/goal sidecars and protected hashes are updated together.
