@@ -239,12 +239,7 @@ impl Parser<'_> {
     fn template_argument(&mut self) -> Result<TemplateArgument, ParseError> {
         let pack_mentions = self.pack_mentions;
         let location = self.location()?;
-        let named = matches!(self.token()?.kind, TokenKind::Identifier(_))
-            || self.at(P::Scope)?
-            || matches!(
-                self.keyword()?,
-                Some(K::Decltype | K::Operator | K::Typename)
-            );
+        let named = self.name_starts_ahead(0)?;
         let kind = if named {
             // Parse the name and its nested arguments once. Both readings borrow it.
             let (name, binding) = self.name()?;
@@ -264,11 +259,15 @@ impl Parser<'_> {
                 TemplateArgumentKind::Expression(self.continue_assignment_expression(primary)?)
             }
         } else {
-            let ty = self.attempt(|parser| {
-                let ty = parser.type_id(false)?;
-                parser.argument_end()?;
-                Ok(ty)
-            })?;
+            let ty = if self.type_specifier_start(0)? {
+                self.attempt(|parser| {
+                    let ty = parser.type_id(false)?;
+                    parser.argument_end()?;
+                    Ok(ty)
+                })?
+            } else {
+                None
+            };
             if let Some(ty) = ty {
                 TemplateArgumentKind::Type(ty)
             } else {
@@ -289,7 +288,7 @@ impl Parser<'_> {
         ) {
             Ok(())
         } else {
-            self.fail()
+            self.decline_operand()
         }
     }
 }

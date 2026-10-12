@@ -1,0 +1,94 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier a
+      init-declarator
+        declarator
+          identifier b
+      init-declarator
+        declarator
+          identifier c
+      init-declarator
+        declarator
+          identifier d
+  class-specifier X
+    class-key KW_STRUCT:struct
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        non-type-template-parameter
+          decl-specifier-seq
+            decl-specifier KW_INT:int
+          declarator
+            identifier N
+    class-specifier P
+      class-key KW_STRUCT:struct
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<::newint(a>b)>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier allocation
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<::delete[]a>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier deallocation
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<sizeof(((a)))>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier extent
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<(a?b>c:d)>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier condition
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier P<static_cast<int>(a)>
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier cast_value
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier f
+      parameter-clause
+    compound-statement
+      expression-statement
+        call-expression
+          id-expression call
+          argument-list
+            type-trait-expression KW_ALIGNOF:alignof
+              type-id
+                type-specifier-seq
+                  cv-qualifier KW_CONST:const
+                  type-name X
+                abstract-declarator
+                  parameter-clause
+            subscript-expression
+              id-expression a
+              braced-init-list
+                id-expression b
+                id-expression c
+            call-expression
+              id-expression unsigned long
+              argument-list
+                literal 1
+end translation unit

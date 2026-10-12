@@ -755,7 +755,7 @@ impl Parser<'_> {
         self.function_scope = None;
         let start = self.tree.init_declarators.begin();
         loop {
-            let first_token = self.declaration_token_ordinal()?;
+            let first_token = self.token_ordinal()?;
             let declarator = self.declarator(super::declarators::Mode::Named)?;
             self.declare_declarator(
                 declarator,
@@ -801,7 +801,7 @@ impl Parser<'_> {
             self.tree.init_declarators.push(InitDeclarator {
                 tokens: super::ast::TokenSpan {
                     begin: first_token,
-                    end: self.declaration_token_ordinal()?,
+                    end: self.token_ordinal()?,
                 },
                 declarator,
                 initializer,

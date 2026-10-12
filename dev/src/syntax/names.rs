@@ -20,6 +20,37 @@ enum NameMode {
 }
 
 impl Parser<'_> {
+    pub(super) fn type_specifier_start(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        let kind = self.cursor.peek(ahead)?.kind;
+        Ok(match kind {
+            TokenKind::Identifier(_) => true,
+            TokenKind::Simple(op) => {
+                op.token.as_punctuator() == Some(P::Scope)
+                    || op.token.as_keyword().is_some_and(|word| {
+                        matches!(
+                            word,
+                            K::Const
+                                | K::Volatile
+                                | K::Typename
+                                | K::Decltype
+                                | K::Class
+                                | K::Struct
+                                | K::Union
+                                | K::Enum
+                        ) || Self::has_type_keyword(word)
+                    })
+            }
+            _ => false,
+        })
+    }
+    pub(super) fn name_starts_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        Ok(
+            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_))
+                || (self.at_ahead(P::Scope, ahead)?
+                    && matches!(self.cursor.peek(ahead + 1)?.kind, TokenKind::Identifier(_))),
+        )
+    }
+
     pub(super) fn name(&mut self) -> Result<(Name, Option<Binding>), ParseError> {
         self.name_in_context(NameMode::Expression)
     }

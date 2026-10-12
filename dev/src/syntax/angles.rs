@@ -32,15 +32,29 @@ impl Parser<'_> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<T, ParseError> {
+        self.with_angle(false, parse)
+    }
+    pub(super) fn with_angle<T>(
+        &mut self,
+        angle: bool,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<T, ParseError> {
         let saved = self.angle;
+        self.angle = angle;
+        let result = parse(self);
+        self.angle = saved;
+        result
+    }
+    pub(super) fn speculative_list_boundary<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<T, ParseError> {
         let open_base = self.angles.open_base;
         self.angles.open_base = self.angles.open.len();
         let abandoning = self.angles.abandoning;
         let abandoned_error = self.angles.abandoned_error.take();
-        self.angle = false;
         self.angles.abandoning = false;
         let result = parse(self);
-        self.angle = saved;
         self.angles.open.truncate(self.angles.open_base);
         self.angles.open_base = open_base;
         self.angles.abandoning = abandoning;

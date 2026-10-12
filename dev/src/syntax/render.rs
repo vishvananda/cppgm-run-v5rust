@@ -685,13 +685,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 if let Some(ty) = ty {
                     self.tasks.push(Render::Type(ty));
                 } else if let Some(operand) = operand {
-                    if parenthesized
-                        && let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind
-                    {
-                        self.tasks.push(Render::Expression(inner));
-                    } else {
-                        self.tasks.push(Render::Expression(operand));
-                    }
+                    self.tasks.push(Render::Expression(operand));
                 }
             }
             ExprKind::TypeTrait {

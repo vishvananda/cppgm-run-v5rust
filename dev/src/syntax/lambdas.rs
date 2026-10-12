@@ -80,7 +80,7 @@ impl Parser<'_> {
             exception: None,
             trailing: None,
             attributes: List::default(),
-            clause_token: self.lambda_token_ordinal()?,
+            clause_token: self.token_ordinal()?,
             body_token: 0,
             body: LambdaBody::Deferred,
         };
@@ -122,7 +122,7 @@ impl Parser<'_> {
                 lambda.trailing = Some(self.type_id(true)?);
             }
         }
-        lambda.body_token = self.lambda_token_ordinal()?;
+        lambda.body_token = self.token_ordinal()?;
         if lambda.parameters.is_none() {
             lambda.clause_token = lambda.body_token;
         }
@@ -149,10 +149,6 @@ impl Parser<'_> {
             self.tree.lambdas.add(lambda)
         }
     }
-    fn lambda_token_ordinal(&self) -> Result<u32, ParseError> {
-        u32::try_from(self.cursor.absolute_position()?)
-            .map_err(|_| ParseError::Limit("lambda token ordinal limit"))
-    }
     fn lambda_body(&mut self, scope: ScopeId) -> Result<StmtId, ParseError> {
         let enclosing = self.scopes.current;
         let pending = self.pending_template;
@@ -171,7 +167,7 @@ impl Parser<'_> {
     ) -> Result<T, ParseError> {
         let saved = self.speculation;
         self.speculation = 0;
-        let result = self.without_angle(parse);
+        let result = self.without_angle(|parser| parser.speculative_list_boundary(parse));
         self.speculation = saved;
         result
     }

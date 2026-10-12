@@ -39,6 +39,87 @@ fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::Sour
 }
 
 #[test]
+fn replay_exhaustion_uses_synthetic_eof_and_restores_the_physical_cursor() {
+    let source = SourceBuffer::new(b"int x;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"replay-end-location").unwrap();
+    let mut cursor = Cursor::new(PostTokenizer::from_input(input, NumberDialect::Cxx11));
+    cursor.retain();
+    while !matches!(cursor.peek(0).unwrap().kind, TokenKind::End) {
+        cursor.advance().unwrap();
+    }
+    let physical = cursor.peek(0).unwrap();
+    assert!(physical.location.0 > 0);
+    assert_eq!(cursor.peek(1).unwrap().location.0, 0);
+    assert_eq!(cursor.peek(0).unwrap().location, physical.location);
+    let position = cursor.absolute_position().unwrap();
+    let run = cursor.capture(0, 0).unwrap();
+    cursor.push_run(run);
+    while !matches!(cursor.peek(0).unwrap().kind, TokenKind::End) {
+        cursor.advance().unwrap();
+    }
+    for ahead in [0, 1, 8] {
+        let end = cursor.peek(ahead).unwrap();
+        assert!(matches!(end.kind, TokenKind::End));
+        assert_eq!(end.location.0, 0);
+    }
+    cursor.pop_run().unwrap();
+    assert_eq!(cursor.absolute_position().unwrap(), position);
+    assert_eq!(cursor.peek(0).unwrap().location, physical.location);
+    cursor.release();
+}
+
+#[test]
+fn failed_braced_list_restores_angle_mode_without_an_enclosing_transaction() {
+    let source = SourceBuffer::new(b"{1, +}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"braced-angle-unwind").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    parser.angle = true;
+    assert!(matches!(
+        parser.braced_list(),
+        Err(ParseError::Syntax { .. })
+    ));
+    assert!(parser.angle);
+    assert_eq!(parser.active_nesting(), 0);
+    assert_eq!(parser.checkpoints, 0);
+}
+
+#[test]
+fn recorded_token_ordinals_keep_the_low_target_bits_after_host_conversion() {
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"source-ordinal-width").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    for ordinal in [0, u64::from(u32::MAX), u64::from(u32::MAX) + 8] {
+        if let Ok(position) = usize::try_from(ordinal) {
+            parser.cursor.position = position;
+            let expected = u32::from_le_bytes(ordinal.to_le_bytes()[..4].try_into().unwrap());
+            assert_eq!(parser.token_ordinal().unwrap(), expected);
+        }
+    }
+}
+
+#[test]
+fn literal_parentheses_do_not_start_tentative_type_readings() {
+    for text in ["(42)", "sizeof(42)", "typeid(42)", "sizeof(((42)))"] {
+        let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"literal-type-demand").unwrap();
+        let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+            input,
+            NumberDialect::Cxx11,
+        )));
+        parser.expression().unwrap();
+        assert_eq!(parser.checkpoints, 0);
+        assert_eq!(parser.rewinds, 0);
+        assert!(matches!(parser.token().unwrap().kind, TokenKind::End));
+    }
+}
+
+#[test]
 fn enum_forward_declarations_preserve_existing_type_member_scope() {
     let source = SourceBuffer::new(b"enum E {value}; enum E; enum E:int;".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"enum-forward-owner").unwrap();

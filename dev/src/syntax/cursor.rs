@@ -86,25 +86,27 @@ impl<'a> Cursor<'a> {
             return Ok(if index < (run.end - run.begin) as usize {
                 self.runs[run.begin as usize + index]
             } else {
-                self.end_token()
+                Self::synthetic_end_token()
             });
         }
         while self.window.len() <= index {
-            if let Some(end) = self.end {
-                return Ok(end);
+            if self.end.is_some() {
+                return Ok(Self::synthetic_end_token());
             }
             self.pull()?;
         }
         self.peak_window = self.peak_window.max(self.window.len());
         Ok(self.window[index])
     }
-    fn end_token(&self) -> Token {
-        self.end.unwrap_or(Token {
+    fn synthetic_end_token() -> Token {
+        // Exhausted lookahead uses the constructor's synthetic EOF, independent
+        // of the physical input EOF that may already have been observed.
+        Token {
             kind: TokenKind::End,
             location: SourceOffset(0),
             shift_half: 0,
             suffix_name: None,
-        })
+        }
     }
     fn pull(&mut self) -> Result<(), ParseError> {
         let post = self.post.next_token().map_err(|error| match error {

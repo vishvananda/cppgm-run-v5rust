@@ -4,6 +4,151 @@ Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
 
+
+## Full-stage audit continuation: expression selection, angle regions and token-stream facts — 2026-10-12
+
+Entry/reviewed commit: `dedcb2b913d61ba860e8b4b74390a9d760166f99` (clean).
+Stage base and last accepted partial audit above remain unchanged. The commit
+containing this entry is recorded in `pa5-expression-audit/handoff.json`.
+**Full acceptance remains open**, and the existing goal remains active. The
+previous goal turn made verified declaration/GNU/enum progress. This turn
+reviews the next full source owner and resolves additional non-fixture defects.
+
+Consulted repository instructions/contract/specification/plan, full owning
+handout/grammar, ledger/source map, frozen `parser_expressions.cpp`, relevant
+`parser_names.cpp`/headers, `parser_regions.h`, complete token-stream header and
+implementation, lambda/body owner, `syntax_unit.cpp` and sizeof rendering.
+`reviewed-expression-responsibilities.json` records **30 due expression
+functions**, eight excluded productions and three anonymous helpers.
+`reviewed-stream-responsibilities.json` records **seven token-stream functions**;
+inline/header and adjacent owner reviews are recorded separately. These source
+reviews compare branching, locations, target narrowing, alternative spelling,
+operator precedence/association, demand, failure tracking and ownership. The
+220-entry navigation inventory now distinguishes those 37 reviews from still
+pending groups. It remains explicitly incomplete; neither mappings nor probes
+certify unreviewed functions or the unresolved resource boundary.
+
+Findings and fixes:
+
+- A conditional's middle expression inherits template-angle mode. Clearing it
+  had accepted `P<a?b>c:d>` where C++ rejects at the first closing angle.
+  Allocation scopes angle mode off for its entire reading; keyword casts
+  scope it on for the type and off for their parenthesized operand.
+- Ordinary angle-mode changes no longer reset open speculative template lists.
+  `angles.rs::with_angle` restores only the angle flag on every Result exit;
+  `speculative_list_boundary` retains isolation specifically at existing class
+  and deferred-lambda boundaries. Braced-list failures restore angle/depth even
+  without an enclosing transaction. No cache key was weakened or memo content
+  reparsed; existing position/environment/scope/angle identity remains intact.
+- Bounded name/type-start predicates belong in `names.rs` and are shared by
+  cast, trait and template grammar. A leading `::new` or `::delete` is an
+  expression, rather than an unconditional shared-name reading. Non-name
+  tentative type parsing runs only at C++'s type-start boundaries. A successful
+  template-argument type followed by the wrong delimiter silently declines
+  without recording an invented furthest failure (`P<int const{1}>`).
+- Keyword functional casts consume only simple-type keywords, preserving their
+  locations. Declaration cv qualifiers, named GNU types and attributes do not
+  extend that keyword list. A named constructor still shares its parsed name.
+  Braced subscript indices stop after the braced list, matching C++'s direct
+  branch rather than accepting a following comma-expression.
+- Type-trait selection preserves the non-named `alignof` function-type reading,
+  while named function types retain C++'s expression preference. `typeid`
+  attempts a non-name type only at a type-start token; `noexcept` reads an
+  expression. Shared operands remain parse-once typed IDs.
+- `render.rs` preserves all inner sizeof parentheses. The syntax parser already
+  removed the one outer pair; the renderer had incorrectly removed another
+  retained node in template-name text. Full AST bytes now match nested cases.
+- Lambda clause/body token positions use the same explicit low-32-bit helper
+  as init-declarator facts, rather than an unsupported checked target narrowing.
+  Host position conversion remains checked. Cursor exhaustion uses C++'s
+  separate zero-located synthetic EOF for replay and beyond-physical-EOF
+  lookahead; the current physical EOF retains its original location. Popping a
+  run restores the physical position and absolute ordinal.
+
+Four invariants cover literal parentheses/traits without unnecessary type
+speculation, deliberate source-ordinal narrowing, braced-error mode/depth
+restoration and synthetic/physical EOF separation with replay restoration.
+Five new required cases and only their new expectations live in the executed
+PA5 general lane: `300-expression-angle-and-rendering`,
+`300-conditional-template-close-reject`,
+`300-keyword-functional-cast-specifiers-reject`,
+`300-subscript-braces-comma-reject`, and
+`300-template-type-decline-location-reject`. Fixtures were not formatted;
+frozen inputs/references, oracle and gate policy remain unchanged.
+
+Architecture review: the new predicates observe token kinds, not text-reparsed
+syntax. Shared names, type attempts, literals and arguments remain in private
+unit-owned stores with compact IDs and bounded rollback. Mode guards unwind
+through structured Results; only real grammar boundaries isolate failed-list
+state. Retained runs copy once or borrow an existing run by compact range;
+physical and synthetic EOF facts do not allocate duplicate source sequences.
+No new module/dependency, unsafe code, environment read, implementation
+subprocess, blanket allowance, mechanical split, backend lifetime change or
+PA35 objective was introduced. Strict Clippy caught overnested trait handling;
+its function-type policy is now expressed by the existing operand-end helper,
+without suppression. The authoritative file audit also passes.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-expression-audit/`.
+`metadata.json`, `progress.json`, PA1–PA5 case/course receipts, raw probe outputs,
+passing/failing ID lists, `checks.json` and census records retain exact commands,
+statuses, source/tool identities and generated bytes. Manifest SHA remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost, no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS debug/release 114 library + nine tool tests, strict Clippy/rustfmt; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 252/252, no failed comparisons/markers; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 87 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS; all 193 retained; `preflight.log`, `preserve.log` |
+
+The expression entry sweep was **405/472**, exposing 67 real discrepancies.
+Final expression and trait sweeps match **472/472** and **144/144**
+(`final.json`, `traits/final.json`). All **609/609** declaration/GNU/enum probes
+and **2141/2141** prior probes match (`recent-probes.json`, `prior-probes.json`).
+Raw comparisons include status/stdout/stderr/full AST; neither filtering nor
+canonicalization establishes identity. New regression receipt matches all five.
+Fixture additions are not claimed as fixed-manifest progress or completeness.
+
+Resources remain separate observations of compiler work. `measure.py`,
+`measurements.json`, `resource-summary.json` and `resource-metadata.json`
+retain 36 serial warm whole invocations at 1000/4000/16000 units, after all
+checks/probes were terminal. Order is oracle/oracle/oracle/candidate/candidate/
+oracle; all runs match complete output/status bytes. Source/tool hashes,
+original AST/streams and RSS files are retained. Median wall milliseconds
+include launch, preprocessing and I/O; RSS is the maximum measured KiB.
+
+| Workload | Rust ms (1k / 4k / 16k) | C++ ms (1k / 4k / 16k) | Rust max RSS KiB (1k / 4k / 16k) |
+| --- | --- | --- | --- |
+| Template conditional/sizeof/cast/trait/subscript arguments | 69.01 / 220.08 / 811.98 | 27.62 / 120.97 / 379.00 | 8608 / 24748 / 88500 |
+| Lambda headers/bodies plus allocation/deletion | 58.37 / 172.94 / 635.82 | 25.58 / 84.78 / 310.14 | 8020 / 19816 / 70316 |
+
+C++ maximum RSS at 16k is respectively 67060 and 61292 KiB. These sampled
+costs grow subquadratically without implying a speed target or generated-code
+optimization. Checkout/scratch together measured 12,115,635,024 bytes, below
+the 107,374,182,400-byte shared storage ceiling.
+
+Native budget fidelity is still unproved: `final-native.json` / `final-native/`
+match **45/48**, with no panic/signal/86. Exact remaining IDs and diagnostics:
+
+| Owned failure ID | C++ | Rust |
+| --- | --- | --- |
+| `final-native/parentheses/4800` | exit 0 | exit 1, column 4234 |
+| `final-native/known-templates/2400` | exit 0 | exit 1, column 4795 |
+| `final-native/known-templates/4800` | exit 1, column 7627 | exit 1, column 4795 |
+
+Rejections say `constructs nested too deeply`. The ordinary diagnostic/exit
+mismatch remains an acceptance failure; parser refactoring changed Rust's
+native frames but did not establish exact frozen cutoffs. No calibrated depth,
+budget multiplier, exception or oracle replacement was added. Next dependency
+boundary: remaining declaration/declarator/name/scope/state/statement/AST/header
+responsibility review and exact native rejection parity. `census-scope.json`
+keeps full census/acceptance false. Full-stage goal completion is not claimed.
+
 ## Full-stage audit continuation: declaration dispatch, GNU initialization and enum ownership — 2026-10-12
 
 Entry/reviewed commit: `bbabb409cd76f046cb599ba2ddbe784f5250e4a8` (clean).

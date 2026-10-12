@@ -261,6 +261,14 @@ impl<'a> Parser<'a> {
         self.error_position = mark.0;
         self.furthest = mark.1;
     }
+    pub(super) fn decline_operand<T>(&mut self) -> Result<T, ParseError> {
+        // A successfully parsed type followed by the wrong delimiter declines
+        // the optional reading without recording a new furthest syntax error.
+        Err(ParseError::Syntax {
+            location: self.location()?,
+            message: "syntax error",
+        })
+    }
     pub(super) fn fail<T>(&mut self) -> Result<T, ParseError> {
         let location = self.location()?;
         let position = self.cursor.absolute_position()?;
@@ -408,8 +416,8 @@ impl<'a> Parser<'a> {
             Err(error) => Err(error),
         }
     }
-    pub(super) fn declaration_token_ordinal(&self) -> Result<u32, ParseError> {
-        // The frozen init-declarator range explicitly keeps the low target
+    pub(super) fn token_ordinal(&self) -> Result<u32, ParseError> {
+        // Frozen init-declarator and lambda ranges keep the low target
         // 32 bits of the unit ordinal, independently of host usize width.
         let bytes = self.cursor.absolute_position()?.to_le_bytes();
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))

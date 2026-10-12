@@ -76,7 +76,7 @@ impl Parser<'_> {
     pub(super) fn assignment_rest(&mut self, left: ExprId) -> Result<ExprId, ParseError> {
         let location = self.tree.expressions.get(left).location;
         if self.accept(P::Question)? {
-            let then_expr = self.without_angle(Self::expression)?;
+            let then_expr = self.expression()?;
             self.expect(P::Colon)?;
             let else_expr = self.assignment_expression()?;
             return self.tree.expressions.add(Expression {
@@ -219,14 +219,18 @@ impl Parser<'_> {
             if self.name_starts_ahead(1)? {
                 return self.parenthesized_from_name(location);
             }
-            let cast = self.attempt(|parser| {
-                parser.cursor.advance()?;
-                let ty = parser.without_angle(|parser| parser.type_id(false))?;
-                if !parser.accept(P::RightParen)? || !parser.operand_start()? {
-                    return parser.decline_operand();
-                }
-                Ok(ty)
-            })?;
+            let cast = if self.type_specifier_start(1)? {
+                self.attempt(|parser| {
+                    parser.cursor.advance()?;
+                    let ty = parser.without_angle(|parser| parser.type_id(false))?;
+                    if !parser.accept(P::RightParen)? || !parser.operand_start()? {
+                        return parser.decline_operand();
+                    }
+                    Ok(ty)
+                })?
+            } else {
+                None
+            };
             if let Some(ty) = cast {
                 let operand = self.unary()?;
                 return self.tree.expressions.add(Expression {
@@ -249,7 +253,7 @@ impl Parser<'_> {
             ) => {
                 self.cursor.advance()?;
                 self.expect(P::Less)?;
-                let ty = self.type_id(true)?;
+                let ty = self.with_angle(true, |parser| parser.type_id(true))?;
                 self.expect(P::Greater)?;
                 self.expect(P::LeftParen)?;
                 let operand = self.without_angle(Self::expression)?;
@@ -314,25 +318,10 @@ impl Parser<'_> {
             )
         ) || self.keyword()?.is_some_and(Self::has_type_keyword))
     }
-    fn type_specifier_start(&mut self) -> Result<bool, ParseError> {
-        Ok(matches!(self.token()?.kind, TokenKind::Identifier(_))
-            || self.at(P::Scope)?
-            || matches!(
-                self.keyword()?,
-                Some(
-                    K::Const
-                        | K::Volatile
-                        | K::Typename
-                        | K::Decltype
-                        | K::Class
-                        | K::Struct
-                        | K::Union
-                        | K::Enum
-                )
-            )
-            || self.keyword()?.is_some_and(Self::has_type_keyword))
-    }
     fn new_expression(&mut self) -> Result<ExprId, ParseError> {
+        self.without_angle(Self::new_expression_inner)
+    }
+    fn new_expression_inner(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
         let global = self.accept(P::Scope)?;
         if !self.accept_keyword(K::New)? {
@@ -346,7 +335,7 @@ impl Parser<'_> {
                 parser.cursor.advance()?;
                 let ty = parser.type_id(false)?;
                 parser.expect(P::RightParen)?;
-                if parser.type_specifier_start()? {
+                if parser.type_specifier_start(0)? {
                     // The oracle leaves this alternative without calling fail().
                     return Err(ParseError::Syntax {
                         location: parser.location()?,
@@ -427,28 +416,13 @@ impl Parser<'_> {
                 .iter()
                 .any(|specifier| matches!(specifier.kind, SpecifierKind::Named(_)))
     }
-    fn name_starts_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
-        Ok(
-            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_))
-                || (self.at_ahead(P::Scope, ahead)?
-                    && matches!(self.cursor.peek(ahead + 1)?.kind, TokenKind::Identifier(_))),
-        )
-    }
-    fn decline_operand<T>(&mut self) -> Result<T, ParseError> {
-        // A successfully parsed type followed by the wrong delimiter declines
-        // the optional reading without recording a new furthest syntax error.
-        Err(ParseError::Syntax {
-            location: self.location()?,
-            message: "syntax error",
-        })
-    }
     fn named_operand(&mut self) -> Result<Operand, ParseError> {
         let location = self.location()?;
         let (name, binding) = self.name()?;
         if self.is_type_name(name, binding, false, false)
             && let Some(ty) = self.attempt(|parser| {
                 let ty = parser.type_from_name(name, location)?;
-                parser.operand_type_end(ty)
+                parser.operand_type_end(ty, false)
             })?
         {
             return Ok(Operand::Type(ty));
@@ -456,12 +430,8 @@ impl Parser<'_> {
         let primary = self.primary_from_name(name, binding, location)?;
         Ok(Operand::Expression(self.continue_expression(primary)?))
     }
-    fn operand_type(&mut self) -> Result<TypeId, ParseError> {
-        let ty = self.type_id(false)?;
-        self.operand_type_end(ty)
-    }
-    fn operand_type_end(&mut self, ty: TypeId) -> Result<TypeId, ParseError> {
-        if !self.at(P::RightParen)? || self.named_function_type(ty) {
+    fn operand_type_end(&mut self, ty: TypeId, function_types: bool) -> Result<TypeId, ParseError> {
+        if !self.at(P::RightParen)? || (!function_types && self.named_function_type(ty)) {
             return self.decline_operand();
         }
         Ok(ty)
@@ -518,7 +488,14 @@ impl Parser<'_> {
             } else if named {
                 parser.named_operand()?
             } else {
-                let ty = parser.attempt(Self::operand_type)?;
+                let ty = if keyword == K::Alignof || parser.type_specifier_start(0)? {
+                    parser.attempt(|parser| {
+                        let ty = parser.type_id(false)?;
+                        parser.operand_type_end(ty, keyword == K::Alignof)
+                    })?
+                } else {
+                    None
+                };
                 if let Some(ty) = ty {
                     Operand::Type(ty)
                 } else {
@@ -590,7 +567,7 @@ impl Parser<'_> {
             });
         }
         let mut parenthesized = false;
-        let ty = if self.at(P::LeftParen)? {
+        let ty = if self.at(P::LeftParen)? && self.type_specifier_start(1)? {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
                 let ty = parser.without_angle(|parser| parser.type_id(false))?;
@@ -645,7 +622,18 @@ impl Parser<'_> {
                     ExprKind::Keyword(keyword)
                 }
                 Some(keyword) if Self::has_type_keyword(keyword) => {
-                    let specifiers = self.specifier_sequence(true, true)?;
+                    let start = self.tree.specs.begin();
+                    while let Some(keyword) =
+                        self.keyword()?.filter(|&word| Self::has_type_keyword(word))
+                    {
+                        let location = self.location()?;
+                        self.cursor.advance()?;
+                        self.tree.specs.push(Specifier {
+                            location,
+                            kind: SpecifierKind::Keyword(keyword),
+                        });
+                    }
+                    let specifiers = self.tree.specs.finish(start)?;
                     return self.functional_cast(location, specifiers);
                 }
                 Some(K::Decltype | K::Typename | K::Operator) => {
@@ -745,7 +733,13 @@ impl Parser<'_> {
                     arguments: self.expression_list(P::RightParen)?,
                 }
             } else if self.accept(P::LeftBracket)? {
-                let index = self.without_angle(Self::expression)?;
+                let index = self.without_angle(|parser| {
+                    if parser.at(P::LeftBrace)? {
+                        parser.braced_list()
+                    } else {
+                        parser.expression()
+                    }
+                })?;
                 self.expect(P::RightBracket)?;
                 ExprKind::Subscript { base: expr, index }
             } else if matches!(self.punctuator()?, Some(P::Dot | P::Arrow)) {
@@ -770,21 +764,20 @@ impl Parser<'_> {
         self.nested(|parser| {
             let location = parser.location()?;
             parser.expect(P::LeftBrace)?;
-            let saved_angle = parser.angle;
-            parser.angle = false;
-            let start = parser.tree.expr_lists.begin();
-            let mut trailing_comma = false;
-            while !parser.at(P::RightBrace)? {
-                let element = parser.expanded_initializer()?;
-                parser.tree.expr_lists.push(element);
-                if !parser.accept(P::Comma)? {
-                    break;
+            let (elements, trailing_comma) = parser.without_angle(|parser| {
+                let start = parser.tree.expr_lists.begin();
+                let mut trailing_comma = false;
+                while !parser.at(P::RightBrace)? {
+                    let element = parser.expanded_initializer()?;
+                    parser.tree.expr_lists.push(element);
+                    if !parser.accept(P::Comma)? {
+                        break;
+                    }
+                    trailing_comma = parser.at(P::RightBrace)?;
                 }
-                trailing_comma = parser.at(P::RightBrace)?;
-            }
-            parser.expect(P::RightBrace)?;
-            let elements = parser.tree.expr_lists.finish(start)?;
-            parser.angle = saved_angle;
+                parser.expect(P::RightBrace)?;
+                Ok((parser.tree.expr_lists.finish(start)?, trailing_comma))
+            })?;
             parser.tree.expressions.add(Expression {
                 location,
                 kind: ExprKind::Braced {
