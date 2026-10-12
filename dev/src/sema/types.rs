@@ -2,7 +2,10 @@
 //! Canonical, immutable type identity owned by one semantic unit.
 use super::{Error, graph::EntityId};
 use crate::types::FundamentalType;
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, hash_map::RandomState},
+    hash::BuildHasher,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct TypeId(u32);
@@ -71,30 +74,59 @@ pub(super) struct Type {
 #[derive(Default)]
 pub(super) struct Types {
     records: Vec<Type>,
-    index: HashMap<Type, TypeId>,
+    // Fingerprints index store-owned records. Dense collision links retain
+    // exact structural equality without a second owned parameter vector.
+    index: HashMap<u64, TypeId>,
+    fingerprints: RandomState,
+    collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
 }
 impl Types {
     pub(super) fn get(&self, id: TypeId) -> &Type {
         &self.records[id.0 as usize]
     }
+    pub(super) fn function_parameter_count(&self, ty: TypeId) -> Result<usize, Error> {
+        let TypeKind::Function { ref parameters, .. } = self.get(ty).kind else {
+            return Err(Error::Invariant("parameter query on no function"));
+        };
+        Ok(parameters.len())
+    }
+    pub(super) fn function_parameter(&self, ty: TypeId, index: usize) -> Result<TypeId, Error> {
+        let TypeKind::Function { ref parameters, .. } = self.get(ty).kind else {
+            return Err(Error::Invariant("parameter query on no function"));
+        };
+        parameters
+            .get(index)
+            .copied()
+            .ok_or(Error::Invariant("parameter index outside function"))
+    }
     pub(super) fn intern(&mut self, kind: TypeKind, cv: Cv) -> Result<TypeId, Error> {
         let ty = Type { cv, kind };
-        if let Some(&id) = self.index.get(&ty) {
-            return Ok(id);
+        let fingerprint = self.fingerprints.hash_one(&ty);
+        let head = self.index.get(&fingerprint).copied();
+        let mut entry = head;
+        while let Some(id) = entry {
+            if self.get(id) == &ty {
+                return Ok(id);
+            }
+            entry = self.collisions[id.0 as usize];
         }
         let id = TypeId(
             u32::try_from(self.records.len()).map_err(|_| Error::Limit("semantic type limit"))?,
         );
-        self.records.push(ty.clone());
+        self.records.push(ty);
+        self.collisions.push(head);
         self.canonical.push(None);
-        self.index.insert(ty, id);
+        self.index.insert(fingerprint, id);
         Ok(id)
     }
     pub(super) fn scalar(&mut self, scalar: Scalar) -> Result<TypeId, Error> {
         self.intern(TypeKind::Scalar(scalar), Cv::default())
     }
     pub(super) fn qualify(&mut self, mut id: TypeId, cv: Cv) -> Result<TypeId, Error> {
+        if cv.0 == 0 {
+            return Ok(id);
+        }
         // Cv on an array belongs to its element; use explicit frames so an
         // arbitrarily long alias chain cannot exhaust the native stack.
         let mut bounds = Vec::new();
@@ -105,8 +137,10 @@ impl Types {
         if !matches!(self.get(id).kind, TypeKind::Reference { .. }) {
             let node = self.get(id);
             let cv = Cv(node.cv.0 | cv.0);
-            let kind = node.kind.clone();
-            id = self.intern(kind, cv)?;
+            if cv != node.cv {
+                let kind = node.kind.clone();
+                id = self.intern(kind, cv)?;
+            }
         }
         for bound in bounds.into_iter().rev() {
             id = self.intern(TypeKind::Array { element: id, bound }, Cv::default())?;
@@ -145,6 +179,9 @@ impl Types {
             TypeKind::Array { element, .. } => self.pointer(element),
             TypeKind::Function { .. } => self.pointer(id),
             _ => {
+                if self.get(id).cv.0 == 0 {
+                    return Ok(id);
+                }
                 let kind = self.get(id).kind.clone();
                 self.intern(kind, Cv::default())
             }
@@ -156,28 +193,31 @@ impl Types {
     // Types refer only to older types: canonicalization is a memoized DAG walk.
     // Explicit frames also keep long pointer chains off the native stack.
     fn canonical_type(&mut self, root: TypeId) -> Result<TypeId, Error> {
+        if let Some(canonical) = self.canonical[root.0 as usize] {
+            return Ok(canonical);
+        }
         let mut work = vec![(root, false)];
         while let Some((id, finish)) = work.pop() {
             if self.canonical[id.0 as usize].is_some() {
                 continue;
             }
-            let node = self.get(id).clone();
             if !finish {
                 work.push((id, true));
-                match node.kind {
+                match &self.get(id).kind {
                     TypeKind::Pointer(element)
                     | TypeKind::Reference { element, .. }
-                    | TypeKind::Array { element, .. } => work.push((element, false)),
+                    | TypeKind::Array { element, .. } => work.push((*element, false)),
                     TypeKind::Function {
                         result, parameters, ..
                     } => {
-                        work.push((result, false));
+                        work.push((*result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
                     TypeKind::Scalar(_) | TypeKind::Class(_) | TypeKind::Enum(_) => (),
                 }
                 continue;
             }
+            let node = self.get(id).clone();
             let kind = match node.kind {
                 TypeKind::Pointer(element) => TypeKind::Pointer(self.canonical_child(element)?),
                 TypeKind::Reference { element, kind } => TypeKind::Reference {
@@ -241,5 +281,32 @@ impl Types {
             return Some(if *x == 0 { second } else { first });
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod collision_tests {
+    use super::*;
+    #[test]
+    fn a_fingerprint_collision_keeps_exact_identity_and_reuses_each_record() {
+        let mut types = Types::default();
+        let int = types.scalar(Scalar::Basic(FundamentalType::Int)).unwrap();
+        let pointer = Type {
+            kind: TypeKind::Pointer(int),
+            cv: Cv::default(),
+        };
+        let fingerprint = types.fingerprints.hash_one(&pointer);
+        // Force a collision without relying on a particular randomized hash.
+        types.index.insert(fingerprint, int);
+        let id = types.pointer(int).unwrap();
+        assert_ne!(int, id);
+        assert_eq!(types.collisions[id.0 as usize], Some(int));
+        assert_eq!(types.pointer(int).unwrap(), id);
+        assert_eq!(
+            types.scalar(Scalar::Basic(FundamentalType::Int)).unwrap(),
+            int
+        );
+        assert_eq!(types.records.len(), 2);
+        assert_eq!(types.records.len(), types.collisions.len());
     }
 }

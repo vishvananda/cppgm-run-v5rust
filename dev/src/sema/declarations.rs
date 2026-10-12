@@ -56,16 +56,7 @@ impl Analyzer<'_> {
             target
         } else if name.is_none() {
             // The anonymous namespace of this owner reopens its first anonymous child.
-            let existing = self
-                .graph
-                .scope(scope)
-                .children
-                .iter()
-                .copied()
-                .find(|&id| {
-                    self.graph.scope(id).kind == ScopeKind::Namespace
-                        && self.graph.scope(id).name.is_none()
-                });
+            let existing = self.graph.scope(scope).anonymous_namespace;
             if let Some(existing) = existing {
                 existing
             } else {
@@ -87,6 +78,9 @@ impl Analyzer<'_> {
             .graph
             .add_scope(ScopeKind::Namespace, scope, Some(scope), name)?;
         self.graph.scope_mut(target).is_inline = inline;
+        if name.is_none() {
+            self.graph.scope_mut(scope).anonymous_namespace = Some(target);
+        }
         self.graph.entity_mut(entity).scope = Some(target);
         self.graph.add_binding(
             scope,
@@ -352,6 +346,7 @@ impl Analyzer<'_> {
         } else {
             BindingKind::Variable
         };
+        let exception_limit = self.graph.binding_limit();
         let binding = self.declare_value(
             name,
             ty,
@@ -368,7 +363,7 @@ impl Analyzer<'_> {
         let entity = self.graph.binding(binding).entity;
         if function {
             self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-            self.record_function_exceptions(entity, &info, home, location)?;
+            self.record_function_exceptions(entity, &info, home, location, exception_limit)?;
         } else if self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static {
             let owner = self
                 .graph
@@ -802,11 +797,11 @@ impl Analyzer<'_> {
         self.class_depth -= 1;
         self.graph.entity_mut(entity).complete = true;
         if self.class_depth == 0 {
+            self.finish_class_exceptions()?;
             let bodies = std::mem::take(&mut self.deferred);
             for body in bodies {
                 self.function_body(body)?;
             }
-            self.finish_class_exceptions()?;
         }
         Ok(ty)
     }

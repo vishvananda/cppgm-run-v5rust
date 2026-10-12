@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function f function of (array of 3 int) returning void
+    function f function of (array of 3 int) returning void
+end translation unit

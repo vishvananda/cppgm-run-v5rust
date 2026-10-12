@@ -31,6 +31,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
+    pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
@@ -81,6 +82,7 @@ impl<'tree> Analyzer<'tree> {
             pending_throws: Vec::new(),
             evaluating_noexcept: false,
             layout_work: Vec::new(),
+            exception_work: Vec::new(),
         })
     }
     pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
@@ -219,6 +221,7 @@ impl<'tree> Analyzer<'tree> {
                         "qualified definition does not match a declaration",
                     ));
                 }
+                let exception_limit = self.graph.binding_limit();
                 let binding = self.declare_value(
                     name,
                     info.ty,
@@ -234,7 +237,7 @@ impl<'tree> Analyzer<'tree> {
                 );
                 let entity = self.graph.binding(binding).entity;
                 self.graph.entity_mut(entity).constexpr = specs.constexpr;
-                self.record_function_exceptions(entity, &info, home, location)?;
+                self.record_function_exceptions(entity, &info, home, location, exception_limit)?;
                 if self.graph.entity(entity).defined {
                     return Err(Error::at(location, "redefinition of a function"));
                 }
@@ -306,18 +309,16 @@ impl<'tree> Analyzer<'tree> {
             Some(body.print),
             Some(body.name),
         )?;
-        let super::types::TypeKind::Function { parameters, .. } =
-            self.graph.types.get(body.ty).kind.clone()
-        else {
-            return Err(Error::Invariant("body of nonfunction"));
-        };
-        for (parameter, &ty) in self
+        let count = self.graph.types.function_parameter_count(body.ty)?;
+        for (index, parameter) in self
             .tree
             .parameters
             .get(body.parameters.parameters)
             .iter()
-            .zip(&parameters)
+            .take(count)
+            .enumerate()
         {
+            let ty = self.graph.types.function_parameter(body.ty, index)?;
             let name = self.declarator_name(parameter.declarator)?;
             let entity = self.graph.add_entity(Some(ty), name, Keyword::Int)?;
             self.graph.add_binding(

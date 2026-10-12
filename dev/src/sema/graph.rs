@@ -43,6 +43,7 @@ pub(super) struct Scope {
     pub name: Option<NameId>,
     pub owner: Option<EntityId>,
     pub children: Vec<ScopeId>,
+    pub anonymous_namespace: Option<ScopeId>,
     pub bindings: Vec<BindingId>,
     pub index: HashMap<NameId, Entry>,
     pub directives: Vec<ScopeEdge>,
@@ -96,7 +97,8 @@ pub(crate) struct Graph {
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
-    call_entities: Vec<Option<EntityId>>,
+    arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
+    call_bindings: Vec<Option<BindingId>>,
 }
 impl Graph {
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
@@ -119,6 +121,7 @@ impl Graph {
                 name: None,
                 owner: None,
                 children: Vec::new(),
+                anonymous_namespace: None,
                 bindings: Vec::new(),
                 index: HashMap::new(),
                 directives: Vec::new(),
@@ -139,7 +142,8 @@ impl Graph {
             binding_labels: HashMap::new(),
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
-            call_entities: Vec::new(),
+            arithmetic_types: Vec::new(),
+            call_bindings: Vec::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -179,6 +183,7 @@ impl Graph {
             name,
             owner: None,
             children: Vec::new(),
+            anonymous_namespace: None,
             bindings: Vec::new(),
             index: HashMap::new(),
             directives: Vec::new(),
@@ -316,19 +321,58 @@ impl Graph {
     pub(super) fn binding_limit(&self) -> usize {
         self.bindings.len()
     }
-    pub(super) fn record_call_entity(
+    pub(super) fn resolved_name(&self, name: crate::syntax::ast::Name) -> Option<BindingId> {
+        self.resolved_names.get(name.index()).copied().flatten()
+    }
+    pub(super) fn expression_type(&self, id: crate::syntax::ast::ExprId) -> Option<TypeId> {
+        self.expression_types.get(id.index()).copied().flatten()
+    }
+    pub(super) fn type_fact(&self, id: crate::syntax::ast::TypeId) -> Option<TypeId> {
+        self.type_facts.get(id.index()).copied().flatten()
+    }
+    pub(super) fn record_arithmetic_types(
+        &mut self,
+        id: crate::syntax::ast::ExprId,
+        left: TypeId,
+        right: TypeId,
+    ) {
+        super::record(&mut self.arithmetic_types, id.index(), (left, right));
+    }
+    pub(super) fn arithmetic_types(
+        &self,
+        id: crate::syntax::ast::ExprId,
+    ) -> Result<(TypeId, TypeId), Error> {
+        self.arithmetic_types
+            .get(id.index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant("arithmetic without conversion types"))
+    }
+    pub(super) fn constant_fact(
+        &self,
+        id: crate::syntax::ast::ExprId,
+    ) -> Option<super::constants::Constant> {
+        self.constant_facts.get(id.index()).copied().flatten()
+    }
+    pub(super) fn record_call_binding(
         &mut self,
         expr: crate::syntax::ast::ExprId,
-        entity: EntityId,
+        binding: BindingId,
     ) {
-        super::record(&mut self.call_entities, expr.index(), entity);
+        super::record(&mut self.call_bindings, expr.index(), binding);
     }
     pub(super) fn call_entity(&self, expr: crate::syntax::ast::ExprId) -> Result<EntityId, Error> {
-        self.call_entities
+        Ok(self.binding(self.call_binding(expr)?).entity)
+    }
+    pub(super) fn call_binding(
+        &self,
+        expr: crate::syntax::ast::ExprId,
+    ) -> Result<BindingId, Error> {
+        self.call_bindings
             .get(expr.index())
             .copied()
             .flatten()
-            .ok_or(Error::Invariant("call without selected entity"))
+            .ok_or(Error::Invariant("call without selected binding"))
     }
     pub(super) fn visible_edges(
         &self,

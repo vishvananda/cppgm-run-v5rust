@@ -52,6 +52,11 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn type_syntax(&mut self, id: ast::TypeId, scope: ScopeId) -> Result<TypeId, Error> {
+        if self.evaluating_noexcept
+            && let Some(ty) = self.graph.type_fact(id)
+        {
+            return Ok(ty);
+        }
         let node = *self.tree.types.get(id);
         let specs = self.specifiers(node.specifiers, scope, false)?;
         let ty = self.declarator(node.declarator, specs.ty, scope)?.ty;

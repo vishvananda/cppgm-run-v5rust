@@ -65,6 +65,7 @@ impl Analyzer<'_> {
         info: &DeclaratorInfo,
         mut scope: ScopeId,
         location: SourceOffset,
+        limit: usize,
     ) -> Result<(), Error> {
         let qualifier =
             info.qualifiers.and_then(|list| {
@@ -97,18 +98,33 @@ impl Analyzer<'_> {
             let prototype =
                 self.graph
                     .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
-            let TypeKind::Function { parameters, .. } = self.graph.types.get(info.ty).kind.clone()
-            else {
-                return Err(Error::Invariant("exception specification on no function"));
-            };
-            for (&parameter, ty) in self
+            let count = self.graph.types.function_parameter_count(info.ty)?;
+            for (index, &parameter) in self
                 .tree
                 .parameters
                 .get(clause.parameters)
                 .iter()
-                .zip(parameters)
+                .take(count)
+                .enumerate()
             {
-                self.declare_parameter_object(parameter, ty, prototype)?;
+                let ty = self.graph.types.function_parameter(info.ty, index)?;
+                if let Some(name) = self.declarator_name(parameter.declarator)? {
+                    let adjusted = self.graph.types.parameter_object(ty)?;
+                    let entity = self
+                        .graph
+                        .add_entity(Some(adjusted), Some(name), Keyword::Int)?;
+                    self.graph.add_binding(
+                        prototype,
+                        None,
+                        super::graph::Binding {
+                            kind: super::graph::BindingKind::Parameter,
+                            name: Some(name),
+                            entity,
+                            ty: Some(ty),
+                            key: Keyword::Int,
+                        },
+                    )?;
+                }
             }
             scope = prototype;
         }
@@ -120,7 +136,7 @@ impl Analyzer<'_> {
             entity,
             qualifier,
             scope,
-            limit: self.graph.binding_limit(),
+            limit,
             location,
             first,
             done: false,
@@ -192,7 +208,11 @@ impl Analyzer<'_> {
                 let nothrow = if let Some(operand) = operand {
                     let saved = self.evaluating_noexcept;
                     self.evaluating_noexcept = true;
-                    let result = self.constant_value(operand, scope, true);
+                    let result = (|| {
+                        let ty = self.exception_operand_type(operand, scope)?;
+                        self.exception_bool(ty, self.tree.expressions.get(operand).location)?;
+                        self.constant_value(operand, scope, true)
+                    })();
                     self.evaluating_noexcept = saved;
                     let value = result?.ok_or(Error::Invariant("missing noexcept value"))?;
                     if self.scoped_enum(value.ty) {

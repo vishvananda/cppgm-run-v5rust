@@ -55,6 +55,13 @@ impl Analyzer<'_> {
             Ok(())
         }
     }
+    fn check_constant_bool(&self, value: Constant, location: SourceOffset) -> Result<(), Error> {
+        if self.evaluating_noexcept {
+            self.exception_bool(value.ty, location)
+        } else {
+            self.check_integral(value, location)
+        }
+    }
     fn scalar_constant(&mut self, bits: u64, scalar: Scalar) -> Result<Constant, Error> {
         Ok(Constant {
             bits,
@@ -86,6 +93,11 @@ impl Analyzer<'_> {
         skipping: bool,
     ) -> Result<Constant, Error> {
         self.check_stack()?;
+        if self.evaluating_noexcept
+            && let Some(value) = self.graph.constant_fact(id)
+        {
+            return Ok(value);
+        }
         let expr = *self.tree.expressions.get(id);
         let location = expr.location;
         let value = match expr.kind {
@@ -128,7 +140,13 @@ impl Analyzer<'_> {
             }
             ExprKind::Paren(inner) => self.evaluate_constant(inner, scope, skipping)?,
             ExprKind::Id(name) => {
-                let found = self.lookup(name, scope, Filter::Ordinary)?;
+                let found = if self.evaluating_noexcept {
+                    self.graph
+                        .resolved_name(name)
+                        .ok_or(Error::Invariant("unresolved exception operand name"))?
+                } else {
+                    self.lookup(name, scope, Filter::Ordinary)?
+                };
                 let binding = self.graph.binding(found);
                 if matches!(
                     binding.kind,
@@ -167,7 +185,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
-                self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, location)?
+                self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
             }
             ExprKind::Conditional {
                 condition,
@@ -175,7 +193,7 @@ impl Analyzer<'_> {
                 else_expr,
             } => {
                 let condition_value = self.evaluate_constant(condition, scope, skipping)?;
-                self.check_integral(
+                self.check_constant_bool(
                     condition_value,
                     self.tree.expressions.get(condition).location,
                 )?;
@@ -191,7 +209,13 @@ impl Analyzer<'_> {
                 } else {
                     self.check_integral(chosen, self.tree.expressions.get(selected).location)?;
                     self.check_integral(unchosen, self.tree.expressions.get(other).location)?;
-                    let ty = self.common_integral_type(chosen.ty, unchosen.ty)?;
+                    let ty = if self.evaluating_noexcept {
+                        self.graph
+                            .expression_type(id)
+                            .ok_or(Error::Invariant("untyped exception conditional"))?
+                    } else {
+                        self.common_integral_type(chosen.ty, unchosen.ty)?
+                    };
                     let kind = self
                         .integral_kind(ty)
                         .ok_or(Error::Invariant("common nonintegral type"))?;
@@ -220,7 +244,13 @@ impl Analyzer<'_> {
                 arguments,
                 braced,
             } => {
-                let ty = self.specifiers(specifiers, scope, false)?.ty;
+                let ty = if self.evaluating_noexcept {
+                    self.graph
+                        .expression_type(id)
+                        .ok_or(Error::Invariant("untyped exception cast"))?
+                } else {
+                    self.specifiers(specifiers, scope, false)?.ty
+                };
                 let args = if let Some(braced) = braced {
                     let ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind
                     else {
@@ -257,6 +287,22 @@ impl Analyzer<'_> {
                 } else {
                     if self.graph.entity(self.graph.call_entity(id)?).constexpr {
                         return Err(Error::Missing("constexpr function interpretation"));
+                    }
+                    if self.graph.binding(self.graph.call_binding(id)?).kind
+                        == BindingKind::Parameter
+                    {
+                        return Err(not_constant(
+                            location,
+                            "a parameter is not usable in a constant expression",
+                        ));
+                    }
+                    if self.graph.binding(self.graph.call_binding(id)?).kind
+                        == BindingKind::Variable
+                    {
+                        return Err(not_constant(
+                            location,
+                            "a variable is not usable in a constant expression",
+                        ));
                     }
                     return Err(not_constant(
                         location,
@@ -368,12 +414,12 @@ impl Analyzer<'_> {
                     ));
                 };
                 if matches!(op, P::LogicalAnd | P::LogicalOr) {
-                    self.check_integral(value, self.tree.expressions.get(left).location)?;
+                    self.check_constant_bool(value, self.tree.expressions.get(left).location)?;
                     let truth = value.bits != 0;
                     let decided = if op == P::LogicalOr { truth } else { !truth };
                     if decided {
                         match self.evaluate_constant(right, scope, true) {
-                            Ok(right_value) => self.check_integral(
+                            Ok(right_value) => self.check_constant_bool(
                                 right_value,
                                 self.tree.expressions.get(right).location,
                             )?,
@@ -383,7 +429,7 @@ impl Analyzer<'_> {
                         value = self.boolean(truth)?;
                     } else {
                         let right_value = self.evaluate_constant(right, scope, skipping)?;
-                        self.check_integral(
+                        self.check_constant_bool(
                             right_value,
                             self.tree.expressions.get(right).location,
                         )?;
@@ -394,7 +440,7 @@ impl Analyzer<'_> {
                     value = if op == P::Comma {
                         right_value
                     } else {
-                        self.constant_arithmetic(op, value, right_value, skipping, expr.location)?
+                        self.constant_arithmetic(op, value, right_value, skipping, id)?
                     };
                 }
                 if !skipping {
@@ -426,7 +472,7 @@ impl Analyzer<'_> {
         };
         self.graph.types.scalar(integral::promoted(scalar))
     }
-    fn common_integral_type(&mut self, a: TypeId, b: TypeId) -> Result<TypeId, Error> {
+    pub(super) fn common_integral_type(&mut self, a: TypeId, b: TypeId) -> Result<TypeId, Error> {
         let a = self.promoted_type(a)?;
         let b = self.promoted_type(b)?;
         let (TypeKind::Scalar(a), TypeKind::Scalar(b)) =
@@ -443,8 +489,9 @@ impl Analyzer<'_> {
         left: Constant,
         right: Constant,
         skipping: bool,
-        location: SourceOffset,
+        id: ast::ExprId,
     ) -> Result<Constant, Error> {
+        let location = self.tree.expressions.get(id).location;
         let comparison = matches!(
             op,
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
@@ -466,9 +513,15 @@ impl Analyzer<'_> {
         }
         self.check_integral(left, location)?;
         self.check_integral(right, location)?;
+        let (ty, right_ty) = if self.evaluating_noexcept {
+            self.graph.arithmetic_types(id)?
+        } else if matches!(op, P::ShiftLeft | P::ShiftRight) {
+            (self.promoted_type(left.ty)?, self.promoted_type(right.ty)?)
+        } else {
+            let common = self.common_integral_type(left.ty, right.ty)?;
+            (common, common)
+        };
         if matches!(op, P::ShiftLeft | P::ShiftRight) {
-            let ty = self.promoted_type(left.ty)?;
-            let right_ty = self.promoted_type(right.ty)?;
             let kind = self
                 .integral_kind(ty)
                 .ok_or(Error::Invariant("nonintegral shift"))?;
@@ -481,7 +534,6 @@ impl Analyzer<'_> {
             }
             return Ok(Constant { bits, ty });
         }
-        let ty = self.common_integral_type(left.ty, right.ty)?;
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral operation"))?;
@@ -510,8 +562,9 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         scope: ScopeId,
         skipping: bool,
-        location: SourceOffset,
+        id: ast::ExprId,
     ) -> Result<Constant, Error> {
+        let location = self.tree.expressions.get(id).location;
         if op == Some(P::BitAnd) {
             return Err(not_constant(
                 location,
@@ -520,7 +573,7 @@ impl Analyzer<'_> {
         }
         let value = self.evaluate_constant(operand, scope, skipping)?;
         if op == Some(P::LogicalNot) {
-            self.check_integral(value, self.tree.expressions.get(operand).location)?;
+            self.check_constant_bool(value, self.tree.expressions.get(operand).location)?;
             return self.boolean(value.bits == 0);
         }
         if !matches!(op, Some(P::Add | P::Subtract | P::Complement)) {
@@ -530,7 +583,13 @@ impl Analyzer<'_> {
             ));
         }
         self.check_integral(value, location)?;
-        let ty = self.promoted_type(value.ty)?;
+        let ty = if self.evaluating_noexcept {
+            self.graph
+                .expression_type(id)
+                .ok_or(Error::Invariant("untyped exception unary operand"))?
+        } else {
+            self.promoted_type(value.ty)?
+        };
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral unary"))?;

@@ -5,6 +5,7 @@ mod declarations;
 mod declarators;
 mod dump;
 mod enumerations;
+mod exception_operands;
 mod exceptions;
 mod expressions;
 mod graph;

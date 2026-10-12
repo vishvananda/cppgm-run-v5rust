@@ -16,7 +16,9 @@ use crate::{
 impl Analyzer<'_> {
     pub(super) fn binding_expression_type(&self, binding: BindingId) -> Result<TypeId, Error> {
         let binding = self.graph.binding(binding);
-        let ty = if binding.kind == BindingKind::Variable {
+        let ty = if binding.kind == BindingKind::Variable
+            || self.evaluating_noexcept && binding.kind == BindingKind::Parameter
+        {
             self.graph.entity(binding.entity).ty
         } else {
             binding.ty
@@ -50,6 +52,9 @@ impl Analyzer<'_> {
         }
         if matches!(self.tree.expressions.get(inner).kind, ExprKind::Call { .. }) {
             return self.query_call_type(inner, scope);
+        }
+        if self.evaluating_noexcept {
+            return self.exception_operand_type(expr, scope);
         }
         self.evaluate_constant(expr, scope, true)
             .map(|value| value.ty)
@@ -169,6 +174,12 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
+        if self.evaluating_noexcept
+            && let Some(ty) = self.graph.expression_type(id)
+        {
+            self.graph.call_binding(id)?;
+            return Ok(ty);
+        }
         let node = self.tree.expressions.get(id);
         let location = node.location;
         let ExprKind::Call {
@@ -184,8 +195,22 @@ impl Analyzer<'_> {
         let ExprKind::Id(name) = self.tree.expressions.get(callee).kind else {
             return Err(Error::Missing("unevaluated indirect call typing"));
         };
-        let binding = self.lookup(name, scope, Filter::Ordinary)?;
-        let entity = self.graph.binding(binding).entity;
+        let binding = if self.evaluating_noexcept
+            && let Some(binding) = self.graph.resolved_name(name)
+        {
+            binding
+        } else {
+            self.lookup(name, scope, Filter::Ordinary)
+                .map_err(|error| match error {
+                    Error::Diagnostic {
+                        location,
+                        message: "undeclared name",
+                    } if self.evaluating_noexcept => {
+                        Error::at(location, "undeclared function name")
+                    }
+                    other => other,
+                })?
+        };
         if matches!(
             self.graph.binding(binding).kind,
             BindingKind::Type | BindingKind::Alias
@@ -199,8 +224,10 @@ impl Analyzer<'_> {
             ty = element;
         }
         let TypeKind::Function {
-            result, parameters, ..
-        } = self.graph.types.get(ty).kind.clone()
+            result,
+            ref parameters,
+            ..
+        } = self.graph.types.get(ty).kind
         else {
             return Err(Error::at(
                 location,
@@ -212,7 +239,7 @@ impl Analyzer<'_> {
         }
         super::record(&mut self.graph.expression_types, callee.index(), ty);
         super::record(&mut self.graph.expression_types, id.index(), result);
-        self.graph.record_call_entity(id, entity);
+        self.graph.record_call_binding(id, binding);
         Ok(result)
     }
     pub(super) fn decltype_type(

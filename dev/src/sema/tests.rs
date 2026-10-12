@@ -416,3 +416,51 @@ fn missing_layout_and_constant_call_owners_remain_status_86_boundaries() {
         assert!(matches!(result, Err(Error::Missing(_))));
     }
 }
+
+#[test]
+fn exception_parameters_retain_source_type_and_adjusted_object_identity() {
+    use super::exceptions::{ExceptionSet, ExceptionState};
+    analyze(b"void f(int a[3]) noexcept(sizeof(decltype(a))==12 && sizeof(a)==8); void f(int a[3]) noexcept;", |graph,cursor| {
+        let name = cursor.intern_name(b"a").unwrap();
+        let mut found = false;
+        for &binding in graph.resolved_names.iter().flatten() {
+            let binding = graph.binding(binding);
+            if binding.name == Some(name) && binding.kind == BindingKind::Parameter {
+                found = true;
+                assert!(matches!(graph.types.get(binding.ty.unwrap()).kind, TypeKind::Array{bound:3,..}));
+                assert!(matches!(graph.types.get(graph.entity(binding.entity).ty.unwrap()).kind, TypeKind::Pointer(_)));
+            }
+        }
+        assert!(found);
+        let name = cursor.intern_name(b"f").unwrap();
+        let binding = graph.binding(graph.own(graph.global,name,Filter::Ordinary).unwrap());
+        assert!(matches!(graph.entity(binding.entity).exceptions, ExceptionState::Value(ExceptionSet::None)));
+    });
+}
+
+#[test]
+fn failed_exception_query_restores_nested_worklists_and_context() {
+    let source =
+        SourceBuffer::new(b"void f() noexcept(1 + sizeof(1 + missing));".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"exception-query-rollback").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    let marker = 0u8;
+    analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+    analyzer
+        .declarations(declarations, analyzer.graph.global)
+        .unwrap();
+    assert!(matches!(
+        analyzer.finish_unit_exceptions(),
+        Err(Error::Diagnostic {
+            message: "undeclared name",
+            ..
+        })
+    ));
+    assert!(analyzer.exception_work.is_empty());
+    assert!(analyzer.constant_spine.is_empty());
+    assert!(!analyzer.evaluating_noexcept);
+    assert!(analyzer.graph.lookup_limit.is_none());
+}
