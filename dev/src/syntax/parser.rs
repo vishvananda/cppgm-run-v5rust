@@ -50,6 +50,7 @@ pub(super) struct Parser<'a> {
     pub stack_budget: crate::support::stack::StackBudget,
     pub stack_base: Option<usize>,
     tentative_depth: usize,
+    transactions: Vec<Checkpoint>,
     pub checkpoints: u64,
     pub rewinds: u64,
     pub peak_nesting: u32,
@@ -116,6 +117,7 @@ impl<'a> Parser<'a> {
             stack_budget: crate::support::stack::StackBudget::default(),
             stack_base: None,
             tentative_depth: 0,
+            transactions: Vec::new(),
             checkpoints: 0,
             rewinds: 0,
             peak_nesting: 0,
@@ -323,6 +325,10 @@ impl<'a> Parser<'a> {
     pub(super) fn active_nesting(&self) -> u32 {
         self.depth
     }
+    #[cfg(test)]
+    pub(super) fn transaction_storage(&self) -> (usize, usize) {
+        (self.transactions.len(), self.transactions.capacity())
+    }
     pub(super) fn stack_check(&mut self) -> Result<(), ParseError> {
         // Only numeric stack-distance accounting uses an address. The pointer
         // is never retained or dereferenced; all syntax still owns typed IDs.
@@ -357,6 +363,45 @@ impl<'a> Parser<'a> {
         commit: bool,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<Option<T>, ParseError> {
+        self.begin_transaction()?;
+        self.cursor.retain();
+        self.tentative_depth += 1;
+        self.speculation += 1;
+        self.checkpoints += 1;
+        let result = parse(self);
+        self.speculation -= 1;
+        if result.is_err() || !commit {
+            self.rewind_transaction()?;
+            self.rewinds += 1;
+        }
+        // Keep the checkpoint and retained cursor live until committed
+        // deferred bodies finish, including any nested transactions they open.
+        let bodies = if commit && result.is_ok() && self.speculation == 0 {
+            let first = self
+                .transactions
+                .last()
+                .ok_or(ParseError::Invariant("missing parser transaction"))?
+                .lambdas;
+            self.parse_deferred_lambdas(first)
+        } else {
+            Ok(())
+        };
+        self.tentative_depth -= 1;
+        self.cursor.release();
+        self.transactions
+            .pop()
+            .ok_or(ParseError::Invariant("missing parser transaction"))?;
+        bodies?;
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(ParseError::Syntax { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+    // Checkpoint construction owns a large, short-lived aggregate. Keep that
+    // frame out of recursive grammar calls; the reusable stack owns its data.
+    #[inline(never)]
+    fn begin_transaction(&mut self) -> Result<(), ParseError> {
         self.initialize()?;
         let mark = Checkpoint {
             conflict: self.conflicts.statement,
@@ -382,54 +427,38 @@ impl<'a> Parser<'a> {
             lambdas: self.lambdas.len(),
             runs: self.cursor.runs_mark(),
         };
-        self.cursor.retain();
-        self.tentative_depth += 1;
-        self.speculation += 1;
-        self.checkpoints += 1;
-        let result = parse(self);
-        self.speculation -= 1;
-        if result.is_err() || !commit {
-            self.shared_lambdas.rewind(mark.shared_lambdas);
-            self.conflicts.statement = mark.conflict;
-            self.cursor.position = mark.position;
-            self.tree.rewind(&mark.tree);
-            self.scopes.rewind(mark.scopes);
-            self.function_scope = mark.function_scope;
-            self.parameter_scope = mark.parameter_scope;
-            self.declarator_context = mark.declarator_context;
-            self.template_mentions = mark.template_mentions;
-            self.pack_mentions = mark.pack_mentions;
-            self.parameter_pack_start = mark.parameter_pack_start;
-            self.angle = mark.angle;
-            self.pending_template = mark.pending_template;
-            self.template_head = mark.template_head;
-            self.specialization_records
-                .truncate(mark.specialization_records);
-            self.pending_attributes = mark.pending_attributes;
-            self.leading_attributes = mark.leading_attributes;
-            self.pending_class_tags = mark.pending_class_tags;
-            self.class_depth = mark.class_depth;
-            self.deferred.truncate(mark.deferred);
-            self.lambdas.truncate(mark.lambdas);
-            self.cursor.rewind_runs(mark.runs);
-            self.rewinds += 1;
-        }
-        // The outer alternative has committed. Body failure is terminal:
-        // the same body occurs in every reading, so no enclosing fallback
-        // may turn this error into a different declaration/expression parse.
-        let bodies = if commit && result.is_ok() && self.speculation == 0 {
-            self.parse_deferred_lambdas(mark.lambdas)
-        } else {
-            Ok(())
-        };
-        self.tentative_depth -= 1;
-        self.cursor.release();
-        bodies?;
-        match result {
-            Ok(value) => Ok(Some(value)),
-            Err(ParseError::Syntax { .. }) => Ok(None),
-            Err(error) => Err(error),
-        }
+        self.transactions.push(mark);
+        Ok(())
+    }
+    fn rewind_transaction(&mut self) -> Result<(), ParseError> {
+        let mark = self
+            .transactions
+            .last()
+            .ok_or(ParseError::Invariant("missing parser transaction"))?;
+        self.shared_lambdas.rewind(mark.shared_lambdas);
+        self.conflicts.statement = mark.conflict;
+        self.cursor.position = mark.position;
+        self.tree.rewind(&mark.tree);
+        self.scopes.rewind(mark.scopes);
+        self.function_scope = mark.function_scope;
+        self.parameter_scope = mark.parameter_scope;
+        self.declarator_context = mark.declarator_context;
+        self.template_mentions = mark.template_mentions;
+        self.pack_mentions = mark.pack_mentions;
+        self.parameter_pack_start = mark.parameter_pack_start;
+        self.angle = mark.angle;
+        self.pending_template = mark.pending_template;
+        self.template_head = mark.template_head;
+        self.specialization_records
+            .truncate(mark.specialization_records);
+        self.pending_attributes = mark.pending_attributes;
+        self.leading_attributes = mark.leading_attributes;
+        self.pending_class_tags = mark.pending_class_tags;
+        self.class_depth = mark.class_depth;
+        self.deferred.truncate(mark.deferred);
+        self.lambdas.truncate(mark.lambdas);
+        self.cursor.rewind_runs(mark.runs);
+        Ok(())
     }
     pub(super) fn token_ordinal(&self) -> Result<u32, ParseError> {
         // Frozen init-declarator and lambda ranges keep the low target

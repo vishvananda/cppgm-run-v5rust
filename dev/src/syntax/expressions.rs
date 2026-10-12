@@ -181,7 +181,53 @@ impl Parser<'_> {
         Ok(left)
     }
     fn unary(&mut self) -> Result<ExprId, ParseError> {
-        self.nested(Self::unary_inner)
+        self.nested(Self::cast_operand)
+    }
+    fn cast_operand(&mut self) -> Result<ExprId, ParseError> {
+        if self.at(P::LeftParen)? {
+            self.parenthesized_or_cast()
+        } else {
+            self.unary_inner()
+        }
+    }
+    fn parenthesized_or_cast(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        if self.name_starts_ahead(1)? {
+            return self.parenthesized_from_name(location);
+        }
+        let cast = if self.type_specifier_start(1)? {
+            self.attempt(|parser| {
+                parser.cursor.advance()?;
+                let ty = parser.without_angle(|parser| parser.type_id(false))?;
+                if !parser.accept(P::RightParen)? || !parser.operand_start()? {
+                    return parser.decline_operand();
+                }
+                Ok(ty)
+            })?
+        } else {
+            None
+        };
+        if let Some(ty) = cast {
+            let operand = self.unary()?;
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Cast {
+                    keyword: None,
+                    ty,
+                    operand,
+                },
+            });
+        }
+        // The ordinary parenthesized reading owns only its location and
+        // child ID across recursion, rather than a general primary payload.
+        self.cursor.advance()?;
+        let inner = self.without_angle(Self::expression)?;
+        self.expect(P::RightParen)?;
+        let paren = self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Paren(inner),
+        })?;
+        self.postfix(paren)
     }
     fn unary_inner(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
@@ -214,34 +260,6 @@ impl Parser<'_> {
                 location,
                 kind: ExprKind::Unary { op, operand },
             });
-        }
-        if self.at(P::LeftParen)? {
-            if self.name_starts_ahead(1)? {
-                return self.parenthesized_from_name(location);
-            }
-            let cast = if self.type_specifier_start(1)? {
-                self.attempt(|parser| {
-                    parser.cursor.advance()?;
-                    let ty = parser.without_angle(|parser| parser.type_id(false))?;
-                    if !parser.accept(P::RightParen)? || !parser.operand_start()? {
-                        return parser.decline_operand();
-                    }
-                    Ok(ty)
-                })?
-            } else {
-                None
-            };
-            if let Some(ty) = cast {
-                let operand = self.unary()?;
-                return self.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::Cast {
-                        keyword: None,
-                        ty,
-                        operand,
-                    },
-                });
-            }
         }
         match self.keyword()? {
             Some(K::Sizeof) => self.sizeof_expression(location),

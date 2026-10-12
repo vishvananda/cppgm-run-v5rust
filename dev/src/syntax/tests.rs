@@ -843,6 +843,7 @@ fn stack_budget_failures_are_terminal_and_transactions_restore_typed_state() {
     assert_eq!(parser.speculation, 0);
     assert_eq!(parser.cursor.position, 0);
     assert_eq!(parser.tree.declarations.mark(), 0);
+    assert_eq!(parser.transaction_storage().0, 0);
     parser.stack_base = None;
     parser.stack_budget = StackBudget::default();
     parser.declarations(false).unwrap();
@@ -873,10 +874,43 @@ fn native_byte_budget_unwinds_before_exhausting_the_callers_stack() {
                 }
             ));
             assert_eq!(unit.parser.active_nesting(), 0);
+            assert_eq!(unit.parser.transaction_storage().0, 0);
             assert!(unit.parser.peak_nesting > 0);
         })
         .unwrap();
     outcome.join().unwrap();
+}
+
+#[test]
+fn nested_parser_transactions_reuse_storage_and_release_all_marks() {
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"transaction-storage-lifetime").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let mut capacity = None;
+    for _ in 0..1000 {
+        let outer: Option<()> = parser
+            .attempt(|parser| {
+                assert_eq!(parser.transaction_storage().0, 1);
+                let inner = parser.attempt(|parser| {
+                    assert_eq!(parser.transaction_storage().0, 2);
+                    parser.angle = true;
+                    Ok(())
+                })?;
+                assert!(inner.is_some());
+                assert!(parser.angle);
+                assert_eq!(parser.transaction_storage().0, 1);
+                parser.fail()
+            })
+            .unwrap();
+        assert!(outer.is_none());
+        assert!(!parser.angle);
+        let storage = parser.transaction_storage();
+        assert_eq!(storage.0, 0);
+        assert_eq!(*capacity.get_or_insert(storage.1), storage.1);
+    }
 }
 
 #[test]
