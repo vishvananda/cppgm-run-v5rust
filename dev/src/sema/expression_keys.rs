@@ -1,0 +1,461 @@
+// Translated from sema/template_placeholders.cpp::decltype_words/size_words. See NOTICE.
+//! Structural keys borrow parsed operands and retain canonical semantic identities.
+//! A key is local to one lookup environment; expression facts are never its cache.
+use super::{
+    Error,
+    analyzer::Analyzer,
+    graph::{EntityId, ScopeId, ScopeKind},
+    integral::IntegralKind,
+    types::{Scalar, TypeId},
+};
+use crate::{
+    lex::{
+        PostTokenKind,
+        identifiers::NameId,
+        vocabulary::{Keyword, SimpleToken},
+    },
+    syntax::{
+        ast::{self, ExprKind},
+        storage::List,
+    },
+};
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum KeyWord {
+    Node(KeyNode),
+    Count(usize),
+    Flag(bool),
+    Operator(SimpleToken),
+    Keyword(Option<Keyword>),
+    Type(TypeId),
+    Entity(EntityId),
+    Parameter(usize),
+    Identifier(NameId),
+    FreeName(NameId),
+    Constant(TypeId, u64),
+    Spelling(Vec<u8>),
+    Absent,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum KeyNode {
+    Id,
+    Name,
+    Arguments,
+    Keyword,
+    This,
+    Paren,
+    Unary,
+    Postfix,
+    Binary,
+    Assign,
+    Conditional,
+    Call,
+    Subscript,
+    Member,
+    Braced,
+    FunctionalCast,
+    Cast,
+    Sizeof,
+    Trait,
+    New,
+    Delete,
+    Throw,
+    PackExpansion,
+    Function,
+}
+#[derive(Default)]
+pub(super) struct ExpressionKey {
+    pub words: Vec<KeyWord>,
+    pub dependent: bool,
+}
+impl Analyzer<'_> {
+    pub(super) fn expression_key(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<Vec<KeyWord>>, Error> {
+        let mut key = ExpressionKey::default();
+        self.key_expression(operand, scope, &mut key)
+            .map(|known| known.then_some(key.words))
+    }
+
+    pub(super) fn key_type(&mut self, ty: TypeId, key: &mut ExpressionKey) -> Result<(), Error> {
+        key.dependent |= self.exception_dependent_type(ty);
+        key.words
+            .push(KeyWord::Type(self.graph.types.canonical_function(ty)?));
+        Ok(())
+    }
+
+    fn key_expression(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        let expr = *self.tree.expressions.get(operand);
+        self.check_stack().map_err(|error| match error {
+            Error::Limit("constructs nested too deeply") => {
+                Error::at(expr.location, "constructs nested too deeply")
+            }
+            other => other,
+        })?;
+        match expr.kind {
+            ExprKind::Id(name) => {
+                key.words.push(KeyWord::Node(KeyNode::Id));
+                return self.key_name(name, scope, true, key);
+            }
+            ExprKind::Literal(literal) => self.key_literal(literal, key)?,
+            ExprKind::Keyword(keyword) => self.key_keyword(keyword, scope, key)?,
+            ExprKind::Paren(inner) | ExprKind::PackExpansion(inner) => {
+                key.words
+                    .push(KeyWord::Node(if matches!(expr.kind, ExprKind::Paren(_)) {
+                        KeyNode::Paren
+                    } else {
+                        KeyNode::PackExpansion
+                    }));
+                return self.key_expression(inner, scope, key);
+            }
+            ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
+                key.words.push(KeyWord::Node(
+                    if matches!(expr.kind, ExprKind::Unary { .. }) {
+                        KeyNode::Unary
+                    } else {
+                        KeyNode::Postfix
+                    },
+                ));
+                key.words.push(KeyWord::Operator(op.token));
+                return self.key_expression(operand, scope, key);
+            }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment,
+            } => {
+                key.words.push(KeyWord::Node(if assignment {
+                    KeyNode::Assign
+                } else {
+                    KeyNode::Binary
+                }));
+                key.words.push(KeyWord::Operator(op.token));
+                return Ok(self.key_expression(left, scope, key)?
+                    && self.key_expression(right, scope, key)?);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                key.words.push(KeyWord::Node(KeyNode::Conditional));
+                return Ok(self.key_expression(condition, scope, key)?
+                    && self.key_expression(then_expr, scope, key)?
+                    && self.key_expression(else_expr, scope, key)?);
+            }
+            ExprKind::Call { callee, arguments } => {
+                key.words.extend([
+                    KeyWord::Node(KeyNode::Call),
+                    KeyWord::Count(self.tree.expr_lists.get(arguments).len()),
+                ]);
+                return Ok(self.key_expression(callee, scope, key)?
+                    && self.key_arguments(arguments, scope, key)?);
+            }
+            ExprKind::Subscript { base, index } => {
+                key.words.push(KeyWord::Node(KeyNode::Subscript));
+                return Ok(self.key_expression(base, scope, key)?
+                    && self.key_expression(index, scope, key)?);
+            }
+            ExprKind::Member { base, op, member } => {
+                key.words
+                    .extend([KeyWord::Node(KeyNode::Member), KeyWord::Operator(op.token)]);
+                return Ok(self.key_expression(base, scope, key)?
+                    && self.key_name(member, scope, false, key)?);
+            }
+            ExprKind::Braced { elements, .. } => {
+                key.words.extend([
+                    KeyWord::Node(KeyNode::Braced),
+                    KeyWord::Count(self.tree.expr_lists.get(elements).len()),
+                ]);
+                return self.key_arguments(elements, scope, key);
+            }
+            ExprKind::Cast {
+                keyword,
+                ty,
+                operand,
+            } => {
+                key.words
+                    .extend([KeyWord::Node(KeyNode::Cast), KeyWord::Keyword(keyword)]);
+                let ty = self.type_syntax(ty, scope)?;
+                self.key_type(ty, key)?;
+                return self.key_expression(operand, scope, key);
+            }
+            ExprKind::FunctionalCast {
+                specifiers,
+                arguments,
+                braced,
+            } => {
+                key.words.extend([
+                    KeyWord::Node(KeyNode::FunctionalCast),
+                    KeyWord::Count(self.tree.expr_lists.get(arguments).len()),
+                    KeyWord::Flag(braced.is_some()),
+                ]);
+                let ty = self.specifiers(specifiers, scope, false)?.ty;
+                self.key_type(ty, key)?;
+                return if let Some(operand) = braced {
+                    self.key_expression(operand, scope, key)
+                } else {
+                    self.key_arguments(arguments, scope, key)
+                };
+            }
+            ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
+                return self.key_size(operand, ty, scope, expr, key);
+            }
+            ExprKind::New { .. } => return self.key_allocation(expr.kind, scope, key),
+            ExprKind::Delete {
+                global,
+                array,
+                operand,
+            } => {
+                key.words.extend([
+                    KeyWord::Node(KeyNode::Delete),
+                    KeyWord::Flag(global),
+                    KeyWord::Flag(array),
+                ]);
+                return self.key_expression(operand, scope, key);
+            }
+            ExprKind::Throw(operand) => {
+                key.words.extend([
+                    KeyWord::Node(KeyNode::Throw),
+                    KeyWord::Flag(operand.is_none()),
+                ]);
+                return if let Some(operand) = operand {
+                    self.key_expression(operand, scope, key)
+                } else {
+                    Ok(true)
+                };
+            }
+            // C++ likewise leaves lambda operands unkeyed. Packs require their
+            // declaration owner, which is outside the PA6 template boundary.
+            ExprKind::Lambda(_) => return Ok(false),
+            ExprKind::SizeofPack(_) => return Err(Error::Missing("template pack expression key")),
+        }
+        Ok(true)
+    }
+
+    fn key_arguments(
+        &mut self,
+        arguments: List<ast::ExprId>,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        for &argument in self.tree.expr_lists.get(arguments) {
+            if !self.key_expression(argument, scope, key)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn key_keyword(
+        &mut self,
+        keyword: Keyword,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<(), Error> {
+        if matches!(keyword, Keyword::True | Keyword::False) {
+            key.words.push(KeyWord::Constant(
+                self.graph.types.scalar(Scalar::Bool)?,
+                u64::from(keyword == Keyword::True),
+            ));
+        } else {
+            key.words.extend([
+                KeyWord::Node(KeyNode::Keyword),
+                KeyWord::Keyword(Some(keyword)),
+            ]);
+            if keyword == Keyword::This {
+                self.key_this(scope, key);
+            }
+        }
+        Ok(())
+    }
+
+    fn key_this(&self, scope: ScopeId, key: &mut ExpressionKey) {
+        let mut current = Some(scope);
+        key.words.push(KeyWord::Node(KeyNode::This));
+        while let Some(scope) = current {
+            let node = self.graph.scope(scope);
+            if node.kind == ScopeKind::Class {
+                if let Some(entity) = node.owner {
+                    key.words.push(KeyWord::Entity(entity));
+                    key.dependent |= self.graph.entity(entity).template_head.is_some();
+                } else {
+                    key.words.push(KeyWord::Absent);
+                }
+                return;
+            }
+            current = node.parent;
+        }
+        key.words.push(KeyWord::Absent);
+    }
+
+    fn key_literal(&mut self, literal: ast::Literal, key: &mut ExpressionKey) -> Result<(), Error> {
+        let typed = match literal.kind {
+            PostTokenKind::Literal { ty, data, .. }
+            | PostTokenKind::Character {
+                ty,
+                data,
+                multicharacter: false,
+                suffix_begin: None,
+            } => Some((ty, data)),
+            _ => None,
+        };
+        if let Some((ty, data)) = typed
+            && IntegralKind::of(Scalar::Basic(ty)).is_some()
+        {
+            let mut bytes = [0u8; 8];
+            let count = data.as_slice().len().min(8);
+            bytes[..count].copy_from_slice(&data.as_slice()[..count]);
+            key.words.push(KeyWord::Constant(
+                self.graph.types.scalar(Scalar::Basic(ty))?,
+                u64::from_le_bytes(bytes),
+            ));
+        } else {
+            key.words.push(KeyWord::Spelling(
+                self.literal_bytes.get(literal.spelling).to_vec(),
+            ));
+            // For nonintegral literals C++ includes spelling even when IEEE
+            // bits are known. Identical spelling already determines those bits.
+        }
+        Ok(())
+    }
+
+    fn key_size(
+        &mut self,
+        operand: Option<ast::ExprId>,
+        ty: Option<ast::TypeId>,
+        scope: ScopeId,
+        expr: ast::Expression,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        let (node, keyword, alignment) = if let ExprKind::TypeTrait { keyword, .. } = expr.kind {
+            (KeyNode::Trait, Some(keyword), true)
+        } else {
+            (KeyNode::Sizeof, None, false)
+        };
+        if let Some(ty) = ty {
+            key.words.extend([
+                KeyWord::Node(node),
+                KeyWord::Keyword(keyword),
+                KeyWord::Flag(true),
+            ]);
+            let ty = self.type_syntax(ty, scope)?;
+            self.key_type(ty, key)?;
+            return Ok(true);
+        }
+        let mut inner = ExpressionKey::default();
+        let known = if let Some(operand) = operand {
+            self.key_expression(operand, scope, &mut inner)?
+        } else {
+            inner.words.push(KeyWord::Absent);
+            true
+        };
+        if known
+            && !inner.dependent
+            && operand.is_some()
+            && keyword.is_none_or(|keyword| keyword == Keyword::Alignof)
+            && let Some(value) =
+                self.constant_value_for_key(operand, scope, alignment, expr.location)?
+        {
+            key.words.push(KeyWord::Constant(value.ty, value.bits));
+            return Ok(true);
+        }
+        key.words.extend([
+            KeyWord::Node(node),
+            KeyWord::Keyword(keyword),
+            KeyWord::Flag(false),
+        ]);
+        key.dependent |= inner.dependent;
+        key.words.extend(inner.words);
+        Ok(known)
+    }
+
+    fn constant_value_for_key(
+        &mut self,
+        operand: Option<ast::ExprId>,
+        scope: ScopeId,
+        alignment: bool,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<super::constants::Constant>, Error> {
+        // Key construction precedes expression typing: prototype Binding.ty
+        // is the source parameter type, rather than its adjusted object type.
+        let saved = self.evaluating_noexcept;
+        self.evaluating_noexcept = false;
+        let result = self.constant_query(None, operand, scope, alignment, location);
+        self.evaluating_noexcept = saved;
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(Error::NonConstant { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn key_allocation(
+        &mut self,
+        kind: ExprKind,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        let ExprKind::New {
+            global,
+            placement,
+            ty,
+            initializer,
+            ..
+        } = kind
+        else {
+            return Err(Error::Invariant("allocation key without new"));
+        };
+        let placement = placement.unwrap_or_default();
+        let (form, arguments) = match initializer {
+            None => (0, List::default()),
+            Some(ast::Initializer {
+                kind: ast::InitializerKind::Parenthesized(arguments),
+                ..
+            }) => (1, arguments),
+            Some(ast::Initializer {
+                kind: ast::InitializerKind::Braced(expression),
+                ..
+            }) => {
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expression).kind
+                else {
+                    return Ok(false);
+                };
+                (2, elements)
+            }
+            _ => return Ok(false),
+        };
+        let count = self.tree.expr_lists.get(arguments).len();
+        let placed = self.tree.expr_lists.get(placement).len();
+        if placed > 0xffff || count > 0xffff {
+            return Ok(false);
+        }
+        let Some((ty, bound)) = self.allocation_key_type(ty, scope)? else {
+            return Ok(false);
+        };
+        key.words.extend([
+            KeyWord::Node(KeyNode::New),
+            KeyWord::Count(placed),
+            KeyWord::Flag(global),
+            KeyWord::Flag(bound.is_some()),
+            KeyWord::Count(form),
+            KeyWord::Count(count),
+        ]);
+        self.key_type(ty, key)?;
+        if let Some(bound) = bound
+            && !self.key_expression(bound, scope, key)?
+        {
+            return Ok(false);
+        }
+        Ok(self.key_arguments(placement, scope, key)?
+            && self.key_arguments(arguments, scope, key)?)
+    }
+}

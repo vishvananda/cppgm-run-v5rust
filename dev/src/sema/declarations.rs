@@ -116,9 +116,12 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let target = self.lookup(target, scope, Filter::Namespace)?;
         let binding = self.graph.binding(target);
+        let target_scope = self.graph.entity(binding.entity).scope;
         if let Some(existing) = self.graph.own(scope, name, Filter::Ordinary) {
             let existing = self.graph.binding(existing);
-            if existing.kind == BindingKind::NamespaceAlias && existing.entity == binding.entity {
+            if existing.kind == BindingKind::NamespaceAlias
+                && self.graph.entity(existing.entity).scope == target_scope
+            {
                 return Ok(());
             }
             return Err(Error::at(
@@ -126,12 +129,17 @@ impl Analyzer<'_> {
                 "namespace alias conflicts with an earlier declaration",
             ));
         }
+        let entity = self
+            .graph
+            .add_entity(None, Some(name), Keyword::Namespace)?;
+        self.graph.entity_mut(entity).scope = target_scope;
         self.graph.add_binding(
             scope,
             None,
             Binding {
                 kind: BindingKind::NamespaceAlias,
                 name: Some(name),
+                entity,
                 ..binding
             },
         )?;
@@ -279,8 +287,13 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let mut info = self.declarator(Some(init.declarator), specs.ty, scope)?;
         let member = self.declared_member(&info, scope)?;
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        let class_name = self.graph.scope(home).kind == ScopeKind::Class
+            && self.graph.scope(home).owner.is_some_and(|class| {
+                info.name.is_some() && info.name == self.graph.entity(class).name
+            });
         if specs.role == DeclarationRole::Typedef
-            && (member.is_some() || self.conversion_declarator(&info))
+            && (member.is_some() || class_name || self.conversion_declarator(&info))
         {
             let message = if info.home.is_some() || init.initializer.is_some() {
                 "invalid typedef declarator"
@@ -290,7 +303,7 @@ impl Analyzer<'_> {
                 "invalid typedef name"
             };
             return Err(Error::at(
-                self.declarator_location(init.declarator)?,
+                self.tree.declarators.get(init.declarator).location,
                 message,
             ));
         }

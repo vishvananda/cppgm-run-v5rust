@@ -60,7 +60,10 @@ impl Analyzer<'_> {
         if let Some(clause) = pattern.parameters {
             let parameters = self.tree.parameters.get(clause.parameters);
             if parameters.len() == count {
-                for (index, parameter) in parameters.iter().enumerate().take(32 - own.len()) {
+                for (index, parameter) in parameters.iter().enumerate() {
+                    if own.len() == 32 {
+                        break;
+                    }
                     let ty = self.graph.types.function_parameter(pattern.ty, index)?;
                     if self.exception_dependent_type(ty)
                         && let Some(name) = self.simple_declarator_name_opt(parameter.declarator)?
@@ -73,35 +76,13 @@ impl Analyzer<'_> {
         if self.exception_names_own(pattern.operand, &own) {
             return Ok(());
         }
-        let mut scope = pattern.scope;
-        if let Some(clause) = pattern.parameters {
-            let parameters = self.tree.parameters.get(clause.parameters);
-            if parameters.len() != count {
-                return Ok(());
-            }
-            scope = self
-                .graph
-                .add_scope(ScopeKind::Function, scope, None, None)?;
-            for (index, &parameter) in parameters.iter().enumerate() {
-                let ty = self.graph.types.function_parameter(pattern.ty, index)?;
-                let name = self.declarator_name(parameter.declarator)?;
-                let object_type = self.graph.types.parameter_object(ty)?;
-                let entity = self
-                    .graph
-                    .add_entity(Some(object_type), name, Keyword::Int)?;
-                self.graph.add_binding(
-                    scope,
-                    None,
-                    Binding {
-                        kind: BindingKind::Parameter,
-                        name,
-                        entity,
-                        ty: Some(ty),
-                        key: Keyword::Int,
-                    },
-                )?;
-            }
+        if pattern
+            .parameters
+            .is_some_and(|clause| self.tree.parameters.get(clause.parameters).len() != count)
+        {
+            return Ok(());
         }
+        let scope = self.exception_prototype(pattern)?;
         let saved_limit = self.graph.lookup_limit;
         let saved_noexcept = self.evaluating_noexcept;
         let saved_depth = self.template_depth;
@@ -121,6 +102,41 @@ impl Analyzer<'_> {
         self.evaluating_noexcept = saved_noexcept;
         self.template_depth = saved_depth;
         result
+    }
+
+    pub(super) fn exception_prototype(
+        &mut self,
+        pattern: TemplateException,
+    ) -> Result<ScopeId, Error> {
+        let mut scope = pattern.scope;
+        if let Some(clause) = pattern.parameters {
+            let parameters = self.tree.parameters.get(clause.parameters);
+            let count = self.graph.types.function_parameter_count(pattern.ty)?;
+            scope = self
+                .graph
+                .add_scope(ScopeKind::Function, scope, None, None)?;
+            for (index, &parameter) in parameters.iter().enumerate().take(count) {
+                let ty = self.graph.types.function_parameter(pattern.ty, index)?;
+                let name = self.declarator_name(parameter.declarator)?;
+                let object_type = self.graph.types.parameter_object(ty)?;
+                let entity = self
+                    .graph
+                    .add_entity(Some(object_type), name, Keyword::Int)?;
+                self.graph.record_prototype_parameter(entity, index);
+                self.graph.add_binding(
+                    scope,
+                    None,
+                    Binding {
+                        kind: BindingKind::Parameter,
+                        name,
+                        entity,
+                        ty: Some(ty),
+                        key: Keyword::Int,
+                    },
+                )?;
+            }
+        }
+        Ok(scope)
     }
 
     fn fixed_template_names(&mut self, root: ast::ExprId, scope: ScopeId) -> Result<bool, Error> {
@@ -278,7 +294,7 @@ impl Analyzer<'_> {
             .map(Option::flatten)
     }
 
-    fn exception_dependent_type(&self, root: TypeId) -> bool {
+    pub(super) fn exception_dependent_type(&self, root: TypeId) -> bool {
         let mut work = vec![root];
         let mut visited = HashSet::new();
         while let Some(ty) = work.pop() {

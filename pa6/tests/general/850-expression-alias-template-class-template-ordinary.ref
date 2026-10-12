@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    scope template-parameters
+      type T typename T
+      type C struct C
+      scope class C
+        type-alias A typename T
+end translation unit

@@ -128,9 +128,19 @@ impl Analyzer<'_> {
     }
     pub(super) fn declarator_in(
         &mut self,
+        id: Option<ast::DeclaratorId>,
+        ty: TypeId,
+        environment: DeclaratorEnvironment,
+    ) -> Result<DeclaratorInfo, Error> {
+        self.declarator_view(id, ty, environment, 0)
+    }
+
+    fn declarator_view(
+        &mut self,
         mut id: Option<ast::DeclaratorId>,
         mut ty: TypeId,
         environment: DeclaratorEnvironment,
+        root_suffix_skip: usize,
     ) -> Result<DeclaratorInfo, Error> {
         let root = id;
         let mut name = None;
@@ -200,7 +210,19 @@ impl Analyzer<'_> {
                     _ => return Err(Error::Missing("extended declarator pointer operator")),
                 }
             }
-            for suffix in self.tree.suffixes.get(node.suffixes).iter().rev() {
+            let skip = if Some(current) == root {
+                root_suffix_skip
+            } else {
+                0
+            };
+            for suffix in self
+                .tree
+                .suffixes
+                .get(node.suffixes)
+                .iter()
+                .skip(skip)
+                .rev()
+            {
                 match *suffix {
                     ast::Suffix::Array(bound) => {
                         parameters = None;
@@ -238,7 +260,10 @@ impl Analyzer<'_> {
             }
             id = node.nested;
         }
-        if let Some(root) = root {
+        // A suffix view is a query result, not the original declarator's fact.
+        if root_suffix_skip == 0
+            && let Some(root) = root
+        {
             super::record(&mut self.graph.declarator_types, root.index(), ty);
         }
         Ok(DeclaratorInfo {
@@ -250,6 +275,35 @@ impl Analyzer<'_> {
             qualifiers: function_qualifiers,
             syntax_name,
         })
+    }
+
+    pub(super) fn allocation_key_type(
+        &mut self,
+        id: ast::TypeId,
+        scope: ScopeId,
+    ) -> Result<Option<(TypeId, Option<ast::ExprId>)>, Error> {
+        let syntax = *self.tree.types.get(id);
+        let first = syntax.declarator.and_then(|id| {
+            self.tree
+                .suffixes
+                .get(self.tree.declarators.get(id).suffixes)
+                .first()
+                .copied()
+        });
+        let (skip, bound) = if let Some(ast::Suffix::Array(bound)) = first {
+            let Some(bound) = bound else {
+                return Ok(None);
+            };
+            (1, Some(bound))
+        } else {
+            (0, None)
+        };
+        let base = self.specifiers(syntax.specifiers, scope, false)?.ty;
+        let environment = self.declarator_environment(syntax.declarator, scope)?;
+        let ty = self
+            .declarator_view(syntax.declarator, base, environment, skip)?
+            .ty;
+        Ok(Some((ty, bound)))
     }
     fn function_type(
         &mut self,

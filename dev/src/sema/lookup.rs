@@ -28,6 +28,9 @@ impl Analyzer<'_> {
                     && !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
                         && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
                         && a.ty == b.ty)
+                    && !(matches!(a.kind, BindingKind::Namespace | BindingKind::NamespaceAlias)
+                        && matches!(b.kind, BindingKind::Namespace | BindingKind::NamespaceAlias)
+                        && self.graph.entity(a.entity).scope == self.graph.entity(b.entity).scope)
                 {
                     return Err(Error::at(self.lookup_location, "ambiguous name"));
                 }

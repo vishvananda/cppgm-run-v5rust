@@ -169,6 +169,29 @@ impl<'tree> Analyzer<'tree> {
                 let node = *self.tree.types.get(ty);
                 let exceptions = self.declarator_specifies_exceptions(node.declarator);
                 let specs = self.specifiers(node.specifiers, scope, false)?;
+                let alias_template = self.active_template_head(scope).is_some();
+                if alias_template
+                    && self
+                        .tree
+                        .specs
+                        .get(node.specifiers)
+                        .iter()
+                        .any(|specifier| match specifier.kind {
+                            ast::SpecifierKind::Class(_) => true,
+                            ast::SpecifierKind::Enum(id) => {
+                                matches!(
+                                    self.tree.declarations.get(id).kind,
+                                    ast::DeclKind::Enum { has_body: true, .. }
+                                )
+                            }
+                            _ => false,
+                        })
+                {
+                    return Err(Error::at(
+                        location,
+                        "a class or enumeration defined in an alias template",
+                    ));
+                }
                 let alias_type = self.declarator(node.declarator, specs.ty, scope)?.ty;
                 super::record(&mut self.graph.type_facts, ty.index(), alias_type);
                 if exceptions {
@@ -181,8 +204,13 @@ impl<'tree> Analyzer<'tree> {
                     self.name_unnamed_enum(declared, None)?;
                     self.name_unnamed_class(declared, None);
                 }
-                self.declare_alias(name, alias_type, scope, location)
-                    .map(|_| ())
+                if alias_template {
+                    self.declare_alias_template(name, alias_type, scope, location)
+                        .map(|_| ())
+                } else {
+                    self.declare_alias(name, alias_type, scope, location)
+                        .map(|_| ())
+                }
             }
             ast::DeclKind::Simple {
                 specifiers,

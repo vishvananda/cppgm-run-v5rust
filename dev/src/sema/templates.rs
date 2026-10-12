@@ -1,11 +1,11 @@
-// Translated from sema/analyzer.cpp and class_templates.cpp. See NOTICE.
+// Translated from sema/analyzer.cpp, class_templates.cpp and template_names.cpp. See NOTICE.
 //! Parameter scopes own names; template heads retain syntax and positional identity.
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
+    graph::{Binding, BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::Filter,
-    types::{Cv, TypeKind},
+    types::{Cv, TypeId, TypeKind},
 };
 use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
@@ -392,7 +392,10 @@ impl Analyzer<'_> {
             ));
         }
         self.merge_template_head(entity, head, location)?;
-        let head = self.graph.templates.head(earlier.unwrap_or(head));
+        self.check_template_defaults(earlier.unwrap_or(head), location)
+    }
+    fn check_template_defaults(&self, head: HeadId, location: SourceOffset) -> Result<(), Error> {
+        let head = self.graph.templates.head(head);
         let mut defaulted = false;
         for (index, &entity) in head.parameters.iter().enumerate() {
             let info = self
@@ -416,6 +419,61 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+    pub(super) fn declare_alias_template(
+        &mut self,
+        name: NameId,
+        ty: TypeId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        self.check_template_parameter_name(scope, name, location)?;
+        let home = self.declaration_scope(scope);
+        let head = self
+            .active_template_head(scope)
+            .ok_or(Error::Invariant("alias template without head"))?;
+        if let Some(earlier) = self.graph.own(home, name, Filter::Ordinary) {
+            let binding = self.graph.binding(earlier);
+            let previous = self.graph.entity(binding.entity).template_head;
+            if binding.kind == BindingKind::Alias
+                && previous.is_some()
+                && self.graph.scope(home).kind != ScopeKind::Class
+            {
+                let previous = previous.ok_or(Error::Invariant("alias template lost head"))?;
+                let previous_ty = binding
+                    .ty
+                    .ok_or(Error::Invariant("alias template without type"))?;
+                if !self.same_template_shape(previous, head)
+                    || self.graph.types.canonical_function(previous_ty)?
+                        != self.graph.types.canonical_function(ty)?
+                {
+                    return Err(Error::at(
+                        location,
+                        "an alias template redeclared with a different template or type",
+                    ));
+                }
+                // The frozen alias-template path keeps its first head and
+                // defaults; it does not merge defaults on redeclaration.
+                return Ok(earlier);
+            }
+            return Err(Error::at(location, "an alias template redeclares a name"));
+        }
+        self.check_template_defaults(head, location)?;
+        let entity = self
+            .graph
+            .add_entity(Some(ty), Some(name), Keyword::Typedef)?;
+        self.graph.entity_mut(entity).template_head = Some(head);
+        self.graph.add_binding(
+            home,
+            None,
+            Binding {
+                kind: BindingKind::Alias,
+                name: Some(name),
+                entity,
+                ty: Some(ty),
+                key: Keyword::Typedef,
+            },
+        )
     }
     pub(super) fn active_template_head(&self, scope: ScopeId) -> Option<HeadId> {
         self.template_head

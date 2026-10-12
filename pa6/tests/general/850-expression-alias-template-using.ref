@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type-alias A typename T
+    scope namespace N
+      scope template-parameters
+        type T typename T
+end translation unit

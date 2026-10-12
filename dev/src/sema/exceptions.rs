@@ -273,7 +273,29 @@ impl Analyzer<'_> {
                 // declaration wrote no pending operand. Its facts stay.
                 return Ok(());
             }
-            return Err(Error::Missing("template exception expression equivalence"));
+            let ExceptionState::Template(first) = self.graph.entity(entity).exceptions else {
+                return Err(Error::Invariant("unexpected template exception state"));
+            };
+            let second = super::template_exceptions::TemplateException {
+                operand,
+                scope,
+                parameters: info.parameters,
+                // Both prototypes use the first entity's source parameters.
+                ty: first.ty,
+                limit,
+            };
+            let earlier = self.exception_prototype(first)?;
+            let later = self.exception_prototype(second)?;
+            if let Some(first) = self.expression_key(first.operand, earlier)?
+                && let Some(second) = self.expression_key(operand, later)?
+                && first != second
+            {
+                return Err(Error::at(
+                    location,
+                    "redeclaration with an incompatible exception-specification",
+                ));
+            }
+            return Ok(());
         }
         let pattern = super::template_exceptions::TemplateException {
             operand,

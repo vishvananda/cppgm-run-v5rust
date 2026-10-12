@@ -137,8 +137,15 @@ pub(crate) struct Graph {
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
     member_functions: HashMap<MemberKey, BindingId>,
+    prototype_parameters: HashMap<EntityId, usize>,
 }
 impl Graph {
+    pub(super) fn record_prototype_parameter(&mut self, entity: EntityId, index: usize) {
+        self.prototype_parameters.insert(entity, index);
+    }
+    pub(super) fn prototype_parameter(&self, entity: EntityId) -> Option<usize> {
+        self.prototype_parameters.get(&entity).copied()
+    }
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
         let ty = if let super::types::TypeKind::Enum(entity) = self.types.get(ty).kind {
             self.entity(entity).enumeration?.underlying?
@@ -187,6 +194,7 @@ impl Graph {
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
             member_functions: HashMap::new(),
+            prototype_parameters: HashMap::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
