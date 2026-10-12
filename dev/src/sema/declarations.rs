@@ -278,6 +278,47 @@ impl Analyzer<'_> {
         _location: SourceOffset,
     ) -> Result<(), Error> {
         let mut info = self.declarator(Some(init.declarator), specs.ty, scope)?;
+        let member = self.declared_member(&info, scope)?;
+        if specs.role == DeclarationRole::Typedef
+            && (member.is_some() || self.conversion_declarator(&info))
+        {
+            let message = if info.home.is_some() || init.initializer.is_some() {
+                "invalid typedef declarator"
+            } else if specs.constexpr {
+                "constexpr in a typedef declaration"
+            } else {
+                "invalid typedef name"
+            };
+            return Err(Error::at(
+                self.declarator_location(init.declarator)?,
+                message,
+            ));
+        }
+        if self.conversion_declarator(&info) {
+            return Err(Error::at(
+                self.declarator_location(init.declarator)?,
+                "a conversion function with a return type",
+            ));
+        }
+        if let Some((class, kind)) = member {
+            return self.complete_special_member(
+                class,
+                kind,
+                &info,
+                specs,
+                scope,
+                super::special_members::MemberDeclaration {
+                    location: self.declarator_location(init.declarator)?,
+                    name: info
+                        .syntax_name
+                        .ok_or(Error::Invariant("special member without name"))?,
+                    declarator: init.declarator,
+                    initializer: init.initializer,
+                    body: None,
+                    implicit_type: false,
+                },
+            );
+        }
         let name = info
             .name
             .ok_or(Error::Invariant("init-declarator without a name"))?;
@@ -699,7 +740,7 @@ impl Analyzer<'_> {
             scope = parent;
         }
     }
-    fn check_function_type_agreement(
+    pub(super) fn check_function_type_agreement(
         &mut self,
         old: TypeId,
         new: TypeId,

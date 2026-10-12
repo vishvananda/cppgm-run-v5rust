@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operatorconstint& function of () const returning lvalue-reference to const int
+      function operatorint* function of () & returning pointer to int
+      function operatorint&& function of () && returning rvalue-reference to int
+end translation unit

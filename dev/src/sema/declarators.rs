@@ -9,6 +9,12 @@ use crate::{
     lex::{identifiers::NameId, pp_lexer::Punctuator, vocabulary::Keyword},
     syntax::ast::{self, SpecifierKind},
 };
+#[derive(Clone, Copy)]
+pub(super) struct DeclaratorEnvironment {
+    pub home: Option<ScopeId>,
+    pub lookup: ScopeId,
+    pub declaring: ScopeId,
+}
 pub(super) struct DeclaratorInfo {
     pub ty: TypeId,
     pub name: Option<NameId>,
@@ -16,8 +22,18 @@ pub(super) struct DeclaratorInfo {
     pub lookup: ScopeId,
     pub parameters: Option<ast::ParameterClause>,
     pub qualifiers: Option<crate::syntax::storage::List<ast::Qualifier>>,
+    pub syntax_name: Option<ast::Name>,
 }
 impl Analyzer<'_> {
+    pub(super) fn conversion_declarator(&self, info: &DeclaratorInfo) -> bool {
+        info.syntax_name.is_some_and(|name| {
+            self.tree
+                .name_lists
+                .get(self.tree.names.get(name).components)
+                .last()
+                .is_some_and(|component| matches!(component.kind, ast::NameKind::Conversion(_)))
+        })
+    }
     pub(super) fn declarator_name(
         &self,
         mut id: Option<ast::DeclaratorId>,
@@ -31,7 +47,12 @@ impl Analyzer<'_> {
                     .get(self.tree.names.get(name).components)
                     .last()
                     .ok_or(Error::Invariant("empty declaration name"))?;
-                return Self::component_name(last.kind).map(Some);
+                return match last.kind {
+                    ast::NameKind::Destructor(_)
+                    | ast::NameKind::DestructorDecltype(_)
+                    | ast::NameKind::Conversion(_) => Ok(None),
+                    _ => Self::component_name(last.kind).map(Some),
+                };
             }
             id = node.nested;
         }
@@ -64,17 +85,12 @@ impl Analyzer<'_> {
         super::record(&mut self.graph.type_facts, id.index(), ty);
         Ok(ty)
     }
-    pub(super) fn declarator(
+    pub(super) fn declarator_environment(
         &mut self,
-        mut id: Option<ast::DeclaratorId>,
-        mut ty: TypeId,
+        id: Option<ast::DeclaratorId>,
         scope: ScopeId,
-    ) -> Result<DeclaratorInfo, Error> {
-        let root = id;
-        let mut name = None;
+    ) -> Result<DeclaratorEnvironment, Error> {
         let mut home = None;
-        let mut parameters = None;
-        let mut function_qualifiers = None;
         let mut after = scope;
         // Qualified declarator-id controls lookup in subsequent suffixes.
         let mut probe = id;
@@ -95,13 +111,48 @@ impl Analyzer<'_> {
             }
             probe = node.nested;
         }
-        if home.is_some_and(|home| !self.graph.encloses(self.declaration_scope(scope), home)) {
+        Ok(DeclaratorEnvironment {
+            home,
+            lookup: after,
+            declaring: self.declaration_scope(scope),
+        })
+    }
+    pub(super) fn declarator(
+        &mut self,
+        id: Option<ast::DeclaratorId>,
+        ty: TypeId,
+        scope: ScopeId,
+    ) -> Result<DeclaratorInfo, Error> {
+        let environment = self.declarator_environment(id, scope)?;
+        self.declarator_in(id, ty, environment)
+    }
+    pub(super) fn declarator_in(
+        &mut self,
+        mut id: Option<ast::DeclaratorId>,
+        mut ty: TypeId,
+        environment: DeclaratorEnvironment,
+    ) -> Result<DeclaratorInfo, Error> {
+        let root = id;
+        let mut name = None;
+        let mut syntax_name = None;
+        let mut parameters = None;
+        let mut function_qualifiers = None;
+        let DeclaratorEnvironment {
+            home,
+            lookup: after,
+            declaring,
+        } = environment;
+        if home.is_some_and(|home| !self.graph.encloses(declaring, home)) {
             return Err(Error::at(
                 self.tree
                     .declarators
                     .get(id.ok_or(Error::Invariant("missing qualified declarator"))?)
                     .location,
-                "qualified definition in a scope that does not enclose the member",
+                if self.graph.scope(declaring).kind == super::graph::ScopeKind::Namespace {
+                    "qualified definition in a scope that does not enclose the member"
+                } else {
+                    "qualified name in a declaration outside namespace scope"
+                },
             ));
         }
         while let Some(current) = id {
@@ -112,6 +163,7 @@ impl Analyzer<'_> {
             }
             if node.name.is_some() {
                 name = self.declarator_name(Some(current))?;
+                syntax_name = node.name;
             }
             for pointer in self.tree.pointers.get(node.pointers) {
                 parameters = None;
@@ -196,6 +248,7 @@ impl Analyzer<'_> {
             lookup: after,
             parameters,
             qualifiers: function_qualifiers,
+            syntax_name,
         })
     }
     fn function_type(

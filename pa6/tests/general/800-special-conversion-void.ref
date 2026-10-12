@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operatorvoid function of () returning void
+      scope function operatorvoid
+        scope block
+end translation unit

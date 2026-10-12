@@ -1,0 +1,445 @@
+// Translated from analyzer_exceptions.cpp::check_fixed_template_noexcept and
+// its OwnNames probes. See NOTICE.
+//! Retain a template specification's typed syntax and declaration environment.
+//! Fixed operands are checked once; dependent operands wait for instantiation.
+use super::{
+    Error,
+    analyzer::Analyzer,
+    graph::{Binding, BindingKind, ScopeId, ScopeKind},
+    lookup::Filter,
+    types::{TypeId, TypeKind},
+};
+use crate::{
+    lex::{identifiers::NameId, vocabulary::Keyword},
+    syntax::{
+        ast::{self, ExprKind, NameKind, SpecifierKind},
+        storage::List,
+    },
+};
+use std::collections::HashSet;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TemplateException {
+    pub operand: ast::ExprId,
+    pub scope: ScopeId,
+    pub parameters: Option<ast::ParameterClause>,
+    pub ty: TypeId,
+    pub limit: usize,
+}
+#[derive(Clone, Copy)]
+enum OwnProbe {
+    Expression(ast::ExprId),
+    Name(ast::Name),
+    Type(ast::TypeId),
+    Specifiers(List<ast::Specifier>, bool),
+}
+impl Analyzer<'_> {
+    pub(super) fn check_template_exception(
+        &mut self,
+        pattern: TemplateException,
+    ) -> Result<(), Error> {
+        let mut own = Vec::with_capacity(32);
+        let mut scope = Some(pattern.scope);
+        while let Some(id) = scope {
+            let current = self.graph.scope(id);
+            if current.kind == ScopeKind::Class
+                && current
+                    .owner
+                    .is_some_and(|id| self.graph.entity(id).template_head.is_some())
+            {
+                return Ok(());
+            }
+            if current.kind == ScopeKind::TemplateParameters {
+                for &binding in current.bindings.iter().take(32 - own.len()) {
+                    own.push(self.graph.binding(binding).name);
+                }
+            }
+            scope = current.parent;
+        }
+        let count = self.graph.types.function_parameter_count(pattern.ty)?;
+        if let Some(clause) = pattern.parameters {
+            let parameters = self.tree.parameters.get(clause.parameters);
+            if parameters.len() == count {
+                for (index, parameter) in parameters.iter().enumerate().take(32 - own.len()) {
+                    let ty = self.graph.types.function_parameter(pattern.ty, index)?;
+                    if self.exception_dependent_type(ty)
+                        && let Some(name) = self.simple_declarator_name_opt(parameter.declarator)?
+                    {
+                        own.push(Some(name));
+                    }
+                }
+            }
+        }
+        if self.exception_names_own(pattern.operand, &own) {
+            return Ok(());
+        }
+        let mut scope = pattern.scope;
+        if let Some(clause) = pattern.parameters {
+            let parameters = self.tree.parameters.get(clause.parameters);
+            if parameters.len() != count {
+                return Ok(());
+            }
+            scope = self
+                .graph
+                .add_scope(ScopeKind::Function, scope, None, None)?;
+            for (index, &parameter) in parameters.iter().enumerate() {
+                let ty = self.graph.types.function_parameter(pattern.ty, index)?;
+                let name = self.declarator_name(parameter.declarator)?;
+                let object_type = self.graph.types.parameter_object(ty)?;
+                let entity = self
+                    .graph
+                    .add_entity(Some(object_type), name, Keyword::Int)?;
+                self.graph.add_binding(
+                    scope,
+                    None,
+                    Binding {
+                        kind: BindingKind::Parameter,
+                        name,
+                        entity,
+                        ty: Some(ty),
+                        key: Keyword::Int,
+                    },
+                )?;
+            }
+        }
+        let saved_limit = self.graph.lookup_limit;
+        let saved_noexcept = self.evaluating_noexcept;
+        let saved_depth = self.template_depth;
+        self.graph.lookup_limit = Some(pattern.limit);
+        self.evaluating_noexcept = true;
+        self.template_depth = 0;
+        let result = (|| {
+            if !self.fixed_template_names(pattern.operand, scope)? {
+                return Ok(());
+            }
+            let ty = self.exception_operand_type(pattern.operand, scope)?;
+            self.exception_bool(ty, self.tree.expressions.get(pattern.operand).location)?;
+            self.constant_value(pattern.operand, scope, true)
+                .map(|_| ())
+        })();
+        self.graph.lookup_limit = saved_limit;
+        self.evaluating_noexcept = saved_noexcept;
+        self.template_depth = saved_depth;
+        result
+    }
+
+    fn fixed_template_names(&mut self, root: ast::ExprId, scope: ScopeId) -> Result<bool, Error> {
+        let mut work = vec![root];
+        while let Some(id) = work.pop() {
+            match self.tree.expressions.get(id).kind {
+                ExprKind::Id(name) => {
+                    let node = self.tree.names.get(name);
+                    let components = self.tree.name_lists.get(node.components);
+                    if !node.global
+                        && components.len() == 1
+                        && let NameKind::Identifier(key) = components[0].kind
+                        && components[0].arguments.is_none()
+                    {
+                        let Ok(Some(binding)) = self.unqualified(scope, key, Filter::Ordinary)
+                        else {
+                            return Ok(false);
+                        };
+                        let binding = self.graph.binding(binding);
+                        if binding
+                            .ty
+                            .is_some_and(|ty| self.exception_dependent_type(ty))
+                            || !matches!(
+                                binding.kind,
+                                BindingKind::Variable
+                                    | BindingKind::Parameter
+                                    | BindingKind::Function
+                                    | BindingKind::Enumerator
+                            )
+                        {
+                            return Ok(false);
+                        }
+                    } else {
+                        let binding = self.lookup(name, scope, Filter::Ordinary)?;
+                        let binding = self.graph.binding(binding);
+                        if binding
+                            .ty
+                            .is_some_and(|ty| self.exception_dependent_type(ty))
+                            || !matches!(
+                                binding.kind,
+                                BindingKind::Variable
+                                    | BindingKind::Parameter
+                                    | BindingKind::Function
+                                    | BindingKind::Enumerator
+                            )
+                        {
+                            return Ok(false);
+                        }
+                    }
+                }
+                ExprKind::Paren(inner)
+                | ExprKind::Unary { operand: inner, .. }
+                | ExprKind::Postfix { operand: inner, .. }
+                | ExprKind::Delete { operand: inner, .. } => work.push(inner),
+                ExprKind::Binary { left, right, .. } => work.extend([right, left]),
+                ExprKind::Conditional {
+                    condition,
+                    then_expr,
+                    else_expr,
+                } => work.extend([else_expr, then_expr, condition]),
+                ExprKind::Call { callee, arguments } => {
+                    work.extend(self.tree.expr_lists.get(arguments).iter().rev().copied());
+                    work.push(callee);
+                }
+                ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
+                    if let Some(ty) = ty {
+                        let ty = self.type_syntax(ty, scope)?;
+                        if self.exception_dependent_type(ty) {
+                            return Ok(false);
+                        }
+                    }
+                    if let Some(operand) = operand {
+                        if ty.is_none()
+                            && matches!(self.tree.expressions.get(id).kind, ExprKind::Sizeof { .. })
+                        {
+                            self.check_template_size_key(
+                                operand,
+                                scope,
+                                self.tree.expressions.get(id).location,
+                            )?;
+                        }
+                        work.push(operand);
+                    }
+                }
+                ExprKind::Cast { ty, operand, .. } => {
+                    let ty = self.type_syntax(ty, scope)?;
+                    if self.exception_dependent_type(ty) {
+                        return Ok(false);
+                    }
+                    work.push(operand);
+                }
+                ExprKind::Member { base, .. } => work.push(base),
+                ExprKind::Subscript { base, index } => work.extend([index, base]),
+                ExprKind::Braced { elements, .. } => {
+                    work.extend(self.tree.expr_lists.get(elements).iter().rev().copied());
+                }
+                ExprKind::FunctionalCast { .. }
+                | ExprKind::New { .. }
+                | ExprKind::Lambda(_)
+                | ExprKind::PackExpansion(_)
+                | ExprKind::SizeofPack(_) => return Ok(false),
+                ExprKind::Throw(operand) => work.extend(operand),
+                ExprKind::Literal(_) | ExprKind::Keyword(_) => (),
+            }
+        }
+        Ok(true)
+    }
+
+    fn check_template_size_key(
+        &mut self,
+        mut operand: ast::ExprId,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind {
+            operand = inner;
+        }
+        let ExprKind::Id(name) = self.tree.expressions.get(operand).kind else {
+            return Ok(());
+        };
+        let node = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        if node.global || components.len() != 1 || components[0].arguments.is_some() {
+            return Ok(());
+        }
+        let NameKind::Identifier(key) = components[0].kind else {
+            return Ok(());
+        };
+        let Ok(Some(binding)) = self.unqualified(scope, key, Filter::Ordinary) else {
+            return Ok(());
+        };
+        let binding = self.graph.binding(binding);
+        if matches!(binding.kind, BindingKind::Parameter | BindingKind::Function)
+            && let Some(mut ty) = binding.ty
+        {
+            if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+                ty = element;
+            }
+            if !matches!(self.graph.types.get(ty).kind, TypeKind::Function { .. }) {
+                return Ok(());
+            }
+            // C++'s equivalence key first tries the source type's constant
+            // sizeof, before the later operand typing adjusts parameters.
+            self.type_size(ty, location)?;
+        }
+        Ok(())
+    }
+
+    fn simple_declarator_name_opt(
+        &self,
+        id: Option<ast::DeclaratorId>,
+    ) -> Result<Option<NameId>, Error> {
+        id.map(|id| self.simple_declarator_name(id))
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    fn exception_dependent_type(&self, root: TypeId) -> bool {
+        let mut work = vec![root];
+        let mut visited = HashSet::new();
+        while let Some(ty) = work.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match &self.graph.types.get(ty).kind {
+                TypeKind::TemplateParameter { .. } => return true,
+                TypeKind::Class(entity) if self.graph.entity(*entity).template_head.is_some() => {
+                    return true;
+                }
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::Function {
+                    result, parameters, ..
+                } => {
+                    work.push(*result);
+                    work.extend(parameters.iter().copied());
+                }
+                _ => (),
+            }
+        }
+        false
+    }
+
+    fn own_name_probe(
+        &self,
+        name: ast::Name,
+        depth: u32,
+        own: &[Option<NameId>],
+        work: &mut Vec<(OwnProbe, u32)>,
+    ) -> bool {
+        let next = depth.wrapping_add(1);
+        let name = self.tree.names.get(name);
+        for (index, component) in self.tree.name_lists.get(name.components).iter().enumerate() {
+            if let NameKind::Identifier(name_id) = component.kind
+                && index == 0
+                && !name.global
+                && own.contains(&Some(name_id))
+            {
+                return true;
+            }
+            if let NameKind::Decltype(expr) = component.kind {
+                work.push((OwnProbe::Expression(expr), next));
+            }
+            if let Some(arguments) = component.arguments {
+                for argument in self.tree.template_arguments.get(arguments) {
+                    match argument.kind {
+                        ast::TemplateArgumentKind::Expression(expr) => {
+                            work.push((OwnProbe::Expression(expr), next));
+                        }
+                        ast::TemplateArgumentKind::Type(ty) => {
+                            work.push((OwnProbe::Type(ty), depth));
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+    fn exception_names_own(&self, root: ast::ExprId, own: &[Option<NameId>]) -> bool {
+        let mut work = vec![(OwnProbe::Expression(root), 0u32)];
+        while let Some((probe, depth)) = work.pop() {
+            let next = depth.wrapping_add(1);
+            match probe {
+                OwnProbe::Specifiers(list, named_only) => {
+                    for spec in self.tree.specs.get(list) {
+                        match spec.kind {
+                            SpecifierKind::Named(name) => work.push((OwnProbe::Name(name), next)),
+                            SpecifierKind::Decltype(expr) if !named_only => {
+                                work.push((OwnProbe::Expression(expr), next));
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                OwnProbe::Type(ty) => work.push((
+                    OwnProbe::Specifiers(self.tree.types.get(ty).specifiers, false),
+                    depth,
+                )),
+                OwnProbe::Name(name) => {
+                    if self.own_name_probe(name, depth, own, &mut work) {
+                        return true;
+                    }
+                }
+                OwnProbe::Expression(expr) => {
+                    if depth > 64 {
+                        continue;
+                    }
+                    match self.tree.expressions.get(expr).kind {
+                        ExprKind::Id(name) => work.push((OwnProbe::Name(name), depth)),
+                        ExprKind::Paren(inner)
+                        | ExprKind::Unary { operand: inner, .. }
+                        | ExprKind::Postfix { operand: inner, .. }
+                        | ExprKind::PackExpansion(inner) => {
+                            work.push((OwnProbe::Expression(inner), next));
+                        }
+                        ExprKind::Binary { left, right, .. } => work.extend([
+                            (OwnProbe::Expression(left), next),
+                            (OwnProbe::Expression(right), next),
+                        ]),
+                        ExprKind::Conditional {
+                            condition,
+                            then_expr,
+                            else_expr,
+                        } => work.extend([
+                            (OwnProbe::Expression(condition), next),
+                            (OwnProbe::Expression(then_expr), next),
+                            (OwnProbe::Expression(else_expr), next),
+                        ]),
+                        ExprKind::Call { callee, arguments } => {
+                            work.push((OwnProbe::Expression(callee), next));
+                            work.extend(
+                                self.tree
+                                    .expr_lists
+                                    .get(arguments)
+                                    .iter()
+                                    .map(|&id| (OwnProbe::Expression(id), next)),
+                            );
+                        }
+                        ExprKind::Member { base, .. } => {
+                            work.push((OwnProbe::Expression(base), next));
+                        }
+                        ExprKind::Subscript { base, index } => work.extend([
+                            (OwnProbe::Expression(base), next),
+                            (OwnProbe::Expression(index), next),
+                        ]),
+                        ExprKind::Cast { ty, operand, .. } => work.extend([
+                            (OwnProbe::Type(ty), depth),
+                            (OwnProbe::Expression(operand), next),
+                        ]),
+                        ExprKind::Sizeof { ty, operand, .. }
+                        | ExprKind::TypeTrait { ty, operand, .. } => {
+                            if let Some(ty) = ty {
+                                work.push((OwnProbe::Type(ty), depth));
+                            }
+                            if let Some(operand) = operand {
+                                work.push((OwnProbe::Expression(operand), next));
+                            }
+                        }
+                        ExprKind::FunctionalCast {
+                            specifiers,
+                            arguments,
+                            ..
+                        } => {
+                            work.push((OwnProbe::Specifiers(specifiers, true), depth));
+                            work.extend(
+                                self.tree
+                                    .expr_lists
+                                    .get(arguments)
+                                    .iter()
+                                    .map(|&id| (OwnProbe::Expression(id), next)),
+                            );
+                        }
+                        ExprKind::SizeofPack(name) if own.contains(&Some(name)) => return true,
+                        _ => (),
+                    }
+                }
+            }
+        }
+        false
+    }
+}

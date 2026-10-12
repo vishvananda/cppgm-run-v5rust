@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operatorU function of () returning typename U
+      scope template-parameters
+        type T typename T
+        function operatorT function of () returning typename T
+      scope function operatorT
+        scope block
+    scope template-parameters
+      type U typename U
+end translation unit

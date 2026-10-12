@@ -26,6 +26,26 @@ use crate::support::source::SourceOffset;
 use ast::DeclId;
 use storage::List;
 
+/// A source-facing special-member label, never a semantic lookup key.
+pub(crate) fn write_member_label(
+    tree: &ast::Tree,
+    cursor: &cursor::Cursor<'_>,
+    name: ast::Name,
+    output: &mut (impl std::io::Write + ?Sized),
+) -> std::io::Result<()> {
+    let component = *tree
+        .name_lists
+        .get(tree.names.get(name).components)
+        .last()
+        .ok_or_else(|| std::io::Error::other("empty special member name"))?;
+    let mut renderer = render::Renderer::new(tree, cursor);
+    renderer.render(render::Render::Component(component, true))?;
+    if matches!(component.kind, ast::NameKind::Conversion(_)) {
+        renderer.bytes.retain(|&byte| byte != b' ');
+    }
+    output.write_all(&renderer.bytes)
+}
+
 #[derive(Debug)]
 pub(crate) enum ParseError {
     Syntax {

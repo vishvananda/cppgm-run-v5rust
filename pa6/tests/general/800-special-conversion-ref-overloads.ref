@@ -1,0 +1,9 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type C struct C
+    scope class C
+      function operatorint function of () & returning int
+      function operatorint function of () && returning int
+end translation unit

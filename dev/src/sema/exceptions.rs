@@ -27,6 +27,7 @@ pub(super) enum ExceptionState {
     Pending(SpecificationId),
     Evaluating,
     Value(ExceptionSet),
+    Template(super::template_exceptions::TemplateException),
 }
 #[derive(Clone, Copy)]
 pub(super) struct PendingSpecification {
@@ -37,6 +38,7 @@ pub(super) struct PendingSpecification {
     location: SourceOffset,
     first: bool,
     done: bool,
+    template: bool,
 }
 
 impl Analyzer<'_> {
@@ -67,18 +69,58 @@ impl Analyzer<'_> {
         location: SourceOffset,
         limit: usize,
     ) -> Result<(), Error> {
-        let qualifier =
+        let mut qualifier =
             info.qualifiers.and_then(|list| {
                 self.tree.qualifiers.get(list).iter().copied().find(|q| {
                     matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
                 })
             });
-        if self.template_depth != 0 && qualifier.is_some() {
+        if self.template_depth != 0 && qualifier.is_some_and(|q| {
+            !matches!(q.kind, QualifierKind::Noexcept(None))
+                && !matches!(q.kind, QualifierKind::Throw(types) if types.is_empty())
+                && !matches!(q.kind, QualifierKind::Noexcept(Some(expr)) if self.true_operand(expr))
+        }) {
+            if let Some(Qualifier {
+                kind: QualifierKind::Noexcept(Some(operand)),
+                ..
+            }) = qualifier
+            {
+                return self
+                    .record_template_exception(entity, info, scope, operand, location, limit);
+            }
             return Err(Error::Missing(
                 "template exception specification ownership and equivalence",
             ));
         }
         let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
+        if !first
+            && self.template_depth != 0
+            && matches!(
+                self.graph.entity(entity).exceptions,
+                ExceptionState::Template(_)
+            )
+        {
+            // With no new operand, the C++ template comparison waits for
+            // instantiation when its first specification is pending.
+            return Ok(());
+        }
+        if !first
+            && qualifier.is_none()
+            && self.template_depth == 0
+            && self
+                .graph
+                .entity(entity)
+                .member_function
+                .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
+        {
+            // Types mode never synthesizes the subobjects' destructor facts.
+            // The C++ omitted redeclaration therefore has the implicit true
+            // specification, while its first omitted declaration allowed all.
+            qualifier = Some(Qualifier {
+                location,
+                kind: QualifierKind::Noexcept(None),
+            });
+        }
         let operand = qualifier.and_then(|q| {
             if let QualifierKind::Noexcept(expr) = q.kind {
                 expr
@@ -145,6 +187,7 @@ impl Analyzer<'_> {
             location,
             first,
             done: false,
+            template: false,
         });
         if first {
             self.graph.entity_mut(entity).exceptions = ExceptionState::Pending(id);
@@ -156,23 +199,33 @@ impl Analyzer<'_> {
         if member_throw {
             self.pending_throws.push(id);
         }
-        let literal_true = operand.is_some_and(|mut expr| {
-            while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {
-                expr = inner;
-            }
-            matches!(
-                self.tree.expressions.get(expr).kind,
-                ExprKind::Keyword(Keyword::True)
-            )
-        });
+        let literal_true = operand.is_some_and(|expr| self.true_operand(expr));
         if !first || (!member_throw && (operand.is_none() || literal_true)) {
             self.resolve_specification(id)?;
         }
         Ok(())
     }
+    fn true_operand(&self, mut expr: ast::ExprId) -> bool {
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {
+            expr = inner;
+        }
+        matches!(
+            self.tree.expressions.get(expr).kind,
+            ExprKind::Keyword(Keyword::True)
+        )
+    }
     fn resolve_specification(&mut self, id: SpecificationId) -> Result<(), Error> {
         let pending = self.specifications[id.0 as usize];
         if pending.done {
+            return Ok(());
+        }
+        if pending.template {
+            let ExceptionState::Template(pattern) = self.graph.entity(pending.entity).exceptions
+            else {
+                return Err(Error::Invariant("missing template exception pattern"));
+            };
+            self.check_template_exception(pattern)?;
+            self.specifications[id.0 as usize].done = true;
             return Ok(());
         }
         if pending.first {
@@ -200,6 +253,56 @@ impl Analyzer<'_> {
             }
         }
         self.specifications[id.0 as usize].done = true;
+        Ok(())
+    }
+    pub(super) fn record_template_exception(
+        &mut self,
+        entity: EntityId,
+        info: &DeclaratorInfo,
+        scope: ScopeId,
+        operand: ast::ExprId,
+        location: SourceOffset,
+        limit: usize,
+    ) -> Result<(), Error> {
+        if !matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent) {
+            if matches!(
+                self.graph.entity(entity).exceptions,
+                ExceptionState::Value(_)
+            ) {
+                // C++ has no expression-equivalence key when the first
+                // declaration wrote no pending operand. Its facts stay.
+                return Ok(());
+            }
+            return Err(Error::Missing("template exception expression equivalence"));
+        }
+        let pattern = super::template_exceptions::TemplateException {
+            operand,
+            scope,
+            parameters: info.parameters,
+            ty: info.ty,
+            limit,
+        };
+        self.graph.entity_mut(entity).exceptions = ExceptionState::Template(pattern);
+        let id = SpecificationId(
+            u32::try_from(self.specifications.len())
+                .map_err(|_| Error::Limit("exception specification limit"))?,
+        );
+        self.specifications.push(PendingSpecification {
+            entity,
+            qualifier: None,
+            scope,
+            limit,
+            location,
+            first: true,
+            done: false,
+            template: true,
+        });
+        // Keep the queue's source order shared with ordinary specifications.
+        if self.graph.entity(entity).template_head.is_none() {
+            // A class template's ordinary member waits for instantiation;
+            // its specification's original typed syntax is retained only.
+            self.specifications[id.0 as usize].done = true;
+        }
         Ok(())
     }
     fn exception_set(

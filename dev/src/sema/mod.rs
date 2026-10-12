@@ -2,7 +2,6 @@
 mod analyzer;
 mod anonymous_types;
 mod constants;
-mod constructors;
 mod data_members;
 mod declarations;
 mod declarators;
@@ -16,8 +15,10 @@ mod integral;
 mod layout;
 mod lookup;
 mod queries;
+mod special_members;
 mod specifiers;
 mod statements;
+mod template_exceptions;
 mod templates;
 mod types;
 use crate::support::source::SourceOffset;

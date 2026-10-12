@@ -17,7 +17,7 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct HeadId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct ShapeId(u32);
+pub(super) struct ShapeId(u32);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ParameterShape {
     pack: bool,
@@ -58,6 +58,9 @@ pub(super) struct Templates {
     positions: HashMap<Position, EntityId>,
 }
 impl Templates {
+    pub(super) fn shape(&self, id: HeadId) -> ShapeId {
+        self.head(id).shape
+    }
     fn head(&self, id: HeadId) -> &Head {
         &self.heads[id.0 as usize]
     }

@@ -30,7 +30,10 @@ impl Graph {
                 ScopeKind::TemplateParameters => "template-parameters",
             };
             write!(output, "scope {kind}")?;
-            if let Some(name) = scope.written_name {
+            if let Some(name) = scope.owner.and_then(|id| self.entity(id).special_name) {
+                output.write_all(b" ")?;
+                crate::syntax::write_member_label(tree, cursor, name, output)?;
+            } else if let Some(name) = scope.written_name {
                 output.write_all(b" ")?;
                 write_syntax_name(tree, cursor, name, output)?;
             } else if let Some(name) = scope.name {
@@ -73,7 +76,9 @@ impl Graph {
                 };
                 indent(output, depth + 1)?;
                 write!(output, "{label} ")?;
-                if let Some(&name) = self.binding_labels.get(&id) {
+                if let Some(&name) = self.special_labels.get(&id) {
+                    crate::syntax::write_member_label(tree, cursor, name, output)?;
+                } else if let Some(&name) = self.binding_labels.get(&id) {
                     write_syntax_name(tree, cursor, name, output)?;
                 } else if let Some(name) = binding.name.or(self.entity(binding.entity).name) {
                     write_name(cursor, name, output)?;

@@ -39,7 +39,7 @@ pub(crate) struct Analyzer<'tree> {
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
     pub entity: super::graph::EntityId,
-    pub name: crate::lex::identifiers::NameId,
+    pub name: Option<crate::lex::identifiers::NameId>,
     pub ty: TypeId,
     pub parameters: ast::ParameterClause,
     pub body: ast::BodyId,
@@ -306,7 +306,32 @@ impl<'tree> Analyzer<'tree> {
     ) -> Result<(), Error> {
         let specs = self.specifiers(specifiers, scope, false)?;
         let mut info = self.declarator(Some(declarator), specs.ty, scope)?;
+        if let Some((class, kind)) = self.declared_member(&info, scope)? {
+            return self.complete_special_member(
+                class,
+                kind,
+                &info,
+                specs,
+                scope,
+                super::special_members::MemberDeclaration {
+                    location,
+                    name: info
+                        .syntax_name
+                        .ok_or(Error::Invariant("special member without name"))?,
+                    declarator,
+                    initializer: None,
+                    body: Some(body),
+                    implicit_type: false,
+                },
+            );
+        }
         self.function_specifier_type(specs, &mut info, scope)?;
+        if self.conversion_declarator(&info) {
+            return Err(Error::at(
+                location,
+                "a conversion function with a return type",
+            ));
+        }
         let name = info
             .name
             .ok_or(Error::Invariant("function definition without a name"))?;
@@ -353,7 +378,7 @@ impl<'tree> Analyzer<'tree> {
             .ok_or(Error::Invariant("function definition without parameters"))?;
         let deferred = DeferredBody {
             entity,
-            name,
+            name: Some(name),
             ty: info.ty,
             parameters,
             body,
@@ -383,7 +408,7 @@ impl<'tree> Analyzer<'tree> {
             ScopeKind::Function,
             body.parent,
             Some(body.print),
-            Some(body.name),
+            body.name,
         )?;
         self.graph.scope_mut(scope).owner = Some(body.entity);
         self.graph.entity_mut(body.entity).scope = Some(scope);

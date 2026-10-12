@@ -52,6 +52,74 @@ fn control_and_handler_bindings_have_local_owners_and_do_not_leak() {
     );
 }
 #[test]
+fn special_members_share_signatures_without_colliding_with_kind_or_template_shape() {
+    use super::graph::MemberKind;
+    analyze(
+        b"struct C{C(int);template<class T>C(int p){}template<class T,class U>C(int);~C(){}operator int();typedef int I;};C::operator I(){}",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"C").unwrap();
+            let class = graph.binding(graph.own(graph.global, name, Filter::Prefix).unwrap()).entity;
+            let scope = graph.entity(class).scope.unwrap();
+            assert_eq!(graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap()).entity, class);
+            let mut pending = vec![scope];
+            let mut constructors = Vec::new();
+            let mut conversions = Vec::new();
+            while let Some(scope) = pending.pop() {
+                pending.extend(graph.scope(scope).children.iter().copied());
+                for &id in &graph.scope(scope).bindings {
+                    let binding = graph.binding(id);
+                    let Some(key) = graph.entity(binding.entity).member_function else { continue };
+                    match key.kind {
+                        MemberKind::Constructor => constructors.push((binding.entity, key)),
+                        MemberKind::Conversion => conversions.push((binding.entity, id)),
+                        MemberKind::Destructor => assert!(graph.entity(binding.entity).special_name.is_some()),
+                    }
+                }
+            }
+            assert_eq!(constructors.len(), 3);
+            assert!(constructors.iter().all(|(_, key)| key.signature == constructors[0].1.signature));
+            assert!(constructors.iter().enumerate().all(|(i, a)| constructors.iter().skip(i+1).all(|b| a.0 != b.0 && a.1.shape != b.1.shape)));
+            assert_eq!(conversions.len(), 2);
+            assert_eq!(conversions[0].0, conversions[1].0);
+            let first_label = graph.entity(conversions[0].0).special_name.unwrap();
+            assert_ne!(graph.special_labels[&conversions[0].1], graph.special_labels[&conversions[1].1]);
+            assert!(conversions.iter().any(|(_, id)| graph.special_labels[id] == first_label));
+            let body = graph.entity(conversions[0].0).scope.unwrap();
+            assert_eq!(graph.scope(body).owner, Some(conversions[0].0));
+        },
+    );
+}
+#[test]
+fn template_exception_patterns_retain_the_original_declaration_environment() {
+    use super::exceptions::ExceptionState;
+    analyze(
+        b"struct C{template<class T>C(T p)noexcept(sizeof(T)+unknown);};",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"C").unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = graph.entity(class).scope.unwrap();
+            let head = graph.scope(scope).children[0];
+            let function = graph
+                .scope(head)
+                .bindings
+                .iter()
+                .copied()
+                .find(|&id| graph.binding(id).kind == BindingKind::Function)
+                .unwrap();
+            let entity = graph.entity(graph.binding(function).entity);
+            let ExceptionState::Template(pattern) = entity.exceptions else {
+                panic!("missing retained template specification")
+            };
+            assert_eq!(pattern.scope, head);
+            assert_eq!(pattern.ty, graph.binding(function).ty.unwrap());
+            assert!(pattern.parameters.is_some());
+            assert_eq!(graph.scope(head).children.len(), 0);
+        },
+    );
+}
+#[test]
 fn constructor_signatures_do_not_hide_the_injected_class_and_share_redeclaration_facts() {
     analyze(
         b"struct C{C(const int);C(long);C *next;};C::C(int p){} void f(){C();new C;}",

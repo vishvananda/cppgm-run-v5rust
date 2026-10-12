@@ -128,6 +128,32 @@ impl Types {
         self.index.insert(fingerprint, id);
         Ok(id)
     }
+    pub(super) fn function_variant(
+        &self,
+        signature: TypeId,
+        cv: Cv,
+        reference: Option<RefKind>,
+    ) -> Result<Option<TypeId>, Error> {
+        let mut ty = self.get(signature).clone();
+        let TypeKind::Function {
+            cv: old_cv,
+            reference: old_reference,
+            ..
+        } = &mut ty.kind
+        else {
+            return Err(Error::Invariant("qualification query on no function"));
+        };
+        *old_cv = cv;
+        *old_reference = reference;
+        let mut current = self.index.get(&self.fingerprints.hash_one(&ty)).copied();
+        while let Some(id) = current {
+            if self.get(id) == &ty {
+                return Ok(Some(id));
+            }
+            current = self.collisions[id.0 as usize];
+        }
+        Ok(None)
+    }
     pub(super) fn scalar(&mut self, scalar: Scalar) -> Result<TypeId, Error> {
         self.intern(TypeKind::Scalar(scalar), Cv::default())
     }

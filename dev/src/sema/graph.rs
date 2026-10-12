@@ -68,6 +68,19 @@ pub(super) struct FunctionProperties {
     pub internal_linkage: bool,
     pub is_static: bool,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum MemberKind {
+    Constructor,
+    Destructor,
+    Conversion,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct MemberKey {
+    pub class: EntityId,
+    pub kind: MemberKind,
+    pub signature: TypeId,
+    pub shape: Option<super::templates::ShapeId>,
+}
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
     pub scope: Option<ScopeId>,
@@ -83,6 +96,8 @@ pub(super) struct Entity {
     pub exceptions: super::exceptions::ExceptionState,
     pub constexpr: bool,
     pub function: Option<FunctionProperties>,
+    pub member_function: Option<MemberKey>,
+    pub special_name: Option<crate::syntax::ast::Name>,
     pub members: Vec<EntityId>,
     pub layout: super::layout::LayoutState,
     pub member_offset: Option<u64>,
@@ -114,13 +129,14 @@ pub(crate) struct Graph {
     pub(super) type_facts: Vec<Option<TypeId>>,
     enum_declarations: Vec<Option<BindingId>>,
     pub(super) binding_labels: HashMap<BindingId, crate::syntax::ast::Name>,
+    pub(super) special_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
-    constructors: HashMap<(EntityId, TypeId), BindingId>,
+    member_functions: HashMap<MemberKey, BindingId>,
 }
 impl Graph {
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
@@ -164,12 +180,13 @@ impl Graph {
             resolved_names: Vec::new(),
             enum_declarations: Vec::new(),
             binding_labels: HashMap::new(),
+            special_labels: HashMap::new(),
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
-            constructors: HashMap::new(),
+            member_functions: HashMap::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -248,6 +265,8 @@ impl Graph {
             exceptions: super::exceptions::ExceptionState::Absent,
             constexpr: false,
             function: None,
+            member_function: None,
+            special_name: None,
             members: Vec::new(),
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,
@@ -357,16 +376,20 @@ impl Graph {
     // Constructors have their own lookup category. Their printed class name
     // must never replace the injected type name in ordinary lookup.
     pub(super) fn constructor(&self, class: EntityId, signature: TypeId) -> Option<BindingId> {
-        self.constructors.get(&(class, signature)).copied()
+        self.member_function(MemberKey {
+            class,
+            kind: MemberKind::Constructor,
+            signature,
+            shape: None,
+        })
     }
-    pub(super) fn record_constructor(
-        &mut self,
-        class: EntityId,
-        signature: TypeId,
-        binding: BindingId,
-    ) {
-        self.constructors.insert((class, signature), binding);
-        self.entity_mut(class).user_constructor = Some(binding);
+    pub(super) fn member_function(&self, key: MemberKey) -> Option<BindingId> {
+        self.member_functions.get(&key).copied()
+    }
+    pub(super) fn record_member_function(&mut self, key: MemberKey, binding: BindingId) {
+        self.member_functions.insert(key, binding);
+        self.entity_mut(self.binding(binding).entity)
+            .member_function = Some(key);
     }
     pub(super) fn resolved_name(&self, name: crate::syntax::ast::Name) -> Option<BindingId> {
         self.resolved_names.get(name.index()).copied().flatten()
