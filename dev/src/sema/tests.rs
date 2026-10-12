@@ -349,3 +349,70 @@ fn decoded_string_elements_keep_character_width_and_signedness() {
         }
     });
 }
+
+#[test]
+fn exception_sets_are_entity_facts_outside_canonical_function_identity() {
+    use super::exceptions::{ExceptionSet, ExceptionState};
+    analyze(b"void a() throw(int, const int, double); void a() throw(double,int); void b() noexcept; void c();", |graph, cursor| {
+        let binding = |cursor: &mut Cursor<'_>, name| {
+            let name = cursor.intern_name(name).unwrap();
+            graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+        };
+        let a = binding(cursor,b"a"); let b = binding(cursor,b"b"); let c = binding(cursor,b"c");
+        assert_eq!(a.ty,b.ty); assert_eq!(b.ty,c.ty);
+        assert!(matches!(&graph.entity(a.entity).exceptions, ExceptionState::Value(ExceptionSet::Dynamic(types)) if types.len()==2));
+        assert!(matches!(graph.entity(b.entity).exceptions, ExceptionState::Value(ExceptionSet::None)));
+        assert!(matches!(graph.entity(c.entity).exceptions, ExceptionState::Value(ExceptionSet::All)));
+    });
+}
+
+#[test]
+fn deferred_exception_lookup_limits_namespaces_and_completes_class_members() {
+    use super::exceptions::{ExceptionSet, ExceptionState};
+    analyze(b"const int n=1; namespace N{void f() noexcept(n); const int n=0;} struct C{void f() noexcept(n); static const int n=1;};", |graph,cursor| {
+        for owner in [b"N".as_slice(), b"C"] {
+            let name = cursor.intern_name(owner).unwrap();
+            let owner = graph.binding(graph.own(graph.global,name,Filter::Prefix).unwrap());
+            let scope = graph.entity(owner.entity).scope.unwrap();
+            let name = cursor.intern_name(b"f").unwrap();
+            let function = graph.binding(graph.own(scope,name,Filter::Ordinary).unwrap());
+            assert!(matches!(graph.entity(function.entity).exceptions,ExceptionState::Value(ExceptionSet::None)));
+            assert!(graph.scope(scope).children.is_empty());
+        }
+    });
+}
+
+#[test]
+fn layout_is_demanded_once_and_records_only_ordinary_data_member_offsets() {
+    use super::layout::LayoutState;
+    analyze(b"struct A{char c; int n;}; struct B{A a[2]; char c; static int ignored;}; struct U{int n;}; int size[sizeof(B)];", |graph,cursor| {
+        let name=cursor.intern_name(b"B").unwrap();
+        let binding=graph.binding(graph.own(graph.global,name,Filter::Elaborated).unwrap());
+        let entity=graph.entity(binding.entity);
+        assert!(matches!(entity.layout, LayoutState::Value{size:20,alignment:4}));
+        assert_eq!(entity.members.len(),2);
+        assert_eq!(graph.entity(entity.members[0]).member_offset,Some(0));
+        assert_eq!(graph.entity(entity.members[1]).member_offset,Some(16));
+        let name=cursor.intern_name(b"U").unwrap();
+        let binding=graph.binding(graph.own(graph.global,name,Filter::Elaborated).unwrap());
+        assert!(matches!(graph.entity(binding.entity).layout,LayoutState::NotStarted));
+    });
+}
+
+#[test]
+fn missing_layout_and_constant_call_owners_remain_status_86_boundaries() {
+    for source in [
+        b"struct C{virtual void f();}; int a[sizeof(C)];".as_slice(),
+        b"constexpr int f(){return 1;} void g() noexcept(f());",
+    ] {
+        let source = SourceBuffer::new(source.to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"missing-query-owner").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let result = Analyzer::new(tree, cursor, StackBudget::default())
+            .unwrap()
+            .analyze(declarations);
+        assert!(matches!(result, Err(Error::Missing(_))));
+    }
+}

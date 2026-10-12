@@ -27,6 +27,10 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) suppress_implicit: bool,
+    pub(super) specifications: Vec<super::exceptions::PendingSpecification>,
+    pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
+    pub(super) evaluating_noexcept: bool,
+    pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
@@ -73,12 +77,17 @@ impl<'tree> Analyzer<'tree> {
             constant_spine: Vec::new(),
             expression_work: Vec::new(),
             suppress_implicit: false,
+            specifications: Vec::new(),
+            pending_throws: Vec::new(),
+            evaluating_noexcept: false,
+            layout_work: Vec::new(),
         })
     }
     pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
         let marker = 0u8;
         self.stack_base = std::ptr::from_ref(&marker).addr();
         self.declarations(declarations, self.graph.global)?;
+        self.finish_unit_exceptions()?;
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
         }
@@ -108,6 +117,30 @@ impl<'tree> Analyzer<'tree> {
         self.check_stack()?;
         let declaration = *self.tree.declarations.get(id);
         let location = declaration.location;
+        if self.graph.scope(scope).kind == ScopeKind::Class && !declaration.attributes.is_empty() {
+            let owner = self
+                .graph
+                .scope(scope)
+                .owner
+                .ok_or(Error::Invariant("class scope without owner"))?;
+            self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+        }
+        let specifiers = match declaration.kind {
+            ast::DeclKind::Simple { specifiers, .. }
+            | ast::DeclKind::Function { specifiers, .. } => Some(specifiers),
+            _ => None,
+        };
+        if let Some(owner) = self.graph.scope(scope).owner
+            && specifiers.is_some_and(|list| {
+                self.tree
+                    .specs
+                    .get(list)
+                    .iter()
+                    .any(|spec| matches!(spec.kind, ast::SpecifierKind::Keyword(Keyword::Virtual)))
+            })
+        {
+            self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+        }
         match declaration.kind {
             ast::DeclKind::Empty | ast::DeclKind::Access(_) => Ok(()),
             ast::DeclKind::Namespace {
@@ -122,7 +155,15 @@ impl<'tree> Analyzer<'tree> {
                 directive, target, ..
             } => self.using_declaration(directive, target, scope, location),
             ast::DeclKind::Alias { name, ty } => {
+                let exceptions =
+                    self.declarator_specifies_exceptions(self.tree.types.get(ty).declarator);
                 let ty = self.type_syntax(ty, scope)?;
+                if exceptions {
+                    return Err(Error::at(
+                        location,
+                        "an exception-specification in an alias-declaration",
+                    ));
+                }
                 self.declare_alias(name, ty, scope, location).map(|_| ())
             }
             ast::DeclKind::Simple {
@@ -166,6 +207,7 @@ impl<'tree> Analyzer<'tree> {
                     .ok_or(Error::Invariant("function definition without a name"))?;
                 let home = info.home.unwrap_or(scope);
                 let location = self.declarator_location(declarator)?;
+                self.check_member_function_redeclaration(&info, home, location)?;
                 if info.home.is_some()
                     && self
                         .graph
@@ -191,6 +233,8 @@ impl<'tree> Analyzer<'tree> {
                     binding,
                 );
                 let entity = self.graph.binding(binding).entity;
+                self.graph.entity_mut(entity).constexpr = specs.constexpr;
+                self.record_function_exceptions(entity, &info, home, location)?;
                 if self.graph.entity(entity).defined {
                     return Err(Error::at(location, "redefinition of a function"));
                 }

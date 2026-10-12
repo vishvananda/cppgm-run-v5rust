@@ -14,6 +14,7 @@ pub(super) struct DeclaratorInfo {
     pub name: Option<NameId>,
     pub home: Option<ScopeId>,
     pub parameters: Option<ast::ParameterClause>,
+    pub qualifiers: Option<crate::syntax::storage::List<ast::Qualifier>>,
 }
 impl Analyzer<'_> {
     pub(super) fn declarator_name(
@@ -67,6 +68,7 @@ impl Analyzer<'_> {
         let mut name = None;
         let mut home = None;
         let mut parameters = None;
+        let mut function_qualifiers = None;
         let mut after = scope;
         // Qualified declarator-id controls lookup in subsequent suffixes.
         let mut probe = id;
@@ -99,6 +101,7 @@ impl Analyzer<'_> {
             }
             for pointer in self.tree.pointers.get(node.pointers) {
                 parameters = None;
+                function_qualifiers = None;
                 if pointer.class_name.is_some() {
                     return Err(Error::Missing("member pointer type construction"));
                 }
@@ -135,6 +138,7 @@ impl Analyzer<'_> {
                 match *suffix {
                     ast::Suffix::Array(bound) => {
                         parameters = None;
+                        function_qualifiers = None;
                         let failure = match self.graph.types.get(ty).kind {
                             TypeKind::Reference { .. } => Some("array of references"),
                             TypeKind::Function { .. } => Some("array of functions"),
@@ -162,6 +166,7 @@ impl Analyzer<'_> {
                     } => {
                         ty = self.function_type(ty, clause, qualifiers, after, node.location)?;
                         parameters = Some(clause);
+                        function_qualifiers = Some(qualifiers);
                     }
                 }
             }
@@ -175,6 +180,7 @@ impl Analyzer<'_> {
             name,
             home,
             parameters,
+            qualifiers: function_qualifiers,
         })
     }
     fn function_type(
@@ -253,9 +259,7 @@ impl Analyzer<'_> {
                 ast::QualifierKind::Trailing(result) => {
                     ty = self.type_syntax(result, scope)?;
                 }
-                ast::QualifierKind::Noexcept(_) | ast::QualifierKind::Throw(_) => {
-                    return Err(Error::Missing("function exception specification analysis"));
-                }
+                ast::QualifierKind::Noexcept(_) | ast::QualifierKind::Throw(_) => (),
                 ast::QualifierKind::Virt(_) => {
                     return Err(Error::Missing("virtual override checks"));
                 }
@@ -300,7 +304,7 @@ impl Analyzer<'_> {
                 _ => false,
             })
     }
-    fn declare_parameter_object(
+    pub(super) fn declare_parameter_object(
         &mut self,
         parameter: ast::Parameter,
         ty: TypeId,

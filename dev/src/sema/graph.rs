@@ -41,13 +41,19 @@ pub(super) struct Scope {
     pub kind: ScopeKind,
     pub parent: Option<ScopeId>,
     pub name: Option<NameId>,
+    pub owner: Option<EntityId>,
     pub children: Vec<ScopeId>,
     pub bindings: Vec<BindingId>,
     pub index: HashMap<NameId, Entry>,
-    pub directives: Vec<ScopeId>,
-    pub inline_members: Vec<ScopeId>,
+    pub directives: Vec<ScopeEdge>,
+    pub inline_members: Vec<ScopeEdge>,
     pub is_inline: bool,
     pub written_name: Option<crate::syntax::ast::Name>,
+}
+#[derive(Clone, Copy)]
+pub(super) struct ScopeEdge {
+    pub target: ScopeId,
+    pub introduced: usize,
 }
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
@@ -59,6 +65,11 @@ pub(super) struct Entity {
     pub enumeration: Option<super::enumerations::EnumInfo>,
     pub constant: super::constants::ConstantState,
     pub implicit_default: Option<ScopeId>,
+    pub exceptions: super::exceptions::ExceptionState,
+    pub constexpr: bool,
+    pub members: Vec<EntityId>,
+    pub layout: super::layout::LayoutState,
+    pub member_offset: Option<u64>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Binding {
@@ -73,6 +84,8 @@ pub(crate) struct Graph {
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
+    ordinals: Vec<usize>,
+    pub(super) lookup_limit: Option<usize>,
     pub(super) global: ScopeId,
     // Dense facts refer to the original AST. No duplicate semantic syntax tree.
     pub(super) declarator_types: Vec<Option<TypeId>>,
@@ -82,6 +95,8 @@ pub(crate) struct Graph {
     pub(super) binding_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
+    pub(super) expression_types: Vec<Option<TypeId>>,
+    call_entities: Vec<Option<EntityId>>,
 }
 impl Graph {
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
@@ -102,6 +117,7 @@ impl Graph {
                 kind: ScopeKind::Namespace,
                 parent: None,
                 name: None,
+                owner: None,
                 children: Vec::new(),
                 bindings: Vec::new(),
                 index: HashMap::new(),
@@ -112,6 +128,8 @@ impl Graph {
             }],
             entities: Vec::new(),
             bindings: Vec::new(),
+            ordinals: Vec::new(),
+            lookup_limit: None,
             global: ScopeId(0),
             declarator_types: Vec::new(),
             declared_bindings: Vec::new(),
@@ -120,6 +138,8 @@ impl Graph {
             enum_declarations: Vec::new(),
             binding_labels: HashMap::new(),
             constant_facts: Vec::new(),
+            expression_types: Vec::new(),
+            call_entities: Vec::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -157,6 +177,7 @@ impl Graph {
             kind,
             parent: Some(parent),
             name,
+            owner: None,
             children: Vec::new(),
             bindings: Vec::new(),
             index: HashMap::new(),
@@ -190,6 +211,11 @@ impl Graph {
             enumeration: None,
             constant: super::constants::ConstantState::None,
             implicit_default: None,
+            exceptions: super::exceptions::ExceptionState::Absent,
+            constexpr: false,
+            members: Vec::new(),
+            layout: super::layout::LayoutState::NotStarted,
+            member_offset: None,
         });
         Ok(id)
     }
@@ -203,7 +229,22 @@ impl Graph {
             u32::try_from(self.bindings.len())
                 .map_err(|_| Error::Limit("semantic binding limit"))?,
         );
+        let earlier = binding
+            .name
+            .and_then(|name| self.scope(scope).index.get(&name))
+            .and_then(|entry| match binding.kind {
+                BindingKind::Type
+                | BindingKind::Alias
+                | BindingKind::Namespace
+                | BindingKind::NamespaceAlias => entry.ty,
+                _ => entry.value,
+            })
+            .filter(|&id| self.binding(id).entity == binding.entity);
+        // A compatible redeclaration is visible since the entity's first
+        // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
+        let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
         self.bindings.push(binding);
+        self.ordinals.push(ordinal);
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
         }
@@ -243,7 +284,15 @@ impl Graph {
         name: NameId,
         filter: super::lookup::Filter,
     ) -> Option<BindingId> {
-        let entry = self.scope(scope).index.get(&name)?;
+        let mut entry = *self.scope(scope).index.get(&name)?;
+        if self.scope(scope).kind == ScopeKind::Namespace
+            && let Some(limit) = self.lookup_limit
+        {
+            let visible = |id: BindingId| self.ordinals[id.0 as usize] < limit;
+            entry.ty = entry.ty.filter(|&id| visible(id));
+            entry.value = entry.value.filter(|&id| visible(id));
+            entry.tag = entry.tag.filter(|&id| visible(id));
+        }
         let id = match filter {
             super::lookup::Filter::Ordinary => entry.value.or(entry.ty),
             super::lookup::Filter::Elaborated => entry.tag.or(entry.ty).filter(|&id| {
@@ -263,5 +312,55 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+    pub(super) fn binding_limit(&self) -> usize {
+        self.bindings.len()
+    }
+    pub(super) fn record_call_entity(
+        &mut self,
+        expr: crate::syntax::ast::ExprId,
+        entity: EntityId,
+    ) {
+        super::record(&mut self.call_entities, expr.index(), entity);
+    }
+    pub(super) fn call_entity(&self, expr: crate::syntax::ast::ExprId) -> Result<EntityId, Error> {
+        self.call_entities
+            .get(expr.index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant("call without selected entity"))
+    }
+    pub(super) fn visible_edges(
+        &self,
+        scope: ScopeId,
+        inline: bool,
+    ) -> impl DoubleEndedIterator<Item = ScopeId> + '_ {
+        let owner = self.scope(scope);
+        let edges = if inline {
+            &owner.inline_members
+        } else {
+            &owner.directives
+        };
+        edges
+            .iter()
+            .filter(move |edge| {
+                owner.kind != ScopeKind::Namespace
+                    || self
+                        .lookup_limit
+                        .is_none_or(|limit| edge.introduced < limit)
+            })
+            .map(|edge| edge.target)
+    }
+    pub(super) fn add_edge(&mut self, scope: ScopeId, target: ScopeId, inline: bool) {
+        let edge = ScopeEdge {
+            target,
+            introduced: self.bindings.len(),
+        };
+        let scope = self.scope_mut(scope);
+        if inline {
+            scope.inline_members.push(edge);
+        } else {
+            scope.directives.push(edge);
+        }
     }
 }

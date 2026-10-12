@@ -250,6 +250,20 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.constant_query(ty, operand, scope, true, location)?,
+            ExprKind::Call { .. } if self.evaluating_noexcept => {
+                let ty = self.query_call_type(id, scope)?;
+                if skipping {
+                    Constant { bits: 0, ty }
+                } else {
+                    if self.graph.entity(self.graph.call_entity(id)?).constexpr {
+                        return Err(Error::Missing("constexpr function interpretation"));
+                    }
+                    return Err(not_constant(
+                        location,
+                        "a call of a function that is not constexpr",
+                    ));
+                }
+            }
             _ => {
                 return Err(not_constant(
                     location,

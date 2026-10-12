@@ -53,7 +53,7 @@ impl Analyzer<'_> {
             }
             members.push(current);
             self.merge(&mut result, self.graph.own(current, name, filter))?;
-            frontier.extend(self.graph.scope(current).inline_members.iter().copied());
+            frontier.extend(self.graph.visible_edges(current, true));
         }
         Ok(result)
     }
@@ -78,7 +78,7 @@ impl Analyzer<'_> {
                     self.merge(&mut result, found)?;
                 } else {
                     for member in members {
-                        next.extend(self.graph.scope(member).directives.iter().rev().copied());
+                        next.extend(self.graph.visible_edges(member, false).rev());
                     }
                 }
             }
@@ -117,13 +117,13 @@ impl Analyzer<'_> {
         let mut current = Some(scope);
         while let Some(scope) = current {
             let mut result = self.graph.own(scope, name, filter);
-            let mut frontier: Vec<_> = self.graph.scope(scope).directives.clone();
+            let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
             while let Some(nominated) = frontier.pop() {
                 if !visited.insert(nominated) {
                     continue;
                 }
                 pending.push((nominated, self.common_namespace(scope, nominated)));
-                frontier.extend(self.graph.scope(nominated).directives.iter().copied());
+                frontier.extend(self.graph.visible_edges(nominated, false));
             }
             let mut index = 0;
             while index < pending.len() {

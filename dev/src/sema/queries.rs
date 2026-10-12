@@ -48,6 +48,9 @@ impl Analyzer<'_> {
                 return self.binding_expression_type(binding);
             }
         }
+        if matches!(self.tree.expressions.get(inner).kind, ExprKind::Call { .. }) {
+            return self.query_call_type(inner, scope);
+        }
         self.evaluate_constant(expr, scope, true)
             .map(|value| value.ty)
     }
@@ -72,13 +75,45 @@ impl Analyzer<'_> {
         } else {
             ty
         };
+        if self.evaluating_noexcept && !self.query_complete(ty) {
+            return Err(Error::at(
+                location,
+                if alignment {
+                    "alignof of an incomplete or function type"
+                } else {
+                    "sizeof of an incomplete or function type"
+                },
+            ));
+        }
         let (size, align) = self.type_size(ty, location)?;
         Ok(Constant {
             bits: if alignment { align } else { size },
             ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
         })
     }
-    fn type_size(&self, mut ty: TypeId, location: SourceOffset) -> Result<(u64, u64), Error> {
+    fn query_complete(&self, mut ty: TypeId) -> bool {
+        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+            if bound == 0 {
+                return false;
+            }
+            ty = element;
+        }
+        match self.graph.types.get(ty).kind {
+            TypeKind::Scalar(Scalar::Void) | TypeKind::Function { .. } => false,
+            TypeKind::Class(entity) => self.graph.entity(entity).complete,
+            TypeKind::Enum(entity) => self
+                .graph
+                .entity(entity)
+                .enumeration
+                .is_some_and(|info| info.underlying.is_some()),
+            _ => true,
+        }
+    }
+    pub(super) fn type_size(
+        &mut self,
+        mut ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<(u64, u64), Error> {
         let mut count = Some(1u64);
         while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
             if bound == 0 {
@@ -97,6 +132,7 @@ impl Analyzer<'_> {
                 .and_then(|info| info.underlying)
                 .ok_or_else(|| Error::at(location, "size of an incomplete enumeration"))?;
         }
+        let mut alignment = None;
         let size = match self.graph.types.get(ty).kind {
             TypeKind::Scalar(Scalar::Basic(scalar)) => {
                 u64::try_from(scalar.size()).map_err(|_| Error::Limit("target scalar size"))?
@@ -114,7 +150,9 @@ impl Analyzer<'_> {
                 if !self.graph.entity(entity).complete {
                     return Err(Error::at(location, "size of an incomplete class"));
                 }
-                return Err(Error::Missing("class layout for size queries"));
+                let (size, align) = self.class_layout(entity, location)?;
+                alignment = Some(align);
+                size
             }
             TypeKind::Enum(_) => return Err(Error::Invariant("enum query not unwound")),
             TypeKind::Array { .. } => return Err(Error::Invariant("array query not unwound")),
@@ -123,8 +161,59 @@ impl Analyzer<'_> {
             count
                 .and_then(|count| size.checked_mul(count))
                 .ok_or_else(|| Error::at(location, "array too large"))?,
-            size,
+            alignment.unwrap_or(size),
         ))
+    }
+    pub(super) fn query_call_type(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        let node = self.tree.expressions.get(id);
+        let location = node.location;
+        let ExprKind::Call {
+            mut callee,
+            arguments,
+        } = node.kind
+        else {
+            return Err(Error::Invariant("call query without call"));
+        };
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(callee).kind {
+            callee = inner;
+        }
+        let ExprKind::Id(name) = self.tree.expressions.get(callee).kind else {
+            return Err(Error::Missing("unevaluated indirect call typing"));
+        };
+        let binding = self.lookup(name, scope, Filter::Ordinary)?;
+        let entity = self.graph.binding(binding).entity;
+        if matches!(
+            self.graph.binding(binding).kind,
+            BindingKind::Type | BindingKind::Alias
+        ) {
+            return Err(Error::Missing(
+                "unevaluated class construction and functional casts",
+            ));
+        }
+        let mut ty = self.binding_expression_type(binding)?;
+        if let TypeKind::Pointer(element) = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let TypeKind::Function {
+            result, parameters, ..
+        } = self.graph.types.get(ty).kind.clone()
+        else {
+            return Err(Error::at(
+                location,
+                "called object is not a function or pointer to function",
+            ));
+        };
+        if !arguments.is_empty() || !parameters.is_empty() {
+            return Err(Error::Missing("call argument conversions and defaults"));
+        }
+        super::record(&mut self.graph.expression_types, callee.index(), ty);
+        super::record(&mut self.graph.expression_types, id.index(), result);
+        self.graph.record_call_entity(id, entity);
+        Ok(result)
     }
     pub(super) fn decltype_type(
         &mut self,

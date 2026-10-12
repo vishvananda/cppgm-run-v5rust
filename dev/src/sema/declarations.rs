@@ -100,10 +100,10 @@ impl Analyzer<'_> {
             },
         )?;
         if inline || name.is_none() {
-            self.graph.scope_mut(scope).directives.push(target);
+            self.graph.add_edge(scope, target, false);
         }
         if inline {
-            self.graph.scope_mut(scope).inline_members.push(target);
+            self.graph.add_edge(scope, target, true);
         }
         Ok(target)
     }
@@ -157,7 +157,7 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .scope
                 .ok_or(Error::Invariant("namespace directive without scope"))?;
-            self.graph.scope_mut(scope).directives.push(target);
+            self.graph.add_edge(scope, target, false);
             return Ok(());
         }
         let name = self.tree.names.get(target);
@@ -278,6 +278,12 @@ impl Analyzer<'_> {
         let home = info.home.unwrap_or(scope);
         let location = self.declarator_location(init.declarator)?;
         if specs.role == DeclarationRole::Typedef {
+            if self.declarator_specifies_exceptions(Some(init.declarator)) {
+                return Err(Error::at(
+                    location,
+                    "an exception-specification in a typedef declaration",
+                ));
+            }
             let binding = self.declare_alias(name, info.ty, home, location)?;
             super::record(
                 &mut self.graph.declared_bindings,
@@ -290,6 +296,9 @@ impl Analyzer<'_> {
             self.graph.types.get(info.ty).kind,
             TypeKind::Function { .. }
         );
+        if function {
+            self.check_member_function_redeclaration(&info, home, location)?;
+        }
         let mut ty = info.ty;
         if !function {
             if matches!(
@@ -356,6 +365,26 @@ impl Analyzer<'_> {
             init.declarator.index(),
             binding,
         );
+        let entity = self.graph.binding(binding).entity;
+        if function {
+            self.graph.entity_mut(entity).constexpr |= specs.constexpr;
+            self.record_function_exceptions(entity, &info, home, location)?;
+        } else if self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static {
+            let owner = self
+                .graph
+                .scope(home)
+                .owner
+                .ok_or(Error::Invariant("class scope without owner"))?;
+            self.graph.entity_mut(owner).members.push(entity);
+            let mut declarator = Some(init.declarator);
+            while let Some(id) = declarator {
+                let node = self.tree.declarators.get(id);
+                if !node.attributes.is_empty() {
+                    self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+                }
+                declarator = node.nested;
+            }
+        }
         if !function
             && self.graph.scope(home).kind != ScopeKind::Class
             && (!specs.is_extern || init.initializer.is_some())
@@ -465,6 +494,34 @@ impl Analyzer<'_> {
             && !self.graph.entity(entity).complete
         {
             return Err(Error::at(location, "variable of incomplete type"));
+        }
+        Ok(())
+    }
+    pub(super) fn check_member_function_redeclaration(
+        &mut self,
+        info: &super::declarators::DeclaratorInfo,
+        home: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.graph.scope(home).kind == ScopeKind::Class
+            && info.home.is_none()
+            && let Some(name) = info.name
+            && let Some(binding) = self.graph.own(home, name, Filter::Ordinary)
+            && self.graph.binding(binding).kind == BindingKind::Function
+        {
+            let old = self
+                .graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("function without type"))?;
+            if self.graph.types.canonical_function(old)?
+                == self.graph.types.canonical_function(info.ty)?
+            {
+                return Err(Error::at(
+                    location,
+                    "member function redeclared in its class",
+                ));
+            }
         }
         Ok(())
     }
@@ -724,6 +781,10 @@ impl Analyzer<'_> {
             .graph
             .add_scope(ScopeKind::Class, home, Some(home), Some(key_name))?;
         self.graph.entity_mut(entity).scope = Some(class);
+        self.graph.scope_mut(class).owner = Some(entity);
+        if node.packing != 0 || !node.attributes.is_empty() {
+            self.graph.entity_mut(entity).layout = super::layout::LayoutState::Unsupported;
+        }
         self.graph.entity_mut(entity).defined = true;
         self.graph.add_binding(
             class,
@@ -745,6 +806,7 @@ impl Analyzer<'_> {
             for body in bodies {
                 self.function_body(body)?;
             }
+            self.finish_class_exceptions()?;
         }
         Ok(ty)
     }

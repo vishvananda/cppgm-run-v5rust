@@ -351,3 +351,183 @@ query demand and array diagnostic order; and nested worklist failure cleanup.
 Use the protected stack qualification receipt and the complete earlier-stage
 ladder. The stage base and last-audited commit are unchanged; Ralph owns audit,
 checkpoint acceptance and advancement.
+
+## Ordinary exception-specification checkpoint
+
+Implementation entry HEAD: `13ad51d2442932776c30ae44095188981dfc1164`.
+Stage base and last-audited fields above remain unchanged. The preceding goal
+turn is classified as progress: its committed integral/enumeration group
+raised the fixed manifest to 105/121. This is a coherent partial PA6 handoff;
+Ralph still owns checkpoint/final audit and stage advancement.
+
+Read the repository contract, specification, clone plan and PA6 handout/guide.
+Consulted frozen `analyzer_exceptions.cpp`, `analyzer_exception_sets.cpp`,
+`analyzer_types.cpp`, `analyzer_declarations.cpp`, `analyzer_classes.cpp`,
+`analyzer_calls.cpp`, `constant_evaluator.cpp`, `layout.cpp`, `analyzer.h` and
+`lookup.cpp`. Rust owners are `sema/exceptions.rs`, `sema/layout.rs` and the
+existing analyzer/declaration/declarator/graph/lookup/query/constant modules.
+The source map records the translated responsibilities and pending interfaces.
+
+Completed behavior and invariants for this slice:
+
+- Function suffix exception qualifiers remain separate from canonical types.
+  Ordinary functions retain typed `Absent`, `Pending(SpecificationId)`,
+  `Evaluating` and `Value(ExceptionSet)` state on their shared entity.
+  Redeclarations compare the first specification's result; bare `noexcept`,
+  `throw()` and true operands converge, while false operands allow all.
+- Dynamic specifications adjust top-level cv, arrays and function types,
+  sort/deduplicate canonical `TypeId` sets and compare set identity, with
+  exact void/incomplete-class/rvalue-reference rejection. Nonempty member
+  specifications resolve at outermost class completion. Unused integral
+  noexcept operands are checked at unit end; a redeclaration can demand the
+  first operand sooner. Prototype scopes use adjusted parameter object types
+  while retaining declared cv, and add no dump scopes.
+- Namespace lookup and directive/inline edges retain declaration ordinals;
+  compatible redeclarations keep their earliest visible ordinal. Deferred
+  queries limit only namespace scopes, leaving complete-class/prototype lookup
+  available. This is direct indexed visibility, with no scope snapshots,
+  history traversal, unit-sized query allocation or negative lookup cache.
+  Saved lookup/evaluation contexts restore on every Result path.
+- PA6's C++ types mode ignores specifications on function-pointer and nested
+  parameter declarators. Typedefs and alias declarations reject them after
+  type formation, preserving source diagnostic order. Same-signature member
+  redeclarations reject in their owning declaration layer before exception
+  comparison; qualified out-of-class definitions still match their owner.
+- Size/alignment queries demand plain class/union layout once. The class owns
+  ordered non-static member EntityIds and target byte offsets. Explicit
+  NotStarted/InProgress/Value layout state and an iterative dependency stack
+  handle member/array class chains, natural alignment/padding, union maximum
+  size, empty-class size 1 and the C++ 2^60-byte limit. Static members and
+  functions consume no object storage. Packing, attributes and virtual members
+  retain an explicit missing layout boundary rather than acquiring a plain
+  layout. No layout is requested merely to print a type.
+- Unevaluated monomorphic zero-argument calls consume the declared result type
+  without executing a body; dense facts retain the callee/selected entity and
+  result TypeId against original ExprIds. Evaluated non-constexpr direct calls
+  in integral noexcept operands reject exactly. Constexpr interpretation,
+  argument/default/overload/member-object conversion and broader expression
+  exception facts remain separate expression/interpreter dependencies.
+
+Architecture review: one parsed AST and one graph per source unit remain.
+Specification/prototype and layout worklists belong to the analyzer's unit
+lifetime; the returned graph retains typed values and identities. Canonical
+function types contain no exception state. Layout visits only the demanded
+class's member/dependency edges and records the result on that class. Dense
+call-target facts have private store APIs; later consumers read those facts
+instead of repeating lookup. Four unit regressions check exception/type
+identity separation, namespace versus class visibility, demand-only layout
+and offsets, and missing layout/interpreter status 86 boundaries. Existing
+stack byte-budget safety remains unchanged. No unsafe, FFI, dependencies,
+compiler subprocess fallback, text reparsing, environment reads under phases,
+fixture/oracle/checker/Ralph-state edits or code-generation/optimizer/register
+allocator changes were introduced. Backend lifetime policies are untouched.
+
+The integral operand/query slice is not a certificate for general PA7
+expression typing or interpretation, templates, exception overrides, function
+pointer semantic exception facts, complete class attributes/bases/bit-fields,
+overloads/default arguments or special members. These remain explicit owners
+for the full compiler port. Fixture counts alone do not establish completeness.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/port/pa6-exceptions/`.
+Candidate release `cppgm` SHA-256: `b821f50bc7d87ffe941f5e00b21c1e191ff64390932a298ccfd24e4e50dc235b`.
+Frozen C++ SHA-256 remains
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+`handoff.json` records the final committed HEAD and binary receipt.
+
+The unchanged fixed manifest contains 121 identities. Incoming 105 passes are
+all retained; six existing failures now pass, increasing the total to 111 and
+reducing failures from 16 to 10. `stage-final-summary.json` records exact
+incoming/new/preserved/remaining identities and proves no lost pass or manifest
+change. This meets the failure-reduction criterion; Ralph executes its own
+stageProgress audit. Each remaining failure exits 86, with its earliest owner
+in `failure-clusters.json` and raw receipt/evidence paths in
+`remaining-evidence.json`. No incomplete stub is counted as a language rejection.
+
+| Command | Result | Evidence under this artifact root unless absolute |
+| --- | --- | --- |
+| `make build` | PASS, full release build 9.84 s; final incremental build 0.95 s | `build.log`, `build-final.log`, binary hash above |
+| `make test-pa6` (`python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa6`) | FAIL, 111/121 exact cases; 10 missing groups | `stage-final.log`, `stage-final-summary.json`; `/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa6/<case-id>/trace.jsonl` and each receipt's raw output/stream evidence |
+| `make course-pa6` | FAIL, 111/121, retained course failure marker | `course-final.log`; `/home/vishvananda/work/private/v5rust/artifacts/clone/course/pa6/test/{counts.txt,course-result.json}` |
+| `clone_check.py prior pa6` | PASS, PA1–PA5 differential and course lanes | `prior-final.log`; prior course artifacts under `artifacts/clone/course/paN/test` |
+| `clone_check.py preflight pa6` | PASS | `preflight.log` |
+| `clone_check.py preserve pa6` | PASS, 105/105 incoming identities | `preserve.log`; independent identity comparison in `stage-final-summary.json` |
+| `make lint` (`clone_quality.py`) | PASS: rustfmt, strict Clippy, debug/release unit suites, source audit | `quality-final.log` |
+| `make audit-rust` | PASS, 103 files, 0 findings | `audit-final.log` |
+| `python3 <artifact-root>/probe.py` | PASS, 67/67 exact oracle probes | `probe-final.log`, `probe-summary.json`, `probes.jsonl`; intermediate raw mismatches retained under `mismatches/` |
+| `python3 <artifact-root>/measure.py` | PASS: nine supported scaling inputs and protected nested-stack receipt | `measure-final.log`, `measurements.json`, `measurement-probes.jsonl`, `nested-summary.json` |
+
+No oracle or harness defect was found. The course wrapper correctly fails
+while its incomplete suite retains a failure marker. Full PA6 differential
+and course success remain requirements for advancement. Early scratch probes
+were relocated from checkout `artifacts/` to the external artifact root;
+`relocation.json` maps their original evidence prefix, without rewriting raw
+streams. The final probe/measurement receipts use the external paths directly.
+
+The nested workload contains 1,000 classes and an innermost exception
+specification querying the completed outer class. With a 1 MiB initial stack,
+the protected adapter qualifies both tools at the shared 16 MiB stack:
+`match: true`, `stack_qualification.passed: true`, both exits 0 and identical
+streams/output hashes. `nested-summary.json` links preserved raw attempts.
+No native exhaustion cutoff or diagnostic position was calibrated.
+
+## Exception checkpoint measured resource costs
+
+Warm A/A calibration then ABBA and BAAB blocks retain every timing/RSS
+observation and input/output/binary hash; each sample verifies its dump hash.
+Wall time includes startup and dump I/O, RSS comes from `/usr/bin/time`.
+The exception workload combines parameter-size noexcept operands and
+redeclared duplicate/reordered dynamic sets. The class workload combines
+padded members/arrays, complete-class size specifications, later throw aliases,
+later static call-result queries and repeated layout reads. The final workload
+is a demanded chain of plain member classes, exercising iterative layout.
+These are compiler costs, not byte equality or PA35 optimization requirements.
+
+| Shape | Groups | C++ median ms / peak RSS KiB | Rust median ms / peak RSS KiB |
+| --- | ---: | ---: | ---: |
+| exceptions | 1000 | 23.53 / 11468 | 57.37 / 9300 |
+| exceptions | 4000 | 83.60 / 26252 | 183.38 / 27604 |
+| exceptions | 16000 | 320.70 / 87288 | 713.16 / 101956 |
+| classes | 1000 | 41.21 / 16344 | 86.27 / 14212 |
+| classes | 4000 | 151.85 / 46116 | 293.66 / 46276 |
+| classes | 16000 | 633.93 / 167612 | 1168.31 / 175664 |
+| layout-chain | 1000 | 10.61 / 7248 | 25.84 / 8748 |
+| layout-chain | 4000 | 26.63 / 12860 | 60.00 / 11412 |
+| layout-chain | 16000 | 106.30 / 36580 | 190.93 / 36768 |
+
+## Current remaining exact fixed-manifest IDs
+
+Paths relative to `pa6/` (superseding the preceding checkpoint's 16-case list):
+
+```text
+tests/general/100-namespace-nonstatic-anonymous-union-bad.t
+tests/general/200-anonymous-struct-declares-nothing-bad.t
+tests/general/200-template-template-parameter.t
+tests/general/300-declaration-forms-valid.t
+tests/spec/200-anonymous-type-typedefs.t
+tests/spec/200-namespace-anonymous-class-array-object.t
+tests/spec/200-namespace-anonymous-union-injected-members.t
+tests/spec/200-template-parameter-scope.t
+tests/spec/300-template-template-inner-parameter-scope-bad.t
+tests/spec/300-using-declaration-template-id-bad.t
+```
+
+## Exception checkpoint handoff
+
+The ordinary integral exception-specification group and its plain-layout /
+zero-argument result-query dependencies are complete for the documented
+slice. The next independent fixed-manifest boundary is anonymous class/union
+naming and declaration-point storage/member injection: consult
+`analyzer_classes.cpp`, typedef name adoption and the original AST token spans.
+Template type/template-template parameter environments form the other
+independent group; the declaration-forms case still stops at its constructor
+owner. Broader typed expressions, constexpr interpretation, exception overrides
+and complete layout remain future dependencies, not substitutes for these
+remaining declaration groups.
+
+Review declaration versus canonical type exception facts; namespace ordinal
+limits versus complete-class scope visibility; prototype object adjustment;
+unused-specification validation and redeclaration demand order; dynamic type
+adjustment/completeness/set comparison; demanded layout memo/offset ownership,
+iterative dependency bounds and failure cleanup; and protected successful
+stack qualification. Stage base/last-audited fields stay unchanged.

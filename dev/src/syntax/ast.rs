@@ -235,13 +235,6 @@ pub(crate) enum SpecifierKind {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TypeSyntax {
     pub specialization: u8,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
-        )
-    )]
     pub location: SourceOffset,
     pub specifiers: List<Specifier>,
     pub declarator: Option<DeclaratorId>,
@@ -255,13 +248,6 @@ pub(crate) struct Pointer {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Declarator {
     pub(super) member_scope: Option<ScopeId>,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Retained attributes are consumed by later semantic analysis"
-        )
-    )]
     pub attributes: List<Attribute>,
     pub location: SourceOffset,
     pub abstract_form: bool,
@@ -387,13 +373,6 @@ pub(crate) struct Base {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClassSyntax {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The packing selected at the class-key is retained for later class layout"
-        )
-    )]
     pub packing: u32,
     #[cfg_attr(
         not(test),
@@ -411,13 +390,6 @@ pub(crate) struct ClassSyntax {
         )
     )]
     pub has_base_clause: bool,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Retained attributes are consumed by later semantic analysis"
-        )
-    )]
     pub attributes: List<Attribute>,
     #[cfg_attr(
         not(test),
