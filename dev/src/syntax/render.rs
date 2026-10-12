@@ -1,5 +1,6 @@
 // Translated from syntax/ast_render.cpp. See NOTICE.
 //! Compact syntax labels are views; never a phase transport or lookup key.
+use super::ast::{InitializerKind, QualifierKind, SpecifierKind};
 use super::{
     ast::{
         Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId, ExceptionDeclaration,
@@ -241,10 +242,10 @@ impl<'a, 'source> Renderer<'a, 'source> {
             Render::CastType(specifiers) => {
                 for (index, &specifier) in self.tree.specs.get(specifiers).iter().enumerate().rev()
                 {
-                    self.tasks.push(match specifier {
-                        Specifier::Keyword(word) => Render::Text(word.spelling()),
-                        Specifier::Named(name) => Render::Name(name, false),
-                        Specifier::Decltype(operand) => Render::Decltype(operand),
+                    self.tasks.push(match specifier.kind {
+                        SpecifierKind::Keyword(word) => Render::Text(word.spelling()),
+                        SpecifierKind::Named(name) => Render::Name(name, false),
+                        SpecifierKind::Decltype(operand) => Render::Decltype(operand),
                         _ => {
                             return Err(std::io::Error::other("invalid functional cast specifier"));
                         }
@@ -285,18 +286,18 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 }
                 self.tasks.push(Render::Text("("));
             }
-            Render::Qualifier(qualifier) => match qualifier {
-                Qualifier::Cv(word) => {
+            Render::Qualifier(qualifier) => match qualifier.kind {
+                QualifierKind::Cv(word) => {
                     self.text(word.spelling());
                     self.text(" ");
                 }
-                Qualifier::Ref(op) => self.text(operator_spelling(op)),
-                Qualifier::Virt(name) => self.bytes.extend_from_slice(self.cursor.name(name)),
-                Qualifier::Trailing(ty) => {
+                QualifierKind::Ref(op) => self.text(operator_spelling(op)),
+                QualifierKind::Virt(name) => self.bytes.extend_from_slice(self.cursor.name(name)),
+                QualifierKind::Trailing(ty) => {
                     self.text("->");
                     self.tasks.push(Render::Type(ty));
                 }
-                Qualifier::Noexcept(operand) => {
+                QualifierKind::Noexcept(operand) => {
                     self.text("noexcept");
                     if let Some(operand) = operand {
                         self.text("(");
@@ -304,7 +305,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                         self.tasks.push(Render::Expression(operand));
                     }
                 }
-                Qualifier::Throw(types) => {
+                QualifierKind::Throw(types) => {
                     self.text("throw(");
                     self.tasks.push(Render::Text(")"));
                     for (index, &ty) in self.tree.type_lists.get(types).iter().enumerate().rev() {
@@ -315,19 +316,19 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     }
                 }
             },
-            Render::Initializer(initializer) => match initializer {
-                Initializer::Assign(expr) => {
+            Render::Initializer(initializer) => match initializer.kind {
+                InitializerKind::Assign(expr) => {
                     self.text("=");
                     self.tasks.push(Render::Expression(expr));
                 }
-                Initializer::Braced(expr) => self.tasks.push(Render::Expression(expr)),
-                Initializer::Parenthesized(arguments) => {
+                InitializerKind::Braced(expr) => self.tasks.push(Render::Expression(expr)),
+                InitializerKind::Parenthesized(arguments) => {
                     self.text("(");
                     self.tasks.push(Render::Text(")"));
                     self.list(arguments);
                 }
-                Initializer::Default => self.text("=default"),
-                Initializer::Delete => self.text("=delete"),
+                InitializerKind::Default => self.text("=default"),
+                InitializerKind::Delete => self.text("=delete"),
             },
             Render::Expression(id) => self.expression(id)?,
             Render::ParenthesizedList(list) => {
@@ -339,8 +340,8 @@ impl<'a, 'source> Renderer<'a, 'source> {
         Ok(())
     }
     fn specifier(&mut self, specifier: Specifier) {
-        match specifier {
-            Specifier::Vector { extended, operand } => {
+        match specifier.kind {
+            SpecifierKind::Vector { extended, operand } => {
                 self.tasks.push(Render::Text(")))"));
                 self.tasks.push(Render::Expression(operand));
                 self.tasks.push(Render::Text(if extended {
@@ -349,21 +350,21 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     "__attribute__((__vector_size__("
                 }));
             }
-            Specifier::Keyword(word) => {
+            SpecifierKind::Keyword(word) => {
                 if matches!(word, K::Const | K::Volatile) {
                     self.tasks.push(Render::Text(" "));
                 }
                 self.tasks.push(Render::Text(word.spelling()));
             }
-            Specifier::Named(name) => self.tasks.push(Render::Name(name, true)),
-            Specifier::Class(id) => self.tasks.push(Render::Class(id)),
-            Specifier::Elaborated { key, name } => {
+            SpecifierKind::Named(name) => self.tasks.push(Render::Name(name, true)),
+            SpecifierKind::Class(id) => self.tasks.push(Render::Class(id)),
+            SpecifierKind::Elaborated { key, name } => {
                 self.tasks.push(Render::Name(name, true));
                 self.tasks.push(Render::Text(" "));
                 self.tasks.push(Render::Text(key.spelling()));
             }
-            Specifier::Enum(decl) => self.enumeration(decl),
-            Specifier::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
+            SpecifierKind::Enum(decl) => self.enumeration(decl),
+            SpecifierKind::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
         }
     }
     fn declarator(&mut self, id: DeclaratorId) {
@@ -471,14 +472,14 @@ impl<'a, 'source> Renderer<'a, 'source> {
             .specs
             .get(self.tree.types.get(ty).specifiers)
             .first()
-            .is_some_and(|specifier| match specifier {
-                Specifier::Vector { .. } => false,
-                Specifier::Keyword(_)
-                | Specifier::Enum(_)
-                | Specifier::Decltype(_)
-                | Specifier::Class(_)
-                | Specifier::Elaborated { .. } => true,
-                Specifier::Named(name) => {
+            .is_some_and(|specifier| match &specifier.kind {
+                SpecifierKind::Vector { .. } => false,
+                SpecifierKind::Keyword(_)
+                | SpecifierKind::Enum(_)
+                | SpecifierKind::Decltype(_)
+                | SpecifierKind::Class(_)
+                | SpecifierKind::Elaborated { .. } => true,
+                SpecifierKind::Named(name) => {
                     let name = self.tree.names.get(*name);
                     !name.global
                         && self

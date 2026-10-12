@@ -1,5 +1,6 @@
 // Translated from syntax/parser_expressions.cpp and parser.cpp. See NOTICE.
 //! Lambda syntax and commit-time body demand; scopes follow source order.
+use super::ast::QualifierKind;
 use super::{
     ParseError,
     ast::{
@@ -91,6 +92,7 @@ impl Parser<'_> {
                 .ok_or(ParseError::Invariant("missing lambda parameter scope"))?;
             let before = self.collect_attributes(false)?;
             lambda.is_mutable = self.accept_keyword(K::Mutable)?;
+            let location = self.location()?;
             lambda.exception = if self.accept_keyword(K::Noexcept)? {
                 let operand = if self.accept(P::LeftParen)? {
                     let operand = self.expression()?;
@@ -99,9 +101,15 @@ impl Parser<'_> {
                 } else {
                     None
                 };
-                Some(Qualifier::Noexcept(operand))
+                Some(Qualifier {
+                    location,
+                    kind: QualifierKind::Noexcept(operand),
+                })
             } else if self.accept_keyword(K::Throw)? {
-                Some(Qualifier::Throw(self.throw_types()?))
+                Some(Qualifier {
+                    location,
+                    kind: QualifierKind::Throw(self.throw_types()?),
+                })
             } else {
                 None
             };

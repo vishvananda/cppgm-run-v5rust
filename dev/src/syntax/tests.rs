@@ -1,4 +1,5 @@
 //! Ownership and speculation invariants independent of the dump vocabulary.
+use super::ast::{InitializerKind, QualifierKind, SpecifierKind};
 use super::{
     ParseError, SyntaxUnit,
     ast::DeclKind,
@@ -11,6 +12,311 @@ use crate::{
     preprocess::unit::Preprocessor,
     support::source::SourceBuffer,
 };
+
+fn class_syntax(
+    tree: &super::ast::Tree,
+    declaration: super::ast::DeclId,
+) -> &super::ast::ClassSyntax {
+    let DeclKind::Class(specifier) = tree.declarations.get(declaration).kind else {
+        panic!("class declaration")
+    };
+    let SpecifierKind::Class(class) = specifier.kind else {
+        panic!("class specifier")
+    };
+    tree.classes.get(class)
+}
+
+fn source_offset(source: &[u8], spelling: &[u8]) -> crate::support::source::SourceOffset {
+    crate::support::source::SourceOffset(
+        u32::try_from(
+            source
+                .windows(spelling.len())
+                .position(|part| part == spelling)
+                .unwrap(),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn source_facts_preserve_specifier_initializer_and_declarator_boundaries() {
+    use super::ast::{InitializerKind, SpecifierKind};
+    let bytes = b"static const unsigned long left = 1, *right(2);";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"source-facts").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let DeclKind::Simple {
+        specifiers,
+        declarators,
+    } = tree
+        .declarations
+        .get(tree.decl_lists.get(unit.declarations.unwrap())[0])
+        .kind
+    else {
+        panic!("simple declaration")
+    };
+    for (specifier, spelling) in tree.specs.get(specifiers).iter().zip([
+        b"static".as_slice(),
+        b"const",
+        b"unsigned",
+        b"long",
+    ]) {
+        assert_eq!(specifier.location, source_offset(bytes, spelling));
+        assert!(matches!(specifier.kind, SpecifierKind::Keyword(_)));
+    }
+    let declarations = tree.init_declarators.get(declarators);
+    assert_eq!(
+        (declarations[0].tokens.begin, declarations[0].tokens.end),
+        (4, 7)
+    );
+    assert_eq!(
+        (declarations[1].tokens.begin, declarations[1].tokens.end),
+        (8, 13)
+    );
+    let first = declarations[0].initializer.unwrap();
+    assert_eq!(first.location, source_offset(bytes, b"="));
+    assert!(matches!(first.kind, InitializerKind::Assign(_)));
+    let second = declarations[1].initializer.unwrap();
+    assert_eq!(second.location, source_offset(bytes, b"("));
+    assert!(matches!(second.kind, InitializerKind::Parenthesized(_)));
+}
+
+#[test]
+fn parameter_qualifier_name_enum_and_constructor_locations_remain_typed() {
+    use super::ast::{Body, InitializerKind, QualifierKind, SpecifierKind, Suffix};
+    let bytes = b"struct C{auto f(int value=1) const & noexcept(value) -> int; inline C():member(2) {} int member;}; [[gnu::used]] enum E{red,blue=3};";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"located-syntax").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let roots = tree.decl_lists.get(unit.declarations.unwrap());
+    let DeclKind::Class(specifier) = tree.declarations.get(roots[0]).kind else {
+        panic!("class declaration")
+    };
+    let SpecifierKind::Class(class) = specifier.kind else {
+        panic!("class specifier")
+    };
+    let members = tree.decl_lists.get(tree.classes.get(class).members);
+    let DeclKind::Simple { declarators, .. } = tree.declarations.get(members[0]).kind else {
+        panic!("method declaration")
+    };
+    let method = tree
+        .declarators
+        .get(tree.init_declarators.get(declarators)[0].declarator);
+    let Suffix::Function {
+        parameters,
+        qualifiers,
+    } = tree.suffixes.get(method.suffixes)[0]
+    else {
+        panic!("function suffix")
+    };
+    assert_eq!(parameters.location, source_offset(bytes, b"(int"));
+    let parameter = tree.parameters.get(parameters.parameters)[0];
+    assert_eq!(parameter.location, source_offset(bytes, b"int value"));
+    let default = parameter.default.unwrap();
+    assert_eq!(default.location, source_offset(bytes, b"1)"));
+    assert!(matches!(default.kind, InitializerKind::Assign(_)));
+    for (qualifier, spelling) in
+        tree.qualifiers
+            .get(qualifiers)
+            .iter()
+            .zip([b"const".as_slice(), b"&", b"noexcept", b"->"])
+    {
+        assert_eq!(qualifier.location, source_offset(bytes, spelling));
+    }
+    assert!(matches!(
+        tree.qualifiers.get(qualifiers)[2].kind,
+        QualifierKind::Noexcept(Some(_))
+    ));
+    let QualifierKind::Trailing(ty) = tree.qualifiers.get(qualifiers)[3].kind else {
+        panic!("trailing type")
+    };
+    assert_eq!(
+        tree.types.get(ty).location.0,
+        source_offset(bytes, b"-> int").0 + 3
+    );
+    let DeclKind::SpecialMember {
+        name,
+        declarator,
+        body: Some(body),
+        ..
+    } = tree.declarations.get(members[1]).kind
+    else {
+        panic!("constructor")
+    };
+    assert_eq!(tree.names.get(name).location, source_offset(bytes, b"C():"));
+    assert_eq!(
+        tree.declarators.get(declarator).location,
+        tree.names.get(name).location
+    );
+    let Body::Parsed(body) = *tree.bodies.get(body) else {
+        panic!("parsed body")
+    };
+    assert_eq!(
+        body.initializer_location,
+        Some(source_offset(bytes, b":member"))
+    );
+    assert_eq!(
+        tree.declarations.get(roots[1]).location,
+        source_offset(bytes, b"enum")
+    );
+    let DeclKind::Enum { enumerators, .. } = tree.declarations.get(roots[1]).kind else {
+        panic!("enum")
+    };
+    assert_eq!(
+        tree.enumerators.get(enumerators)[0].location,
+        source_offset(bytes, b"red")
+    );
+    assert_eq!(
+        tree.enumerators.get(enumerators)[1].location,
+        source_offset(bytes, b"blue")
+    );
+}
+
+#[test]
+fn class_packing_and_token_spans_survive_lookahead_and_deferred_replay() {
+    use super::ast::{Body, StmtKind, TokenSpan};
+    let bytes = b"#pragma pack(push,1)\nstruct A {void f(){struct Local{};}} __attribute__((packed));\n#pragma pack(push,4)\nstruct B {};\n#pragma pack(pop)\nstruct C {};\n#pragma pack(pop)\nstruct D {};";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"packing-facts").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    let mut tokens = Vec::new();
+    for ahead in 0.. {
+        let token = unit.parser.cursor.peek(ahead).unwrap();
+        tokens.push(token);
+        if matches!(token.kind, TokenKind::End) {
+            break;
+        }
+    }
+    assert_eq!(unit.parser.cursor.post.input().pack_alignment(), 0);
+    unit.parse().unwrap();
+    let tree = &unit.parser.tree;
+    let roots = tree.decl_lists.get(unit.declarations.unwrap());
+    for (index, (name, alignment, end_spelling)) in [
+        (b"A".as_slice(), 1, b"} __".as_slice()),
+        (b"B", 4, b"};\n#pragma pack(pop)\nstruct C"),
+        (b"C", 1, b"};\n#pragma pack(pop)\nstruct D"),
+        (b"D", 0, b"};"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let class = class_syntax(tree, roots[index]);
+        assert_eq!(class.packing, alignment);
+        assert!(!class.has_base_clause);
+        let TokenSpan { begin, end } = class.tokens;
+        assert_eq!(
+            tokens[usize::try_from(begin).unwrap()].location,
+            class.location
+        );
+        let closing = if name == b"D" {
+            bytes.len() - 2
+        } else {
+            source_offset(bytes, end_spelling).0 as usize
+        };
+        assert_eq!(
+            tokens[usize::try_from(end - 1).unwrap()].location.0 as usize,
+            closing
+        );
+    }
+    let outer = class_syntax(tree, roots[0]);
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(outer.members)[0])
+        .kind
+    else {
+        panic!("member function")
+    };
+    let Body::Parsed(body) = *tree.bodies.get(body) else {
+        panic!("parsed member")
+    };
+    assert_eq!(
+        tree.statements.get(body.compound).location,
+        source_offset(bytes, b"{struct Local")
+    );
+    let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+        panic!("compound")
+    };
+    let StmtKind::Declaration(local) = tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+    else {
+        panic!("local declaration")
+    };
+    let local = class_syntax(tree, local);
+    assert_eq!(local.packing, 1);
+    assert_eq!(local.location, source_offset(bytes, b"struct Local"));
+    let root = tree.decl_lists.get(unit.declarations.unwrap())[0];
+    assert!(matches!(
+        tree.declarations.get(root).kind,
+        DeclKind::Class(super::ast::Specifier {
+            kind: SpecifierKind::Class(_),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn macro_and_attribute_locations_preserve_shared_names_and_first_token_packing() {
+    use super::ast::{SpecifierKind, TypeSyntax};
+    let bytes = b"struct _Pragma(\"pack(2)\") M{}; struct N{}; typename N::word const";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"first-token-facts").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let first = parser.declaration().unwrap();
+    let second = parser.declaration().unwrap();
+    assert_eq!(class_syntax(&parser.tree, first).packing, 0);
+    assert_eq!(class_syntax(&parser.tree, second).packing, 2);
+    let start = parser.location().unwrap();
+    let (name, _) = parser.name().unwrap();
+    assert_eq!(
+        parser.tree.names.get(name).location,
+        source_offset(bytes, b"N::word")
+    );
+    let ty = parser.type_from_name(name, start).unwrap();
+    let TypeSyntax {
+        location,
+        specifiers,
+        ..
+    } = parser.tree.types.get(ty);
+    assert_eq!(*location, source_offset(bytes, b"typename"));
+    let specs = parser.tree.specs.get(*specifiers);
+    assert_eq!(specs[0].location, *location);
+    assert!(matches!(specs[0].kind, SpecifierKind::Named(id) if id==name));
+    assert_eq!(specs[1].location, source_offset(bytes, b"const"));
+}
+
+#[test]
+fn abandoned_source_records_rewind_while_pack_observations_remain_live() {
+    let bytes = b"#pragma pack(2)\nstruct C{int member=1;};\n#pragma pack(8)\nstruct D{};";
+    let source = SourceBuffer::new(bytes.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"source-fact-rollback").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    let result: Option<()> = parser
+        .attempt(|parser| {
+            let declaration = parser.declaration()?;
+            assert_eq!(class_syntax(&parser.tree, declaration).packing, 2);
+            parser.fail()
+        })
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(parser.tree.classes.mark(), 0);
+    assert_eq!(
+        parser.tree.specs.mark(),
+        super::storage::Lists::<super::ast::Specifier>::default().mark()
+    );
+    let declarations = parser.declarations(false).unwrap();
+    let roots = parser.tree.decl_lists.get(declarations);
+    assert_eq!(class_syntax(&parser.tree, roots[0]).packing, 2);
+    assert_eq!(class_syntax(&parser.tree, roots[1]).packing, 8);
+}
 
 #[test]
 fn conflicting_statements_retain_typed_readings_and_share_one_lambda_body() {
@@ -303,7 +609,7 @@ fn unnamed_parameter_packs_remain_distinct_from_varargs_despite_identical_dump_v
     assert!(tree.declarators.get(items[0].declarator.unwrap()).pack);
     assert!(items[1].declarator.is_none());
     assert!(parameters.ellipsis);
-    let super::ast::Specifier::Named(name) = tree.specs.get(items[1].specifiers)[0] else {
+    let super::ast::SpecifierKind::Named(name) = tree.specs.get(items[1].specifiers)[0].kind else {
         panic!("name");
     };
     let arguments = tree.name_lists.get(tree.names.get(name).components)[0]
@@ -357,7 +663,10 @@ fn named_trait_and_cast_readings_share_names_and_do_not_consume_alias_records() 
     };
     assert!(matches!(
         parser.tree.specs.get(specifiers),
-        [Specifier::Named(_)]
+        [Specifier {
+            kind: SpecifierKind::Named(_),
+            ..
+        }]
     ));
 }
 
@@ -633,10 +942,19 @@ fn primary_casts_retain_type_facts_even_when_dump_labels_are_calls() {
             if index == 2 {
                 assert!(matches!(
                     tree.specs.get(specifiers),
-                    [Specifier::Decltype(_)]
+                    [Specifier {
+                        kind: SpecifierKind::Decltype(_),
+                        ..
+                    }]
                 ));
             } else {
-                assert!(matches!(tree.specs.get(specifiers), [Specifier::Named(_)]));
+                assert!(matches!(
+                    tree.specs.get(specifiers),
+                    [Specifier {
+                        kind: SpecifierKind::Named(_),
+                        ..
+                    }]
+                ));
             }
         }
     }
@@ -879,7 +1197,10 @@ fn allocation_modes_retain_type_parentheses_placement_and_initializers() {
         allocations[2],
         ExprKind::New {
             parenthesized_type: true,
-            initializer: Some(Initializer::Parenthesized(_)),
+            initializer: Some(Initializer {
+                kind: InitializerKind::Parenthesized(_),
+                ..
+            }),
             ..
         }
     ));
@@ -942,7 +1263,11 @@ fn class_completion_parses_each_body_with_later_member_categories() {
     unit.parse().unwrap();
     let tree = &unit.parser.tree;
     let root = tree.decl_lists.get(unit.declarations.unwrap());
-    let DeclKind::Class(Specifier::Class(outer)) = tree.declarations.get(root[1]).kind else {
+    let DeclKind::Class(Specifier {
+        kind: SpecifierKind::Class(outer),
+        ..
+    }) = tree.declarations.get(root[1]).kind
+    else {
         panic!("outer class");
     };
     let members = tree.decl_lists.get(tree.classes.get(outer).members);
@@ -1078,7 +1403,10 @@ fn template_transaction_rewinds_heads_arguments_environment_and_deferred_bodies(
     ));
     assert!(matches!(
         parser.tree.declarations.get(declaration).kind,
-        DeclKind::Class(Specifier::Class(_))
+        DeclKind::Class(Specifier {
+            kind: SpecifierKind::Class(_),
+            ..
+        })
     ));
     assert_eq!(
         parser.scopes.lookup(c).unwrap().category,
@@ -1207,8 +1535,8 @@ fn attributes_retain_typed_operands_sites_and_owner_order() {
         panic!("expected object");
     };
     assert!(matches!(
-        parser.tree.specs.get(specifiers)[1],
-        Specifier::Vector {
+        parser.tree.specs.get(specifiers)[1].kind,
+        SpecifierKind::Vector {
             extended: false,
             ..
         }
@@ -1222,7 +1550,10 @@ fn attributes_retain_typed_operands_sites_and_owner_order() {
     assert_eq!(attributes[0].site, AttributeSite::Type);
     assert!(attributes[0].expression.is_some());
     let declaration = parser.declaration().unwrap();
-    let DeclKind::Class(Specifier::Class(class)) = parser.tree.declarations.get(declaration).kind
+    let DeclKind::Class(Specifier {
+        kind: SpecifierKind::Class(class),
+        ..
+    }) = parser.tree.declarations.get(declaration).kind
     else {
         panic!("expected class");
     };
@@ -1306,8 +1637,8 @@ fn failed_nested_attribute_declarations_restore_all_storage_and_scratch() {
         panic!("expected alias");
     };
     assert!(matches!(
-        parser.tree.specs.get(parser.tree.types.get(ty).specifiers)[1],
-        super::ast::Specifier::Vector { .. }
+        parser.tree.specs.get(parser.tree.types.get(ty).specifiers)[1].kind,
+        super::ast::SpecifierKind::Vector { .. }
     ));
 }
 
@@ -1374,7 +1705,10 @@ fn lambda_facts_retain_capture_kinds_attributes_and_source_ordinals() {
     assert!(lambda.is_mutable && lambda.trailing.is_some());
     assert!(matches!(
         lambda.exception,
-        Some(Qualifier::Noexcept(Some(_)))
+        Some(Qualifier {
+            kind: QualifierKind::Noexcept(Some(_)),
+            ..
+        })
     ));
     let attributes = parser.tree.attributes.get(lambda.attributes);
     assert_eq!(attributes.len(), 2);

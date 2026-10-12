@@ -41,6 +41,7 @@ impl Parser<'_> {
         let declared = matches!(mode, NameMode::Declarator | NameMode::DeclaredType);
         let mentions = self.template_mentions;
         let typename_keyword = self.accept_keyword(K::Typename)?;
+        let location = self.location()?;
         let global = self.accept(P::Scope)?;
         let start = self.tree.name_lists.begin();
         let mut prefix = NamePrefix::new(global);
@@ -161,6 +162,7 @@ impl Parser<'_> {
         };
         let components = self.tree.name_lists.finish(start)?;
         let name = self.tree.names.add(QualifiedName {
+            location,
             global,
             typename_keyword,
             components,

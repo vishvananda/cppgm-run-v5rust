@@ -1,5 +1,6 @@
 // Translated from syntax/parser_specifiers.cpp, parser_declarations.cpp and parser.cpp. See NOTICE.
 //! Class category ownership and bodies queued on the outermost class completion.
+use super::ast::SpecifierKind;
 use super::{
     ParseError,
     ast::{
@@ -35,6 +36,7 @@ impl Parser<'_> {
         first: bool,
     ) -> Result<Specifier, ParseError> {
         let location = self.location()?;
+        let first_token = self.cursor.absolute_position()?;
         let key = self
             .keyword()?
             .ok_or(ParseError::Invariant("missing class key"))?;
@@ -72,7 +74,7 @@ impl Parser<'_> {
             if self.pending_attributes.is_some() {
                 self.pending_class_tags = tags;
             }
-            return self.elaborated_class(key, name, friend, first);
+            return self.elaborated_class(key, name, friend, first, location);
         }
         let enclosing = self.scopes.current;
         let is_template = self.pending_template;
@@ -159,6 +161,7 @@ impl Parser<'_> {
             node.binding = Some(binding);
             self.tree.names.replace(name, node);
         }
+        let has_base_clause = self.at(P::Colon)?;
         let bases = if self.accept(P::Colon)? {
             self.base_clause(
                 scope,
@@ -180,6 +183,7 @@ impl Parser<'_> {
         self.class_depth -= 1;
         self.scopes.current = enclosing;
         let members = result?;
+        let end_token = self.cursor.absolute_position()?;
         let trailing = if matches!(self.token()?.kind, TokenKind::Identifier(id) if matches!(self.cursor.name(id), b"__attribute__" | b"__attribute"))
         {
             self.collect_attributes(false)?
@@ -193,6 +197,12 @@ impl Parser<'_> {
         self.scopes
             .complete_class(scope, is_template || self.scopes.specialization(scope));
         let class = self.tree.classes.add(ClassSyntax {
+            packing: self.cursor.pack_at(first_token),
+            tokens: super::ast::TokenSpan {
+                begin: first_token,
+                end: end_token,
+            },
+            has_base_clause,
             attributes,
             location,
             key,
@@ -206,7 +216,10 @@ impl Parser<'_> {
             self.speculation_boundary(|parser| parser.parse_deferred_bodies(first_deferred))?;
             self.cursor.rewind_runs(runs);
         }
-        Ok(Specifier::Class(class))
+        Ok(Specifier {
+            location,
+            kind: SpecifierKind::Class(class),
+        })
     }
     fn link_specialization(
         &mut self,
@@ -244,6 +257,7 @@ impl Parser<'_> {
         name: Name,
         friend: bool,
         first: bool,
+        location: SourceOffset,
     ) -> Result<Specifier, ParseError> {
         let is_template = self.pending_template;
         self.pending_template = false;
@@ -295,7 +309,10 @@ impl Parser<'_> {
             node.binding = Some(binding);
             self.tree.names.replace(name, node);
         }
-        Ok(Specifier::Elaborated { key, name })
+        Ok(Specifier {
+            location,
+            kind: SpecifierKind::Elaborated { key, name },
+        })
     }
     fn base_clause(&mut self, class: ScopeId, primary: bool) -> Result<List<Base>, ParseError> {
         let start = self.tree.bases.begin();
@@ -358,8 +375,12 @@ impl Parser<'_> {
                 @ (K::Inline | K::Virtual | K::Explicit | K::Constexpr | K::Friend | K::Static),
             ) = self.keyword()?
             {
+                let location = self.location()?;
                 self.cursor.advance()?;
-                self.tree.specs.push(Specifier::Keyword(word));
+                self.tree.specs.push(Specifier {
+                    location,
+                    kind: SpecifierKind::Keyword(word),
+                });
             } else {
                 break;
             }
@@ -440,7 +461,7 @@ impl Parser<'_> {
         let suffixes = self.tree.suffixes.finish(start)?;
         let declarator = self.tree.declarators.add(Declarator {
             attributes,
-            location,
+            location: self.tree.names.get(name).location,
             abstract_form: false,
             pointers: List::default(),
             pack: false,

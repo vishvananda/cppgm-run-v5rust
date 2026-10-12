@@ -31,6 +31,10 @@ pub(super) struct TokenRun {
     end: u32,
     absolute: u64,
 }
+struct PackChange {
+    ordinal: u64,
+    alignment: u32,
+}
 struct Replay {
     run: TokenRun,
     resume: usize,
@@ -39,6 +43,8 @@ pub(super) struct Cursor<'a> {
     pub post: PostTokenizer<Preprocessor<'a>>,
     pub spellings: TextStore,
     window: Vec<Token>,
+    pack_changes: Vec<PackChange>,
+    last_pack: u32,
     runs: Vec<Token>,
     replay: Vec<Replay>,
     pub peak_run_tokens: usize,
@@ -55,6 +61,8 @@ impl<'a> Cursor<'a> {
             post,
             spellings: TextStore::default(),
             window: Vec::new(),
+            pack_changes: Vec::new(),
+            last_pack: 0,
             runs: Vec::new(),
             replay: Vec::new(),
             peak_run_tokens: 0,
@@ -149,6 +157,18 @@ impl<'a> Cursor<'a> {
                 suffix: self.spellings.add(post.suffix)?,
             }),
         };
+        let alignment = self.post.input().pack_alignment();
+        if alignment != self.last_pack {
+            let ordinal = self
+                .base
+                .checked_add(
+                    u64::try_from(self.window.len())
+                        .map_err(|_| ParseError::Limit("packing token ordinal limit"))?,
+                )
+                .ok_or(ParseError::Limit("packing token ordinal limit"))?;
+            self.pack_changes.push(PackChange { ordinal, alignment });
+            self.last_pack = alignment;
+        }
         if matches!(token.kind, TokenKind::Simple(Operator { token: simple, .. }) if simple.as_punctuator() == Some(Punctuator::ShiftRight))
         {
             let greater = SimpleToken::punctuator(Punctuator::Greater)
@@ -164,6 +184,15 @@ impl<'a> Cursor<'a> {
         }
         self.window.push(token);
         Ok(())
+    }
+    pub(super) fn pack_at(&self, ordinal: u64) -> u32 {
+        // Lookahead and deferred replay observe the state at the original
+        // token ordinal, never the preprocessor's later current state.
+        let end = self
+            .pack_changes
+            .partition_point(|change| change.ordinal <= ordinal);
+        end.checked_sub(1)
+            .map_or(0, |index| self.pack_changes[index].alignment)
     }
     pub(super) fn absolute_position(&self) -> Result<u64, ParseError> {
         self.replay

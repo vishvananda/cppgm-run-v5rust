@@ -1,4 +1,5 @@
 // Translated from syntax/parser_expressions.cpp. See NOTICE.
+use super::ast::SpecifierKind;
 use super::{
     ParseError,
     ast::{ExprId, ExprKind, Expression, Operator, Specifier, TypeId},
@@ -423,7 +424,7 @@ impl Parser<'_> {
                 .specs
                 .get(ty.specifiers)
                 .iter()
-                .any(|specifier| matches!(specifier, Specifier::Named(_)))
+                .any(|specifier| matches!(specifier.kind, SpecifierKind::Named(_)))
     }
     fn name_starts_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
         Ok(
@@ -699,9 +700,10 @@ impl Parser<'_> {
                 && (known_type || self.is_type_name(name, binding, false, false)))
         {
             let start = self.tree.specs.begin();
-            self.tree
-                .specs
-                .push(decltype.map_or(Specifier::Named(name), Specifier::Decltype));
+            self.tree.specs.push(Specifier {
+                location,
+                kind: decltype.map_or(SpecifierKind::Named(name), SpecifierKind::Decltype),
+            });
             let specifiers = self.tree.specs.finish(start)?;
             return self.functional_cast(location, specifiers);
         }

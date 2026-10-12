@@ -17,6 +17,25 @@ pub(super) type BodyId = Id<Body>;
 pub(super) type ClassId = Id<ClassSyntax>;
 pub(super) type StmtId = Id<Statement>;
 pub(super) type LambdaId = Id<Lambda>;
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct TokenSpan<T = u64> {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The first token ordinal is retained for later source identity"
+        )
+    )]
+    pub begin: T,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The exclusive end token ordinal is retained for later source identity"
+        )
+    )]
+    pub end: T,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CaptureKind {
     This,
@@ -96,6 +115,7 @@ pub(super) struct Attribute {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct QualifiedName {
+    pub location: SourceOffset,
     pub global: bool,
     pub typename_keyword: bool,
     pub components: List<NameComponent>,
@@ -206,7 +226,19 @@ pub(super) struct Literal {
     pub suffix: Text,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Specifier {
+pub(super) struct Specifier {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The owning syntax location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
+    pub kind: SpecifierKind,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SpecifierKind {
     Keyword(Keyword),
     Named(Name),
     Enum(DeclId),
@@ -218,9 +250,12 @@ pub(super) enum Specifier {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TypeSyntax {
     pub specialization: u8,
-    #[expect(
-        dead_code,
-        reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+        )
     )]
     pub location: SourceOffset,
     pub specifiers: List<Specifier>,
@@ -242,9 +277,12 @@ pub(super) struct Declarator {
         )
     )]
     pub attributes: List<Attribute>,
-    #[expect(
-        dead_code,
-        reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+        )
     )]
     pub location: SourceOffset,
     pub abstract_form: bool,
@@ -264,18 +302,46 @@ pub(super) enum Suffix {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ParameterClause {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The parameter clause location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
     pub parameters: List<Parameter>,
     pub ellipsis: bool,
     pub ellipsis_without_comma: bool,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Parameter {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The parameter declaration location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
     pub specifiers: List<Specifier>,
     pub declarator: Option<DeclaratorId>,
     pub default: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Qualifier {
+pub(super) struct Qualifier {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The owning syntax location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
+    pub kind: QualifierKind,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum QualifierKind {
     Cv(Keyword),
     Ref(Operator),
     Noexcept(Option<ExprId>),
@@ -284,7 +350,19 @@ pub(super) enum Qualifier {
     Virt(NameId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Initializer {
+pub(super) struct Initializer {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The owning syntax location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
+    pub kind: InitializerKind,
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) enum InitializerKind {
     Assign(ExprId),
     Braced(ExprId),
     Parenthesized(List<ExprId>),
@@ -293,11 +371,27 @@ pub(super) enum Initializer {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct InitDeclarator {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The source token range belongs to this init-declarator for later declaration diagnostics"
+        )
+    )]
+    pub tokens: TokenSpan<u32>,
     pub declarator: DeclaratorId,
     pub initializer: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Enumerator {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The enumerator location is retained for later semantic diagnostics"
+        )
+    )]
+    pub location: SourceOffset,
     pub name: NameId,
     pub value: Option<ExprId>,
 }
@@ -325,13 +419,40 @@ pub(super) struct ClassSyntax {
         not(test),
         expect(
             dead_code,
+            reason = "The packing selected at the class-key is retained for later class layout"
+        )
+    )]
+    pub packing: u32,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The class token interval is retained for later declaration identity and diagnostics"
+        )
+    )]
+    pub tokens: TokenSpan,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The presence of an empty base clause is distinct from its owned base list"
+        )
+    )]
+    pub has_base_clause: bool,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
             reason = "Retained attributes are consumed by later semantic analysis"
         )
     )]
     pub attributes: List<Attribute>,
-    #[expect(
-        dead_code,
-        reason = "Class key source location is retained for later declaration diagnostics"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Class key source location is retained for later declaration diagnostics"
+        )
     )]
     pub location: SourceOffset,
     pub key: Keyword,
@@ -359,6 +480,14 @@ pub(super) struct MemInitializer {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FunctionBody {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The ctor-initializer colon location is retained for later constructor diagnostics"
+        )
+    )]
+    pub initializer_location: Option<SourceOffset>,
     pub initializers: List<MemInitializer>,
     pub compound: StmtId,
     pub handlers: Option<List<Handler>>,
@@ -379,9 +508,12 @@ pub(super) struct Handler {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Declaration {
     pub attributes: List<Attribute>,
-    #[expect(
-        dead_code,
-        reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "The declaration location is retained for later semantic diagnostics"
+        )
     )]
     pub location: SourceOffset,
     pub kind: DeclKind,
@@ -545,9 +677,12 @@ pub(super) enum ExprKind {
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Statement {
-    #[expect(
-        dead_code,
-        reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Source location retained for later semantic diagnostics on this typed syntax node"
+        )
     )]
     pub location: SourceOffset,
     pub kind: StmtKind,

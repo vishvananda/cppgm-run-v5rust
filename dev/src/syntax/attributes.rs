@@ -1,5 +1,6 @@
 // Translated from syntax/parser_specifiers.cpp and parser_state.cpp. See NOTICE.
 //! Attribute collection owns typed operands; PA5 views intentionally omit attributes.
+use super::ast::SpecifierKind;
 use super::{
     ParseError,
     ast::{Attribute, AttributeForm, AttributeKind as A, AttributeSite, ExprId, Specifier},
@@ -309,11 +310,14 @@ impl Parser<'_> {
         for index in 0..self.tree.attributes.get(attributes).len() {
             let attribute = self.tree.attributes.get(attributes)[index];
             if matches!(attribute.kind, A::VectorSize | A::ExtVectorType) {
-                self.tree.specs.push(Specifier::Vector {
-                    extended: attribute.kind == A::ExtVectorType,
-                    operand: attribute
-                        .expression
-                        .ok_or(ParseError::Invariant("vector attribute lacks operand"))?,
+                self.tree.specs.push(Specifier {
+                    location: attribute.location,
+                    kind: SpecifierKind::Vector {
+                        extended: attribute.kind == A::ExtVectorType,
+                        operand: attribute
+                            .expression
+                            .ok_or(ParseError::Invariant("vector attribute lacks operand"))?,
+                    },
                 });
             } else if keep && self.pending_attributes.is_some() {
                 self.tree.attributes.push(attribute);

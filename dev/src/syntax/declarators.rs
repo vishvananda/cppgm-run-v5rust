@@ -1,4 +1,5 @@
 // Translated from syntax/parser_declarators.cpp. See NOTICE.
+use super::ast::{InitializerKind, QualifierKind};
 use super::{
     ParseError,
     ast::{
@@ -279,6 +280,7 @@ impl Parser<'_> {
         mut definite: bool,
         member: Option<super::scopes::ScopeId>,
     ) -> Result<ParameterClause, ParseError> {
+        let location = self.location()?;
         self.expect(P::LeftParen)?;
         let enclosing = self.scopes.current;
         let scope = self.scopes.push()?;
@@ -293,6 +295,7 @@ impl Parser<'_> {
                 ellipsis = true;
                 break;
             }
+            let parameter_location = self.location()?;
             let enclosing_pack_start = self.parameter_pack_start;
             self.parameter_pack_start = self.pack_mentions;
             let specifiers = self.specifier_sequence(definite, false)?;
@@ -311,7 +314,10 @@ impl Parser<'_> {
             self.parameter_pack_start = enclosing_pack_start;
             self.skip_attributes()?;
             let default = if self.accept(P::Assign)? {
-                Some(Initializer::Assign(self.initializer_clause()?))
+                Some(Initializer {
+                    location: self.location()?,
+                    kind: InitializerKind::Assign(self.initializer_clause()?),
+                })
             } else {
                 None
             };
@@ -319,6 +325,7 @@ impl Parser<'_> {
                 self.declare_declarator(declarator, false, None, super::storage::List::default());
             }
             self.tree.parameters.push(Parameter {
+                location: parameter_location,
                 specifiers,
                 declarator,
                 default,
@@ -337,6 +344,7 @@ impl Parser<'_> {
         self.scopes.current = enclosing;
         self.function_scope = Some(scope);
         Ok(ParameterClause {
+            location,
             parameters,
             ellipsis,
             ellipsis_without_comma,
@@ -360,10 +368,11 @@ impl Parser<'_> {
             } else {
                 self.skip_attributes()?;
             }
-            let qualifier = match self.keyword()? {
+            let location = self.location()?;
+            let kind = match self.keyword()? {
                 Some(word @ (K::Const | K::Volatile)) => {
                     self.cursor.advance()?;
-                    Qualifier::Cv(word)
+                    QualifierKind::Cv(word)
                 }
                 Some(K::Noexcept) => {
                     self.cursor.advance()?;
@@ -374,22 +383,22 @@ impl Parser<'_> {
                     } else {
                         None
                     };
-                    Qualifier::Noexcept(operand)
+                    QualifierKind::Noexcept(operand)
                 }
                 Some(K::Throw) => {
                     self.cursor.advance()?;
-                    Qualifier::Throw(self.throw_types()?)
+                    QualifierKind::Throw(self.throw_types()?)
                 }
                 _ if matches!(self.punctuator()?, Some(P::BitAnd | P::LogicalAnd)) => {
-                    Qualifier::Ref(self.operator()?)
+                    QualifierKind::Ref(self.operator()?)
                 }
-                _ if self.accept(P::Arrow)? => Qualifier::Trailing(self.type_id(true)?),
+                _ if self.accept(P::Arrow)? => QualifierKind::Trailing(self.type_id(true)?),
                 _ if matches!(self.token()?.kind, TokenKind::Identifier(name) if matches!(self.cursor.name(name), b"final" | b"override")) => {
-                    Qualifier::Virt(self.identifier()?)
+                    QualifierKind::Virt(self.identifier()?)
                 }
                 _ => break,
             };
-            self.tree.qualifiers.push(qualifier);
+            self.tree.qualifiers.push(Qualifier { location, kind });
         }
         self.tree.qualifiers.finish(start)
     }

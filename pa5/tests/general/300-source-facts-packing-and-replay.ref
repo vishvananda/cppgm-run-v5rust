@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier A
+    class-key KW_STRUCT:struct
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier f
+        parameter-clause
+      compound-statement
+        class-specifier Local
+          class-key KW_STRUCT:struct
+  class-specifier B
+    class-key KW_STRUCT:struct
+  class-specifier C
+    class-key KW_STRUCT:struct
+  class-specifier D
+    class-key KW_STRUCT:struct
+end translation unit

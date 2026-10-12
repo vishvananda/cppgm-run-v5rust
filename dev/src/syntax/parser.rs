@@ -350,6 +350,12 @@ impl<'a> Parser<'a> {
             Err(error) => Err(error),
         }
     }
+    pub(super) fn declaration_token_ordinal(&self) -> Result<u32, ParseError> {
+        // The frozen init-declarator range explicitly keeps the low target
+        // 32 bits of the unit ordinal, independently of host usize width.
+        let bytes = self.cursor.absolute_position()?.to_le_bytes();
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
     pub(super) fn declarations(&mut self, until_brace: bool) -> Result<List<DeclId>, ParseError> {
         let start = self.tree.decl_lists.begin();
         loop {
@@ -418,8 +424,8 @@ impl<'a> Parser<'a> {
         specifiers: List<super::ast::Specifier>,
     ) -> Option<ScopeId> {
         for specifier in self.tree.specs.get(specifiers) {
-            match specifier {
-                super::ast::Specifier::Named(name) => {
+            match &specifier.kind {
+                super::ast::SpecifierKind::Named(name) => {
                     return self
                         .tree
                         .names
@@ -427,15 +433,17 @@ impl<'a> Parser<'a> {
                         .binding
                         .and_then(|binding| binding.scope);
                 }
-                super::ast::Specifier::Enum(enumeration) => {
+                super::ast::SpecifierKind::Enum(enumeration) => {
                     if let super::ast::DeclKind::Enum { scope, .. } =
                         self.tree.declarations.get(*enumeration).kind
                     {
                         return scope;
                     }
                 }
-                super::ast::Specifier::Class(id) => return Some(self.tree.classes.get(*id).scope),
-                super::ast::Specifier::Elaborated { name, .. } => {
+                super::ast::SpecifierKind::Class(id) => {
+                    return Some(self.tree.classes.get(*id).scope);
+                }
+                super::ast::SpecifierKind::Elaborated { name, .. } => {
                     return self
                         .tree
                         .names
@@ -443,9 +451,9 @@ impl<'a> Parser<'a> {
                         .binding
                         .and_then(|binding| binding.scope);
                 }
-                super::ast::Specifier::Keyword(_)
-                | super::ast::Specifier::Decltype(_)
-                | super::ast::Specifier::Vector { .. } => (),
+                super::ast::SpecifierKind::Keyword(_)
+                | super::ast::SpecifierKind::Decltype(_)
+                | super::ast::SpecifierKind::Vector { .. } => (),
             }
         }
         None

@@ -1,4 +1,5 @@
 // Translated from syntax/parser_declarations.cpp and parser_specifiers.cpp. See NOTICE.
+use super::ast::{InitializerKind, SpecifierKind};
 use super::{
     ParseError,
     ast::{
@@ -261,7 +262,7 @@ impl Parser<'_> {
                 scope,
             };
             if is_template && self.tree.specs.get(type_node.specifiers).iter().any(|specifier| {
-                matches!(specifier, Specifier::Named(name) if { let node = self.tree.names.get(*name); node.prefix_state == super::ast::PrefixState::Known && (node.prefix_template != super::ast::TemplatePrefix::Ordinary) })
+                matches!(specifier.kind, SpecifierKind::Named(name) if { let node = self.tree.names.get(name); node.prefix_state == super::ast::PrefixState::Known && (node.prefix_template != super::ast::TemplatePrefix::Ordinary) })
             }) { binding.scope = None; }
             self.note_type_guesses(&mut binding, type_node.specifiers, is_template);
             self.scopes
@@ -394,18 +395,19 @@ impl Parser<'_> {
         definite: bool,
         type_only: bool,
         leading: List<super::ast::Attribute>,
-        initial: Option<super::ast::Name>,
+        initial: Option<(super::ast::Name, SourceOffset)>,
     ) -> Result<List<Specifier>, ParseError> {
         let start = self.tree.specs.begin();
         self.vector_specifiers(leading, false)?;
-        if let Some(name) = initial {
-            self.tree.specs.push(self.named_specifier(name));
+        if let Some((name, location)) = initial {
+            self.tree.specs.push(self.named_specifier(name, location));
         }
         let mut has_type = initial.is_some();
         let mut has_friend = false;
         loop {
             let attributes = self.collect_attributes(self.tree.specs.begin() != start)?;
             self.vector_specifiers(attributes, !type_only)?;
+            let location = self.location()?;
             match self.keyword()? {
                 Some(word)
                     if Self::is_specifier(word)
@@ -416,11 +418,17 @@ impl Parser<'_> {
                     has_type |= Self::has_type_keyword(word);
                     has_friend |= word == K::Friend;
                     self.cursor.advance()?;
-                    self.tree.specs.push(Specifier::Keyword(word));
+                    self.tree.specs.push(Specifier {
+                        location,
+                        kind: SpecifierKind::Keyword(word),
+                    });
                 }
                 Some(K::Enum) if !has_type => {
                     let enumeration = self.enum_specifier()?;
-                    self.tree.specs.push(Specifier::Enum(enumeration));
+                    self.tree.specs.push(Specifier {
+                        location,
+                        kind: SpecifierKind::Enum(enumeration),
+                    });
                     has_type = true;
                 }
                 Some(K::Class | K::Struct | K::Union) if !has_type => {
@@ -450,7 +458,7 @@ impl Parser<'_> {
                     let Some(name) = named else {
                         break;
                     };
-                    self.tree.specs.push(self.named_specifier(name));
+                    self.tree.specs.push(self.named_specifier(name, location));
                     has_type = true;
                 }
                 _ => break,
@@ -464,25 +472,30 @@ impl Parser<'_> {
     pub(super) fn type_id(&mut self, definite: bool) -> Result<TypeId, ParseError> {
         self.type_id_in_mode(definite, super::declarators::Mode::Abstract)
     }
-    fn named_specifier(&self, name: super::ast::Name) -> Specifier {
+    fn named_specifier(&self, name: super::ast::Name, location: SourceOffset) -> Specifier {
         let node = self.tree.names.get(name);
-        if !node.global
+        let kind = if !node.global
             && self.tree.name_lists.get(node.components).len() == 1
             && let super::ast::NameKind::Decltype(operand) =
                 self.tree.name_lists.get(node.components)[0].kind
         {
-            Specifier::Decltype(operand)
+            SpecifierKind::Decltype(operand)
         } else {
-            Specifier::Named(name)
-        }
+            SpecifierKind::Named(name)
+        };
+        Specifier { location, kind }
     }
     pub(super) fn type_from_name(
         &mut self,
         name: super::ast::Name,
         location: SourceOffset,
     ) -> Result<TypeId, ParseError> {
-        let specifiers =
-            self.specifier_sequence_with_leading(false, true, List::default(), Some(name))?;
+        let specifiers = self.specifier_sequence_with_leading(
+            false,
+            true,
+            List::default(),
+            Some((name, location)),
+        )?;
         let declarator = self.declarator(super::declarators::Mode::Abstract)?;
         let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
         // The frozen shared-name builder does not set SpecifierInfo::type_name.
@@ -520,14 +533,14 @@ impl Parser<'_> {
             .specs
             .get(specifiers)
             .iter()
-            .any(|specifier| match specifier {
-                Specifier::Keyword(word) => Self::has_type_keyword(*word),
-                Specifier::Vector { .. } => false,
-                Specifier::Named(_)
-                | Specifier::Enum(_)
-                | Specifier::Class(_)
-                | Specifier::Elaborated { .. }
-                | Specifier::Decltype(_) => true,
+            .any(|specifier| match &specifier.kind {
+                SpecifierKind::Keyword(word) => Self::has_type_keyword(*word),
+                SpecifierKind::Vector { .. } => false,
+                SpecifierKind::Named(_)
+                | SpecifierKind::Enum(_)
+                | SpecifierKind::Class(_)
+                | SpecifierKind::Elaborated { .. }
+                | SpecifierKind::Decltype(_) => true,
             })
     }
     fn enum_specifier(&mut self) -> Result<DeclId, ParseError> {
@@ -599,6 +612,7 @@ impl Parser<'_> {
         let mut trailing_comma = false;
         if has_body {
             while !self.at(P::RightBrace)? {
+                let location = self.location()?;
                 let name = self.identifier()?;
                 self.skip_attributes()?;
                 let value = if self.accept(P::Assign)? {
@@ -606,7 +620,11 @@ impl Parser<'_> {
                 } else {
                     None
                 };
-                self.tree.enumerators.push(Enumerator { name, value });
+                self.tree.enumerators.push(Enumerator {
+                    location,
+                    name,
+                    value,
+                });
                 if let Some(scope) = scope {
                     self.scopes.declare_in(
                         scope,
@@ -666,12 +684,12 @@ impl Parser<'_> {
             .specs
             .get(specifiers)
             .iter()
-            .any(|specifier| matches!(specifier, Specifier::Keyword(K::Typedef)));
+            .any(|specifier| matches!(specifier.kind, SpecifierKind::Keyword(K::Typedef)));
         if self.accept(P::Semicolon)? {
             if let [specifier] = self.tree.specs.get(specifiers) {
-                match *specifier {
-                    Specifier::Enum(enumeration) if !self.in_class() => return Ok(enumeration),
-                    Specifier::Class(_) | Specifier::Elaborated { .. }
+                match specifier.kind {
+                    SpecifierKind::Enum(enumeration) if !self.in_class() => return Ok(enumeration),
+                    SpecifierKind::Class(_) | SpecifierKind::Elaborated { .. }
                         if !self.pending_class_attributes() =>
                     {
                         return self.tree.declarations.add(Declaration {
@@ -698,6 +716,7 @@ impl Parser<'_> {
         self.function_scope = None;
         let start = self.tree.init_declarators.begin();
         loop {
+            let first_token = self.declaration_token_ordinal()?;
             let declarator = self.declarator(super::declarators::Mode::Named)?;
             self.declare_declarator(
                 declarator,
@@ -741,6 +760,10 @@ impl Parser<'_> {
             self.scopes.current = enclosing;
             let initializer = result?;
             self.tree.init_declarators.push(InitDeclarator {
+                tokens: super::ast::TokenSpan {
+                    begin: first_token,
+                    end: self.declaration_token_ordinal()?,
+                },
                 declarator,
                 initializer,
             });
@@ -761,22 +784,27 @@ impl Parser<'_> {
         })
     }
     pub(super) fn initializer(&mut self) -> Result<Initializer, ParseError> {
+        let location = self.location()?;
+        let kind = self.without_angle(Self::initializer_kind)?;
+        Ok(Initializer { location, kind })
+    }
+    fn initializer_kind(&mut self) -> Result<InitializerKind, ParseError> {
         if self.accept(P::Assign)? {
             if self.at_ahead(P::Semicolon, 1)? || self.at_ahead(P::Comma, 1)? {
                 if self.accept_keyword(K::Default)? {
-                    return Ok(Initializer::Default);
+                    return Ok(InitializerKind::Default);
                 }
                 if self.accept_keyword(K::Delete)? {
-                    return Ok(Initializer::Delete);
+                    return Ok(InitializerKind::Delete);
                 }
             }
-            return Ok(Initializer::Assign(self.initializer_clause()?));
+            return Ok(InitializerKind::Assign(self.initializer_clause()?));
         }
         if self.at(P::LeftBrace)? {
-            return Ok(Initializer::Braced(self.braced_list()?));
+            return Ok(InitializerKind::Braced(self.braced_list()?));
         }
         self.expect(P::LeftParen)?;
-        Ok(Initializer::Parenthesized(
+        Ok(InitializerKind::Parenthesized(
             self.expression_list(P::RightParen)?,
         ))
     }

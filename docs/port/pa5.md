@@ -3,6 +3,120 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: source facts and packing observations — 2026-10-12
+
+Entry/reviewed commit: `eeb0e48954aaad0e00fbaadab74cd26328a2906a` (clean).
+Stage base and last accepted partial-audit commit above remain unchanged.
+The commit containing this entry is recorded in `pa5-source-facts/handoff.json`.
+**Full acceptance remains open**, with the original goal active. The previous
+turn made verified progress: committed category/pack and class-query owners,
+zero lost fixed passes, and concrete scaling improvement. This continuation
+completes the connected retained source-fact responsibility beyond dump coverage.
+
+Consulted frozen `ast{,_names,_types,_declarations,_statements,_expressions}.h`,
+`parser_names.cpp`, `parser_specifiers.cpp`, `parser_declarators.cpp`,
+`parser_declarations.cpp`, `parser.cpp`, `parse_token_stream.*` and
+`syntax_unit.cpp` directly at the fixed oracle commit. The repository guide,
+contract, specification, plan, complete PA5 handout/parsing guide and source
+map/ledger remain the requirements. No oracle/harness defect was found.
+
+| C++ responsibility and finding | Rust correction |
+| --- | --- |
+| `DeclSpecifier`, `FunctionQualifier`, `Initializer` source locations | `ast.rs` now stores each as a located typed kind/payload in its existing list/record owner. All grammar producers retain the exact start, including vector Attribute locations, shared-name type-id starts and named/decltype functional casts. The printer/renderer and parser consumers read the same kinds and IDs; no second tree or later text reconstruction is required. |
+| Parameter/clause/default boundaries (`parser_declarators.cpp`) | `declarators.rs` captures the clause's opening parenthesis and parameter's start before attributes/specifiers. A parameter-default Initializer's location is the token after `=`, matching C++; ordinary initializer records instead start at their introducer. Every cv/ref/noexcept/throw/trailing/virt qualifier has its own location. |
+| Root names and special members (`parser_names.cpp`, `parser_declarations.cpp`) | `names.rs` retains the root Name location separately from its components and typename-specifier start. `classes.rs` now gives a special-member Declarator its Name's location; the old location incorrectly came from the outer declaration's first member-function specifier. |
+| Class/enum/constructor facts (`ast_declarations.h`) | ClassSyntax owns its absolute class-key/closing-brace token interval, base-clause presence and class-key packing. The exclusive end precedes trailing GNU attributes, like C++. Enumerator locations and constructor clause colon location remain typed on their owners. Existing enum/statement/type locations cover their other C++ source responsibilities; Handler/Pointer/Capture have no missing C++ location field. Function-try location is the compound Statement's location, as the oracle constructs it. |
+| Simple init-declarator token intervals (`parser_declarations.cpp`) | Each InitDeclarator records its first token and the token after its initializer/before comma or semicolon. `parser.rs` explicitly keeps the low target 32 bits of the unit ordinal, matching the frozen cast independently of host width; ClassSyntax spans retain full u64 ordinals. |
+| `observe_pack`, `pack_at` (`parse_token_stream.cpp`, `syntax_unit.cpp`) | `cursor.rs` records only packing changes observed after the shared post-token demand, indexed by original absolute token ordinal. A partition query selects the state at the class-key. Lookahead, window compaction, deferred replay and parser rollback therefore cannot substitute the preprocessor's later current state. The existing Rust PA4 pragma owner supplies the typed alignment; no re-interpretation of pragma text occurs. |
+
+This is parse-time fact preservation, not semantic layout/instantiation work.
+Every location is the shared SourceOffset; names and operands are compact IDs.
+The existing slabs/list marks rewind the new facts with their owning records.
+Packing observations belong to irreversible preprocessing demand and survive
+parser rewind; the class query uses the original token ordinal. There is no
+per-token packing vector, whole-unit materialization in production, owning
+spelling copy, rendered transport or fallback. `source-fact-owners.json` records
+the exact owner review, including already represented or absent C++ fields.
+The initializer builder also restores its delimiter angle context like C++.
+No target numeric evaluation, optimizer/register allocator policy or backend
+lifetime changed.
+
+Five independent invariants inspect the facts rather than matching a dump:
+individual specifier/initializer and target token bounds; parameter/default/
+qualifier/Name/type/enum/ctor locations; packing and brace ranges with all tokens
+already looked ahead and a deferred local class; complete rollback of source
+records while retaining packing history; and an intervening macro `_Pragma`
+after the class-key plus shared typename/name location differences. Debug and
+release each pass **98 library plus eight tool tests**. Strict Clippy, rustfmt
+and the authoritative **84-file** audit pass with zero findings. Narrow
+non-test dead-code expectations on source facts retained for later consumers
+have field-specific reasons and direct invariant use; unused or now-consumed
+expectations were removed. No blanket allowance, unsafe, dependency, process/
+environment read, mechanical split or fixture tailoring was added.
+
+Three new required fixtures and only their new oracle expectations are in
+`pa5/tests/general/300-source-facts-*.t`, the executed owning lane. Frozen
+fixtures/references, acceptance policy and Ralph state are unchanged.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-source-facts/`.
+Metadata, entry/final receipts, `progress.json`, passing/failing ID lists,
+`cases/` and PA1–PA5 `course/` receipts preserve all results. Manifest SHA-256
+remains `27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost, no fixed failures. These facts and owner
+review provide architecture evidence; new passing fixtures do not redefine
+fixed-manifest progress or prove the still-pending nesting policy.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS; `quality.log` (97 library tests), final `quality-facts-final.log` (98 after adding the macro/typename invariant), eight tool tests each debug/release, strict Clippy/rustfmt and file audit |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 238/238, zero failed comparisons/no marker; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 84 files, zero findings; `audit.log`; repeated within final quality run |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+`validate.py` / `checks.json` preserve commands, statuses and elapsed costs.
+`final.json`, `final/` / `parameter-sources.json` retain **631/631** complete
+exit/stdout/stderr/AST comparisons. Prior probe receipts retain **1510/1510**:
+147 attributes, 114 earlier audit, 334 parameter bases, 135 lambdas, 704 shared
+operands and 76 templates. `new-regressions.json` records all three new strict
+fixture comparisons. The final extra invariant changes only test code; all
+production source and fixtures were already validated by the full gate run.
+
+Resource command: `python3` on this root's `measure.py`, after the full gate and
+final quality handles were terminal. Tool/input/output hashes, Linux/rustc
+1.98.0, UTC/C and whole invocation conditions are frozen in metadata. Oracle
+A/A calibration then A/B/B/A blocks match all **36** complete byte results.
+`resources/`, `measurements.json` and `measure.log` preserve raw times/RSS and
+outputs. These are warm observations on a shared host, including preprocessing,
+clock query and I/O, separate from generated-code equality and any PA35 target.
+
+| Workload | Count | Rust mean ms | Rust max RSS KiB | C++ mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| located-parameter-functions | 1000 | 48.27 | 8024 | 16.74 | 7244 |
+| located-parameter-functions | 4000 | 120.96 | 13508 | 58.52 | 13492 |
+| located-parameter-functions | 16000 | 493.21 | 42452 | 206.83 | 39296 |
+| packed-deferred-classes | 1000 | 42.21 | 8012 | 18.27 | 7176 |
+| packed-deferred-classes | 4000 | 148.01 | 14200 | 57.55 | 13556 |
+| packed-deferred-classes | 16000 | 393.25 | 46372 | 201.29 | 39144 |
+
+Fourfold 4000 -> 16000 growth takes about 4.1 times Rust time for the larger
+located parameter/specifier records and 2.65 times for packed deferred classes;
+owned syntax/packing-change storage grows with source demand. These data do
+not certify identical compiler speed or hardware-counter behavior. Checkout
+and scratch occupy about 8.9 GiB of the shared 100 GiB capacity.
+
+The exact remaining acceptance case `deep-parenthesized-expression` remains
+C++ exit 0 / Rust 86 at 300 parentheses, preserved in `pending-probes.json` /
+raw paths. The two category cases stay resolved. The exploratory unhosted fold
+and statement-expression mismatches remain outside PA5's authoritative grammar,
+as established in the previous owner review. Next: replace the safe parser's
+nesting stub with the byte-budget policy and audit failure boundaries, then
+finish the complete PA5 grammar/driver responsibility census. Full-stage
+acceptance and goal completion remain unproven; no goal status change is made.
+
 ## Full-stage audit continuation: completed-class query ownership — 2026-10-12
 
 Entry/reviewed commit: `6f8b1eb1a04aa734011a6869c5816c33edb1bca6` (clean).

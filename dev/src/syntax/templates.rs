@@ -1,5 +1,6 @@
 // Translated from syntax/parser_declarations.cpp and parser_names.cpp. See NOTICE.
 //! Template heads and arguments retain typed syntax, independently of instantiation.
+use super::ast::SpecifierKind;
 use super::{
     ParseError,
     ast::{
@@ -114,7 +115,10 @@ impl Parser<'_> {
             if name.is_none()
                 && matches!(
                     self.tree.specs.get(specifiers),
-                    [Specifier::Keyword(K::Int)]
+                    [Specifier {
+                        kind: SpecifierKind::Keyword(K::Int),
+                        ..
+                    }]
                 )
             {
                 let mut node = *self.tree.expressions.get(value);

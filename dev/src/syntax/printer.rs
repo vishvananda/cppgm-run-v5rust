@@ -1,5 +1,6 @@
 // Translated from syntax/ast_printer.cpp. See NOTICE.
 //! Iterative tree view, including arbitrarily long left-associated chains.
+use super::ast::{InitializerKind, QualifierKind, SpecifierKind};
 use super::{
     ast::{
         Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind, DeclaratorId,
@@ -197,9 +198,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 };
                 self.function_body(body)?;
             }
-            Task::OwnedSpecifier(specifier) => match specifier {
-                Specifier::Class(id) => self.class(id)?,
-                Specifier::Elaborated { key, name } => {
+            Task::OwnedSpecifier(specifier) => match specifier.kind {
+                SpecifierKind::Class(id) => self.class(id)?,
+                SpecifierKind::Elaborated { key, name } => {
                     self.open("class-forward-declaration", Payload::Name(name))?;
                     self.tasks
                         .push(Task::Line("class-key", Payload::Keyword(key), false));
@@ -254,9 +255,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         false,
                     ));
                 }
-                match member.initializer {
-                    Initializer::Braced(expr) => self.tasks.push(Task::Expression(expr)),
-                    Initializer::Parenthesized(args) => self
+                match member.initializer.kind {
+                    InitializerKind::Braced(expr) => self.tasks.push(Task::Expression(expr)),
+                    InitializerKind::Parenthesized(args) => self
                         .tasks
                         .push(Task::ExpressionList("paren-argument-list", args)),
                     _ => return Err(io::Error::other("invalid constructor initializer")),
@@ -288,19 +289,19 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             Task::Qualifier(qualifier) => self.qualifier(qualifier)?,
             Task::Initializer(initializer) => {
                 self.open("initializer", Payload::None)?;
-                match initializer {
-                    Initializer::Assign(expr) | Initializer::Braced(expr) => {
+                match initializer.kind {
+                    InitializerKind::Assign(expr) | InitializerKind::Braced(expr) => {
                         self.tasks.push(Task::Expression(expr));
                     }
-                    Initializer::Parenthesized(args) => self
+                    InitializerKind::Parenthesized(args) => self
                         .tasks
                         .push(Task::ExpressionList("paren-initializer", args)),
-                    Initializer::Default => self.tasks.push(Task::Line(
+                    InitializerKind::Default => self.tasks.push(Task::Line(
                         "special-initializer",
                         Payload::Text("default"),
                         false,
                     )),
-                    Initializer::Delete => self.tasks.push(Task::Line(
+                    InitializerKind::Delete => self.tasks.push(Task::Line(
                         "special-initializer",
                         Payload::Text("delete"),
                         false,
@@ -491,7 +492,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 if !specifiers.is_empty() {
                     self.tasks.push(Task::Close);
                     for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
-                        let Specifier::Keyword(word) = specifier else {
+                        let SpecifierKind::Keyword(word) = specifier.kind else {
                             return Err(io::Error::other("invalid member specifier"));
                         };
                         self.tasks.push(Task::Line(
@@ -631,8 +632,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             Payload::None,
         )?;
         for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
-            let task = match specifier {
-                Specifier::Vector { operand, .. } => {
+            let task = match specifier.kind {
+                SpecifierKind::Vector { operand, .. } => {
                     self.tasks.push(Task::Close);
                     self.tasks.push(Task::Expression(operand));
                     Task::Line(
@@ -641,7 +642,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         true,
                     )
                 }
-                Specifier::Keyword(word) => Task::Line(
+                SpecifierKind::Keyword(word) => Task::Line(
                     if !types {
                         "decl-specifier"
                     } else if matches!(word, K::Const | K::Volatile) {
@@ -652,7 +653,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     Payload::Keyword(word),
                     false,
                 ),
-                Specifier::Named(name) => {
+                SpecifierKind::Named(name) => {
                     let node = self.renderer.tree.names.get(name);
                     let components = self.renderer.tree.name_lists.get(node.components);
                     if !node.global
@@ -687,11 +688,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         )
                     }
                 }
-                Specifier::Class(_) | Specifier::Elaborated { .. } => {
+                SpecifierKind::Class(_) | SpecifierKind::Elaborated { .. } => {
                     Task::OwnedSpecifier(specifier)
                 }
-                Specifier::Enum(decl) => Task::Declaration(decl),
-                Specifier::Decltype(operand) => {
+                SpecifierKind::Enum(decl) => Task::Declaration(decl),
+                SpecifierKind::Decltype(operand) => {
                     self.tasks.push(Task::Close);
                     self.tasks.push(Task::Expression(operand));
                     Task::Line(
@@ -905,15 +906,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         Ok(())
     }
     fn qualifier(&mut self, qualifier: Qualifier) -> io::Result<()> {
-        match qualifier {
-            Qualifier::Cv(word) => self.line("cv-qualifier", Payload::Keyword(word), false)?,
-            Qualifier::Ref(op) => self.line("ref-qualifier", Payload::Operator(op), false)?,
-            Qualifier::Virt(name) => self.line("virt-specifier", Payload::Virt(name), false)?,
-            Qualifier::Trailing(ty) => {
+        match qualifier.kind {
+            QualifierKind::Cv(word) => self.line("cv-qualifier", Payload::Keyword(word), false)?,
+            QualifierKind::Ref(op) => self.line("ref-qualifier", Payload::Operator(op), false)?,
+            QualifierKind::Virt(name) => self.line("virt-specifier", Payload::Virt(name), false)?,
+            QualifierKind::Trailing(ty) => {
                 self.open("trailing-return-type", Payload::Render(Render::Type(ty)))?;
                 self.tasks.push(Task::Type(ty));
             }
-            Qualifier::Noexcept(operand) => {
+            QualifierKind::Noexcept(operand) => {
                 self.open(
                     "function-qualifier",
                     Payload::Render(Render::Qualifier(qualifier)),
@@ -922,7 +923,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.tasks.push(Task::Expression(operand));
                 }
             }
-            Qualifier::Throw(_) => self.open(
+            QualifierKind::Throw(_) => self.open(
                 "function-qualifier",
                 Payload::Render(Render::Qualifier(qualifier)),
             )?,
@@ -945,8 +946,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     .push(Task::Line("trailing-return-type", Payload::None, true));
             }
             if let Some(exception) = lambda.exception {
-                match exception {
-                    Qualifier::Noexcept(operand) => {
+                match exception.kind {
+                    QualifierKind::Noexcept(operand) => {
                         self.tasks.push(Task::Close);
                         if let Some(operand) = operand {
                             self.tasks.push(Task::Expression(operand));
@@ -954,7 +955,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         self.tasks
                             .push(Task::Line("noexcept-specification", Payload::None, true));
                     }
-                    Qualifier::Throw(_) => self.tasks.push(Task::Qualifier(exception)),
+                    QualifierKind::Throw(_) => self.tasks.push(Task::Qualifier(exception)),
                     _ => {
                         return Err(io::Error::other("invalid lambda exception specification"));
                     }
@@ -1076,7 +1077,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.open("call-expression", Payload::None)?;
                 let keywords = matches!(
                     self.renderer.tree.specs.get(specifiers),
-                    [Specifier::Keyword(_)]
+                    [Specifier {
+                        kind: SpecifierKind::Keyword(_),
+                        ..
+                    }]
                 );
                 if let Some(braced) = braced {
                     self.tasks.push(Task::Expression(braced));

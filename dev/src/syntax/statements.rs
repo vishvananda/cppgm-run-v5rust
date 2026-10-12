@@ -272,7 +272,12 @@ impl Parser<'_> {
     }
     pub(super) fn function_body(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
         let try_block = self.accept_keyword(K::Try)?;
-        let initializers = if constructor && self.at(P::Colon)? {
+        let initializer_location = if constructor && self.at(P::Colon)? {
+            Some(self.location()?)
+        } else {
+            None
+        };
+        let initializers = if initializer_location.is_some() {
             self.ctor_initializers()?
         } else {
             super::storage::List::default()
@@ -284,6 +289,7 @@ impl Parser<'_> {
             None
         };
         Ok(FunctionBody {
+            initializer_location,
             initializers,
             compound,
             handlers,

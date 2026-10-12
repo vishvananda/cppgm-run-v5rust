@@ -1,5 +1,6 @@
 // Translated from syntax/parser_names.cpp::resolve_component/advance_prefix/note_type_name. See NOTICE.
 //! Typed parser lookup context and the guesses retained for later readings.
+use super::ast::SpecifierKind;
 use super::{
     ast::{Name, PrefixState, Specifier, TemplateArgument, TemplatePrefix},
     parser::Parser,
@@ -264,7 +265,7 @@ impl Parser<'_> {
             .get(specifiers)
             .iter()
             .find_map(|specifier| {
-                if let Specifier::Named(name) = specifier {
+                if let SpecifierKind::Named(name) = &specifier.kind {
                     Some(*name)
                 } else {
                     None

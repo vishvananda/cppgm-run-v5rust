@@ -1,5 +1,6 @@
 // Translated from syntax/parser_names.cpp::parameter_base_lookup and its owners. See NOTICE.
 //! Syntactic lookup through substituted type-parameter bases, without instantiation.
+use super::ast::SpecifierKind;
 use super::{
     ParseError,
     ast::{
@@ -115,7 +116,13 @@ impl Parser<'_> {
         if argument.pack || ty.declarator.is_some() {
             return None;
         }
-        let [Specifier::Named(name)] = self.tree.specs.get(ty.specifiers) else {
+        let [
+            Specifier {
+                kind: SpecifierKind::Named(name),
+                ..
+            },
+        ] = self.tree.specs.get(ty.specifiers)
+        else {
             return None;
         };
         let name = *name;
@@ -179,7 +186,7 @@ impl Parser<'_> {
     }
     pub(super) fn typedef_record(&mut self, specifiers: List<Specifier>) -> u8 {
         for index in 0..self.tree.specs.get(specifiers).len() {
-            if let Specifier::Named(name) = self.tree.specs.get(specifiers)[index] {
+            if let SpecifierKind::Named(name) = self.tree.specs.get(specifiers)[index].kind {
                 let node = *self.tree.names.get(name);
                 let Some(binding) = node.binding else {
                     return 0;

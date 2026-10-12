@@ -1,0 +1,88 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_STATIC:static
+      decl-specifier KW_CONST:const
+      decl-specifier KW_UNSIGNED:unsigned
+      decl-specifier KW_LONG:long
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier left
+        initializer
+          literal 1
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier right
+        initializer
+          paren-initializer
+            literal 2
+  class-specifier C
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_AUTO:auto
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier f
+            parameter-clause
+              parameter-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                declarator
+                  identifier value
+                default-argument
+                  initializer
+                    literal 1
+            cv-qualifier KW_CONST:const
+            ref-qualifier OP_AMP:&
+            function-qualifier noexcept(value)
+              id-expression value
+            trailing-return-type int
+              type-id
+                type-specifier-seq
+                  type-specifier KW_INT:int
+    special-member-definition C
+      member-specifiers
+        specifier KW_INLINE:inline
+      declarator
+        identifier C
+        parameter-clause
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id member
+          paren-argument-list
+            literal 2
+      compound-statement
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier member
+  enum-specifier E
+    enumerator red
+    enumerator blue
+      literal 3
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Named
+      class-key KW_STRUCT:struct
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier T::type
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+end translation unit
