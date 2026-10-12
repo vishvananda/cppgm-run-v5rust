@@ -148,17 +148,10 @@ impl Analyzer<'_> {
                             .map(|&id| (id, unevaluated)),
                     );
                 }
-                let syntax = self.tree.types.get(ty);
-                if syntax.declarator.is_some_and(|id| {
-                    self.tree
-                        .suffixes
-                        .get(self.tree.declarators.get(id).suffixes)
-                        .iter()
-                        .any(|s| matches!(s, ast::Suffix::Array(_)))
-                }) {
-                    return Err(Error::Missing("new-expression runtime array bounds"));
+                let (ty, bound) = self.allocation_type(ty, scope)?;
+                if let Some(bound) = bound {
+                    self.expression_work.push((bound, unevaluated));
                 }
-                let ty = self.type_syntax(ty, scope)?;
                 let empty = initializer.is_none_or(|init| matches!(init.kind, InitializerKind::Parenthesized(arguments) if arguments.is_empty()));
                 if empty && !unevaluated {
                     self.value_initialized_class(ty)?;

@@ -293,6 +293,25 @@ impl Analyzer<'_> {
         id: ast::TypeId,
         scope: ScopeId,
     ) -> Result<Option<(TypeId, Option<ast::ExprId>)>, Error> {
+        let syntax = self.tree.types.get(id);
+        if syntax.declarator.is_some_and(|id| {
+            matches!(
+                self.tree
+                    .suffixes
+                    .get(self.tree.declarators.get(id).suffixes)
+                    .first(),
+                Some(ast::Suffix::Array(None))
+            )
+        }) {
+            return Ok(None);
+        }
+        self.allocation_type(id, scope).map(Some)
+    }
+    pub(super) fn allocation_type(
+        &mut self,
+        id: ast::TypeId,
+        scope: ScopeId,
+    ) -> Result<(TypeId, Option<ast::ExprId>), Error> {
         let syntax = *self.tree.types.get(id);
         let first = syntax.declarator.and_then(|id| {
             self.tree
@@ -301,10 +320,7 @@ impl Analyzer<'_> {
                 .first()
                 .copied()
         });
-        let (skip, bound) = if let Some(ast::Suffix::Array(bound)) = first {
-            let Some(bound) = bound else {
-                return Ok(None);
-            };
+        let (skip, bound) = if let Some(ast::Suffix::Array(Some(bound))) = first {
             (1, Some(bound))
         } else {
             (0, None)
@@ -314,7 +330,7 @@ impl Analyzer<'_> {
         let ty = self
             .declarator_view(syntax.declarator, base, environment, skip)?
             .ty;
-        Ok(Some((ty, bound)))
+        Ok((ty, bound))
     }
     fn function_type(
         &mut self,
