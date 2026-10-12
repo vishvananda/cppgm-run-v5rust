@@ -1,0 +1,102 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier Root
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier Left
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name Root
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  class-specifier Right
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name Root
+  class-specifier Choice
+    class-key KW_STRUCT:struct
+    base-clause
+      base-specifier
+        base-name Left
+      base-specifier
+        base-name Right
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier f
+        parameter-clause
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:word
+          init-declarator-list
+            init-declarator
+              declarator
+                ptr-operator OP_STAR:*
+                identifier p
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Dependent
+      class-key KW_STRUCT:struct
+      base-clause
+        base-specifier
+          base-name Choice
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_VOID:void
+        declarator
+          identifier f
+          parameter-clause
+        compound-statement
+          simple-declaration
+            decl-specifier-seq
+              decl-specifier TT_IDENTIFIER:word
+            init-declarator-list
+              init-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+                  identifier p
+  function-definition
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    declarator
+      identifier g
+      parameter-clause
+    compound-statement
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier Choice::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier p
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier Dependent<int>::word
+        init-declarator-list
+          init-declarator
+            declarator
+              ptr-operator OP_STAR:*
+              identifier q
+end translation unit

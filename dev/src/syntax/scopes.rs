@@ -75,6 +75,8 @@ pub(super) enum ScopeKind {
 struct Scope {
     identity: ScopeIdentity,
     specialization: bool,
+    memo: bool,
+    graph_revision: u64,
     kind: ScopeKind,
     complete: bool,
     parent: Option<ScopeId>,
@@ -115,7 +117,7 @@ pub(super) enum Change {
     Unnamed(ScopeId, Option<ScopeId>),
     Binding((ScopeId, NameId), Option<Binding>),
     Edge(ScopeId, Option<Edge>),
-    Complete(ScopeId, bool),
+    Complete(ScopeId, bool, bool),
     Member(ScopeId, Option<ScopeId>),
     Parent(ScopeId, Option<ScopeId>, u32),
     ParameterBase(ScopeId, Option<ParameterBase>),
@@ -128,9 +130,37 @@ pub(super) struct ScopeMark {
     current: ScopeId,
     environment: u64,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct SearchKey {
+    scope: ScopeIdentity,
+    name: NameId,
+    prefix_only: bool,
+}
+#[derive(Clone, Copy)]
+struct KeptSearch {
+    result: Option<Binding>,
+    name_revision: u64,
+    graph_revision: u64,
+}
+enum SearchDecision {
+    Finished(Option<Binding>),
+    Edges,
+}
+struct SearchFrame {
+    scope: ScopeId,
+    remaining: usize,
+}
 pub(super) struct Scopes {
     records: Vec<Scope>,
-    bindings: HashMap<(ScopeId, NameId), Binding>,
+    // Tombstones retain the oracle binding census; identities never recycle.
+    bindings: HashMap<(ScopeIdentity, NameId), Option<Binding>>,
+    // Each oracle query identity holds both base-demand contexts. The slot
+    // choice is part of the complete key, without changing the census limit.
+    searches: HashMap<SearchKey, [Option<KeptSearch>; 2]>,
+    name_revisions: Vec<u64>,
+    incoming: HashMap<ScopeId, HashSet<ScopeId>>,
+    invalidation_work: Vec<ScopeId>,
+    invalidation_seen: HashSet<ScopeId>,
     unnamed: HashMap<ScopeId, ScopeId>,
     changes: Vec<Change>,
     pub current: ScopeId,
@@ -140,7 +170,9 @@ pub(super) struct Scopes {
     pending: BinaryHeap<Pending>,
     edge_targets: HashSet<(ScopeId, ScopeId, bool)>,
     name_marks: Vec<u8>,
-    search_work: Vec<ScopeId>,
+    search_work: Vec<SearchFrame>,
+    #[cfg(test)]
+    search_visits: u64,
     next_identity: u64,
     categories: HashMap<(ScopeIdentity, NameId, NameId), Categories>,
     conflicts: bool,
@@ -152,6 +184,8 @@ impl Default for Scopes {
             records: vec![Scope {
                 identity: ScopeIdentity(0),
                 specialization: false,
+                memo: false,
+                graph_revision: 0,
                 kind: ScopeKind::Namespace,
                 complete: false,
                 parent: None,
@@ -161,6 +195,11 @@ impl Default for Scopes {
                 parameter_bases: Vec::new(),
             }],
             bindings: HashMap::new(),
+            searches: HashMap::new(),
+            name_revisions: Vec::new(),
+            incoming: HashMap::new(),
+            invalidation_work: Vec::new(),
+            invalidation_seen: HashSet::new(),
             unnamed: HashMap::new(),
             changes: Vec::new(),
             current: ScopeId(0),
@@ -171,6 +210,8 @@ impl Default for Scopes {
             edge_targets: HashSet::new(),
             name_marks: Vec::new(),
             search_work: Vec::new(),
+            #[cfg(test)]
+            search_visits: 0,
             next_identity: 1,
             categories: HashMap::new(),
             conflicts: false,
@@ -397,10 +438,20 @@ impl Scopes {
     pub(super) fn complete(&self, scope: ScopeId) -> bool {
         self.records[scope.0 as usize].complete
     }
-    pub(super) fn complete_class(&mut self, scope: ScopeId) {
-        let old = self.records[scope.0 as usize].complete;
-        self.changes.push(Change::Complete(scope, old));
+    pub(super) fn complete_class(&mut self, scope: ScopeId, templated: bool) {
+        let record = &self.records[scope.0 as usize];
+        let memo = !templated
+            && record.edges.iter().all(|edge| {
+                let target = &self.records[edge.target.0 as usize];
+                matches!(target.kind, ScopeKind::Class(_) | ScopeKind::AnonymousClass)
+                    && target.memo
+                    && !edge.dependent
+            });
+        self.changes
+            .push(Change::Complete(scope, record.complete, record.memo));
         self.records[scope.0 as usize].complete = true;
+        self.records[scope.0 as usize].memo = memo;
+        self.invalidate_class_graph(scope);
         self.changed();
     }
     pub(super) fn reopen(&mut self, scope: ScopeId, parent: ScopeId) -> Result<(), ParseError> {
@@ -483,6 +534,8 @@ impl Scopes {
         self.records.push(Scope {
             identity,
             specialization: false,
+            memo: false,
+            graph_revision: 0,
             kind,
             complete: false,
             parent: Some(self.current),
@@ -550,7 +603,10 @@ impl Scopes {
             .is_some_and(|marks| marks & 4 != 0)
     }
     pub(super) fn own(&self, scope: ScopeId, name: NameId) -> Option<Binding> {
-        self.bindings.get(&(scope, name)).copied()
+        self.bindings
+            .get(&(self.records[scope.0 as usize].identity, name))
+            .copied()
+            .flatten()
     }
     pub(super) fn declare(&mut self, name: NameId, binding: Binding) {
         self.declare_in(self.current, name, binding);
@@ -610,8 +666,20 @@ impl Scopes {
                 binding
             }
         });
-        let old = self.bindings.insert(key, binding);
+        let old = self
+            .bindings
+            .insert(
+                (self.records[scope.0 as usize].identity, name),
+                Some(binding),
+            )
+            .flatten();
         self.changes.push(Change::Binding(key, old));
+        if matches!(
+            self.kind(scope),
+            ScopeKind::Class(_) | ScopeKind::AnonymousClass | ScopeKind::Enum
+        ) {
+            self.touch_name(name);
+        }
         self.changed();
         if self.records[scope.0 as usize].specialization {
             self.record_member_category(scope, name, category);
@@ -656,6 +724,8 @@ impl Scopes {
                 at,
                 dependent,
             });
+            self.incoming.entry(scope).or_default().insert(current);
+            self.invalidate_class_graph(current);
             self.changes.push(Change::Edge(current, None));
             self.changed();
         }
@@ -820,36 +890,174 @@ impl Scopes {
         specialization: bool,
     ) -> Option<Binding> {
         self.search_work.clear();
-        self.search_work.push(scope);
-        while let Some(scope) = self.search_work.pop() {
-            if !self.visited.insert(scope) {
+        if let SearchDecision::Finished(result) =
+            self.begin_search(scope, name, prefix_only, specialization)
+        {
+            return result;
+        }
+        self.search_work.push(SearchFrame {
+            scope,
+            remaining: self.records[scope.0 as usize].edges.len(),
+        });
+        while let Some(frame) = self.search_work.last_mut() {
+            if frame.remaining == 0 {
+                let scope = frame.scope;
+                self.search_work.pop();
+                self.keep_search(scope, name, prefix_only, specialization, None);
                 continue;
             }
-            if let Some(binding) = self
-                .own(scope, name)
-                .filter(|binding| Self::found(*binding, prefix_only))
-            {
-                return Some(binding);
+            frame.remaining -= 1;
+            let edge = self.records[frame.scope.0 as usize].edges[frame.remaining];
+            if edge.dependent && !specialization {
+                continue;
             }
-            if matches!(
-                self.kind(scope),
-                ScopeKind::Class(_) | ScopeKind::AnonymousClass
-            ) && self
+            if let SearchDecision::Finished(result) =
+                self.begin_search(edge.target, name, prefix_only, specialization)
+            {
+                if let Some(binding) = result {
+                    while let Some(frame) = self.search_work.pop() {
+                        self.keep_search(
+                            frame.scope,
+                            name,
+                            prefix_only,
+                            specialization,
+                            Some(binding),
+                        );
+                    }
+                    return Some(binding);
+                }
+            } else {
+                self.search_work.push(SearchFrame {
+                    scope: edge.target,
+                    remaining: self.records[edge.target.0 as usize].edges.len(),
+                });
+            }
+        }
+        None
+    }
+    // A completed negative search differs from one still needing its edges.
+    fn begin_search(
+        &mut self,
+        scope: ScopeId,
+        name: NameId,
+        prefix_only: bool,
+        specialization: bool,
+    ) -> SearchDecision {
+        if !self.visited.insert(scope) {
+            return SearchDecision::Finished(None);
+        }
+        #[cfg(test)]
+        {
+            self.search_visits += 1;
+        }
+        if let Some(binding) = self
+            .own(scope, name)
+            .filter(|binding| Self::found(*binding, prefix_only))
+        {
+            return SearchDecision::Finished(Some(binding));
+        }
+        let record = &self.records[scope.0 as usize];
+        if matches!(record.kind, ScopeKind::Class(_) | ScopeKind::AnonymousClass)
+            && self
                 .name_marks
                 .get(name.index())
                 .is_none_or(|marks| marks & 2 == 0)
-            {
+        {
+            return SearchDecision::Finished(None);
+        }
+        let key = SearchKey {
+            scope: record.identity,
+            name,
+            prefix_only,
+        };
+        self.searches
+            .get(&key)
+            .and_then(|kept| kept[usize::from(specialization)])
+            .filter(|kept| {
+                record.memo
+                    && kept.graph_revision == record.graph_revision
+                    && kept.name_revision == self.name_revision(name)
+            })
+            .map_or(SearchDecision::Edges, |kept| {
+                SearchDecision::Finished(kept.result)
+            })
+    }
+    fn name_revision(&self, name: NameId) -> u64 {
+        self.name_revisions.get(name.index()).copied().unwrap_or(0)
+    }
+    fn touch_name(&mut self, name: NameId) {
+        // Names without kept searches need no epoch storage.
+        if self
+            .name_marks
+            .get(name.index())
+            .is_none_or(|marks| marks & 64 == 0)
+        {
+            return;
+        }
+        if name.index() >= self.name_revisions.len() {
+            self.name_revisions.resize(name.index() + 1, 0);
+        }
+        let revision = &mut self.name_revisions[name.index()];
+        if let Some(next) = revision.checked_add(1) {
+            *revision = next;
+        } else {
+            // Wrapping may not revive an old result. Only this name is cold.
+            *revision = 0;
+            self.searches.retain(|key, _| key.name != name);
+        }
+    }
+    fn keep_search(
+        &mut self,
+        scope: ScopeId,
+        name: NameId,
+        prefix_only: bool,
+        specialization: bool,
+        result: Option<Binding>,
+    ) {
+        let record = &self.records[scope.0 as usize];
+        if !record.memo {
+            return;
+        }
+        let key = SearchKey {
+            scope: record.identity,
+            name,
+            prefix_only,
+        };
+        // A full memo renews existing queries but introduces no new ones.
+        let limit = self.bindings.len().saturating_mul(4).max(1 << 16);
+        if self.searches.len() >= limit && !self.searches.contains_key(&key) {
+            return;
+        }
+        let kept = KeptSearch {
+            result,
+            name_revision: self.name_revision(name),
+            graph_revision: record.graph_revision,
+        };
+        self.searches.entry(key).or_insert([None; 2])[usize::from(specialization)] = Some(kept);
+        self.mark_name(name, 64);
+    }
+    fn invalidate_class_graph(&mut self, scope: ScopeId) {
+        // Reverse base edges invalidate this entity and its actual dependents,
+        // rather than making unrelated translation-unit searches cold.
+        self.invalidation_work.clear();
+        self.invalidation_seen.clear();
+        self.invalidation_work.push(scope);
+        while let Some(scope) = self.invalidation_work.pop() {
+            if !self.invalidation_seen.insert(scope) {
                 continue;
             }
-            self.search_work.extend(
-                self.records[scope.0 as usize]
-                    .edges
-                    .iter()
-                    .filter(|edge| !edge.dependent || specialization)
-                    .map(|edge| edge.target),
-            );
+            let record = &mut self.records[scope.0 as usize];
+            if let Some(next) = record.graph_revision.checked_add(1) {
+                record.graph_revision = next;
+            } else {
+                record.graph_revision = 0;
+                let identity = record.identity;
+                self.searches.retain(|key, _| key.scope != identity);
+            }
+            if let Some(incoming) = self.incoming.get(&scope) {
+                self.invalidation_work.extend(incoming);
+            }
         }
-        None
     }
     pub(super) fn mark(&self) -> ScopeMark {
         ScopeMark {
@@ -883,21 +1091,24 @@ impl Scopes {
                 Change::Unnamed(parent, old)
             }
             Change::Binding(key, value) => {
-                let old = if let Some(value) = value {
-                    self.bindings.insert(key, value)
-                } else {
-                    self.bindings.remove(&key)
-                };
+                self.touch_name(key.1);
+                let identity = self.records[key.0.0 as usize].identity;
+                let old = self.bindings.insert((identity, key.1), value).flatten();
                 Change::Binding(key, old)
             }
             Change::Member(scope, value) => Change::Member(
                 scope,
                 std::mem::replace(&mut self.records[scope.0 as usize].member_of, value),
             ),
-            Change::Complete(scope, value) => Change::Complete(
-                scope,
-                std::mem::replace(&mut self.records[scope.0 as usize].complete, value),
-            ),
+            Change::Complete(scope, value, memo) => {
+                self.invalidate_class_graph(scope);
+                let record = &mut self.records[scope.0 as usize];
+                Change::Complete(
+                    scope,
+                    std::mem::replace(&mut record.complete, value),
+                    std::mem::replace(&mut record.memo, memo),
+                )
+            }
             Change::Parent(scope, parent, depth) => {
                 let record = &mut self.records[scope.0 as usize];
                 Change::Parent(
@@ -908,6 +1119,8 @@ impl Scopes {
             }
             Change::Edge(scope, Some(edge)) => {
                 self.records[scope.0 as usize].edges.push(edge);
+                self.incoming.entry(edge.target).or_default().insert(scope);
+                self.invalidate_class_graph(scope);
                 self.edge_targets
                     .insert((scope, edge.target, edge.dependent));
                 Change::Edge(scope, None)
@@ -918,6 +1131,16 @@ impl Scopes {
                     self.edge_targets
                         .remove(&(scope, edge.target, edge.dependent));
                 }
+                if let Some(edge) = edge
+                    && !self.records[scope.0 as usize]
+                        .edges
+                        .iter()
+                        .any(|remaining| remaining.target == edge.target)
+                    && let Some(incoming) = self.incoming.get_mut(&edge.target)
+                {
+                    incoming.remove(&scope);
+                }
+                self.invalidate_class_graph(scope);
                 Change::Edge(scope, edge)
             }
         }
@@ -954,5 +1177,201 @@ impl Scopes {
     }
     pub(super) fn settle(&mut self) {
         self.changes.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lex::identifiers::Identifiers;
+
+    fn binding(category: Category, scope: Option<ScopeId>) -> Binding {
+        Binding {
+            category,
+            scope,
+            pack: false,
+            parameter: false,
+            specialization: 0,
+            alternatives: Categories::default(),
+            guesses: Guesses::default(),
+        }
+    }
+    fn class(scopes: &mut Scopes, name: NameId, base: Option<ScopeId>) -> ScopeId {
+        scopes.current = Scopes::global();
+        let scope = scopes.push_kind(ScopeKind::Class(name)).unwrap();
+        if let Some(base) = base {
+            scopes.add_base(base, false);
+        }
+        scopes.complete_class(scope, false);
+        scope
+    }
+    #[test]
+    fn inherited_searches_scale_and_unrelated_mutations_keep_them_warm() {
+        let mut names = Identifiers::default();
+        let class_name = names.intern(b"C").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let other = names.intern(b"other").unwrap();
+        let mut scopes = Scopes::default();
+        let base = class(&mut scopes, class_name, None);
+        scopes.declare_in(base, word, binding(Category::Type, None));
+        let mut last = base;
+        for _ in 0..1024 {
+            last = class(&mut scopes, class_name, Some(last));
+            assert_eq!(
+                scopes
+                    .lookup_specialization(last, word, false, false)
+                    .unwrap()
+                    .category,
+                Category::Type
+            );
+        }
+        assert!(scopes.search_visits <= 2048);
+        let before = scopes.search_visits;
+        scopes.declare_in(base, other, binding(Category::Value, None));
+        scopes.declare_in(Scopes::global(), word, binding(Category::Value, None));
+        assert_eq!(
+            scopes
+                .lookup_specialization(last, word, false, false)
+                .unwrap()
+                .category,
+            Category::Type
+        );
+        assert_eq!(scopes.search_visits - before, 1);
+    }
+    #[test]
+    fn negative_prefix_and_specialization_queries_have_complete_keys() {
+        let mut names = Identifiers::default();
+        let class_name = names.intern(b"C").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let mut scopes = Scopes::default();
+        let empty = class(&mut scopes, class_name, None);
+        let other = class(&mut scopes, class_name, None);
+        scopes.declare_in(other, word, binding(Category::Type, Some(other)));
+        let child = class(&mut scopes, class_name, Some(empty));
+        let root = class(&mut scopes, class_name, Some(child));
+        assert!(
+            scopes
+                .lookup_specialization(root, word, true, false)
+                .is_none()
+        );
+        let before = scopes.search_visits;
+        assert!(
+            scopes
+                .lookup_specialization(root, word, true, false)
+                .is_none()
+        );
+        assert_eq!(scopes.search_visits - before, 1);
+        scopes.declare_in(empty, word, binding(Category::Value, None));
+        assert_eq!(
+            scopes
+                .lookup_specialization(root, word, false, false)
+                .unwrap()
+                .category,
+            Category::Value
+        );
+        assert!(
+            scopes
+                .lookup_specialization(root, word, true, false)
+                .is_none()
+        );
+        scopes.current = child;
+        scopes.add_base(other, true);
+        assert!(
+            scopes
+                .lookup_specialization(root, word, true, false)
+                .is_none()
+        );
+        assert_eq!(
+            scopes
+                .lookup_specialization(root, word, true, true)
+                .unwrap()
+                .scope,
+            Some(other)
+        );
+        assert!(
+            scopes
+                .lookup_specialization(root, word, true, false)
+                .is_none()
+        );
+    }
+    #[test]
+    fn rewound_memos_never_return_discarded_scope_handles() {
+        let mut names = Identifiers::default();
+        let class_name = names.intern(b"C").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let mut scopes = Scopes::default();
+        let base = class(&mut scopes, class_name, None);
+        scopes.declare_in(base, word, binding(Category::Type, Some(base)));
+        let root = class(&mut scopes, class_name, Some(base));
+        assert_eq!(
+            scopes
+                .lookup_specialization(root, word, false, false)
+                .unwrap()
+                .scope,
+            Some(base)
+        );
+        scopes.settle();
+        let mark = scopes.mark();
+        let temporary = class(&mut scopes, class_name, None);
+        scopes.declare_in(base, word, binding(Category::Type, Some(temporary)));
+        assert_eq!(
+            scopes
+                .lookup_specialization(root, word, false, false)
+                .unwrap()
+                .scope,
+            Some(temporary)
+        );
+        scopes.current = root;
+        scopes.add_base(temporary, false);
+        scopes.rewind(mark);
+        let recycled = class(&mut scopes, class_name, None);
+        assert_eq!(temporary, recycled);
+        assert_eq!(
+            scopes
+                .lookup_specialization(root, word, false, false)
+                .unwrap()
+                .scope,
+            Some(base)
+        );
+        assert!(scopes.incoming.get(&recycled).is_none_or(HashSet::is_empty));
+        assert!(
+            scopes
+                .lookup_specialization(recycled, word, false, false)
+                .is_none()
+        );
+    }
+    #[test]
+    fn full_search_store_renews_existing_results_and_declines_new_slots() {
+        let mut names = Identifiers::default();
+        let class_name = names.intern(b"C").unwrap();
+        let word = names.intern(b"word").unwrap();
+        let mut scopes = Scopes::default();
+        let base = class(&mut scopes, class_name, None);
+        scopes.declare_in(base, word, binding(Category::Type, None));
+        let mut first = None;
+        let mut last = base;
+        for _ in 0..=1 << 16 {
+            last = class(&mut scopes, class_name, Some(base));
+            first.get_or_insert(last);
+            assert_eq!(
+                scopes
+                    .lookup_specialization(last, word, false, false)
+                    .unwrap()
+                    .category,
+                Category::Type
+            );
+        }
+        assert_eq!(scopes.searches.len(), 1 << 16);
+        scopes.declare_in(base, word, binding(Category::Value, None));
+        for scope in [first.unwrap(), last] {
+            assert_eq!(
+                scopes
+                    .lookup_specialization(scope, word, false, false)
+                    .unwrap()
+                    .category,
+                Category::Value
+            );
+        }
+        assert_eq!(scopes.searches.len(), 1 << 16);
     }
 }

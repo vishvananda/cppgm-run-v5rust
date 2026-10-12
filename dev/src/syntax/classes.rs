@@ -190,7 +190,8 @@ impl Parser<'_> {
         self.tree.attributes.extend(attributes);
         self.tree.attributes.extend(trailing);
         let attributes = self.tree.attributes.finish(start)?;
-        self.scopes.complete_class(scope);
+        self.scopes
+            .complete_class(scope, is_template || self.scopes.specialization(scope));
         let class = self.tree.classes.add(ClassSyntax {
             attributes,
             location,

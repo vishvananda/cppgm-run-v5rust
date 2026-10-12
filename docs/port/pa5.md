@@ -3,6 +3,131 @@
 Stage base commit: `d182aa4bc3c8d2a2bfeffb7c615bea7a77a5fd43`
 Last audited commit: `0dc9f88edaafe9b64e59f440d8f9b6745dc090bc`
 
+## Full-stage audit continuation: completed-class query ownership — 2026-10-12
+
+Entry/reviewed commit: `6f8b1eb1a04aa734011a6869c5816c33edb1bca6` (clean).
+Stage base and last accepted partial-audit commit above remain unchanged; this
+commit is recorded in `pa5-class-lookups/handoff.json`. **Full acceptance remains
+open**, with the original goal active. The prior category/pack increment and
+all 193 fixed passes remain preserved. This completes the connected class
+search memo responsibility, with resource evidence beyond fixture parity.
+
+Consulted `name_scopes.cpp/.h` push/declare/complete_class/query/search,
+`memo_key`, bounded memo_slot/memo_limit, name/edge epochs and undo/detach/
+reattach, plus `parser_specifiers.cpp`'s completion call. Required repository,
+contract, specification, plan, full handout/parsing guide and source map/ledger
+remain the audit basis. Frozen oracle commit is unchanged.
+
+Finding: Rust's iterative traversal preserved order and cycle handling, but
+walked an inherited chain afresh for each method. Fourfold 4000 -> 16000 growth
+cost roughly fifteenfold time, versus near-linear C++. This was missing due
+compiler work despite matching all ASTs. `scopes.rs` now owns bounded completed
+class query results, including explicit negative results. `classes.rs` supplies
+the template/specialization completion fact; eligibility follows C++'s ordinary
+complete-class and eligible non-dependent-base rule.
+
+The memo identity is stable ScopeIdentity, interned NameId and prefix demand,
+with separate ordinary/specialization base-demand slots. Both demand modes share
+one census entry and the C++ capacity policy: at least 65,536 query identities,
+or four times the retained binding-slot count; a full table renews old entries
+and declines new ones. The base-demand slot is part of the full key even for a
+class whose eligibility was established before a subsequent graph mutation.
+A typed SearchDecision distinguishes a finished negative result from a search
+still needing edges. A reusable explicit DFS frame stack retains last-added
+edge preference, visited-cycle handling, own-binding precedence and member-name
+hints. Successful unwind publishes ancestor results; completed failure records
+a negative. Nothing reparses syntax or formats names.
+
+Binding storage uses stable identity plus NameId and optional owned Binding;
+rollback leaves the same conservative empty-slot census as C++'s table, rather
+than recycling an abandoned scope's binding key. Name revisions invalidate
+only that name (on class/enum declaration and logged undo/redo). Reverse base
+edges invalidate graph revisions of the changed scope and its actual dependents,
+without C++'s translation-unit-wide class-edge generation. The chosen results
+and capacity/order remain unchanged, while meeting the specification's targeted
+invalidation requirement. Revision exhaustion removes only the affected name
+or scope's queries before restarting its epoch; no wrapping can revive stale
+results. Undo/redo updates reverse edges, completion facts and revisions before
+released ScopeId slots can be reused. Memos are unit owned and bounded; stale
+scope identities cannot be queried as a new scope.
+
+Four independent invariants prove linear visit count across a 1024-class chain,
+warm queries after unrelated mutations, negative/prefix/base-demand distinctions,
+name and dependent graph invalidation, rollback with cached discarded scope
+handles and recycled ScopeIds, and full-table renewal/refusal at the 65,536
+minimum. Debug and release each pass **93 library plus eight tool tests**.
+Strict Clippy, rustfmt and the authoritative **84-file** audit pass with zero
+findings. No allowance, unsafe, new dependency, process/environment read,
+compiler fallback or code-generation policy change was introduced. The growing
+scope module remains within its model/function/nesting limits; no mechanical
+split was needed. The new required executed case is
+`pa5/tests/general/300-class-query-contexts.t`, with only its new expectations.
+
+Artifact root: `/home/vishvananda/work/private/v5rust/artifacts/pa5-class-lookups/`.
+Metadata, entry/final receipts, `progress.json`, passing/failing lists, `cases/`
+and all earlier/full `course/` receipts are archived. Manifest hash remains
+`27cefa061900dab78611f38c128ded4809888024a76c349668e6cfdcc2ab22f1`:
+193 entry/final passes, zero lost and no fixed failures.
+
+| Command | Final result / artifact |
+| --- | --- |
+| `make build` | PASS; `build.log` |
+| `make lint` / protected `clone_quality.py` | PASS; debug/release invariants, strict Clippy, rustfmt, file audit; `quality.log` |
+| `make test-pa5` | PASS 193/193; `stage.log` |
+| exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa5` | PASS 193/193, exit 0; `required-stage.log` |
+| `make course-pa5` | PASS 235/235, no failed comparisons/marker; `course.log`, `course/pa5/test/counts.txt` |
+| protected `clone_check.py prior pa5` | PASS PA1–PA4 fixed 58/58, 26/26, 20/20, 106/106 and full course 58/58, 28/28, 20/20, 112/112; `prior.log`, archived receipts |
+| `make audit-rust` | PASS 84 files, zero findings; `audit.log` |
+| protected `clone_check.py preflight pa5` / `preserve pa5` | PASS, all 193 retained; `preflight.log`, `preserve.log` |
+
+`validate.py` / `checks.json` retain commands, statuses and elapsed costs.
+`final.json`, `final/` and `parameter-sources.json` match **631/631** complete
+exit/stdout/stderr/AST results: the 597 category/pack sweep plus long inherited
+chains, type/value/template members, qualified/prefix uses, shared-base diamonds
+and opposing base order. Final prior probes retain **1510/1510** comparisons.
+`new-regressions.json` retains the required case. Views match the oracle, and
+invariants prove the hidden cache/ownership properties.
+
+Resource command: `python3 measure.py before` / `python3 measure.py after`.
+The before run finished before changing the candidate binary; the after run
+started after final validation was terminal. Metadata freezes both binaries,
+Linux/rustc 1.98.0, UTC/C and warm whole invocations including preprocessing,
+clock query and I/O. Oracle A/A calibration then A/B/B/A blocks match all **18**
+complete results in each run, with identical input/output hashes across runs.
+Raw files/RSS/times are in `resources-before/`, `resources-after/`, measurement
+and metadata JSON. These observations on a shared host are separate from
+code-generation equality and impose no PA35 objective.
+
+| Classes | Rust before mean ms | Before max RSS KiB | Rust after mean ms | After max RSS KiB | C++ after mean ms | C++ max RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 114.94 | 8008 | 38.12 | 8104 | 15.07 | 6516 |
+| 4000 | 1039.60 | 10660 | 89.73 | 12120 | 36.36 | 10728 |
+| 16000 | 15745.02 | 31640 | 247.04 | 38576 | 112.68 | 29744 |
+
+Fourfold 4000 -> 16000 growth now takes about 2.75 times Rust time; the 16000
+case improves from about 15.75 seconds to 0.247 seconds. RSS increases from
+about 31 MiB to 38 MiB for the bounded owned query table and reverse edges.
+The input/output bytes are identical; this is a parser scaling observation.
+
+The exact acceptance failure `deep-parenthesized-expression` remains C++ 0 /
+Rust 86 at 300 parentheses, preserved in `pending-probes.json` / raw paths.
+The two category failures stay resolved. Additional exploratory IDs
+`unhosted-fold-expression` and `unhosted-statement-expression` produce C++ 0 /
+Rust 1, but owner review now establishes that both forms are absent from
+PA5's authoritative `pa5.gram` primary-expression productions. They are outside
+PA5's defined syntax boundary, even though the frozen later compiler recognizes
+them without hosted mode; they remain later syntax owners, not PA5 acceptance
+failures. The previous entry's unreviewed fold boundary is thereby resolved
+without forcing future grammar into this stage or changing any gate.
+
+Next dependency: replace the host nesting stub with the safe byte-budget
+policy and preserve failure locations; audit and complete due source facts
+(specifier/parameter/qualifier/initializer locations, declaration/class token
+spans and pragma-pack observation ownership). Finish the responsibility census
+against the authoritative PA5 grammar/driver surface, distinguishing later
+hosted grammar, statistics and semantic facts from due work. Full-stage
+acceptance still cannot be inferred from green fixtures or this memo increment.
+
 ## Full-stage audit continuation: category readings and pack facts — 2026-10-12
 
 Entry/reviewed commit: `f29a5ac9498abca8f5fb7d6661cd9decaf47a7dd` (clean).
