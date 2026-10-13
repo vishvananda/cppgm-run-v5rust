@@ -90,6 +90,9 @@ impl Types {
     pub(super) fn record_parameter_entity(&mut self, named: EntityId, canonical: EntityId) {
         self.parameter_entities.insert(named, canonical);
     }
+    pub(super) fn canonical_view(&self, id: TypeId) -> TypeId {
+        self.canonical[id.0 as usize].unwrap_or(id)
+    }
     pub(super) fn get(&self, id: TypeId) -> &Type {
         &self.records[id.0 as usize]
     }

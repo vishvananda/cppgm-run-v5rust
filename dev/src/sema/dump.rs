@@ -196,7 +196,7 @@ impl Graph {
         }
         Ok(())
     }
-    fn write_type(
+    pub(super) fn write_type(
         &self,
         ty: TypeId,
         cursor: &Cursor<'_>,
@@ -350,7 +350,7 @@ fn indent(output: &mut (impl Write + ?Sized), depth: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn write_syntax_name(
+pub(super) fn write_syntax_name(
     tree: &crate::syntax::ast::Tree,
     cursor: &Cursor<'_>,
     name: crate::syntax::ast::Name,

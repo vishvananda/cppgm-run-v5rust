@@ -756,3 +756,68 @@ fn positional_template_parameter_identity_includes_inner_head_shape() {
         assert_ne!(a, c);
     });
 }
+
+#[test]
+fn standard_conversions_keep_rank_and_recursive_qualification_facts() {
+    use super::expression_facts::{ConversionRank, ExprFacts, ValueCategory};
+    let source = SourceBuffer::new(Vec::new()).unwrap();
+    let input = Preprocessor::with_name(&source, b"conversion-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, _) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    let int = analyzer
+        .graph
+        .types
+        .scalar(Scalar::Basic(FundamentalType::Int))
+        .unwrap();
+    let short = analyzer.graph.types.scalar(Scalar::Short).unwrap();
+    let cint = analyzer.graph.types.qualify(int, Cv::CONST).unwrap();
+    let pointer = analyzer.graph.types.pointer(int).unwrap();
+    let qualified_pointer = analyzer.graph.types.pointer(cint).unwrap();
+    let nested_pointer = analyzer.graph.types.pointer(pointer).unwrap();
+    let unsafe_deep_pointer = analyzer.graph.types.pointer(qualified_pointer).unwrap();
+    let const_pointer_object = analyzer
+        .graph
+        .types
+        .qualify(qualified_pointer, Cv::CONST)
+        .unwrap();
+    let deep_const_pointer = analyzer.graph.types.pointer(const_pointer_object).unwrap();
+    assert!(
+        analyzer
+            .pointer_qualification(pointer, qualified_pointer)
+            .unwrap()
+    );
+    assert!(
+        !analyzer
+            .pointer_qualification(qualified_pointer, pointer)
+            .unwrap()
+    );
+    assert!(
+        !analyzer
+            .pointer_qualification(nested_pointer, unsafe_deep_pointer)
+            .unwrap()
+    );
+    assert!(
+        analyzer
+            .pointer_qualification(nested_pointer, deep_const_pointer)
+            .unwrap()
+    );
+    let facts = ExprFacts::new(short, ValueCategory::Lvalue);
+    let conversion = analyzer
+        .standard_conversion(facts, int, false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(conversion.rank, ConversionRank::Promotion);
+    assert_eq!(facts.ty, short);
+    let conversion = analyzer
+        .standard_conversion(
+            ExprFacts::new(pointer, ValueCategory::Lvalue),
+            qualified_pointer,
+            false,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(conversion.rank, ConversionRank::Exact);
+    assert!(conversion.qualification);
+}

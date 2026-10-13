@@ -56,7 +56,7 @@ fn path_error(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
 fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsStr>), CliError> {
     if !args
         .iter()
-        .any(|arg| arg == "--emit-ast" || arg == "--emit-types")
+        .any(|arg| arg == "--emit-ast" || arg == "--emit-types" || arg == "--emit-semantics")
     {
         return Err(CliError::Missing("source compiler modes beyond --emit-ast"));
     }
@@ -66,7 +66,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
     while index < args.len() {
         let arg = &args[index];
         index += 1;
-        if arg == "--emit-ast" || arg == "--emit-types" {
+        if arg == "--emit-ast" || arg == "--emit-types" || arg == "--emit-semantics" {
             continue;
         }
         if arg == "-o" {
@@ -104,12 +104,15 @@ fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let ast = args.iter().any(|arg| arg == "--emit-ast");
     let types = args.iter().any(|arg| arg == "--emit-types");
-    if ast && types {
+    let semantics = args.iter().any(|arg| arg == "--emit-semantics");
+    if u8::from(ast) + u8::from(types) + u8::from(semantics) > 1 {
         return Err(CliError::Message(
             "multiple --emit-* options provided".to_owned(),
         ));
     }
-    let mode = if types {
+    let mode = if semantics {
+        EmitMode::Semantics
+    } else if types {
         EmitMode::Types
     } else {
         EmitMode::Ast

@@ -215,6 +215,9 @@ impl Analyzer<'_> {
         self.function_specifier_type(specs, info, scope)?;
         let key = self.declaration_key(info)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
+        if self.semantic() && self.graph.scope(home).kind == ScopeKind::Class {
+            return Err(Error::Missing("class semantic functions"));
+        }
         if info.home.is_some() && specs.is_static && self.graph.scope(home).kind == ScopeKind::Class
         {
             return Err(Error::at(

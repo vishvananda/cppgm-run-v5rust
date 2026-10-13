@@ -15,6 +15,7 @@ pub enum AstToolError {
 pub enum EmitMode {
     Ast,
     Types,
+    Semantics,
 }
 /// Parse and print one translation unit using the shared typed front end.
 ///
@@ -57,12 +58,17 @@ pub fn emit_unit(
             ),
         });
     }
-    let graph = if mode == EmitMode::Types {
+    let graph = if mode == EmitMode::Ast {
+        None
+    } else {
         let (tree, cursor, declarations) = unit
             .semantic_inputs()
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
-        let analysis = crate::sema::Analyzer::new(tree, cursor, stack_budget)
-            .and_then(|analyzer| analyzer.analyze(declarations));
+        let analysis =
+            crate::sema::Analyzer::new(tree, cursor, stack_budget).and_then(|mut analyzer| {
+                analyzer.set_semantics(mode == EmitMode::Semantics);
+                analyzer.analyze(declarations)
+            });
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }
             | crate::sema::Error::NonConstant { location, message } => {
@@ -77,17 +83,21 @@ pub fn emit_unit(
             }
             crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
         })?)
-    } else {
-        None
     };
     writeln!(output, "start translation unit {ordinal}").map_err(AstToolError::Output)?;
     if let Some(graph) = graph {
-        let (tree, cursor, _) = unit
+        let (tree, cursor, declarations) = unit
             .semantic_inputs()
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
-        graph
-            .print(tree, cursor, output)
-            .map_err(AstToolError::Output)?;
+        if mode == EmitMode::Semantics {
+            graph
+                .print_semantics(tree, cursor, declarations, output)
+                .map_err(AstToolError::Output)?;
+        } else {
+            graph
+                .print(tree, cursor, output)
+                .map_err(AstToolError::Output)?;
+        }
     } else {
         unit.print(output).map_err(AstToolError::Output)?;
     }

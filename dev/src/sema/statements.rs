@@ -22,17 +22,66 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn statement(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
+        let initialized = self.switch_initialized();
+        let result = self.statement_scoped(id, scope);
+        let mut selected = id;
+        if matches!(
+            self.tree.statements.get(id).kind,
+            StmtKind::Ambiguous { .. }
+        ) && let Some(reading) = self
+            .graph
+            .statement_readings
+            .get(id.index())
+            .copied()
+            .flatten()
+        {
+            selected = reading;
+        }
+        if !matches!(
+            self.tree.statements.get(selected).kind,
+            StmtKind::Declaration(_)
+                | StmtKind::Case { .. }
+                | StmtKind::Default(_)
+                | StmtKind::Label { .. }
+        ) {
+            self.restore_switch_initialized(initialized);
+        }
+        result.map_err(|error| match error {
+            Error::Limit("constructs nested too deeply") if self.semantic() => Error::at(
+                self.tree.statements.get(id).location,
+                "constructs nested too deeply",
+            ),
+            other => other,
+        })
+    }
+    fn statement_scoped(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
+        self.reject_extended_statement(id)?;
+        if self.semantic()
+            && matches!(
+                self.tree.statements.get(id).kind,
+                StmtKind::Break | StmtKind::Continue | StmtKind::Default(_)
+            )
+        {
+            self.semantic_jump(id)?;
+        }
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(list) => self.compound(list, scope, false),
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
+            StmtKind::Return(operand) if self.semantic() => {
+                self.semantic_return(id, operand, scope)
+            }
             StmtKind::Expression(operand)
             | StmtKind::Return(operand)
             | StmtKind::Throw(operand) => operand.map_or(Ok(()), |id| self.expression(id, scope)),
             StmtKind::Break | StmtKind::Continue | StmtKind::Goto(_) => Ok(()),
             StmtKind::Label { body, .. } | StmtKind::Default(body) => self.statement(body, scope),
             StmtKind::Case { value, body } => {
-                self.expression(value, scope)?;
+                if self.semantic() {
+                    self.semantic_case(id, value, scope)?;
+                } else {
+                    self.expression(value, scope)?;
+                }
                 self.statement(body, scope)
             }
             StmtKind::If {
@@ -42,6 +91,7 @@ impl Analyzer<'_> {
             } => {
                 let block = self.block_scope(scope)?;
                 self.condition(condition, block)?;
+                self.condition_conversion(condition, false)?;
                 self.substatement(then_branch, block)?;
                 if let Some(branch) = else_branch {
                     self.substatement(branch, block)?;
@@ -49,16 +99,33 @@ impl Analyzer<'_> {
                 Ok(())
             }
             StmtKind::ConditionalLoop {
-                condition, body, ..
+                keyword,
+                condition,
+                body,
             } => {
                 let block = self.block_scope(scope)?;
                 self.condition(condition, block)?;
-                self.substatement(body, block)
+                let switch = self.condition_conversion(condition, Self::is_switch(keyword))?;
+                self.control_substatement(
+                    body,
+                    block,
+                    switch,
+                    self.tree.statements.get(id).location,
+                )
             }
             StmtKind::Do { body, condition } => {
                 let block = self.block_scope(scope)?;
-                self.substatement(body, block)?;
-                self.expression(condition, block)
+                self.control_substatement(
+                    body,
+                    block,
+                    None,
+                    self.tree.statements.get(id).location,
+                )?;
+                self.expression(condition, block)?;
+                if self.semantic() {
+                    self.convert_bool(condition)?;
+                }
+                Ok(())
             }
             StmtKind::For {
                 declaration,
@@ -75,11 +142,12 @@ impl Analyzer<'_> {
                 }
                 if let Some(condition) = condition {
                     self.condition(condition, block)?;
+                    self.condition_conversion(condition, false)?;
                 }
                 if let Some(iteration) = iteration {
                     self.expression(iteration, block)?;
                 }
-                self.substatement(body, block)
+                self.control_substatement(body, block, None, self.tree.statements.get(id).location)
             }
             StmtKind::RangeFor {
                 specifiers,
@@ -170,10 +238,15 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let block = self.block_scope(scope)?;
         self.graph.scope_mut(block).guarded = guarded;
-        for &item in self.tree.stmt_lists.get(list) {
-            self.statement(item, block)?;
-        }
-        Ok(())
+        let initialized = self.switch_initialized();
+        let result = (|| {
+            for &item in self.tree.stmt_lists.get(list) {
+                self.statement(item, block)?;
+            }
+            Ok(())
+        })();
+        self.restore_switch_initialized(initialized);
+        result
     }
 
     fn condition(&mut self, condition: Condition, scope: ScopeId) -> Result<(), Error> {

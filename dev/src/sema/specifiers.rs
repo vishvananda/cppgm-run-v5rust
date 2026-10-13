@@ -23,6 +23,11 @@ pub(super) enum Virtuality {
     NonVirtual,
     Virtual,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ThreadStorage {
+    Ordinary,
+    ThreadLocal,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
     pub ty: TypeId,
@@ -32,6 +37,7 @@ pub(super) struct Specifiers {
     pub is_static: bool,
     pub virtuality: Virtuality,
     pub constexpr: bool,
+    pub thread_storage: ThreadStorage,
 }
 impl Analyzer<'_> {
     pub(super) fn specifiers(
@@ -63,6 +69,7 @@ impl Analyzer<'_> {
         let mut is_static = false;
         let mut virtuality = Virtuality::NonVirtual;
         let mut constexpr = false;
+        let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
         for specifier in self.tree.specs.get(list) {
             if let SpecifierKind::Keyword(key) = specifier.kind {
@@ -82,7 +89,8 @@ impl Analyzer<'_> {
                     Keyword::Constexpr => constexpr = true,
                     Keyword::Static => is_static = true,
                     Keyword::Virtual => virtuality = Virtuality::Virtual,
-                    Keyword::ThreadLocal | Keyword::Inline | Keyword::Register => (),
+                    Keyword::ThreadLocal => thread_storage = ThreadStorage::ThreadLocal,
+                    Keyword::Inline | Keyword::Register => (),
                     Keyword::Explicit if special => (),
                     Keyword::Auto | Keyword::Friend | Keyword::Explicit | Keyword::Mutable => {
                         return Err(Error::Missing(
@@ -148,6 +156,7 @@ impl Analyzer<'_> {
                 is_static,
                 virtuality,
                 constexpr,
+                thread_storage,
             },
             has_written_type.then_some(ty),
         ))

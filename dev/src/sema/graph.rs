@@ -123,6 +123,7 @@ pub(crate) struct Graph {
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
     ordinals: Vec<usize>,
+    binding_scopes: Vec<ScopeId>,
     pub(super) lookup_limit: Option<usize>,
     pub(super) global: ScopeId,
     // Dense facts refer to the original AST. No duplicate semantic syntax tree.
@@ -135,6 +136,7 @@ pub(crate) struct Graph {
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
+    pub(super) expression_facts: super::expression_facts::ExpressionFacts,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
@@ -226,6 +228,7 @@ impl Graph {
             entities: Vec::new(),
             bindings: Vec::new(),
             ordinals: Vec::new(),
+            binding_scopes: Vec::new(),
             lookup_limit: None,
             global: ScopeId(0),
             declarator_types: Vec::new(),
@@ -237,6 +240,7 @@ impl Graph {
             special_labels: HashMap::new(),
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
+            expression_facts: super::expression_facts::ExpressionFacts::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
@@ -357,6 +361,7 @@ impl Graph {
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
         let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
         self.bindings.push(binding);
+        self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
@@ -425,6 +430,9 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+    pub(super) fn binding_scope(&self, id: BindingId) -> ScopeId {
+        self.binding_scopes[id.0 as usize]
     }
     pub(super) fn binding_limit(&self) -> usize {
         self.bindings.len()

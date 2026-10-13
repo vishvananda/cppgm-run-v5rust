@@ -15,6 +15,7 @@ mod parameter_bases;
 mod parser;
 mod printer;
 mod render;
+pub(crate) use render::operator_spelling;
 mod scopes;
 mod statements;
 pub(crate) mod storage;

@@ -510,7 +510,19 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
         if let Some(initializer) = init.initializer {
-            self.initializer_names(initializer, info.lookup, ty)?;
+            if self.semantic() {
+                if self.graph.scope(home).kind == ScopeKind::Block
+                    && !specs.is_static
+                    && !specs.is_extern
+                    && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary
+                {
+                    self.note_local_initializer();
+                }
+
+                self.scalar_initializer(initializer, info.lookup, ty)?;
+            } else {
+                self.initializer_names(initializer, info.lookup, ty)?;
+            }
             if !member {
                 self.record_constant_initializer(
                     self.graph.binding(binding).entity,

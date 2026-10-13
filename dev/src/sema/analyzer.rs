@@ -14,6 +14,12 @@ use crate::{
     },
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AnalysisMode {
+    Types,
+    Semantics,
+}
+
 pub(crate) struct Analyzer<'tree> {
     pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
     pub(super) tree: &'tree Tree,
@@ -30,6 +36,9 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) suppress_implicit: bool,
+    mode: AnalysisMode,
+    pub(super) body_context: Option<super::procedural_statements::BodyContext>,
+    pub(super) binary_spine: Vec<ast::ExprId>,
     pub(super) specifications: Vec<super::exceptions::PendingSpecification>,
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
@@ -86,6 +95,9 @@ impl<'tree> Analyzer<'tree> {
             constant_spine: Vec::new(),
             expression_work: Vec::new(),
             suppress_implicit: false,
+            mode: AnalysisMode::Types,
+            body_context: None,
+            binary_spine: Vec::new(),
             specifications: Vec::new(),
             pending_throws: Vec::new(),
             evaluating_noexcept: false,
@@ -94,6 +106,16 @@ impl<'tree> Analyzer<'tree> {
         };
         analyzer.predeclare_allocations()?;
         Ok(analyzer)
+    }
+    pub(crate) fn set_semantics(&mut self, enabled: bool) {
+        self.mode = if enabled {
+            AnalysisMode::Semantics
+        } else {
+            AnalysisMode::Types
+        };
+    }
+    pub(super) fn semantic(&self) -> bool {
+        self.mode == AnalysisMode::Semantics
     }
     pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
         let marker = 0u8;
@@ -257,6 +279,7 @@ impl<'tree> Analyzer<'tree> {
                         is_static: false,
                         virtuality: super::specifiers::Virtuality::NonVirtual,
                         constexpr: false,
+                        thread_storage: super::specifiers::ThreadStorage::Ordinary,
                     },
                     scope,
                     location,
@@ -321,6 +344,9 @@ impl<'tree> Analyzer<'tree> {
             } => self.template_declaration(parameters, declaration, scope, location),
             ast::DeclKind::ExplicitInstantiation { .. } => {
                 Err(Error::Missing("explicit template instantiation"))
+            }
+            ast::DeclKind::SpecialMember { .. } if self.semantic() => {
+                Err(Error::Missing("class semantic members"))
             }
             ast::DeclKind::SpecialMember { .. } => self.special_member(id, scope),
             ast::DeclKind::BitField { .. } => Err(Error::Missing("bit-field declarations")),
@@ -409,7 +435,17 @@ impl<'tree> Analyzer<'tree> {
         let saved_class_depth = self.class_depth;
         self.template_depth = body.template_depth;
         self.class_depth = 0;
+        let saved_context = self.body_context.take();
+        if self.semantic() {
+            let super::types::TypeKind::Function { result, .. } =
+                self.graph.types.get(body.ty).kind
+            else {
+                return Err(Error::Invariant("body without function type"));
+            };
+            self.body_context = Some(super::procedural_statements::BodyContext::new(result));
+        }
         let result = self.function_body_scopes(body);
+        self.body_context = saved_context;
         self.template_depth = saved;
         self.class_depth = saved_class_depth;
         result
