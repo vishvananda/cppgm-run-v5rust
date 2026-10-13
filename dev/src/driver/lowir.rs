@@ -11,6 +11,10 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
             eprintln!("ERROR: {message}");
             std::process::ExitCode::FAILURE
         }
+        Err(Error::Construction(message)) => {
+            eprintln!("internal compiler error: invalid exercise program: {message}");
+            std::process::ExitCode::from(70)
+        }
         Err(Error::NotImplemented(feature)) => {
             eprintln!("lowir: Rust port is not implemented yet: {feature}");
             std::process::ExitCode::from(86)
@@ -79,7 +83,7 @@ fn execute(args: &[String]) -> Result<(), Error> {
                 "unknown LowIR exercise: {exercise}"
             )));
         }
-        return Err(Error::NotImplemented("LowIR construction exercises"));
+        return lowir::exercise(exercise, output);
     }
     lowir::roundtrip(&paths, output)
 }

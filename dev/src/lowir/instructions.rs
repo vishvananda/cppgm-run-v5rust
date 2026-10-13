@@ -2,7 +2,7 @@
 use super::{
     Error,
     lexer::Kind,
-    model::{BlockId, Body, Facts, Instruction, InstructionKind as I, Value},
+    model::{BlockId, Body, Call, Facts, Instruction, InstructionKind as I, Value},
     reader::Parser,
     vocabulary::{Binary, Compare, Convert, Projection, Type, Unary, named_literal},
 };
@@ -24,7 +24,12 @@ impl Parser<'_> {
                 self.lexer.advance();
                 Ok(Value::Slot(id))
             }
-            Kind::Global => Err(Error::NotImplemented("LowIR symbol operands")),
+            Kind::Global => {
+                let name = self.program.names.intern(token.word())?;
+                let symbol = self.program.reference(name, self.source_id, token.line)?;
+                self.lexer.advance();
+                Ok(Value::Symbol(symbol))
+            }
             Kind::Block => Err(self.fail("block label used as value")),
             _ => {
                 if !self.value_start() {
@@ -292,8 +297,8 @@ impl Parser<'_> {
                 self.expect(Kind::Comma, ",")?;
                 I::Index(ty, projection, a, self.value(body, Type::Void)?)
             }
-            "call"
-            | "atomic_load"
+            "call" => I::Call(self.call(body)?),
+            "atomic_load"
             | "atomic_add_fetch"
             | "atomic_exchange"
             | "atomic_compare_exchange"
@@ -310,6 +315,58 @@ impl Parser<'_> {
     }
     fn memory_facts(&mut self) -> Facts {
         Facts::memory(self.accept_word("volatile"), self.accept_word("typed"))
+    }
+    fn call(&mut self, body: &mut Body) -> Result<Call, Error> {
+        let result = self.parse_type()?;
+        if !matches!(self.lexer.token.kind, Kind::Global | Kind::Temp) {
+            return Err(self.fail(format!(
+                "expected a function, global or temporary callee, got '{}'",
+                self.lexer.token.spelling()
+            )));
+        }
+        let callee = self.value(body, Type::Void)?;
+        self.expect(Kind::LParen, "(")?;
+        self.arguments.clear();
+        if !self.at(Kind::RParen) {
+            loop {
+                let argument = self.value(body, Type::Void)?;
+                self.arguments.push(argument);
+                if !self.accept(Kind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(Kind::RParen, ")")?;
+        let arguments = body.add_arguments(&self.arguments)?;
+        let mut copy_elision = false;
+        if self.accept(Kind::LBracket) {
+            loop {
+                if copy_elision || !self.accept_word("elision") {
+                    return Err(self.fail("invalid call metadata"));
+                }
+                self.expect(Kind::Equals, "=")?;
+                if !self.accept_word("copy") {
+                    return Err(self.fail("invalid call metadata"));
+                }
+                copy_elision = true;
+                if !self.accept(Kind::Comma) {
+                    break;
+                }
+            }
+            self.expect(Kind::RBracket, "]")?;
+        }
+        let signature = if self.accept_word("as") {
+            Some(self.signature(None)?)
+        } else {
+            None
+        };
+        Ok(Call {
+            result,
+            callee,
+            arguments,
+            copy_elision,
+            signature,
+        })
     }
     fn span(&mut self) -> Result<(u64, u8), Error> {
         if !self.at(Kind::Number) {
@@ -379,8 +436,14 @@ impl Parser<'_> {
                 )
             }
             "unreachable" => I::Unreachable,
-            "call"
-            | "atomic_store"
+            "call" => {
+                let call = self.call(body)?;
+                if call.result != Type::Void {
+                    return Err(self.fail_at(line, "a call without a result must be void"));
+                }
+                I::Call(call)
+            }
+            "atomic_store"
             | "atomic_thread_fence"
             | "atomic_signal_fence"
             | "va_start"

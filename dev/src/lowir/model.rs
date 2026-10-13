@@ -12,7 +12,16 @@ macro_rules! identity {
     )+ };
 }
 identity!(
-    NameId, TempId, SlotId, BlockId, InstId, FunctionId, LiteralId
+    NameId,
+    TempId,
+    SlotId,
+    BlockId,
+    InstId,
+    FunctionId,
+    LiteralId,
+    SymbolId,
+    SignatureId,
+    SourceId
 );
 #[derive(Default)]
 pub(super) struct Names {
@@ -38,20 +47,93 @@ impl Names {
 pub(super) struct Program {
     pub(super) names: Names,
     functions: Vec<Function>,
-    index: HashMap<NameId, FunctionId>,
+    symbols: Vec<Symbol>,
+    index: HashMap<NameId, SymbolId>,
+    signatures: Vec<Signature>,
+    sources: Vec<String>,
 }
 impl Program {
-    pub(super) fn add(&mut self, function: Function) -> Result<(), Error> {
+    pub(super) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
-        self.index.insert(function.name, id);
+        self.symbols[symbol.0 as usize].function = Some(id);
         self.functions.push(function);
         Ok(())
     }
-    pub(super) fn contains(&self, name: NameId) -> bool {
-        self.index.contains_key(&name)
+    pub(super) fn reference(
+        &mut self,
+        name: NameId,
+        source: SourceId,
+        line: u32,
+    ) -> Result<SymbolId, Error> {
+        if let Some(&id) = self.index.get(&name) {
+            return Ok(id);
+        }
+        let id = SymbolId(u32::try_from(self.symbols.len()).map_err(|_| Error::Limit)?);
+        self.symbols.push(Symbol {
+            name,
+            function: None,
+            source,
+            line,
+        });
+        self.index.insert(name, id);
+        Ok(id)
+    }
+    pub(super) fn add_source(&mut self, path: &str) -> Result<SourceId, Error> {
+        let id = SourceId(u32::try_from(self.sources.len()).map_err(|_| Error::Limit)?);
+        self.sources.push(path.into());
+        Ok(id)
+    }
+    pub(super) fn symbol(&self, id: SymbolId) -> &Symbol {
+        &self.symbols[id.0 as usize]
+    }
+    pub(super) fn finish_symbols(&self) -> Result<(), Error> {
+        for symbol in &self.symbols {
+            if symbol.function.is_none() {
+                return Err(Error::Diagnostic(format!(
+                    "undefined top-level symbol: {} at {}:{}",
+                    self.names.get(symbol.name),
+                    self.sources[symbol.source.0 as usize],
+                    symbol.line
+                )));
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn add_signature(&mut self, signature: Signature) -> Result<SignatureId, Error> {
+        let id = SignatureId(u32::try_from(self.signatures.len()).map_err(|_| Error::Limit)?);
+        self.signatures.push(signature);
+        Ok(id)
+    }
+    pub(super) fn signature(&self, id: SignatureId) -> &Signature {
+        &self.signatures[id.0 as usize]
+    }
+    pub(super) fn call_boundary(&self, call: &Call) -> Option<&Signature> {
+        if let Some(id) = call.signature {
+            return Some(self.signature(id));
+        }
+        self.callee_function(call.callee)
+            .map(|f| self.signature(f.signature))
+    }
+    pub(super) fn callee_function(&self, value: Value) -> Option<&Function> {
+        if let Value::Symbol(id) = value {
+            return self
+                .symbol(id)
+                .function
+                .map(|id| &self.functions[id.0 as usize]);
+        }
+        None
+    }
+    pub(super) fn may_end_block(&self, kind: &InstructionKind) -> bool {
+        kind.terminator()
+            || matches!(kind, InstructionKind::Call(call) if self.call_boundary(call).is_some_and(|s| s.boundary.returns == Returns::NoReturn))
     }
     pub(super) fn functions(&self) -> &[Function] {
         &self.functions
+    }
+    pub(super) fn functions_in_symbol_order(&self) -> impl Iterator<Item = &Function> {
+        self.symbols
+            .iter()
+            .filter_map(|symbol| symbol.function.map(|id| &self.functions[id.0 as usize]))
     }
     pub(super) fn legacy_roles(&mut self) {
         if self
@@ -76,6 +158,17 @@ impl Program {
             }
         }
     }
+}
+pub(super) struct Symbol {
+    pub(super) name: NameId,
+    pub(super) function: Option<FunctionId>,
+    source: SourceId,
+    line: u32,
+}
+pub(super) struct Signature {
+    pub(super) parameters: Vec<Parameter>,
+    pub(super) result: Type,
+    pub(super) boundary: Boundary,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Arity {
@@ -102,11 +195,15 @@ pub(super) enum Linkage {
     C,
 }
 #[derive(Default)]
-pub(super) struct Metadata {
+pub(super) struct Boundary {
     pub(super) arity: Arity,
     pub(super) effects: Option<Effects>,
     pub(super) unwind: Unwind,
     pub(super) returns: Returns,
+    pub(super) result_classes: Option<super::vocabulary::ObjectClasses>,
+}
+#[derive(Default)]
+pub(super) struct Metadata {
     pub(super) role: Option<Role>,
     pub(super) linkage: Linkage,
     pub(super) binding: Option<Binding>,
@@ -119,11 +216,11 @@ pub(super) struct Parameter {
     pub(super) pass: Option<Pass>,
     pub(super) no_alias: bool,
     pub(super) object_bytes: u64,
+    pub(super) classes: Option<super::vocabulary::ObjectClasses>,
 }
 pub(super) struct Function {
     pub(super) name: NameId,
-    pub(super) parameters: Vec<Parameter>,
-    pub(super) result: Type,
+    pub(super) signature: SignatureId,
     pub(super) metadata: Metadata,
     pub(super) body: Option<Body>,
 }
@@ -132,6 +229,7 @@ pub(super) enum Value {
     Temp(TempId),
     Slot(SlotId),
     Integer(LiteralId),
+    Symbol(SymbolId),
 }
 pub(super) struct Temp {
     pub(super) name: NameId,
@@ -153,6 +251,7 @@ pub(super) struct Block {
 #[derive(Default)]
 pub(super) struct Body {
     literals: Vec<u128>,
+    operands: Vec<Value>,
     temps: Vec<Temp>,
     slots: Vec<Slot>,
     blocks: Vec<Block>,
@@ -197,6 +296,19 @@ impl Body {
     }
     pub(super) fn literal(&self, id: LiteralId) -> u128 {
         self.literals[id.0 as usize]
+    }
+    pub(super) fn add_arguments(&mut self, arguments: &[Value]) -> Result<Arguments, Error> {
+        let first = u32::try_from(self.operands.len()).map_err(|_| Error::Limit)?;
+        let count = u32::try_from(arguments.len()).map_err(|_| Error::Limit)?;
+        let _ = first.checked_add(count).ok_or(Error::Limit)?;
+        self.operands.extend_from_slice(arguments);
+        Ok(Arguments { first, count })
+    }
+    pub(super) fn arguments(&self, arguments: Arguments) -> &[Value] {
+        arguments.slice(&self.operands)
+    }
+    pub(super) fn visit_values(&self, kind: &InstructionKind, visit: impl FnMut(Value)) {
+        kind.visit_values(&self.operands, visit);
     }
     pub(super) fn temps(&self) -> &[Temp] {
         &self.temps
@@ -245,6 +357,9 @@ impl Body {
     pub(super) fn find_slot(&self, name: NameId) -> Option<SlotId> {
         self.slot_index.get(&name).copied()
     }
+    pub(super) fn find_temp(&self, name: NameId) -> Option<TempId> {
+        self.temp_index.get(&name).copied()
+    }
     pub(super) fn add_slot(&mut self, name: NameId, ty: Type) -> Result<(), Error> {
         let id = SlotId(u32::try_from(self.slots.len()).map_err(|_| Error::Limit)?);
         self.slots.push(Slot { name, ty });
@@ -258,10 +373,11 @@ impl Body {
     ) -> Result<InstId, Error> {
         let id = InstId(u32::try_from(self.instructions.len()).map_err(|_| Error::Limit)?);
         let mut overflow = false;
-        instruction.kind.visit_values(|value| {
+        let temps = &mut self.temps;
+        instruction.kind.visit_values(&self.operands, |value| {
             if let Value::Temp(temp) = value {
-                if let Some(count) = self.temp(temp).uses.checked_add(1) {
-                    self.temp_mut(temp).uses = count;
+                if let Some(count) = temps[temp.0 as usize].uses.checked_add(1) {
+                    temps[temp.0 as usize].uses = count;
                 } else {
                     overflow = true;
                 }
@@ -298,11 +414,30 @@ pub(super) enum InstructionKind {
     Index(Type, Option<Projection>, Value, Value),
     CopyObject(u64, u8, Value, Value),
     ZeroInit(u64, u8, Value),
+    Call(Call),
     Jump(BlockId),
     Branch(Value, BlockId, BlockId),
     Switch(Value, BlockId, Vec<(Value, BlockId)>),
     Return(Type, Option<Value>),
     Unreachable,
+}
+pub(super) struct Call {
+    pub(super) result: Type,
+    pub(super) callee: Value,
+    pub(super) arguments: Arguments,
+    pub(super) copy_elision: bool,
+    pub(super) signature: Option<SignatureId>,
+}
+/// A checked slice in the owning function's mutable extra-operand store.
+#[derive(Clone, Copy)]
+pub(super) struct Arguments {
+    first: u32,
+    count: u32,
+}
+impl Arguments {
+    fn slice(self, operands: &[Value]) -> &[Value] {
+        &operands[self.first as usize..(self.first + self.count) as usize]
+    }
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct Facts(u8);
@@ -349,10 +484,11 @@ impl InstructionKind {
             | Self::Load(_, t, _) => *t,
             Self::Compare(..) => Type::I64,
             Self::Addr(_) | Self::Index(..) => Type::Ptr,
+            Self::Call(call) => call.result,
             _ => Type::Void,
         }
     }
-    pub(super) fn visit_values(&self, mut visit: impl FnMut(Value)) {
+    fn visit_values(&self, operands: &[Value], mut visit: impl FnMut(Value)) {
         match self {
             Self::Const(_, v)
             | Self::Copy(_, v)
@@ -385,6 +521,12 @@ impl InstructionKind {
                 visit(*v);
                 for &(v, _) in pairs {
                     visit(v);
+                }
+            }
+            Self::Call(call) => {
+                visit(call.callee);
+                for &value in call.arguments.slice(operands) {
+                    visit(value);
                 }
             }
             _ => {}

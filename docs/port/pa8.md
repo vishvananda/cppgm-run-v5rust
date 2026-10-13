@@ -3,6 +3,252 @@
 Stage base commit: `2bf11a2456047bffa7598407a9d32533f8f4fdd5`.
 Last audited commit: INITIAL (no PA8 acceptance audit; unchanged by implementation).
 
+## Symbol/call boundary and construction checkpoint — 2026-10-13
+
+Current coherent partial handoff: **73/125 fixed cases pass; 52 fail**, down
+from **74 failures** at the turn's clean entry (`4fe8f03`). The 125 case identities
+and fixed manifest hash remain unchanged. Every prior passing identity is
+retained (**51/51**); 22 existing failures become passes. This is implementation
+progress, not PA8 full-stage acceptance. The older core checkpoint below is
+retained as historical evidence; its remaining-case list is superseded here.
+Stage base and last-audited commit above are unchanged. The implementation
+commit is the commit containing this entry; its hash is recorded in the
+external `handoff.json`, without changing Ralph's audit state.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa8-call-boundaries-20261013/`.
+The prior goal turn is classified as progress: the authoritative entry commit
+implements the integer core and its recorded fixed-manifest gains; no live
+process from that work was needed to resume this group.
+
+### Owners, completed behavior and architecture review
+
+Read the required repository/assignment documents and consult the frozen
+C++ snapshot directly. This group translates `lowir/program.{cpp,h}` symbol
+identity and boundary lookup; `text_parser.{cpp,h}` signatures/classes and
+completion; `text_parser_body.cpp` symbol values, call grammar and deferred
+block endings; `validator.{cpp,h}` symbol-order, layout and call checks;
+`text_writer.cpp` call/parameter/metadata output; and
+`builder.{cpp,h}`, `exercises.{cpp,h}` construction. Also reviewed
+`ir_symbol_model.h`, `lowir_model.h`, `lowir/types.h`, `instruction.h`,
+`local_names.cpp`, and `dev/lowir.cpp`. C++ sources, generated answers,
+fixtures, oracle binaries and protected policy remain unchanged.
+
+- `model.rs`: private checked SymbolId, SignatureId and SourceId stores;
+  unresolved versus declared/defined function identity; first-reference
+  symbol order independent of definition/declaration emission order. Each
+  symbol retains compact first-use source/line provenance. Signature-owned
+  parameters/result/boundary facts are separate from symbol metadata.
+  Functions reference signatures by ID; direct/explicit call demand reads
+  those records directly. Arguments are checked slices in each owning body's
+  operand vector; append counts callee and argument temporary uses.
+- `reader.rs` / `instructions.rs`: parse each file once, retain one current
+  token, intern spellings, reuse argument scratch, and append typed operands.
+  Shared signature grammar accepts explicit indirect boundaries with exact
+  metadata context/placement and introductory object ABI classes/result
+  classes. Call elision grammar preserves duplicate/placement diagnostics.
+  The parser allows a final call provisionally; the validator resolves its
+  noreturn boundary after all files have been read.
+- `validator.rs`: traverse bodies in first-reference symbol order, preserving
+  C++ diagnostic priority independently of emission order. Calls check exact
+  result/arity, fixed direct slot types versus storage passing, and direct
+  void copy-elision requirements. The C++ owner's permissive temporary and
+  callee operand rules are retained, with no additional type rule. Shared
+  phi handling now covers symbol operands. Construction audits stored result
+  links/types before shared semantic/layout validation.
+- `writer.rs`: stream explicit signatures, parameter and boundary metadata,
+  object classes, calls and elision facts directly from typed records. Call
+  integer operands retain their untyped 128-bit spelling rather than being
+  prematurely narrowed to parameter widths; no optimizer transformation is
+  introduced. All three exercise outputs match C++ bytes exactly.
+- `builder.rs` / `exercises.rs`: demand-sized typed construction over the same
+  stores, with checked parameter/block/temp uniqueness and incremental use
+  counts. Port the C++ sum closed form, load-before-store alias-safe swap,
+  and two ordered indirect calls. The C++ recipes use explicit plain names;
+  general generated/inlined-name collision handling remains a later consumer
+  boundary. No textual bodies, token replay, cached reference answers or
+  alternative construction model are used.
+- `mod.rs` / `driver/lowir.rs`: construction uses the shared model/writer and
+  is audited before writing. An invalid constructed exercise is distinguished
+  as internal status 70; unfinished features stay status 86. No dependency,
+  unsafe/FFI, environment read, fallback compiler or backend change is added.
+
+Each call's operands and every function's validation scratch remain local to
+that function. The program owns only cross-function names/symbols/signatures,
+file provenance and declaration order. No call validation scans unrelated
+functions. Ordinary text reader/writer validation is explicit tool work;
+there is no new whole-program scan on a source-to-object production path.
+The optimizer, instruction selector and allocator are unaffected.
+
+### Validation and raw evidence
+
+- `make build`: pass (`build-final.log`, incremental release build 15.43 s).
+- `make test-pa8` invokes the required
+  `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa8`:
+  all 125 fixed cases execute, 73 pass, 52 fail (`stage-final.log`,
+  `stage-final.json`). `preservation.json` proves equal identity sets/hash,
+  51 retained passes, 22 gains, zero regressions and failure reduction 74→52.
+  JSON entries link each protected raw trace and course log; mismatch records
+  link retained raw streams/artifacts. Manifest SHA-256 remains
+  `3cc0c62abe169d83ff54140690c5c8798d9223f005cbb44a2cb0d7f08bb84e6b`.
+- `make course-pa8`: required full course run remains failed, with
+  **70/122 specification comparisons and 3/3 exercises**. Its underlying
+  keep-going make returns 0 but creates `.test_failed`; the protected runner
+  correctly reports failure (`course-final.log`,
+  `artifacts/clone/course/pa8/test/course-result.json`, `course.log` and
+  `trace.jsonl` under the external artifact root). No exception is requested.
+- `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa8`:
+  pass, all PA1–PA7 differential and course lanes (`prior-final.log`,
+  `prior-summary.json`, external `artifacts/clone/results/pa1.json` through
+  `pa7.json` and `artifacts/clone/course/paN/test/`). Differential counts are
+  58/58, 26/26, 20/20, 106/106, 196/196, 121/121 and 214/214.
+- `make lint` (protected `clone_quality.py`): pass (`lint-final.log`);
+  rustfmt, all-feature strict Clippy, debug/release tests (190 library tests,
+  including two construction/operand ownership tests) and companion audit.
+  `make audit-rust`: pass, 146 files, zero findings (`audit-final.log`). No
+  lint expectation/suppression is added.
+- `... clone_check.py preflight pa8`: pass (`preflight-final.log`).
+  `... clone_check.py preserve pa8`: pass, **51/51** historical required
+  identities (`preserve-final.log`). The independent final-result comparison
+  additionally proves preservation against the actual turn-entry JSON.
+- `probe.py`, `probes-final.log`, `probe-results.json`, `probes.trace.jsonl`:
+  **64/64** protected adapter receipts match. Cover cross-file forward calls
+  and missing symbols, duplicate declarations, signature/slot/arity/elision
+  diagnostics, symbol validation priority, permissive C++ operands, noreturn
+  endings, object classes and all three exact exercise outputs. `measure.py`
+  and `scaling.trace.jsonl` add **6/6** matching scaling receipts.
+
+All supplemental comparisons inspect the protected receipt's `match`, retaining
+raw streams/output and any `stack_qualification` proof. These iterative LowIR
+probes do not exhaust native stack; no C++ frame cutoff or diagnostic location
+is calibrated. Prior-stage checks also use the protected adapter. This is
+PA8 text/typed construction and oracle-backend behavior evidence, not a claim
+that Rust native code generation or PA34 fixed-point equality is complete.
+
+Candidate lowir SHA-256:
+`654751a79f5be4e4b123153d336338e779d875ddc919e0bdcac26032e358dd91`.
+`source-hashes.json` records the reviewed compiler sources.
+
+Measurements run after the gates finished, three warm candidate invocations
+per fixed generated input, using `/usr/bin/time` and wall-clock timing. The
+call workload is one function with a direct-call chain; the function workload
+is a forward-reference cycle of individually owned small functions. Every
+output matches the frozen writer through the protected adapter.
+
+| Workload | Count | Source bytes | Wall seconds | Peak RSS KiB |
+| --- | --- | --- | --- | --- |
+| calls | 1,000 | 27,901 | 0.0041–0.0044 | 2,184–2,192 |
+| calls | 10,000 | 297,903 | 0.0146–0.0174 | 4,996–5,004 |
+| calls | 100,000 | 3,177,905 | 0.1164–0.1214 | 26,596–26,600 |
+| functions | 100 | 8,880 | 0.0029–0.0042 | 2,184–2,184 |
+| functions | 1,000 | 90,780 | 0.0068–0.0086 | 3,592–3,604 |
+| functions | 10,000 | 927,780 | 0.0406–0.0414 | 19,080–19,080 |
+
+`measurements.json` retains all runs and binary hash. These observations show
+supported LowIR processing/scaling costs; they impose no C++ runtime equality
+or PA35 generated-code improvement target. Shared storage was 28 GiB used of
+98 GiB at handoff preparation, below the 100 GiB ceiling.
+
+### Coverage accounting defect (read-only reproducer)
+
+Ralph's last-stageProgress log rejects exact counts because it records
+**143** targets and **18 unrun**, while the fixed manifest, final result JSON
+and Ralph's own target list each contain exactly **125**, with equal identities.
+`coverage-accounting-reproducer.py` reads those authoritative files without
+mutation; run it with Python. `coverage-accounting-reproducer.json` records
+125/125/143/125 and equal target sets. The same discrepancy existed at entry.
+The external log remains
+`/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high/checks/last-stageProgress.log`.
+No state, manifest, acceptance policy, test coverage or aggregate total is
+changed. Actual fixed-manifest failure reduction is proven independently;
+Ralph owns correction of the aggregate and checkpoint acceptance. This
+handoff does not claim that its automated stageProgress check is green.
+
+### Next dependency boundary and exact remaining cases
+
+All **52** final failing cases reach status 86 at an explicit missing owner;
+there is no ordinary exit/diagnostic/output mismatch left in this group's
+fixed cases. `remaining-clusters.json` records first divergent boundaries:
+globals/object aliases 36; floating literals 9; effect records 3; debug
+locations 2; TLS/symbol relations 2. These are earliest-boundary clusters,
+not a complete census of every feature downstream in those cases.
+
+The next coherent group is unit globals/data/aliases and their symbol/TLS
+metadata: extend symbol kind/detail identity with typed global records,
+scalar/structured zero/data/address initializers, aliases and final target
+checks, preserve emission phases/order, and validate storage/TLS wrapper
+relations. Missing floating literal parsing/rounding/spelling (including
+integer operands demanding a floating call parameter's serialization) remains
+an explicit 86 boundary. Then complete atomics/varargs/dynamic-stack/EH,
+debug records, stats and later constructed field checks. Retained
+frontend-forward boundary memos, host-object extensions and generated/inlined
+names belong to their actual consuming producers rather than speculative
+hot-path work here.
+
+Audit questions: review the checked body-owned argument spans and incremental
+uses, final direct/explicit boundary selection, first-reference validation
+versus declaration emission order, and distinct metadata contexts. Verify the
+C++ slot and permissive temporary rules before strengthening anything. Confirm
+construction never obtains its bodies from text; its algorithm/order/plain
+names match the consulted C++ owner.
+
+Exact remaining fixed case IDs (prefix `pa8/`):
+
+```text
+tests/spec/100-copyobj.t
+tests/spec/100-eh-cleanup-resume.t
+tests/spec/100-eh-end-normal.t
+tests/spec/100-eh-same-function-catch.t
+tests/spec/100-f32-global.t
+tests/spec/100-f64-arith-cmp.t
+tests/spec/100-function-and-instruction-debug-locations.t
+tests/spec/100-global-variable.t
+tests/spec/100-legacy-runtime-hooks.t
+tests/spec/100-object-abi-lowered.t
+tests/spec/100-signaling-nan-literal-roundtrip.t
+tests/spec/100-startup-shutdown-hooks.t
+tests/spec/100-structured-global-data.t
+tests/spec/100-subnormal-floating-literal.t
+tests/spec/100-zeroinit.t
+tests/spec/200-atomic-add-fetch.t
+tests/spec/200-atomic-compare-exchange-failure.t
+tests/spec/200-atomic-compare-exchange-success.t
+tests/spec/200-atomic-exchange.t
+tests/spec/200-atomic-fences.t
+tests/spec/200-atomic-load-store.t
+tests/spec/200-bad-duplicate-object-alias.t
+tests/spec/200-bad-duplicate-tls-wrapper.t
+tests/spec/200-bad-function-debug-zero-line.t
+tests/spec/200-bad-storage-op-alignment.t
+tests/spec/200-bad-tls-for-non-thread-local-global.t
+tests/spec/200-bad-undefined-object-alias-target.t
+tests/spec/200-bad-unknown-global-storage-metadata.t
+tests/spec/200-binding-metadata-smoke.t
+tests/spec/200-direct-object-return-boundary-smoke.t
+tests/spec/200-f64-direct-call.t
+tests/spec/200-f80-direct-call.t
+tests/spec/200-f80-global.t
+tests/spec/200-f80-unary-binary-cmp.t
+tests/spec/200-float-width-conversions.t
+tests/spec/200-global-pointer-address-init.t
+tests/spec/200-global-storage-metadata-smoke.t
+tests/spec/200-integral-float-conversions.t
+tests/spec/200-linkage-metadata-smoke.t
+tests/spec/200-structured-float-data.t
+tests/spec/200-structured-global-zero-padding.t
+tests/spec/200-thread-local-global-storage-metadata-smoke.t
+tests/spec/200-thread-local-wrapper-metadata-smoke.t
+tests/spec/200-unused-declarations.t
+tests/spec/300-bad-copy-elision-indirect-callee.t
+tests/spec/300-bad-global-section-unsafe-name.t
+tests/spec/300-bad-nowrap-on-float.t
+tests/spec/300-bad-replaceable-without-weak.t
+tests/spec/300-instruction-facts.t
+tests/spec/300-object-abi-metadata.t
+tests/spec/300-object-alias-smoke.t
+tests/spec/300-symbol-object-metadata-smoke.t
+```
+
 ## Integer/function core checkpoint — 2026-10-13
 
 This is a coherent **partial PA8 implementation**, not full-stage acceptance.

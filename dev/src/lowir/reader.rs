@@ -3,23 +3,33 @@ use super::{
     Error,
     lexer::{Kind, Lexer},
     model::{
-        Arity, Body, Function, Linkage, Metadata, NameId, Parameter, Program, Returns, Unwind,
+        Arity, Body, Boundary, Function, Linkage, Metadata, NameId, Parameter, Program, Returns,
+        Signature, SignatureId, SourceId, Unwind, Value,
     },
-    vocabulary::{Binding, Effects, Pass, Role, Type},
+    vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Type},
 };
 use std::collections::HashSet;
 pub(super) struct Parser<'a> {
     pub(super) program: &'a mut Program,
     pub(super) lexer: Lexer<'a>,
     pub(super) source: &'a str,
+    pub(super) source_id: SourceId,
+    pub(super) arguments: Vec<Value>,
 }
 impl<'a> Parser<'a> {
-    pub(super) fn new(program: &'a mut Program, source: &'a [u8], path: &'a str) -> Self {
-        Self {
+    pub(super) fn new(
+        program: &'a mut Program,
+        source: &'a [u8],
+        path: &'a str,
+    ) -> Result<Self, Error> {
+        let source_id = program.add_source(path)?;
+        Ok(Self {
             program,
             lexer: Lexer::new(source),
             source: path,
-        }
+            source_id,
+            arguments: Vec::new(),
+        })
     }
     pub(super) fn fail(&self, message: impl Into<String>) -> Error {
         let message = match self.lexer.token.kind {
@@ -139,7 +149,8 @@ impl<'a> Parser<'a> {
     fn function(&mut self, definition: bool) -> Result<(), Error> {
         let line = self.lexer.token.line;
         let name = self.name(Kind::Global, "function name")?;
-        if self.program.contains(name) {
+        let symbol = self.program.reference(name, self.source_id, line)?;
+        if self.program.symbol(symbol).function.is_some() {
             return Err(self.fail_at(
                 line,
                 format!(
@@ -148,12 +159,31 @@ impl<'a> Parser<'a> {
                 ),
             ));
         }
+        let mut metadata = Metadata::default();
+        let signature = self.signature(Some(&mut metadata))?;
         let mut function = Function {
             name,
+            signature,
+            metadata,
+            body: None,
+        };
+        if definition {
+            if self.at(Kind::Debug) {
+                return Err(Error::NotImplemented("LowIR debug locations"));
+            }
+            self.expect(Kind::LBrace, "{")?;
+            function.body = Some(self.body(&function)?);
+        }
+        self.program.add(symbol, function)
+    }
+    pub(super) fn signature(
+        &mut self,
+        symbol: Option<&mut Metadata>,
+    ) -> Result<SignatureId, Error> {
+        let mut signature = Signature {
             parameters: Vec::new(),
             result: Type::Void,
-            metadata: Metadata::default(),
-            body: None,
+            boundary: Boundary::default(),
         };
         let signature_line = self.lexer.token.line;
         self.expect(Kind::LParen, "(")?;
@@ -171,11 +201,12 @@ impl<'a> Parser<'a> {
                     pass: None,
                     no_alias: false,
                     object_bytes: 0,
+                    classes: None,
                 };
                 if self.at(Kind::LBracket) {
                     self.parameter_metadata(&mut parameter)?;
                 }
-                function.parameters.push(parameter);
+                signature.parameters.push(parameter);
                 if !self.accept(Kind::Comma) {
                     break;
                 }
@@ -183,21 +214,14 @@ impl<'a> Parser<'a> {
         }
         self.expect(Kind::RParen, ")")?;
         self.expect(Kind::Arrow, "->")?;
-        function.result = self.parse_type()?;
-        self.metadata(&mut function.metadata)?;
-        for (i, p) in function.parameters.iter().enumerate() {
-            if p.pass == Some(Pass::IndirectResult) && (i != 0 || function.result != Type::Void) {
+        signature.result = self.parse_type()?;
+        self.metadata(symbol, &mut signature.boundary, signature.result)?;
+        for (i, p) in signature.parameters.iter().enumerate() {
+            if p.pass == Some(Pass::IndirectResult) && (i != 0 || signature.result != Type::Void) {
                 return Err(self.fail_at(signature_line, "invalid indirect result parameter"));
             }
         }
-        if definition {
-            if self.at(Kind::Debug) {
-                return Err(Error::NotImplemented("LowIR debug locations"));
-            }
-            self.expect(Kind::LBrace, "{")?;
-            function.body = Some(self.body(&function)?);
-        }
-        self.program.add(function)
+        self.program.add_signature(signature)
     }
     fn parameter_metadata(&mut self, parameter: &mut Parameter) -> Result<(), Error> {
         self.lexer.advance();
@@ -238,7 +262,17 @@ impl<'a> Parser<'a> {
                         return Err(self.fail("object_bytes metadata requires ptr"));
                     }
                 }
-                "classes" => return Err(Error::NotImplemented("LowIR object ABI classes")),
+                "classes" => {
+                    if seen.contains(key) {
+                        return Err(self.fail("duplicate metadata key: classes"));
+                    }
+                    parameter.classes = Some(self.object_classes(parameter.ty)?);
+                    seen.insert(key);
+                    if !self.accept(Kind::Comma) {
+                        break;
+                    }
+                    continue;
+                }
                 _ => return Err(self.fail("invalid parameter metadata")),
             }
             if !seen.insert(key) {
@@ -251,7 +285,30 @@ impl<'a> Parser<'a> {
         }
         self.expect(Kind::RBracket, "]")
     }
-    fn metadata(&mut self, metadata: &mut Metadata) -> Result<(), Error> {
+    fn object_classes(&mut self, ty: Type) -> Result<ObjectClasses, Error> {
+        let Type::Object { bytes, .. } = ty else {
+            return Err(self.fail("classes metadata requires a direct object of matching size"));
+        };
+        if bytes > 16 {
+            return Err(self.fail("classes metadata requires a direct object of matching size"));
+        }
+        let classes = if self.at(Kind::Word) {
+            ObjectClasses::parse(self.lexer.token.word(), bytes)
+        } else {
+            None
+        };
+        let Some(classes) = classes else {
+            return Err(self.fail("invalid classes metadata"));
+        };
+        self.lexer.advance();
+        Ok(classes)
+    }
+    fn metadata(
+        &mut self,
+        mut symbol: Option<&mut Metadata>,
+        boundary: &mut Boundary,
+        result: Type,
+    ) -> Result<(), Error> {
         let mut seen = HashSet::new();
         while self.accept(Kind::LBracket) {
             loop {
@@ -291,6 +348,14 @@ impl<'a> Parser<'a> {
                 if !seen.insert(key) {
                     return Err(self.fail(format!("duplicate metadata key: {key}")));
                 }
+                if symbol.is_none()
+                    && !matches!(
+                        key,
+                        "arity" | "effects" | "unwind" | "return" | "result_classes"
+                    )
+                {
+                    return Err(self.fail("symbol metadata on call signature"));
+                }
                 let value = self.lexer.token.word();
                 let symbol_key = !matches!(
                     key,
@@ -312,11 +377,11 @@ impl<'a> Parser<'a> {
                         if !self.at_word("variadic") {
                             return Err(self.fail("invalid arity metadata"));
                         }
-                        metadata.arity = Arity::Variadic;
+                        boundary.arity = Arity::Variadic;
                     }
                     "effects" => {
-                        metadata.effects = Effects::parse(value);
-                        if metadata.effects.is_none() {
+                        boundary.effects = Effects::parse(value);
+                        if boundary.effects.is_none() {
                             return Err(self.fail("invalid effects metadata"));
                         }
                     }
@@ -324,60 +389,30 @@ impl<'a> Parser<'a> {
                         if !self.at_word("no") {
                             return Err(self.fail("invalid unwind metadata"));
                         }
-                        metadata.unwind = Unwind::No;
+                        boundary.unwind = Unwind::No;
                     }
                     "return" => {
                         if !self.at_word("noreturn") {
                             return Err(self.fail("invalid return metadata"));
                         }
-                        metadata.returns = Returns::NoReturn;
+                        boundary.returns = Returns::NoReturn;
                     }
-                    "role" => {
-                        metadata.role = Role::parse(value);
-                        if metadata.role.is_none_or(Role::global) {
-                            return Err(self.fail("invalid symbol role"));
+                    "result_classes" => {
+                        let classes = self.object_classes(result)?;
+                        if matches!(classes, ObjectClasses::Memory) {
+                            return Err(self.fail("a memory-class result is returned through an indirect_result parameter"));
                         }
-                    }
-                    "linkage" => {
-                        if !self.at_word("c") {
-                            return Err(self.fail("invalid linkage metadata"));
+                        boundary.result_classes = Some(classes);
+                        if !self.accept(Kind::Comma) {
+                            break;
                         }
-                        metadata.linkage = Linkage::C;
-                    }
-                    "binding" => {
-                        metadata.binding = Binding::parse(value);
-                        if metadata.binding.is_none() {
-                            return Err(self.fail("invalid binding metadata"));
-                        }
-                    }
-                    "object" => {
-                        let value = if self.at(Kind::Global) {
-                            format!("@{value}")
-                        } else {
-                            value.into()
-                        };
-                        metadata.object = Some(self.program.names.intern(&value)?);
-                    }
-                    "storage" => return Err(self.fail("storage metadata on non-global")),
-                    "section" => return Err(self.fail("section metadata requires a global")),
-                    "tls_for" | "result_classes" => {
-                        return Err(Error::NotImplemented(
-                            "LowIR symbol and object boundary relations",
-                        ));
+                        continue;
                     }
                     _ => {
-                        if !self.at_word("yes") {
-                            return Err(self.fail("metadata flag must be yes"));
-                        }
-                        metadata.flags |= match key {
-                            "keep_alias" => 1,
-                            "prefer_local" => 2,
-                            "object_root" => 4,
-                            "force_inline" => 8,
-                            "inline_hint" => 16,
-                            "no_inline" => 32,
-                            _ => 64,
+                        let Some(metadata) = symbol.as_deref_mut() else {
+                            return Err(self.fail("symbol metadata on call signature"));
                         };
+                        self.symbol_metadata(metadata, key)?;
                     }
                 }
                 self.lexer.advance();
@@ -387,14 +422,68 @@ impl<'a> Parser<'a> {
             }
             self.expect(Kind::RBracket, "]")?;
         }
-        if metadata.flags & 64 != 0 && metadata.binding != Some(Binding::Weak) {
+        if symbol.is_some_and(|m| m.flags & 64 != 0 && m.binding != Some(Binding::Weak)) {
             return Err(self.fail("replaceable metadata requires binding=weak"));
         }
         Ok(())
     }
+    fn symbol_metadata(&mut self, metadata: &mut Metadata, key: &str) -> Result<(), Error> {
+        let value = self.lexer.token.word();
+        match key {
+            "role" => {
+                metadata.role = Role::parse(value);
+                if metadata.role.is_none_or(Role::global) {
+                    return Err(self.fail("invalid symbol role"));
+                }
+            }
+            "linkage" => {
+                if !self.at_word("c") {
+                    return Err(self.fail("invalid linkage metadata"));
+                }
+                metadata.linkage = Linkage::C;
+            }
+            "binding" => {
+                metadata.binding = Binding::parse(value);
+                if metadata.binding.is_none() {
+                    return Err(self.fail("invalid binding metadata"));
+                }
+            }
+            "object" => {
+                let value = if self.at(Kind::Global) {
+                    format!("@{value}")
+                } else {
+                    value.into()
+                };
+                metadata.object = Some(self.program.names.intern(&value)?);
+            }
+            "storage" => return Err(self.fail("storage metadata on non-global")),
+            "section" => return Err(self.fail("section metadata requires a global")),
+            "tls_for" => {
+                return Err(Error::NotImplemented(
+                    "LowIR symbol and object boundary relations",
+                ));
+            }
+            _ => {
+                if !self.at_word("yes") {
+                    return Err(self.fail("metadata flag must be yes"));
+                }
+                metadata.flags |= match key {
+                    "keep_alias" => 1,
+                    "prefer_local" => 2,
+                    "object_root" => 4,
+                    "force_inline" => 8,
+                    "inline_hint" => 16,
+                    "no_inline" => 32,
+                    _ => 64,
+                };
+            }
+        }
+        Ok(())
+    }
     fn body(&mut self, function: &Function) -> Result<Body, Error> {
-        let mut body = Body::new(self.source, function.parameters.len());
-        for p in &function.parameters {
+        let signature = self.program.signature(function.signature);
+        let mut body = Body::new(self.source, signature.parameters.len());
+        for p in &signature.parameters {
             let id = body.use_temp(p.name, 0)?;
             body.temp_mut(id).ty = Some(p.ty);
         }
@@ -460,11 +549,13 @@ impl<'a> Parser<'a> {
     fn check_end(&self, body: &Body) -> Result<(), Error> {
         if let Some(&id) = body.layout.last() {
             let block = body.block(id);
-            if !block
-                .instructions
-                .last()
-                .is_some_and(|&id| body.instruction(id).kind.terminator())
-            {
+            if !block.instructions.last().is_some_and(|&id| {
+                body.instruction(id).kind.terminator()
+                    || matches!(
+                        body.instruction(id).kind,
+                        super::model::InstructionKind::Call(_)
+                    )
+            }) {
                 return Err(self.fail(format!(
                     "block has no terminator: {}",
                     self.program.names.get(block.name)

@@ -130,3 +130,39 @@ vocabulary!(Binding { Internal => "internal", Strong => "strong", Weak => "weak"
 vocabulary!(Effects { ReadNone => "readnone", ReadOnly => "readonly" });
 vocabulary!(Pass { IndirectResult => "indirect_result", ByAddress => "by_address" });
 vocabulary!(Projection { ArrayElement => "array_element", Field => "field" });
+vocabulary!(EightbyteClass { None => "none", Integer => "integer", Sse => "sse" });
+#[derive(Clone, Copy)]
+pub(super) enum ObjectClasses {
+    Memory,
+    Direct(EightbyteClass, Option<EightbyteClass>),
+}
+impl ObjectClasses {
+    pub(super) fn parse(text: &str, bytes: u64) -> Option<Self> {
+        if text == "memory" {
+            return Some(Self::Memory);
+        }
+        if bytes > 8 {
+            let (first, second) = text.split_once('_')?;
+            Some(Self::Direct(
+                EightbyteClass::parse(first)?,
+                Some(EightbyteClass::parse(second)?),
+            ))
+        } else {
+            Some(Self::Direct(EightbyteClass::parse(text)?, None))
+        }
+    }
+}
+impl std::fmt::Display for ObjectClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Memory => f.write_str("memory"),
+            Self::Direct(first, second) => {
+                f.write_str(first.spelling())?;
+                if let Some(second) = second {
+                    write!(f, "_{}", second.spelling())?;
+                }
+                Ok(())
+            }
+        }
+    }
+}

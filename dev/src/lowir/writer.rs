@@ -1,8 +1,8 @@
 //! Bounded streaming serializer over typed `LowIR` facts. See NOTICE.
 use super::{
     model::{
-        Arity, Body, Facts, Function, InstructionKind as I, Linkage, Program, Returns, Unwind,
-        Value,
+        Arity, Body, Call, Facts, Function, InstructionKind as I, Linkage, Metadata, Program,
+        Returns, Signature, Unwind, Value,
     },
     vocabulary::Type,
 };
@@ -29,77 +29,13 @@ pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
 fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::Result<()> {
     write!(
         out,
-        "{}function @{}(",
+        "{}function @{}",
         if f.body.is_some() { "" } else { "declare " },
         program.names.get(f.name)
     )?;
-    for (i, p) in f.parameters.iter().enumerate() {
-        if i != 0 {
-            write!(out, ", ")?;
-        }
-        write!(out, "%{} : {}", program.names.get(p.name), p.ty)?;
-        let mut fields = Vec::new();
-        if let Some(pass) = p.pass {
-            fields.push(format!("pass={}", pass.spelling()));
-        }
-        if p.no_alias {
-            fields.push("alias=noalias".into());
-        }
-        if p.object_bytes != 0 {
-            fields.push(format!("object_bytes={}", p.object_bytes));
-        }
-        if !fields.is_empty() {
-            write!(out, " [{}]", fields.join(", "))?;
-        }
-    }
-    write!(out, ") -> {}", f.result)?;
-    let m = &f.metadata;
-    let mut fields = Vec::new();
-    if m.arity == Arity::Variadic {
-        fields.push("arity=variadic".into());
-    }
-    if let Some(effects) = m.effects {
-        fields.push(format!("effects={}", effects.spelling()));
-    }
-    if m.unwind == Unwind::No {
-        fields.push("unwind=no".into());
-    }
-    if m.returns == Returns::NoReturn {
-        fields.push("return=noreturn".into());
-    }
-    if let Some(role) = m.role {
-        fields.push(format!("role={}", role.spelling()));
-    }
-    if m.linkage == Linkage::C {
-        fields.push("linkage=c".into());
-    }
-    if let Some(binding) = m.binding {
-        fields.push(format!("binding={}", binding.spelling()));
-    }
-    if m.flags & 64 != 0 {
-        fields.push("replaceable=yes".into());
-    }
-    if let Some(object) = m.object {
-        fields.push(format!("object={}", program.names.get(object)));
-    }
-    for (i, name) in [
-        "keep_alias",
-        "prefer_local",
-        "object_root",
-        "force_inline",
-        "inline_hint",
-        "no_inline",
-    ]
-    .iter()
-    .enumerate()
-    {
-        if m.flags & (1 << i) != 0 {
-            fields.push(format!("{name}=yes"));
-        }
-    }
-    if !fields.is_empty() {
-        write!(out, " [{}]", fields.join(", "))?;
-    }
+    let signature = program.signature(f.signature);
+    parameters(program, signature, out)?;
+    metadata(program, Some(&f.metadata), signature, out)?;
     let Some(body) = &f.body else {
         return writeln!(out);
     };
@@ -134,6 +70,93 @@ fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::
     }
     writeln!(out, "}}")
 }
+fn parameters(program: &Program, signature: &Signature, out: &mut impl Write) -> io::Result<()> {
+    write!(out, "(")?;
+    for (i, p) in signature.parameters.iter().enumerate() {
+        if i != 0 {
+            write!(out, ", ")?;
+        }
+        write!(out, "%{} : {}", program.names.get(p.name), p.ty)?;
+        let mut fields = Vec::new();
+        if let Some(pass) = p.pass {
+            fields.push(format!("pass={}", pass.spelling()));
+        }
+        if p.no_alias {
+            fields.push("alias=noalias".into());
+        }
+        if p.object_bytes != 0 {
+            fields.push(format!("object_bytes={}", p.object_bytes));
+        }
+        if let Some(classes) = p.classes {
+            fields.push(format!("classes={classes}"));
+        }
+        if !fields.is_empty() {
+            write!(out, " [{}]", fields.join(", "))?;
+        }
+    }
+    write!(out, ") -> {}", signature.result)?;
+    Ok(())
+}
+fn metadata(
+    program: &Program,
+    symbol: Option<&Metadata>,
+    signature: &Signature,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    let m = &signature.boundary;
+    let mut fields = Vec::new();
+    if m.arity == Arity::Variadic {
+        fields.push("arity=variadic".into());
+    }
+    if let Some(effects) = m.effects {
+        fields.push(format!("effects={}", effects.spelling()));
+    }
+    if m.unwind == Unwind::No {
+        fields.push("unwind=no".into());
+    }
+    if m.returns == Returns::NoReturn {
+        fields.push("return=noreturn".into());
+    }
+    if let Some(classes) = m.result_classes {
+        fields.push(format!("result_classes={classes}"));
+    }
+    if let Some(m) = symbol {
+        if let Some(role) = m.role {
+            fields.push(format!("role={}", role.spelling()));
+        }
+        if m.linkage == Linkage::C {
+            fields.push("linkage=c".into());
+        }
+        if let Some(binding) = m.binding {
+            fields.push(format!("binding={}", binding.spelling()));
+        }
+        if m.flags & 64 != 0 {
+            fields.push("replaceable=yes".into());
+        }
+        if let Some(object) = m.object {
+            fields.push(format!("object={}", program.names.get(object)));
+        }
+        for (i, name) in [
+            "keep_alias",
+            "prefer_local",
+            "object_root",
+            "force_inline",
+            "inline_hint",
+            "no_inline",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if m.flags & (1 << i) != 0 {
+                fields.push(format!("{name}=yes"));
+            }
+        }
+    }
+    if !fields.is_empty() {
+        write!(out, " [{}]", fields.join(", "))?;
+    }
+    Ok(())
+}
 struct InstructionWriter<'a, W> {
     program: &'a Program,
     body: &'a Body,
@@ -151,6 +174,11 @@ impl<W: Write> InstructionWriter<'_, W> {
                 self.out,
                 "${}",
                 self.program.names.get(self.body.slot(s).name)
+            ),
+            Value::Symbol(id) => write!(
+                self.out,
+                "@{}",
+                self.program.names.get(self.program.symbol(id).name)
             ),
             Value::Integer(id) => self
                 .out
@@ -173,6 +201,28 @@ impl<W: Write> InstructionWriter<'_, W> {
         }
         if f.typed() {
             write!(self.out, "typed ")?;
+        }
+        Ok(())
+    }
+    fn call(&mut self, call: &Call) -> io::Result<()> {
+        write!(self.out, "call {} ", call.result)?;
+        self.value(call.callee, Type::Void)?;
+        write!(self.out, "(")?;
+        for (index, &argument) in self.body.arguments(call.arguments).iter().enumerate() {
+            if index != 0 {
+                self.comma()?;
+            }
+            self.value(argument, Type::Void)?;
+        }
+        write!(self.out, ")")?;
+        if call.copy_elision {
+            write!(self.out, " [elision=copy]")?;
+        }
+        if let Some(id) = call.signature {
+            write!(self.out, " as ")?;
+            let signature = self.program.signature(id);
+            parameters(self.program, signature, self.out)?;
+            metadata(self.program, None, signature, self.out)?;
         }
         Ok(())
     }
@@ -308,6 +358,7 @@ impl<W: Write> InstructionWriter<'_, W> {
                 }
                 Ok(())
             }
+            I::Call(call) => self.call(call),
             I::Unreachable => write!(self.out, "unreachable"),
         }
     }

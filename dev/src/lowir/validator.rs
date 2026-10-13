@@ -1,13 +1,15 @@
 //! C++ `LowIR` validator's layout-order, scalar/fact and phi checks. See NOTICE.
 use super::{
     Error,
-    model::{BlockId, Body, Function, Instruction, InstructionKind as I, Program, Value},
+    model::{
+        Arity, BlockId, Body, Call, Function, Instruction, InstructionKind as I, Program, Value,
+    },
     vocabulary::{Binary, Convert, Role, Type, Unary},
 };
 use std::collections::HashSet;
 pub(super) fn validate(program: &Program) -> Result<(), Error> {
     let mut roles = HashSet::new();
-    for function in program.functions() {
+    for function in program.functions_in_symbol_order() {
         if let Some(role) = function.metadata.role {
             if !roles.insert(role.spelling()) {
                 return Err(Error::Diagnostic(format!(
@@ -23,12 +25,45 @@ pub(super) fn validate(program: &Program) -> Result<(), Error> {
             }
         }
     }
-    for function in program.functions() {
+    for function in program.functions_in_symbol_order() {
         if let Some(body) = &function.body {
             validate_body(program, function, body)?;
         }
     }
     Ok(())
+}
+/// Audit the stored links/results that textual construction establishes while parsing.
+pub(super) fn validate_constructed(program: &Program) -> Result<(), Error> {
+    program.finish_symbols()?;
+    for function in program.functions_in_symbol_order() {
+        if let Some(body) = &function.body {
+            for (index, inst) in body.instructions().iter().enumerate() {
+                let ty = inst.kind.result_type();
+                let message = if inst.result.is_some() != (ty != Type::Void) {
+                    Some(if ty == Type::Void {
+                        "a void instruction has no result"
+                    } else {
+                        "value instruction without its result temporary"
+                    })
+                } else if let Some(result) = inst.result {
+                    let temp = body.temp(result);
+                    if temp.definition.is_none_or(|id| id.index() != index) {
+                        Some("value instruction without its result temporary")
+                    } else if temp.ty != Some(ty) {
+                        Some("result temporary type mismatch")
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(message) = message {
+                    return Err(fail(program, function, body, inst, message));
+                }
+            }
+        }
+    }
+    validate(program)
 }
 fn fail(
     program: &Program,
@@ -37,19 +72,36 @@ fn fail(
     inst: &Instruction,
     message: impl Into<String>,
 ) -> Error {
-    Error::Diagnostic(format!(
-        "{} in function @{} at {}:{}",
-        message.into(),
-        program.names.get(function.name),
-        body.source,
-        inst.line
-    ))
+    let message = message.into();
+    let name = program.names.get(function.name);
+    Error::Diagnostic(if body.source.is_empty() {
+        format!("{message} in function @{name}")
+    } else {
+        format!(
+            "{message} in function @{name} at {}:{}",
+            body.source, inst.line
+        )
+    })
 }
 fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<(), Error> {
+    if body.layout.is_empty() {
+        return Err(Error::Diagnostic(format!(
+            "function has no blocks in function @{}",
+            program.names.get(function.name)
+        )));
+    }
     let mut positions = vec![0; body.instructions().len()];
     let mut predecessors = vec![HashSet::new(); body.blocks().len()];
     let mut position = 0;
     for &block in &body.layout {
+        let last = body.block(block).instructions.last().copied();
+        if last.is_none_or(|id| !program.may_end_block(&body.instruction(id).kind)) {
+            return Err(Error::Diagnostic(format!(
+                "block has no terminator: {} in function @{}",
+                program.names.get(body.block(block).name),
+                program.names.get(function.name)
+            )));
+        }
         for &id in &body.block(block).instructions {
             positions[id.index()] = position;
             position += 1;
@@ -69,7 +121,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
             ordinary |= !matches!(inst.kind, I::Phi(..));
             let mut early_use = None;
             if !matches!(inst.kind, I::Phi(..)) {
-                inst.kind.visit_values(|v| {
+                body.visit_values(&inst.kind, |v| {
                     if let Value::Temp(t) = v
                         && !body.temp_is_parameter(t)
                         && body
@@ -136,7 +188,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                         let actual = match *v {
                             Value::Temp(t) => body.temp(t).ty,
                             Value::Slot(s) => Some(body.slot(s).ty),
-                            Value::Integer(_) => None,
+                            Value::Integer(_) | Value::Symbol(_) => None,
                         };
                         if actual == Some(Type::I128) && *ty != Type::I128 {
                             return Err(error("comparison operand type mismatch"));
@@ -154,7 +206,9 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                     }
                 }
                 I::Return(ty, value) => {
-                    if *ty != function.result || value.is_some() == (*ty == Type::Void) {
+                    if *ty != program.signature(function.signature).result
+                        || value.is_some() == (*ty == Type::Void)
+                    {
                         return Err(error("return type does not match function"));
                     }
                 }
@@ -165,11 +219,75 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                         return Err(fail(program, function, body, inst, message));
                     }
                 }
+                I::Call(call) => {
+                    if let Some(message) = call_error(program, body, call) {
+                        return Err(fail(program, function, body, inst, message));
+                    }
+                    // Integer spellings can still demand the deferred floating literal owner.
+                    if program.call_boundary(call).is_some_and(|signature| {
+                        signature
+                            .parameters
+                            .iter()
+                            .zip(body.arguments(call.arguments))
+                            .any(|(parameter, argument)| {
+                                parameter.ty.float_rank() != 0
+                                    && matches!(argument, Value::Integer(_))
+                            })
+                    }) {
+                        return Err(Error::NotImplemented("LowIR floating call operands"));
+                    }
+                }
                 _ => {}
             }
         }
     }
     Ok(())
+}
+fn call_error(program: &Program, body: &Body, call: &Call) -> Option<String> {
+    let direct = program.callee_function(call.callee).is_some();
+    let signature = program.call_boundary(call);
+    if call.signature.is_none() && !direct {
+        return Some("indirect call requires signature".into());
+    }
+    let signature = signature?;
+    if call.result != signature.result {
+        return Some(
+            if call.signature.is_some() {
+                "call signature return mismatch"
+            } else {
+                "direct call return mismatch"
+            }
+            .into(),
+        );
+    }
+    let arguments = body.arguments(call.arguments);
+    let count = arguments.len();
+    let parameters = signature.parameters.len();
+    if (signature.boundary.arity == Arity::Fixed && count != parameters) || count < parameters {
+        return Some("call arity mismatch".into());
+    }
+    for (parameter, argument) in signature.parameters.iter().zip(arguments) {
+        if let Value::Slot(id) = *argument
+            && parameter.pass.is_none()
+            && body.slot(id).ty != parameter.ty
+        {
+            return Some(format!(
+                "call argument slot type does not match the parameter type: {}",
+                program.names.get(body.slot(id).name)
+            ));
+        }
+    }
+    if call.copy_elision {
+        if !direct {
+            return Some("copy elision requires a direct call".into());
+        }
+        if call.result != Type::Void || count < 2 {
+            return Some(
+                "copy elision requires a direct void call with destination and source".into(),
+            );
+        }
+    }
+    None
 }
 fn valid_conversion(op: Convert, to: Type, from: Type) -> bool {
     if to == from {
@@ -230,6 +348,9 @@ fn phi_error(
             }
             Value::Integer(_) if ty.bits() == 0 && ty != Type::Ptr => {
                 return Some("phi integer literal type mismatch".into());
+            }
+            Value::Symbol(_) if ty != Type::Ptr => {
+                return Some("phi global operand requires ptr type".into());
             }
             Value::Slot(_) => return Some("phi incoming operand is not a scalar value".into()),
             _ => {}
