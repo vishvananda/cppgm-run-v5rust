@@ -2,7 +2,7 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (clean continued audit entry).
-Last audited commit: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (reviewed entry; resulting source commit is recorded below after commit; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+Last audited implementation commit: `67419338047bc8419b75b35d334efecc2c6eec29` (source/fixes and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
 
 
 ## Procedural acceptance-audit checkpoint — 2026-10-13
@@ -10,6 +10,11 @@ Last audited commit: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (reviewed entry;
 Reviewed clean entry and group base:
 `a4f09d05042874cc9e4e1224f2a206df61de5dc7`.
 Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+Reviewed resulting implementation commit:
+`67419338047bc8419b75b35d334efecc2c6eec29`.
+The final staged code diff (including the new module) has SHA-256
+`5305feee23d422377303cdad90c53c51538d6c59bda402724e47d5dc77215546`;
+`reviewed-source.json` retains each source hash.
 This continued the existing full-stage audit, without creating/resetting its goal,
 editing Ralph state, changing acceptance policy or advancing the stage.
 **The procedural/control/default/scalar-effect findings below are fixed;
