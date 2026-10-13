@@ -1,14 +1,14 @@
 # PA6 port ledger
 
 Stage base commit: `70e745588987998ee1e5bde80b3861541eab753d`
-Last audited commit: `5851cab157eacc66f410f3275b0c06bd2f8d1c41` (PA6 full-stage acceptance PASS; due responsibilities reviewed and fixed, later-stage boundaries individually recorded).
+Last audited commit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` (PA6 declaration follow-up source/quality/prior-lane review; original full-stage acceptance `5851cab157eacc66f410f3275b0c06bd2f8d1c41`; PA7 acceptance remains pending).
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
 ## PA7 audit follow-up to PA6 declarations — 2026-10-13
 
 Reviewed clean entry `6ef88b8823f646a16bb17f0725394a355c48b635` and the
-resulting implementation revision recorded in the PA7 ledger. This supplements
+resulting implementation revision `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`. This supplements
 the prior PA6 acceptance review; it does not replace its stage base or Ralph's
 stage ownership. The PA7 independent source audit found earlier-owned storage,
 language linkage, block entity adoption, using-signature conflict, typedef and

@@ -2,14 +2,16 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `6ef88b8823f646a16bb17f0725394a355c48b635` (clean declaration/linkage audit entry).
-Last audited implementation commit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e` (query/effect source and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+Last audited implementation commit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` (declaration/linkage and scalar source/validation reviewed; full-stage acceptance pending). Previous partial audit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e`.
 
 
 ## Declaration/linkage and scalar failure-order audit checkpoint — 2026-10-13
 
 Reviewed entry: `6ef88b8823f646a16bb17f0725394a355c48b635`.
 Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Reviewed source revision: recorded below after the implementation commit.
+Reviewed implementation commit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
+`reviewed-source.json` retains all fifteen source hashes and staged audit diff
+SHA-256 `cebb2df629dae111d3c028e270f580a391caf6c6be7ad79fcd3e1219b3ca06ec`.
 **This closes the findings listed here; full-stage acceptance is still pending.**
 The independent operator sweep found sixteen reproducible frozen-oracle crashes,
 which are retained as baseline issues, not successful reference outcomes or
