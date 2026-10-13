@@ -1,7 +1,7 @@
 # PA9 port ledger
 
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
-Last audited commit: INITIAL (implementation does not advance this field).
+Last audited commit: `624273b1e25ece742d81dc5f275e2e7a75595b57` (standalone parity and quality reviewed; full-stage acceptance withheld).
 
 ## Full-stage audit: findings fixed, acceptance withheld — 2026-10-13
 
@@ -9,7 +9,7 @@ Entry HEAD: `3750b85cd1832a32658bd5b3dc655d8454332ad9`, clean checkout.
 The previous goal turn was **progress**, completing the local-context port;
 no interrupted checker/compiler process was live at audit entry. Reviewed the
 three implementation increments `8f54cbd`, `b7157ce` and `3750b85`, plus the
-fixes recorded here. The stage base above is unchanged. This audit does
+fixes in implementation commit `624273b1e25ece742d81dc5f275e2e7a75595b57`. The stage base above is unchanged. This audit does
 **not** certify full PA9 acceptance or advance Ralph's stage/goal state.
 
 Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the full PA9 handout,
@@ -58,8 +58,8 @@ milestones; this audit does not claim their implementation-wide completion.
 
 Evidence root:
 `/home/vishvananda/work/private/v5rust/artifacts/pa9-audit-20261013/`.
-The fixes are in the implementation commit recorded by the following audit
-commit; external `handoff.json` identifies both commits and final clean status.
+The fixes are in `624273b1e25ece742d81dc5f275e2e7a75595b57`; this audit commit records that reviewed
+implementation. External `handoff.json` identifies both commits and final clean status.
 Generated files, raw logs, benchmarks and receipts are outside Git.
 
 | Command/evidence | Result |
