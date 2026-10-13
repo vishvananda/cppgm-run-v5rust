@@ -1,0 +1,42 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable assigned const int
+    assignment-expression lvalue const int OP_ASS:=
+      literal lvalue lvalue-reference to const int 3
+      literal prvalue int 4
+  variable compound const int
+    assignment-expression lvalue const int OP_PLUSASS:+=
+      literal lvalue lvalue-reference to const int 3
+      literal prvalue int 4
+  variable prefix const int
+    unary-expression lvalue const int OP_INC:++
+      literal lvalue lvalue-reference to const int 3
+  variable postfix const int
+    postfix-expression prvalue const int OP_INC:++
+      literal lvalue lvalue-reference to const int 3
+  variable fresh const int
+    binary-expression lvalue const int OP_COMMA:,
+      assignment-expression lvalue int OP_ASS:=
+        literal lvalue lvalue-reference to const int 3
+        literal prvalue int 4
+      literal lvalue lvalue-reference to const int 3
+  variable wrap const int
+    assignment-expression lvalue unsigned char OP_PLUSASS:+=
+      literal lvalue lvalue-reference to const unsigned char 255
+      literal prvalue int 1
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  id-expression lvalue const int assigned
+                  id-expression lvalue const int compound
+                id-expression lvalue const int prefix
+              id-expression lvalue const int postfix
+            id-expression lvalue const int fresh
+          id-expression lvalue const int wrap
+end translation unit

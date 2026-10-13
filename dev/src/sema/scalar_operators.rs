@@ -447,6 +447,36 @@ impl Analyzer<'_> {
         }
         Ok(Some(result))
     }
+    pub(super) fn scalar_list_assignment(
+        &mut self,
+        id: ast::ExprId,
+        op: P,
+        left: ExprFacts,
+        right: ast::ExprId,
+        scope: super::graph::ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let target = self.bare_type(left.ty)?;
+        let scalar = match self.graph.types.get(target).kind {
+            TypeKind::Scalar(scalar) => scalar != Scalar::Void,
+            TypeKind::Enum(_) | TypeKind::Pointer(_) | TypeKind::MemberPointer { .. } => true,
+            _ => false,
+        };
+        if op != P::Assign || !scalar {
+            return Err(Error::at(
+                self.tree.expressions.get(right).location,
+                "assignment from a braced-init-list is not supported",
+            ));
+        }
+        if !self.modifiable(left) {
+            return Err(self.operator_error(
+                id,
+                "assignment to something that is not a modifiable lvalue",
+            ));
+        }
+        self.list_initialize(right, target, scope)?;
+        self.new_expression_facts(left.ty, V::Lvalue)
+    }
+
     pub(super) fn scalar_assignment(
         &mut self,
         id: ast::ExprId,
@@ -463,6 +493,7 @@ impl Analyzer<'_> {
             ));
         }
         let target = self.bare_type(lf.ty)?;
+        let mut operation = target;
         if op == P::Assign {
             self.convert_scalar(right, target, false)?;
         } else {
@@ -491,6 +522,7 @@ impl Analyzer<'_> {
                 // object pointer, converting the pointer result back to bool.
                 self.complete_pointer(rt, id)?;
                 self.convert_operand_scalar(right, rt, false)?;
+                operation = rt;
             } else {
                 let integral_only = matches!(
                     op,
@@ -516,7 +548,25 @@ impl Analyzer<'_> {
                     self.arithmetic_type(target, rt)?
                 };
                 self.convert_operand_scalar(right, common, false)?;
+                operation = if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
+                    self.promoted_type(target)?
+                } else {
+                    common
+                };
             }
+        }
+        if op != P::Assign {
+            let right_type = self
+                .graph
+                .expression_facts
+                .get(right)?
+                .conversion
+                .ok_or(Error::Invariant(
+                    "compound assignment without right conversion",
+                ))?
+                .result;
+            self.graph
+                .record_arithmetic_types(id, operation, right_type);
         }
         self.new_expression_facts(lf.ty, V::Lvalue)
     }

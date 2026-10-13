@@ -13,6 +13,205 @@ use crate::{
 };
 
 #[test]
+fn declared_conditions_keep_read_and_target_facts_separate_from_initializers() {
+    use super::expression_facts::{LvalueTransform, ValueConversion};
+    use crate::syntax::ast::{Body, Condition, DeclKind, StmtKind};
+    let source = SourceBuffer::new(b"void f(int*p,unsigned char x){if(int*q=p){}switch(const unsigned char&r=x){default:break;}}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"condition-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[0])
+        .kind
+    else {
+        panic!("function expected");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("block expected");
+    };
+    for (&statement, (target, second)) in tree.stmt_lists.get(statements).iter().zip([
+        (Scalar::Bool, ValueConversion::PointerBoolean),
+        (
+            Scalar::Basic(FundamentalType::Int),
+            ValueConversion::IntegralPromotion,
+        ),
+    ]) {
+        let (StmtKind::If { condition, .. } | StmtKind::ConditionalLoop { condition, .. }) =
+            tree.statements.get(statement).kind
+        else {
+            panic!("control statement expected");
+        };
+        let Condition::Declaration { declarator, .. } = condition else {
+            panic!("declared condition expected");
+        };
+        let conversion = graph.condition_conversion(declarator).unwrap();
+        assert_eq!(conversion.first, LvalueTransform::Read);
+        assert!(!conversion.initialization);
+        assert_eq!(conversion.second, second);
+        assert_eq!(
+            graph.types.get(conversion.result).kind,
+            TypeKind::Scalar(target)
+        );
+        let binding = graph.declared_bindings[declarator.index()].unwrap();
+        assert_ne!(
+            graph.entity(graph.binding(binding).entity).ty.unwrap(),
+            conversion.result
+        );
+    }
+}
+
+#[test]
+fn mutable_constant_temporaries_are_fresh_per_evaluation() {
+    use super::constants::ConstantState;
+    use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind};
+    let source = SourceBuffer::new(b"constexpr int n=(const_cast<int&>(static_cast<const int&>(3))+=4);constexpr int m=(const_cast<int&>(static_cast<const int&>(3))++);constexpr int failure=__builtin_constant_p(const_cast<int&>(static_cast<const int&>(2147483647))+=1);".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"evaluation-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let scope = analyzer.graph.global;
+    let marker = 0u8;
+    analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+    for &declaration in tree.decl_lists.get(declarations) {
+        analyzer.declaration(declaration, scope).unwrap();
+    }
+    for (&declaration, expected) in tree.decl_lists.get(declarations).iter().zip([7, 3]) {
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("scalar object declaration expected");
+        };
+        let init = tree.init_declarators.get(declarators)[0];
+        let InitializerKind::Assign(expression) = init.initializer.unwrap().kind else {
+            panic!("assignment initializer expected");
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                analyzer
+                    .constant_value(expression, scope, true)
+                    .unwrap()
+                    .unwrap()
+                    .bits,
+                expected
+            );
+            assert!(analyzer.constant_evaluation.is_none());
+        }
+        let graph = &analyzer.graph;
+        let binding = graph.declared_bindings[init.declarator.index()].unwrap();
+        let ConstantState::Value(value) = graph.entity(graph.binding(binding).entity).constant
+        else {
+            panic!("published integral constant expected");
+        };
+        assert_eq!(value.bits, expected);
+    }
+    let DeclKind::Simple { declarators, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[2])
+        .kind
+    else {
+        panic!("query declaration expected");
+    };
+    let init = tree.init_declarators.get(declarators)[0];
+    let InitializerKind::Assign(query) = init.initializer.unwrap().kind else {
+        panic!("query initializer expected");
+    };
+    let ExprKind::Call { arguments, .. } = tree.expressions.get(query).kind else {
+        panic!("query call expected");
+    };
+    let operand = tree.expr_lists.get(arguments)[0];
+    for _ in 0..2 {
+        assert!(matches!(
+            analyzer.constant_value(operand, scope, true),
+            Err(Error::Diagnostic {
+                message: "an arithmetic operation with an undefined result",
+                ..
+            })
+        ));
+        assert!(analyzer.constant_evaluation.is_none());
+    }
+}
+
+#[test]
+fn compound_assignments_retain_operation_types_on_original_expressions() {
+    use crate::{
+        lex::pp_lexer::Punctuator as P,
+        syntax::ast::{Body, DeclKind, ExprKind, StmtKind},
+    };
+    let source = SourceBuffer::new(b"void f(int x){x+=1L;x<<=1L;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"compound-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let expression_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), expression_count);
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[0])
+        .kind
+    else {
+        panic!("function expected");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("function block expected");
+    };
+    for &statement in tree.stmt_lists.get(statements) {
+        let StmtKind::Expression(Some(expression)) = tree.statements.get(statement).kind else {
+            panic!("assignment statement expected");
+        };
+        let ExprKind::Binary {
+            op,
+            left,
+            right,
+            assignment: true,
+        } = tree.expressions.get(expression).kind
+        else {
+            panic!("assignment expression expected");
+        };
+        let (operation, count) = graph.arithmetic_types(expression).unwrap();
+        let facts = graph.expression_facts.get(expression).unwrap();
+        assert_eq!(facts.ty, graph.expression_facts.get(left).unwrap().ty);
+        assert_eq!(
+            facts.category,
+            super::expression_facts::ValueCategory::Lvalue
+        );
+        assert!(matches!(
+            graph.types.get(count).kind,
+            TypeKind::Scalar(Scalar::Basic(FundamentalType::LongInt))
+        ));
+        assert_eq!(
+            graph
+                .expression_facts
+                .get(right)
+                .unwrap()
+                .conversion
+                .unwrap()
+                .result,
+            count
+        );
+        if op.token.as_punctuator() == Some(P::ShiftLeftAssign) {
+            assert_eq!(operation, facts.ty);
+        } else {
+            assert_eq!(operation, count);
+            assert_ne!(operation, facts.ty);
+        }
+    }
+}
+
+#[test]
 fn constant_addresses_keep_root_identity_views_offsets_and_extended_storage() {
     use super::{constant_addresses::Root, constants::ConstantState};
     let source = SourceBuffer::new(b"int a[3];constexpr int*p=a+3;int*const&r=p;constexpr long distance=p-a;constexpr const char*t=\"abc\";constexpr bool equal=t+1==\"abc\"+1;const int&temporary=7;constexpr int read=temporary;int f(int);constexpr bool callable=f;".to_vec()).unwrap();

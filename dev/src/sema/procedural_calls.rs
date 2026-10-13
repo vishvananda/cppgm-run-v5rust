@@ -32,10 +32,27 @@ impl Analyzer<'_> {
         arguments: List<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let facts = if let ast::ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
+        let mut named = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+            named = inner;
+        }
+        let facts = if let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind {
             let mut found = self.lookup_call_result(name, scope)?;
             if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                 return Ok(facts);
+            }
+            let syntax_name = self.tree.names.get(name);
+            let qualified =
+                syntax_name.global || self.tree.name_lists.get(syntax_name.components).len() > 1;
+            if found.binding.is_none() && (qualified || callee != named) {
+                return Err(Error::at(
+                    self.tree.expressions.get(named).location,
+                    if qualified {
+                        "undeclared name"
+                    } else {
+                        "undeclared function name"
+                    },
+                ));
             }
             if let Some(binding) = found.binding {
                 let binding = self.graph.binding(binding);
@@ -55,8 +72,7 @@ impl Analyzer<'_> {
             for &argument in self.tree.expr_lists.get(arguments) {
                 self.typed_expression(argument, scope)?;
             }
-            let syntax_name = self.tree.names.get(name);
-            if !syntax_name.global && self.tree.name_lists.get(syntax_name.components).len() == 1 {
+            if callee == named && !qualified {
                 let component = self.tree.name_lists.get(syntax_name.components)[0];
                 if let ast::NameKind::Identifier(key) = component.kind {
                     self.argument_dependent_lookup(key, arguments, &mut found)?;
@@ -84,9 +100,17 @@ impl Analyzer<'_> {
             {
                 self.explicit_function_specializations(*component, &mut found, scope, true)?;
             }
-            let facts = self.named_expression(callee, &found, scope)?;
-            self.graph.expression_facts.set(callee, facts);
-            super::record(&mut self.graph.expression_types, callee.index(), facts.ty);
+            let facts = self.named_expression(named, &found, scope)?;
+            self.graph.expression_facts.set(named, facts);
+            super::record(&mut self.graph.expression_types, named.index(), facts.ty);
+            let mut outer = callee;
+            while outer != named {
+                self.graph.expression_facts.share(outer, named);
+                let ast::ExprKind::Paren(inner) = self.tree.expressions.get(outer).kind else {
+                    return Err(Error::Invariant("named callee without parentheses"));
+                };
+                outer = inner;
+            }
             facts
         } else {
             let facts = self.typed_expression(callee, scope)?;
@@ -353,7 +377,7 @@ impl Analyzer<'_> {
                     };
                     Some(conversion)
                 } else {
-                    if facts.functions.is_some()
+                    if facts.functions.is_some() && self.ordinary_function_operand(facts).is_none()
                         || matches!(
                             self.graph.types.get(facts.ty).kind,
                             TypeKind::Scalar(Scalar::Void)

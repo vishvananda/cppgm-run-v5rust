@@ -107,11 +107,20 @@ impl Analyzer<'_> {
                 assignment: true,
             } => {
                 self.typed_expression(left, scope)?;
-                self.typed_expression(right, scope)?;
+                self.check_resolved_function(left)?;
+                let facts = self.graph.expression_facts.get(left)?;
                 let Some(op) = op.token.as_punctuator() else {
                     return Err(Error::Invariant("nonpunctuator assignment"));
                 };
-                self.scalar_assignment(id, op, left, right)?
+                if matches!(
+                    self.tree.expressions.get(right).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    self.scalar_list_assignment(id, op, facts, right, scope)?
+                } else {
+                    self.typed_expression(right, scope)?;
+                    self.scalar_assignment(id, op, left, right)?
+                }
             }
             ExprKind::Conditional {
                 condition,

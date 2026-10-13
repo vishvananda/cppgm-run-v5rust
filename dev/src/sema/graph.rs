@@ -198,6 +198,7 @@ pub(crate) struct Graph {
     pub(super) overloads: super::function_resolution::FunctionSets,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
+    condition_conversions: Vec<Option<super::expression_facts::Conversion>>,
     call_bindings: Vec<Option<BindingId>>,
     member_functions: HashMap<MemberKey, BindingId>,
     prototype_parameters: HashMap<EntityId, usize>,
@@ -321,6 +322,7 @@ impl Graph {
             overloads: super::function_resolution::FunctionSets::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
+            condition_conversions: Vec::new(),
             call_bindings: Vec::new(),
             member_functions: HashMap::new(),
             prototype_parameters: HashMap::new(),
@@ -746,6 +748,28 @@ impl Graph {
         right: TypeId,
     ) {
         super::record(&mut self.arithmetic_types, id.index(), (left, right));
+    }
+    pub(super) fn record_condition_conversion(
+        &mut self,
+        declarator: crate::syntax::ast::DeclaratorId,
+        mut conversion: super::expression_facts::Conversion,
+    ) {
+        conversion.initialization = false;
+        super::record(
+            &mut self.condition_conversions,
+            declarator.index(),
+            conversion,
+        );
+    }
+    pub(super) fn condition_conversion(
+        &self,
+        declarator: crate::syntax::ast::DeclaratorId,
+    ) -> Result<super::expression_facts::Conversion, Error> {
+        self.condition_conversions
+            .get(declarator.index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant("condition declaration without conversion"))
     }
     pub(super) fn arithmetic_types(
         &self,

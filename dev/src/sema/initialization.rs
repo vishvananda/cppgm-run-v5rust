@@ -102,6 +102,42 @@ impl Analyzer<'_> {
             Ok(target)
         }
     }
+    pub(super) fn initialize_list_argument(
+        &mut self,
+        id: ast::ExprId,
+        parameter: TypeId,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        // A parameter default's list denotes the temporary object, rather
+        // than binding a reference directly to its single source element.
+        let target = match self.graph.types.get(parameter).kind {
+            TypeKind::Reference { element, kind } => {
+                if kind == RefKind::Lvalue && self.type_cv(element) != Cv::CONST {
+                    return Err(Error::at(
+                        self.tree.expressions.get(id).location,
+                        "an lvalue reference to a type that is not const bound to a list's temporary",
+                    ));
+                }
+                element
+            }
+            _ => parameter,
+        };
+        if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+            self.array_braced_list(id, target, scope)?;
+        } else {
+            let object = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+                target
+            } else {
+                self.bare_type(target)?
+            };
+            self.list_initialize(id, object, scope)?;
+        }
+        let mut facts = self.graph.expression_facts.get(id)?;
+        facts.category = V::Prvalue;
+        self.graph.expression_facts.set(id, facts);
+        Ok(())
+    }
+
     pub(super) fn list_initialize(
         &mut self,
         id: ast::ExprId,

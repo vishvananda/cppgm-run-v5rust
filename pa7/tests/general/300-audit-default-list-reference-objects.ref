@@ -1,0 +1,32 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable object int
+  function-declaration f function of (lvalue-reference to const int) returning int
+  function-declaration g function of (lvalue-reference to const long int) returning int
+  function-declaration h function of (lvalue-reference to array of 2 const int) returning int
+  function-declaration i function of (rvalue-reference to int) returning int
+  function-definition call function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              call-expression prvalue int
+                callee f function of (lvalue-reference to const int) returning int
+                braced-init-list prvalue int
+                  id-expression lvalue int object
+              call-expression prvalue int
+                callee g function of (lvalue-reference to const long int) returning int
+                braced-init-list prvalue long int
+                  literal prvalue int 3
+            call-expression prvalue int
+              callee h function of (lvalue-reference to array of 2 const int) returning int
+              braced-init-list prvalue array of 2 const int
+                literal prvalue int 1
+                literal prvalue int 2
+          call-expression prvalue int
+            callee i function of (rvalue-reference to int) returning int
+            braced-init-list prvalue int
+              id-expression lvalue int object
+end translation unit

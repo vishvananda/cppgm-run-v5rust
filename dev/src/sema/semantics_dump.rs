@@ -755,6 +755,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 initializer,
                 ..
             } => {
+                self.graph
+                    .condition_conversion(declarator)
+                    .map_err(|_| io::Error::other("condition declaration without conversion"))?;
                 self.line("condition-declaration", depth + 1)?;
                 let binding = self.declared(declarator)?;
                 self.work

@@ -1,0 +1,1 @@
+int f() { return __builtin_constant_p(const_cast<int&>(static_cast<const int&>(3)) = 4) + __builtin_constant_p(++const_cast<int&>(static_cast<const int&>(3))) + __builtin_constant_p(const_cast<int&>(static_cast<const int&>(3))++) + __builtin_constant_p(const_cast<int*&>(static_cast<int*const&>((int*)0)) = nullptr); }

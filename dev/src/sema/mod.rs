@@ -4,6 +4,7 @@ mod anonymous_types;
 mod builtin_calls;
 mod call_lookup;
 mod constant_addresses;
+mod constant_mutations;
 mod constant_pointer_operations;
 mod constants;
 mod construction;

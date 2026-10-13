@@ -1,9 +1,224 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `47bb96aef40fbfb74c1c064747685eeb779f989d` (clean continued audit entry).
-Last audited commit: `47bb96aef40fbfb74c1c064747685eeb779f989d` (continued full-stage entry audit; acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+Current implementation group base: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (clean continued audit entry).
+Last audited commit: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (reviewed entry; resulting source commit is recorded below after commit; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
 
+
+## Procedural acceptance-audit checkpoint — 2026-10-13
+
+Reviewed clean entry and group base:
+`a4f09d05042874cc9e4e1224f2a206df61de5dc7`.
+Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+This continued the existing full-stage audit, without creating/resetting its goal,
+editing Ralph state, changing acceptance policy or advancing the stage.
+**The procedural/control/default/scalar-effect findings below are fixed;
+full-stage acceptance remains open for the remaining cumulative source census.**
+There are no failing executed PA7-scope probe or fixture identities in this group.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-procedural-audit-20261013/`.
+Final Rust cppgm SHA-256:
+`6a9afadc8a420b86448786dc3d44b1f78c04e006df921eae404634d3d63ba846`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+`checks.json`, the source/diff snapshots and `handoff.json` identify the final
+commands, reviewed implementation commit and explicit still-open goal status.
+
+### Source responsibilities, findings and completeness reasoning
+
+Read the current repository instructions, clone contract, specification, PA7
+handout, plan, source map and ledger, then compared the frozen owning functions
+with their Rust algorithms. `responsibility-review.json` records 55 functions
+in nine C++ owners, source locations/hashes, Rust owners, reasoning and remaining
+boundaries. It is a review of these groups, not an implementation-wide completion
+census. The source map records each corrected responsibility and supersedes the
+previous checkpoint's unit-level cast-temporary memo description explicitly.
+
+- `analyzer_bodies.cpp`'s procedural scope, loop/switch, condition, case and
+  return owners map to `statements.rs`/`procedural_statements.rs`. Checked guarded
+  substatements and header/body lifetimes, nested switch isolation, automatic
+  initialization counts, static/extern/thread-local exclusions, duplicate-label
+  precedence and sorting only after the whole switch body. A case first resolves
+  its operand and evaluates its constant, then records operand conversion and
+  checks representability; a pointer-valued label previously produced the wrong
+  conversion diagnostic. An unresolved overload in a void return or case is
+  rejected before the result/constant diagnostic. Declared conditions now retain
+  noninitializing read/promotion/boolean conversion facts against their original
+  `DeclaratorId`; source object types remain distinct and scoped switch targets
+  strip top-level cv. Dumping requires those recorded facts without retyping.
+- `analyzer_initialization.cpp::list_argument` and the non-template default
+  owners map to `default_arguments.rs`/`initialization.rs`. A braced reference
+  default initializes a prvalue of the referent's object type, rather than a
+  reference-typed list or direct binding to its source element. Scalar cv removal,
+  array qualifiers, nonconst/volatile lvalue-reference rejection and narrowing
+  follow the frozen owner. Original default/list/element IDs and declaration
+  visibility are retained; printing does no default checking.
+- `analyzer_calls.cpp`, `conversions.cpp` and their Rust call/conversion owners
+  were compared for indexed lookup, allowed ADL edges, source/target identity,
+  standard/reference ranks, arity/default filtering, expected candidate rejection,
+  candidate-local selected function facts, winner-versus-all ambiguity checks and
+  publication only after selection. Singleton ordinary function designations are
+  valid ellipsis operands; true overload sets still require a target. Callee
+  parentheses now share the original designation facts and suppress ADL. Missing
+  qualified or parenthesized callees fail before argument typing; ordinary
+  unqualified calls preserve the argument analysis ADL needs. A 169-case ordinary
+  scalar/reference ranking matrix matched without new ranking policy.
+- `analyzer_expressions.cpp::assignment` maps to `scalar_expressions.rs` and
+  `scalar_operators.rs`. LHS overload resolution precedes ordinary and braced RHS
+  typing. Scalar braced assignment uses the unqualified left object type and
+  keeps its original list/element facts. Compound assignments retain operation
+  and count `TypeId`s independently from the source/result lvalue type, so later
+  consumers do not reclassify arithmetic.
+- `constant_expressions.cpp`'s assignment, compound assignment, increment and
+  glvalue/rvalue rules map to the cohesive `constant_mutations.rs` and existing
+  value/place/arithmetic owners. Simple assignment evaluates/converts the RHS
+  before locating the LHS; compound assignment designates/reads it once. Recorded
+  operation types drive target wrapping/truncation, shifts and signed overflow.
+  Pointer moves use the existing symbolic bounds algorithm. Undefined arithmetic,
+  bad pointer moves and read failures precede writes at the C++ locations.
+  Pointer, subscript, conditional, comma, reference and member places no longer
+  reach the generic missing-assignment path. External variable, string-literal
+  and extended-temporary writes retain their distinct normal failures.
+- `constant_interpreter.cpp::root_storage/read/write` maps to private typed
+  scalar temporary storage. Cast temporaries created inside an evaluation may
+  change, including assignment, compound assignment and prefix/postfix results.
+  `Evaluation` owns sparse original-`ExprId` integer/pointer values; nested
+  operations share that owner. Both success and structured failure clear all
+  values and return the empty scratch container for capacity reuse. The previous
+  unit-owned expression-temporary memo was removed, so no mutable value, duplicate
+  initial snapshot or negative result survives the query. Only declaration-owned
+  immutable constants/references and their extended temporary storage remain in
+  `Graph`. Full constexpr bodies/frames are still an explicit later owner and
+  cannot enter this expression-lifetime store.
+- A temporary bound before the evaluation is readable only through a const view.
+  This check occurs before arithmetic or pointer stepping. Pointer reference
+  casts now designate their resulting place/view and read through it, rather
+  than bypassing the view as a pointer-value cast. That closes both an incorrect
+  successful constexpr pointer read and an incorrect constant-query result.
+  Genuine query-local mutable temporaries remain readable. Known scalar unary
+  prvalues fail normal glvalue designation instead of reaching a missing stub.
+- Integral-required address operands preserve address evaluation failures before
+  the nonintegral-result diagnostic. `__builtin_constant_p` selects its integer
+  or address evaluator once from recorded type facts; it does not execute a
+  pointer expression twice. Missing later execution is still status 86 and never
+  silently becomes query zero.
+
+Initial concrete divergences included `switch-case-pointer-bad`,
+`return-void-overload-bad`, `default-list-ref`, `case-overload-bad`,
+`ellipsis-function`, `ellipsis-function-address`, the indirect/subscript/
+conditional/comma/member assignment probes, `assignment-constexpr-bad`,
+`assignment-pointer-constexpr-bad`, the four `mutable-cast-lvalue*` boundary
+probes, `undeclared-qualified-argument-order`, `undeclared-parenthesized`, and
+`extended-pointer-temporary-nonconst-read-bad`/`...-query`. They are resolved.
+Raw failed attempts and mismatch outputs remain in the artifact root; the
+xvalue-mutation boundary probes reject normally in both implementations and were
+not substituted for the successful lvalue-temporary cases.
+
+`case-float-id-bad` remains a separately classified later-boundary probe:
+both tools reject it, with different diagnostics because complete floating
+constant-object storage is not yet implemented. PA7's handout explicitly excludes
+floating-point literals. Its raw mismatch remains recorded; it is not a matched
+negative case, a gate exception or a reason to certify the remaining source
+review. Full floating/class/array interpreter state remains due to later owners.
+
+Three meaningful ownership tests prove that semantic analysis preserves the
+original expression count, compound operation/count types stay separate from the
+left object, declared conditions retain read/target facts, and repeated successful
+and failing evaluations of the same original mutation expression start fresh and
+release their active values. They supplement byte comparisons. Twenty-six new
+regressions and new oracle-derived references are in PA7's executed general lane;
+existing compiler inputs, references, protected manifests and checker code were
+not modified.
+
+No unsafe code, FFI, source/fixture recognition, C++ implementation fallback,
+text transport/reparse, new dependency, global retry, mechanical file split or
+lint allowance was added. The new module owns scalar effects, not a chunk of a
+large dispatcher. Compact IDs, canonical types, parse-once syntax and private
+fact/storage APIs remain the boundaries. Function-local control contexts and
+resolution scratch die/reset at their owning body/query; backend lifetimes,
+optimizer and allocator policies were not changed. Oracle tools were used only
+by the protected comparator, reference generation and resource comparison.
+
+### Exact validation and preservation
+
+| Command / check | Final result | Artifact relative to root |
+| --- | --- | --- |
+| `make build` | Pass, locked release workspace | `build-final.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | Pass, 198/198 fixed cases | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | Pass, same fixed coverage | `stage-make.log` |
+| `make course-pa7` | Pass, 289/289, no failure marker | `course-final.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | Pass, all PA1–PA6 fixed and full course lanes | `prior-final.log`, `prior-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | Pass | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | Pass | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | Pass, rustfmt, strict Clippy, 185 library tests in debug/release plus tool/doc tests, file audit | `lint-final-accepted.log` |
+| `make audit-rust` | Pass, 135 files, zero findings | `audit-final.log` |
+| `python3 .../pa7-procedural-audit-20261013/probe.py` | 411/411 PA7-scope comparisons; one recorded out-of-scope floating mismatch | `probe-final.log`, `probes.jsonl`, `summary.json` |
+| Preceding address/full-stage/template/initialization/scalar probes | 147/147, 62/62, 70/70, 78/78, 55/55 | `addresses/`, `preceding/`, `templates/`, `initialization/`, `scalar-audit/` |
+| New fixture comparisons | All 26 match in final full-course trace | `fixture-final.jsonl`, `course-preservation.json`; initial failed attempts retained separately |
+| `python3 .../pa7-procedural-audit-20261013/measure.py` | 18 exact workload receipts and two successful protected native qualifications | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+Fixed identity preservation is independently 198 entry/current passes, zero
+lost and no fixed-manifest coverage change. Full-course preservation compares the
+entry commit's 263 `.t` identities with the final trace: every entry ran and
+matched, 26 new cases ran, and all 289 receipts match. The original 229-case
+course lane and all preceding added cases are retained. Earlier fixed counts are
+58/26/20/106/196/121; earlier full-course counts are 58/28/20/112/296/694.
+Final commands were rerun after the code changes; intermediate gate receipts and
+failed quality attempts are retained separately. No failed attempt is presented
+as an accepted negative.
+
+### Resource observations and protected stack qualification
+
+Measured only after all gate/probe/quality jobs had finished. Each supported
+input used the same 16 MiB stack and output path for both binaries, warm A/A runs
+followed by ABBA/BAAB samples, with four measured runs per tool and two protected
+adapter receipts. Source/binary hashes, individual samples and exact semantic
+output hashes are retained. Counts mean switch labels, separately initialized
+mutable scalar temporaries, or reference-default declarations plus calls.
+
+| Workload | Count | C++ median ms / peak KiB | Rust median ms / peak KiB |
+| --- | ---: | ---: | ---: |
+| Switch labels | 128 | 6.91 / 5,766 | 19.79 / 8,732 |
+| Mutable temporaries | 128 | 7.56 / 6,506 | 20.44 / 8,738 |
+| Reference defaults | 128 | 7.08 / 6,478 | 19.50 / 8,742 |
+| Switch labels | 512 | 7.62 / 6,526 | 23.63 / 8,374 |
+| Mutable temporaries | 512 | 12.36 / 7,236 | 32.15 / 8,370 |
+| Reference defaults | 512 | 12.77 / 7,204 | 32.08 / 7,990 |
+| Switch labels | 2,048 | 10.18 / 6,520 | 29.21 / 8,746 |
+| Mutable temporaries | 2,048 | 22.66 / 9,280 | 58.90 / 9,952 |
+| Reference defaults | 2,048 | 45.89 / 10,684 | 105.64 / 9,954 |
+
+These are complete-process compile observations, not generated-code optimization
+or universal complexity claims. RSS noise at small counts is retained. Scalar
+query storage reuses capacity without retaining values; switch duplicate checking
+is one final sort and defaults reuse their original committed syntax/facts.
+Semantic byte equality is proved separately by the protected receipts. No LowIR,
+object/bootstrap or PA35 optimization acceptance is inferred from these timings.
+
+`native-pointer-conditional.cpp` contains 1,000 nested pointer conditions;
+`native-address-parentheses.cpp` contains 1,500 parentheses around an address
+comparison. Both protected receipts report `match=true` and
+`stack_qualification.passed=true`: from the original 1 MiB stack, both tools
+succeed with identical outputs at the same 16 MiB stack. The original exhaustion
+attempts are retained. No native cutoff or diagnostic location was calibrated.
+The production guard remains a real typed byte-budget check. The direct-entry
+ownership test establishes the same stack anchor as `Analyzer::analyze`; it does
+not bypass or loosen that guard.
+
+### Remaining acceptance work
+
+This is a coherent audited increment, not full-stage certification. Finish the
+cumulative ordinary declaration/redeclaration, scalar operator/type-query and
+semantic rendering source census, reconciling these corrections with all earlier
+ownership rows and reviewed checkpoints. The next concrete owners are frozen
+`analyzer_declarations.cpp`, `analyzer_types.cpp`, `analyzer_expressions.cpp`,
+`analyzer_operators.cpp` and `semantics_dump.cpp`, with their existing Rust
+owners. Preserve the explicit PA11–PA23 class/template/full-interpreter boundaries
+in the plan; do not treat an outside-scope successful C++ probe as a matched Rust
+rejection. PA33's release/debug/complete-implementation census and PA34's full
+object/tool fixed point remain later obligations. Ralph's existing phase goal
+remains active until full-stage audit acceptance is actually justified.
 
 ## Symbolic address acceptance-audit checkpoint — 2026-10-13
 

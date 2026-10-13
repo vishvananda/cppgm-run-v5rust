@@ -79,7 +79,18 @@ impl Analyzer<'_> {
         self.unevaluated -= 1;
         let facts = result?;
         self.check_resolved_function(operand)?;
-        let mut constant = self.constant_value(operand, scope, false)?.is_some();
+        let address = self.is_address_expression(operand);
+        let mut constant = if address {
+            self.address_value(operand, scope)?.is_some_and(|value| {
+                matches!(
+                    value.root,
+                    super::constant_addresses::Root::Null
+                        | super::constant_addresses::Root::Literal(_)
+                )
+            })
+        } else {
+            self.constant_value(operand, scope, false)?.is_some()
+        };
         // Floating, null and string-literal address constants are supported by this query.
         let mut inner = operand;
         while let ast::ExprKind::Paren(expr) = self.tree.expressions.get(inner).kind {
@@ -97,15 +108,8 @@ impl Analyzer<'_> {
                     ..
                 })
         );
-        if !constant && self.is_address_expression(operand) {
-            constant = self.address_value(operand, scope)?.is_some_and(|value| {
-                matches!(
-                    value.root,
-                    super::constant_addresses::Root::Null
-                        | super::constant_addresses::Root::Literal(_)
-                )
-            });
-        } else if !constant
+        if !constant
+            && !address
             && matches!(
                 self.graph.types.get(facts.ty).kind,
                 TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))

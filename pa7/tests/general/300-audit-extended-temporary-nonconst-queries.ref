@@ -1,0 +1,15 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable value lvalue-reference to const int
+    literal prvalue int 3
+  variable pointer lvalue-reference to const pointer to int
+    cast-expression prvalue const pointer to int
+      literal prvalue nullptr_t KW_NULLPTR:nullptr
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          literal prvalue int 0
+          literal prvalue int 0
+end translation unit

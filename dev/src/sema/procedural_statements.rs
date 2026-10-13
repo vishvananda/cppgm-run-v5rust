@@ -101,6 +101,7 @@ impl Analyzer<'_> {
         }
         let facts = self.typed_expression(id, scope)?;
         if void {
+            self.check_resolved_function(id)?;
             if matches!(
                 self.graph.types.get(facts.ty).kind,
                 TypeKind::Scalar(Scalar::Void)
@@ -174,10 +175,11 @@ impl Analyzer<'_> {
             ));
         }
         self.typed_expression(value, scope)?;
-        self.convert_scalar(value, ty, false)?;
+        self.check_resolved_function(value)?;
         let constant = self
             .constant_value(value, scope, true)?
             .ok_or(Error::Invariant("case without constant"))?;
+        self.convert_operand_scalar(value, ty, false)?;
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral switch"))?;
@@ -297,20 +299,31 @@ impl Analyzer<'_> {
                     "switch condition is not of integral or enumeration type",
                 ));
             }
-            let ty = self.promoted_type(facts.ty)?;
+            let source = self.bare_type(facts.ty)?;
+            let ty = self.promoted_type(source)?;
             if let Some(expr) = expr {
                 self.convert_operand_scalar(expr, ty, false)?;
+            } else if let Condition::Declaration { declarator, .. } = condition {
+                let conversion = self
+                    .standard_conversion(facts, ty, false)?
+                    .ok_or(Error::Invariant("integral condition without promotion"))?;
+                self.graph
+                    .record_condition_conversion(declarator, conversion);
             }
             Ok(Some(ty))
         } else {
             let ty = self.graph.types.scalar(Scalar::Bool)?;
             if let Some(expr) = expr {
                 self.convert_bool(expr)?;
-            } else if self.standard_conversion(facts, ty, true)?.is_none() {
-                return Err(Error::at(
-                    location,
-                    "condition is not contextually convertible to bool",
-                ));
+            } else if let Condition::Declaration { declarator, .. } = condition {
+                let conversion = self.standard_conversion(facts, ty, true)?.ok_or_else(|| {
+                    Error::at(
+                        location,
+                        "condition is not contextually convertible to bool",
+                    )
+                })?;
+                self.graph
+                    .record_condition_conversion(declarator, conversion);
             }
             Ok(None)
         }

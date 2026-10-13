@@ -49,15 +49,18 @@ enum State {
     Value(Address),
 }
 #[derive(Clone, Copy)]
-enum TemporaryValue {
+pub(super) enum TemporaryValue {
     Integer(Constant),
     Pointer(Address),
+}
+#[derive(Default)]
+pub(super) struct Evaluation {
+    values: HashMap<ast::ExprId, TemporaryValue>,
 }
 #[derive(Default)]
 pub(super) struct Addresses {
     values: HashMap<EntityId, State>,
     temporaries: HashMap<EntityId, TemporaryValue>,
-    expression_temporaries: HashMap<ast::ExprId, TemporaryValue>,
 }
 impl Addresses {
     fn evaluating(&self, entity: EntityId) -> bool {
@@ -91,23 +94,31 @@ impl Addresses {
             _ => None,
         }
     }
-    fn expression_pointer(&self, expr: ast::ExprId) -> Option<Address> {
-        match self.expression_temporaries.get(&expr) {
-            Some(TemporaryValue::Pointer(value)) => Some(*value),
-            _ => None,
-        }
-    }
-    pub(super) fn expression_temporary(&self, expr: ast::ExprId) -> Option<Constant> {
-        match self.expression_temporaries.get(&expr) {
-            Some(TemporaryValue::Integer(value)) => Some(*value),
-            _ => None,
-        }
-    }
 }
 pub(super) fn nonconstant(location: SourceOffset, message: &'static str) -> Error {
     Error::NonConstant { location, message }
 }
 impl Analyzer<'_> {
+    pub(super) fn in_constant_evaluation<T>(
+        &mut self,
+        evaluate: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        if self.constant_evaluation.is_some() {
+            return evaluate(self);
+        }
+        self.constant_evaluation = Some(std::mem::take(&mut self.constant_scratch));
+        let result = evaluate(self);
+        let Some(mut evaluation) = self.constant_evaluation.take() else {
+            return Err(Error::Invariant("constant evaluation lost its storage"));
+        };
+        evaluation.values.clear();
+        self.constant_scratch = evaluation;
+        result
+    }
+
+    fn expression_temporary_value(&self, id: ast::ExprId) -> Option<TemporaryValue> {
+        self.constant_evaluation.as_ref()?.values.get(&id).copied()
+    }
     pub(super) fn is_address_expression(&self, id: ast::ExprId) -> bool {
         self.graph.expression_facts.get(id).is_ok_and(|facts| {
             matches!(
@@ -135,6 +146,13 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
+        self.in_constant_evaluation(|analyzer| analyzer.evaluate_address_inner(id, scope))
+    }
+    fn evaluate_address_inner(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let node = *self.tree.expressions.get(id);
@@ -157,12 +175,36 @@ impl Analyzer<'_> {
             _ => (),
         }
         let mut value = match node.kind {
+            ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
+                if facts.reference_cast.is_some() =>
+            {
+                let place = self.constant_place(id, scope)?;
+                self.read_constant_address(place, location)?
+            }
             ExprKind::Keyword(Keyword::Nullptr) => Address::new(Root::Null, facts.ty),
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::BitAnd) => {
                 self.constant_place(operand, scope)?
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Add) => {
                 self.evaluate_address(operand, scope)?
+            }
+            ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand }
+                if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)) =>
+            {
+                let (place, old) = self.constant_increment_values(
+                    id,
+                    operand,
+                    op.token.as_punctuator() == Some(P::Decrement),
+                    scope,
+                )?;
+                if matches!(node.kind, ExprKind::Postfix { .. }) {
+                    let TemporaryValue::Pointer(old) = old else {
+                        return Err(Error::Invariant("pointer increment with integer value"));
+                    };
+                    old
+                } else {
+                    self.read_constant_address(place, location)?
+                }
             }
             ExprKind::Id(_)
             | ExprKind::Unary { .. }
@@ -191,6 +233,21 @@ impl Analyzer<'_> {
                     ));
                 }
             },
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: true,
+            } => {
+                let place = self.constant_assignment_place(
+                    id,
+                    left,
+                    right,
+                    op.token.as_punctuator(),
+                    scope,
+                )?;
+                self.read_constant_address(place, location)?
+            }
             ExprKind::Conditional {
                 condition,
                 then_expr,
@@ -373,6 +430,9 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
+        self.in_constant_evaluation(|analyzer| analyzer.constant_place_inner(id, scope))
+    }
+    fn constant_place_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Address, Error> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let node = *self.tree.expressions.get(id);
@@ -438,14 +498,16 @@ impl Analyzer<'_> {
                     _ => Err(nonconstant(location, "a name that designates no object")),
                 }
             }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: true,
+            } => self.constant_assignment_place(id, left, right, op.token.as_punctuator(), scope),
             ExprKind::Literal(ast::Literal {
                 kind: PostTokenKind::String { .. },
                 ..
             }) => Ok(Address::new(Root::Literal(id), facts.ty)),
-            ExprKind::Literal(_) | ExprKind::Keyword(_) => Err(nonconstant(
-                location,
-                "a glvalue outside constant evaluation",
-            )),
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
                 let mut value = if matches!(
                     self.graph
@@ -508,13 +570,16 @@ impl Analyzer<'_> {
             } if facts.reference_cast.is_some() => {
                 self.constant_reference_cast_place(id, operand, keyword, scope)
             }
-            ExprKind::Unary { op, .. }
+            ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)) =>
             {
-                self.evaluate_constant(id, scope, false)?;
-                Err(Error::Invariant(
-                    "external increment unexpectedly evaluated",
-                ))
+                self.constant_increment_values(
+                    id,
+                    operand,
+                    op.token.as_punctuator() == Some(P::Decrement),
+                    scope,
+                )
+                .map(|(place, _)| place)
             }
             ExprKind::FunctionalCast { arguments, .. } => {
                 let [operand] = self.tree.expr_lists.get(arguments) else {
@@ -588,6 +653,9 @@ impl Analyzer<'_> {
                 place.designated = facts.ty;
                 Ok(place)
             }
+            ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Unary { .. } => Err(
+                nonconstant(location, "a glvalue outside constant evaluation"),
+            ),
             _ => Err(Error::Missing("extended constant place evaluation")),
         }
     }
@@ -615,12 +683,7 @@ impl Analyzer<'_> {
                 .conversion
                 .is_some_and(|conversion| conversion.temporary)
         {
-            if !self
-                .graph
-                .constant_addresses
-                .expression_temporaries
-                .contains_key(&id)
-            {
+            if self.expression_temporary_value(id).is_none() {
                 let value = if self.is_address_expression(id) {
                     TemporaryValue::Pointer(self.address_operand(operand, scope)?)
                 } else {
@@ -633,9 +696,10 @@ impl Analyzer<'_> {
                         ty: self.bare_type(facts.ty)?,
                     })
                 };
-                self.graph
-                    .constant_addresses
-                    .expression_temporaries
+                self.constant_evaluation
+                    .as_mut()
+                    .ok_or(Error::Invariant("temporary outside constant evaluation"))?
+                    .values
                     .insert(id, value);
             }
             return Ok(Address::new(Root::Ephemeral(id), facts.ty));
@@ -644,7 +708,7 @@ impl Analyzer<'_> {
         place.designated = facts.ty;
         Ok(place)
     }
-    fn read_constant_address(
+    pub(super) fn read_constant_address(
         &self,
         place: Address,
         location: SourceOffset,
@@ -679,6 +743,12 @@ impl Analyzer<'_> {
             });
         }
         if let Root::Temporary(entity) = place.root {
+            if self.graph.types.get(place.designated).cv != super::types::Cv::CONST {
+                return Err(nonconstant(
+                    location,
+                    "an access to a temporary that is not const, bound outside the evaluation",
+                ));
+            }
             return self
                 .graph
                 .constant_addresses
@@ -686,14 +756,63 @@ impl Analyzer<'_> {
                 .ok_or(Error::Missing("constant temporary pointer storage"));
         }
         if let Root::Ephemeral(expr) = place.root {
-            return self
-                .graph
-                .constant_addresses
-                .expression_pointer(expr)
-                .ok_or(Error::Invariant("cast pointer temporary without value"));
+            return match self.expression_temporary_value(expr) {
+                Some(TemporaryValue::Pointer(value)) => Ok(value),
+                _ => Err(Error::Invariant("cast pointer temporary without value")),
+            };
         }
         Err(Error::Missing("constant pointer place storage"))
     }
+    pub(super) fn write_constant_value(
+        &mut self,
+        place: Address,
+        value: TemporaryValue,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "an access one past the end of an array",
+            ));
+        }
+        let message = match place.root {
+            Root::Variable(_) => {
+                "a modification of an object whose lifetime began outside the evaluation"
+            }
+            Root::Literal(_) => "a modification of a string literal",
+            Root::Temporary(_) => {
+                "an access to a temporary that is not const, bound outside the evaluation"
+            }
+            Root::Function(_) => "a function is not an object",
+            Root::Null => "an indirection through a null pointer",
+            Root::Ephemeral(id) => {
+                let old = self
+                    .expression_temporary_value(id)
+                    .ok_or(Error::Invariant("write to an uncreated constant temporary"))?;
+                let matches = match old {
+                    TemporaryValue::Integer(old) => self.bare_type(place.designated)? == old.ty,
+                    TemporaryValue::Pointer(_) => matches!(
+                        self.graph.types.get(place.designated).kind,
+                        TypeKind::Pointer(_)
+                    ),
+                };
+                if place.offset != 0 || !matches {
+                    return Err(nonconstant(
+                        location,
+                        "an access outside the designated object or to an inactive union member",
+                    ));
+                }
+                self.constant_evaluation
+                    .as_mut()
+                    .ok_or(Error::Invariant("write outside constant evaluation"))?
+                    .values
+                    .insert(id, value);
+                return Ok(());
+            }
+        };
+        Err(nonconstant(location, message))
+    }
+
     pub(super) fn read_constant_integer(
         &mut self,
         place: Address,
@@ -756,16 +875,22 @@ impl Analyzer<'_> {
                     )),
                 }
             }
-            Root::Temporary(entity) => self
-                .graph
-                .constant_addresses
-                .temporary(entity)
-                .ok_or(Error::Missing("constant temporary scalar storage")),
-            Root::Ephemeral(expr) => self
-                .graph
-                .constant_addresses
-                .expression_temporary(expr)
-                .ok_or(Error::Invariant("cast temporary without value")),
+            Root::Temporary(entity) => {
+                if self.type_cv(place.designated) != super::types::Cv::CONST {
+                    return Err(nonconstant(
+                        location,
+                        "an access to a temporary that is not const, bound outside the evaluation",
+                    ));
+                }
+                self.graph
+                    .constant_addresses
+                    .temporary(entity)
+                    .ok_or(Error::Missing("constant temporary scalar storage"))
+            }
+            Root::Ephemeral(expr) => match self.expression_temporary_value(expr) {
+                Some(TemporaryValue::Integer(value)) => Ok(value),
+                _ => Err(Error::Invariant("cast temporary without value")),
+            },
             Root::Literal(id) => {
                 let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
                     return Err(Error::Invariant("literal place without literal syntax"));

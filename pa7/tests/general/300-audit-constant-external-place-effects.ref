@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable x int
+  variable y int
+  variable a array of 2 int
+  variable p pointer to int
+  variable r lvalue-reference to int
+    id-expression lvalue int x
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  binary-expression prvalue int OP_PLUS:+
+                    binary-expression prvalue int OP_PLUS:+
+                      binary-expression prvalue int OP_PLUS:+
+                        literal prvalue int 0
+                        literal prvalue int 0
+                      literal prvalue int 0
+                    literal prvalue int 0
+                  literal prvalue int 0
+                literal prvalue int 0
+              literal prvalue int 0
+            literal prvalue int 0
+          literal prvalue int 0
+end translation unit

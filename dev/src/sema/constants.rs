@@ -81,7 +81,17 @@ impl Analyzer<'_> {
         scope: ScopeId,
         required: bool,
     ) -> Result<Option<Constant>, Error> {
-        match self.evaluate_constant(id, scope, false) {
+        let result = if self.semantic() && self.is_address_expression(id) {
+            self.evaluate_address(id, scope).and_then(|_| {
+                Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "not an integral constant expression",
+                ))
+            })
+        } else {
+            self.evaluate_constant(id, scope, false)
+        };
+        match result {
             Ok(value) => Ok(Some(value)),
             Err(Error::NonConstant { location, message }) if required => {
                 Err(Error::at(location, message))
@@ -91,6 +101,16 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn evaluate_constant(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Constant, Error> {
+        self.in_constant_evaluation(|analyzer| {
+            analyzer.evaluate_constant_inner(id, scope, skipping)
+        })
+    }
+    fn evaluate_constant_inner(
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
@@ -186,14 +206,23 @@ impl Analyzer<'_> {
                 left,
                 right,
                 op,
-            } if self.semantic() => self.constant_assignment(
-                id,
-                left,
-                right,
-                op.token.as_punctuator(),
-                scope,
-                skipping,
-            )?,
+            } if self.semantic() => {
+                if skipping {
+                    Constant {
+                        bits: 0,
+                        ty: self.graph.expression_facts.get(id)?.ty,
+                    }
+                } else {
+                    let place = self.constant_assignment_place(
+                        id,
+                        left,
+                        right,
+                        op.token.as_punctuator(),
+                        scope,
+                    )?;
+                    self.read_constant_integer(place, location)?
+                }
+            }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
@@ -426,59 +455,6 @@ impl Analyzer<'_> {
             ));
         }
         Err(Error::Missing("constexpr function interpretation"))
-    }
-    fn constant_assignment(
-        &mut self,
-        id: ast::ExprId,
-        mut left: ast::ExprId,
-        right: ast::ExprId,
-        op: Option<P>,
-        scope: ScopeId,
-        skipping: bool,
-    ) -> Result<Constant, Error> {
-        if skipping {
-            return Ok(Constant {
-                bits: 0,
-                ty: self.graph.expression_facts.get(id)?.ty,
-            });
-        }
-        // The frozen simple-assignment interpreter evaluates the right operand
-        // before locating and writing the left object. Compound assignments read
-        // the left object first. No interpreter frame owns storage in this slice.
-        if op == Some(P::Assign) {
-            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
-                if let Some(&element) = self.tree.expr_lists.get(elements).first() {
-                    self.evaluate_constant(element, scope, false)?;
-                }
-            } else {
-                self.evaluate_constant(right, scope, false)?;
-            }
-        } else {
-            self.evaluate_constant(left, scope, false)?;
-            self.evaluate_constant(right, scope, false)?;
-        }
-        while let ExprKind::Paren(inner) = self.tree.expressions.get(left).kind {
-            left = inner;
-        }
-        if let ExprKind::Id(name) = self.tree.expressions.get(left).kind {
-            let binding = self
-                .graph
-                .resolved_name(name)
-                .ok_or(Error::Invariant("unresolved assignment object"))?;
-            let location = self.tree.expressions.get(id).location;
-            return match self.graph.binding(binding).kind {
-                BindingKind::Variable => Err(not_constant(
-                    location,
-                    "a modification of an object whose lifetime began outside the evaluation",
-                )),
-                BindingKind::Parameter => Err(not_constant(
-                    self.tree.expressions.get(left).location,
-                    "a parameter is not usable in a constant expression",
-                )),
-                _ => Err(Error::Invariant("assignment target without object")),
-            };
-        }
-        Err(Error::Missing("constant assignment place evaluation"))
     }
     fn constant_member_object(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
@@ -859,6 +835,20 @@ impl Analyzer<'_> {
         id: ast::ExprId,
     ) -> Result<Constant, Error> {
         let location = self.tree.expressions.get(id).location;
+        if self.semantic() && matches!(op, Some(P::Increment | P::Decrement)) && !skipping {
+            let (place, old) =
+                self.constant_increment_values(id, operand, op == Some(P::Decrement), scope)?;
+            return if matches!(self.tree.expressions.get(id).kind, ExprKind::Postfix { .. }) {
+                match old {
+                    super::constant_addresses::TemporaryValue::Integer(old) => Ok(old),
+                    super::constant_addresses::TemporaryValue::Pointer(_) => {
+                        Err(Error::Invariant("integer increment with pointer value"))
+                    }
+                }
+            } else {
+                self.read_constant_integer(place, location)
+            };
+        }
         if op == Some(P::BitAnd) {
             return Err(not_constant(
                 location,
