@@ -5,6 +5,70 @@ Current implementation group base: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753` (c
 Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (call/conversion/association source, complete due lanes and resource evidence reviewed; full-stage acceptance pending frozen-oracle baseline disposition). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
 
 
+## Completion audit: frozen baseline impasse — 2026-10-13
+
+Reviewed clean entry: `cfb8075f846846faff12c69188620b2a474adc06`.
+The last audited implementation remains
+`01cdba770e15010228180780457d1d7f5b47faca`; all nine reviewed Rust source
+hashes and both compiler binary hashes match the preceding validation snapshot.
+The preceding goal turn was **progress**, with six corrected behavior groups,
+nineteen executed regressions and committed source/evidence. This review does
+not replace those requirements with a fixture-only completion claim.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-baseline-disposition-20261013/`.
+`completion-audit.json` reconciles current sources with the preceding complete
+command/probe/resource evidence and records the remaining dependency.
+
+- Fresh protected `preflight pa7`: PASS, exit 0 (`preflight.log`).
+- Fresh required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7`:
+  PASS, exit 0, all 198 identities (`stage-required.log`, `fixed-manifest.json`).
+- Unchanged-source evidence retains original course 330/330, independently
+  preserved 311/311 entry identities, PA1–PA6 fixed/full course lanes, rustfmt,
+  strict Clippy, debug/release workspace tests and the authoritative file audit
+  (136 files, zero findings), plus 2,414 exact supplementary probes. Their
+  commands, receipts and resource costs remain in the immediately following
+  checkpoint and `../pa7-conversion-audit-20261013/`; no new compiler code or
+  regression was introduced in this completion review.
+- Fresh protected comparisons reproduce all sixteen failures listed below:
+  `oracle-issue-probes.jsonl` has sixteen rejected comparison receipts, each
+  frozen-oracle exit -11. Direct revalidation at 16 and 64 MiB reproduces
+  32/32 SIGSEGV attempts, no streams and empty generated outputs, retained
+  in `oracle-crash-reproduction.json` and `oracle-issues.log`.
+
+The actual pinned control flow confirms the failure before any language result:
+`analyzer_expressions.cpp::MayOverload` admits an unknown operand type;
+`combine` calls the operator search before `check_resolved`, and
+`analyzer_operators.cpp::operator_candidates` passes the left unresolved
+function's null type to `conversions.h::ClassOf`, which dereferences it.
+These inputs have no declared overloaded operator or user-defined conversion;
+they therefore cannot be dismissed merely by naming PA7's later class/operator
+boundary. The comparator reports infrastructure failures, not valid rejections.
+No supplementary failure is counted as a passing or expected-failure case.
+
+CLONE_CONTRACT.md requires: “A reproducible oracle bug or unstable output is
+a baseline issue to report, not permission to correct references in this run.”
+Its stack qualification requires identical **successful** results at a common
+larger stack. A SIGSEGV with no guard diagnostic and no successful larger-stack
+result fails that qualification. The two genuine stack probes in the preceding
+checkpoint remain successfully qualified at 16 MiB; their implementation
+exhaustion cutoffs and diagnostic positions are not acceptance defects.
+
+The same frozen baseline condition is recorded across three consecutive goal
+turns: declaration/linkage audit (`743155c`), call/conversion audit (`01cdba7`)
+and this completion review. Rust-owned normal-result findings and due lanes
+have been resolved and validated; no authorized Rust change can supply the
+missing C++ oracle outcomes. Emulating a crash, changing protected reference
+inputs or accepting the failed receipts would violate the contract.
+
+Full exact-clone acceptance remains **unproven**, and the existing goal's blocked
+audit threshold is satisfied. The next dependency is an approved resolution of
+the reference baseline that provides valid comparison outcomes for the same
+sixteen sources. No fixture, reference, oracle, gate policy or Ralph state was
+edited; the goal is neither replaced nor marked complete. PA33 implementation
+census/release/debug obligations, PA34 object/tool equality and PA35 exclusions
+retain their original boundaries.
+
 ## Call/conversion and association acceptance audit checkpoint — 2026-10-13
 
 Reviewed entry: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753`.
