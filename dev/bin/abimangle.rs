@@ -7,5 +7,24 @@ fn main() -> std::process::ExitCode {
         eprintln!("abimangle: host stack budget exceeds usize");
         return std::process::ExitCode::FAILURE;
     };
-    cppgm_rust::driver::abimangle::run(&std::env::args_os().skip(1).collect::<Vec<_>>(), budget)
+    cppgm_rust::driver::abimangle::run(
+        &std::env::args_os().skip(1).collect::<Vec<_>>(),
+        budget,
+        peak_rss,
+    )
+}
+
+fn peak_rss() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                line.strip_prefix("VmHWM:")?
+                    .split_whitespace()
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+        })
+        .unwrap_or(0)
 }

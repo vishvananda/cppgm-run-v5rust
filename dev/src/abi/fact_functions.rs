@@ -218,10 +218,11 @@ impl CaseReader<'_, '_> {
             return Err(self.word_error(line, "stray ':' in ABI name '", original, "'"));
         }
         function.scope = if let Some(split) = split {
+            let scope = self.qualified_name(line, &path[..split])?;
             Some(if &path[..split] == b"std" {
                 self.graph.intern(Node::Std, &[])?
             } else {
-                self.qualified_name(line, &path[..split])?
+                scope
             })
         } else {
             None

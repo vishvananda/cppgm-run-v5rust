@@ -5,14 +5,16 @@ use std::{
     fs::File,
     io::{self, BufWriter, Write},
     path::PathBuf,
+    time::Instant,
 };
 
 #[must_use]
 pub fn run(
     arguments: &[OsString],
     budget: crate::support::stack::StackBudget,
+    peak_rss: fn() -> u64,
 ) -> std::process::ExitCode {
-    match execute(arguments, budget) {
+    match execute(arguments, budget, peak_rss) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
             eprintln!("abimangle: Rust port is not implemented yet: {feature}");
@@ -35,6 +37,7 @@ pub fn run(
 fn execute(
     arguments: &[OsString],
     budget: crate::support::stack::StackBudget,
+    peak_rss: fn() -> u64,
 ) -> Result<(), Error> {
     if arguments.iter().any(|arg| arg == "--help" || arg == "-h") {
         print!("usage: abimangle -o <outfile> <abi-facts-file>...\n\nquery flags:\n  --help, -h\n");
@@ -68,9 +71,7 @@ fn execute(
     if output.is_empty() || paths.is_empty() {
         return Err(Error::diagnostic("invalid usage"));
     }
-    if stats {
-        return Err(Error::NotImplemented("ABI statistics"));
-    }
+    let start = Instant::now();
     let file = File::create(output).map_err(|_| {
         Error::word(
             "unable to open output file '",
@@ -82,12 +83,20 @@ fn execute(
     // small writes deferred until close and large writes at the reader flush
     // boundary, including the distinct diagnostics at those two boundaries.
     let mut file = BufWriter::with_capacity(4096, file);
-    facts::mangle_files(&paths, &mut file, budget)?;
+    let observations = facts::mangle_files(&paths, &mut file, budget)?;
     file.flush().map_err(|_| {
         Error::word(
             "unable to write output file '",
             output.as_encoded_bytes(),
             "'",
         )
-    })
+    })?;
+    if stats {
+        let _ = observations.write(
+            &mut io::stderr().lock(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            peak_rss(),
+        );
+    }
+    Ok(())
 }

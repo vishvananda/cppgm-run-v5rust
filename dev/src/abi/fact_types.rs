@@ -288,7 +288,14 @@ impl CaseReader<'_, '_> {
                 let ty = self.compact_type(line, words[1])?;
                 let literal_ty = self.compact_type(line, words[2])?;
                 let argument = self.typed_literal(line, literal_ty, words[3])?;
-                return self.graph.intern(Node::TypedArgument { ty, argument }, &[]);
+                let declaration = self.graph.intern(Node::NonTypeParameter(ty), &[])?;
+                return self.graph.intern(
+                    Node::TypedArgument {
+                        declaration,
+                        argument,
+                    },
+                    &[],
+                );
             }
             b"template-entity" if words.len() == 2 => return self.qualified_name(line, words[1]),
             b"member-template-entity" if words.len() == 4 => {

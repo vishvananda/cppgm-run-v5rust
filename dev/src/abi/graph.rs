@@ -170,8 +170,9 @@ pub enum Node {
         ty: NodeId,
         bits: u64,
     },
+    NonTypeParameter(NodeId),
     TypedArgument {
-        ty: NodeId,
+        declaration: NodeId,
         argument: NodeId,
     },
     ArgumentPack,
@@ -250,6 +251,14 @@ impl Graph {
     }
     pub(crate) fn len(&self) -> usize {
         self.nodes.len()
+    }
+    /// Reserved payload bytes in graph stores and the intern index. Hash table
+    /// control bytes and allocator overhead are outside this storage census.
+    pub(crate) fn bytes_reserved(&self) -> usize {
+        self.nodes.capacity() * size_of::<StoredNode>()
+            + self.items.capacity() * size_of::<NodeId>()
+            + self.text.capacity()
+            + self.index.capacity() * size_of::<(u64, NodeId)>()
     }
     pub(crate) fn reset(&mut self) {
         self.nodes.truncate(1);

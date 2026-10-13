@@ -3,6 +3,7 @@ use super::{
     Error,
     encoder::{CallOffset, Encoder, Target},
     graph::{Graph, Node, NodeId},
+    statistics::Statistics,
 };
 use crate::support::stack::StackBudget;
 use std::{
@@ -205,16 +206,22 @@ impl<'a, 'g> CaseReader<'a, 'g> {
     pub fn integer_value(&self, line: usize, word: &[u8]) -> Result<i64, Error> {
         let negative = word.starts_with(b"-");
         let digits = if negative { &word[1..] } else { word };
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        if digits.is_empty() {
             return Err(self.word_error(line, "invalid ABI integer '", word, "'"));
         }
-        let magnitude = digits
-            .iter()
-            .try_fold(0u64, |value, digit| {
-                value.checked_mul(10)?.checked_add(u64::from(digit - b'0'))
-            })
-            .filter(|n| !negative || *n <= (1 << 63))
-            .ok_or_else(|| self.word_error(line, "ABI integer out of range '", word, "'"))?;
+        let mut magnitude = 0u64;
+        for digit in digits {
+            if !digit.is_ascii_digit() {
+                return Err(self.word_error(line, "invalid ABI integer '", word, "'"));
+            }
+            magnitude = magnitude
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(u64::from(digit - b'0')))
+                .ok_or_else(|| self.word_error(line, "ABI integer out of range '", word, "'"))?;
+        }
+        if negative && magnitude > (1 << 63) {
+            return Err(self.word_error(line, "ABI integer out of range '", word, "'"));
+        }
         let bits = if negative {
             0u64.wrapping_sub(magnitude)
         } else {
@@ -481,7 +488,8 @@ pub fn mangle_files(
     paths: &[PathBuf],
     output: &mut impl Write,
     budget: StackBudget,
-) -> Result<(), Error> {
+) -> Result<Statistics, Error> {
+    let mut stats = Statistics::default();
     let mut graph = Graph::default();
     let mut pending_output = Vec::new();
     for path in paths {
@@ -511,6 +519,7 @@ pub fn mangle_files(
             {
                 break;
             }
+            stats.source_bytes += line.len();
             number = number.checked_add(1).ok_or(Error::StorageLimit)?;
             let bytes = line.strip_suffix(b"\n").unwrap_or(&line);
             let start = bytes
@@ -544,6 +553,7 @@ pub fn mangle_files(
                         &mut pending_output,
                         output,
                         budget,
+                        &mut stats,
                     )?;
                     cases += 1;
                 }
@@ -565,16 +575,19 @@ pub fn mangle_files(
                 &mut pending_output,
                 output,
                 budget,
+                &mut stats,
             )?;
             cases += 1;
         }
+        stats.source_files += 1;
         if cases == 0 {
             return Err(Error::diagnostic("ABI fact file contains no cases"));
         }
     }
     output
         .write_all(&pending_output)
-        .map_err(|_| Error::diagnostic("unable to write mangled ABI output"))
+        .map_err(|_| Error::diagnostic("unable to write mangled ABI output"))?;
+    Ok(stats)
 }
 fn finish_case(
     graph: &mut Graph,
@@ -583,10 +596,17 @@ fn finish_case(
     pending: &mut Vec<u8>,
     output: &mut impl Write,
     budget: StackBudget,
+    stats: &mut Statistics,
 ) -> Result<(), Error> {
     let mut reader = CaseReader::new(graph, text, numbers, budget);
     let target = reader.read_target()?;
-    Encoder::encode(graph, target, pending, budget)?;
+    let definitions = reader.definitions.len();
+    Encoder::encode_observed(graph, target, pending, budget, Some(stats))?;
+    stats.cases += 1;
+    stats.records += numbers.len();
+    stats.definitions += definitions;
+    stats.peak_graph_nodes = stats.peak_graph_nodes.max(graph.len());
+    stats.peak_graph_bytes = stats.peak_graph_bytes.max(graph.bytes_reserved());
     pending.push(b'\n');
     graph.reset();
     if pending.len() >= 64 << 10 {

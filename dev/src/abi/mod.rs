@@ -7,6 +7,7 @@ mod fact_functions;
 mod fact_types;
 pub mod facts;
 pub mod graph;
+pub mod statistics;
 #[cfg(test)]
 mod tests;
 pub mod vocabulary;

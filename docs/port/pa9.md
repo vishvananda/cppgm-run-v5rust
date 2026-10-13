@@ -3,6 +3,138 @@
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
 Last audited commit: INITIAL (implementation does not advance this field).
 
+## Full-stage audit: findings fixed, acceptance withheld — 2026-10-13
+
+Entry HEAD: `3750b85cd1832a32658bd5b3dc655d8454332ad9`, clean checkout.
+The previous goal turn was **progress**, completing the local-context port;
+no interrupted checker/compiler process was live at audit entry. Reviewed the
+three implementation increments `8f54cbd`, `b7157ce` and `3750b85`, plus the
+fixes recorded here. The stage base above is unchanged. This audit does
+**not** certify full PA9 acceptance or advance Ralph's stage/goal state.
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the full PA9 handout,
+rust-clone-plan.md, source-map.tsv and this ledger. Compared the frozen
+`883778fdfa45d523cf9e135d15169af976f451a8` C++ tool and its production owners
+at `/home/vishvananda/work/references/v5rust-cpp/` directly. Source identities,
+manifest and tool hashes are retained in `source-hashes.json` and the gate
+receipts. Reviewed observable control flow, numeric rules, diagnostics,
+substitution ordering, tie-breaks and output-file bytes, beyond fixture counts.
+
+### Source responsibilities and corrections
+
+| Frozen C++ responsibility | Rust owner and review |
+| --- | --- |
+| `abimangle.cpp`: help scan, option precedence, byte paths, output lifetime, telemetry | `dev/bin/abimangle.rs`, `driver/abimangle.rs`: exact help/argv/error order; output created before reading sources; 4-KiB buffered writer and distinct reader-flush versus close diagnostics. Stack/RSS host observations enter through typed tool arguments. `--stats` now runs the ordinary Rust pipeline and reports after successful output flush, replacing status 86. |
+| `abi_fact_reader.cpp`/`abi_fact_case.h`: streaming cases, classification, binders, resolution, target/record assembly | `abi/facts.rs`, `fact_functions.rs`, `fact_contexts.rs`: one active case, direct binder index, file-order eager definition pass with Unstarted/InProgress/Complete recursive demand, duplicate/cycle error order, all twelve frozen target words and record families. Case/record/definition/file/byte counts observe existing work. `set_path` now follows C++ qualified-scope construction before selecting the special std scope, preserving its graph-node count. |
+| `abi_fact_definitions.cpp`: types, arguments, expressions, entities, local/closure contexts | `fact_types.rs`, `fact_expressions.rs`, `fact_functions.rs`, `fact_contexts.rs`: complete frozen standalone productions, arities and ordered operands, scalar range/modulo rules, index bounds, boolean alternatives and generated-lambda defaults. Integer conversion now checks each digit and overflow in order: `18446744073709551616x` reports overflow before reaching the invalid suffix, as C++ does. The required regression is `tests/abi/100-reject-overflow-before-invalid-digit.t`, executed in the PA9 full course lane. |
+| `abi_graph.{h,cpp}`: immutable canonical identity and owned storage | `abi/graph.rs`: private compact IDs; flat node/edge/text stores; hash collisions compare complete typed keys; canonical tags and cv; member-function owner, expression values, array bounds and local context identity retained. Dependent values now refer to an interned non-type parameter declaration, matching C++ typed_argument ownership rather than flattening the declaration into the argument. Graph capacity is reused between cases; no recursive drop. |
+| `abi_encoder.{h,cpp}`: type/name/prefix/context/expression/argument/entity/special productions | `abi/encoder.rs`: iterative modifier/prefix walks; ID-indexed per-name substitutions, components before structures; exact base-36 slots, complex builtin substitution, std abbreviations, constructor/conversion result exclusions, inherited constructor prefixes, entity-reference dictionary sharing, local discriminators after whole names, thunk offset signs and special-name bytes. Optional telemetry counts actual substitution lookups/hits/entries, entity references and name bytes; output counts exclude the reader's newline. |
+| `abi_mangle.h`/`abimangle-scaffold.cpp`: frozen standalone vocabulary | `abi/vocabulary.rs` and typed graph/fact owners: builtin code/width/signedness table, terminal aliases and operand-count choices, operation shape validation and qualifier order compared directly. No fixture names or reference answers participate in production. |
+| `abi_stats.h`: work counters and resource observations | `abi/statistics.rs`, reader/encoder/graph and driver: all printed fields and their order implemented. Real reserved Rust graph payload capacity is reported, including intern-index payload, excluding hash control/allocator overhead. Time and RSS are measured separately. The protected storage-field comparison remains unresolved below. |
+
+The ABI fact reader remains an explicit tool adapter. The encoder consumes
+immutable typed nodes; no semantic producer renders fact text to communicate
+with it. Binder caches die with the case; the encoder's dictionary dies with
+the name. All canonical key inputs and borrowed-span lifetimes were reviewed.
+There is no speculative C++ parsing in PA9, so parser transactions and backend
+function lifetimes are outside this adapter; those earlier owning phases are
+preserved by their suites. No unsafe code, dependency, phase subprocess,
+environment read, fixture tailoring, blanket allowance or mechanical split was
+introduced. The companion audit reports **162 files, zero findings**; the
+reviewed ABI/tool files have at most **822 code lines**, functions/closures at
+most **131 code lines**, and nesting at most **5** (`source-shape.json`).
+
+The residual status-86 target sentinel is unreachable from the reader's
+recognized PA9 target set: function/thunk words take their own path and all
+other recognized words have implementations. No tested or supplemental input
+reaches it. Shared compiler-only families remain explicitly partial in the
+source map: implicit/hidden tags and abbreviation derivation, data-member
+closure prefixes, unnamed/decomposition names, general template parameter
+heads, advanced expressions/literals/arrays and TLS-init/guard targets. They
+have no frozen standalone input production and belong to their later producer
+milestones; this audit does not claim their implementation-wide completion.
+
+### Validation and retained evidence
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa9-audit-20261013/`.
+The fixes are in the implementation commit recorded by the following audit
+commit; external `handoff.json` identifies both commits and final clean status.
+Generated files, raw logs, benchmarks and receipts are outside Git.
+
+| Command/evidence | Result |
+| --- | --- |
+| `make build` | PASS, final release build 16.64 s; `build-reviewed.log`. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa9` | PASS **119/119** unchanged frozen identities; `stage-reviewed.log`, `gate-snapshot/results/pa9.json` and retained case receipts. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa9` | PASS **120/120**, original 119 plus the new owning-lane regression; exit 0 and no failed comparison/marker; `course-reviewed.log`, `gate-snapshot/course-pa9/test/`. |
+| Protected `clone_check.py prior pa9` | PASS **866/866** fixed cases: PA1 58, PA2 26, PA3 20, PA4 106, PA5 196, PA6 121, PA7 214, PA8 125; every original full course suite passes. `prior-reviewed.log`, `stage-summary.json`, per-stage case and course snapshots. |
+| Protected `clone_check.py preflight pa9` / `preserve pa9` | PASS, frozen inputs/oracle/routing intact and **119/119** prior PA9 case identities retained; `preflight-reviewed.log`, `preserve-reviewed.log`. |
+| `make lint` (protected `clone_quality.py`) / `make audit-rust` | PASS, rustfmt, strict all/pedantic Clippy, debug/release workspace tests (202 library tests each), file/layout audit; `lint-reviewed.log`, `audit-reviewed.log`. |
+| Supplemental naming / expression / context probes | **82/82**, **126/126**, **119/119** exact protected matches; separate subdirectories retain scripts, inputs, logs and traces. Byte paths, NUL spellings, ordered malformed records, forward/cyclic demand, canonical/distinct substitutions, qualifier/terminal restrictions and supported nested contexts included. Eight additional byte-path/help/multi-file/failure probes match (`io-reviewed.py` and trace). Direct paired empty-output and small/large /dev/full probes also match; their close-versus-reader-flush diagnostics agree. The adapter cannot restore /dev/full (device unlink fails), so device checks retain direct paired raw streams; its previously recorded empty-path defect also remains unchanged. |
+| Supplemental grammar/error mutations | **3,912/3,912** exact protected matches, no status 86, panic/signal/timeout or lost output equality; `mutations.py`, `mutations-reviewed.log`, trace and summary. Includes overflow-versus-invalid-digit precedence in typed values, expressions, arrays, thunks and construction vtables. |
+| `--stats` probes across all course inputs | **120/120** have identical work counters/exit/output bytes and no non-resource difference. **115 successful receipts remain FAIL** solely on `peak_graph_bytes`; five rejection receipts match exactly. `stats.trace.jsonl`, `stats-summary.json`, raw mismatch directories. These failures are not waived or counted as full parity. |
+
+`gate-results.json` retains exact commands, exits, durations and log paths.
+Protected `stack_qualification` policy was preserved throughout; the final
+stage/prior/course receipts and supported audit probes needed no qualification
+(`stack-qualifications.json`). No native rejection cutoff or diagnostic
+position was calibrated. PA9 name-byte checks imply no object/bootstrap proof;
+optimizer/backend code and PA35 optimization policies were untouched. PA33
+implementation-wide census and compiler debug lanes remain later requirements.
+
+### Resource observations
+
+`scaling.py`, fixed input digests, `scaling.json` and protected trace retain
+nine supported workloads, two oracle warmups and paired ABBA blocks. All
+**9/9** no-statistics protected comparisons and **72/72** measured statistics
+invocations produce matching output files; their deterministic work counters
+also match (`scaling-counter-summary.json`). Actual graph allocation/time/RSS
+values remain raw observations, not equality requirements substituted for the
+protected comparator. Candidate median process ms / maximum RSS KiB, four
+observations per row, including launch/timing-wrapper overhead:
+
+| Size | Many independent cases | Dependent value arguments | Repeated pointer types |
+| --- | --- | --- | --- |
+| 4,000 | 11.459 / 2,220 | 8.460 / 4,332 | 6.232 / 2,216 |
+| 8,000 | 19.457 / 2,216 | 16.919 / 6,452 | 8.227 / 2,912 |
+| 16,000 | 35.915 / 2,212 | 28.304 / 9,984 | 14.550 / 3,628 |
+
+These families show approximately linear supported growth and constant graph
+storage across independent cases; they make no arbitrary recursive-depth or
+code-generation performance claim.
+
+### Acceptance gaps and next dependency boundary
+
+No fixed PA9 case remains failing, but two non-fixture requirements prevent
+full-stage signoff:
+
+1. **Protected statistics allocation comparison.** For
+   `abimangle --stats -o OUT pa9/tests/abi/100-global-function.t`, C++ reports
+   `peak_graph_bytes=20608` and Rust reports its actual reserved graph payload
+   `248`. All other deterministic fields and output files match. The frozen
+   graph's bytes_reserved includes its arena and vector reservations; the
+   adapter's comparable_stderr exempts named arena fields, time and RSS, but
+   keeps peak_graph_bytes exact. Contract runtime costs versus deterministic
+   fields and the plan's allocation-observation requirement must be reconciled
+   by the external acceptance owner. Rust does not fabricate C++ sizes or add
+   purposeless storage to imitate them. Protected comparator/policy unchanged.
+2. **Handout/frozen-reader coverage discrepancy.** PA9 README line 166 permits
+   `member <type-ref> <yes|no> <identifier> [<argument-ref>...]`. The frozen
+   read_expression_definition member branch instead requires exactly three
+   operands. `handout-member-template.facts` uses one type template argument
+   on `member T no selected A`, followed by a call and decltype. Both tools
+   reject at line 3 with the same malformed-member diagnostic. Two protected
+   receipts prove the rejection is stable; paired raw streams are retained.
+   This exact rejection is not evidence of the handout's successful coverage.
+   It requires an externally resolved baseline/handout decision; neither
+   frozen source nor handout/reference policy is edited here.
+
+The next boundary is resolving these two external acceptance discrepancies,
+then repeating affected exact statistics/handout evidence and final gates.
+The existing Ralph goal remains active; it is not marked achieved merely
+because the supplied gates are green. Later compiler ABI producer work remains
+at its owning milestones. Stage advancement stays with Ralph.
+
 ## Local function scopes, closures and substitution checkpoint — 2026-10-13
 
 Entry HEAD: `b7157ce279dc11279447508f2c2d22178c326f18`, clean checkout.

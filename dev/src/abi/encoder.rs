@@ -2,6 +2,7 @@
 use super::{
     Error,
     graph::{Graph, Modifier, Node, NodeId, Qualifiers},
+    statistics::Statistics,
 };
 use crate::support::stack::StackBudget;
 
@@ -38,6 +39,7 @@ pub struct Encoder<'a> {
     output: &'a mut Vec<u8>,
     budget: StackBudget,
     stack_base: usize,
+    stats: Option<&'a mut Statistics>,
 }
 impl<'a> Encoder<'a> {
     /// Append one name using the graph's canonical identities.
@@ -50,7 +52,21 @@ impl<'a> Encoder<'a> {
         output: &'a mut Vec<u8>,
         budget: StackBudget,
     ) -> Result<(), Error> {
+        Self::encode_observed(graph, target, output, budget, None)
+    }
+    /// Append a name and observe the existing dictionary work.
+    ///
+    /// # Errors
+    /// Returns an encoding diagnostic or a checked storage/stack limit.
+    pub fn encode_observed(
+        graph: &'a Graph,
+        target: Target,
+        output: &'a mut Vec<u8>,
+        budget: StackBudget,
+        stats: Option<&'a mut Statistics>,
+    ) -> Result<(), Error> {
         let marker = 0u8;
+        let start = output.len();
         let mut encoder = Self {
             graph,
             slots: vec![None; graph.len()],
@@ -58,8 +74,13 @@ impl<'a> Encoder<'a> {
             output,
             budget,
             stack_base: std::ptr::from_ref(&marker).addr(),
+            stats,
         };
-        encoder.target(target)
+        encoder.target(target)?;
+        if let Some(stats) = &mut encoder.stats {
+            stats.output_bytes += encoder.output.len() - start;
+        }
+        Ok(())
     }
     fn put(&mut self, bytes: &[u8]) {
         self.output.extend_from_slice(bytes);
@@ -85,9 +106,15 @@ impl<'a> Encoder<'a> {
         }
     }
     fn substitute(&mut self, id: NodeId) -> bool {
+        if let Some(stats) = &mut self.stats {
+            stats.substitution_lookups += 1;
+        }
         let Some(index) = self.slots[id.index()] else {
             return false;
         };
+        if let Some(stats) = &mut self.stats {
+            stats.substitution_hits += 1;
+        }
         self.put(b"S");
         if index != 0 {
             let mut number = index - 1;
@@ -114,6 +141,9 @@ impl<'a> Encoder<'a> {
         if self.slots[id.index()].is_none() {
             self.slots[id.index()] = Some(self.entries);
             self.entries = self.entries.checked_add(1).ok_or(Error::StorageLimit)?;
+            if let Some(stats) = &mut self.stats {
+                stats.substitution_entries += 1;
+            }
         }
         Ok(())
     }
@@ -558,7 +588,15 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"E");
             }
-            Node::TypedArgument { ty, argument } => {
+            Node::TypedArgument {
+                declaration,
+                argument,
+            } => {
+                let Node::NonTypeParameter(ty) = self.graph.get(declaration) else {
+                    return Err(Error::diagnostic(
+                        "invalid ABI template parameter declaration",
+                    ));
+                };
                 self.put(b"Tn");
                 self.encode_type(ty)?;
                 self.argument(argument)?;
@@ -682,6 +720,9 @@ impl<'a> Encoder<'a> {
         Ok(())
     }
     fn entity_reference(&mut self, entity: NodeId) -> Result<(), Error> {
+        if let Some(stats) = &mut self.stats {
+            stats.entity_references += 1;
+        }
         if let Node::ExternalSymbol(symbol) = self.graph.get(entity) {
             self.put(self.graph.text(symbol));
         } else {
