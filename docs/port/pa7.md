@@ -2,7 +2,7 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `223cb4a5c3b422323dcc8f672189f4be701c8065` (clean continued query audit entry).
-Last audited implementation commit: `67419338047bc8419b75b35d334efecc2c6eec29` (source/fixes and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+Last audited implementation commit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e` (query/effect source and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
 
 
 ## Type-query and discarded-value audit checkpoint — 2026-10-13
@@ -13,6 +13,11 @@ The previous turn made authoritative progress in implementation commit
 `6741933` and ledger commit `223cb4a`; their clean worktree, ledger and retained
 handoff were inspected before continuing the existing phase goal.
 Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+Reviewed resulting implementation commit:
+`ee02b39f602ab94d4d286e97e1d39649d6b5643e`.
+The staged code diff SHA-256 is
+`2d41d207011b1c16ce937c8747945cd30f0497c6e9be5f0fc90784eb9da1a212`;
+`reviewed-source.json` retains all eight source hashes.
 **The nine query-group divergences below are resolved. Full-stage acceptance
 remains open for the cumulative declaration/operator/dump source census.**
 No executed probe in this group fails. Ralph state, goal and acceptance policy
