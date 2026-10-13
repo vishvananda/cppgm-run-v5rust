@@ -409,6 +409,22 @@ impl Analyzer<'_> {
         scope: ScopeId,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        self.lookup_result_in(name, scope, filter, true)
+    }
+    pub(super) fn lookup_call_result(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+    ) -> Result<LookupResult, Error> {
+        self.lookup_result_in(name, scope, Filter::Ordinary, false)
+    }
+    fn lookup_result_in(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+        filter: Filter,
+        specialize: bool,
+    ) -> Result<LookupResult, Error> {
         let node = *self.tree.names.get(name);
         self.lookup_location = node.location;
         let last = self
@@ -417,7 +433,7 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("empty semantic name"))?;
-        if last.arguments.is_some() {
+        if last.arguments.is_some() && !self.semantic() {
             return Err(Error::Missing("template specialization lookup"));
         }
         let NameKind::Identifier(key) = last.kind else {
@@ -427,11 +443,14 @@ impl Analyzer<'_> {
             ));
         };
         let prefix = self.prefix(name, scope)?;
-        let found = if let Some(prefix) = prefix {
+        let mut found = if let Some(prefix) = prefix {
             self.qualified_result(prefix, key.into(), filter)?
         } else {
             self.unqualified_result(scope, key.into(), filter)?
         };
+        if specialize && last.arguments.is_some() {
+            self.explicit_function_specializations(*last, &mut found, scope, false)?;
+        }
         if let Some(binding) = found.binding {
             if let Some(search) = prefix
                 && let Some(naming) = self.graph.scope(search).owner

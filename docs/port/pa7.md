@@ -1,8 +1,211 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `ba31318e0b60de4e51a284b15a34026b7d218b9a` (clean implementation entry).
+Current implementation group base: `77d7de1287bf976a9495422b8b0318b2a5ced489` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Ordinary function-template signature checkpoint — 2026-10-13
+
+Completed a coherent signature-specialization group for the `pa7 full-stage`
+implementation phase. The preceding turn was progress: `77d7de1` completed
+ordinary nonvirtual inheritance and reduced fixed failures from three to one.
+This entry inspected the clean checkout, reread the contract, specification,
+plan, owning handout and current ledger, consulted frozen C++ owners directly,
+and reran the entire entry manifest. Stage base and last-audited commit above
+remain unchanged; implementation does not advance Ralph's stage or audit pointer.
+
+The unchanged fixed manifest improves **197/198 → 198/198**, **1 → 0 failures**,
+with identical identities and all 197 entry passes preserved. The full original
+course lane improves **228/229 → 229/229**; its additional 31 cases execute and
+pass. Exact fixed-stage failure reduction comes from the existing identity
+`tests/general/300-static-cast-overloaded-function-template-argument.t`, rather
+than added tests. No fixed or course failures remain in this run. Passing these
+lanes establishes this checkpoint's validation, not implementation-wide PA7
+completion or advancement; the remaining production boundaries below are explicit.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-function-templates-20261013/`.
+`baseline.log` and `baseline-manifest.json` retain the independent turn-start
+run. `protected-stage-result.json`, `course-result.json`, `preservation.json`,
+`checks.json` and `handoff.json` retain final identity coverage, exit statuses,
+evidence and binary hashes. Protected per-case diagnostics and raw outputs remain
+under `../clone/cases/pa7/<case-hash>/`; supplementary sources, mismatches and
+attempts remain in this checkpoint artifact root. Artifacts are not committed.
+
+### Frozen owners and typed data flow
+
+Consulted `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/` directly:
+`function_templates.cpp::{explicit_specializations,SoleTemplateHead,specialize,
+complete_deduction,deduced_specialization,substitute,substitute_function,without_cv,
+deduce_type,deduce_argument,deduce_overloaded,deduce_for_call,deduce_for_target,
+function_type_at_least_as_specialized,reference_ordering}`;
+`template_specializations.cpp::declaration_pattern`;
+`analyzer_expressions.cpp::{select_overloaded,resolve_overloaded,typed}`;
+`analyzer_calls.cpp` candidate collection/conversions;
+`analyzer_declarations.cpp` retained template parameter clauses;
+`semantics_dump.cpp::{schedule,trailing,specialization_declaration}`;
+`function_records.h` and `template_records.h`. `source-map.tsv` records partial
+owners and boundaries. Syntax display reuses the existing `ast_render.cpp`
+translation, rather than creating or reparsing name text.
+
+- `function_templates.rs` owns signature formation, type-only argument overlays,
+  substitution, structural deduction and partial ordering. Unit-owned signature
+  keys contain canonical primary `EntityId` and argument `TypeId`s. Explicit
+  `InProgress` and `Complete(BindingId)` states prevent duplicate formation;
+  failed substitutions remove their entry rather than caching a context-dependent
+  absence. A query's immutable argument overlay is borrowed by all substitution
+  frames, with a query-owned type memo. Successful type-default memos use the
+  canonical head, parameter index and preceding arguments; defaults cannot legally
+  replace an already used default, and adding later defaults cannot invalidate
+  these successful entries. Non-type parameters, packs and dependent class/alias
+  signatures remain explicit dependencies.
+- `graph.rs` privately publishes hidden function bindings with compact IDs,
+  canonical entity origin, declaration home and source access. Hidden partial
+  explicit-argument and specialized bindings do not enter ordinary name indexes,
+  overload indexes or printed scope lists. Using declarations retain the original
+  entity's namespace. Source parameter clauses remain borrowed AST identities,
+  following the frozen redeclaration naming rules. Canonical template parameter
+  entities retain positional facts so deduction never keys on printed types/names.
+- `lookup.rs`, `function_resolution.rs` and `procedural_calls.rs` distinguish
+  explicit id/address specialization from call deduction. Calls first perform
+  indexed ordinary/ADL lookup, then retain explicit arguments; invalid call
+  substitution therefore produces the frozen call diagnostic instead of an
+  id-expression specialization diagnostic. Arity filtering precedes deduction.
+  Explicit arguments permit ordinary conversions; inferred arguments remain
+  consistent across parameters. Structural deduction supports pointer/reference,
+  fixed-array, function and member-pointer type edges, reference collapsing,
+  argument decay and cv removal, forwarding references, and target-type forwarding
+  adjustment. Non-template preference and structural/reference partial ordering
+  run only after conversion ordering ties.
+- Completed selection and conversion facts are retained on the original expression
+  IDs. Only the selected function contributes demand; losing signature candidates
+  instantiate no body/default and produce no trailing declaration. Primary-keyed
+  demand records make later template-definition arrival an explicit dependency
+  event. Both already-defined and later-defined demanded template bodies remain
+  status 86, as do selected omitted template default arguments; these are not
+  fabricated language rejections. Deleted singleton specializations diagnose at
+  the original designation before any body demand.
+- `semantics_dump.rs` consumes selected bindings, retained parameter clauses and
+  function-owned demand facts. It prints demanded specialization declarations,
+  canonical parameter types and original parameter names in first-use order.
+  `syntax::write_expression_name` preserves original template-id spellings,
+  including partially explicit and empty argument lists. The printer performs
+  no lookup, deduction, substitution, body analysis or semantic demand.
+- The ownership regression in `sema/tests.rs` checks repeated specialization
+  identity, unchanged ordinary overload membership, compact selected origins,
+  and exclusion of losing specializations from the trailing demand queue.
+
+### Validation and exact evidence
+
+Candidate cppgm SHA-256:
+`011c76002ddeba49a8f1b8ed87fc1d838a93de3aa2cf10c5da17a410df07e183`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | Pass | `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | Pass, 198/198 fixed identities | `stage-required.log`, `protected-stage-result.json` |
+| `make test-pa7` | Pass, same 198/198 | `stage.log` |
+| `make course-pa7` | Pass, 229/229, no failure marker | `course.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | Pass, PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json` |
+| `make lint` | Pass, rustfmt, strict Clippy, unit/doc tests and protected quality | `lint.log` |
+| `make audit-rust` | Pass, zero findings | `audit.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | Pass | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | Pass, all 197 previous identities | `preserve.log`, `preservation.json` |
+| `python3 .../pa7-function-templates-20261013/probe.py` | 70/70 exact protected comparisons | `probe-summary.json`, `probes.jsonl` |
+| `python3 .../pa7-function-templates-20261013/measure.py` | Exact supported scaling and native qualification | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+The 70 exact supplementary comparisons cover full/partial/empty explicit argument
+lists, type defaults, call and target deduction, returning-type deduction,
+forwarding/cv/reference/array/function/member-pointer signatures, namespaces,
+using declarations, ADL, repeated/different specialization identities,
+non-template preference, structural/reference ordering, inconsistent deduction,
+invalid pointer/reference/return substitutions, deleted functions, arity filtering,
+variadic calls, renamed template redeclarations, unused definitions and unevaluated
+body use. They supplement the unchanged fixed/course lanes; they do not count as
+fixed-manifest progress. `boundary.jsonl` retains successful-oracle reproducers
+for eight remaining boundaries. Every receipt judges `match`, including resource
+qualification, rather than comparing native exhaustion locations.
+
+The earlier Ralph progress receipt treated the fixed lane's 198 results as a
+229-case run, yielding 31 unrun cases. `harness-counts.json` retains the unchanged
+external receipt and both lane counts. This run executes all 198 fixed entries
+and separately all 229 course entries, both passing. Checker policy, manifests,
+fixtures, references, frozen sources and Ralph state are untouched. Ralph owns
+interpretation, checkpoint/final audits and advancement.
+
+### Resource measurements and protected stack qualification
+
+Measurements run after the gate jobs finish, with A/A calibration followed by
+paired ABBA/BAAB blocks. Every input/binary hash, sample, wall/RSS reading, exit,
+output digest and protected receipt is retained. All workload output digests
+agree and all 18 protected workload receipts match. These warm process readings
+include startup, parsing, semantic analysis and dump I/O; they are not a cold-cache
+or hardware-counter gate. PA35 generated-code improvement targets do not apply.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| distinct-signatures / 128 | 6.83 / 6486 | 20.01 / 8730 |
+| shared-signature / 128 | 7.08 / 6506 | 21.07 / 8746 |
+| distinct-signatures / 512 | 12.13 / 8604 | 31.82 / 8724 |
+| shared-signature / 512 | 10.27 / 7182 | 31.01 / 7996 |
+| distinct-signatures / 2048 | 40.07 / 15608 | 87.60 / 17712 |
+| shared-signature / 2048 | 19.10 / 10048 | 51.68 / 9248 |
+| overload-arity / 16 | 5.44 / 5838 | 17.82 / 8736 |
+| overload-arity / 64 | 7.47 / 6502 | 20.29 / 8370 |
+| overload-arity / 256 | 29.56 / 11444 | 67.56 / 8670 |
+
+Distinct signatures scale one template over independent class identities; shared
+signatures scale repeated uses of one specialization. Overload arity scales
+source declarations of one name with progressively longer parameter lists and
+one one-argument call. The last workload intrinsically grows total source/parameter
+volume quadratically in candidate count; its measurement does not establish a
+linear bound in candidate count alone. Queries visit only indexed candidates;
+substitution memos and the dependency walk avoid revisiting a shared type DAG.
+Partial-order unique placeholder identities are bounded by the largest queried
+head and never complete or instantiate source classes.
+
+Native probes fix 1,000 nested function-template calls and 1,500 parentheses in a
+template call argument, starting at a 1 MiB stack. Both protected receipts have
+`match: true` and `stack_qualification.passed: true`, with identical successful
+results at a shared 16 MiB retry. Raw originals and retries remain under
+`stack-qualifications/<receipt-id>/`. The genuine byte-budget guard is retained;
+no native cutoff, frame size or exhaustion diagnostic position was calibrated.
+Shared storage remains below the 107,374,182,400-byte ceiling.
+
+### Next dependency boundary and architecture review
+
+No fixed PA7 failures remain. The next template group is demand-owned body/default
+instantiation and dependent signature substitution: `function_templates.cpp`,
+`class_templates.cpp`, `template_names.cpp`, `template_specializations.cpp`, and
+retained fact-bearing body instantiation. It must bind immutable parent-linked
+environments, preserve definition-time name lookup and access, allocate instance
+facts once, and queue definition demand by specialization identity. Non-type and
+pack argument formation, class/alias instantiation, dependent names, noexcept,
+member-template contexts and expanded ordering remain separate related owners.
+The inherited broader class-call/user-conversion/construction groups also remain
+incomplete; these passing lanes are not evidence of their completion.
+
+`boundary-body-demand.cpp`, `boundary-late-body-demand.cpp`,
+`boundary-default-demand.cpp`, `boundary-explicit-default-demand.cpp`,
+`boundary-pack.cpp`, `boundary-non-type.cpp` and `boundary-class-signature.cpp`
+all retain candidate status 86 against successful C++ output. The earlier phase
+`boundary-data-member-address.cpp` reaches the existing data-member designation
+rejection (candidate 1, oracle 0); pointer-to-data-member address formation belongs
+to `analyzer_member_pointers.cpp`/`analyzer_expressions.cpp`, before template
+signature deduction. None of these probes is treated as a matched negative case.
+
+Review a template-id from its single parsed name through indexed lookup, hidden
+explicit bindings, canonical signature memoization, recorded call/operand facts
+and the first-use trailing declaration. Then review two candidate specializations
+where only the selected function demands output, and a later template definition
+that triggers the recorded primary's dependency boundary. Single-AST ownership,
+compact IDs, immutable type identity and per-query overlays are preserved. No
+unsafe code, FFI, compiler fallback, text reparsing, fixture recognition, new
+dependency, lint suppression, global retry or speculative class/body work is added.
+The optimizer, code generator, register allocator and backend lifetimes are
+unchanged; this group makes no PA34 object-parity claim.
 
 ## Ordinary nonvirtual inheritance checkpoint — 2026-10-13
 

@@ -223,6 +223,23 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
+            if found.functions.as_slice().len() == 1
+                && self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .availability
+                    == super::graph::FunctionAvailability::Deleted
+                && self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .template_head
+                    .is_none()
+            {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "use of a deleted function",
+                ));
+            }
             if self.default_argument_scope.is_none()
                 && let Some(body) = &self.body_context
                 && !self

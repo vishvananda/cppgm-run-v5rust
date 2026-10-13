@@ -33,7 +33,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
         let facts = if let ast::ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
-            let mut found = self.lookup_result(name, scope, super::lookup::Filter::Ordinary)?;
+            let mut found = self.lookup_call_result(name, scope)?;
             if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                 return Ok(facts);
             }
@@ -78,6 +78,11 @@ impl Analyzer<'_> {
                         "undeclared function name"
                     },
                 ));
+            }
+            if let Some(component) = self.tree.name_lists.get(syntax_name.components).last()
+                && component.arguments.is_some()
+            {
+                self.explicit_function_specializations(*component, &mut found, scope, true)?;
             }
             let facts = self.named_expression(callee, &found, scope)?;
             self.graph.expression_facts.set(callee, facts);
@@ -308,11 +313,11 @@ impl Analyzer<'_> {
         scratch.sequences.clear();
         let args = self.tree.expr_lists.get(arguments);
         for index in 0..self.graph.overloads.get(set).len() {
-            let binding = self.graph.overloads.get(set)[index];
+            let primary = self.graph.overloads.get(set)[index];
+            let Some(binding) = self.deduce_function_call(primary, arguments)? else {
+                continue;
+            };
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
-                return Err(Error::Missing("function template call deduction"));
-            }
             let ty = entity.ty.ok_or(Error::Invariant("function without type"))?;
             let ty = self.graph.types.canonical_function(ty)?;
             let TypeKind::Function {
@@ -326,9 +331,7 @@ impl Analyzer<'_> {
             let count = parameters.len();
             if args.len() > count && !variadic
                 || (args.len()..count).any(|index| {
-                    self.graph
-                        .function_default(self.graph.binding(binding).entity, index)
-                        .is_none()
+                    !self.function_has_default(self.graph.binding(binding).entity, index)
                 })
             {
                 continue;
@@ -382,6 +385,7 @@ impl Analyzer<'_> {
             }
         }
         let (binding, first) = scratch.candidates[best];
+        self.check_template_call_defaults(binding, arguments)?;
         for (index, &arg) in args.iter().enumerate() {
             if let Some(sequence) = scratch.sequences[first + index] {
                 let mut facts = self.graph.expression_facts.get(arg)?;
@@ -418,11 +422,19 @@ impl Analyzer<'_> {
             better |= order == Ordering::Greater;
             worse |= order == Ordering::Less;
         }
-        Ok(match (better, worse) {
+        let order = match (better, worse) {
             (true, false) => Ordering::Greater,
             (false, true) => Ordering::Less,
             _ => Ordering::Equal,
-        })
+        };
+        if !better && !worse {
+            return self.compare_function_templates(
+                scratch.candidates[a].0,
+                scratch.candidates[b].0,
+                Some(count),
+            );
+        }
+        Ok(order)
     }
     fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_resolved_function(id)?;

@@ -459,6 +459,11 @@ impl<'tree> Analyzer<'tree> {
             return Err(Error::at(location, "redefinition of a function"));
         }
         self.graph.entity_mut(entity).defined = true;
+        if self.graph.function_templates.body_demanded(entity) {
+            return Err(Error::Missing(
+                "demanded function template body instantiation",
+            ));
+        }
         let parameters = info
             .parameters
             .ok_or(Error::Invariant("function definition without parameters"))?;

@@ -13,6 +13,73 @@ use crate::{
 };
 
 #[test]
+fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected_functions() {
+    use super::{
+        function_demands::{self, Demand},
+        function_resolution::CallTarget,
+    };
+    use crate::syntax::ast::{Body, DeclKind, StmtKind};
+    let source = SourceBuffer::new(b"template<class T>void f(T value);template<class T>void f(T*pointer);void use(int*p){f(1);f(2);f(p);}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"template-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let name = cursor.intern_name(b"f").unwrap();
+    let functions: Vec<_> = graph.functions_at(graph.global, name.into()).collect();
+    assert_eq!(functions.len(), 2);
+    assert!(functions.iter().all(|&binding| {
+        graph
+            .entity(graph.binding(binding).entity)
+            .template_head
+            .is_some()
+    }));
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[2])
+        .kind
+    else {
+        panic!("function expected");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected");
+    };
+    let mut selected = Vec::new();
+    for &statement in tree.stmt_lists.get(statements) {
+        let StmtKind::Expression(Some(expression)) = tree.statements.get(statement).kind else {
+            panic!("call statement expected");
+        };
+        let Some(CallTarget::Direct(binding)) =
+            graph.expression_facts.get(expression).unwrap().call
+        else {
+            panic!("selected direct call expected");
+        };
+        selected.push(binding);
+        let entity = graph.binding(binding).entity;
+        assert!(graph.function_templates.primary(entity).is_some());
+        assert_eq!(graph.function_origin(entity).unwrap(), binding);
+        assert!(graph.entity(entity).template_head.is_none());
+    }
+    assert_eq!(selected[0], selected[1]);
+    assert_ne!(selected[0], selected[2]);
+    let demands: Vec<_> = function_demands::trailing(&graph)
+        .into_iter()
+        .map(|demand| {
+            let Demand::Function { binding, .. } = demand else {
+                panic!("signature should not demand construction");
+            };
+            binding
+        })
+        .collect();
+    assert_eq!(demands, vec![selected[0], selected[2]]);
+}
+
+#[test]
 fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand_local() {
     use super::{
         construction::ConstructorState, expression_facts::ValueConversion, function_demands::Demand,

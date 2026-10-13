@@ -20,6 +20,7 @@ mod expressions;
 mod function_demands;
 mod function_names;
 mod function_resolution;
+mod function_templates;
 mod graph;
 mod inheritance;
 mod initialization;

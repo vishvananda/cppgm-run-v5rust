@@ -136,6 +136,7 @@ pub(super) struct Entity {
     pub function: Option<FunctionProperties>,
     pub definition_emission: super::function_demands::DefinitionEmission,
     pub function_definition: Option<crate::syntax::ast::DeclId>,
+    pub function_parameters: Option<crate::syntax::ast::ParameterClause>,
     pub demands: super::function_demands::DemandList,
     pub member_function: Option<MemberKey>,
     pub special_name: Option<crate::syntax::ast::Name>,
@@ -168,6 +169,7 @@ pub(crate) struct Graph {
     pub(super) types: Types,
     pub(super) base_paths: super::inheritance::BasePaths,
     pub(super) templates: super::templates::Templates,
+    pub(super) function_templates: super::function_templates::FunctionTemplates,
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
@@ -275,6 +277,7 @@ impl Graph {
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
             templates: super::templates::Templates::default(),
+            function_templates: super::function_templates::FunctionTemplates::default(),
             scopes: vec![Scope {
                 kind: ScopeKind::Namespace,
                 parent: None,
@@ -434,6 +437,7 @@ impl Graph {
             function: None,
             definition_emission: super::function_demands::DefinitionEmission::Always,
             function_definition: None,
+            function_parameters: None,
             demands: super::function_demands::DemandList::default(),
             member_function: None,
             special_name: None,
@@ -460,6 +464,24 @@ impl Graph {
         scope: ScopeId,
         print: Option<ScopeId>,
         binding: Binding,
+    ) -> Result<BindingId, Error> {
+        self.add_binding_inner(scope, print, binding, true)
+    }
+    pub(super) fn add_hidden_function(
+        &mut self,
+        origin: BindingId,
+        binding: Binding,
+    ) -> Result<BindingId, Error> {
+        let id = self.add_binding_inner(self.binding_scope(origin), None, binding, false)?;
+        self.binding_access[id.0 as usize] = self.binding_access(origin);
+        Ok(id)
+    }
+    fn add_binding_inner(
+        &mut self,
+        scope: ScopeId,
+        print: Option<ScopeId>,
+        binding: Binding,
+        visible: bool,
     ) -> Result<BindingId, Error> {
         let id = BindingId(
             u32::try_from(self.bindings.len())
@@ -513,14 +535,14 @@ impl Graph {
         self.ordinals.push(ordinal);
         if binding.kind == BindingKind::Function {
             self.function_origins.entry(binding.entity).or_insert(id);
-            if let Some(name) = binding.name {
+            if visible && let Some(name) = binding.name {
                 self.record_function_binding(scope, name.into(), id);
             }
         }
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
         }
-        if let Some(name) = binding.name {
+        if visible && let Some(name) = binding.name {
             let entry = self.scope_mut(scope).index.entry(name).or_insert(Entry {
                 ty: None,
                 value: None,

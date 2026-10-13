@@ -114,6 +114,13 @@ impl Graph {
                         printer.function_definition(binding, Some(body), depth)?;
                     } else {
                         printer.binding_header(binding, "function-declaration", depth)?;
+                        if let Some(primary) = printer
+                            .graph
+                            .function_templates
+                            .primary(printer.graph.binding(binding).entity)
+                        {
+                            printer.specialization_parameters(binding, primary, depth + 1)?;
+                        }
                     }
                 }
                 Item::Line(text) => printer.line(text, depth)?,
@@ -123,6 +130,60 @@ impl Graph {
     }
 }
 impl<W: Write + ?Sized> Printer<'_, '_, W> {
+    fn specialization_parameters(
+        &mut self,
+        binding: BindingId,
+        primary: BindingId,
+        depth: usize,
+    ) -> io::Result<()> {
+        let ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or_else(|| io::Error::other("specialization without type"))?;
+        let clause = self
+            .graph
+            .entity(self.graph.binding(primary).entity)
+            .function_parameters;
+        let count = self
+            .graph
+            .types
+            .function_parameter_count(ty)
+            .map_err(|_| io::Error::other("specialization without function type"))?;
+        for index in 0..count {
+            self.indent(depth)?;
+            self.output.write_all(b"parameter ")?;
+            let mut declarator = clause
+                .and_then(|clause| self.tree.parameters.get(clause.parameters).get(index))
+                .and_then(|parameter| parameter.declarator);
+            let mut name = None;
+            while let Some(id) = declarator {
+                let node = self.tree.declarators.get(id);
+                if let Some(syntax_name) = node.name {
+                    name = self
+                        .tree
+                        .name_lists
+                        .get(self.tree.names.get(syntax_name).components)
+                        .last()
+                        .and_then(|component| match component.kind {
+                            ast::NameKind::Identifier(name) => Some(name),
+                            _ => None,
+                        });
+                    break;
+                }
+                declarator = node.nested;
+            }
+            self.name(name)?;
+            self.output.write_all(b" ")?;
+            self.ty(self
+                .graph
+                .types
+                .function_parameter(ty, index)
+                .map_err(|_| io::Error::other("specialization parameter outside type"))?)?;
+            writeln!(self.output)?;
+        }
+        Ok(())
+    }
     fn indent(&mut self, depth: usize) -> io::Result<()> {
         for _ in 0..depth {
             self.output.write_all(b"  ")?;
@@ -832,7 +893,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.name(self.graph.binding(binding).name)?;
             self.work.push((Item::Storage(storage), depth + 1));
         } else {
-            super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
+            crate::syntax::write_expression_name(self.tree, self.cursor, name, self.output)?;
         }
         Ok(())
     }

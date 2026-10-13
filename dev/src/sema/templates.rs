@@ -35,16 +35,21 @@ pub(super) struct ParameterInfo {
     position: Position,
     inner: Option<HeadId>,
 }
+impl ParameterInfo {
+    pub(super) fn index(self, depth: u32) -> Option<usize> {
+        (self.position.depth == depth).then_some(usize::from(self.position.index))
+    }
+    pub(super) fn ordinary_type(self) -> bool {
+        !self.position.shape.pack && self.inner.is_none()
+    }
+}
 #[derive(Clone, Copy)]
-#[expect(
-    dead_code,
-    reason = "Default syntax and declaration scope are retained for later demand-only template instantiation"
-)]
-struct DefaultArgument {
-    syntax: ast::TypeId,
-    scope: ScopeId,
+pub(super) struct DefaultArgument {
+    pub syntax: ast::TypeId,
+    pub scope: ScopeId,
 }
 struct Head {
+    depth: u32,
     scope: ScopeId,
     syntax: ast::TemplateParameterClause,
     parameters: Vec<EntityId>,
@@ -58,6 +63,16 @@ pub(super) struct Templates {
     positions: HashMap<Position, EntityId>,
 }
 impl Templates {
+    pub(super) fn parameters(&self, id: HeadId) -> &[EntityId] {
+        &self.head(id).parameters
+    }
+    pub(super) fn default_argument(&self, id: HeadId, index: usize) -> Option<DefaultArgument> {
+        self.head(id).defaults[index]
+    }
+    pub(super) fn depth(&self, id: HeadId) -> u32 {
+        // A head's first parameter has the lexical depth of its scope.
+        self.head(id).depth
+    }
     pub(super) fn shape(&self, id: HeadId) -> ShapeId {
         self.head(id).shape
     }
@@ -286,6 +301,8 @@ impl Analyzer<'_> {
                 position,
                 inner,
             });
+            self.graph.entity_mut(canonical).template_parameter =
+                self.graph.entity(entity).template_parameter;
             self.graph.types.record_parameter_entity(entity, canonical);
             let ty = self.graph.types.intern(
                 TypeKind::TemplateParameter {
@@ -314,6 +331,7 @@ impl Analyzer<'_> {
         }
         self.graph.templates.add_head(
             Head {
+                depth,
                 scope,
                 syntax,
                 parameters,

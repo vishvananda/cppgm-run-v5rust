@@ -299,6 +299,9 @@ impl Analyzer<'_> {
         )?;
         self.record_callable_label(binding, info, key)?;
         let entity = self.graph.binding(binding).entity;
+        if !self.graph.entity(entity).defined || definition == Definition::Body {
+            self.graph.entity_mut(entity).function_parameters = info.parameters;
+        }
         if definition == Definition::Deleted {
             self.graph.entity_mut(entity).availability =
                 super::graph::FunctionAvailability::Deleted;

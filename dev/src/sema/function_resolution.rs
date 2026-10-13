@@ -79,9 +79,6 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("empty address name"))?;
-        if last.arguments.is_some() {
-            return Err(Error::Missing("template specialization lookup"));
-        }
         let ast::NameKind::Identifier(key) = last.kind else {
             return Err(Error::at(
                 node.location,
@@ -93,7 +90,7 @@ impl Analyzer<'_> {
             .prefix(name, scope)?
             .ok_or(Error::Invariant("qualified address without prefix"))?;
         self.lookup_location = location;
-        let found = self
+        let mut found = self
             .qualified_result(prefix, key.into(), Filter::Ordinary)
             .map_err(|error| match error {
                 Error::Diagnostic {
@@ -104,6 +101,9 @@ impl Analyzer<'_> {
                 }
                 other => other,
             })?;
+        if last.arguments.is_some() {
+            self.explicit_function_specializations(*last, &mut found, scope, false)?;
+        }
         let binding = found
             .binding
             .ok_or(Error::Invariant("address lookup without binding"))?;
@@ -239,9 +239,38 @@ impl Analyzer<'_> {
             }
         }
         if found.is_none() && template {
-            return Err(Error::Missing(
-                "target-directed function template deduction",
-            ));
+            let mut candidates = Vec::new();
+            for index in 0..self.graph.overloads.get(set).len() {
+                let binding = self.graph.overloads.get(set)[index];
+                if self.member_function_owner(binding) != owner {
+                    continue;
+                }
+                if let Some(binding) = self.deduce_function_target(binding, target)?
+                    && self.graph.binding(binding).ty == Some(target)
+                    && !candidates.contains(&binding)
+                {
+                    candidates.push(binding);
+                }
+            }
+            for &binding in &candidates {
+                if let Some(old) = found {
+                    if self.compare_function_templates(binding, old, None)? == Ordering::Greater {
+                        found = Some(binding);
+                    }
+                } else {
+                    found = Some(binding);
+                }
+            }
+            if let Some(best) = found {
+                for binding in candidates {
+                    if binding != best
+                        && self.compare_function_templates(best, binding, None)?
+                            != Ordering::Greater
+                    {
+                        return Ok(None);
+                    }
+                }
+            }
         }
         Ok(found)
     }
@@ -261,6 +290,7 @@ impl Analyzer<'_> {
                 "use of a deleted function",
             ));
         }
+        self.check_specialization_body(binding)?;
         let ty = self
             .graph
             .binding(binding)

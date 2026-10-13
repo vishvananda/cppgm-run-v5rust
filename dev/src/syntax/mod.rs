@@ -28,6 +28,18 @@ use ast::DeclId;
 use storage::List;
 
 /// A source-facing special-member label, never a semantic lookup key.
+pub(crate) fn write_expression_name(
+    tree: &ast::Tree,
+    cursor: &cursor::Cursor<'_>,
+    name: ast::Name,
+    output: &mut (impl std::io::Write + ?Sized),
+) -> std::io::Result<()> {
+    let mut renderer = render::Renderer::new(tree, cursor);
+    renderer.render(render::Render::Name(name, true))?;
+    output.write_all(&renderer.bytes)
+}
+
+/// A source-facing special-member label, never a semantic lookup key.
 pub(crate) fn write_member_label(
     tree: &ast::Tree,
     cursor: &cursor::Cursor<'_>,
