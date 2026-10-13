@@ -1,0 +1,54 @@
+function @overloaded(%value : i32) -> i32 [binding=strong, object=_Z10overloadedi] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    return i32 %t1
+}
+function @overloaded__ov2(%value : i64) -> i64 [binding=strong, object=_Z10overloadedl] {
+  slot $value : i64
+
+  block ^entry:
+    store typed i64 %value, $value
+    %t1 = load typed i64 $value
+    return i64 %t1
+}
+function @operator_(%function : ptr, %value : i32) -> i32 [binding=strong, object=_ZplPFiiE5Value] {
+  slot $function : ptr
+  slot $value : i32
+
+  block ^entry:
+    store typed ptr %function, $function
+    store typed i32 %value, $value
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $function
+    %t3 = call i32 %t2(%t1) as (%arg0 : i32) -> i32
+    return i32 %t3
+}
+function @operator___ov2(%value : i32, %function : ptr) -> i32 [binding=strong, object=_Zpl5ValuePFiiE] {
+  slot $value : i32
+  slot $function : ptr
+
+  block ^entry:
+    store typed i32 %value, $value
+    store typed ptr %function, $function
+    %t1 = load typed i32 $value
+    %t2 = load typed ptr $function
+    %t3 = call i32 %t2(%t1) as (%arg0 : i32) -> i32
+    return i32 %t3
+}
+function @probe(%value : i32) -> i32 [binding=strong, object=_Z5probe5Value] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr @overloaded
+    %t2 = load typed i32 $value
+    %t3 = call i32 @operator_(%t1, %t2)
+    %t4 = load typed i32 $value
+    %t5 = addr @overloaded
+    %t6 = call i32 @operator___ov2(%t4, %t5)
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}

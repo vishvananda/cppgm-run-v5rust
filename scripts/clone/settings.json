@@ -2,6 +2,6 @@
   "checkout": "/home/vishvananda/work/private/v5rust/checkout",
   "reference": "/home/vishvananda/work/references/v5rust-cpp",
   "artifacts": "/home/vishvananda/work/private/v5rust/artifacts/clone",
-  "revision": "905bd7e4412a2d77d88694fe6abc7f3e1c27bce1",
+  "revision": "883778fdfa45d523cf9e135d15169af976f451a8",
   "state_dir": "/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high"
 }

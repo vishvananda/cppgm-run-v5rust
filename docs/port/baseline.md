@@ -1,8 +1,36 @@
 # Frozen preparation baseline
 
-## Current oracle refresh — 2026-10-12
+## Current oracle refresh — 2026-10-13
 
-The current reference is cppgm-extended `0fe8e3b4bde9929c2419fb7906028df83bb17de5` (PR #65, merged).
+The reference is cppgm-extended `883778fdfa45d523cf9e135d15169af976f451a8`,
+merged into main after PR #68 passed the complete GCC/libstdc++ and clang/libc++
+CI matrix. It handles untyped overload-set operands during operator candidate
+collection without changing ordinary comparison or resource qualification rules.
+
+All previous fixed cases are retained. The sixteen new PA7 rejection fixtures
+and two PA12 valid enum/class operator fixtures and their generated references
+are copied into the run and protected manifest. PA7 grows from 198 to 214 cases;
+PA12 grows from 316 to 318. The existing course controls and accumulated Rust
+regressions retain their identities. All nine tool digests and reference source
+hashes are refreshed; only the C++ compiler binary changes.
+
+Before restart, the sixteen previously blocked operator probes pass exact
+protected comparisons against the updated oracle. Their raw receipts and the
+before/after manifest record are retained under
+`artifacts/observer/baseline-883778fd/`. PA7 passes 214/214, its full course lane passes 346/346, and PA1–PA6
+differential and course lanes pass before the audit resumes. Upstream validation and the PA35 hardware
+measurements are recorded in the reference's
+`docs/v5/untyped-operator-operands.md`; no measurable performance regression was
+found on the frozen O0/O3 workload.
+
+Old C1/C2 receipts below remain historical. The cached bootstrap workspace and
+generations are archived as `obj/bootstrap-before-883778fd/`, so PA34 must copy
+the updated reference fixtures and rebuild the complete fixed-point proof. This
+baseline update does not mark the Rust audit complete or advance Ralph's state.
+
+## Previous oracle refresh — 2026-10-12
+
+The reference at that refresh was cppgm-extended `0fe8e3b4bde9929c2419fb7906028df83bb17de5` (PR #65, merged).
 It fixes speculative template failures being reused across different name
 interpretations. The key now includes the selected conflict category,
 alternative-reading mode, and following-call requirement. Argument parsing

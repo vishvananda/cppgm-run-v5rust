@@ -2,8 +2,26 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753` (clean call/conversion acceptance audit entry).
-Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (call/conversion/association source, complete due lanes and resource evidence reviewed; full-stage acceptance pending frozen-oracle baseline disposition). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
+Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (call/conversion/association source, complete due lanes and resource evidence reviewed; full-stage acceptance pending resumed audit of the refreshed 883778fd baseline). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
 
+
+## Owner-authorized oracle resolution — 2026-10-13
+
+The frozen C++ reference is now `883778fdfa45d523cf9e135d15169af976f451a8`
+(PR #68, CI passed and merged into main). The null-type operator-candidate bug
+reported below is fixed. The sixteen retained reproducer sources all pass the
+protected adapter's exact comparison; a crash is still an invalid outcome.
+
+The protected PA7 gate retains all 198 earlier identities and adds the sixteen
+new rejection regressions (214/214 passing); the full course lane passes 346/346
+and completed PA1–PA6 differential and course lanes remain green. PA12 adds two target-directed operator
+regressions in its owning lane (318 total). C++ source/tool hashes and contract
+pins are refreshed together, while the Rust compiler source and ordinary
+acceptance rules are unchanged. See `baseline.md` and
+`artifacts/observer/baseline-883778fd/` for the update and verification evidence.
+The earlier impasse record is historical; resume the PA7 audit against this
+reference and verify its acceptance obligations rather than repeating the
+old crashing-oracle disposition. Ralph still owns goal and phase advancement.
 
 ## Completion audit: frozen baseline impasse — 2026-10-13
 
