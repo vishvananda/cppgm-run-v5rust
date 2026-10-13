@@ -4,7 +4,7 @@ dev/abimangle.cpp		pending
 dev/cppgm++-scaffold.cpp		pending
 dev/cppgm++.cpp	dev/bin/cppgm.rs,dev/bin/source_tool/build_time.rs,dev/src/driver/ast.rs	partial overall; PA5 responsibilities complete: PA5 AST invocation, per-file source/syntax ownership, output order/failure and exact located errors; other emit/driver/hosted/options/statistics paths pending; PA6 typed --emit-types mode, duplicate emit-option rejection and parse-once semantic/dump source loop translated; partial assignment boundary recorded in docs/port/pa6.md; PA7 scalar checkpoint: --emit-semantics selection, mutual exclusion of all three emit modes, one parsed unit and typed analyzer mode; semantic output retains source ordering and wrapper/error behavior; PA7 ordinary calls/overloads run in the Rust semantic owners below; later compiler modes remain pending
 dev/lowir-scaffold.cpp		pending
-dev/lowir.cpp		pending
+dev/lowir.cpp	dev/bin/lowir.rs,dev/src/driver/lowir.rs,dev/src/lowir/mod.rs	partial PA8: exact basic invocation/help/batch scaffold routing; typed file-order roundtrip and output failures; exercises and statistics remain status 86
 dev/lowir2native-scaffold.cpp		pending
 dev/lowir2native.cpp		pending
 dev/lowiropt-scaffold.cpp		pending
@@ -32,7 +32,7 @@ dev/src/driver/host_environment.cpp		pending
 dev/src/driver/host_environment.h		pending
 dev/src/driver/toolchain.cpp		pending
 dev/src/driver/toolchain.h		pending
-dev/src/ir_symbol_model.h		pending
+dev/src/ir_symbol_model.h	dev/src/lowir/vocabulary.rs,dev/src/lowir/model.rs	partial PA8: all symbol roles, function binding/linkage/boundary/passing/alias and projection vocabulary; typed facts and compact symbol flags; global storage, TLS and object ABI classes pending
 dev/src/lex/gnu_builtins.cpp	dev/src/lex/gnu_keywords.rs	partial: all 17 unconditional syntax keyword aliases and dropped names translated; hosted builtin/probe/trait registries remain later-stage responsibilities
 dev/src/lex/gnu_builtins.h	dev/src/lex/gnu_keywords.rs	partial: typed syntax keyword/drop vocabulary translated; builtin signatures and trait/transform interfaces remain later-stage responsibilities
 dev/src/lex/identifier_table.cpp	dev/src/lex/identifiers.rs,dev/src/lex/vocabulary.rs	partial: private name store and compact published NameId; keyword conversion shared; later GNU/role metadata pending
@@ -92,33 +92,33 @@ dev/src/lower/tracked_lifetime_lowering.cpp		pending
 dev/src/lower/vector_lowering.cpp		pending
 dev/src/lower/virtual_base_lowering.cpp		pending
 dev/src/lower/vtable_lowering.cpp		pending
-dev/src/lowir/builder.cpp		pending
-dev/src/lowir/builder.h		pending
+dev/src/lowir/builder.cpp	dev/src/lowir/model.rs	partial PA8: function-owned checked temp/slot/block/instruction IDs, parameter initialization, forward local identity, append/bind, compact integer literal pool and incremental temporary use counts; insertion, generated names, calls, floating literal records and locations pending
+dev/src/lowir/builder.h	dev/src/lowir/model.rs	partial PA8: private typed function-body store APIs and operand/target visitors; general construction API and later mutation interfaces pending
 dev/src/lowir/exercises.cpp		pending
 dev/src/lowir/exercises.h		pending
-dev/src/lowir/instruction.h		pending
-dev/src/lowir/literals.cpp		pending
-dev/src/lowir/literals.h		pending
+dev/src/lowir/instruction.h	dev/src/lowir/model.rs	partial PA8: exhaustive typed payloads for integer/control-flow/address/scalar and bulk memory instructions; compact instruction facts; remaining opcode payloads and debug facts pending
+dev/src/lowir/literals.cpp	dev/src/lowir/instructions.rs,dev/src/lowir/writer.rs	partial PA8: decimal/octal/hex integer scanning modulo 128 bits, narrow sign extension, context-width signed/unsigned decimal writing and nullptr; floating parse/bits/serialization pending
+dev/src/lowir/literals.h	dev/src/lowir/vocabulary.rs,dev/src/lowir/instructions.rs,dev/src/lowir/writer.rs	partial PA8: typed function-owned compact integer LiteralIds and named-literal recognition; floating APIs pending
 dev/src/lowir/local_kinds.h		pending
-dev/src/lowir/local_names.cpp		pending
-dev/src/lowir/local_names.h		pending
-dev/src/lowir/name_table.cpp		pending
-dev/src/lowir/name_table.h		pending
-dev/src/lowir/program.cpp		pending
-dev/src/lowir/program.h		pending
-dev/src/lowir/text_lexer.cpp		pending
-dev/src/lowir/text_lexer.h		pending
-dev/src/lowir/text_parser.cpp		pending
-dev/src/lowir/text_parser.h		pending
-dev/src/lowir/text_parser_body.cpp		pending
-dev/src/lowir/text_reader.cpp		pending
-dev/src/lowir/text_reader.h		pending
-dev/src/lowir/text_writer.cpp		pending
-dev/src/lowir/text_writer.h		pending
-dev/src/lowir/types.h		pending
-dev/src/lowir/validator.cpp		pending
-dev/src/lowir/validator.h		pending
-dev/src/lowir_model.h		pending
+dev/src/lowir/local_names.cpp	dev/src/lowir/writer.rs	partial PA8: plain explicit parameter/temp/slot/block names retained byte-exactly; generated kinds, collision avoidance and unnamed construction names pending
+dev/src/lowir/local_names.h	dev/src/lowir/writer.rs	partial PA8: typed-ID plain-name writer; generated name state pending
+dev/src/lowir/name_table.cpp	dev/src/lowir/model.rs	partial PA8: unit-owned interned ASCII word/name spelling, shared Arc storage and compact IDs; empty sentinel, vocabulary-preinterning statistics and arbitrary debug file bytes pending
+dev/src/lowir/name_table.h	dev/src/lowir/model.rs	partial PA8: private typed interner ownership/API; later name statistics and byte spellings pending
+dev/src/lowir/program.cpp	dev/src/lowir/model.rs	partial PA8: function declarations/definitions and declaration-order index; unit-wide symbols/forward call boundaries/globals/builtin predicates pending
+dev/src/lowir/program.h	dev/src/lowir/model.rs	partial PA8: one typed unit and per-function bodies; typed signatures/parameters/facts retained directly; remaining program records pending
+dev/src/lowir/text_lexer.cpp	dev/src/lowir/lexer.rs	partial PA8: on-demand one-token borrowed scanning, all ordinary words/names/numbers/punctuation, obj type words, exact ASCII whitespace/comments and malformed character diagnostics; debug scanner pending
+dev/src/lowir/text_lexer.h	dev/src/lowir/lexer.rs	partial PA8: borrowed token/current cursor and typed token kinds; debug record fields pending
+dev/src/lowir/text_parser.cpp	dev/src/lowir/reader.rs,dev/src/lowir/instructions.rs	partial PA8: exact function/signature/parameter grammar, scalar/object types and conservative positive-integer parser; typed function and parameter metadata, legacy roles and ordered duplicate failures; globals/aliases/call signatures/classes/debug pending
+dev/src/lowir/text_parser.h	dev/src/lowir/reader.rs,dev/src/lowir/instructions.rs	partial PA8: Result grammar interfaces and source/line error ownership; each input read once with one current token and interned retained spelling; remaining grammar pending
+dev/src/lowir/text_parser_body.cpp	dev/src/lowir/reader.rs,dev/src/lowir/instructions.rs	partial PA8: slots, block layout/targets/terminators, forward temps/blocks, integer operations/conversions/select/phi/switch, ordered facts, scalar and bulk memory grammar; calls/atomics/varargs/EH/debug pending
+dev/src/lowir/text_reader.cpp	dev/src/lowir/mod.rs	partial PA8: bulk input reads in command-line order into one typed unit, followed by one validation and streaming serialization; parse/validate statistics pending
+dev/src/lowir/text_reader.h	dev/src/lowir/mod.rs	partial PA8: shared typed file-roundtrip entry; construction/text APIs and statistics pending
+dev/src/lowir/text_writer.cpp	dev/src/lowir/writer.rs	partial PA8: bounded streaming writer over retained typed facts, exact declarations-before-definitions ordering and whitespace for plain named function core; all supported integer/CFG/memory payloads; remaining records and generated names pending
+dev/src/lowir/text_writer.h	dev/src/lowir/writer.rs	partial PA8: typed program-to-sink API with Result I/O; definition streaming/later output interfaces pending
+dev/src/lowir/types.h	dev/src/lowir/vocabulary.rs	partial PA8: all scalar type identities, object extent/alignment and integer/float rank facts; later scalar memory-alignment consumers pending
+dev/src/lowir/validator.cpp	dev/src/lowir/validator.rs,dev/src/lowir/model.rs	partial PA8: singleton function roles/legacy role demand, exact layout-order temporary uses, phi placement/deduplicated predecessors/type constraints, integer width conversions/select/unary/fact/return checks; calls/TLS/global/EH and general construction checks pending
+dev/src/lowir/validator.h	dev/src/lowir/validator.rs	partial PA8: typed scalar-function validation with original instruction/source locations; constructed-program/general symbol APIs pending
+dev/src/lowir_model.h	dev/src/lowir/vocabulary.rs,dev/src/lowir/model.rs	partial PA8: scalar/object types and complete unary/binary/comparison/conversion vocabulary; typed integer/CFG/scalar and bulk memory payloads; atomic/EH/varargs vocab and payloads pending
 dev/src/mir_model.h		pending
 dev/src/native/backend.cpp		pending
 dev/src/native/backend.h		pending
@@ -368,7 +368,7 @@ dev/src/support/stack_budget.h	dev/src/support/stack.rs,dev/bin/source_tool/stac
 dev/src/support/telemetry.h		pending
 dev/src/support/testing/test_runner.cpp		pending
 dev/src/support/tool_errors.h		pending
-dev/src/support/tool_help_text.h		pending
+dev/src/support/tool_help_text.h	dev/src/driver/lowir.rs	partial: exact PA8 lowir help text; other tool help responsibilities pending in this map row
 dev/src/support/unicode/utf8.cpp	dev/src/support/unicode.rs	complete
 dev/src/support/unicode/utf8.h	dev/src/support/unicode.rs	complete
 dev/src/syntax/ast.h	dev/src/syntax/ast.rs,dev/src/syntax/storage.rs	partial overall; PA5 responsibilities complete: unit-owned typed slabs and compact lists, located templates/packs and attributes with typed ExprId/TypeId operands, form/site enums and ABI-tag grouping; typed lambda/capture/body stores with transactional marks; later facts pending; located typed specifier/qualifier/initializer payloads share the owning slabs and marks; parameter/enum/ctor source facts and class/init-declarator token spans translated; direct PA5 header review: source-faithful due variant/location/operand ownership checked; using-declaration typename fact belongs to DeclKind::Using separately from target Name; existing class/token span facts now consumed by PA6 anonymous presentation; no parser or token ownership change

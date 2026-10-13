@@ -1,0 +1,132 @@
+//! `LowIR` scalar and operation vocabulary, translated from `lowir_model.h`. See NOTICE.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Type {
+    Void,
+    I1,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    I128,
+    F32,
+    F64,
+    F80,
+    Ptr,
+    Object { bytes: u64, align: u8 },
+}
+impl Type {
+    pub(super) fn scalar(text: &str) -> Option<Self> {
+        Some(match text {
+            "void" => Self::Void,
+            "i1" => Self::I1,
+            "i8" => Self::I8,
+            "u8" => Self::U8,
+            "i16" => Self::I16,
+            "u16" => Self::U16,
+            "i32" => Self::I32,
+            "u32" => Self::U32,
+            "i64" => Self::I64,
+            "i128" => Self::I128,
+            "f32" => Self::F32,
+            "f64" => Self::F64,
+            "f80" => Self::F80,
+            "ptr" => Self::Ptr,
+            _ => return None,
+        })
+    }
+    pub(super) fn bits(self) -> u32 {
+        match self {
+            Self::I1 => 1,
+            Self::I8 | Self::U8 => 8,
+            Self::I16 | Self::U16 => 16,
+            Self::I32 | Self::U32 => 32,
+            Self::I64 => 64,
+            Self::I128 => 128,
+            _ => 0,
+        }
+    }
+    pub(super) fn float_rank(self) -> u8 {
+        match self {
+            Self::F32 => 1,
+            Self::F64 => 2,
+            Self::F80 => 3,
+            _ => 0,
+        }
+    }
+}
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Void => "void",
+            Self::I1 => "i1",
+            Self::I8 => "i8",
+            Self::U8 => "u8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::I32 => "i32",
+            Self::U32 => "u32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::F80 => "f80",
+            Self::Ptr => "ptr",
+            Self::Object { bytes, align } => return write!(f, "obj<{bytes}x{}>", 1_u64 << align),
+        };
+        f.write_str(text)
+    }
+}
+// These paired tables are the shared reader/writer vocabulary, not implementation fragments.
+macro_rules! vocabulary {
+    ($name:ident { $($variant:ident => $word:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(super) enum $name { $($variant),+ }
+        impl $name {
+            pub(super) fn parse(text: &str) -> Option<Self> {
+                match text { $($word => Some(Self::$variant),)+ _ => None }
+            }
+            pub(super) fn spelling(self) -> &'static str {
+                match self { $(Self::$variant => $word,)+ }
+            }
+        }
+    };
+}
+vocabulary!(Unary { Neg => "neg", Not => "not", BitNot => "bitnot", ByteSwap => "bswap", Ctz => "ctz", Clz => "clz" });
+vocabulary!(Binary { Add => "add", Sub => "sub", Mul => "mul", Div => "div", Mod => "mod", UDiv => "udiv", UMod => "umod", And => "and", Or => "or", Xor => "xor", Shl => "shl", Shr => "shr", UShr => "ushr" });
+vocabulary!(Compare { Eq => "eq", Ne => "ne", Lt => "lt", Le => "le", Gt => "gt", Ge => "ge", Ult => "ult", Ule => "ule", Ugt => "ugt", Uge => "uge" });
+vocabulary!(Convert { SignExtend => "sext", ZeroExtend => "zext", Truncate => "trunc", SignedToFloat => "sitofp", UnsignedToFloat => "uitofp", FloatToSigned => "fptosi", FloatToUnsigned => "fptoui", FloatExtend => "fpext", FloatTruncate => "fptrunc" });
+vocabulary!(Role {
+    Entry => "entry", Init => "init", Fini => "fini",
+    EhAllocateException => "eh_allocate_exception", EhBeginCatch => "eh_begin_catch",
+    EhEndCatch => "eh_end_catch", EhRethrow => "eh_rethrow", EhThrow => "eh_throw",
+    EhPersonality => "eh_personality", EhResume => "eh_resume", AllocateMemory => "allocate_memory",
+    FreeMemory => "free_memory", Terminate => "terminate", PureVirtual => "pure_virtual",
+    DynamicCast => "dynamic_cast", BadCast => "bad_cast", BadTypeId => "bad_typeid",
+    RttiClass => "rtti_class", RttiSi => "rtti_si", RttiVmi => "rtti_vmi", RttiData => "rtti_data",
+    BadArrayNewLength => "bad_array_new_length", RttiPointer => "rtti_pointer",
+});
+impl Role {
+    pub(super) fn global(self) -> bool {
+        matches!(
+            self,
+            Self::RttiClass | Self::RttiSi | Self::RttiVmi | Self::RttiData | Self::RttiPointer
+        )
+    }
+}
+pub(super) fn named_literal(text: &str) -> bool {
+    if text == "nullptr" {
+        return true;
+    }
+    if matches!(text, "inf" | "INFINITY" | "nan" | "NAN" | "snan" | "SNAN") {
+        return true;
+    }
+    let base = text.strip_suffix(['f', 'F', 'l', 'L']).unwrap_or(text);
+    matches!(base, "inf" | "INFINITY" | "nan" | "NAN" | "snan" | "SNAN")
+}
+vocabulary!(Binding { Internal => "internal", Strong => "strong", Weak => "weak" });
+vocabulary!(Effects { ReadNone => "readnone", ReadOnly => "readonly" });
+vocabulary!(Pass { IndirectResult => "indirect_result", ByAddress => "by_address" });
+vocabulary!(Projection { ArrayElement => "array_element", Field => "field" });

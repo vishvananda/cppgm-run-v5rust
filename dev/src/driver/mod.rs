@@ -26,3 +26,4 @@ pub enum TokenToolError {
 }
 
 pub mod ast;
+pub mod lowir;
