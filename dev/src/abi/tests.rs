@@ -206,3 +206,80 @@ fn expression_identity_retains_operands_and_id_expression_category() {
     .unwrap();
     assert_eq!(out, b"Aplfp_Li1E_i");
 }
+
+#[test]
+fn local_scope_identity_and_closure_signature_survive_store_growth() {
+    let mut graph = Graph::default();
+    let int = graph.intern(Node::Builtin(Builtin::Int), &[]).unwrap();
+    let text = graph.string(b"f").unwrap();
+    let name = graph.name(None, text, &[]).unwrap();
+    let encoding = graph
+        .intern(
+            Node::Function {
+                name,
+                result: None,
+                qualifiers: Qualifiers::default(),
+                variadic: false,
+            },
+            &[int],
+        )
+        .unwrap();
+    let scope = Node::FunctionScope {
+        encoding,
+        default_argument: 0,
+    };
+    let first = graph.intern(scope, &[]).unwrap();
+    assert_eq!(first, graph.intern(scope, &[]).unwrap());
+    let default_argument = graph
+        .intern(
+            Node::FunctionScope {
+                encoding,
+                default_argument: 2,
+            },
+            &[],
+        )
+        .unwrap();
+    assert_ne!(first, default_argument);
+    let closure = graph
+        .intern(
+            Node::ClosureName {
+                number: 1,
+                variadic: true,
+            },
+            &[int],
+        )
+        .unwrap();
+    let local = Node::Name {
+        parent: Some(default_argument),
+        terminal: closure,
+        internal: false,
+        occurrence: 11,
+    };
+    let ty = graph.intern(local, &[]).unwrap();
+    let other = graph
+        .intern(
+            Node::Name {
+                parent: Some(default_argument),
+                terminal: closure,
+                internal: false,
+                occurrence: 10,
+            },
+            &[],
+        )
+        .unwrap();
+    assert_ne!(ty, other);
+    for index in 0..4096 {
+        graph.string(index.to_string().as_bytes()).unwrap();
+    }
+    assert_eq!(graph.items(closure), &[int]);
+    assert_eq!(ty, graph.intern(local, &[]).unwrap());
+    let mut output = Vec::new();
+    Encoder::encode(
+        &graph,
+        Target::Type(ty),
+        &mut output,
+        StackBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(output, b"Z1fiEd0_UlizE0___10_");
+}

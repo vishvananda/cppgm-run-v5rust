@@ -33,6 +33,7 @@ pub(super) struct FunctionFacts {
     params: Vec<NodeId>,
     variadic: bool,
     qualifiers: Qualifiers,
+    generated_lambda: bool,
 }
 impl CaseReader<'_, '_> {
     pub(super) fn entity_definition(
@@ -47,7 +48,10 @@ impl CaseReader<'_, '_> {
                     return Ok(id);
                 }
                 let Node::Name {
-                    parent, terminal, ..
+                    parent,
+                    terminal,
+                    occurrence,
+                    ..
                 } = self.graph.get(id)
                 else {
                     return Err(Error::StorageLimit);
@@ -58,6 +62,7 @@ impl CaseReader<'_, '_> {
                         parent,
                         terminal,
                         internal: true,
+                        occurrence,
                     },
                     &tags,
                 );
@@ -152,24 +157,28 @@ impl CaseReader<'_, '_> {
             function.structured = true;
             return Ok(function);
         }
-        if matches!(form, b"local" | b"lambda") {
-            return Err(Error::NotImplemented(
-                "local and lambda ABI function contexts",
-            ));
-        }
-        if form == b"namespace-lambda" {
+        if matches!(form, b"local" | b"lambda" | b"namespace-lambda") {
+            let terminal_word = if form == b"namespace-lambda" { 2 } else { 3 };
             let terminal = words
-                .get(2)
+                .get(terminal_word)
                 .and_then(|word| Terminal::from_word(word))
                 .ok_or_else(|| {
-                    self.error(
-                        line,
-                        "namespace-lambda function target has invalid operands",
-                    )
+                    self.word_error(line, "", form, " function target has invalid operands")
                 })?;
-            let parent = self.namespace_path(line, &words[3..])?;
-            let name = self.graph.string(words[1])?;
-            function.scope = Some(self.graph.name(parent, name, &[])?);
+            function.scope = Some(match form {
+                b"local" => {
+                    if words.len() != 5 {
+                        return Err(self.error(line, "local function target has invalid operands"));
+                    }
+                    self.local_entity(line, words[1], words[2], words[4])?
+                }
+                b"lambda" => self.closure_entity(line, words[1], words[2], &words[4..])?,
+                _ => {
+                    let parent = self.namespace_path(line, &words[3..])?;
+                    let name = self.graph.string(words[1])?;
+                    self.graph.name(parent, name, &[])?
+                }
+            });
             function.terminal = Some(TerminalFact::Fixed(terminal));
             function.terminal_records = 1;
             function.context_records = 1;
@@ -305,7 +314,7 @@ impl CaseReader<'_, '_> {
             b"name-source" | b"name-std" | b"name-template" | b"component-abi-tag" => {
                 self.name_record(line, &words, function)?;
             }
-            b"namespace-lambda-context" => {
+            b"local-context" | b"lambda-context" | b"namespace-lambda-context" => {
                 if !function.structured {
                     return Err(self.error(
                         line,
@@ -321,15 +330,33 @@ impl CaseReader<'_, '_> {
                 {
                     return Err(self.error(line, "a local context cannot follow name components"));
                 }
-                if words.len() < 2 {
-                    return Err(self.error(line, "namespace-lambda-context needs a source name"));
-                }
-                let parent = self.namespace_path(line, &words[2..])?;
-                let name = self.graph.string(words[1])?;
-                function.scope = Some(self.graph.name(parent, name, &[])?);
-            }
-            b"local-context" | b"lambda-context" => {
-                return Err(Error::NotImplemented("local ABI function records"));
+                function.scope = Some(match words[0] {
+                    b"local-context" => {
+                        if words.len() != 4 {
+                            return Err(self.error(line, "local-context has invalid operands"));
+                        }
+                        function.generated_lambda = words[2].starts_with(b"$_")
+                            && words[2].len() >= 3
+                            && words[2][2..].iter().all(u8::is_ascii_digit);
+                        self.local_entity(line, words[1], words[2], words[3])?
+                    }
+                    b"lambda-context" => {
+                        if words.len() < 3 {
+                            return Err(self.error(line, "lambda-context has invalid operands"));
+                        }
+                        self.closure_entity(line, words[1], words[2], &words[3..])?
+                    }
+                    _ => {
+                        if words.len() < 2 {
+                            return Err(
+                                self.error(line, "namespace-lambda-context needs a source name")
+                            );
+                        }
+                        let parent = self.namespace_path(line, &words[2..])?;
+                        let name = self.graph.string(words[1])?;
+                        self.graph.name(parent, name, &[])?
+                    }
+                });
             }
             _ => return Err(self.word_error(line, "unknown ABI function record '", words[0], "'")),
         }
@@ -514,6 +541,12 @@ impl CaseReader<'_, '_> {
         mut function: FunctionFacts,
     ) -> Result<NodeId, Error> {
         self.graph.drop_void(&mut function.params);
+        if function.terminal.is_none()
+            && function.generated_lambda
+            && matches!(function.final_component, Component::Missing)
+        {
+            function.terminal = Some(TerminalFact::Fixed(Terminal::Call));
+        }
         let mut scope = function.scope;
         let mut component_tags = function.component_tags;
         let mut component = if let Some(terminal) = function.terminal {

@@ -159,8 +159,11 @@ impl CaseReader<'_, '_> {
                     &[],
                 );
             }
-            b"lambda-closure" | b"local-type" => {
-                return Err(Error::NotImplemented("local ABI types"));
+            b"lambda-closure" if words.len() == 3 => {
+                return self.closure_entity(line, words[1], words[2], &[]);
+            }
+            b"local-type" if words.len() == 4 => {
+                return self.local_entity(line, words[1], words[2], words[3]);
             }
             _ => {}
         }

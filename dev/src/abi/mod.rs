@@ -1,6 +1,7 @@
 //! Typed Itanium ABI graph and name construction. See NOTICE.
 
 pub mod encoder;
+mod fact_contexts;
 mod fact_expressions;
 mod fact_functions;
 mod fact_types;

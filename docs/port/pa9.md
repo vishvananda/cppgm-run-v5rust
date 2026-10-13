@@ -3,6 +3,149 @@
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
 Last audited commit: INITIAL (implementation does not advance this field).
 
+## Local function scopes, closures and substitution checkpoint — 2026-10-13
+
+Entry HEAD: `b7157ce279dc11279447508f2c2d22178c326f18`, clean checkout.
+The previous goal turn was **progress**: its committed dependent-expression
+translation established the verified 108/119 baseline. No interrupted
+compiler/checker process was live at entry. Stage base and last-audited commit
+above remain unchanged; implementation does not advance audit state.
+
+This coherent local-context group moves the unchanged fixed manifest from
+**108/119 to 119/119**, reducing failures **11 → 0** and preserving **108/108**
+previously passing identities. The owning course suite also passes 119/119.
+This is an implementation checkpoint, not full PA9 acceptance: statistics
+and later compiler-producer interfaces still need translation and review.
+Ralph owns checkpoint/final audits and stage advancement.
+
+### C++ owners, typed flow and architecture review
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the owning PA9 handout,
+rust-clone-plan.md and the stage ledger. Consulted the frozen production
+implementation directly in `/home/vishvananda/work/references/v5rust-cpp/`:
+`dev/src/abi/facts/abi_fact_definitions.cpp` (`read_context_definition`,
+`local_entity`, `closure_entity`, generated-lambda recognition),
+`abi_fact_reader.cpp`/`abi_fact_case.h` (function targets, context records,
+terminal selection and function-entity construction), and
+`dev/src/abi/itanium/abi_graph.{h,cpp}`/`abi_encoder.{h,cpp}` (scope/name/closure
+identity, contexts, local/nested names, whole-entity discriminators, prefix
+sharing and closure signatures). Protected raw traces showed all eleven
+failures stopped at a reader status-86 path, before encoding.
+
+| C++ responsibility | Rust owner and invariant |
+| --- | --- |
+| Context definitions and local/closure type facts | `abi/fact_contexts.rs`, `abi/facts.rs`, `abi/fact_types.rs`: one parse at the explicit tool boundary; function and opaque raw scopes enter the existing Unstarted/InProgress/Complete resolution, including forward binders and cycles. Local occurrences are validated indices; closure number and ordered signature facts remain typed. A sole void parameter is normalized away. |
+| Local/lambda function targets and component records | `abi/fact_functions.rs`: C++ arity, terminal-before-context validation and diagnostic order; structured context-kind/name-component restrictions; default call terminal only for a `$_` name followed entirely by decimal digits. Ordinary function qualifiers, parameters, results, tags and template arguments reuse the existing builders. |
+| Canonical scope, local-name and closure ownership | `abi/graph.rs`: immutable function/raw scope nodes, default-argument identity, local occurrence, closure number/variadic bit and graph-owned ordered signature spans. Canonical equality and substitution use compact IDs; neither binder spelling nor a rendered context identifies a semantic fact. Tagging preserves occurrence fields. No owning recursive edges or recursive drop. |
+| Local/context/nested-name emission | `abi/encoder.rs`: nested function encodings share the enclosing name's dictionary. Function scopes never become prefix substitution candidates. Local discriminators follow the entire entity/member terminal; short and long forms split at number 10. Known prefixes permit ordinary nested names. Prefix/type chains remain iterative; closure parameter types participate in exact substitution order. Default-argument and variadic-closure typed fields are encoded directly. The C++ decltype prefix-root production is also translated. |
+
+`fact_contexts.rs` owns the local scope/type fact responsibility, rather than
+splitting the function reader mechanically. `source-map.tsv` records all
+translated standalone fact productions and keeps statistics/producer APIs
+partial. The graph still owns flat node/text/edge stores, private compact IDs
+and checked spans. Case resolution and encoding scratch die at their original
+boundaries; no text transport, semantic reparse, global scan, new dependency,
+unsafe/FFI code, compiler fallback or generated-code optimization was added.
+The new ownership test checks canonical scope identity, default-argument and
+occurrence distinctions, closure signature stability after graph growth, and
+variadic/default-argument emission. Source limits and architecture review
+remain part of the companion audit.
+
+A genuine stack byte budget also guards recursive context encoding. No probe
+calibrates a C++ exhaustion cutoff or diagnostic position. Supported nested
+context probes (8/32/128 levels) all succeed and match. Resource-limited
+source-driver probes remain governed by the protected adapter's `match` and
+`stack_qualification` receipt. The supported ABI probes here did not exhaust
+native stack and required no qualification.
+
+Optimizer, register allocator, backend and source-driver implementations were
+untouched. PA9 produces ABI names; these checks make no object-byte or PA34
+bootstrap claim. PA35 code-generation improvement targets remain out of scope.
+
+### Validation and retained evidence
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa9-contexts-20261013/`.
+The implementation commit is the commit containing this entry; its hash and
+clean status are recorded in external `handoff.json`. `source-hashes.json`
+records final Rust and reviewed C++ source identities. Generated artifacts,
+logs, fixtures for supplemental probes and binaries are not committed.
+
+| Command/evidence | Result |
+| --- | --- |
+| `make build` | PASS; optimized workspace build, `build.log`/`build-final.log`. |
+| `make test-pa9` / required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa9` | PASS **119/119**, `stage.log`, `stage-final.log`, `stage.json`. `turn-start-results.json` and `progress.json` prove the same 119 identities and manifest SHA, eleven gains and zero lost identities. |
+| `make course-pa9` | PASS **119/119**, exit 0, no failure marker; `course.log`, `gate-snapshot/course-pa9/test/course-result.json` and `counts.txt`. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa9` | PASS; PA1 58/58, PA2 26/26, PA3 20/20, PA4 106/106, PA5 196/196, PA6 121/121, PA7 214/214, PA8 125/125; all owning course suites PASS. `prior.log`, `prior-summary.json`, retained per-stage results and course receipts. |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict all/pedantic Clippy, debug/release workspace tests (202 library tests), file/layout checks. `lint-final.log`. |
+| `make audit-rust` | PASS, 161 files, zero findings; `audit-final.log`. |
+| Protected `clone_check.py preflight pa9` / `preserve pa9` | PASS; `preflight.log`, `preserve.log`. Identity comparison independently proves all 108 entry passes retained. |
+| Supplemental protected-adapter probes | **119/119 exact matches**, `probes.py`, `probe-*.facts`, `probes.log`, `probes.trace.jsonl`: local/raw/lambda contexts, short/long discriminators, index bounds, closures/signatures, generated-name defaults, repeated/equivalent/distinct contexts, nested member/template substitutions, entities, qualifier/terminal restrictions, cycles and malformed-record error precedence. |
+
+`gate-snapshot/cases-pa9/` retains every fixed per-case course log and protected
+receipt with raw streams and output hashes; traces also remain under
+`/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa9/`.
+`stage.json` maps identities to those paths. The existing empty-output adapter
+defect is documented in the earlier checkpoint; no checker/oracle/policy
+change was made here.
+
+### Compile-time, RSS and scaling
+
+`scaling.py`, fixed generated `.facts` inputs, `scaling.trace.jsonl`,
+`scaling.log` and `scaling.json` retain digests, two oracle warmups and paired
+ABBA runs. **9/9 protected comparisons** and all **72 measured invocations**
+succeed with byte-identical outputs. Values are candidate median process
+latency (ms) / maximum RSS (KiB), from four observations per row; they include
+process/timing-wrapper costs and are observations rather than equality gates.
+
+| Supported fact count | Distinct local types, each used twice | Closure signature parameters | Member prefixes under a local type |
+| --- | --- | --- | --- |
+| 4,000 | 9.434 / 4,316 | 6.156 / 2,268 | 8.280 / 3,632 |
+| 8,000 | 17.564 / 6,416 | 9.829 / 2,960 | 11.104 / 5,016 |
+| 16,000 | 34.162 / 10,652 | 16.069 / 3,644 | 21.993 / 7,164 |
+
+Growth is approximately linear on these supported input families. Local type
+resolution uses direct binder lookup; prefix construction refers to already
+resolved predecessors and the encoder walks the final chain iteratively.
+This does not claim arbitrary deep-forward-demand or nested-context scaling.
+The initial optimized workspace build after the group took 18.41 seconds in
+`build.log`; ABI measurements above observe the new supported hot paths.
+
+### Exact fixed gains, remaining work and next boundary
+
+No fixed PA9 case IDs remain failing. The exact eleven recovered IDs, relative
+to `pa9/`, are:
+
+- `tests/abi/200-lambda-closure-type.t`
+- `tests/abi/200-local-class-call-operator.t`
+- `tests/abi/200-local-context-destructor-discriminator.t`
+- `tests/abi/200-local-context-destructor-terminal.t`
+- `tests/abi/200-local-context-lambda-substitution-order.t`
+- `tests/abi/200-member-lambda-call-operator.t`
+- `tests/abi/200-raw-lambda-context-function.t`
+- `tests/abi/200-raw-local-context-function.t`
+- `tests/abi/600-function-local-class-template-arg.t`
+- `tests/abi/600-function-template-local-class-arg.t`
+- `tests/abi/600-function-template-local-lambda-arg.t`
+
+The **standalone local-context group is done**, including related signature,
+discriminator and shared-prefix rules beyond the fixed failures. The next
+coherent boundary is **ABI tool statistics**: translate `abi_stats.h`, reader
+and encoder work counts and storage observations through typed optional
+telemetry to `driver/abimangle.rs`; `--stats` still returns explicit status 86.
+Retain real Rust allocation observations. Review the protected comparator's
+`peak_graph_bytes` treatment before comparing implementation-specific storage,
+without fabricating C++ sizes or changing acceptance policy.
+
+Later compiler-only graph/encoder interfaces remain partial: implicit/hidden
+ABI tags and tag memos, standard-abbreviation derivation, data-member closure
+prefixes, unnamed/decomposition names, template-parameter declarations and
+advanced expression/literal/target forms previously listed in this ledger.
+They are distinct from the standalone reader's translated productions and
+must have owners and exact evidence before their producer milestones. Full
+PA9 audit should inspect statistics, typed producer coverage and the raw I/O
+boundaries before advancement; fixture counts alone do not certify the stage.
+
 ## Dependent expression identity and encoding checkpoint — 2026-10-13
 
 Entry HEAD: `8f54cbd0ba680cb0f7f6120edbc3564f72b31297`, clean checkout.

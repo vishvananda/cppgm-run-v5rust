@@ -93,10 +93,23 @@ pub enum Node {
     None,
     Text,
     Std,
+    FunctionScope {
+        encoding: NodeId,
+        /// Zero for an ordinary scope; otherwise default parameter index plus one.
+        default_argument: u32,
+    },
+    RawFunctionScope(NodeId),
     Name {
         parent: Option<NodeId>,
         terminal: NodeId,
         internal: bool,
+        /// Number of earlier entities with this name directly in the function.
+        occurrence: u32,
+    },
+    ClosureName {
+        /// Zero when omitted; otherwise the Itanium closure number plus one.
+        number: u32,
+        variadic: bool,
     },
     Terminal {
         kind: Terminal,
@@ -294,6 +307,7 @@ impl Graph {
                 parent,
                 terminal,
                 internal: false,
+                occurrence: 0,
             },
             &sorted,
         )

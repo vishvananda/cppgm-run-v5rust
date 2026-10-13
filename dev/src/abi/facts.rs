@@ -167,7 +167,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
             DefinitionKind::Type => self.type_spec(line, &words)?,
             DefinitionKind::Argument => self.argument_definition(line, &words)?,
             DefinitionKind::Expression => self.expression_definition(line, &words)?,
-            DefinitionKind::Context => return Err(Error::NotImplemented("local ABI contexts")),
+            DefinitionKind::Context => self.context_definition(line, &words)?,
             DefinitionKind::Entity => self.entity_definition(line, &words)?,
         };
         self.definitions[index].state = Resolution::Complete(id);
@@ -351,6 +351,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
                     parent: None,
                     terminal,
                     internal: false,
+                    occurrence: 0,
                 } = self.graph.get(id)
                 {
                     return Ok(Target::CName(terminal));

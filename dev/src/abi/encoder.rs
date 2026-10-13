@@ -283,10 +283,126 @@ impl<'a> Encoder<'a> {
             }
             return self.unqualified(final_id);
         }
+        // Find the entity directly in the function without copying its chain.
+        // A known prefix already represents that scope in an ordinary nested name.
+        let mut root = parent;
+        let mut local = final_id;
+        while let Some(component) = root {
+            let component = if let Node::Template(template) = self.graph.get(component) {
+                template
+            } else {
+                component
+            };
+            let Node::Name { parent, .. } = self.graph.get(component) else {
+                break;
+            };
+            local = component;
+            root = parent;
+        }
+        if root.is_some_and(|root| self.is_function_scope(root))
+            && (local == final_id || !self.chain_has_known_prefix(id))
+        {
+            return self.local_name(id, local, qualifiers);
+        }
+        self.nested_name(id, qualifiers)
+    }
+    fn is_function_scope(&self, id: NodeId) -> bool {
+        matches!(
+            self.graph.get(id),
+            Node::FunctionScope { .. } | Node::RawFunctionScope(_)
+        )
+    }
+    fn chain_has_known_prefix(&self, id: NodeId) -> bool {
+        let mut prefix = match self.graph.get(id) {
+            Node::Name { parent, .. } => parent,
+            Node::Template(template) => Some(template),
+            _ => None,
+        };
+        while let Some(id) = prefix {
+            prefix = match self.graph.get(id) {
+                Node::Name { parent, .. } => parent,
+                Node::Template(template) => Some(template),
+                _ => return false,
+            };
+            if self.slots[id.index()].is_some() {
+                return true;
+            }
+        }
+        false
+    }
+    fn local_name(
+        &mut self,
+        id: NodeId,
+        local: NodeId,
+        qualifiers: Qualifiers,
+    ) -> Result<(), Error> {
+        let Node::Name {
+            parent: Some(scope),
+            occurrence,
+            ..
+        } = self.graph.get(local)
+        else {
+            return Err(Error::diagnostic("invalid ABI local name"));
+        };
+        self.context(scope)?;
+        let final_id = if let Node::Template(template) = self.graph.get(id) {
+            template
+        } else {
+            id
+        };
+        if final_id == local {
+            if !qualifiers.is_empty() {
+                return Err(Error::diagnostic(
+                    "function qualifiers need a member function name",
+                ));
+            }
+            if matches!(self.graph.get(id), Node::Template(_)) {
+                self.prefix(Some(final_id))?;
+                self.template_args(id)?;
+            } else {
+                self.unqualified(local)?;
+            }
+        } else {
+            self.nested_name(id, qualifiers)?;
+        }
+        if occurrence != 0 {
+            let number = occurrence - 1;
+            self.put(if number < 10 { b"_" } else { b"__" });
+            self.number(u64::from(number));
+            if number >= 10 {
+                self.put(b"_");
+            }
+        }
+        Ok(())
+    }
+    fn context(&mut self, scope: NodeId) -> Result<(), Error> {
+        self.check_stack()?;
+        match self.graph.get(scope) {
+            Node::RawFunctionScope(fragment) => self.put(self.graph.text(fragment)),
+            Node::FunctionScope {
+                encoding,
+                default_argument,
+            } => {
+                self.put(b"Z");
+                self.entity(encoding)?;
+                self.put(b"E");
+                if default_argument != 0 {
+                    self.put(b"d");
+                    if default_argument > 1 {
+                        self.number(u64::from(default_argument - 2));
+                    }
+                    self.put(b"_");
+                }
+            }
+            _ => return Err(Error::diagnostic("invalid ABI local context")),
+        }
+        Ok(())
+    }
+    fn nested_name(&mut self, id: NodeId, qualifiers: Qualifiers) -> Result<(), Error> {
         self.put(b"N");
         self.qualifiers(qualifiers);
         self.reference_qualifier(qualifiers);
-        match node {
+        match self.graph.get(id) {
             Node::Template(template) => {
                 self.prefix(Some(template))?;
                 self.template_args(id)?;
@@ -307,7 +423,8 @@ impl<'a> Encoder<'a> {
             match self.graph.get(current) {
                 Node::Name { parent, .. } if self.slots[current.index()].is_none() => {
                     chain.push(current);
-                    id = parent;
+                    // The context was emitted by local_name; it is not a prefix candidate.
+                    id = parent.filter(|parent| !self.is_function_scope(*parent));
                 }
                 Node::Template(template) if self.slots[current.index()].is_none() => {
                     chain.push(current);
@@ -360,7 +477,7 @@ impl<'a> Encoder<'a> {
                     self.record(id)?;
                 }
             }
-            Node::VendorType(_) => self.encode_type(id)?,
+            Node::VendorType(_) | Node::Decltype { .. } => self.encode_type(id)?,
             _ => return Err(Error::diagnostic("invalid ABI name prefix")),
         }
         Ok(())
@@ -400,6 +517,15 @@ impl<'a> Encoder<'a> {
             Node::LiteralOperator(suffix) => {
                 self.put(b"li");
                 self.source_name(suffix);
+            }
+            Node::ClosureName { number, variadic } => {
+                self.put(b"Ul");
+                self.parameters(terminal, variadic)?;
+                self.put(b"E");
+                if number != 0 {
+                    self.number(u64::from(number - 1));
+                }
+                self.put(b"_");
             }
             _ => return Err(Error::diagnostic("invalid ABI unqualified name")),
         }
