@@ -113,6 +113,7 @@ impl Analyzer<'_> {
             scratch.sequences.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
+            self.check_class_arguments(binding, arguments, scope)?;
             self.check_direct_member_access(
                 binding,
                 scope,
@@ -191,7 +192,20 @@ impl Analyzer<'_> {
         for (index, &argument) in args.iter().enumerate() {
             if index < count {
                 let target = self.graph.types.function_parameter(function, index)?;
+                self.class_parameter_destruction(
+                    target,
+                    scope,
+                    self.tree.expressions.get(argument).location,
+                )?;
                 self.convert_scalar(argument, target, false)?;
+                self.elide_class_copy(
+                    argument,
+                    target,
+                    scope,
+                    false,
+                    false,
+                    self.tree.expressions.get(argument).location,
+                )?;
             } else {
                 self.ellipsis_argument(argument)?;
             }
@@ -232,6 +246,43 @@ impl Analyzer<'_> {
                 conversion,
                 function,
             }))
+    }
+    fn check_class_arguments(
+        &mut self,
+        binding: BindingId,
+        arguments: List<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let ty = self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .ty
+            .ok_or(Error::Invariant("selected function without type"))?;
+        let count = self.graph.types.function_parameter_count(ty)?;
+        for (index, &id) in self
+            .tree
+            .expr_lists
+            .get(arguments)
+            .iter()
+            .enumerate()
+            .take(count)
+        {
+            let target = self.graph.types.function_parameter(ty, index)?;
+            self.class_parameter_destruction(
+                target,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+            self.elide_class_copy(
+                id,
+                target,
+                scope,
+                false,
+                false,
+                self.tree.expressions.get(id).location,
+            )?;
+        }
+        Ok(())
     }
     fn resolve_call(
         &mut self,

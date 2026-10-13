@@ -257,7 +257,9 @@ impl Analyzer<'_> {
                     rank: R::Exact,
                     qualification: reference_qualification,
                     initialization: true,
-                    temporary: facts.category == V::Prvalue && !function,
+                    temporary: facts.category == V::Prvalue
+                        && !function
+                        && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)),
                 })
             } else if lvalue && !constant
                 || related

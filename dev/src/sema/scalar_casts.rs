@@ -144,10 +144,19 @@ impl Analyzer<'_> {
             facts.reference_cast = Some(target);
             return Ok(facts);
         }
-        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
-            || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_))
-        {
-            return Err(Error::Missing("class explicit conversions"));
+        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+            if !static_kind {
+                return Err(Error::Missing("class explicit conversions"));
+            }
+            self.elide_class_copy(
+                operand,
+                target,
+                scope,
+                true,
+                false,
+                self.tree.expressions.get(id).location,
+            )?;
+            return self.new_expression_facts(target, V::Prvalue);
         }
         let goal = self.bare_type(target)?;
         if matches!(
@@ -155,6 +164,9 @@ impl Analyzer<'_> {
             TypeKind::Scalar(Scalar::Void)
         ) {
             return self.new_expression_facts(goal, V::Prvalue);
+        }
+        if matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)) {
+            return Err(Error::Missing("class explicit conversions"));
         }
         let from = self.decayed_type(source.ty)?;
         // analyzer_member_pointers.cpp shows a successful static member-pointer

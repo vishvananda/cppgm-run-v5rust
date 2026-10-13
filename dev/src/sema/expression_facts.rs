@@ -75,6 +75,7 @@ pub(super) struct ExprFacts {
     pub member: Option<super::graph::BindingId>,
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
+    pub elided_copy: Option<super::copy_initialization::CopySelection>,
 }
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
@@ -94,6 +95,7 @@ impl ExprFacts {
             anonymous_member: None,
             member: None,
             member_address_scope: None,
+            elided_copy: None,
         }
     }
 }

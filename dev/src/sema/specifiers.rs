@@ -28,6 +28,12 @@ pub(super) enum ThreadStorage {
     Ordinary,
     ThreadLocal,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Explicitness {
+    #[default]
+    Converting,
+    Explicit,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
     pub ty: TypeId,
@@ -38,6 +44,7 @@ pub(super) struct Specifiers {
     pub mutability: Mutability,
     pub virtuality: Virtuality,
     pub constexpr: bool,
+    pub explicitness: Explicitness,
     pub thread_storage: ThreadStorage,
 }
 impl Analyzer<'_> {
@@ -71,6 +78,7 @@ impl Analyzer<'_> {
         let mut mutability = Mutability::Ordinary;
         let mut virtuality = Virtuality::NonVirtual;
         let mut constexpr = false;
+        let mut explicitness = Explicitness::Converting;
         let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
         for specifier in self.tree.specs.get(list) {
@@ -94,7 +102,7 @@ impl Analyzer<'_> {
                     Keyword::Virtual => virtuality = Virtuality::Virtual,
                     Keyword::ThreadLocal => thread_storage = ThreadStorage::ThreadLocal,
                     Keyword::Inline | Keyword::Register => (),
-                    Keyword::Explicit if special => (),
+                    Keyword::Explicit if special => explicitness = Explicitness::Explicit,
                     Keyword::Auto | Keyword::Friend | Keyword::Explicit => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
@@ -160,6 +168,7 @@ impl Analyzer<'_> {
                 mutability,
                 virtuality,
                 constexpr,
+                explicitness,
                 thread_storage,
             },
             has_written_type.then_some(ty),

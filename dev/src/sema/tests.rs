@@ -12,6 +12,79 @@ use crate::{
     types::FundamentalType,
 };
 
+#[test]
+fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
+    use super::{copy_initialization::CopyOrigin, expression_facts::ValueCategory};
+    use crate::syntax::ast::{DeclKind, InitializerKind};
+    let source = SourceBuffer::new(b"struct Hidden{};struct C{int x;C(const C&){Hidden h;}};C make();C a=make();const C b((make()));struct D{int x;};D get();D d=get();D e=get();".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"copy-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let mut origins = Vec::new();
+    for index in [3, 4, 7, 8] {
+        let DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[index])
+            .kind
+        else {
+            panic!("object declaration expected");
+        };
+        let declaration = tree.init_declarators.get(declarators)[0];
+        let initializer = declaration.initializer.unwrap();
+        let expression = match initializer.kind {
+            InitializerKind::Assign(id) => id,
+            InitializerKind::Parenthesized(arguments) => tree.expr_lists.get(arguments)[0],
+            _ => panic!("copy initializer expected"),
+        };
+        let facts = graph.expression_facts.get(expression).unwrap();
+        assert_eq!(facts.category, ValueCategory::Prvalue);
+        assert!(facts.conversion.is_none());
+        assert_eq!(
+            graph.expression_type(graph.expression_facts.root(expression)),
+            Some(facts.ty)
+        );
+        let selected = facts.elided_copy.unwrap();
+        assert!(!selected.binding.temporary);
+        let TypeKind::Reference { element, .. } = graph.types.get(selected.binding.target).kind
+        else {
+            panic!("selected constructor parameter is not a reference");
+        };
+        assert_eq!(
+            graph.types.get(element).kind,
+            graph.types.get(facts.ty).kind
+        );
+        origins.push(selected.origin);
+        let binding =
+            graph.binding(graph.declared_bindings[declaration.declarator.index()].unwrap());
+        let variable = binding.entity;
+        assert_eq!(graph.entity(variable).ty, binding.ty);
+        assert_eq!(
+            graph.types.get(binding.ty.unwrap()).cv,
+            if index == 4 { Cv::CONST } else { Cv::default() }
+        );
+        assert!(graph.entity(variable).constructor.is_none());
+    }
+    assert_eq!(origins[0], origins[1]);
+    assert_eq!(origins[2], origins[3]);
+    assert!(matches!(origins[0], CopyOrigin::Declared(_)));
+    let CopyOrigin::Implicit { class, kind } = origins[2] else {
+        panic!("implicit move expected");
+    };
+    assert_eq!(kind, RefKind::Rvalue);
+    assert!(graph.entity(class).implicit_copies.is_some());
+    assert!(matches!(
+        graph.entity(class).default_construction,
+        super::construction::ConstructorState::NotStarted
+    ));
+    // The written copy body was analyzed, but its Hidden dependency remains
+    // owned by that undemanded function. Elision must never make it a root.
+    assert!(super::function_demands::trailing(&graph).is_empty());
+}
+
 fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     let source = SourceBuffer::new(source.to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"semantic-ownership").unwrap();

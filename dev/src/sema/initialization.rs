@@ -57,7 +57,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
-            return Err(Error::Missing("class semantic initialization"));
+            return self.class_copy_initializer(target, initializer, scope, location);
         }
         let (id, direct) = match initializer.kind {
             InitializerKind::Assign(id) | InitializerKind::Braced(id)

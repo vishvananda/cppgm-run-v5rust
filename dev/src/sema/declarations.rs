@@ -1242,6 +1242,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).complete = true;
         self.finish_class_initializers(entity, node.location)?;
         if self.semantic() && self.template_depth == 0 {
+            self.classify_class_copies(entity)?;
             self.complete_scalar_destructor_exceptions(entity)?;
         }
         if self.class_depth == 0 {

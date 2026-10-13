@@ -489,6 +489,9 @@ impl Analyzer<'_> {
         }
         self.graph.entity_mut(function).defined |= body.is_some() || deleted;
         self.graph.entity_mut(function).constexpr = specs.constexpr;
+        if specs.explicitness == super::specifiers::Explicitness::Explicit {
+            self.graph.entity_mut(function).explicitness = specs.explicitness;
+        }
         self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
             internal_linkage: false,
             is_static: specs.is_static,

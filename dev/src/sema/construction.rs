@@ -409,7 +409,17 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("constructor without type"))?,
         )? != 0
         {
-            return Err(Error::Missing("defaulted copy or move constructor plans"));
+            let binding = self.graph.function_origin(function)?;
+            let kind = self
+                .declared_copy_kind(binding, class)?
+                .ok_or(Error::Invariant("defaulted non-copy constructor"))?;
+            if self.scalar_copy_deleted(class, kind)? {
+                return Err(Error::at(
+                    location,
+                    "an explicitly defaulted function is defined as deleted",
+                ));
+            }
+            return Ok(());
         }
         let binding = self.graph.function_origin(function)?;
         let id = self.scalar_constructor_facts(class, Some(binding))?;
@@ -485,7 +495,34 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn scalar_destructor_binding(&mut self, class: EntityId) -> Result<Option<BindingId>, Error> {
+    pub(super) fn class_parameter_destruction(
+        &mut self,
+        ty: TypeId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(());
+        };
+        let Some(binding) = self.scalar_destructor_binding(class)? else {
+            return Ok(());
+        };
+        self.require_scalar_destruction(class)?;
+        if self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .availability
+            == super::graph::FunctionAvailability::Deleted
+        {
+            return Err(Error::at(location, "use of a deleted function"));
+        }
+        self.check_direct_member_access(binding, scope, location)
+    }
+
+    pub(super) fn scalar_destructor_binding(
+        &mut self,
+        class: EntityId,
+    ) -> Result<Option<BindingId>, Error> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let signature = self.graph.types.intern(
             TypeKind::Function {

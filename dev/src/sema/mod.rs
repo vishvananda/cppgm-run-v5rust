@@ -5,6 +5,7 @@ mod builtin_calls;
 mod call_lookup;
 mod constants;
 mod construction;
+mod copy_initialization;
 mod data_members;
 mod declarations;
 mod declarators;

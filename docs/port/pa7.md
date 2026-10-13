@@ -1,8 +1,205 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `71998f27499a12f5728b781f9c1545f78d698d6a` (clean implementation entry).
+Current implementation group base: `2aed55f1e7ff6aab7b18f35d7899bf8c0e3eb156` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Checked scalar-class prvalue copy elision checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The previous goal turn was progress: `2aed55f` translated
+scalar special-member construction/lifetime facts and reduced fixed failures
+from six to four. This turn revalidated the clean checkout and complete entry
+manifest. Stage base and last-audited commit above are unchanged; implementation
+does not advance the stage or its independent audit pointer.
+
+The fixed manifest improves **194/198 → 195/198**, **4 → 3 failures**.
+Coverage has identical case identities and retains all 194 prior passes.
+The course lane improves **225/229 → 226/229**, with the same three failures.
+The additional 31 course cases execute. This is a completed checked-prvalue-
+copy-elision group, not completion of all class copying or PA7.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-copy-elision-20261013/`.
+`baseline.log` and `baseline-manifest.json` retain the independent turn-start
+run; `protected-stage-result.json`, `preservation.json` and `checks.json` retain
+final coverage, identity preservation, exits and hashes. Raw protected case
+receipts, diagnostics and output files remain in
+`../clone/cases/pa7/<case-hash>/`. Development attempts are retained under
+`development-validation/` and `mismatches/`; only the final receipts below
+support the handoff. Sources, dumps, measurements and logs are uncommitted
+artifacts. No protected fixtures, references, oracle sources, checks, policy
+or Ralph state changed.
+
+### Frozen owners and typed data flow
+
+Read the frozen `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/`
+owners directly: `analyzer_copy.cpp::{copy_kind,classify_copy_members,
+implicit_copy_members,declare_implicit_copy_members,implicit_copy_member,
+const_copy_source,defaulted_copy_facts,constructor_candidates}`;
+`analyzer_construction.cpp::{initialize_class,direct_initialization,
+same_class_source,copy_initialization,record_copy,select_constructor,
+check_destruction}`; `analyzer_classes.cpp` completion;
+`analyzer_initialization.cpp::{initialize_variable,type_default_arguments}`;
+`analyzer_calls.cpp::convert_arguments`, `analyzer_bodies.cpp` return typing,
+`analyzer_declarations.cpp` special/defaulted definitions,
+`conversions.cpp` reference binding and `semantics_dump.cpp` initialization
+views. The source map records the translated responsibilities and boundaries.
+
+- `copy_initialization.rs` classifies original non-template constructor
+  identities at class completion, using canonical parameter types and recorded
+  default arguments. A later addition of a default does not retroactively
+  reclassify the declaration. Constructor candidate viability still observes
+  the defaults visible at the use, matching the distinct C++ responsibilities.
+- Implicit copy/move candidates are demanded once per complete scalar-subobject
+  class. They retain canonical const-lvalue-reference/rvalue-reference parameter
+  IDs and memoized scalar deletion facts. Own constructor, assignment and
+  destructor indexes determine suppression/deletion. Reference members,
+  rvalue-reference copy deletion, scalar arrays, const members and union storage
+  follow the frozen owner. No class-subobject plan is fabricated.
+- Query scratch retains capacity and clears contents on success or failure.
+  Candidates are filtered by explicit policy, arity/defaults and standard
+  parameter binding. Deleted defaulted moves are ignored; deleted declared
+  moves still participate. Best-against-all ranking distinguishes ambiguity,
+  no constructor set and no viable candidate. Access/deletion checks precede
+  successful elision. Class completion and selection inspect only the owning
+  class's indexes, not unrelated declarations.
+- Original `ExprId` facts retain `CopySelection`: a declared origin `BindingId`
+  or implicit `(EntityId, RefKind)` identity and the full selected parameter
+  `Conversion`. The source type/category and any existing operand conversion
+  remain intact. Parentheses share the original fact. A class prvalue binds a
+  reference directly rather than through a scalar conversion-created temporary.
+- Variable assign/direct initialization, by-value defaults, selected direct and
+  indirect call arguments, returns, and functional/static/C-style casts consume
+  those facts. Elision creates no constructor/body emission demand. Written
+  bodies still receive normal declaration-time analysis and retain dependencies
+  on their own function. Returns use the original return location; initializer,
+  cast and argument diagnostics use their owning source locations.
+- `construction.rs` checks late-defaulted scalar copy deletion and by-value
+  parameter destructor access/deletion in caller context. The semantic view
+  keeps the original initializer expression with its original cv-qualified
+  declared object type and emission order. The printer performs no new lookup,
+  typing, selection or textual transport.
+
+The ownership regression proves declared/implicit origin reuse, original
+prvalue facts and parameter bindings, shared parenthesized facts, cv-qualified
+object identity, absent copy actions/default-constructor demand, and that an
+undemanded copy body's nested constructor dependency does not become a root.
+Architecture review: one parsed AST, canonical compact identities, dense
+facts, explicit class-completion classification, unit-owned immutable copy
+memos and reusable query scratch. Scalar-member support/deletion is checked
+once per demanded class rather than once per use. No syntax synthesis,
+reparsing, whole-program retry, speculative body demand, environment access,
+compiler subprocess, unsafe code, new dependency or lint suppression is added.
+Optimizer, register allocator, lower/native code and backend lifetimes are
+unchanged; this group makes no PA34 object-parity claim.
+
+### Validation and preserved evidence
+
+Candidate cppgm SHA-256:
+`ce10daf8eeeb544ca8dbccc2077107a7151da8ac463ae3a757e065239d885953`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 195/198; three failures, exit 1 | `stage-required.log`, `protected-stage-result.json` |
+| `make test-pa7` | Same fixed coverage/outcomes; make exit 2 | `stage.log` |
+| `make course-pa7` | 226/229; same three failures, marker retained; make exit 2 | `course.log`, `course-result.json`, `../clone/course/pa7/test/trace.jsonl` |
+| `python3 .../clone_check.py prior pa7` | PASS, PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json` |
+| `python3 .../clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 .../clone_check.py preserve pa7` | PASS; independent 194-identity preservation passes | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all-feature Clippy, 177 debug/release library tests each | `lint.log`, `lint-final.log`, `ownership-final.log` |
+| `make audit-rust` | PASS, 130 files, zero findings | `audit.log` |
+| `python3 .../pa7-copy-elision-20261013/probe.py` | 119/119 exact protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl`, sources |
+| `python3 .../pa7-copy-elision-20261013/boundary-probe.py` | Four explicit status-86 boundaries, oracle success | `boundary.log`, `boundary-probes.jsonl` |
+| `python3 .../pa7-copy-elision-20261013/measure.py` | Exact supported scaling and native qualification | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+The stage/course failures are retained evidence of unfinished dependencies;
+their commands are not reported as passing checks. `handoff.json` records
+final commit and evidence/binary hashes. Rustfmt, strict Clippy and the
+companion file audit pass without new lint expectations or suppression.
+
+
+The 119 exact protected probes cover copy/direct initialization, const/volatile
+results, parameter qualification ranking, private/deleted/explicit constructors,
+first/later default definitions, declared copy/move competition, own assignment
+and destructor suppression, reference/rvalue-reference/array/union members,
+extra defaults, late-added defaults, repeated selection, namespace/local classes,
+by-value direct/indirect calls, defaults, returns, casts and undemanded body
+closure. They supplement the unchanged fixed and course manifests.
+`boundary-probe.py` and `boundary-probes.jsonl` retain successful-oracle
+reproducers for lvalue copies, class-subobject copies, conditional object copies
+and user-conversion competition; each candidate path remains explicit status 86
+and a mismatch, never a fabricated successful rejection.
+
+The existing Ralph progress receipt counts the fixed lane's 198 results as a
+229-case run and reports 31 unrun cases. `harness-counts.json` retains the
+reproducer commands, unchanged external failure log and both complete receipts.
+The fixed command executes all 198 entries; the course command executes all 229.
+The independent identity receipt proves exact fixed failure reduction. Checker
+policy and Ralph state are untouched; advancement remains Ralph's decision.
+
+### Resource measurements and stack qualification
+
+Measurements run after the gate jobs finish, with A/A calibration followed by
+paired ABBA/BAAB blocks. Inputs/binaries are hashed; every sample includes
+wall time, RSS, exit, output size and digest. All output digests agree and all
+18 protected workload receipts match. Workloads scale distinct scalar-member
+classes, repeated copy/move selection from one class, and scalar member counts
+at 128 copies. They include warm process startup, parsing, semantics and dump
+I/O, not a cold-cache or hardware-counter gate. PA35 generated-code improvement
+targets do not apply here.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| distinct-copies / 128 | 6.89 / 7204 | 21.20 / 8362 |
+| shared-selection / 128 | 4.66 / 5794 | 15.68 / 8008 |
+| distinct-copies / 512 | 12.68 / 10030 | 29.93 / 8006 |
+| shared-selection / 512 | 6.80 / 6492 | 23.51 / 7986 |
+| distinct-copies / 2048 | 43.76 / 21974 | 83.67 / 17070 |
+| shared-selection / 2048 | 14.85 / 8554 | 37.52 / 8000 |
+| scalar-members / 16 | 5.60 / 5774 | 20.14 / 8374 |
+| scalar-members / 64 | 4.98 / 5798 | 16.40 / 7988 |
+| scalar-members / 256 | 5.94 / 6444 | 18.59 / 8006 |
+
+Native probes fix 1,000 nested ordinary class-valued/by-value calls and 1,500
+parentheses in a same-class prvalue initializer, starting at a 1 MiB stack.
+Both protected receipts have `match: true` and `stack_qualification.passed:
+true`, with both tools succeeding identically at a shared 16 MiB retry. Raw
+original attempts and retries remain under `stack-qualifications/<receipt-id>/`.
+Only the protected receipts establish qualification. The genuine byte-budget
+guard is unchanged; no exhaustion cutoff, frame size or diagnostic position
+was calibrated. Shared storage measured 28.51 GB used under the 107.37 GB ceiling.
+
+
+### Remaining identities and next dependency boundary
+
+The newly passing fixed identity is
+`tests/general/300-elaborated-local-struct-copy-init.t`. The exact remaining
+fixed identities are:
+
+```text
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
+
+The two inheritance failures first diverge at class-base formation
+(`declarations.rs::class_type`, status 86). Their next coherent group needs typed
+base edges/paths, base member lookup, implicit base construction, reference and
+pointer derived-to-base sequences/ranking, access facts and static downcasts
+from the corresponding frozen class/lookup/conversion owners. The template
+failure needs retained-pattern function specialization and target/call deduction.
+
+Within construction, nonelided lvalue/xvalue/conditional object copying,
+copy/move subobject and assignment plans, general/list construction,
+user-conversion competition, derived sources, implicit return moves and full
+temporary/abstract/virtual lifetime semantics remain separate explicit
+boundaries. The new selection facts are ready for those consumers; they must
+not substitute scalar zero/default plans or infer semantics from dump text.
+This coherent checked-elision partial handoff does not claim stage completion.
 
 ## Scalar special-member definitions and construction checkpoint — 2026-10-13
 

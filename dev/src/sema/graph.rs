@@ -123,12 +123,16 @@ pub(super) struct Entity {
     pub implicit_default: Option<ScopeId>,
     pub user_constructor: Option<BindingId>,
     pub declared_constructors: Vec<BindingId>,
+    pub declared_conversions: Vec<BindingId>,
     pub special_definition: Option<super::special_members::SpecialDefinition>,
     pub destructor_specification: super::exceptions::DestructorSpecification,
     pub data_member: Option<DataMemberKind>,
     pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
     pub constexpr: bool,
+    pub explicitness: super::specifiers::Explicitness,
+    pub implicit_copies: Option<super::copy_initialization::ImplicitCopies>,
+    pub copy_kind: Option<super::types::RefKind>,
     pub function: Option<FunctionProperties>,
     pub definition_emission: super::function_demands::DefinitionEmission,
     pub function_definition: Option<crate::syntax::ast::DeclId>,
@@ -411,12 +415,16 @@ impl Graph {
             implicit_default: None,
             user_constructor: None,
             declared_constructors: Vec::new(),
+            declared_conversions: Vec::new(),
             special_definition: None,
             destructor_specification: super::exceptions::DestructorSpecification::Explicit,
             data_member: None,
             mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
             constexpr: false,
+            explicitness: super::specifiers::Explicitness::Converting,
+            implicit_copies: None,
+            copy_kind: None,
             function: None,
             definition_emission: super::function_demands::DefinitionEmission::Always,
             function_definition: None,
@@ -673,6 +681,19 @@ impl Graph {
                 constructors[index] = binding;
             } else {
                 constructors.push(binding);
+            }
+        } else if key.kind == MemberKind::Conversion {
+            let entity = self.binding(binding).entity;
+            let earlier = self
+                .entity(key.class)
+                .declared_conversions
+                .iter()
+                .position(|&id| self.binding(id).entity == entity);
+            let conversions = &mut self.entity_mut(key.class).declared_conversions;
+            if let Some(index) = earlier {
+                conversions[index] = binding;
+            } else {
+                conversions.push(binding);
             }
         }
     }

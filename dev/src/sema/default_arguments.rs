@@ -128,7 +128,15 @@ impl Analyzer<'_> {
                         Ok(())
                     } else {
                         self.typed_expression(expression, scope)?;
-                        self.convert_scalar(expression, target, false)
+                        self.convert_scalar(expression, target, false)?;
+                        self.elide_class_copy(
+                            expression,
+                            target,
+                            scope,
+                            false,
+                            false,
+                            self.tree.expressions.get(expression).location,
+                        )
                     }
                 })();
                 self.default_argument_scope = saved;
