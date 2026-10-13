@@ -132,14 +132,14 @@ impl Analyzer<'_> {
                 let context = body.switches.last_mut().ok_or_else(|| {
                     Error::at(stmt.location, "default label outside a switch statement")
                 })?;
+                if context.has_default {
+                    return Err(Error::at(stmt.location, "duplicate default label"));
+                }
                 if context.initialized != 0 {
                     return Err(Error::at(
                         stmt.location,
                         "default label bypasses a variable's initialization",
                     ));
-                }
-                if context.has_default {
-                    return Err(Error::at(stmt.location, "duplicate default label"));
                 }
                 context.has_default = true;
                 Ok(())
