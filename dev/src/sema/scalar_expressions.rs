@@ -178,6 +178,12 @@ impl Analyzer<'_> {
                 let target = self.specifiers(specifiers, scope, false)?.ty;
                 self.scalar_functional_cast(id, target, arguments, braced, scope)?
             }
+            ExprKind::Braced { .. } => {
+                return Err(Error::at(
+                    node.location,
+                    "a braced-init-list is not an expression here",
+                ));
+            }
             _ => return Err(Error::Missing("extended semantic expressions")),
         };
         // A constexpr initializer's printed cv type is applied by its declaration view,

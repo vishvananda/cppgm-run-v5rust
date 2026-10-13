@@ -317,35 +317,4 @@ impl Analyzer<'_> {
         let target = self.graph.types.scalar(Scalar::Bool)?;
         self.convert_operand_scalar(id, target, true)
     }
-    pub(super) fn scalar_initializer(
-        &mut self,
-        initializer: ast::Initializer,
-        scope: super::graph::ScopeId,
-        target: TypeId,
-    ) -> Result<(), Error> {
-        if matches!(
-            self.graph.types.get(target).kind,
-            TypeKind::Class(_) | TypeKind::Array { .. }
-        ) {
-            return Err(Error::Missing("class and array semantic initialization"));
-        }
-        let (id, direct) = match initializer.kind {
-            ast::InitializerKind::Assign(id) => (id, false),
-            ast::InitializerKind::Parenthesized(arguments) => {
-                let arguments = self.tree.expr_lists.get(arguments);
-                if arguments.len() != 1 {
-                    return Err(Error::Missing("scalar value initialization"));
-                }
-                (arguments[0], true)
-            }
-            ast::InitializerKind::Braced(_) => {
-                return Err(Error::Missing("scalar list initialization"));
-            }
-            ast::InitializerKind::Default | ast::InitializerKind::Delete => {
-                return Err(Error::Invariant("nonobject initializer"));
-            }
-        };
-        self.typed_expression(id, scope)?;
-        self.convert_scalar(id, target, direct)
-    }
 }

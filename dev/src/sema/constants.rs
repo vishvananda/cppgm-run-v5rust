@@ -145,50 +145,7 @@ impl Analyzer<'_> {
                 self.scalar_constant(0, Scalar::Nullptr)?
             }
             ExprKind::Paren(inner) => self.evaluate_constant(inner, scope, skipping)?,
-            ExprKind::Id(name) => {
-                let found = if self.evaluating_noexcept {
-                    self.graph
-                        .resolved_name(name)
-                        .ok_or(Error::Invariant("unresolved exception operand name"))?
-                } else {
-                    self.lookup(name, scope, Filter::Ordinary)?
-                };
-                let binding = self.graph.binding(found);
-                if matches!(
-                    binding.kind,
-                    BindingKind::Type
-                        | BindingKind::Alias
-                        | BindingKind::Namespace
-                        | BindingKind::NamespaceAlias
-                ) {
-                    return Err(Error::at(location, "name does not denote a value"));
-                }
-                if let ConstantState::Value(value) = self.graph.entity(binding.entity).constant {
-                    value
-                } else {
-                    let ty = self.binding_expression_type(found)?;
-                    if skipping && self.integral_kind(ty).is_some() {
-                        let ty = self
-                            .graph
-                            .types
-                            .intern(self.graph.types.get(ty).kind.clone(), Cv::default())?;
-                        Constant { bits: 0, ty }
-                    } else {
-                        return Err(not_constant(
-                            location,
-                            match binding.kind {
-                                BindingKind::Variable => {
-                                    "variable is not usable in a constant expression"
-                                }
-                                BindingKind::Parameter => {
-                                    "a parameter is not usable in a constant expression"
-                                }
-                                _ => "not an integral constant expression",
-                            },
-                        ));
-                    }
-                }
-            }
+            ExprKind::Id(name) => self.constant_named_value(name, scope, skipping, location)?,
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
@@ -327,6 +284,52 @@ impl Analyzer<'_> {
             super::record(&mut self.graph.constant_facts, id.index(), value);
         }
         Ok(value)
+    }
+    fn constant_named_value(
+        &mut self,
+        name: ast::Name,
+        scope: ScopeId,
+        skipping: bool,
+        location: SourceOffset,
+    ) -> Result<Constant, Error> {
+        let found = if self.evaluating_noexcept {
+            self.graph
+                .resolved_name(name)
+                .ok_or(Error::Invariant("unresolved exception operand name"))?
+        } else {
+            self.lookup(name, scope, Filter::Ordinary)?
+        };
+        let binding = self.graph.binding(found);
+        if matches!(
+            binding.kind,
+            BindingKind::Type
+                | BindingKind::Alias
+                | BindingKind::Namespace
+                | BindingKind::NamespaceAlias
+        ) {
+            return Err(Error::at(location, "name does not denote a value"));
+        }
+        if let ConstantState::Value(value) = self.graph.entity(binding.entity).constant {
+            return Ok(value);
+        }
+        let ty = self.binding_expression_type(found)?;
+        if skipping && self.integral_kind(ty).is_some() {
+            let ty = self.bare_type(ty)?;
+            return Ok(Constant { bits: 0, ty });
+        }
+        let reference = self.semantic()
+            && binding.ty.is_some_and(|ty| {
+                matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            });
+        let message = match binding.kind {
+            BindingKind::Variable if reference => {
+                "a reference is not usable in a constant expression"
+            }
+            BindingKind::Variable => "variable is not usable in a constant expression",
+            BindingKind::Parameter => "a parameter is not usable in a constant expression",
+            _ => "not an integral constant expression",
+        };
+        Err(not_constant(location, message))
     }
     fn constant_string_element(
         &mut self,
@@ -694,6 +697,18 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let Some(expr) = self.single_initializer(initializer) else {
+            if self.semantic()
+                && !reference
+                && matches!(initializer.kind, InitializerKind::Assign(id) | InitializerKind::Braced(id)
+                    if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { elements, .. }
+                        if self.tree.expr_lists.get(elements).is_empty()))
+            {
+                let target = self.bare_type(object)?;
+                self.graph.entity_mut(entity).constant = ConstantState::Value(Constant {
+                    bits: 0,
+                    ty: target,
+                });
+            }
             return Ok(());
         };
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;

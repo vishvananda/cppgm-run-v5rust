@@ -940,3 +940,62 @@ fn overload_visibility_keeps_earlier_entities_across_interleaved_redeclarations(
     graph.lookup_limit = None;
     assert_eq!(graph.functions_at(graph.global, name.into()).count(), 2);
 }
+
+#[test]
+fn array_initialization_completes_identity_and_retains_source_operand_conversions() {
+    use super::expression_facts::{ConversionRank, ValueCategory};
+    use crate::syntax::ast::{DeclKind, ExprKind};
+    let source =
+        SourceBuffer::new(b"short x; long a[][2]={x,2,3,4}; int tail[1000000000]={1};".to_vec())
+            .unwrap();
+    let input = Preprocessor::with_name(&source, b"array-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let DeclKind::Simple { declarators, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[1])
+        .kind
+    else {
+        panic!("array declaration expected");
+    };
+    let declaration = tree.init_declarators.get(declarators)[0];
+    let binding = graph.declared_bindings[declaration.declarator.index()].unwrap();
+    let ty = graph.binding(binding).ty.unwrap();
+    assert_eq!(graph.entity(graph.binding(binding).entity).ty, Some(ty));
+    let TypeKind::Array {
+        element: row,
+        bound: 2,
+    } = graph.types.get(ty).kind
+    else {
+        panic!("deduced bound expected");
+    };
+    let TypeKind::Array { element, bound: 2 } = graph.types.get(row).kind else {
+        panic!("row bound expected");
+    };
+    let initializer = declaration.initializer.unwrap();
+    let crate::syntax::ast::InitializerKind::Assign(list) = initializer.kind else {
+        panic!("list expected");
+    };
+    let list_facts = graph.expression_facts.get(list).unwrap();
+    assert_eq!(list_facts.ty, ty);
+    let ExprKind::Braced { elements, .. } = tree.expressions.get(list).kind else {
+        panic!("list expected");
+    };
+    let values = tree.expr_lists.get(elements);
+    assert_eq!(values.len(), 4);
+    let operand = graph.expression_facts.get(values[0]).unwrap();
+    assert_eq!(operand.category, ValueCategory::Lvalue);
+    assert!(matches!(
+        graph.types.get(operand.ty).kind,
+        TypeKind::Scalar(Scalar::Short)
+    ));
+    let conversion = operand.conversion.unwrap();
+    assert_eq!(conversion.target, element);
+    assert_eq!(conversion.rank, ConversionRank::Conversion);
+    // The billion-element tail creates no per-element semantic records.
+    assert_eq!(graph.expression_types.iter().flatten().count(), 7);
+}

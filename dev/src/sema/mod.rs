@@ -18,6 +18,7 @@ mod expressions;
 mod function_names;
 mod function_resolution;
 mod graph;
+mod initialization;
 mod integral;
 mod layout;
 mod lookup;

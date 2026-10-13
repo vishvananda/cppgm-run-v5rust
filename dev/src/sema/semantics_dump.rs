@@ -263,6 +263,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             return Ok(());
         }
         if let Some(init) = initializer {
+            if self.string_initializer(
+                binding
+                    .ty
+                    .ok_or_else(|| io::Error::other("variable without type"))?,
+                init,
+                depth + 1,
+            )? {
+                return Ok(());
+            }
             let retype = |id| {
                 let facts = self.graph.expression_facts.get(id).ok()?;
                 let conversion = facts.conversion?;
@@ -307,6 +316,63 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
         }
         Ok(())
+    }
+    fn string_initializer(
+        &mut self,
+        ty: TypeId,
+        initializer: ast::Initializer,
+        depth: usize,
+    ) -> io::Result<bool> {
+        let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind else {
+            return Ok(false);
+        };
+        let (ast::InitializerKind::Assign(mut id) | ast::InitializerKind::Braced(mut id)) =
+            initializer.kind
+        else {
+            return Ok(false);
+        };
+        id = self.graph.expression_facts.root(id);
+        if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+            let elements = self.tree.expr_lists.get(elements);
+            if elements.len() != 1 {
+                return Ok(false);
+            }
+            id = self.graph.expression_facts.root(elements[0]);
+        }
+        let ExprKind::Literal(ast::Literal {
+            kind: crate::lex::PostTokenKind::String { ty: literal, .. },
+            data,
+            ..
+        }) = self.tree.expressions.get(id).kind
+        else {
+            return Ok(false);
+        };
+        let bytes = self.cursor.spellings.get(data);
+        let kind = self
+            .graph
+            .integral_kind(element)
+            .ok_or_else(|| io::Error::other("character array without integral kind"))?;
+        self.indent(depth)?;
+        self.output.write_all(b"braced-init-list lvalue ")?;
+        self.ty(ty)?;
+        writeln!(self.output)?;
+        let mut units = bytes.chunks_exact(literal.size());
+        for _ in 0..bound {
+            let mut bytes = [0u8; 8];
+            if let Some(unit) = units.next() {
+                bytes[..unit.len()].copy_from_slice(unit);
+            }
+            let bits = kind.convert(u64::from_le_bytes(bytes));
+            self.indent(depth + 1)?;
+            self.output.write_all(b"literal prvalue ")?;
+            self.ty(element)?;
+            if kind.signed {
+                writeln!(self.output, " {}", super::integral::signed(bits))?;
+            } else {
+                writeln!(self.output, " {bits}")?;
+            }
+        }
+        Ok(true)
     }
     fn condition(&mut self, condition: ast::Condition, depth: usize) -> io::Result<()> {
         self.line("condition", depth)?;
@@ -542,6 +608,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Subscript { .. } => "subscript-expression",
             ExprKind::Sizeof { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
+            ExprKind::Braced { .. } => "braced-init-list",
             ExprKind::Call { .. } => {
                 if facts.functional_call {
                     "cast-expression"
@@ -658,6 +725,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     arguments
                 };
                 for &id in self.tree.expr_lists.get(args).iter().rev() {
+                    self.expr(id, depth + 1);
+                }
+            }
+            ExprKind::Braced { elements, .. } => {
+                for &id in self.tree.expr_lists.get(elements).iter().rev() {
                     self.expr(id, depth + 1);
                 }
             }

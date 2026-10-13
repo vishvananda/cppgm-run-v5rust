@@ -291,6 +291,27 @@ impl Graph {
     pub(super) fn binding(&self, id: BindingId) -> Binding {
         self.bindings[id.0 as usize]
     }
+    pub(super) fn complete_variable_type(
+        &mut self,
+        id: BindingId,
+        ty: TypeId,
+    ) -> Result<(), Error> {
+        let binding = self.binding(id);
+        if binding.kind != BindingKind::Variable {
+            return Err(Error::Invariant("completing a nonvariable type"));
+        }
+        self.bindings[id.0 as usize].ty = Some(ty);
+        self.entity_mut(binding.entity).ty = Some(ty);
+        Ok(())
+    }
+    pub(super) fn publish_variable_type(&mut self, id: BindingId) -> Result<TypeId, Error> {
+        let ty = self
+            .entity(self.binding(id).entity)
+            .ty
+            .ok_or(Error::Invariant("variable without type"))?;
+        self.complete_variable_type(id, ty)?;
+        Ok(ty)
+    }
     pub(super) fn add_scope(
         &mut self,
         kind: ScopeKind,

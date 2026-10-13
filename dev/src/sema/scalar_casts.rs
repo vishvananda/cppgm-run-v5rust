@@ -209,8 +209,30 @@ impl Analyzer<'_> {
         braced: Option<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        if braced.is_some() {
-            return Err(Error::Missing("scalar list initialization"));
+        if let Some(braced) = braced {
+            if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+                let ty = self.array_braced_list(braced, target, scope)?;
+                return self.new_expression_facts(ty, V::Prvalue);
+            }
+            if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+                return Err(Error::Missing("class list initialization"));
+            }
+            let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind
+            else {
+                return Err(Error::Invariant("functional cast without list"));
+            };
+            let elements = self.tree.expr_lists.get(elements);
+            if elements.len() > 1 {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "list-initialization of a scalar from several values",
+                ));
+            }
+            if let Some(&element) = elements.first() {
+                self.initialize_element(element, target, scope, true)?;
+                let ty = self.bare_type(target)?;
+                return self.new_expression_facts(ty, V::Prvalue);
+            }
         }
         let arguments = self.tree.expr_lists.get(arguments);
         if arguments.len() == 1 {

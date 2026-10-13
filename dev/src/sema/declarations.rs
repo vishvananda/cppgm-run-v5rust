@@ -502,6 +502,9 @@ impl Analyzer<'_> {
             binding,
         );
         let entity = self.graph.binding(binding).entity;
+        if self.semantic() {
+            ty = self.graph.publish_variable_type(binding)?;
+        }
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
             self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
                 super::graph::DataMemberKind::Static
@@ -531,7 +534,6 @@ impl Analyzer<'_> {
         if (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some())
         {
-            let entity = self.graph.binding(binding).entity;
             if self.graph.entity(entity).defined {
                 return Err(Error::at(location, "redefinition of a variable"));
             }
@@ -542,12 +544,12 @@ impl Analyzer<'_> {
         let definition = (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some());
         if member || definition {
-            let entity = self.graph.binding(binding).entity;
             let object = self
                 .graph
                 .entity(entity)
                 .ty
                 .ok_or(Error::Invariant("object without type"))?;
+            let object = self.initial_object_type(object, init.initializer);
             self.check_object_type(object, member, location)?;
         }
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
@@ -562,16 +564,15 @@ impl Analyzer<'_> {
                     self.note_local_initializer();
                 }
 
-                self.scalar_initializer(initializer, info.lookup, ty)?;
+                ty = self.initialize_variable(binding, initializer, info.lookup, location)?;
+                if member || definition {
+                    self.check_object_type(ty, member, location)?;
+                }
             } else {
                 self.initializer_names(initializer, info.lookup, ty)?;
             }
             if !member {
-                self.record_constant_initializer(
-                    self.graph.binding(binding).entity,
-                    initializer,
-                    info.lookup,
-                )?;
+                self.record_constant_initializer(entity, initializer, info.lookup)?;
             }
         }
         Ok(())
@@ -596,8 +597,10 @@ impl Analyzer<'_> {
         match self.tree.expressions.get(expr).kind {
             ast::ExprKind::Braced { elements, .. } => {
                 let elements = self.tree.expr_lists.get(elements);
-                bound = u64::try_from(elements.len())
-                    .map_err(|_| Error::Limit("array initializer size limit"))?;
+                if !self.semantic() {
+                    bound = u64::try_from(elements.len())
+                        .map_err(|_| Error::Limit("array initializer size limit"))?;
+                }
                 if elements.len() == 1
                     && self.integral_element(element)
                     && let ast::ExprKind::Literal(literal) =

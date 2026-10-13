@@ -59,8 +59,19 @@ impl Analyzer<'_> {
             self.default_argument_scope = Some(scope);
             let target = self.graph.types.function_parameter(ty, index)?;
             let result = (|| {
-                self.typed_expression(expression, scope)?;
-                self.convert_scalar(expression, target, false)
+                if matches!(
+                    self.tree.expressions.get(expression).kind,
+                    ast::ExprKind::Braced { .. }
+                ) {
+                    self.list_initialize(expression, target, scope)?;
+                    let mut facts = self.graph.expression_facts.get(expression)?;
+                    facts.category = super::expression_facts::ValueCategory::Prvalue;
+                    self.graph.expression_facts.set(expression, facts);
+                    Ok(())
+                } else {
+                    self.typed_expression(expression, scope)?;
+                    self.convert_scalar(expression, target, false)
+                }
             })();
             self.default_argument_scope = saved;
             result?;

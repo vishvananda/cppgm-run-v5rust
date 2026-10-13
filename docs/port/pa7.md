@@ -1,225 +1,202 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `e72f1d8d28ce56e34e16660fd124c402a2265103`.
-Last audited commit: INITIAL (unchanged; implementation does not advance Ralph's audit).
+Current implementation group base: `37c435809aa28ae021003fed46b5ef8c2efda824`.
+Last audited commit: INITIAL (unchanged; Ralph owns checkpoint/final audit and advancement).
 
 ## Current checkpoint
 
-This is a coherent partial PA7 ordinary-function call and overload implementation
-handoff. Full PA7 remains incomplete. The fixed 198-case manifest improves from
-83 passes / 115 failures to 174 passes / 24 failures: 91 formerly failing
-identities now match, all 83 turn-start passing identities remain, and coverage
-is unchanged. The preceding goal turn made authoritative progress: its clean
-commit `e72f1d8` implemented the scalar/procedural group and established the
-83-case baseline. This turn inspected that commit, its ledger and actual raw
-failure receipts before extending it.
-
-The previous scalar checkpoint's source review, 57 probes, original scaling
-inputs and receipts remain at
-`/home/vishvananda/work/private/v5rust/artifacts/pa7-scalar-core-20261013/`.
-The current group builds on those original-AST scalar facts and conversions.
-The retained completed groups cover scalar literals/ids and shared parentheses,
-parameter/reference/enumerator facts, scalar copy/direct conversions and casts,
-built-in operators/subscripts, procedural scopes/returns/conditions/loops/switch
-rules, and the iterative semantic view. Their owning modules and C++ mappings
-remain in the source map; the full prior ledger is also retained at commit
-`e72f1d8`.
-Neither checkpoint establishes complete assignment coverage or advancement.
-Ralph owns independent checkpoint/final audit and stage advancement.
+Coherent partial PA7 scalar/list and array initialization handoff. The fixed
+198-case manifest improves from 174 passes / 24 failures to 179 passes / 19
+failures. All 174 turn-start passing identities remain; the five new passing
+identities are recorded below. Coverage is unchanged. PA7 remains incomplete.
+The preceding goal turn made authoritative progress in clean commit `37c4358`,
+porting ordinary function calls and overload resolution. This turn inspected its
+actual ledger, fixed receipts and C++ owners before extending the original-AST
+initialization boundary. A commit or one passing fixture was not the stopping
+boundary: initialization invariants, related casts/defaults/returns, source
+responsibilities, supported probes and scaling were completed together.
 
 Read `AGENTS.md`, `CLONE_CONTRACT.md`, `spec.md`, `pa7/README.md`,
-`docs/rust-clone-plan.md` and this stage ledger. Consulted the frozen implementation
-at `/home/vishvananda/work/references/v5rust-cpp` directly, particularly
-`dev/src/sema/analyzer_calls.cpp`, `analyzer_expressions.cpp`, `conversions.cpp`,
-`analyzer_declarations.cpp`, `analyzer_initialization.cpp`, `analyzer_builtins.cpp`,
-`analyzer.cpp`, `analyzer_lambdas.cpp`, `semantics_dump.cpp` and
-`dev/src/lex/gnu_builtins.h`. Existing PA6/PA7 Rust owners were inspected alongside
-them. `source-map.tsv` records translated responsibilities and the remaining
-class/template/initialization/interpreter dependencies.
+`docs/rust-clone-plan.md` and the prior stage ledger. Consulted frozen C++ owners
+at `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/` directly:
+`analyzer_initialization.cpp`, `analyzer_construction.cpp::initialize_object`,
+`analyzer_expressions.cpp::{braced_list,functional_cast,subscript,typed}`,
+`analyzer_declarations.cpp::{complete_array_from_initializer,declare_variable}`,
+`analyzer_bodies.cpp`'s return list path, `constant_evaluator.cpp`,
+`constant_expressions.cpp`, `constant_construction.cpp` and `semantics_dump.cpp`.
+`docs/port/source-map.tsv` records their Rust responsibilities and explicit
+remaining boundaries.
 
-## Completed group and typed data flow
+The prior completed scalar/procedural and ordinary-call groups remain intact:
+original expression facts, shared parentheses, indexed lookup/ADL, canonical
+function identities, selected conversions, ordinary overload ranking, source
+visibility, default-argument IDs, builtins, procedural scopes/control flow and
+the iterative semantic dump. Full prior ledgers are retained at `e72f1d8` and
+`37c4358`. Their evidence remains in `artifacts/pa7-scalar-core-20261013/` and
+`artifacts/pa7-calls-20261013/` under the shared artifact parent.
 
-- `graph.rs`, `lookup.rs`, `declarations.rs` and `function_names.rs` index
-  ordinary overloads by `(ScopeId, ValueKey)`. Canonical parameter signatures
-  identify redeclarations; return-type conflicts, qualified mismatches,
-  repeated definitions and deleted use preserve C++ diagnostics. The first
-  entity origin and visibility survive interleaved declarations and using
-  aliases. Using declarations introduce every required overload and diagnose
-  signature conflicts. Lexical and namespace-edge lookup merge function lists
-  without scanning unrelated declarations. Single-function query results stay
-  inline; only larger sets allocate a temporary candidate vector.
-- `function_resolution.rs` owns checked `OverloadId` slices in unit storage,
-  function designations, target-directed ordinary function-pointer/reference
-  selection and sequence ordering. Original `ExprId` facts retain a designation
-  until its use selects a function. Parentheses share facts. One `&` or `*`
-  designator can resolve by a call; deeper unresolved designations require a
-  target, as the C++ owner specifies. Unsupported bare sets reject, and selected
-  deleted functions reject. Explicit scalar casts consume the same selections.
-- `procedural_calls.rs` types arguments before borrowing reusable resolution
-  scratch. It filters arity/defaults, represents expected candidate rejection
-  as `Option<Conversion>`, retains all viable scalar/reference/ellipsis sequences,
-  selects a provisional best, then proves it better than every other candidate.
-  Ambiguity/no-viable diagnostics are rendered only after resolution. Rank,
-  subsequence, qualification, reference cv/category and pointer-bool ordering
-  follow `ConversionRules::compare`; no new optimization or candidate pruning
-  policy is introduced. The selected binding and operand sequences stay on the
-  original graph; applying a selected sequence does not classify it again.
-- Direct calls retain `CallTarget::Direct(BindingId)`; indirect function,
-  function-reference and pointer calls retain `CallTarget::Indirect(TypeId)`.
-  Indirect arity and argument conversions diagnose at the C++ positions. Call
-  facts carry the semantic result category/type; the dump uses the declared
-  return spelling, including references. Scalar result cv stripping and an
-  rvalue reference to a function yielding an lvalue follow `result_category`.
-- `call_lookup.rs` associates only argument types, enclosing namespaces and
-  indexed inline namespace edges. It ignores using directives during ADL,
-  preserves qualified-call/block-declaration suppression, and permits block
-  using declarations whose entity originates in a namespace. Fundamental-only
-  arguments need no association walk. Class bases, hidden friends, template
-  associated entities and user-defined calls remain dependencies.
-- `default_arguments.rs` checks canonical parameter defaults at declaration
-  context, retains original expression IDs and introduction ordinals, rejects
-  repeated/missing trailing defaults, and protects evaluated local-variable
-  use. Parameter names are not invented in the default's lookup context;
-  scalar declarations follow the observed C++ owner. Unevaluated sizeof and
-  decltype/query contexts retain their existing distinction. Calls and the dump
-  consume the retained defaults without parsing or typing them again. Member
-  and template default demand remains pending.
-- `builtin_calls.rs` recognizes interned reserved identifiers, lazily declares
-  `__builtin_abort`, and lets normal resolution check its arity. The one-operand
-  unevaluated `__builtin_constant_p` query folds propagated integral constants
-  and floating/null/string literals. Nonliteral floating/address interpretation
-  remains an explicit status-86 dependency; it is not silently approximated as
-  nonconstant. Remaining hosted builtin forms are unported.
-- `scalar_conversions.rs` canonicalizes target types and handles array-element
-  cv/reference compatibility and pointer-to-array shape checks in its owning
-  algorithm. Operators check unresolved function designations before treating
-  them as scalar values. Semantic decltype consumes the call's existing facts.
-- `semantics_dump.rs` prints selected direct callees, indirect operand trees,
-  defaults and source operand categories in C++ order. `dump.rs` shares the
-  iterative type renderer with a separate qualified-class semantic view,
-  preserving PA6's source-facing type view. Namespace/anonymous namespace and
-  class ownership is retained as typed scope facts, never inferred from text.
+## Completed group and typed ownership
 
-Two Rust ownership tests validate retained selected sequences on original AST
-nodes and source visibility across interleaved overload redeclarations.
-New lint expectations were not added; obsolete rank/qualification and parameter
-clause-location expectations were removed as these facts acquired consumers.
-Rustfmt, strict Clippy and the companion source audit remain authoritative.
-No dependency, unsafe code, FFI, environment read in `dev/src/`, compiler
-subprocess, fixture recognition, reference answer or protected policy change
-was introduced. Optimizer, register allocator, lowering and object generation
-are unchanged. This semantic-view group makes no new object-byte or PA34
-completion claim.
+- `initialization.rs` owns nonclass object/list initialization. It consumes
+  the original `ExprId`/initializer list ranges, canonical `TypeId` and lexical
+  `ScopeId`; it does not reparse, clone syntax, render transport text or create
+  synthetic element nodes. Scalar lists retain lvalue list facts, at most one
+  element, empty value initialization and exact nested/multiple-list diagnostics.
+  Elements keep original types/categories plus their selected conversion.
+- Arrays consume explicit elements in source order, recursively respecting
+  braced subarrays and brace elision. An omitted outer bound counts initialized
+  objects rather than raw syntax entries. Zero-filled scalar tails need no
+  per-element semantic allocation or work; semantic string output necessarily
+  prints each requested array element. Class-element zero/default construction
+  is an explicit status-86 dependency even with no written elements.
+- `declarations.rs` keeps types-mode raw bound formation and semantics-mode
+  typed completion distinct, checks element completeness before deducing a list
+  bound and rejects a remaining incomplete object after initialization. Earlier
+  array declarations supply their canonical bound. `Graph`'s private variable
+  publication/completion methods update binding/entity type identity while the
+  variable remains visible to its own initializer; no global declaration scan
+  or cache invalidation is introduced. Declared references keep reference type
+  identity even when their list denotes a temporary object.
+- Narrow/wide strings consume retained decoded literal bytes. Character
+  compatibility, signed/unsigned narrow characters, list/direct diagnostics,
+  bound limits and parenthesized string rules follow the C++ owner. The semantic
+  view expands a variable's string initializer into a typed braced list of code
+  units and zero padding, preserving element cv and target signedness.
+- Narrowing consumes original source facts and the selected conversion. Integral
+  widths/signedness and representability use the existing explicit target
+  arithmetic owner. Integer-to-floating constants check significant bits exactly;
+  floating-to-integral always narrows. Narrower floating literals use their
+  decoded binary64/x87 significands/exponents and the target overflow midpoint,
+  including sign and zero handling; no host floating approximation is used.
+  Nonliteral floating interpretation remains a named status-86 dependency.
+- `scalar_casts.rs`, `default_arguments.rs` and `procedural_statements.rs`
+  consume the same initialization algorithm for scalar/array functional lists,
+  braced defaults and braced returns. Array functional lists use aggregate
+  initialization directly, preserving the oracle's distinct character-string rule. Defaults retain introduction visibility
+  and declaration-time checking. Calls consume the recorded default IDs.
+  Bare lists in expression-only contexts diagnose exactly; overload ranking
+  of explicit braced call arguments remains a separate dependency.
+- `constants.rs` records the canonical zero of const integral empty-list objects
+  and keeps the exact unavailable-reference diagnostic. Named constant reads
+  have one owning helper, preserving unevaluated/short-circuit behavior.
+  Full symbolic referents, class/array constant storage and interpreter demand
+  remain pending.
+
+One ownership test checks brace-elided bound completion, shared variable/binding
+identity, unchanged source element category/type, selected element conversions,
+and bounded facts for a billion-element scalar array with one initializer.
+Rustfmt, strict Clippy and the companion file audit pass without new lint
+expectations or suppression. The audit remains authoritative over Clippy.
+
+No dependency, unsafe code, FFI, environment read under `dev/src/`, compiler
+subprocess, fixture recognition, reference answer or protected input/policy
+change was introduced. Optimizer, register allocator, lowering, emission order
+and backend ownership are unchanged. This semantic group makes no PA34 or
+whole-program object-byte completion claim.
 
 ## Validation and retained evidence
 
 Artifact root:
-`/home/vishvananda/work/private/v5rust/artifacts/pa7-calls-20261013/`.
-`handoff.json` records the implementation commit, exact binary hashes, command
-results and stage identities after committing this ledger. Candidate cppgm
-SHA-256: `1aea4927ed89436a0936b36e7375b819bc5d11396005919ba4f0447f39595630`.
-Frozen C++ cppgm++ SHA-256:
-`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-initialization-20261013/`.
+`handoff.json` records the final commit, binary hashes and command exits.
+Candidate cppgm SHA-256: `565bc14360dac94ea0b1544d656b93a8fb4640c63e3a0d776a911c3d8659599c`.
+Frozen C++ cppgm++ SHA-256: `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+`fixed-manifest.json` retains all current identities/receipts; the independent
+`turn-start-manifest.json` comparison requires all 174 prior passing identities
+and all 198 covered identities. Raw protected traces, diagnostics and output
+files remain at `artifacts/clone/cases/pa7/<case-hash>/`.
 
 | Command | Result | Evidence relative to artifact root |
 | --- | --- | --- |
 | `make build` | PASS, locked release workspace | `build.log` |
-| `make test-pa7` and required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | FAIL overall; 174/198 exact passing identities, 24 remaining failures | `stage.log`, `fixed-manifest.json`, `failing-case-ids.txt` |
-| `make course-pa7` | FAIL overall; 174/198, remaining failure marker retained | `course.log`; full `artifacts/clone/course/pa7/test/{course.log,course-result.json,counts.txt,trace.jsonl}` under the shared artifact parent |
-| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, all PA1–PA6 differential and course lanes | `prior.log`; `artifacts/clone/course/paN/test/` for N=1..6 |
-| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS, 83/83 prior passing identities | `preserve.log`; `baseline-manifest.json`, `fixed-manifest.json` independently record zero regressions and 91 new identities |
+| `make test-pa7` | FAIL overall; 179/198, 19 remaining failures | `stage.log`, `fixed-manifest.json` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | FAIL overall; same 179/198 identities | `stage-required.log` |
+| `make course-pa7` | FAIL overall; 179/198, remaining failure marker retained | `course.log`; full `artifacts/clone/course/pa7/test/` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, PA1–PA6 differential and original course lanes | `prior.log`; `artifacts/clone/course/paN/test/` for N=1..6 |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS; independent 174-identity comparison also passes | `preserve.log`, `preservation.json` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
-| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all-feature Clippy, debug/release workspace tests and audit | `quality.log` |
-| `make audit-rust` | PASS, 125 files, zero findings | `audit.log` |
-| `python3 .../pa7-calls-20261013/probe.py` | 71/71 protected exact matches | `probe.py`, `probe.log`, `probe-summary.json`, `probes.jsonl` |
-| `python3 .../pa7-calls-20261013/measure.py` | Exact scaling receipts and protected native qualification | `measure.py`, `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, all-feature strict Clippy, debug/release workspace tests and audit | `quality.log` |
+| `make audit-rust` | PASS, 126 files, zero findings | `audit.log` |
+| `python3 .../pa7-initialization-20261013/probe.py` | 78/78 protected exact supported probes | `probe.py`, `probe.log`, `probe-summary.json`, `probes.jsonl` |
+| `python3 .../pa7-initialization-20261013/measure.py` | Exact supported scaling and native resource receipts | `measure.py`, `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
 
-Each failing fixed case's raw exit/diagnostics/output hashes and mismatch paths
-are in `fixed-manifest.json`. Original protected case traces remain at
-`/home/vishvananda/work/private/v5rust/artifacts/clone/cases/pa7/<case-hash>/`.
-The manifest retains all 198 fixed identities; counts alone are not the
-preservation evidence. No oracle/harness defect was encountered.
+The probes cover copy/direct lists, zero initialization, integer/bool/float
+narrowing boundaries, enum/pointer lists, reference-related versus temporary
+lists, functional scalar/array lists, defaults/returns, array redeclarations,
+multidimensional brace elision, too many/nested initializers, character kind,
+decoded signed bytes, padding, and const propagation. They supplement the fixed
+course gate. `boundary-probe.py` and `boundary-probes.jsonl` retain a class-array empty-list reproducer
+that correctly remains an incomplete Rust path (86), not a successful rejection.
+Four initial hexadecimal-floating probes exposed the existing strict C++11
+lexer boundary (`lex/number.rs`); raw mismatch evidence remains under this root.
+Decimal probes exercise the same initialization thresholds without changing
+that earlier-phase grammar dependency. No oracle/harness defect was encountered.
 
-The focused probes cover multiple using-imported overloads and conflicts,
-nested calls, target-directed addresses/references/arguments/casts, scalar
-promotions, pointer/array/reference ranking, indirect and reference-return
-calls, canonical parameter adjustment, defaults and diagnostics, deleted use,
-qualified definitions, declaration visibility, absence of a global best,
-ellipsis, enum/inline/class-pointer ADL, suppressed ADL, unnamed namespaces,
-reserved builtins, folded queries, decltype and conditional function callees.
-They supplement the fixed/course gate and do not redefine full-stage coverage.
+## Measured costs and protected stack qualification
 
-## Measured costs and native resource qualification
+Measurements use 128/512/2,048 independent arrays with four brace-elided elements,
+then 128 arrays with 16/64/256 elements. Every input/binary hash, output digest,
+wall/RSS reading and A/A calibration is retained in `measurements.json`.
+Paired ABBA and BAAB runs follow calibration; every workload has two protected
+adapter receipts. These warm process observations include startup, parsing,
+semantics and dump I/O, not a cold-cache or hardware-counter gate.
+PA35's generated-code improvement targets are outside this group's requirements.
 
-Measurements use frozen supported call inputs with 128, 512 or 2,048 independent
-functions and a two-member overload set; a second axis uses 128 functions and
-4, 16 or 64 overloads. All source/binary hashes, output digests, individual
-wall/RSS observations and A/A calibration are retained in `measurements.json`.
-Each input is checked through the protected adapter. Separate same-binary A/A
-runs precede paired ABBA and BAAB blocks. These are warm process-level readings
-including startup, frontend work and output I/O; no cold-cache or Linux hardware
-counter gate is claimed. PA35's generated-code improvement targets are unused.
-
-| Functions / overloads | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| Arrays / elements | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
 | --- | --- | --- |
-| 128 / 2 | 5.77 / 6472 | 18.84 / 8378 |
-| 512 / 2 | 9.21 / 7252 | 25.50 / 7996 |
-| 2048 / 2 | 22.56 / 10672 | 52.49 / 9950 |
-| 128 / 4 | 5.98 / 6484 | 19.50 / 8378 |
-| 128 / 16 | 6.48 / 6516 | 19.42 / 8358 |
-| 128 / 64 | 6.84 / 6520 | 21.89 / 8000 |
+| 128 / 4 | 5.31 / 6532 | 18.18 / 8374 |
+| 512 / 4 | 7.69 / 7226 | 23.75 / 8380 |
+| 2048 / 4 | 21.14 / 9236 | 46.98 / 8574 |
+| 128 / 16 | 6.59 / 6504 | 21.65 / 8006 |
+| 128 / 64 | 13.03 / 7154 | 33.14 / 8730 |
+| 128 / 256 | 30.91 / 10754 | 76.17 / 12808 |
 
-The observations bound these supported paths, not all semantic workloads.
-The genuine native byte-budget guard is retained. Fixed unary and nested-call
-probes start at a 1 MiB stack, and only protected receipts establish equality
-through a shared larger stack. Raw exhaustion diagnostics/positions are kept
-in receipts; no cutoff, frame-size or diagnostic-position calibration is used.
-`native-probes.jsonl` records `match` and `stack_qualification.passed`, with
-raw attempts and retries under `stack-qualifications/<receipt-id>/`.
-
-The unary input fixes 1,500 operators; the call input fixes 1,000 nested
-ordinary calls. Both receipts report `match: true` and
-`stack_qualification.passed: true`, with one shared 16 MiB successful retry.
-Successful output SHA-256 values are respectively
-`c816cbed6d5c3f042cdcd873c923cb5376a2fc9f4f3e327a39b7cf0929fc5021` and
-`d47e1dcdf4efe5ca267533e88c3a97b318e368ef405e453523efee63c7147660`.
+Native probes fix 1,500 unary operators and 1,000 ordinary nested calls inside
+an array initializer, starting at a 1 MiB stack. Both protected receipts have
+`match: true` and `stack_qualification.passed: true`, with identical successful
+output at a shared 16 MiB retry. Raw original attempts and retries are retained
+under `stack-qualifications/<receipt-id>/`; only the protected receipt establishes
+qualification. The genuine byte-budget guard is retained. No native cutoff,
+frame size or exhaustion diagnostic position was calibrated.
 
 ## Next dependency boundary and architecture review
 
-The next coherent group is class objects and their initialization/member facts:
-`analyzer_initialization.cpp`, class/member/constructor owners, array and list
-initialization, anonymous-union storage/member projection and semantic printing.
-It must preserve explicit class-completion/constructor demand, source order,
-object identities and retained conversion/construction plans. Class bases and
-member pointers have their own typed boundaries; template deduction and deferred
-member/default bodies must not be pulled into scalar calls speculatively.
+The next group is class object construction/member facts and anonymous-union
+storage projection: `analyzer_initialization.cpp`, `analyzer_construction.cpp`,
+class/member/function demand and `semantics_dump.cpp`. It needs typed
+construction plans, explicit class completion, source-ordered members and
+constructor/default-body demand. Arrays of class objects must consume those
+plans, including empty tails, rather than imitate scalar zero initialization.
+Base conversions/member pointers, template specialization and deferred closure
+remain distinct dependent owners. Braced call-argument sequence ranking and
+nonliteral floating constants are additional explicit production boundaries.
 
-The 24 fixed failures cluster at the earliest current boundary: six class-function
-stubs, five class/array initialization stubs, two class special-member stubs,
-two inheritance stubs, two member-pointer stubs, two extended-member expression
-stubs, one scalar-list stub and one template-specialization lookup stub. Three
-non-stub mismatches remain: two anonymous-union storage/member views and one
-class-object constructor-action view. The latter is the class object in
-`300-reference-binding-pointee-const-pointer`, whose call/reference selection
-itself is now supported. Nonliteral floating/address queries, full class/base
-conversion ranking, template/hidden-friend ADL and full constexpr demand also
-remain production dependencies even where this manifest does not isolate them.
+Review an array declaration from prior canonical identity through list
+consumption and brace-elided bound completion to retained element conversions;
+then review a reference list's declared type versus its temporary list facts.
+The single AST, borrowed list ranges, compact IDs and dense facts are preserved.
+No per-zero-tail element allocation, unrelated declaration scan, speculative
+class completion, syntax synthesis or textual transport is added. Backend
+lifetimes and optimizer ordering stay outside this frontend-only change.
 
-Architecture review should trace an overload-imported call from indexed lookup
-through canonical entity/signature, scratch candidate rejection and best-against-all
-comparison to original operand sequences and dump; then trace a default argument
-from its declaration context to one selected call. The ownership tests and source
-review confirm no syntax/token clone, rendered-text transport, unrelated entity
-scan or reclassification during ordinary selected-sequence application. Resolver
-scratch clears contents between queries and preserves capacity; unit-owned facts
-retain only compact IDs/conversions/default expressions. Class/template demand,
-construction plans, later emission and per-function backend ownership remain
-explicit later consumers, not claims established by 174 fixture matches.
+The 19 fixed failures remain class/member/template dependencies (16 explicit
+incomplete paths and three mismatching class/anonymous-union semantic views).
+They are not accepted negative cases, and the stage has not advanced.
 
-## Exact remaining fixed-manifest case IDs
+## Exact newly passing fixed identities
 
 Relative to `pa7/`:
+
+```text
+tests/general/200-braced-narrowing-integer-constant-bad.t
+tests/general/200-function-pointer-array-deduced-bound.t
+tests/general/200-signed-char-array-string-initializer.t
+tests/general/300-subscript-commuted-expression.t
+tests/general/300-subscript-unscoped-enum-index.t
+```
+
+## Exact remaining fixed identities
 
 ```text
 tests/general/100-distinct-anonymous-type-identities.t
@@ -227,11 +204,8 @@ tests/general/100-namespace-static-anonymous-union-injected-members.t
 tests/general/100-private-nested-out-of-class-constructor-definition.t
 tests/general/100-private-nested-out-of-class-member-definition.t
 tests/general/100-qualified-base-data-member-hides-function.t
-tests/general/200-braced-narrowing-integer-constant-bad.t
 tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
-tests/general/200-function-pointer-array-deduced-bound.t
 tests/general/200-local-anonymous-union-variable.t
-tests/general/200-signed-char-array-string-initializer.t
 tests/general/300-block-anonymous-union-injected-members.t
 tests/general/300-default-argument-nonstatic-member-bad.t
 tests/general/300-deferred-demand-closure.t
@@ -244,6 +218,4 @@ tests/general/300-most-vexing-local-function-member-call-bad.t
 tests/general/300-reference-binding-pointee-const-pointer.t
 tests/general/300-static-cast-member-overload-prefers-nontemplate.t
 tests/general/300-static-cast-overloaded-function-template-argument.t
-tests/general/300-subscript-commuted-expression.t
-tests/general/300-subscript-unscoped-enum-index.t
 ```

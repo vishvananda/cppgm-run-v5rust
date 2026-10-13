@@ -84,6 +84,19 @@ impl Analyzer<'_> {
                 ))
             };
         };
+        if matches!(
+            self.tree.expressions.get(id).kind,
+            ast::ExprKind::Braced { .. }
+        ) {
+            if void || matches!(self.graph.types.get(result).kind, TypeKind::Array { .. }) {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "returning a braced-init-list for this result",
+                ));
+            }
+            self.list_initialize(id, result, scope)?;
+            return Ok(());
+        }
         let facts = self.typed_expression(id, scope)?;
         if void {
             if matches!(
