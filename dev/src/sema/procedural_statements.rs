@@ -12,6 +12,7 @@ use crate::{
     syntax::ast::{self, Condition},
 };
 pub(super) struct BodyContext {
+    pub entity: super::graph::EntityId,
     pub result: TypeId,
     pub loops: usize,
     pub switches: Vec<SwitchContext>,
@@ -23,8 +24,9 @@ pub(super) struct SwitchContext {
     initialized: u32,
 }
 impl BodyContext {
-    pub(super) fn new(result: TypeId) -> Self {
+    pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
         Self {
+            entity,
             result,
             loops: 0,
             switches: Vec::new(),

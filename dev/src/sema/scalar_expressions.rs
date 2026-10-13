@@ -78,6 +78,13 @@ impl Analyzer<'_> {
                 self.new_expression_facts(ty, V::Prvalue)?
             }
             ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
+                if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd)
+                    && let Some(facts) = self.qualified_function_address(id, operand, scope)?
+                {
+                    self.graph.expression_facts.set(id, facts);
+                    super::record(&mut self.graph.expression_types, id.index(), facts.ty);
+                    return Ok(facts);
+                }
                 self.typed_expression(operand, scope)?;
                 let Some(op) = op.token.as_punctuator() else {
                     return Err(Error::Invariant("nonpunctuator unary"));
@@ -138,10 +145,12 @@ impl Analyzer<'_> {
                     self.type_syntax(ty, scope)?
                 } else if let Some(operand) = operand {
                     self.unevaluated += 1;
-                    let result = self.typed_expression(operand, scope);
+                    let result = self.typed_expression(operand, scope).and_then(|facts| {
+                        self.check_resolved_function(operand)?;
+                        Ok(facts)
+                    });
                     self.unevaluated -= 1;
                     let facts = result?;
-                    self.check_resolved_function(operand)?;
                     facts.ty
                 } else {
                     return Err(Error::Invariant("sizeof without operand"));
@@ -213,6 +222,28 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
+            if self.default_argument_scope.is_none()
+                && let Some(body) = &self.body_context
+                && !self
+                    .graph
+                    .entity(body.entity)
+                    .function
+                    .is_some_and(|props| props.is_static)
+                && let Some(home) = self.graph.entity(body.entity).home
+                && self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                && let Some(object) = self
+                    .graph
+                    .scope(home)
+                    .owner
+                    .and_then(|class| self.graph.entity(class).ty)
+                && found
+                    .functions
+                    .as_slice()
+                    .iter()
+                    .any(|&function| self.member_function_owner(function) == Some(object))
+            {
+                return Err(Error::Missing("bound member function designation"));
+            }
             let facts = self.function_designation(binding, found.functions.as_slice())?;
             return Ok(facts);
         }
@@ -292,11 +323,12 @@ impl Analyzer<'_> {
             && self.graph.entity(binding.entity).data_member
                 == Some(super::graph::DataMemberKind::Instance)
         {
-            if self
-                .graph
-                .entity(binding.entity)
-                .home
-                .is_some_and(|home| self.graph.encloses(home, scope))
+            if self.default_argument_scope.is_none()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .home
+                    .is_some_and(|home| self.graph.encloses(home, scope))
             {
                 return Err(Error::Missing("implicit object member designation"));
             }

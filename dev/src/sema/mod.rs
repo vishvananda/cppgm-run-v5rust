@@ -16,6 +16,7 @@ mod exceptions;
 mod expression_facts;
 mod expression_keys;
 mod expressions;
+mod function_demands;
 mod function_names;
 mod function_resolution;
 mod graph;

@@ -113,7 +113,32 @@ impl Analyzer<'_> {
             scratch.sequences.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
+            self.check_direct_member_access(
+                binding,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+            if self.member_function_owner(binding).is_some() {
+                if self.body_context.as_ref().is_some_and(|body| {
+                    self.graph.entity(body.entity).home.is_some_and(|home| {
+                        self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                    }) && !self
+                        .graph
+                        .entity(body.entity)
+                        .function
+                        .is_some_and(|props| props.is_static)
+                }) {
+                    return Err(Error::Missing("implicit object member calls"));
+                }
+                if self.unevaluated == 0 {
+                    return Err(Error::at(
+                        self.tree.expressions.get(id).location,
+                        "non-static member function called without an object",
+                    ));
+                }
+            }
             self.select_function_designation(callee, binding)?;
+            self.demand_function(binding, true);
             let ty = self.graph.types.canonical_function(
                 self.graph
                     .binding(binding)
@@ -191,7 +216,9 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("function argument without type"))?,
             )?;
-            facts.ty = if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_)) {
+            facts.ty = if facts.member_address_scope.is_some() {
+                self.function_address_type(binding, ty)?
+            } else if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_)) {
                 self.graph.types.pointer(ty)?
             } else {
                 ty

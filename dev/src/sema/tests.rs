@@ -324,7 +324,7 @@ fn semantic_storage_is_hidden_and_default_construction_is_demanded_once() {
     }
     assert_eq!(constructors[0], constructors[1]);
     assert_eq!(constructors[1], constructors[2]);
-    assert_eq!(graph.constructors.demands().len(), 2);
+    assert_eq!(super::function_demands::trailing(&graph).len(), 2);
     let anonymous = tree.decl_lists.get(declarations)[5];
     assert!(matches!(
         tree.declarations.get(anonymous).kind,
@@ -1242,4 +1242,74 @@ fn member_designation_retains_shared_entity_and_binding_access_without_layout_de
             super::construction::ConstructorState::NotStarted
         ));
     }
+}
+
+#[test]
+fn member_addresses_select_canonical_cv_identity_and_close_only_the_selected_demand_list() {
+    use super::function_demands::{DefinitionEmission, Demand};
+    use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind};
+    let source = SourceBuffer::new(
+        b"struct Dependency{};struct Unused{};struct C{int f(){Unused u;return 0;}int f()const{Dependency d;return 1;}void query(){}};using P=int(C::*)()const;P first=&C::f;P second=&C::f;unsigned long query=sizeof(&C::query);".to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"member-demand-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let mut selected = None;
+    for &declaration in &tree.decl_lists.get(declarations)[4..6] {
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("pointer variable expected");
+        };
+        let InitializerKind::Assign(address) = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap()
+            .kind
+        else {
+            panic!("address initializer expected");
+        };
+        let facts = graph.expression_facts.get(address).unwrap();
+        let binding = facts.function.unwrap();
+        assert!(facts.functions.is_none());
+        assert!(selected.is_none_or(|prior| prior == binding));
+        selected = Some(binding);
+        let TypeKind::MemberPointer { owner, element } = graph.types.get(facts.ty).kind else {
+            panic!("member pointer expected");
+        };
+        assert!(matches!(graph.types.get(owner).kind, TypeKind::Class(_)));
+        assert!(matches!(
+            graph.types.get(element).kind,
+            TypeKind::Function { cv: Cv::CONST, .. }
+        ));
+        let ExprKind::Unary { operand, .. } = tree.expressions.get(address).kind else {
+            panic!("address operand expected");
+        };
+        assert_eq!(graph.expression_facts.get(operand).unwrap().ty, element);
+        let function = graph.entity(graph.binding(binding).entity);
+        assert_eq!(function.definition_emission, DefinitionEmission::Demanded);
+        let scope = function.scope.unwrap();
+        assert_eq!(
+            graph.scope(scope).owner,
+            Some(graph.binding(binding).entity)
+        );
+        assert_eq!(graph.scope(scope).parent, function.home);
+    }
+    let trailing = super::function_demands::trailing(&graph);
+    assert_eq!(trailing.len(), 2);
+    assert!(matches!(trailing[0], Demand::Function { binding, .. } if Some(binding) == selected));
+    assert!(matches!(trailing[1], Demand::Constructor(_)));
+    let class_name = cursor.intern_name(b"C").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, class_name, Filter::Prefix).unwrap())
+        .entity;
+    assert!(matches!(
+        graph.entity(class).layout,
+        super::layout::LayoutState::NotStarted
+    ));
+    assert!(matches!(
+        graph.entity(class).default_construction,
+        super::construction::ConstructorState::NotStarted
+    ));
 }

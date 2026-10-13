@@ -187,7 +187,8 @@ impl Analyzer<'_> {
             if self.class_depth == 0 {
                 self.function_body(deferred)?;
             } else {
-                self.deferred.push(deferred);
+                self.deferred
+                    .push(super::analyzer::DeferredMember::Body(deferred));
             }
         }
         Ok(())

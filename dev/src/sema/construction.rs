@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ConstructorId(u32);
 #[derive(Clone, Copy, Default)]
 pub(super) enum ConstructorState {
@@ -26,12 +26,10 @@ pub(super) struct Constructor {
     deleted: bool,
     const_default: bool,
     initializers: usize,
-    scheduled: bool,
 }
 #[derive(Default)]
 pub(super) struct Constructors {
     records: Vec<Constructor>,
-    demands: Vec<ConstructorId>,
 }
 impl Constructors {
     fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
@@ -44,16 +42,6 @@ impl Constructors {
     }
     pub(super) fn get(&self, id: ConstructorId) -> &Constructor {
         &self.records[id.0 as usize]
-    }
-    pub(super) fn demands(&self) -> &[ConstructorId] {
-        &self.demands
-    }
-    fn demand(&mut self, id: ConstructorId) {
-        let record = &mut self.records[id.0 as usize];
-        if !record.scheduled {
-            record.scheduled = true;
-            self.demands.push(id);
-        }
     }
 }
 impl Analyzer<'_> {
@@ -105,26 +93,6 @@ impl Analyzer<'_> {
             object = element;
         }
         if let TypeKind::Class(class) = self.graph.types.get(object).kind {
-            // Member bodies have their own demand lists, consumed when the
-            // class-aware call group emits them. Do not publish those uses as roots.
-            let mut home = self.graph.entity(variable).home;
-            while let Some(scope) = home {
-                if self.graph.scope(scope).kind == super::graph::ScopeKind::Function {
-                    if self
-                        .graph
-                        .scope(scope)
-                        .owner
-                        .and_then(|owner| self.graph.entity(owner).home)
-                        .is_some_and(|owner| {
-                            self.graph.scope(owner).kind == super::graph::ScopeKind::Class
-                        })
-                    {
-                        return Err(Error::Missing("member-body construction demand"));
-                    }
-                    break;
-                }
-                home = self.graph.scope(scope).parent;
-            }
             let constructor = self.implicit_scalar_constructor(class)?;
             let record = self.graph.constructors.get(constructor);
             if record.deleted {
@@ -145,7 +113,7 @@ impl Analyzer<'_> {
             if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
                 && self.unevaluated == 0
             {
-                self.graph.constructors.demand(constructor);
+                self.record_demand(super::function_demands::Demand::Constructor(constructor));
             }
         } else if self.graph.types.get(object).cv.0 & 1 != 0
             && !self
@@ -246,7 +214,6 @@ impl Analyzer<'_> {
             deleted,
             const_default,
             initializers: initialized,
-            scheduled: false,
         })
     }
 }

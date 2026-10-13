@@ -653,23 +653,25 @@ impl Analyzer<'_> {
         home: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if self.graph.scope(home).kind == ScopeKind::Class
-            && info.home.is_none()
-            && let Some(binding) = self.graph.value_binding(home, self.declaration_key(info)?)
-            && self.graph.binding(binding).kind == BindingKind::Function
-        {
-            let old = self
+        if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
+            let candidates: Vec<_> = self
                 .graph
-                .binding(binding)
-                .ty
-                .ok_or(Error::Invariant("function without type"))?;
-            if self.graph.types.canonical_function(old)?
-                == self.graph.types.canonical_function(info.ty)?
-            {
-                return Err(Error::at(
-                    location,
-                    "member function redeclared in its class",
-                ));
+                .functions_at(home, self.declaration_key(info)?)
+                .collect();
+            for binding in candidates {
+                let old = self
+                    .graph
+                    .binding(binding)
+                    .ty
+                    .ok_or(Error::Invariant("function without type"))?;
+                if self.graph.types.canonical_function(old)?
+                    == self.graph.types.canonical_function(info.ty)?
+                {
+                    return Err(Error::at(
+                        location,
+                        "member function redeclared in its class",
+                    ));
+                }
             }
         }
         Ok(())
@@ -1236,7 +1238,12 @@ impl Analyzer<'_> {
             self.finish_class_exceptions()?;
             let bodies = std::mem::take(&mut self.deferred);
             for body in bodies {
-                self.function_body(body)?;
+                match body {
+                    super::analyzer::DeferredMember::Body(body) => self.function_body(body)?,
+                    super::analyzer::DeferredMember::Defaults(defaults) => {
+                        self.type_function_defaults(defaults)?;
+                    }
+                }
             }
         }
         Ok(ty)

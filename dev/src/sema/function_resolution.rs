@@ -6,7 +6,8 @@ use super::{
     expression_facts::{
         Conversion, ConversionRank as R, ExprFacts, ValueCategory as V, ValueConversion as C,
     },
-    graph::BindingId,
+    graph::{BindingId, BindingKind, ScopeId, ScopeKind},
+    lookup::Filter,
     types::{RefKind, TypeId, TypeKind},
 };
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
@@ -45,6 +46,82 @@ impl FunctionSets {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn member_function_owner(&self, binding: BindingId) -> Option<TypeId> {
+        let entity = self.graph.entity(self.graph.binding(binding).entity);
+        let home = entity.home?;
+        if self.graph.scope(home).kind != ScopeKind::Class
+            || entity.function.is_some_and(|props| props.is_static)
+        {
+            return None;
+        }
+        self.graph
+            .scope(home)
+            .owner
+            .and_then(|class| self.graph.entity(class).ty)
+    }
+
+    pub(super) fn qualified_function_address(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<ExprFacts>, Error> {
+        let ast::ExprKind::Id(name) = self.tree.expressions.get(operand).kind else {
+            return Ok(None);
+        };
+        let node = self.tree.names.get(name);
+        if !node.global && self.tree.name_lists.get(node.components).len() == 1 {
+            return Ok(None);
+        }
+        let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+        let binding = found
+            .binding
+            .ok_or(Error::Invariant("address lookup without binding"))?;
+        if self.graph.binding(binding).kind != BindingKind::Function {
+            return Ok(None);
+        }
+        let mut inner = self.function_designation(binding, found.functions.as_slice())?;
+        inner.member_address_scope = Some(scope);
+        self.graph.expression_facts.set(operand, inner);
+        super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
+        let ty = self.function_address_type(binding, inner.ty)?;
+        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+        facts.functions = inner.functions;
+        facts.member_address_scope = Some(scope);
+        if found.functions.as_slice().len() == 1
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .template_head
+                .is_none()
+        {
+            self.check_direct_member_access(binding, scope, node.location)?;
+            if self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .availability
+                == super::graph::FunctionAvailability::Deleted
+            {
+                return Err(Error::at(node.location, "use of a deleted function"));
+            }
+            self.graph.expression_facts.set(id, facts);
+            self.select_function_designation(id, binding)?;
+            return Ok(Some(self.graph.expression_facts.get(id)?));
+        }
+        Ok(Some(facts))
+    }
+
+    pub(super) fn function_address_type(
+        &mut self,
+        binding: BindingId,
+        ty: TypeId,
+    ) -> Result<TypeId, Error> {
+        if let Some(owner) = self.member_function_owner(binding) {
+            self.graph.types.member_pointer(owner, ty)
+        } else {
+            self.graph.types.pointer(ty)
+        }
+    }
     pub(super) fn function_designation(
         &mut self,
         binding: BindingId,
@@ -95,22 +172,26 @@ impl Analyzer<'_> {
             TypeKind::Reference { element, .. } => element,
             _ => target,
         };
-        let target = match self.graph.types.get(target).kind {
-            TypeKind::Pointer(element) => element,
-            _ => target,
+        let (owner, target) = match self.graph.types.get(target).kind {
+            TypeKind::Pointer(element) => (None, element),
+            TypeKind::MemberPointer { owner, element } => (Some(owner), element),
+            _ => (None, target),
         };
         if !matches!(self.graph.types.get(target).kind, TypeKind::Function { .. }) {
             return Ok(None);
         }
         let target = self.graph.types.canonical_function(target)?;
         let mut found = None;
+        let mut template = false;
         for index in 0..self.graph.overloads.get(set).len() {
             let binding = self.graph.overloads.get(set)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if self.member_function_owner(binding) != owner {
+                continue;
+            }
             if entity.template_head.is_some() {
-                return Err(Error::Missing(
-                    "target-directed function template deduction",
-                ));
+                template = true;
+                continue;
             }
             let ty = entity.ty.ok_or(Error::Invariant("function without type"))?;
             if self.graph.types.canonical_function(ty)? == target {
@@ -119,6 +200,11 @@ impl Analyzer<'_> {
                 }
                 found = Some(binding);
             }
+        }
+        if found.is_none() && template {
+            return Err(Error::Missing(
+                "target-directed function template deduction",
+            ));
         }
         Ok(found)
     }
@@ -145,6 +231,14 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("function without type"))?;
         let ty = self.graph.types.canonical_function(ty)?;
         let root = self.graph.expression_facts.root(id);
+        let address_scope = self.graph.expression_facts.get(root)?.member_address_scope;
+        if let Some(scope) = address_scope {
+            self.check_direct_member_access(
+                binding,
+                scope,
+                self.tree.expressions.get(root).location,
+            )?;
+        }
         let inner = match self.tree.expressions.get(root).kind {
             ast::ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
@@ -159,7 +253,11 @@ impl Analyzer<'_> {
             let current = self.graph.expression_facts.root(current);
             let mut facts = self.graph.expression_facts.get(current)?;
             facts.ty = if current == root && inner.is_some() {
-                self.graph.types.pointer(ty)?
+                if address_scope.is_some() {
+                    self.function_address_type(binding, ty)?
+                } else {
+                    self.graph.types.pointer(ty)?
+                }
             } else {
                 ty
             };
@@ -170,6 +268,9 @@ impl Analyzer<'_> {
             );
             self.graph.expression_facts.set(current, facts);
             super::record(&mut self.graph.expression_types, current.index(), facts.ty);
+        }
+        if self.unevaluated == 0 {
+            self.demand_function(binding, false);
         }
         Ok(())
     }

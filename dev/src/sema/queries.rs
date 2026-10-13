@@ -26,10 +26,12 @@ impl Analyzer<'_> {
         } else {
             let operand = operand.ok_or(Error::Invariant("alignof without operand"))?;
             self.unevaluated += 1;
-            let result = self.typed_expression(operand, scope);
+            let result = self.typed_expression(operand, scope).and_then(|facts| {
+                self.check_resolved_function(operand)?;
+                Ok(facts)
+            });
             self.unevaluated -= 1;
             let facts = result?;
-            self.check_resolved_function(operand)?;
             facts.ty
         };
         if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
@@ -313,10 +315,12 @@ impl Analyzer<'_> {
             }
             if !matches!(self.tree.expressions.get(inner).kind, ExprKind::Id(_)) {
                 self.unevaluated += 1;
-                let result = self.typed_expression(operand, scope);
+                let result = self.typed_expression(operand, scope).and_then(|facts| {
+                    self.check_resolved_function(operand)?;
+                    Ok(facts)
+                });
                 self.unevaluated -= 1;
                 let facts = result?;
-                self.check_resolved_function(operand)?;
                 return match facts.category {
                     super::expression_facts::ValueCategory::Prvalue => Ok(facts.ty),
                     super::expression_facts::ValueCategory::Lvalue => {

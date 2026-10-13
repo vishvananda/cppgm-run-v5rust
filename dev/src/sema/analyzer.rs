@@ -27,7 +27,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) stack_budget: StackBudget,
     pub(super) stack_base: usize,
     pub(super) lookup_location: SourceOffset,
-    pub(super) deferred: Vec<DeferredBody>,
+    pub(super) deferred: Vec<DeferredMember>,
     pub(super) anonymous_enums: u32,
     pub(super) local_types: u32,
     pub(super) class_depth: usize,
@@ -60,6 +60,11 @@ pub(super) struct DeferredBody {
     pub parent: ScopeId,
     pub print: ScopeId,
     pub template_depth: usize,
+}
+#[derive(Clone, Copy)]
+pub(super) enum DeferredMember {
+    Body(DeferredBody),
+    Defaults(super::default_arguments::PendingDefaults),
 }
 impl<'tree> Analyzer<'tree> {
     pub(crate) fn new(
@@ -326,7 +331,7 @@ impl<'tree> Analyzer<'tree> {
                 specifiers,
                 declarator,
                 body,
-            } => self.function_definition(specifiers, declarator, body, scope, location),
+            } => self.function_definition(id, specifiers, declarator, body, scope, location),
             ast::DeclKind::Linkage {
                 language,
                 declarations,
@@ -390,6 +395,7 @@ impl<'tree> Analyzer<'tree> {
     }
     fn function_definition(
         &mut self,
+        declaration: ast::DeclId,
         specifiers: List<ast::Specifier>,
         declarator: ast::DeclaratorId,
         body: ast::BodyId,
@@ -440,6 +446,13 @@ impl<'tree> Analyzer<'tree> {
             binding,
         );
         let entity = self.graph.binding(binding).entity;
+        self.graph.entity_mut(entity).function_definition = Some(declaration);
+        self.graph.entity_mut(entity).definition_emission =
+            if self.class_depth != 0 || specs.constexpr {
+                super::function_demands::DefinitionEmission::Demanded
+            } else {
+                super::function_demands::DefinitionEmission::Always
+            };
         self.graph.entity_mut(entity).constexpr = specs.constexpr;
         self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
         if self.graph.entity(entity).defined {
@@ -462,7 +475,7 @@ impl<'tree> Analyzer<'tree> {
         if self.class_depth == 0 {
             self.function_body(deferred)
         } else {
-            self.deferred.push(deferred);
+            self.deferred.push(DeferredMember::Body(deferred));
             Ok(())
         }
     }
@@ -478,7 +491,10 @@ impl<'tree> Analyzer<'tree> {
             else {
                 return Err(Error::Invariant("body without function type"));
             };
-            self.body_context = Some(super::procedural_statements::BodyContext::new(result));
+            self.body_context = Some(super::procedural_statements::BodyContext::new(
+                result,
+                body.entity,
+            ));
         }
         let result = self.function_body_scopes(body);
         self.body_context = saved_context;
@@ -535,6 +551,12 @@ impl<'tree> Analyzer<'tree> {
         let ast::Body::Parsed(parsed) = self.tree.bodies.get(body.body) else {
             return Err(Error::Invariant("unparsed body at semantic boundary"));
         };
+        if self.semantic() && self.template_depth == 0 {
+            self.require_function_definition_types(
+                body.ty,
+                self.tree.statements.get(parsed.compound).location,
+            )?;
+        }
         if parsed.handlers.is_some() && self.graph.entity(body.entity).constexpr {
             return Err(Error::at(
                 self.tree.statements.get(parsed.compound).location,

@@ -73,6 +73,8 @@ pub(super) struct ExprFacts {
     pub anonymous_member: Option<super::graph::BindingId>,
     // Explicit designation retains the selected entity independently of spelling.
     pub member: Option<super::graph::BindingId>,
+    // Qualified address formation is distinct from parenthesized designations.
+    pub member_address_scope: Option<super::graph::ScopeId>,
 }
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
@@ -91,6 +93,7 @@ impl ExprFacts {
             call: None,
             anonymous_member: None,
             member: None,
+            member_address_scope: None,
         }
     }
 }

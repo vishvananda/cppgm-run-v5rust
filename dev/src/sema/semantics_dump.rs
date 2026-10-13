@@ -30,6 +30,7 @@ enum Item {
     Binding(BindingId, Option<ast::Initializer>),
     Storage(BindingId),
     Constructor(super::construction::ConstructorId),
+    DemandedFunction(BindingId),
     Line(&'static str),
 }
 struct Printer<'a, 'source, W: Write + ?Sized> {
@@ -56,11 +57,22 @@ impl Graph {
         };
         printer.line("translation-unit", 0)?;
         printer.work.extend(
-            self.constructors
-                .demands()
-                .iter()
+            super::function_demands::trailing(self)
+                .into_iter()
                 .rev()
-                .map(|&id| (Item::Constructor(id), 1)),
+                .map(|demand| {
+                    (
+                        match demand {
+                            super::function_demands::Demand::Constructor(id) => {
+                                Item::Constructor(id)
+                            }
+                            super::function_demands::Demand::Function { binding, .. } => {
+                                Item::DemandedFunction(binding)
+                            }
+                        },
+                        1,
+                    )
+                }),
         );
         printer.declarations(declarations, 1, false);
         while let Some((item, depth)) = printer.work.pop() {
@@ -74,6 +86,24 @@ impl Graph {
                 Item::Binding(id, initializer) => printer.binding(id, initializer, depth)?,
                 Item::Storage(id) => printer.storage_expression(id, depth)?,
                 Item::Constructor(id) => printer.constructor_definition(id, depth)?,
+                Item::DemandedFunction(binding) => {
+                    if let Some(declaration) = printer
+                        .graph
+                        .entity(printer.graph.binding(binding).entity)
+                        .function_definition
+                    {
+                        let DeclKind::Function { body, .. } =
+                            printer.tree.declarations.get(declaration).kind
+                        else {
+                            return Err(io::Error::other(
+                                "demanded definition without function syntax",
+                            ));
+                        };
+                        printer.function_definition(binding, body, depth)?;
+                    } else {
+                        printer.binding_header(binding, "function-declaration", depth)?;
+                    }
+                }
                 Item::Line(text) => printer.line(text, depth)?,
             }
         }
@@ -182,41 +212,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 declarator, body, ..
             } => {
                 let binding = self.declared(declarator)?;
-                let b = self.graph.binding(binding);
-                self.binding_header(binding, "function-definition", depth)?;
-                let scope = self
+                if self
                     .graph
-                    .entity(b.entity)
-                    .scope
-                    .ok_or_else(|| io::Error::other("function without scope"))?;
-                let ty = self
-                    .graph
-                    .types
-                    .canonical_view(b.ty.ok_or_else(|| io::Error::other("function without type"))?);
-                let TypeKind::Function { parameters, .. } = &self.graph.types.get(ty).kind else {
-                    return Err(io::Error::other("definition without function type"));
-                };
-                let mut index = 0;
-                for &binding in &self.graph.scope(scope).bindings {
-                    let binding = self.graph.binding(binding);
-                    if binding.kind != BindingKind::Parameter {
-                        continue;
-                    }
-                    self.indent(depth + 1)?;
-                    self.output.write_all(b"parameter ")?;
-                    self.name(binding.name)?;
-                    self.output.write_all(b" ")?;
-                    let parameter = *parameters
-                        .get(index)
-                        .ok_or_else(|| io::Error::other("parameter count mismatch"))?;
-                    self.ty(parameter)?;
-                    writeln!(self.output)?;
-                    index += 1;
+                    .entity(self.graph.binding(binding).entity)
+                    .definition_emission
+                    == super::function_demands::DefinitionEmission::Always
+                {
+                    self.function_definition(binding, body, depth)?;
                 }
-                let ast::Body::Parsed(body) = self.tree.bodies.get(body) else {
-                    return Err(io::Error::other("unparsed semantic body"));
-                };
-                self.work.push((Item::Statement(body.compound), depth + 1));
             }
             DeclKind::Linkage { declarations, .. } => self.declarations(declarations, depth, block),
             DeclKind::Class(_) => {
@@ -239,6 +242,55 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             _ => (),
         }
+        Ok(())
+    }
+    fn function_definition(
+        &mut self,
+        binding: BindingId,
+        body: ast::BodyId,
+        depth: usize,
+    ) -> io::Result<()> {
+        let b = self.graph.binding(binding);
+        self.binding_header(binding, "function-definition", depth)?;
+        if let Some((object, cv)) = self.function_object(binding) {
+            self.indent(depth + 1)?;
+            self.output.write_all(b"parameter this ")?;
+            self.object_pointer(object, cv)?;
+            writeln!(self.output)?;
+        }
+        let scope = self
+            .graph
+            .entity(b.entity)
+            .scope
+            .ok_or_else(|| io::Error::other("function without scope"))?;
+        let ty = self
+            .graph
+            .types
+            .canonical_view(b.ty.ok_or_else(|| io::Error::other("function without type"))?);
+        let TypeKind::Function { parameters, .. } = &self.graph.types.get(ty).kind else {
+            return Err(io::Error::other("definition without function type"));
+        };
+        let mut index = 0;
+        for &binding in &self.graph.scope(scope).bindings {
+            let binding = self.graph.binding(binding);
+            if binding.kind != BindingKind::Parameter {
+                continue;
+            }
+            self.indent(depth + 1)?;
+            self.output.write_all(b"parameter ")?;
+            self.name(binding.name)?;
+            self.output.write_all(b" ")?;
+            let parameter = *parameters
+                .get(index)
+                .ok_or_else(|| io::Error::other("parameter count mismatch"))?;
+            self.ty(parameter)?;
+            writeln!(self.output)?;
+            index += 1;
+        }
+        let ast::Body::Parsed(body) = self.tree.bodies.get(body) else {
+            return Err(io::Error::other("unparsed semantic body"));
+        };
+        self.work.push((Item::Statement(body.compound), depth + 1));
         Ok(())
     }
     fn function_name(&mut self, id: BindingId) -> io::Result<()> {
@@ -272,10 +324,75 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.variable_name(id)?;
         }
         self.output.write_all(b" ")?;
-        self.ty(binding
-            .ty
-            .ok_or_else(|| io::Error::other("binding without type"))?)?;
+        if binding.kind == BindingKind::Function {
+            self.function_type(id)?;
+        } else {
+            self.ty(binding
+                .ty
+                .ok_or_else(|| io::Error::other("binding without type"))?)?;
+        }
         writeln!(self.output)
+    }
+    fn function_object(&self, id: BindingId) -> Option<(TypeId, super::types::Cv)> {
+        let entity = self.graph.entity(self.graph.binding(id).entity);
+        let home = entity.home?;
+        if self.graph.scope(home).kind != ScopeKind::Class
+            || entity
+                .function
+                .is_some_and(|properties| properties.is_static)
+        {
+            return None;
+        }
+        let object = self
+            .graph
+            .scope(home)
+            .owner
+            .and_then(|class| self.graph.entity(class).ty)?;
+        let TypeKind::Function { cv, .. } = self.graph.types.get(entity.ty?).kind else {
+            return None;
+        };
+        Some((object, cv))
+    }
+    fn object_pointer(&mut self, object: TypeId, cv: super::types::Cv) -> io::Result<()> {
+        self.output.write_all(b"pointer to ")?;
+        if cv.0 & 1 != 0 {
+            self.output.write_all(b"const ")?;
+        }
+        if cv.0 & 2 != 0 {
+            self.output.write_all(b"volatile ")?;
+        }
+        self.ty(object)
+    }
+    fn function_type(&mut self, id: BindingId) -> io::Result<()> {
+        let ty = self
+            .graph
+            .binding(id)
+            .ty
+            .ok_or_else(|| io::Error::other("function without type"))?;
+        let ty = self.graph.types.canonical_view(ty);
+        let Some((object, cv)) = self.function_object(id) else {
+            return self.ty(ty);
+        };
+        let TypeKind::Function {
+            result,
+            parameters,
+            variadic,
+            ..
+        } = &self.graph.types.get(ty).kind
+        else {
+            return Err(io::Error::other("function without type"));
+        };
+        self.output.write_all(b"function of (")?;
+        self.object_pointer(object, cv)?;
+        for &parameter in parameters {
+            self.output.write_all(b", ")?;
+            self.ty(parameter)?;
+        }
+        if *variadic {
+            self.output.write_all(b", ...")?;
+        }
+        self.output.write_all(b") returning ")?;
+        self.ty(*result)
     }
     fn binding(
         &mut self,
@@ -649,8 +766,6 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .ok_or_else(|| io::Error::other("anonymous member without designation"))?;
             self.name(self.graph.binding(binding).name)?;
             self.work.push((Item::Storage(storage), depth + 1));
-        } else if let Some(binding) = facts.function {
-            self.function_name(binding)?;
         } else {
             super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
         }
@@ -763,17 +878,6 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // including when a reference cast retypes its presentation item.
             category = facts.category;
         }
-        if matches!(node.kind, ExprKind::Id(_))
-            && let Some(binding) = facts.function
-        {
-            // Printer::id_node spells a selected function's canonical type,
-            // even when a surrounding reference cast retypes the view.
-            ty = self
-                .graph
-                .binding(binding)
-                .ty
-                .ok_or_else(|| io::Error::other("function without type"))?;
-        }
         let label = match node.kind {
             ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
             ExprKind::Id(_) => "id-expression",
@@ -804,7 +908,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         };
         self.indent(depth)?;
         write!(self.output, "{label} {} ", category.spelling())?;
-        self.ty(ty)?;
+        if matches!(node.kind, ExprKind::Id(_))
+            && let Some(binding) = facts.function
+        {
+            self.function_type(binding)?;
+        } else {
+            self.ty(ty)?;
+        }
         match node.kind {
             ExprKind::Id(name) => self.id_node(name, facts, depth)?,
             ExprKind::Literal(literal) => {

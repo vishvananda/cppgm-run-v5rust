@@ -1,8 +1,227 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `0808a9169dca5eed4c67f1771c690eebc58ad426` (clean implementation entry).
+Current implementation group base: `4663046a410b80aa3f53857525c941b937a8767c` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Class-function identity, addresses and demand checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The preceding goal turn is classified as progress:
+`4663046` translated explicit data members and reduced fixed failures from
+14 to 12. This entry revalidated the clean checkout, read all owning guides
+and consulted the frozen C++ owners before rerunning the full turn-start
+manifest. Stage base and last-audited commit above are unchanged; implementation
+does not advance the stage or certify the remaining groups.
+
+The fixed manifest improves **186/198 → 192/198**, **12 → 6 failures**,
+with identical coverage and all 186 prior passing identities preserved.
+The original course lane improves **217/229 → 223/229**, with the same six
+failures. All 31 additional existing course regressions execute and pass.
+No fixture, reference, oracle, protected checker, Ralph state or acceptance
+policy changed. Optimizer, register allocator, lowering, emission and backend
+lifetimes are preserved; this frontend group does not claim PA34 object parity.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-member-functions-20261013/`.
+Generated inputs, outputs, raw attempts, receipts and measurements remain
+outside the committed checkout. The fixed turn-start log and identity snapshot
+are `baseline.log` and `baseline-manifest.json`; the preceding final course
+receipt is retained as `baseline-course-result.json`.
+
+### Frozen owners and typed responsibilities
+
+Consulted `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/` directly:
+`analyzer_declarations.cpp::{declare_function,redeclare_function,
+check_member_overload,signature_of,define_function,require_definition_types}`,
+`analyzer_expressions.cpp::{binding_expression,address_of,select_overloaded,
+resolve_overloaded,odr_use}`, `analyzer_calls.cpp::resolved_call`,
+`analyzer_initialization.cpp::{record_default_arguments,type_default_arguments}`,
+`analyzer_classes.cpp::finish_class_nesting`, `analyzer_bodies.cpp`'s body/demand
+context, and `semantics_dump.cpp::{function_type,function_definition,id_node,
+schedule,trailing}`. `source-map.tsv` records the partial translation and
+remaining owners; no C++ implementation is invoked by Rust compiler code.
+
+- `function_names.rs` and `declarations.rs` publish class functions through
+  the existing typed callable factory, retaining canonical parameter/cv/ref
+  signatures, first entity identity, static properties and source bindings.
+  A new member overload checks static/nonstatic and mixed ref-qualification
+  conflicts only within its named set. Existing signatures follow redeclaration
+  rules, retaining effective static properties for out-of-class definitions
+  and allocation functions. All matching named overloads participate in
+  in-class redeclaration checks. By-value definition parameters/results must
+  be complete at body analysis, after class completion.
+- `function_resolution.rs` reads original qualified address operands once.
+  Parenthesized designation remains distinct from `&C::f`. A single ordinary
+  function resolves immediately; genuine overloads retain compact `OverloadId`
+  slices for target-directed selection. Member/static kind, canonical function
+  type and owner identity filter candidates; a matching non-template wins
+  before template deduction. Inheritance paths and template specialization
+  deduction remain explicit dependencies. Selected access/deleted diagnostics
+  preserve the frozen name versus address location. The original operand keeps
+  its selected function `TypeId`; the unary address keeps its distinct immutable
+  member-pointer `TypeId`. Argument ranking and return/assignment/cast contexts
+  consume those facts without another lookup.
+- `expression_facts.rs` retains the address context `ScopeId` and selected
+  canonical function origin on the original `ExprId`. The dump reads original
+  name spelling, including aliases, and computes its function presentation
+  from recorded ownership/cv facts. Member-pointer function types keep their
+  cv/ref suffix; function designations/definitions show the implicit object
+  pointer and `parameter this`. No source spelling is a semantic identity.
+- `default_arguments.rs` records default expression IDs and introduction
+  visibility once, then checks member clauses through the source-ordered
+  `DeferredMember` class-completion queue alongside bodies. Complete-class
+  lookup may find later members; namespace lookup stops at the class-completion
+  event. Defaults have no enclosing function's implicit object. Nonstatic data
+  members and calls reject exactly, while unevaluated members, enum/static
+  defaults, lists and ordinary conversions retain their shared owners.
+- `function_demands.rs` owns private typed demand lists keyed by function
+  `EntityId` or `ConstructorId`. Repeated uses deduplicate while retaining first
+  order and merging whether the function is called. `DefinitionEmission`
+  separates ordinary root definitions from inline/constexpr demand. An
+  ephemeral `BodyContext` carries the current function entity; inline/constexpr
+  bodies retain their own dependencies, while ordinary out-of-class definitions
+  publish root uses. Scalar default construction in member bodies records the
+  same typed plans as ordinary declarations. No unrelated body is instantiated.
+- The explicit semantic view closes demand with separate implicit/member queues
+  and identity deduplication in C++ order. Cycles terminate; address-only uses
+  of undefined members do not create declarations, while calls may. New demand
+  encountered while printing a member joins the appropriate next queue round.
+  Printing performs no analysis, name lookup or reparsing. `sizeof`/`alignof`/
+  `decltype` selection stays under the unevaluated boundary, preventing output
+  demand from query-only addresses.
+
+Architecture review: one parsed AST, canonical immutable types, original dense
+expression facts and per-entity source/demand records. Lookup visits the named
+class/overload set and required lexical prefixes, never unrelated declarations.
+Deferred defaults/bodies run on outermost class completion, not unit polling.
+Demand collection is keyed and deduplicated; demand closure is linear in the
+reachable edge set. Body context and overload scratch retain their existing
+lifetimes. The ownership regression proves const overload selection, shared
+origin on repeated addresses, original operand/address type separation,
+query-only exclusion, constructor closure from only the selected member, and
+undemanded owner layout/default construction. Rustfmt, strict Clippy and the
+companion file audit pass with no new lint expectations, blanket suppression,
+dependency, unsafe code, FFI, environment read or subprocess compiler fallback.
+
+### Validation evidence
+
+Candidate cppgm SHA-256:
+`7454c3a5f934d8386bf6cd745aa79957dd4db1a1897a3363efd0f1d61d962198`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+`checks.json` retains terminal command exits and binary hashes.
+`preservation.json` proves the exact fixed coverage, failure reduction and
+zero lost passing identities. `protected-stage-result.json` retains every
+case receipt; raw diagnostics/outputs remain under
+`../clone/cases/pa7/<case-hash>/trace.jsonl` and its mismatch directory.
+The course receipt retains its failure marker; process exit alone is not
+reported as successful course validation.
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 192/198, six failures; exit 1 | `stage-required.log`, `protected-stage-result.json`, `fixed-manifest.json` |
+| `make test-pa7` | Same fixed identities and counts; make exit 2 | `stage.log` |
+| `make course-pa7` | 223/229, same six failures; marker retained; make exit 2 | `course.log`, `course-result.json`; `../clone/course/pa7/test/trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json`, `prior-course-results.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS; independent preservation of all 186 turn-start passes | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all-feature Clippy, debug/release workspace tests (175 library tests each), file audit | `lint.log` |
+| `make audit-rust` | PASS, 129 implementation files, zero findings | `audit.log` |
+| `python3 .../pa7-member-functions-20261013/probe.py` | 100/100 exact protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl`, sources |
+| `python3 .../pa7-member-functions-20261013/measure.py` | Supported scaling and protected native receipts | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl`, qualification attempts |
+
+The probes cover cv/ref overloads, pointer-to-cv return types, single versus
+true overloaded addresses, static/nonstatic kind, owner/type mismatch,
+reference/assignment/return/argument/cast use, aliases and original name
+spelling, deleted/private selection, duplicate and return-only declarations,
+static/ref conflicts, canonical parameter normalization, out-of-class and
+private nested definitions, complete-class defaults, incomplete definition
+types, constexpr emission, root versus function-owned demand, deduplication,
+cycles, queue rounds and unevaluated addresses. These supplement the unchanged
+fixed and course suites; they do not replace either lane.
+
+The existing `last-stageProgress.log` counts the fixed gate against 229 course
+cases and reports 31 cases unrun. The protected manifest has 198 entries;
+`stage pa7` executes all 198, while `course pa7` executes all 229. The mismatch
+in that progress report is retained in `harness-counts.json`, reproducible with
+the required stage command and `make course-pa7`. The protected policy and
+Ralph state remain unchanged. Both complete lane counts and exact fixed
+identity preservation are supplied for Ralph's checkpoint review; no external
+stage-advancement claim is made.
+
+### Measured costs and stack qualification
+
+Warm paired measurements run after test jobs finish, with A/A calibration,
+ABBA/BAAB blocks, every timing/RSS sample, source/binary hash and output digest
+retained in `measurements.json`. All paired output hashes agree and all 18
+protected workload receipts match. Workloads independently scale distinct
+classes with two cv overloads, repeated selection from one shared class, and
+a reachable chain of inline member-address demands. The shared class emits
+one selected definition despite repeated uses; the demand chain follows only
+its reachable edges. Observations include process startup and dump I/O, not
+cold-cache or hardware-counter claims. PA35 generated-code improvements are
+outside this group's requirements.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| classes / 128 | 7.10 / 6466 | 21.87 / 8368 |
+| shared-overloads / 128 | 5.01 / 6514 | 17.00 / 8378 |
+| demand-chain / 128 | 6.34 / 6490 | 19.28 / 7988 |
+| classes / 512 | 15.75 / 9294 | 39.61 / 8734 |
+| shared-overloads / 512 | 8.72 / 6522 | 22.94 / 8000 |
+| demand-chain / 512 | 10.39 / 7900 | 27.95 / 7996 |
+| classes / 2048 | 46.57 / 17734 | 94.34 / 17736 |
+| shared-overloads / 2048 | 15.28 / 8598 | 37.78 / 7996 |
+| demand-chain / 2048 | 26.25 / 13554 | 64.01 / 12120 |
+
+Native probes fix 1,000 nested ordinary calls around a member-function address,
+1,500 unary operators over that address, and 1,500 enclosing parentheses,
+starting at a 1 MiB stack. All three protected receipts have `match: true`
+and `stack_qualification.passed: true`: both tools succeed with identical
+streams, deterministic counters and generated files at a shared 16 MiB
+retry. Raw original attempts and retries remain under `stack-qualifications/`.
+Judge the protected receipt, not the adapter's retained original exit or
+exhaustion position. The genuine byte-budget guard is unchanged; no native
+cutoff, physical frame size or diagnostic position was calibrated. Shared
+storage was about 28.50 GB used under the 107.37 GB capacity ceiling.
+
+### Exact newly passing fixed identities
+
+```text
+tests/general/100-private-nested-out-of-class-member-definition.t
+tests/general/300-default-argument-nonstatic-member-bad.t
+tests/general/300-deferred-demand-closure.t
+tests/general/300-member-cv-overload-identity.t
+tests/general/300-member-function-pointer-return-pointer-const.t
+tests/general/300-static-cast-member-overload-prefers-nontemplate.t
+```
+
+### Remaining identities and next dependency boundary
+
+The coherent group completes ordinary class-function identity, qualified
+function-address selection and demand closure for scalar default-construction
+plans. Bound member designation/calls and implicit object expressions remain
+explicit status-86 dependencies. The next fixed groups are special-member
+semantic actions (two), inheritance formation/conversions (two), class copying
+(one), and template target deduction (one), as recorded in
+`failure-clusters.json`. Special-member declaration identity already exists
+from PA6; semantic constructor actions need typed body/construction plans and
+the frozen special-member presentation. Class subobjects, bit fields, friend/
+inheritance access, operator calls, template specialization and constexpr
+interpreter execution remain separate owners. A status-86 path is still a
+failed case, even for the oracle's rejecting most-vexing declaration.
+
+```text
+tests/general/100-private-nested-out-of-class-constructor-definition.t
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/300-elaborated-local-struct-copy-init.t
+tests/general/300-most-vexing-local-function-member-call-bad.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
 
 ## Explicit data-member designation checkpoint — 2026-10-13
 

@@ -74,6 +74,29 @@ impl Definition {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn require_function_definition_types(
+        &self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let TypeKind::Function {
+            result, parameters, ..
+        } = &self.graph.types.get(ty).kind
+        else {
+            return Err(Error::Invariant("definition without function type"));
+        };
+        for &ty in parameters.iter().chain(std::iter::once(result)) {
+            if let TypeKind::Class(class) = self.graph.types.get(ty).kind
+                && !self.graph.entity(class).complete
+            {
+                return Err(Error::at(
+                    location,
+                    "a parameter or return type of a function definition is incomplete",
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(super) fn predeclare_allocations(&mut self) -> Result<(), Error> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let pointer = self.graph.types.pointer(void)?;
@@ -215,9 +238,6 @@ impl Analyzer<'_> {
         self.function_specifier_type(specs, info, scope)?;
         let key = self.declaration_key(info)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
-        if self.semantic() && self.graph.scope(home).kind == ScopeKind::Class {
-            return Err(Error::Missing("class semantic functions"));
-        }
         if info.home.is_some() && specs.is_static && self.graph.scope(home).kind == ScopeKind::Class
         {
             return Err(Error::at(
@@ -262,6 +282,7 @@ impl Analyzer<'_> {
             ));
         }
         self.check_callable_qualifiers(info, key, specs, home, location)?;
+        self.check_member_overload(info.ty, key, specs, home, location)?;
         let binding = self.declare_value(
             key,
             info.ty,
@@ -320,6 +341,90 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+
+    fn check_member_overload(
+        &mut self,
+        ty: super::types::TypeId,
+        key: ValueKey,
+        specs: Specifiers,
+        home: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.graph.scope(home).kind != ScopeKind::Class
+            || self.active_template_head(home).is_some()
+        {
+            return Ok(());
+        }
+        let ty = self.graph.types.canonical_function(ty)?;
+        let TypeKind::Function { reference, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("member overload without function type"));
+        };
+        // Probe only the named overload set; no unrelated declaration or
+        // body is visited. Return types do not distinguish overloads.
+        let candidates: Vec<_> = self.graph.functions_at(home, key).collect();
+        for binding in candidates {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_some() {
+                continue;
+            }
+            let other = entity.ty.ok_or(Error::Invariant("function without type"))?;
+            let is_static = entity.function.is_some_and(|props| props.is_static);
+            let other = self.graph.types.canonical_function(other)?;
+            // An existing signature follows redeclare_function, retaining
+            // its effective static property (an out-of-class definition does
+            // not repeat `static`). Only a new overload runs this check.
+            if self.same_function_parameters(ty, other)? {
+                return Ok(());
+            }
+            let TypeKind::Function {
+                reference: old_ref, ..
+            } = self.graph.types.get(other).kind
+            else {
+                return Err(Error::Invariant("member overload without function type"));
+            };
+            if !self.same_member_parameter_list(ty, other)? {
+                continue;
+            }
+            if is_static != specs.is_static {
+                return Err(Error::at(
+                    location,
+                    "a static and a non-static member function with the same parameters",
+                ));
+            }
+            if reference.is_none() != old_ref.is_none() {
+                return Err(Error::at(
+                    location,
+                    "member functions with the same parameters, some with a ref-qualifier and some without",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn same_member_parameter_list(
+        &self,
+        a: super::types::TypeId,
+        b: super::types::TypeId,
+    ) -> Result<bool, Error> {
+        let (
+            TypeKind::Function {
+                parameters: ap,
+                variadic: av,
+                ..
+            },
+            TypeKind::Function {
+                parameters: bp,
+                variadic: bv,
+                ..
+            },
+        ) = (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
+        else {
+            return Err(Error::Invariant(
+                "member parameter comparison without functions",
+            ));
+        };
+        Ok(ap == bp && av == bv)
     }
 
     pub(super) fn declare_function_init(
