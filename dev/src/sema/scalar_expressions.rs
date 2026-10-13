@@ -129,8 +129,8 @@ impl Analyzer<'_> {
                 self.typed_expression(condition, scope)?;
                 self.convert_bool(condition)?;
                 self.typed_expression(then_expr, scope)?;
-                self.typed_expression(else_expr, scope)?;
                 self.check_resolved_function(then_expr)?;
+                self.typed_expression(else_expr, scope)?;
                 self.check_resolved_function(else_expr)?;
                 let a = self.graph.expression_facts.get(then_expr)?;
                 let b = self.graph.expression_facts.get(else_expr)?;
@@ -141,6 +141,23 @@ impl Analyzer<'_> {
             }
             ExprKind::Subscript { base, index } => {
                 self.typed_expression(base, scope)?;
+                self.check_resolved_function(base)?;
+                if matches!(
+                    self.tree.expressions.get(index).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    let facts = self.graph.expression_facts.get(base)?;
+                    return Err(
+                        if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)) {
+                            Error::Missing("class braced subscript operator resolution")
+                        } else {
+                            Error::at(
+                                self.tree.expressions.get(index).location,
+                                "a braced-init-list subscript of no class object",
+                            )
+                        },
+                    );
+                }
                 self.typed_expression(index, scope)?;
                 self.scalar_subscript(id, base, index)?
             }

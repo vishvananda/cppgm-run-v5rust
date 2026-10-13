@@ -1,0 +1,7 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function __builtin_abort function of () returning void
+    function __builtin_abort function of () returning void
+end translation unit

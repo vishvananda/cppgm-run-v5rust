@@ -2,7 +2,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    function_names::{Definition, SpecialName, ValueKey},
+    function_names::{Definition, ValueKey},
     graph::{Binding, BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::Filter,
     specifiers::{DeclarationRole, Specifiers},
@@ -18,6 +18,7 @@ use crate::{
 };
 #[derive(Clone, Copy)]
 pub(super) struct ValueScope {
+    pub qualified: bool,
     pub home: ScopeId,
     pub print: ScopeId,
     pub head: Option<super::templates::HeadId>,
@@ -361,7 +362,12 @@ impl Analyzer<'_> {
                 info.name.is_some() && info.name == self.graph.entity(class).name
             });
         if specs.role == DeclarationRole::Typedef
-            && (member.is_some() || class_name || self.conversion_declarator(&info))
+            && (info.home.is_some()
+                || init.initializer.is_some()
+                || specs.constexpr
+                || member.is_some()
+                || class_name
+                || self.conversion_declarator(&info))
         {
             let message = if info.home.is_some() || init.initializer.is_some() {
                 "invalid typedef declarator"
@@ -430,19 +436,7 @@ impl Analyzer<'_> {
         let home = info.home.unwrap_or(self.declaration_scope(scope));
         let location = self.declarator_location(init.declarator)?;
         if specs.role == DeclarationRole::Typedef {
-            if self.declarator_specifies_exceptions(Some(init.declarator)) {
-                return Err(Error::at(
-                    location,
-                    "an exception-specification in a typedef declaration",
-                ));
-            }
-            let binding = self.declare_alias(name, info.ty, home, location)?;
-            super::record(
-                &mut self.graph.declared_bindings,
-                init.declarator.index(),
-                binding,
-            );
-            return Ok(());
+            return self.declare_typedef_binding(init.declarator, name, info.ty, home, location);
         }
         let mut ty = info.ty;
         if matches!(
@@ -481,6 +475,11 @@ impl Analyzer<'_> {
             self.tree.declarators.get(init.declarator).location,
         )?;
         self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
+        let mut specs = specs;
+        specs.is_extern |= self.linkage_specification
+            == Some(super::linkage::Specification::Single)
+            && self.graph.scope(home).kind == ScopeKind::Namespace;
+        self.check_variable_storage(specs, init.initializer.is_some(), home, location)?;
         if info.home.is_none()
             && self.graph.scope(home).kind == ScopeKind::Class
             && self
@@ -499,6 +498,7 @@ impl Analyzer<'_> {
             name.into(),
             ty,
             ValueScope {
+                qualified: info.home.is_some(),
                 home,
                 print: info.home.unwrap_or(scope),
                 head: self.active_template_head(scope),
@@ -572,6 +572,28 @@ impl Analyzer<'_> {
         {
             self.variable_destruction(binding, info.lookup, location, init.initializer.is_some())?;
         }
+        Ok(())
+    }
+    fn declare_typedef_binding(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        name: NameId,
+        ty: TypeId,
+        home: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.declarator_specifies_exceptions(Some(declarator)) {
+            return Err(Error::at(
+                location,
+                "an exception-specification in a typedef declaration",
+            ));
+        }
+        let binding = self.declare_alias(name, ty, home, location)?;
+        super::record(
+            &mut self.graph.declared_bindings,
+            declarator.index(),
+            binding,
+        );
         Ok(())
     }
     fn complete_initializer_array(
@@ -693,6 +715,7 @@ impl Analyzer<'_> {
         specs: Specifiers,
     ) -> Result<BindingId, Error> {
         let ValueScope {
+            qualified,
             home,
             print,
             head,
@@ -701,6 +724,13 @@ impl Analyzer<'_> {
         } = context;
         if let Some(name) = name.identifier() {
             self.check_template_parameter_name(print, name, location)?;
+        }
+        if kind == BindingKind::Function
+            && home == self.graph.global
+            && head.is_none()
+            && name.identifier() == Some(self.builtin_names.abort)
+        {
+            self.ensure_abort()?;
         }
         if kind == BindingKind::Variable
             && self.graph.scope(home).guarded
@@ -723,18 +753,16 @@ impl Analyzer<'_> {
         if kind == BindingKind::Function
             && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
         {
-            existing = None;
-            let candidates: Vec<_> = self.graph.functions_at(home, name).collect();
-            for candidate in candidates {
-                let binding = self.graph.binding(candidate);
-                let old = binding
-                    .ty
-                    .ok_or(Error::Invariant("function without type"))?;
-                if self.same_function_parameters(old, ty)? {
-                    existing = Some(candidate);
-                    break;
-                }
-            }
+            existing = self.match_declared_function(home, name, ty, location)?;
+        }
+        if kind == BindingKind::Variable
+            && existing.is_none()
+            && self.graph.scope(home).kind == ScopeKind::Block
+            && specs.is_extern
+            && let Some(name) = name.identifier()
+            && let Some(outer) = self.outer_linkage_entity(home, name, kind, ty)?
+        {
+            entity = Some(outer);
         }
         if let Some(existing) = existing {
             let binding = self.graph.binding(existing);
@@ -801,6 +829,13 @@ impl Analyzer<'_> {
                             "a static declaration of a function declared with external linkage",
                         ));
                     }
+                    if self.graph.scope(home).kind == ScopeKind::Namespace
+                        && !qualified
+                        && self.graph.entity(binding.entity).builtin.is_none()
+                        && let Some(properties) = self.graph.entity(binding.entity).function
+                    {
+                        self.agree_language(properties.language, location)?;
+                    }
                     if self.graph.entity(binding.entity).constexpr != specs.constexpr {
                         return Err(Error::at(
                             location,
@@ -808,12 +843,19 @@ impl Analyzer<'_> {
                         ));
                     }
                 } else if let Some(completed) = self.graph.types.complete_array(old, ty) {
+                    self.agree_variable_linkage(binding.entity, specs, home, qualified, location)?;
                     self.graph.entity_mut(binding.entity).ty = Some(completed);
                 } else {
                     return Err(Error::at(location, "conflicting declaration of a variable"));
                 }
                 entity = Some(binding.entity);
             }
+        }
+        if let Some(entity) = entity
+            && kind == BindingKind::Variable
+            && existing.is_none()
+        {
+            self.complete_linked_variable(entity, ty, location)?;
         }
         let entity = if let Some(entity) = entity {
             entity
@@ -822,42 +864,52 @@ impl Analyzer<'_> {
                 .graph
                 .add_entity(Some(ty), name.identifier(), Keyword::Int)?;
             if kind == BindingKind::Variable {
-                self.graph.entity_mut(entity).variable = Some(super::graph::VariableProperties {
-                    is_extern: specs.is_extern,
-                    thread_storage: specs.thread_storage,
-                    automatic: self.graph.scope(home).kind == ScopeKind::Block
-                        && !specs.is_static
-                        && !specs.is_extern
-                        && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
-                });
+                self.initialize_linkage(
+                    entity,
+                    specs,
+                    super::linkage::Declaration {
+                        home,
+                        name,
+                        ty,
+                        kind,
+                        templated: head.is_some(),
+                        location,
+                    },
+                )?;
             }
             entity
         };
         if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
-            let member = self.graph.scope(home).kind == ScopeKind::Class;
-            let special = name.special();
-            let allocation = special.is_some_and(SpecialName::allocation);
-            if member
-                && specs.is_static
-                && matches!(special, Some(SpecialName::Operator { .. }))
-                && !allocation
-            {
-                return Err(Error::at(location, "a static member operator function"));
-            }
-            self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
-                internal_linkage: specs.is_static
-                    && self.graph.scope(home).kind == ScopeKind::Namespace
-                    || !self.c_language && self.internal_namespace(home),
-                is_static: member && (specs.is_static || allocation),
-                special,
-                allocation: None,
-            });
+            self.initialize_linkage(
+                entity,
+                specs,
+                super::linkage::Declaration {
+                    home,
+                    name,
+                    ty,
+                    kind,
+                    templated: head.is_some(),
+                    location,
+                },
+            )?;
         }
         if kind == BindingKind::Function
             && let Some(head) = head
         {
             self.merge_template_head(entity, head, location)?;
         }
+        let ty = if kind == BindingKind::Variable
+            && matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Array { bound: 0, .. }
+            ) {
+            self.graph
+                .entity(entity)
+                .ty
+                .ok_or(Error::Invariant("completed variable without type"))?
+        } else {
+            ty
+        };
         let binding = self.graph.add_binding(
             home,
             Some(print),
@@ -874,7 +926,34 @@ impl Analyzer<'_> {
         }
         Ok(binding)
     }
-    fn internal_namespace(&self, mut scope: ScopeId) -> bool {
+    fn match_declared_function(
+        &mut self,
+        home: ScopeId,
+        name: ValueKey,
+        ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<Option<BindingId>, Error> {
+        let mut next = 0;
+        while let Some(candidate) = self.graph.next_function(home, name, &mut next) {
+            let binding = self.graph.binding(candidate);
+            let old = binding
+                .ty
+                .ok_or(Error::Invariant("function without type"))?;
+            if self.same_function_parameters(old, ty)? {
+                if self.graph.entity(binding.entity).home != Some(home)
+                    && self.graph.scope(home).kind != ScopeKind::Class
+                {
+                    return Err(Error::at(
+                        location,
+                        "function conflicts with a using-declaration",
+                    ));
+                }
+                return Ok(Some(candidate));
+            }
+        }
+        Ok(None)
+    }
+    pub(super) fn internal_namespace(&self, mut scope: ScopeId) -> bool {
         loop {
             let current = self.graph.scope(scope);
             if scope != self.graph.global

@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable x array of 2 int
+    function f function of () returning void
+    scope function f
+      scope block
+        variable x array of 2 int
+end translation unit

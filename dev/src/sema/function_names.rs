@@ -131,6 +131,8 @@ impl Analyzer<'_> {
                 };
                 let entity = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
                 self.graph.entity_mut(entity).function = Some(FunctionProperties {
+                    language: super::linkage::Language::Cpp,
+                    denotes: None,
                     internal_linkage: false,
                     is_static: false,
                     special: Some(name),
@@ -287,6 +289,7 @@ impl Analyzer<'_> {
             key,
             info.ty,
             super::declarations::ValueScope {
+                qualified: info.home.is_some(),
                 home,
                 print: info.home.unwrap_or(scope),
                 head,

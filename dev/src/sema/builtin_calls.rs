@@ -23,6 +23,46 @@ pub(super) struct BuiltinNames {
     pub constant_p: NameId,
 }
 impl Analyzer<'_> {
+    pub(super) fn ensure_abort(&mut self) -> Result<super::graph::BindingId, Error> {
+        let key = self.builtin_names.abort;
+        if let Some(binding) = self.graph.value_binding(self.graph.global, key.into()) {
+            return Ok(binding);
+        }
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        let ty = self.graph.types.intern(
+            TypeKind::Function {
+                result: void,
+                parameters: Vec::new(),
+                variadic: false,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        let entity = self.graph.add_entity(Some(ty), Some(key), Keyword::Int)?;
+        self.graph.entity_mut(entity).builtin = Some(BuiltinFunction::Abort);
+        self.graph.entity_mut(entity).exceptions =
+            super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
+        self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+            internal_linkage: false,
+            language: super::linkage::Language::C,
+            denotes: None,
+            is_static: false,
+            special: None,
+            allocation: None,
+        });
+        self.graph.add_binding(
+            self.graph.global,
+            None,
+            Binding {
+                kind: BindingKind::Function,
+                name: Some(key),
+                entity,
+                ty: Some(ty),
+                key: Keyword::Int,
+            },
+        )
+    }
     pub(super) fn builtin_call(
         &mut self,
         id: ast::ExprId,
@@ -40,30 +80,7 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         if key == self.builtin_names.abort {
-            let void = self.graph.types.scalar(Scalar::Void)?;
-            let ty = self.graph.types.intern(
-                TypeKind::Function {
-                    result: void,
-                    parameters: Vec::new(),
-                    variadic: false,
-                    cv: Cv::default(),
-                    reference: None,
-                },
-                Cv::default(),
-            )?;
-            let entity = self.graph.add_entity(Some(ty), Some(key), Keyword::Int)?;
-            self.graph.entity_mut(entity).builtin = Some(BuiltinFunction::Abort);
-            let binding = self.graph.add_binding(
-                self.graph.global,
-                None,
-                Binding {
-                    kind: BindingKind::Function,
-                    name: Some(key),
-                    entity,
-                    ty: Some(ty),
-                    key: Keyword::Int,
-                },
-            )?;
+            let binding = self.ensure_abort()?;
             found.binding = Some(binding);
             found.functions.push(binding);
             return Ok(None);

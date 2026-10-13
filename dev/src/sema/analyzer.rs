@@ -33,6 +33,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) class_depth: usize,
     pub(super) template_depth: usize,
     pub(super) c_language: bool,
+    pub(super) linkage_specification: Option<super::linkage::Specification>,
+    pub(super) block_linkages: super::linkage::BlockLinkages,
     pub(super) template_head: Option<super::templates::HeadId>,
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
@@ -114,6 +116,8 @@ impl<'tree> Analyzer<'tree> {
             class_depth: 0,
             template_depth: 0,
             c_language: false,
+            linkage_specification: None,
+            block_linkages: super::linkage::BlockLinkages::default(),
             template_head: None,
             constant_spine: Vec::new(),
             constant_discard_work: Vec::new(),
@@ -344,12 +348,19 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::Linkage {
                 language,
                 declarations,
-                ..
+                braced,
             } => {
                 let saved = self.c_language;
+                let saved_specification = self.linkage_specification;
                 self.c_language = self.literal_bytes.get(language) == b"C";
+                self.linkage_specification = Some(if braced {
+                    super::linkage::Specification::Block
+                } else {
+                    super::linkage::Specification::Single
+                });
                 let result = self.declarations(declarations, scope);
                 self.c_language = saved;
+                self.linkage_specification = saved_specification;
                 result
             }
             ast::DeclKind::Enum { .. } => {

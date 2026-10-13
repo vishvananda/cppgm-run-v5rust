@@ -5,6 +5,30 @@ Last audited commit: `5851cab157eacc66f410f3275b0c06bd2f8d1c41` (PA6 full-stage 
 Audit entries advance this field to the reviewed implementation revision;
 Ralph retains stage advancement and goal ownership.
 
+## PA7 audit follow-up to PA6 declarations — 2026-10-13
+
+Reviewed clean entry `6ef88b8823f646a16bb17f0725394a355c48b635` and the
+resulting implementation revision recorded in the PA7 ledger. This supplements
+the prior PA6 acceptance review; it does not replace its stage base or Ralph's
+stage ownership. The PA7 independent source audit found earlier-owned storage,
+language linkage, block entity adoption, using-signature conflict, typedef and
+builtin exception declaration mismatches. Rust `sema/linkage.rs`, declaration
+and builtin/exception owners now implement the C++ control flow and failure
+order, with namespace/name-indexed block obligations, retained first-declaration
+facts, shared variable IDs and independent block-function defaults.
+
+28 required regressions belong in PA6's original executed types lane; their
+exact paths and new frozen reference generation are recorded in `fixtures.json`
+at `/home/vishvananda/work/private/v5rust/artifacts/pa7-declaration-audit-20261013/`.
+No existing fixture/reference or acceptance manifest changed. The final
+`clone_check.py prior pa7` reruns PA1–6 fixed gates and full course suites:
+PA6 remains **121/121 fixed**, now **722/722 full course**, retaining all
+694 preceding course IDs including multi-unit cases. Build, strict rustfmt/
+Clippy/debug+release tests, file audit and safe-Rust audit pass. See the PA7
+follow-up for exact ownership, resolved failures, commit hashes, artifact paths,
+resource observations and the independently found frozen-oracle signal bugs;
+those are neither accepted PA6 rejection fixtures nor altered policy.
+
 ## Declaration checkpoint contract and ownership
 
 This is a coherent partial PA6 implementation checkpoint, not PA6 completion

@@ -85,6 +85,8 @@ pub(super) enum Access {
 #[derive(Clone, Copy)]
 pub(super) struct FunctionProperties {
     pub internal_linkage: bool,
+    pub language: super::linkage::Language,
+    pub denotes: Option<EntityId>,
     pub is_static: bool,
     pub special: Option<super::function_names::SpecialName>,
     pub allocation: Option<super::function_names::AllocationOrigin>,
@@ -93,6 +95,8 @@ pub(super) struct FunctionProperties {
 pub(super) struct VariableProperties {
     // The C++ entity retains these facts from its first declaration.
     pub is_extern: bool,
+    pub internal_linkage: bool,
+    pub language: super::linkage::Language,
     pub automatic: bool,
     pub thread_storage: super::specifiers::ThreadStorage,
 }
@@ -602,6 +606,27 @@ impl Graph {
                         .lookup_limit
                         .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
             })
+    }
+    // An ordinal cursor lets declaration matching intern canonical types without
+    // borrowing the index or allocating a copy of its candidate set.
+    pub(super) fn next_function(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        next: &mut usize,
+    ) -> Option<BindingId> {
+        let set = self.function_sets.get(&(scope, key))?;
+        while let Some(&id) = set.get(*next) {
+            *next += 1;
+            if self.scope(scope).kind != ScopeKind::Namespace
+                || self
+                    .lookup_limit
+                    .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+            {
+                return Some(id);
+            }
+        }
+        None
     }
     pub(super) fn function_default(
         &self,

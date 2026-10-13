@@ -175,17 +175,18 @@ impl Analyzer<'_> {
         right: ast::ExprId,
     ) -> Result<ExprFacts, Error> {
         self.check_resolved_function(left)?;
+        if matches!(op, P::LogicalAnd | P::LogicalOr) {
+            self.convert_bool(left)?;
+            self.check_resolved_function(right)?;
+            self.convert_bool(right)?;
+            let ty = self.graph.types.scalar(Scalar::Bool)?;
+            return self.new_expression_facts(ty, V::Prvalue);
+        }
         self.check_resolved_function(right)?;
         let lf = self.graph.expression_facts.get(left)?;
         let rf = self.graph.expression_facts.get(right)?;
         if op == P::Comma {
             return self.new_expression_facts(rf.ty, rf.category);
-        }
-        if matches!(op, P::LogicalAnd | P::LogicalOr) {
-            self.convert_bool(left)?;
-            self.convert_bool(right)?;
-            let ty = self.graph.types.scalar(Scalar::Bool)?;
-            return self.new_expression_facts(ty, V::Prvalue);
         }
         let a = self.decayed_type(lf.ty)?;
         let b = self.decayed_type(rf.ty)?;
@@ -230,6 +231,11 @@ impl Analyzer<'_> {
             let ty = self.graph.types.scalar(Scalar::Bool)?;
             return self.new_expression_facts(ty, V::Prvalue);
         }
+        if matches!(self.graph.types.get(a).kind, TypeKind::Scalar(Scalar::Void))
+            || matches!(self.graph.types.get(b).kind, TypeKind::Scalar(Scalar::Void))
+        {
+            return Err(self.operator_error(id, "operand of type void"));
+        }
         let lp = self.object_pointer(a).is_some();
         let rp = self.object_pointer(b).is_some();
         if matches!(op, P::Add | P::Subtract) && (lp || rp) {
@@ -264,11 +270,6 @@ impl Analyzer<'_> {
             let index_ty = self.promoted_type(index_ty)?;
             self.convert_operand_scalar(index, index_ty, false)?;
             return self.new_expression_facts(pointer, V::Prvalue);
-        }
-        if matches!(self.graph.types.get(a).kind, TypeKind::Scalar(Scalar::Void))
-            || matches!(self.graph.types.get(b).kind, TypeKind::Scalar(Scalar::Void))
-        {
-            return Err(self.operator_error(id, "operand of type void"));
         }
         let integral_only = matches!(
             op,

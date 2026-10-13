@@ -493,6 +493,8 @@ impl Analyzer<'_> {
             self.graph.entity_mut(function).explicitness = specs.explicitness;
         }
         self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
+            language: super::linkage::Language::Cpp,
+            denotes: None,
             internal_linkage: false,
             is_static: specs.is_static,
             special: None,

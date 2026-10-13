@@ -1,9 +1,261 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `223cb4a5c3b422323dcc8f672189f4be701c8065` (clean continued query audit entry).
+Current implementation group base: `6ef88b8823f646a16bb17f0725394a355c48b635` (clean declaration/linkage audit entry).
 Last audited implementation commit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e` (query/effect source and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
 
+
+## Declaration/linkage and scalar failure-order audit checkpoint — 2026-10-13
+
+Reviewed entry: `6ef88b8823f646a16bb17f0725394a355c48b635`.
+Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+Reviewed source revision: recorded below after the implementation commit.
+**This closes the findings listed here; full-stage acceptance is still pending.**
+The independent operator sweep found sixteen reproducible frozen-oracle crashes,
+which are retained as baseline issues, not successful reference outcomes or
+accepted rejection fixtures. Ralph's existing goal stays active. No goal,
+Ralph state, acceptance policy, frozen source or existing reference was changed.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-declaration-audit-20261013/`.
+Final Rust cppgm SHA-256:
+`55d8c3e79c5f2d4f5e303f3f403c7e128f350e7d706a18a30e010611f0dd2c6e`.
+Frozen cppgm++ SHA-256 remains:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+`checks.json`, `reviewed-source.json`, `handoff.json`, all probe inputs/receipts,
+initial divergence evidence and final resource observations belong to that root.
+
+### Source responsibilities, completeness reasoning and fixes
+
+Read the repository contract/specification and cumulative PA6/PA7 handouts and
+ledgers. Consulted the pinned C++ implementation directly, especially
+`analyzer_declarations.cpp::declare_declarator`, `declare_variable`,
+`check_variable_specifiers`, `earlier_variable`, `new_variable`,
+`earlier_function`, `redeclare_function`, `new_function`,
+`note_block_linkage`, `agree_block_linkage`, `agree_language_linkage`;
+`analyzer.cpp`'s linkage context and hidden-name walk;
+`analyzer_builtins.cpp::builtin_function`; `constant_expressions.cpp`'s
+function entity places; `analyzer_expressions.cpp::combine`, `arithmetic`,
+`unary`, `increment`, `subscript`, `comparison`, `typed_value`,
+`check_resolved`; `analyzer_conversions.cpp::conditional`; and
+`semantics_dump.cpp/.h`'s source/statement/expression/conversion/call views.
+
+Compared successful control flow as well as competing failures, declaration
+order, first-declaration properties, default ownership, canonical numeric/types,
+entity identity and presentation bytes. Earlier ownership/demand audits remain
+in this ledger. No fixture count substitutes for this review.
+
+- `linkage.rs` owns storage/language linkage obligations, using typed `Language`
+  and `Specification` values, compact `ScopeId`/`NameId`/`EntityId` facts, and
+  a unit-local namespace/name index. A single declaration in a linkage
+  specification is effectively extern; declarations in braces retain written
+  storage. Nested language/specification context restores after analysis,
+  including errors. Written-extern reference-initializer rules retain their
+  separate ordering.
+- A block extern variable adopts an eligible earlier namespace variable,
+  including an external variable hidden by an intervening local. A hidden
+  internal one remains distinct. An adopted variable shares its constant,
+  canonical entity and completed array bound, while each binding retains its
+  source scope. Const array element qualification and reference exceptions
+  follow C++ first-declaration internal-linkage rules.
+- A block function keeps its own entity and defaults, records its canonical
+  namespace denotation, and inherits eligible outer storage/language facts.
+  Its conflicting return type fails at the declaration. The frozen constant
+  interpreter compares function entity places without normalizing denotation;
+  that distinction is preserved rather than rewriting constant pointer identity.
+- An unmatched block function inside an unnamed namespace still has external
+  linkage; internal namespace linkage belongs to the namespace entity itself.
+  The ownership test separately checks the internal enclosing function and
+  external unmatched declaration. This corrects a retained fact even though
+  the semantic view does not print it; acceptance is not based on dump tests
+  alone.
+- A first namespace declaration validates prior unmatched block obligations,
+  newest first, for the same namespace/name: kind, matching function signature
+  and return type or compatible variable type, then internal and language
+  linkage. Other namespaces and unrelated overload signatures are skipped.
+  No retrospective entity unification, whole-unit search or negative cache is
+  introduced.
+- Existing variables check compatible type before static/linkage agreement,
+  then redefinition. Existing functions preserve return/delete/redefinition/
+  static/language/constexpr order. Qualified redeclarations skip language
+  agreement as C++ does. Namespace signatures introduced by a using declaration
+  diagnose a conflict; different signatures remain available overloads.
+- Initialized or qualified typedef declarators fail before the constexpr-typedef
+  rule. Block extern initializers and constexpr declarations without a definition
+  retain the required errors and positions. Cohesive typedef, signature matching
+  and linked-variable completion helpers preserve source responsibility limits.
+- Reserved abort is created once as a hidden global typed entity before its
+  first explicit ordinary global prototype or value use. Explicit declarations
+  retain its builtin origin and implicit nonthrowing exception facts. Wrong
+  return types, overload arity, ordinary shadows and declared builtin constant
+  execution failures follow their respective C++ paths; builtin language and
+  exception matching exemptions apply to the entity, not a spelling test in
+  general declaration comparison.
+- Scalar logical expressions convert the resolved left operand before resolving
+  the right value. Arithmetic rejects void before pointer checks. Conditional
+  then operands resolve as values before else typing. Subscripts resolve the
+  base before typing the index; a scalar braced index fails at that index before
+  visiting its list names. Successful result types/categories and recorded
+  conversions are retained. Class operator resolution remains a distinct later
+  owner, not an ordinary rejection stub.
+- The dump review confirms source declaration order, procedural statement child
+  order, canonical parameter versus declared result types, original default
+  expression IDs, recorded conversions, folded values, omitted sizeof operands,
+  commuted subscript presentation and iterative source-then-demand traversal.
+  Printing borrows facts and performs no semantic lookup, typing, substitution
+  or body demand. The previously unmapped dump header now has an explicit Rust
+  interface owner in the source map.
+
+### Architecture and Rust review
+
+The new obligations are owned by one `Analyzer`, with complete typed
+`(ScopeId, NameId)` keys and append-only source order; the graph owns persistent
+first-declaration facts. There is no cache invalidation or unrelated name scan.
+A private ordinal cursor walks indexed overload entries without copying the
+candidate set, respecting declaration-point lookup limits. Canonical type
+interning stays in the type owner. Compact entity IDs and original binding
+scopes separate shared storage from source presentation; function defaults are
+not inherited by copying a namespace function.
+
+The ownership regression verifies shared block-variable storage/completed type,
+separate source binding scopes, independent block-function defaults and
+canonical denotation, restoration of C++ language context, retained builtin
+exception facts, and unchanged AST expression count. The parsed unit is never
+cloned, synthesized or reparsed. A braced class subscript remains explicit
+unported operator demand instead of being disguised as a normal rejection.
+
+Safe Rust, structured `Result` errors, host-size/ID checks, original typed
+byte-budget guards and deliberate target arithmetic are preserved. No new
+unsafe/dependency/blanket allowance/environment read or C++ subprocess path
+was added. The new module owns a cohesive linkage algorithm, not a mechanical
+split. Strict debug/release Clippy, rustfmt and the authoritative file audit
+pass: 136 implementation files, zero findings; 187 library tests pass in each
+profile, plus the existing binary tests. The optimizer, register allocator,
+lowering/native policies and per-function backend ownership were not changed.
+Oracle tools remain harness comparators/evaluators only; due frontend work runs
+in Rust.
+
+### Exact probes, retained cases and validation
+
+The first declaration sweep matched 50/67; the seventeen mismatches and their
+raw evidence are retained in `probe-initial.log` and `probes-initial.jsonl`.
+The expanded sweep reached 109/112 and then **112/112** after qualified language
+agreement and builtin value lookup were corrected (`probe-final-owned.log`).
+The boundary sweep then exposed builtin exception redeclaration matching;
+after that fix it is **142/143**, with only `builtin-noexcept-query` reaching
+an explicit later semantic `noexcept` expression boundary (PA16; status 86).
+This is recorded in `boundary-final.log`; it is neither a PA7 accepted negative
+case nor a claim that general exception expression analysis is complete.
+
+Rechecked prior independent groups before the final internal-linkage fact
+correction (then verified that correction with the ownership test and all final
+gates):
+query 86/86, address 147/147, procedural due 411/411, function-template
+70/70, initialization 78/78 (`rechecks.json` and the isolated `recheck-*`
+receipts). The procedural suite's already recorded outside-PA7
+`case-float-id-bad` remains its single floating-object boundary; it is not
+counted as a passing rejection or silently omitted from the evidence.
+
+Eight additional scalar failure-order divergences are resolved; thirteen
+focused operator probes now match (`operator-probes-final.jsonl`). The wider
+operator matrix is **545/561**, with all sixteen residuals caused by the frozen
+oracle SIGSEGV described below, not differing normal language results.
+
+Added **43** supplemental executed regressions, listed exactly in
+`fixtures.json`: **28 in PA6** for the earlier declaration/storage/linkage/
+exception responsibilities, **15 in PA7** for constant entity identity, builtin
+value/constant use and scalar analysis failures. New references alone were
+produced by the frozen oracle in the original course cwd. Existing fixtures,
+references and protected fixed manifests are unchanged. Each course invocation
+has a strict adapter match, including diagnostic/artifact comparison for errors.
+
+| Command | Final result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS | `build-operator-final.log`, `build-final.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | PASS, 198/198 | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | PASS, 198/198 | `stage-make.log` |
+| `make course-pa7` | PASS, 311/311 | `course-final.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, all PA1–6 fixed and full course lanes | `prior-final.log`, `prior-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS | `preserve.log` |
+| `make lint` | PASS, rustfmt/strict Clippy/debug and release tests/file audit | `lint-final.log` |
+| `make audit-rust` | PASS | `audit-final.log` |
+
+Earlier fixed counts remain PA1 58, PA2 26, PA3 20, PA4 106, PA5 196, PA6 121.
+Full courses remain 58/58, 28/28, 20/20, 112/112, 296/296, and now 722/722.
+`preservation.json` retains all 198 preceding PA7 fixed IDs. The source-entry
+course identity comparison in `course-preservation.json` retains all preceding
+694 PA6 and 296 PA7 cases, including multi-translation-unit inputs; no prior
+passing case is lost. Exact command times are recorded in `checks.json`.
+
+An intermediate PA6 course snapshot copied the final new test before its new
+reference/status pair existed. Its missing-reference failure is retained in
+`pre-exception-validation/pa6-incomplete-fixture-snapshot.log`. It is superseded
+by the complete final rerun above; no failed outcome is counted as acceptance.
+Quality/probe reruns followed the builtin and scalar corrections.
+
+### Resource observations, separate from dump equality
+
+Measurements were made after validation processes ended. At a shared 16 MiB
+stack, two warm samples per tool precede interleaved ABBA/BAAB samples, four
+measured per tool and workload. Every sample succeeds with one exact dump hash;
+12 independent protected receipts also match. `measurements.json` records
+source/binary hashes, raw samples, bytes and RSS; `measurement-results.log`
+records results. Times are observations, not an optimization/equality policy.
+
+| Workload / functions | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| Indexed outer linkage / 128 | 6.51 / 6472 | 19.79 / 7996 |
+| Indexed outer linkage / 512 | 11.29 / 7908 | 29.20 / 8728 |
+| Indexed outer linkage / 2048 | 25.09 / 12822 | 61.05 / 11830 |
+| New block obligations / 128 | 8.56 / 6474 | 22.14 / 8376 |
+| New block obligations / 512 | 16.35 / 8570 | 40.49 / 8744 |
+| New block obligations / 2048 | 36.71 / 16010 | 89.13 / 18510 |
+
+The first workload repeatedly adopts namespace function/array facts; the second
+creates distinct block obligations followed by their namespace declarations.
+The direct indexes visit the relevant name set only. Source text/AST/name
+storage remains unit-owned; no per-function backend state was extended.
+
+At a 1 MiB initial stack, the 1000 nested linkage specifications and 1500 address
+parentheses probes both qualify through the protected adapter: **both tools
+succeed at 16 MiB with exact streams/files**, `match=true` and
+`stack_qualification.passed=true`. `native-probes.jsonl` and its linked
+`stack-qualifications/` retain initial and successful larger-stack attempts.
+No guard depth, native cutoff or diagnostic position was reproduced/calibrated.
+
+### Baseline issues and next audit boundary
+
+The operator matrix residual IDs are exactly:
+
+```text
+binary-023 binary-051 binary-079 binary-107 binary-135 binary-163
+binary-191 binary-219 binary-247 binary-275 binary-303 binary-331
+binary-359 binary-387 binary-415 binary-443
+```
+
+Each has an unresolved overloaded function `(f)` as the left operand and an
+unscoped enum parameter `(u)` as the right, for the listed arithmetic, bitwise,
+logical or comparison operator. `operator-matrix-summary.json` preserves exact
+sources, exit values, diagnostics and artifact evidence. Protected receipts
+classify the oracle as infrastructure failure (exit -11), not normal rejection.
+Independent direct runs of all sixteen at **both 16 and 64 MiB** reproduce
+SIGSEGV, no diagnostic and an empty output file (32/32 attempts), recorded in
+`oracle-crash-reproduction.json`. In the pinned source,
+`analyzer_operators.cpp::operator_candidates` calls `ClassOf` on the left
+unresolved overload's null type; `conversions.h::ClassOf` dereferences it.
+This is a reproducible baseline bug, not stack exhaustion. There is no exact
+successful larger-stack oracle result and no legitimate Rust crash to emulate.
+References, oracle and protected policy are preserved.
+
+No due corrected probe still fails with a normal C++ result. The standalone
+`builtin-noexcept-query` remains an individually recorded PA16 dependency;
+class/enum operator-function candidate resolution is a PA12+ owner, distinct
+from PA7 builtin operators. This checkpoint does not certify those later paths.
+Full PA7 acceptance still requires reconciling the baseline issues and finishing
+its cumulative responsibility census; green fixture lanes alone do not close
+Ralph's goal. Continue from this audited source revision and retained evidence,
+not by resetting the goal or editing Ralph state.
 
 ## Type-query and discarded-value audit checkpoint — 2026-10-13
 

@@ -209,6 +209,8 @@ impl Analyzer<'_> {
         self.graph.entity_mut(storage).defined = true;
         self.graph.entity_mut(storage).variable = Some(super::graph::VariableProperties {
             is_extern: false,
+            internal_linkage: specs.is_static || unnamed_namespace,
+            language: super::linkage::Language::from_c(self.c_language && kind != ScopeKind::Class),
             thread_storage: specs.thread_storage,
             automatic: kind == ScopeKind::Block
                 && !specs.is_static

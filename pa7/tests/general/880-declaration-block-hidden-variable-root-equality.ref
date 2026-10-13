@@ -1,0 +1,21 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable x int
+  function-definition f function of () returning void
+    compound-statement
+      simple-declaration
+        variable x int
+      compound-statement
+        simple-declaration
+          variable x int
+        simple-declaration
+          variable b const bool
+            binary-expression prvalue const bool OP_EQ:==
+              unary-expression prvalue pointer to int OP_AMP:&
+                id-expression lvalue int x
+              unary-expression prvalue pointer to int OP_AMP:&
+                id-expression lvalue int ::x
+        simple-declaration
+          variable a array of 2 int
+end translation unit

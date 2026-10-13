@@ -448,6 +448,15 @@ impl Analyzer<'_> {
         } else {
             self.unqualified_result(scope, key.into(), filter)?
         };
+        if filter == Filter::Ordinary
+            && found.binding.is_none()
+            && key == self.builtin_names.abort
+            && prefix.is_none_or(|prefix| prefix == self.graph.global)
+        {
+            let binding = self.ensure_abort()?;
+            found.binding = Some(binding);
+            found.functions.push(binding);
+        }
         if specialize && last.arguments.is_some() {
             self.explicit_function_specializations(*last, &mut found, scope, false)?;
         }

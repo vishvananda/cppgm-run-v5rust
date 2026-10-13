@@ -13,6 +13,116 @@ use crate::{
 };
 
 #[test]
+fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
+    use super::{graph::ScopeKind, linkage::Language};
+    let source = SourceBuffer::new(b"extern \"C\" {int h(int=1);extern int a[3];}const int x=7;void f(){extern int a[];extern const int x;int h(int=2);h();}int k(int);void __builtin_abort()noexcept(false);namespace{void unseen(){int missing(int);}}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"linkage-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let expression_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), expression_count);
+    let abort = cursor.intern_name(b"__builtin_abort").unwrap();
+    let builtin = graph.entity(
+        graph
+            .binding(graph.own(graph.global, abort, Filter::Ordinary).unwrap())
+            .entity,
+    );
+    assert!(matches!(
+        builtin.exceptions,
+        super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
+    ));
+    let names: Vec<_> = [b"a".as_slice(), b"x", b"h", b"f", b"k"]
+        .into_iter()
+        .map(|name| cursor.intern_name(name).unwrap())
+        .collect();
+    let globals: Vec<_> = names
+        .iter()
+        .map(|&name| graph.own(graph.global, name, Filter::Ordinary).unwrap())
+        .collect();
+    let function = graph
+        .entity(graph.binding(globals[3]).entity)
+        .scope
+        .unwrap();
+    let mut scopes = vec![function];
+    let mut block = None;
+    while let Some(scope) = scopes.pop() {
+        if graph.scope(scope).kind == ScopeKind::Block
+            && graph.own(scope, names[0], Filter::Ordinary).is_some()
+        {
+            block = Some(scope);
+            break;
+        }
+        scopes.extend_from_slice(&graph.scope(scope).children);
+    }
+    let block = block.unwrap();
+    for (&name, &global) in names[..2].iter().zip(&globals[..2]) {
+        let local = graph.own(block, name, Filter::Ordinary).unwrap();
+        assert_eq!(graph.binding(local).entity, graph.binding(global).entity);
+        assert_eq!(graph.binding(local).ty, graph.binding(global).ty);
+        assert_eq!(graph.binding_scope(local), block);
+        assert_eq!(graph.binding_scope(global), graph.global);
+    }
+    let global = graph.entity(graph.binding(globals[2]).entity);
+    let local = graph.entity(
+        graph
+            .binding(graph.own(block, names[2], Filter::Ordinary).unwrap())
+            .entity,
+    );
+    assert_eq!(
+        local.function.unwrap().denotes,
+        Some(graph.binding(globals[2]).entity)
+    );
+    assert_ne!(local.home, global.home);
+    assert_ne!(
+        local.defaults[0].unwrap().expression,
+        global.defaults[0].unwrap().expression
+    );
+    assert!(local.function.unwrap().language == Language::C);
+    assert!(global.function.unwrap().language == Language::C);
+    assert!(
+        graph
+            .entity(graph.binding(globals[4]).entity)
+            .function
+            .unwrap()
+            .language
+            == Language::Cpp
+    );
+    let anonymous = graph
+        .scope(graph.global)
+        .children
+        .iter()
+        .copied()
+        .find(|&scope| {
+            graph.scope(scope).kind == ScopeKind::Namespace && graph.scope(scope).name.is_none()
+        })
+        .unwrap();
+    let unseen = cursor.intern_name(b"unseen").unwrap();
+    let entity = graph
+        .binding(graph.own(anonymous, unseen, Filter::Ordinary).unwrap())
+        .entity;
+    assert!(graph.entity(entity).function.unwrap().internal_linkage);
+    let function = graph.entity(entity).scope.unwrap();
+    let body = graph
+        .scope(function)
+        .children
+        .iter()
+        .copied()
+        .find(|&scope| graph.scope(scope).kind == ScopeKind::Block)
+        .unwrap();
+    let missing = cursor.intern_name(b"missing").unwrap();
+    let entity = graph
+        .binding(graph.own(body, missing, Filter::Ordinary).unwrap())
+        .entity;
+    let properties = graph.entity(entity).function.unwrap();
+    assert!(!properties.internal_linkage);
+    assert!(properties.denotes.is_none());
+}
+
+#[test]
 fn constant_discards_use_places_and_restore_scratch_after_failure() {
     use super::{builtin_calls::BuiltinFunction, constants::ConstantState};
     use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind};

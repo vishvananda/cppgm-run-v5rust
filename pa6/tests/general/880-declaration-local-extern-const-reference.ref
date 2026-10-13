@@ -1,0 +1,11 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable x const int
+    function f function of () returning void
+    scope function f
+      scope block
+        variable x const int
+        variable n const int
+end translation unit

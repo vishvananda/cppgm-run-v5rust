@@ -81,6 +81,11 @@ impl Analyzer<'_> {
         location: SourceOffset,
         limit: usize,
     ) -> Result<(), Error> {
+        // Reserved builtins keep the registry's implicit exception facts;
+        // explicit declarations need not repeat those facts (GCC's rule).
+        if self.graph.entity(entity).builtin.is_some() {
+            return Ok(());
+        }
         let mut qualifier =
             info.qualifiers.and_then(|list| {
                 self.tree.qualifiers.get(list).iter().copied().find(|q| {

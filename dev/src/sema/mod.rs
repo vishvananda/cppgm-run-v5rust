@@ -29,6 +29,7 @@ mod inheritance;
 mod initialization;
 mod integral;
 mod layout;
+mod linkage;
 mod lookup;
 mod member_expressions;
 mod name_keys;

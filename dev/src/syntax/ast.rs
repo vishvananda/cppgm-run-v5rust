@@ -460,10 +460,6 @@ pub(crate) enum DeclKind {
     },
     Linkage {
         language: Text,
-        #[expect(
-            dead_code,
-            reason = "Linkage brace form is preserved for later source rendering"
-        )]
         braced: bool,
         declarations: List<DeclId>,
     },

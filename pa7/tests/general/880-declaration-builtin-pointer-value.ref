@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable p const pointer to function of () returning void
+    id-expression lvalue function of () returning void __builtin_abort
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+end translation unit
