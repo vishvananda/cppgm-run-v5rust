@@ -60,7 +60,7 @@ impl Parser<'_> {
             "va_arg" => {
                 let ty = self.parse_type()?;
                 let list = self.value(body, Type::Void)?;
-                if self.accept(Kind::LBracket) {
+                if self.accept(Kind::LBracket)? {
                     // Host-object argument classes are enabled only by their later producer.
                     return Err(self.fail("invalid va_arg metadata"));
                 }
@@ -113,7 +113,7 @@ impl Parser<'_> {
         }))
     }
     fn optional_selector(&mut self, what: &str) -> Result<Option<i64>, Error> {
-        if self.accept(Kind::Comma) {
+        if self.accept(Kind::Comma)? {
             Ok(Some(self.small_integer(what)?))
         } else {
             Ok(None)
@@ -123,15 +123,15 @@ impl Parser<'_> {
         self.arguments.clear();
         // The writer omits the grammar's initial comma for a selector-only filter.
         let mut has_selector =
-            self.at(Kind::Number) || self.at(Kind::Minus) || self.accept(Kind::Comma);
+            self.at(Kind::Number) || self.at(Kind::Minus) || self.accept(Kind::Comma)?;
         while !has_selector && self.at(Kind::Global) {
             // Unlike catch's expect-name path, C++ references filters before advancing.
             let token = self.lexer.token;
             let name = self.program.names.intern(token.word())?;
             let symbol = self.program.reference(name, self.source_id, token.line)?;
-            self.lexer.advance();
+            self.advance()?;
             self.arguments.push(Value::Symbol(symbol));
-            if !self.accept(Kind::Comma) {
+            if !self.accept(Kind::Comma)? {
                 break;
             }
             has_selector = !self.at(Kind::Global);

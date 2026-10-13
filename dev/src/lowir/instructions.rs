@@ -10,7 +10,7 @@ use super::{
 impl Parser<'_> {
     /// Shared signed target word scanner for addends, selectors and memory orders.
     pub(super) fn small_integer(&mut self, what: &str) -> Result<i64, Error> {
-        let negative = self.accept(Kind::Minus);
+        let negative = self.accept(Kind::Minus)?;
         if !self.at(Kind::Number) {
             return Err(self.fail(format!("invalid {what}")));
         }
@@ -32,7 +32,7 @@ impl Parser<'_> {
             Kind::Temp => {
                 let name = self.program.names.intern(token.word())?;
                 let id = body.use_temp(name, token.line)?;
-                self.lexer.advance();
+                self.advance()?;
                 Ok(Value::Temp(id))
             }
             Kind::Slot => {
@@ -40,13 +40,13 @@ impl Parser<'_> {
                 let Some(id) = body.find_slot(name) else {
                     return Err(self.fail(format!("undefined slot: {}", token.word())));
                 };
-                self.lexer.advance();
+                self.advance()?;
                 Ok(Value::Slot(id))
             }
             Kind::Global => {
                 let name = self.program.names.intern(token.word())?;
                 let symbol = self.program.reference(name, self.source_id, token.line)?;
-                self.lexer.advance();
+                self.advance()?;
                 Ok(Value::Symbol(symbol))
             }
             Kind::Block => Err(self.fail("block label used as value")),
@@ -72,9 +72,9 @@ impl Parser<'_> {
         }
     }
     pub(super) fn constant(&mut self, context: Type) -> Result<Constant, Error> {
-        let negative = self.accept(Kind::Minus);
+        let negative = self.accept(Kind::Minus)?;
         let token = self.lexer.token;
-        if self.accept_word("nullptr") {
+        if self.accept_word("nullptr")? {
             if negative {
                 return Err(self.fail("expected literal"));
             }
@@ -83,7 +83,7 @@ impl Parser<'_> {
         let text = token.word();
         if token.kind != Kind::Number {
             if token.kind == Kind::Word && named_literal(text) {
-                self.lexer.advance();
+                self.advance()?;
                 if context.bits() != 0 || context == Type::Ptr {
                     return Err(self.fail("invalid floating literal"));
                 }
@@ -97,7 +97,7 @@ impl Parser<'_> {
             }
             let result = literals::scan(&mut self.floating, text, context, negative)?
                 .ok_or_else(|| self.fail("invalid floating literal"))?;
-            self.lexer.advance();
+            self.advance()?;
             return Ok(result);
         }
         let hex = text.starts_with("0x") || text.starts_with("0X");
@@ -138,7 +138,7 @@ impl Parser<'_> {
             }
             Constant::Integer(value)
         };
-        self.lexer.advance();
+        self.advance()?;
         Ok(result)
     }
     pub(super) fn target(&mut self, body: &mut Body) -> Result<BlockId, Error> {
@@ -148,7 +148,7 @@ impl Parser<'_> {
         let token = self.lexer.token;
         let name = self.program.names.intern(token.word())?;
         let id = body.use_block(name, token.line)?;
-        self.lexer.advance();
+        self.advance()?;
         Ok(id)
     }
     fn operation<T>(&mut self, parse: fn(&str) -> Option<T>) -> Result<T, Error> {
@@ -160,7 +160,7 @@ impl Parser<'_> {
         let Some(operation) = operation else {
             return Err(self.fail_token("unknown LowIR operation: ", ""));
         };
-        self.lexer.advance();
+        self.advance()?;
         Ok(operation)
     }
     pub(super) fn instruction(&mut self, body: &mut Body, block: BlockId) -> Result<(), Error> {
@@ -187,7 +187,7 @@ impl Parser<'_> {
                 "",
             ));
         }
-        self.lexer.advance();
+        self.advance()?;
         let kind = if result.is_some() {
             self.rvalue(body, head.word(), head.line)?
         } else {
@@ -236,7 +236,7 @@ impl Parser<'_> {
             "binary" => {
                 let op = self.operation(Binary::parse)?;
                 let facts =
-                    Facts::arithmetic(self.accept_word("nowrap"), self.accept_word("exact"));
+                    Facts::arithmetic(self.accept_word("nowrap")?, self.accept_word("exact")?);
                 let ty = self.parse_type()?;
                 let a = self.value(body, ty)?;
                 self.expect(Kind::Comma, ",")?;
@@ -274,7 +274,7 @@ impl Parser<'_> {
                     let target = self.target(body)?;
                     self.expect(Kind::Colon, ":")?;
                     pairs.push((target, self.value(body, ty)?));
-                    if !self.accept(Kind::Comma) {
+                    if !self.accept(Kind::Comma)? {
                         break;
                     }
                 }
@@ -292,15 +292,15 @@ impl Parser<'_> {
                 I::Addr(self.value(body, Type::Void)?)
             }
             "load" => {
-                let facts = self.memory_facts();
+                let facts = self.memory_facts()?;
                 let ty = self.parse_type()?;
                 I::Load(facts, ty, self.value(body, Type::Ptr)?)
             }
             "index" => {
                 let ty = self.parse_type()?;
                 let mut projection = None;
-                if self.accept(Kind::LBracket) {
-                    if !self.accept_word("projection") {
+                if self.accept(Kind::LBracket)? {
+                    if !self.accept_word("projection")? {
                         return Err(self.fail("invalid index metadata"));
                     }
                     self.expect(Kind::Equals, "=")?;
@@ -308,8 +308,8 @@ impl Parser<'_> {
                     if projection.is_none() {
                         return Err(self.fail("invalid index projection"));
                     }
-                    self.lexer.advance();
-                    if !self.accept(Kind::RBracket) {
+                    self.advance()?;
+                    if !self.accept(Kind::RBracket)? {
                         return Err(self.fail("invalid index metadata"));
                     }
                 }
@@ -323,8 +323,11 @@ impl Parser<'_> {
             })?),
         })
     }
-    fn memory_facts(&mut self) -> Facts {
-        Facts::memory(self.accept_word("volatile"), self.accept_word("typed"))
+    fn memory_facts(&mut self) -> Result<Facts, Error> {
+        Ok(Facts::memory(
+            self.accept_word("volatile")?,
+            self.accept_word("typed")?,
+        ))
     }
     fn call(&mut self, body: &mut Body) -> Result<Call, Error> {
         let result = self.parse_type()?;
@@ -341,7 +344,7 @@ impl Parser<'_> {
             loop {
                 let argument = self.value(body, Type::Void)?;
                 self.arguments.push(argument);
-                if !self.accept(Kind::Comma) {
+                if !self.accept(Kind::Comma)? {
                     break;
                 }
             }
@@ -349,23 +352,23 @@ impl Parser<'_> {
         self.expect(Kind::RParen, ")")?;
         let arguments = body.add_arguments(&self.arguments)?;
         let mut copy_elision = false;
-        if self.accept(Kind::LBracket) {
+        if self.accept(Kind::LBracket)? {
             loop {
-                if copy_elision || !self.accept_word("elision") {
+                if copy_elision || !self.accept_word("elision")? {
                     return Err(self.fail("invalid call metadata"));
                 }
                 self.expect(Kind::Equals, "=")?;
-                if !self.accept_word("copy") {
+                if !self.accept_word("copy")? {
                     return Err(self.fail("invalid call metadata"));
                 }
                 copy_elision = true;
-                if !self.accept(Kind::Comma) {
+                if !self.accept(Kind::Comma)? {
                     break;
                 }
             }
             self.expect(Kind::RBracket, "]")?;
         }
-        let signature = if self.accept_word("as") {
+        let signature = if self.accept_word("as")? {
             Some(self.signature(None)?)
         } else {
             None
@@ -392,13 +395,13 @@ impl Parser<'_> {
             return Err(self.fail("object alignment is not a power of two"));
         }
         let align = u8::try_from(align.trailing_zeros()).map_err(|_| Error::Limit)?;
-        self.lexer.advance();
+        self.advance()?;
         Ok((bytes, align))
     }
     fn effect(&mut self, body: &mut Body, head: &str, line: u32) -> Result<I, Error> {
         Ok(match head {
             "store" => {
-                let facts = self.memory_facts();
+                let facts = self.memory_facts()?;
                 let ty = self.parse_type()?;
                 let a = self.value(body, ty)?;
                 self.expect(Kind::Comma, ",")?;
@@ -427,7 +430,7 @@ impl Parser<'_> {
                 self.expect(Kind::Comma, ",")?;
                 let default = self.target(body)?;
                 let mut pairs = Vec::new();
-                while self.accept(Kind::Comma) {
+                while self.accept(Kind::Comma)? {
                     let value = self.value(body, Type::Void)?;
                     self.expect(Kind::Colon, ":")?;
                     pairs.push((value, self.target(body)?));

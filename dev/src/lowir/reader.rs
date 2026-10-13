@@ -8,11 +8,11 @@ use super::{
     },
     vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Storage, Type},
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
 pub(super) struct Parser<'a> {
     pub(super) program: &'a mut Program,
     pub(super) lexer: Lexer<'a>,
-    pub(super) source: &'a str,
+    pub(super) source: &'a Path,
     pub(super) source_id: SourceId,
     pub(super) arguments: Vec<Value>,
     pub(super) floating: crate::types::floating::FloatingScanner,
@@ -21,12 +21,14 @@ impl<'a> Parser<'a> {
     pub(super) fn new(
         program: &'a mut Program,
         source: &'a [u8],
-        path: &'a str,
+        path: &'a Path,
     ) -> Result<Self, Error> {
+        program.prepare_reader()?;
         let source_id = program.add_source(path)?;
+        let lexer = Lexer::new(source, &mut program.names)?;
         Ok(Self {
             program,
-            lexer: Lexer::new(source),
+            lexer,
             source: path,
             source_id,
             arguments: Vec::new(),
@@ -41,7 +43,7 @@ impl<'a> Parser<'a> {
         self.fail_at(self.lexer.token.line, message)
     }
     pub(super) fn fail_at(&self, line: u32, message: impl Into<String>) -> Error {
-        Error::Diagnostic(format!("{} at {}:{line}", message.into(), self.source))
+        Error::at_path(message.into(), self.source, line)
     }
     /// Render a token only at a diagnostic boundary, retaining arbitrary debug-file bytes.
     pub(super) fn fail_token(&self, prefix: &str, suffix: &str) -> Error {
@@ -51,9 +53,7 @@ impl<'a> Parser<'a> {
         let mut message = prefix.as_bytes().to_vec();
         self.lexer.token.append_spelling(&mut message);
         message.extend_from_slice(suffix.as_bytes());
-        message
-            .extend_from_slice(format!(" at {}:{}", self.source, self.lexer.token.line).as_bytes());
-        Error::ByteDiagnostic(message)
+        Error::at_path(message, self.source, self.lexer.token.line)
     }
     pub(super) fn at(&self, kind: Kind) -> bool {
         self.lexer.token.kind == kind
@@ -61,22 +61,25 @@ impl<'a> Parser<'a> {
     pub(super) fn at_word(&self, text: &str) -> bool {
         self.at(Kind::Word) && self.lexer.token.word() == text
     }
-    pub(super) fn accept(&mut self, kind: Kind) -> bool {
-        if !self.at(kind) {
-            return false;
-        }
-        self.lexer.advance();
-        true
+    pub(super) fn advance(&mut self) -> Result<(), Error> {
+        self.lexer.advance(&mut self.program.names)
     }
-    pub(super) fn accept_word(&mut self, text: &str) -> bool {
-        if !self.at_word(text) {
-            return false;
+    pub(super) fn accept(&mut self, kind: Kind) -> Result<bool, Error> {
+        if !self.at(kind) {
+            return Ok(false);
         }
-        self.lexer.advance();
-        true
+        self.advance()?;
+        Ok(true)
+    }
+    pub(super) fn accept_word(&mut self, text: &str) -> Result<bool, Error> {
+        if !self.at_word(text) {
+            return Ok(false);
+        }
+        self.advance()?;
+        Ok(true)
     }
     pub(super) fn expect(&mut self, kind: Kind, text: &str) -> Result<(), Error> {
-        if self.accept(kind) {
+        if self.accept(kind)? {
             Ok(())
         } else {
             Err(self.fail_token(&format!("expected '{text}', got '"), "'"))
@@ -87,14 +90,14 @@ impl<'a> Parser<'a> {
             return Err(self.fail_token(&format!("expected {what}, got '"), "'"));
         }
         let name = self.program.names.intern(self.lexer.token.word())?;
-        self.lexer.advance();
+        self.advance()?;
         Ok(name)
     }
     pub(super) fn parse_type(&mut self) -> Result<Type, Error> {
         let token = self.lexer.token;
         if token.kind == Kind::Word {
             if let Some(ty) = Type::scalar(token.word()) {
-                self.lexer.advance();
+                self.advance()?;
                 return Ok(ty);
             }
             if let Some(object) = token
@@ -115,7 +118,7 @@ impl<'a> Parser<'a> {
                     return Err(self.fail("object size is too large"));
                 }
                 let align = u8::try_from(align.trailing_zeros()).map_err(|_| Error::Limit)?;
-                self.lexer.advance();
+                self.advance()?;
                 return Ok(Type::Object { bytes, align });
             }
         }
@@ -139,12 +142,12 @@ impl<'a> Parser<'a> {
     }
     pub(super) fn parse(&mut self) -> Result<(), Error> {
         while !self.at(Kind::End) {
-            let declaration = self.accept_word("declare");
-            if self.accept_word("function") {
+            let declaration = self.accept_word("declare")?;
+            if self.accept_word("function")? {
                 self.function(!declaration)?;
-            } else if self.accept_word("global") {
+            } else if self.accept_word("global")? {
                 self.global_item(!declaration)?;
-            } else if !declaration && self.accept_word("alias") {
+            } else if !declaration && self.accept_word("alias")? {
                 self.object_alias()?;
             } else {
                 return Err(self.fail(if declaration {
@@ -202,7 +205,7 @@ impl<'a> Parser<'a> {
             line: u32::try_from(debug.line).map_err(|_| Error::Limit)?,
             column: u32::try_from(debug.column).map_err(|_| Error::Limit)?,
         };
-        self.lexer.advance();
+        self.advance()?;
         Ok(location)
     }
     pub(super) fn signature(
@@ -236,7 +239,7 @@ impl<'a> Parser<'a> {
                     self.parameter_metadata(&mut parameter)?;
                 }
                 signature.parameters.push(parameter);
-                if !self.accept(Kind::Comma) {
+                if !self.accept(Kind::Comma)? {
                     break;
                 }
             }
@@ -253,14 +256,14 @@ impl<'a> Parser<'a> {
         self.program.add_signature(signature)
     }
     fn parameter_metadata(&mut self, parameter: &mut Parameter) -> Result<(), Error> {
-        self.lexer.advance();
+        self.advance()?;
         let mut seen = HashSet::new();
         loop {
             if !self.at(Kind::Word) {
                 return Err(self.fail("invalid parameter metadata"));
             }
             let key = self.lexer.token.word();
-            self.lexer.advance();
+            self.advance()?;
             self.expect(Kind::Equals, "=")?;
             let value = self.lexer.token.word();
             match key {
@@ -297,7 +300,7 @@ impl<'a> Parser<'a> {
                     }
                     parameter.classes = Some(self.object_classes(parameter.ty)?);
                     seen.insert(key);
-                    if !self.accept(Kind::Comma) {
+                    if !self.accept(Kind::Comma)? {
                         break;
                     }
                     continue;
@@ -307,8 +310,8 @@ impl<'a> Parser<'a> {
             if !seen.insert(key) {
                 return Err(self.fail(format!("duplicate metadata key: {key}")));
             }
-            self.lexer.advance();
-            if !self.accept(Kind::Comma) {
+            self.advance()?;
+            if !self.accept(Kind::Comma)? {
                 break;
             }
         }
@@ -329,7 +332,7 @@ impl<'a> Parser<'a> {
         let Some(classes) = classes else {
             return Err(self.fail("invalid classes metadata"));
         };
-        self.lexer.advance();
+        self.advance()?;
         Ok(classes)
     }
     pub(super) fn metadata(
@@ -340,7 +343,7 @@ impl<'a> Parser<'a> {
         on_global: bool,
     ) -> Result<(), Error> {
         let mut seen = HashSet::new();
-        while self.accept(Kind::LBracket) {
+        while self.accept(Kind::LBracket)? {
             loop {
                 if !self.at(Kind::Word) {
                     return Err(self.fail_token("expected metadata key, got '", "'"));
@@ -370,7 +373,7 @@ impl<'a> Parser<'a> {
                 ) {
                     return Err(self.fail(format!("unknown symbol metadata: {key}")));
                 }
-                self.lexer.advance();
+                self.advance()?;
                 self.expect(Kind::Equals, "=")?;
                 if !seen.insert(key) {
                     return Err(self.fail(format!("duplicate metadata key: {key}")));
@@ -403,7 +406,7 @@ impl<'a> Parser<'a> {
                     if let Some(metadata) = symbol.as_deref_mut() {
                         metadata.tls_for = Some(target);
                     }
-                    if !self.accept(Kind::Comma) {
+                    if !self.accept(Kind::Comma)? {
                         break;
                     }
                     continue;
@@ -453,7 +456,7 @@ impl<'a> Parser<'a> {
                             return Err(self.fail("a memory-class result is returned through an indirect_result parameter"));
                         }
                         boundary.result_classes = Some(classes);
-                        if !self.accept(Kind::Comma) {
+                        if !self.accept(Kind::Comma)? {
                             break;
                         }
                         continue;
@@ -465,8 +468,8 @@ impl<'a> Parser<'a> {
                         self.symbol_metadata(metadata, key, on_global)?;
                     }
                 }
-                self.lexer.advance();
-                if !self.accept(Kind::Comma) {
+                self.advance()?;
+                if !self.accept(Kind::Comma)? {
                     break;
                 }
             }
@@ -552,16 +555,16 @@ impl<'a> Parser<'a> {
     }
     fn body(&mut self, function: &Function) -> Result<Body, Error> {
         let signature = self.program.signature(function.signature);
-        let mut body = Body::new(self.source, signature.parameters.len());
+        let mut body = Body::new(Some(self.source_id), signature.parameters.len());
         for p in &signature.parameters {
             let id = body.use_temp(p.name, 0)?;
             body.temp_mut(id).ty = Some(p.ty);
         }
-        while !self.accept(Kind::RBrace) {
+        while !self.accept(Kind::RBrace)? {
             if self.at(Kind::End) {
                 return Err(self.fail("unexpected end of LowIR"));
             }
-            if self.accept_word("slot") {
+            if self.accept_word("slot")? {
                 if !body.layout.is_empty() {
                     return Err(self.fail("slot declaration after first block"));
                 }
@@ -572,7 +575,7 @@ impl<'a> Parser<'a> {
                     return Err(self.fail("duplicate slot"));
                 }
                 body.add_slot(name, ty)?;
-            } else if self.accept_word("block") {
+            } else if self.accept_word("block")? {
                 self.check_end(&body)?;
                 let name = self.name(Kind::Block, "block name")?;
                 let id = body.use_block(name, self.lexer.token.line)?;

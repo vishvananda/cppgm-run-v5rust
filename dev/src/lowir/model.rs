@@ -9,6 +9,7 @@ use super::{
 };
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
@@ -29,10 +30,18 @@ identity!(
     SourceId,
     GlobalId
 );
-#[derive(Default)]
 pub(super) struct Names {
     text: Vec<Arc<[u8]>>,
     index: HashMap<Arc<[u8]>, NameId>,
+}
+impl Default for Names {
+    fn default() -> Self {
+        let empty: Arc<[u8]> = Arc::from(&b""[..]);
+        Self {
+            text: vec![Arc::clone(&empty)],
+            index: HashMap::from([(empty, NameId(0))]),
+        }
+    }
 }
 impl Names {
     pub(super) fn intern(&mut self, text: &str) -> Result<NameId, Error> {
@@ -52,6 +61,12 @@ impl Names {
         // Grammar names are ASCII; only debug file tokens use the byte view.
         std::str::from_utf8(self.bytes(id)).unwrap_or("")
     }
+    pub(super) fn len(&self) -> usize {
+        self.text.len()
+    }
+    pub(super) fn storage_bytes(&self) -> usize {
+        self.text.iter().map(|text| text.len()).sum()
+    }
     pub(super) fn bytes(&self, id: NameId) -> &[u8] {
         &self.text[id.0 as usize]
     }
@@ -63,12 +78,57 @@ pub(super) struct Program {
     symbols: Vec<Symbol>,
     index: HashMap<NameId, SymbolId>,
     signatures: Vec<Signature>,
-    sources: Vec<String>,
+    sources: Vec<PathBuf>,
     globals: Vec<Global>,
     aliases: Vec<ObjectAlias>,
     alias_names: HashSet<NameId>,
+    reader_vocabulary: bool,
 }
 impl Program {
+    pub(super) fn prepare_reader(&mut self) -> Result<(), Error> {
+        if !self.reader_vocabulary {
+            super::vocabulary::intern_reader_words(&mut self.names)?;
+            self.reader_vocabulary = true;
+        }
+        Ok(())
+    }
+    pub(super) fn statistics(&self) -> super::Statistics {
+        let mut stats = super::Statistics {
+            symbols: self.symbols.len(),
+            functions: self.functions.len(),
+            globals: self.globals.len(),
+            signatures: self.signatures.len(),
+            names: self.names.len(),
+            name_arena_bytes: self.names.storage_bytes(),
+            ..super::Statistics::default()
+        };
+        for global in &self.globals {
+            if let GlobalInit::Data(items) = &global.init {
+                stats.data_items += items.len();
+            }
+        }
+        for body in self
+            .functions
+            .iter()
+            .filter_map(|function| function.body.as_ref())
+        {
+            stats.blocks += body.blocks.len();
+            stats.instructions += body.instructions.len();
+            stats.temps += body.temps.len();
+            stats.literals += body.literals.len();
+            stats.extra_operands += body.operands.len();
+            // The oracle stores each predecessor/value or value/target pair
+            // in its extra-operand vector; our typed pairs have the same census.
+            for instruction in &body.instructions {
+                stats.extra_operands += match &instruction.kind {
+                    InstructionKind::Phi(_, pairs) => pairs.len() * 2,
+                    InstructionKind::Switch(_, _, pairs) => pairs.len() * 2,
+                    _ => 0,
+                };
+            }
+        }
+        stats
+    }
     pub(super) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Function(id);
@@ -94,10 +154,13 @@ impl Program {
         self.index.insert(name, id);
         Ok(id)
     }
-    pub(super) fn add_source(&mut self, path: &str) -> Result<SourceId, Error> {
+    pub(super) fn add_source(&mut self, path: &Path) -> Result<SourceId, Error> {
         let id = SourceId(u32::try_from(self.sources.len()).map_err(|_| Error::Limit)?);
         self.sources.push(path.into());
         Ok(id)
+    }
+    pub(super) fn source(&self, id: SourceId) -> &Path {
+        &self.sources[id.0 as usize]
     }
     pub(super) fn symbol(&self, id: SymbolId) -> &Symbol {
         &self.symbols[id.0 as usize]
@@ -105,12 +168,14 @@ impl Program {
     pub(super) fn finish_symbols(&self) -> Result<(), Error> {
         for symbol in &self.symbols {
             if matches!(symbol.detail, SymbolDetail::Unresolved) {
-                return Err(Error::Diagnostic(format!(
-                    "undefined top-level symbol: {} at {}:{}",
-                    self.names.get(symbol.name),
-                    self.sources[symbol.source.0 as usize],
-                    symbol.line
-                )));
+                return Err(Error::at_path(
+                    format!(
+                        "undefined top-level symbol: {}",
+                        self.names.get(symbol.name)
+                    ),
+                    &self.sources[symbol.source.0 as usize],
+                    symbol.line,
+                ));
             }
         }
         Ok(())
@@ -373,13 +438,13 @@ pub(super) struct Body {
     block_index: HashMap<NameId, BlockId>,
     pub(super) layout: Vec<BlockId>,
     pub(super) parameter_count: usize,
-    pub(super) source: String,
+    pub(super) source: Option<SourceId>,
 }
 impl Body {
-    pub(super) fn new(source: &str, parameter_count: usize) -> Self {
+    pub(super) fn new(source: Option<SourceId>, parameter_count: usize) -> Self {
         Self {
-            source: source.into(),
             parameter_count,
+            source,
             ..Self::default()
         }
     }

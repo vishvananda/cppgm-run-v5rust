@@ -112,14 +112,12 @@ fn fail(
 ) -> Error {
     let message = message.into();
     let name = program.names.get(function.name);
-    Error::Diagnostic(if body.source.is_empty() {
-        format!("{message} in function @{name}")
+    let message = format!("{message} in function @{name}");
+    if let Some(source) = body.source {
+        Error::at_path(message, program.source(source), inst.line)
     } else {
-        format!(
-            "{message} in function @{name} at {}:{}",
-            body.source, inst.line
-        )
-    })
+        Error::Diagnostic(message)
+    }
 }
 fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<(), Error> {
     if body.layout.is_empty() {

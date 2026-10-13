@@ -1,4 +1,5 @@
 //! One-token, borrowed-buffer `LowIR` scanner. See NOTICE.
+use super::{Error, model::Names};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     End,
@@ -63,7 +64,7 @@ pub(super) struct Lexer<'a> {
     pub(super) token: Token<'a>,
 }
 impl<'a> Lexer<'a> {
-    pub(super) fn new(source: &'a [u8]) -> Self {
+    pub(super) fn new(source: &'a [u8], names: &mut Names) -> Result<Self, Error> {
         let mut lexer = Self {
             source,
             position: 0,
@@ -75,8 +76,8 @@ impl<'a> Lexer<'a> {
                 debug: None,
             },
         };
-        lexer.advance();
-        lexer
+        lexer.advance(names)?;
+        Ok(lexer)
     }
     fn space(&mut self) {
         while let Some(&c) = self.source.get(self.position) {
@@ -94,7 +95,7 @@ impl<'a> Lexer<'a> {
             }
         }
     }
-    pub(super) fn advance(&mut self) {
+    pub(super) fn advance(&mut self, names: &mut Names) -> Result<(), Error> {
         self.space();
         let mut start = self.position;
         let line = self.line;
@@ -105,7 +106,7 @@ impl<'a> Lexer<'a> {
                 line,
                 debug: None,
             };
-            return;
+            return Ok(());
         };
         self.position += 1;
         let mut debug = None;
@@ -209,6 +210,16 @@ impl<'a> Lexer<'a> {
             line,
             debug,
         };
+        if matches!(
+            kind,
+            Kind::Word | Kind::Temp | Kind::Slot | Kind::Global | Kind::Block
+        ) {
+            names.intern_bytes(self.token.text)?;
+        }
+        if let Some(debug) = debug {
+            names.intern_bytes(debug.file)?;
+        }
+        Ok(())
     }
     fn scan_debug(&mut self, start: usize) -> (Kind, Option<DebugToken<'a>>) {
         let malformed = Kind::Invalid("malformed !dbg(file, line, column) location");

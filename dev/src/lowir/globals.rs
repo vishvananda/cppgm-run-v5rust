@@ -27,9 +27,9 @@ impl Parser<'_> {
             && let Some(storage) = Storage::parse(self.lexer.token.word())
         {
             metadata.storage = Some(storage);
-            self.lexer.advance();
+            self.advance()?;
         }
-        let ty = if self.accept(Kind::Colon) {
+        let ty = if self.accept(Kind::Colon)? {
             Some(self.parse_type()?)
         } else {
             None
@@ -53,9 +53,9 @@ impl Parser<'_> {
                 let Some(ty) = ty else {
                     return Err(self.fail("scalar global requires type"));
                 };
-                if self.accept_word("zero") {
+                if self.accept_word("zero")? {
                     GlobalInit::Zero
-                } else if self.accept_word("addr") {
+                } else if self.accept_word("addr")? {
                     let (target, addend) =
                         self.address_initializer("address initializer symbol")?;
                     GlobalInit::Address(target, addend)
@@ -79,19 +79,19 @@ impl Parser<'_> {
     fn global_data(&mut self) -> Result<Vec<DataItem>, Error> {
         self.expect(Kind::LBrace, "{")?;
         let mut items = Vec::new();
-        while !self.accept(Kind::RBrace) {
-            let item = if self.accept_word("zero") {
+        while !self.accept(Kind::RBrace)? {
+            let item = if self.accept_word("zero")? {
                 if !self.at(Kind::Number) {
                     return Err(self.fail("expected positive integer"));
                 }
                 let amount = self.positive(self.lexer.token.word())?;
                 // The C++ record stores the u64 count modulo 2^64 as signed i64.
                 let amount = i64::from_le_bytes(amount.to_le_bytes());
-                self.lexer.advance();
+                self.advance()?;
                 DataItem::Zero(amount)
             } else {
                 let ty = self.parse_type()?;
-                if ty == Type::Ptr && self.accept_word("addr") {
+                if ty == Type::Ptr && self.accept_word("addr")? {
                     let (target, addend) = self.address_initializer("address target")?;
                     DataItem::Address(target, addend)
                 } else {
@@ -110,7 +110,7 @@ impl Parser<'_> {
         let target = self.symbol_reference(what)?;
         let addend = if self.at(Kind::Plus) || self.at(Kind::Minus) {
             let negative = self.at(Kind::Minus);
-            self.lexer.advance();
+            self.advance()?;
             let addend = self.small_integer("address addend")?;
             if negative {
                 addend.wrapping_neg()
@@ -128,7 +128,7 @@ impl Parser<'_> {
             .reference(name, self.source_id, self.lexer.token.line)
     }
     pub(super) fn object_alias(&mut self) -> Result<(), Error> {
-        if !self.accept_word("object") {
+        if !self.accept_word("object")? {
             return Err(self.fail_token("expected 'object', got '", "'"));
         }
         let line = self.lexer.token.line;

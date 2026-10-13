@@ -25,7 +25,7 @@ impl<'a> FunctionBuilder<'a> {
         result: Type,
     ) -> Result<Self, Error> {
         let name = program.names.intern(name)?;
-        let source = program.add_source("")?;
+        let source = program.add_source(std::path::Path::new(""))?;
         let symbol = program.reference(name, source, 0)?;
         if program.symbol(symbol).declared() {
             return Err(Error::Diagnostic("duplicate constructed function".into()));
@@ -35,7 +35,7 @@ impl<'a> FunctionBuilder<'a> {
             result,
             boundary: Boundary::default(),
         };
-        let mut body = Body::new("", parameters.len());
+        let mut body = Body::new(None, parameters.len());
         for &(text, ty) in parameters {
             let name = program.names.intern(text)?;
             if body.find_temp(name).is_some() {
