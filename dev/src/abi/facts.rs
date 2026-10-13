@@ -166,9 +166,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
         let id = match kind {
             DefinitionKind::Type => self.type_spec(line, &words)?,
             DefinitionKind::Argument => self.argument_definition(line, &words)?,
-            DefinitionKind::Expression => {
-                return Err(Error::NotImplemented("dependent ABI expressions"));
-            }
+            DefinitionKind::Expression => self.expression_definition(line, &words)?,
             DefinitionKind::Context => return Err(Error::NotImplemented("local ABI contexts")),
             DefinitionKind::Entity => self.entity_definition(line, &words)?,
         };

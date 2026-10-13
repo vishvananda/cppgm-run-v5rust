@@ -133,3 +133,76 @@ fn tags_and_values_use_canonical_structure_instead_of_definition_binders() {
     let array_three = graph.modified(Modifier::Array(3), int).unwrap();
     assert_ne!(array_two, array_three);
 }
+
+#[test]
+fn expression_identity_retains_operands_and_id_expression_category() {
+    use super::vocabulary::Operation;
+    let mut graph = Graph::default();
+    let int = graph.intern(Node::Builtin(Builtin::Int), &[]).unwrap();
+    let long = graph.intern(Node::Builtin(Builtin::Long), &[]).unwrap();
+    let name = graph.string(b"trait").unwrap();
+    let first = graph
+        .intern(Node::VendorExpression(name), &[int, long])
+        .unwrap();
+    let same = graph
+        .intern(Node::VendorExpression(name), &[int, long])
+        .unwrap();
+    let reverse = graph
+        .intern(Node::VendorExpression(name), &[long, int])
+        .unwrap();
+    assert_eq!(first, same);
+    assert_ne!(first, reverse);
+    let param = graph.intern(Node::FunctionParam(0), &[]).unwrap();
+    let one = graph
+        .intern(Node::Literal { ty: int, bits: 1 }, &[])
+        .unwrap();
+    let two = graph
+        .intern(Node::Literal { ty: int, bits: 2 }, &[])
+        .unwrap();
+    let add_one = graph
+        .intern(Node::Operation(Operation::Add), &[param, one])
+        .unwrap();
+    let add_two = graph
+        .intern(Node::Operation(Operation::Add), &[param, two])
+        .unwrap();
+    let bound_one = graph
+        .modified(Modifier::ExpressionArray(add_one), int)
+        .unwrap();
+    let bound_two = graph
+        .modified(Modifier::ExpressionArray(add_two), int)
+        .unwrap();
+    assert_ne!(bound_one, bound_two);
+    let bare = graph
+        .intern(
+            Node::Decltype {
+                expression: param,
+                id_expression: true,
+            },
+            &[],
+        )
+        .unwrap();
+    let parenthesized = graph
+        .intern(
+            Node::Decltype {
+                expression: param,
+                id_expression: false,
+            },
+            &[],
+        )
+        .unwrap();
+    assert_ne!(bare, parenthesized);
+    for index in 0..4096 {
+        graph.string(index.to_string().as_bytes()).unwrap();
+    }
+    assert_eq!(graph.items(add_one), &[param, one]);
+    assert_eq!(graph.items(first), &[int, long]);
+    let mut out = Vec::new();
+    Encoder::encode(
+        &graph,
+        Target::Type(bound_one),
+        &mut out,
+        StackBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(out, b"Aplfp_Li1E_i");
+}

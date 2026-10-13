@@ -1,7 +1,7 @@
 //! Canonical ABI identities in flat case/unit-owned stores. See NOTICE.
 use super::{
     Error,
-    vocabulary::{Builtin, Terminal},
+    vocabulary::{Builtin, Operation, Terminal},
 };
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
@@ -83,6 +83,7 @@ pub enum Modifier {
     Qualified(Qualifiers),
     Vendor(NodeId),
     Array(u64),
+    ExpressionArray(NodeId),
 }
 
 /// Lists are held by the graph: tags for names/abbreviations, arguments for
@@ -125,6 +126,33 @@ pub enum Node {
         index: u32,
         substitutable: bool,
     },
+    Decltype {
+        expression: NodeId,
+        id_expression: bool,
+    },
+    FunctionParam(u32),
+    Operation(Operation),
+    Call,
+    Cast {
+        operation: Operation,
+        ty: NodeId,
+        operand: NodeId,
+    },
+    UnresolvedName(NodeId),
+    VendorExpression(NodeId),
+    SizeofType(NodeId),
+    ScopedMember {
+        owner: NodeId,
+        member: NodeId,
+        close_qualifier: bool,
+    },
+    MemberAccess {
+        operation: Operation,
+        object: NodeId,
+        member: NodeId,
+    },
+    EntityReference(NodeId),
+    ExpressionArgument(NodeId),
     Literal {
         ty: NodeId,
         bits: u64,

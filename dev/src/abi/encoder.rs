@@ -176,6 +176,11 @@ impl<'a> Encoder<'a> {
                             self.put(b"U");
                             self.source_name(name);
                         }
+                        Modifier::ExpressionArray(expression) => {
+                            self.put(b"A");
+                            self.expression(expression)?;
+                            self.put(b"_");
+                        }
                         Modifier::Array(bound) => {
                             self.put(b"A");
                             self.number(bound);
@@ -212,6 +217,14 @@ impl<'a> Encoder<'a> {
             }
             Node::Name { .. } | Node::Template(_) => self.name(id, Qualifiers::default())?,
             Node::TemplateParam { .. } => return self.prefix(Some(id)),
+            Node::Decltype {
+                expression,
+                id_expression,
+            } => {
+                self.put(if id_expression { b"Dt" } else { b"DT" });
+                self.expression(expression)?;
+                self.put(b"E");
+            }
             Node::VendorType(name) => {
                 self.put(b"u");
                 self.source_name(name);
@@ -404,6 +417,11 @@ impl<'a> Encoder<'a> {
     fn argument(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
+            Node::ExpressionArgument(expression) => {
+                self.put(b"X");
+                self.expression(expression)?;
+                self.put(b"E");
+            }
             Node::Literal { ty, bits } => {
                 self.put(b"L");
                 self.encode_type(ty)?;
@@ -431,18 +449,118 @@ impl<'a> Encoder<'a> {
                     self.put(b"Xad");
                 }
                 self.put(b"L");
-                if let Node::ExternalSymbol(symbol) = self.graph.get(entity) {
-                    self.put(self.graph.text(symbol));
-                } else {
-                    self.put(b"_Z");
-                    self.entity(entity)?;
-                }
+                self.entity_reference(entity)?;
                 self.put(b"E");
                 if address {
                     self.put(b"E");
                 }
             }
             _ => self.encode_type(id)?,
+        }
+        Ok(())
+    }
+    // Expressions are never dictionary entries. Their type operands use the
+    // same dictionary as the enclosing name, in source operand order.
+    fn expression(&mut self, id: NodeId) -> Result<(), Error> {
+        self.check_stack()?;
+        match self.graph.get(id) {
+            Node::TemplateParam { index, .. } => {
+                self.put(b"T");
+                if index != 0 {
+                    self.number(u64::from(index - 1));
+                }
+                self.put(b"_");
+            }
+            Node::FunctionParam(index) => {
+                self.put(b"fp");
+                if index != 0 {
+                    self.number(u64::from(index - 1));
+                }
+                self.put(b"_");
+            }
+            Node::Literal { .. } => self.argument(id)?,
+            Node::Operation(operation) => {
+                self.put(operation.code());
+                for item in self.graph.items(id) {
+                    self.expression(*item)?;
+                }
+            }
+            Node::Call => {
+                self.put(b"cl");
+                for item in self.graph.items(id) {
+                    self.expression(*item)?;
+                }
+                self.put(b"E");
+            }
+            Node::Cast {
+                operation,
+                ty,
+                operand,
+            } => {
+                self.put(operation.code());
+                self.encode_type(ty)?;
+                self.expression(operand)?;
+            }
+            Node::UnresolvedName(name) => {
+                self.source_name(name);
+                if !self.graph.items(id).is_empty() {
+                    self.template_args(id)?;
+                }
+            }
+            Node::VendorExpression(name) => {
+                self.put(b"u");
+                self.source_name(name);
+                for item in self.graph.items(id) {
+                    self.argument(*item)?;
+                }
+                self.put(b"E");
+            }
+            Node::SizeofType(ty) => {
+                self.put(b"st");
+                self.encode_type(ty)?;
+            }
+            Node::ScopedMember {
+                owner,
+                member,
+                close_qualifier,
+            } => {
+                self.put(b"sr");
+                self.encode_type(owner)?;
+                if close_qualifier {
+                    self.put(b"E");
+                }
+                self.source_name(member);
+                if !self.graph.items(id).is_empty() {
+                    self.template_args(id)?;
+                }
+            }
+            Node::MemberAccess {
+                operation,
+                object,
+                member,
+            } => {
+                self.put(operation.code());
+                self.expression(object)?;
+                self.source_name(member);
+                if !self.graph.items(id).is_empty() {
+                    self.template_args(id)?;
+                }
+            }
+            Node::EntityReference(entity) => {
+                self.put(b"L");
+                self.entity_reference(entity)?;
+                self.put(b"E");
+            }
+            _ => return Err(Error::diagnostic("ABI node is not an expression")),
+        }
+        Ok(())
+    }
+    fn entity_reference(&mut self, entity: NodeId) -> Result<(), Error> {
+        if let Node::ExternalSymbol(symbol) = self.graph.get(entity) {
+            self.put(self.graph.text(symbol));
+        } else {
+            self.put(b"_Z");
+            self.entity(entity)?;
         }
         Ok(())
     }

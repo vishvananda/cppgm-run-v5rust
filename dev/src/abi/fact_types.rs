@@ -148,8 +148,19 @@ impl CaseReader<'_, '_> {
                 let member = self.compact_type(line, words[2])?;
                 return self.graph.member_pointer(owner, member);
             }
-            b"decltype" | b"decltype-id" | b"lambda-closure" | b"local-type" => {
-                return Err(Error::NotImplemented("dependent and local ABI types"));
+            b"decltype" | b"decltype-id" if words.len() == 2 => {
+                let expression =
+                    self.reference(words[1], DefinitionKind::Expression, "expression")?;
+                return self.graph.intern(
+                    Node::Decltype {
+                        expression,
+                        id_expression: form == b"decltype-id",
+                    },
+                    &[],
+                );
+            }
+            b"lambda-closure" | b"local-type" => {
+                return Err(Error::NotImplemented("local ABI types"));
             }
             _ => {}
         }
@@ -171,12 +182,17 @@ impl CaseReader<'_, '_> {
                     .filter(|n| *n != 0)
                     .ok_or_else(|| self.error(line, "missing array bound"))?;
                 let bound = &word[..end];
-                if !bound[0].is_ascii_digit() {
-                    self.reference(bound, DefinitionKind::Expression, "array bound expression")?;
-                    return Err(Error::NotImplemented("expression ABI array bounds"));
+                if bound[0].is_ascii_digit() {
+                    let value = self.integer_value(line, bound)?;
+                    modifiers.push(Modifier::Array(u64::from_ne_bytes(value.to_ne_bytes())));
+                } else {
+                    let expression = self.reference(
+                        bound,
+                        DefinitionKind::Expression,
+                        "array bound expression",
+                    )?;
+                    modifiers.push(Modifier::ExpressionArray(expression));
                 }
-                let value = self.integer_value(line, bound)?;
-                modifiers.push(Modifier::Array(u64::from_ne_bytes(value.to_ne_bytes())));
                 word = &word[end + 1..];
             } else {
                 break;
@@ -302,7 +318,11 @@ impl CaseReader<'_, '_> {
                 );
             }
             b"member-external-address" => return self.member_address(line, &words[1..]),
-            b"expression" => return Err(Error::NotImplemented("ABI expression arguments")),
+            b"expression" if words.len() == 2 => {
+                let expression =
+                    self.reference(words[1], DefinitionKind::Expression, "expression")?;
+                return self.graph.intern(Node::ExpressionArgument(expression), &[]);
+            }
             _ => {}
         }
         Err(self.word_error(

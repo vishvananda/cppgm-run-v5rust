@@ -3,6 +3,141 @@
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
 Last audited commit: INITIAL (implementation does not advance this field).
 
+## Dependent expression identity and encoding checkpoint — 2026-10-13
+
+Entry HEAD: `8f54cbd0ba680cb0f7f6120edbc3564f72b31297`, clean checkout.
+The preceding goal turn was **progress**: its committed nonlocal ABI group
+established the verified 93/119 baseline. No interrupted checker/compiler
+process was live at this entry. The stage base and last-audited fields above
+remain unchanged; implementation does not advance audit state.
+
+This coherent partial group moves the same frozen manifest from **93/119 to
+108/119**, reducing failures **26 → 11** and preserving **93/93** previously
+passing identities. PA9 full-stage acceptance is still incomplete. Ralph owns
+checkpoint/final audits and advancement.
+
+### C++ owners, implementation and architecture review
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete owning handout,
+rust-clone-plan.md and this ledger. Consulted the frozen production owners in
+`/home/vishvananda/work/references/v5rust-cpp/dev/src/abi/`: the
+`facts/abi_fact_definitions.cpp` expression/type/argument readers and ordered
+resolution boundary, `itanium/abi_graph.cpp` expression constructors and
+identity fields, `itanium/abi_encoder.cpp` expression/type/argument/entity
+encoding, and `itanium/abi_mangle.h` operation/shape vocabulary. Consulted raw
+protected receipts and outputs; remaining cases reach explicit local-context
+status 86 before encoding, while all expression-group cases now match.
+
+| C++ responsibility | Rust owner and invariants |
+| --- | --- |
+| `read_expression_definition` and operation validation | `abi/fact_expressions.rs`, `abi/vocabulary.rs`: all standalone expression productions, complete frozen operation table with semantic enum names and typed operand shape, exact arity checks and left-to-right operand/error order. Unary/binary/conditional edges use a fixed three-ID temporary; variable calls and trait lists use local vectors published to graph-owned spans. |
+| `decltype_of`, expression array bounds and expression arguments | `abi/fact_types.rs`, `abi/graph.rs`: canonical nodes retain id-expression category, operation kind, ordered child identities, literal bits, type-trait operands and array-bound expression identity. Expression literals deliberately retain the reader's target long-long bit pattern, unlike range-checked typed argument values. |
+| Definition resolution | `abi/facts.rs`: expressions join the existing file-order, Unstarted/InProgress/Complete resolution and forward-reference/cycle rules. Binder spelling never identifies an expression; separately defined equivalent structures share one canonical ID. |
+| `encode_expression` and expression consumers | `abi/encoder.rs`: expressions are not substitution entries. Their type operands use the enclosing name's dictionary in encoding order; decltype and array types are recorded after operands. Template-parameter expressions encode directly without substituting the matching type parameter. Entity references reuse the existing typed entity encoder and its dictionary, including internal-variable linkage and opaque external symbols. |
+
+`source-map.tsv` records these translated responsibilities as partial PA9
+owners rather than claiming later compiler producers complete. Graph nodes,
+edges and text remain flat, immutable and case-owned; substitution comparisons
+are ID comparisons. No recursive owning pointers, rendered-text keys, phase
+reparsing, unsafe code, extra dependencies, whole-program scans or fallback
+compiler paths were introduced. Encoding scratch still dies per name. The
+new graph test verifies expression identity distinctions and span stability
+under store growth; existing tests continue to check per-name lifetime,
+canonical qualifiers, typed owners and forward/cyclic resolution.
+
+Optimizer, register allocation, native backend and source-driver code were
+untouched. PA9 produces names, not objects; no object-byte or PA34 completion
+claim is inferred from these checks. PA35 optimization targets remain outside
+this port.
+
+### Validation and retained evidence
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa9-expressions-20261013/`.
+The implementation commit is the commit containing this entry; its hash,
+checkout status and candidate hashes are recorded in external `handoff.json`.
+`source-hashes.json` records the reviewed C++ and final Rust source identities.
+
+| Command/evidence | Result |
+| --- | --- |
+| `make build` | PASS; final release rebuild 18.42 s, `build-final.log`. |
+| `make test-pa9` / required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa9` | Still FAIL, **108/119**. `stage-final.log`, `stage.json`; `progress.json` proves identical manifest digest and case IDs, fifteen gains, zero losses. |
+| `make course-pa9` | Still FAIL, **108/119**, same eleven local cases; `course-final.log`, `gate-snapshot/course-pa9/test/counts.txt` and course receipt. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa9` | PASS; PA1–PA8 fixed manifests and every owning course suite green. `prior-final.log`, `gate-snapshot/results/pa1.json` through `pa8.json` and course receipts. |
+| `make lint` / protected `clone_quality.py` | PASS; rustfmt, strict Clippy, all targets/features, debug and release library tests **201/201**, layout/file checks; `lint-final.log`. |
+| `make audit-rust` | PASS, **160 files, zero findings**; `audit.log`. |
+| Protected `clone_check.py preflight pa9` | PASS; `preflight.log`. |
+| Protected `clone_check.py preserve pa9` | PASS, **93/93**; `preserve.log`. |
+| Additional expression probes through protected adapter | **126/126 exact matches**; `probes.py`, `probe-*.facts`, `probes.trace.jsonl`, `probes.log`. All unary/binary/cast/access vocabulary shapes, malformed forms, error precedence, forward/cyclic dependencies, raw entity references, expression-array substitutions, distinct/equivalent facts, and target integral boundaries. |
+
+`gate-snapshot/cases-pa9/` retains the fixed per-case receipts, raw mismatch
+files and course logs. Live protected paths remain under
+`artifacts/clone/cases/pa9/` outside the checkout; `stage.json` maps exact case
+IDs to those paths. `turn-start-results.json` preserves the entry evidence.
+Scratch inputs and outputs were moved to the evidence root at handoff;
+receipts retain the original invocation paths. No generated files or logs
+are committed, and no fixtures/references/checker policy were edited.
+
+### Compile-time, RSS and scaling
+
+`scaling.py`, `scaling.json`, `scaling.log` and `scaling.trace.jsonl` retain
+fixed generated inputs/digests, two oracle warmups, two paired ABBA blocks,
+raw latency/RSS observations and output hashes. All **9/9 protected adapter
+comparisons** and **72/72 measured invocations** succeed with identical output
+bytes. Candidate median ms / maximum KiB below are four observations per row,
+including launch/timing-wrapper overhead; no C++ resource-equality claim.
+
+| Size | Expression-bound array modifiers | Distinct cast/decltype parameters, repeated | Type-trait expression arguments |
+| --- | --- | --- | --- |
+| 4,000 | 4.758 / 2,900 | 17.172 / 6,452 | 13.944 / 5,760 |
+| 8,000 | 6.554 / 3,636 | 32.572 / 10,688 | 28.269 / 9,264 |
+| 16,000 | 11.023 / 4,340 | 66.164 / 18,348 | 57.153 / 17,704 |
+
+The supported expression/identity/substitution workloads scale approximately
+linearly. These shallow expression graphs exercise large flat stores and
+modifier lists, not arbitrary recursive depth. The existing genuine stack
+byte budget remains in resolution and expression/type encoding; no native
+exhaustion cutoff or diagnostic position was calibrated. Resource-limited
+source-driver probes must use protected `stack_qualification` receipts and
+judge their `match`, as required by CLONE_CONTRACT.md.
+
+### Exact remaining IDs and next dependency boundary
+
+All remaining IDs are relative to `pa9/`, with oracle success versus explicit
+candidate status 86 at the local context/type/function boundary:
+
+- `tests/abi/200-lambda-closure-type.t`
+- `tests/abi/200-local-class-call-operator.t`
+- `tests/abi/200-local-context-destructor-discriminator.t`
+- `tests/abi/200-local-context-destructor-terminal.t`
+- `tests/abi/200-local-context-lambda-substitution-order.t`
+- `tests/abi/200-member-lambda-call-operator.t`
+- `tests/abi/200-raw-lambda-context-function.t`
+- `tests/abi/200-raw-local-context-function.t`
+- `tests/abi/600-function-local-class-template-arg.t`
+- `tests/abi/600-function-template-local-class-arg.t`
+- `tests/abi/600-function-template-local-lambda-arg.t`
+
+The **standalone dependent-expression group is done**, including related
+expression array/decltype consumers beyond the previously failing cases.
+The next coherent implementation group is **local function/lambda contexts**:
+`read_context_definition`, `local_entity`, `closure_entity`, local/lambda
+function records, typed function/raw scopes and closure signatures,
+`encode_context`, `encode_local_name`, discriminators and known-prefix sharing.
+It has distinct ownership and substitution/context state and owns all eleven
+remaining fixed failures.
+
+`--stats` remains status 86 and needs faithful counters plus actual Rust
+storage measurements before full-stage acceptance; `peak_graph_bytes`
+comparison needs the previously recorded policy review, without fabricated
+C++ allocation sizes. Later compiler-only expression constructors/encodings
+(function-parameter levels/this, prefixed increments, unresolved prefixes,
+operator callees, expression lists/allocation, floating/nullptr literals),
+implicit ABI tags and other producer interfaces remain partial source-map
+responsibilities. The standalone reader cannot construct those forms; this
+checkpoint does not claim them complete. The earlier empty-output adapter
+defect remains documented below; this group needed no checker/oracle changes.
+
 ## Nonlocal ABI graph, type and entity encoding checkpoint — 2026-10-13
 
 This coherent partial implementation moves the frozen manifest from **0/119
