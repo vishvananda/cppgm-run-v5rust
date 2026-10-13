@@ -2,7 +2,157 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753` (clean call/conversion acceptance audit entry).
-Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (call/conversion/association source, complete due lanes and resource evidence reviewed; full-stage acceptance pending resumed audit of the refreshed 883778fd baseline). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
+Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (full PA7 acceptance verified against the refreshed 883778fd baseline). Last audited checkout: `7c79453` (authorized reference refresh; no Rust compiler changes since the audited implementation). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
+
+## Full-stage acceptance — refreshed baseline audit, 2026-10-13
+
+**PA7 full-stage acceptance passes.** Reviewed clean entry:
+`7c79453`; implementation remains `01cdba770e15010228180780457d1d7f5b47faca`.
+The stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+The preceding goal turn was progress: it reconciled the acceptance evidence and
+identified the reproducible reference blocker. The authorized reference refresh
+now supplies normal results for all sixteen blocked comparisons. This audit
+checks that resolution, reconciles the cumulative source review, and repeats
+the complete due gates and probes. No compiler correction was needed in this
+final review. The historical withheld/partial decisions below describe their
+own earlier revisions and are superseded by this acceptance entry.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-acceptance-final-20261013/`.
+`reviewed-source.json` records requirements, all 136 Rust source hashes, both
+compiler hashes and unchanged-source verification against the preceding audit.
+`responsibility-census.json` records current C++/Rust owners and hashes;
+`requirements.json` and `completion-audit.json` reconcile the handout and
+acceptance obligations with concrete evidence. All generated probes, outputs,
+logs, receipts and measurements remain outside the checkout.
+
+### Completeness and source review
+
+Read `AGENTS.md`, `CLONE_CONTRACT.md`, `spec.md`, the full PA7 handout,
+`docs/rust-clone-plan.md`, source map, cumulative ledger and the reported
+`/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high/last-test.log`.
+The earlier source audits remain applicable: the entire `dev/` tree is unchanged
+since `01cdba7`. Against the preceding pinned C++ revision, the refreshed C++
+implementation changes only `analyzer_operators.cpp` (14 inserted, six removed
+lines). Reviewed that complete diff and its surrounding candidate collection,
+viability, builtin exclusion, ranking and failure propagation directly.
+
+An unresolved function set supplies no member/builtin operand type. A declared
+operator candidate can later supply its parameter target, an obligation of
+PA12+, while the PA7 path with no operator declaration falls through to ordinary
+unresolved-function rejection. The refreshed enum-candidate filter checks either
+known operand independently and never dereferences the absent left type. Rust's
+existing scalar resolution supplies the same PA7 result; no crash emulation,
+oracle fallback or fixture-dependent branch is necessary. The source-map row
+now records this disposition while retaining the later operator responsibilities.
+
+The cumulative 121-row frontend/type/semantic census and prior function-level
+reviews cover all due responsibilities. Rechecked the following boundaries in
+the current sources, including facts not printed by fixtures:
+
+| Responsibility / frozen C++ owners | Rust owners and completeness reasoning |
+| --- | --- |
+| `cppgm++.cpp`, shared source/syntax entry | `dev/bin/cppgm.rs`, `driver/ast.rs`, `syntax/`: one source and parsed unit per input; typed emit mode, source-order wrappers, lazy located errors and failed-output handling; the actual candidate is the rustc-built ELF |
+| Declarations, canonical identity, indexed lookup and linkage | `analyzer.rs`, `declarations.rs`, `linkage.rs`, `graph.rs`, `types.rs`, `lookup.rs`: source visibility, first-declaration properties, shared object versus function denotation, normalized function signatures, scope restoration and defaults remain owned typed facts |
+| `analyzer_calls.cpp`, `conversions.cpp/.h`, function designation | `procedural_calls.rs`, `call_lookup.rs`, `function_resolution.rs`, `scalar_conversions.rs`: required indexed candidate/ADL edges, arity/default filtering, all-candidate ambiguity validation, separate ranking/application and one selected binding/conversion publication; scratch clears on every result |
+| Scalar operators/casts, conditions and returns | `scalar_expressions.rs`, `scalar_operators.rs`, `scalar_casts.rs`, `statements.rs`, `procedural_statements.rs`: original expression/statement IDs, operand and diagnostic order, categories, qualification, scoped-enum restrictions, function-local control context and recorded condition/return conversions |
+| Initialization/defaults, arrays and sizing | `initialization.rs`, `default_arguments.rs`, `declarators.rs`, `queries.rs`, `layout.rs`: original syntax ranges, declaration-time visibility, bound completion, exact narrowing, explicit-element-only work, no per-zero-tail allocation and no sizeof operand reanalysis |
+| Integral constants, symbolic addresses and effects | `integral.rs`, `constants.rs`, `constant_addresses.rs`, `constant_pointer_operations.rs`, `constant_mutations.rs`, `builtin_calls.rs`: LP64 width/sign, promotion, signed overflow and division/shift validity, unsigned wrap/truncation, symbolic root/offset/bounds, unevaluated/short-circuit effects and query-local mutable storage |
+| Inherited tested extensions | Anonymous storage, member designation, scalar construction/elision, nonvirtual inheritance and signature-template owners retain their earlier reviewed identities/demand boundaries; 654 independent comparisons repeat their supported behavior beyond the fixed fixtures |
+| `semantic_dump.cpp/.h`, `semantics_dump.cpp/.h` | `dump.rs`, `semantics_dump.rs`, `function_demands.rs`: deterministic source then demand order, exact declared/result/operand/default views, direct versus indirect callees, original spellings and iterative traversal; printing performs no lookup, retyping, substitution or analysis |
+
+Architecture review traces a declaration and call from the single retained AST
+through compact canonical IDs and selected conversion facts to the borrowed
+dump. Signature-specialization keys contain primary entity and canonical
+argument IDs; successful default keys also contain head, index and preceding
+arguments. Per-query substitution overlays/memos cannot outlive their context;
+failed substitutions do not publish stale negative entries. ADL minimum-depth
+visitation permits strictly improving bounded revisits. Parser checkpoints
+retain bounded cursor/store/log marks, restore all owners transactionally and
+do not clone trees or tokens. Body, call, copy and constant scratch release
+contents at their query/body boundary while retaining capacity. No text transport,
+unsafe code, dependency, environment read in compiler phases, blanket allowance,
+fixture recognition or C++ production delegation was introduced or found in
+these due paths. Backend/optimizer/allocator policies and lifetimes are unchanged.
+
+Acceptance includes every original course case and retained extension. It does
+not claim later class/operator/template-body/interpreter responsibilities are
+ported. The handout's explicit semantic boundary and the plan retain those
+owners. The single inherited `case-float-id-bad` comparison still has different
+floating-object diagnostics; its raw mismatch is retained separately and never
+counted as a pass. The first new arithmetic experiment accidentally used `auto`:
+704 inputs reached PA20 variable deduction and 96 explicit-type cases matched.
+Those raw results remain in `numeric/`. The complete same-seed arithmetic sweep
+with explicit PA7 scalar types is 800/800 (`numeric-typed/`); it exercises the
+required arithmetic rather than claiming that deduction is implemented.
+
+### Exact validation and preservation
+
+All eleven commands in `checks.json` exited zero. Original course success also
+requires all strict adapter receipts, complete counts and no failure marker;
+these were inspected and copied into `lanes/` so subsequent gate runs cannot
+overwrite the acceptance snapshot. Every previously tracked PA7 input/reference
+file and all original 198 fixed identities remain present. `preservation.json`
+retains the identity evidence. No reference, protected policy or Ralph state was
+changed in this audit.
+
+| Command / evidence | Result | Artifact relative to root |
+| --- | --- | --- |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS, pinned inputs/tools/routing | `preflight.log` |
+| `make build` | PASS, locked release workspace | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | PASS, 214/214 | `required-stage.log`, `lanes/pa7/pa7.json`, `lanes/pa7/fixed-traces/` |
+| `make test-pa7` | PASS, 214/214 | `stage-make.log` |
+| `make course-pa7` (protected `course pa7`) | PASS, 346/346 exact invocations, no failed count/marker | `course.log`, `lanes/pa7/course-result.json`, `lanes/pa7/trace.jsonl` |
+| `python3 .../clone_check.py prior pa7` | PASS, every PA1–PA6 fixed/full-course lane | `prior.log`, `lanes.json`, `lanes/pa1/` through `lanes/pa6/` |
+| `python3 .../clone_check.py preserve pa7` | PASS, independent identity preservation also PASS | `preserve.log`, `preservation.json` |
+| `python3 .../clone_quality.py`, `make lint` | PASS, rustfmt, strict all-feature Clippy, debug/release workspace tests | `quality.log`, `lint.log` |
+| `make audit-rust` | PASS, 136 files, zero source/function/nesting/architecture findings | `audit.log` |
+| `make test-harness` | PASS, 28 protected harness tests | `harness.log` |
+| Fresh cumulative conversion/call/address/query/initialization/declaration/control probes | 3,334/3,334 due comparisons; all sixteen former crashes now match normal exit 1 | `probe-summary.json`, `probes/*/trace.jsonl`, `probe-inputs.json` |
+| Fresh inherited supported-extension probes | 654/654 | `inherited-summary.json`, `probes/inherited-*/trace.jsonl` |
+| New deterministic target-arithmetic sweep | 800/800, including success and exact failure bytes | `numeric-typed/summary.json`, `numeric-typed/trace.jsonl`, `numeric-typed/cases.json` |
+
+Earlier fixed counts are PA1 58, PA2 26, PA3 20, PA4 106, PA5 196, PA6 121;
+their full course counts are 58, 28, 20, 112, 296 and 722, all passing. The PA7
+original full course identities and every supplemental regression remain
+executed; added probes do not substitute for fixed/course preservation.
+
+### Resources and protected stack qualification
+
+After all gate/probe jobs terminated, repeated warm A/A calibration then paired
+ABBA/BAAB sampling on both hashed binaries at the same 16 MiB stack. Every exit
+and output hash agrees; all twelve independent protected workload receipts match.
+`measurements.json` retains all source/binary hashes, raw wall/RSS samples and
+output sizes/digests. These are complete-process observations, separate from
+semantic bytes and any generated-code optimization objective.
+
+| Workload / calls | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| Function-reference ranking / 128 | 6.94 / 5834 | 21.66 / 8006 |
+| Shared ADL depth / 128 | 8.00 / 6440 | 23.07 / 8736 |
+| Function-reference ranking / 512 | 7.78 / 6510 | 25.39 / 8724 |
+| Shared ADL depth / 512 | 10.53 / 6462 | 28.90 / 8360 |
+| Function-reference ranking / 2048 | 12.79 / 7214 | 36.72 / 8020 |
+| Shared ADL depth / 2048 | 17.71 / 7236 | 51.04 / 8746 |
+
+At an initial 1 MiB stack, 1,500 function dereferences and 1,000 nested calls
+both obtain `match=true` and `stack_qualification.passed=true`: both tools
+succeed with identical streams/files at the common 16 MiB retry. The native
+receipts and raw initial/retry attempts remain in `native-probes.jsonl` and
+`stack-qualifications/`. The genuine byte-budget guard is retained; no native
+cutoff, diagnostic position or frame size was calibrated. Shared filesystem use
+is below the 107,374,182,400-byte ceiling.
+
+### Acceptance disposition and next dependency
+
+Exact failing PA7 case/probe IDs: **none**. The previous sixteen reference
+failures are resolved and independently revalidated on the authorized baseline.
+Due Rust ownership, cumulative source completeness, exact successful/rejection
+bytes, complete course execution, earlier preservation, quality, resources and
+stack qualification are all evidenced. This closes the existing PA7 audit goal;
+Ralph retains stage advancement and state ownership. PA8 is the next dependency
+boundary. PA33's implementation-wide census/release/debug lanes and PA34's full
+object/tool fixed point remain later requirements; PA35 targets are excluded.
 
 
 ## Owner-authorized oracle resolution — 2026-10-13
