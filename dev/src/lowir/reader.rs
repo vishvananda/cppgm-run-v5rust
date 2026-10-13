@@ -6,7 +6,7 @@ use super::{
         Arity, Body, Boundary, Function, Linkage, Metadata, NameId, Parameter, Program, Returns,
         Signature, SignatureId, SourceId, Unwind, Value,
     },
-    vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Type},
+    vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Storage, Type},
 };
 use std::collections::HashSet;
 pub(super) struct Parser<'a> {
@@ -134,8 +134,10 @@ impl<'a> Parser<'a> {
             let declaration = self.accept_word("declare");
             if self.accept_word("function") {
                 self.function(!declaration)?;
-            } else if self.at_word("global") || (!declaration && self.at_word("alias")) {
-                return Err(Error::NotImplemented("LowIR globals and object aliases"));
+            } else if self.accept_word("global") {
+                self.global_item(!declaration)?;
+            } else if !declaration && self.accept_word("alias") {
+                self.object_alias()?;
             } else {
                 return Err(self.fail(if declaration {
                     "expected declaration kind"
@@ -150,7 +152,7 @@ impl<'a> Parser<'a> {
         let line = self.lexer.token.line;
         let name = self.name(Kind::Global, "function name")?;
         let symbol = self.program.reference(name, self.source_id, line)?;
-        if self.program.symbol(symbol).function.is_some() {
+        if self.program.symbol(symbol).declared() {
             return Err(self.fail_at(
                 line,
                 format!(
@@ -215,7 +217,7 @@ impl<'a> Parser<'a> {
         self.expect(Kind::RParen, ")")?;
         self.expect(Kind::Arrow, "->")?;
         signature.result = self.parse_type()?;
-        self.metadata(symbol, &mut signature.boundary, signature.result)?;
+        self.metadata(symbol, &mut signature.boundary, signature.result, false)?;
         for (i, p) in signature.parameters.iter().enumerate() {
             if p.pass == Some(Pass::IndirectResult) && (i != 0 || signature.result != Type::Void) {
                 return Err(self.fail_at(signature_line, "invalid indirect result parameter"));
@@ -303,11 +305,12 @@ impl<'a> Parser<'a> {
         self.lexer.advance();
         Ok(classes)
     }
-    fn metadata(
+    pub(super) fn metadata(
         &mut self,
         mut symbol: Option<&mut Metadata>,
         boundary: &mut Boundary,
         result: Type,
+        on_global: bool,
     ) -> Result<(), Error> {
         let mut seen = HashSet::new();
         while self.accept(Kind::LBracket) {
@@ -356,19 +359,42 @@ impl<'a> Parser<'a> {
                 {
                     return Err(self.fail("symbol metadata on call signature"));
                 }
-                let value = self.lexer.token.word();
-                let symbol_key = !matches!(
+                let boundary_key = matches!(
                     key,
-                    "arity"
-                        | "effects"
-                        | "unwind"
-                        | "return"
-                        | "result_classes"
-                        | "storage"
-                        | "section"
-                        | "tls_for"
+                    "arity" | "effects" | "unwind" | "return" | "result_classes"
                 );
-                if symbol_key && !self.at(Kind::Word) && !(key == "object" && self.at(Kind::Global))
+                if on_global && boundary_key {
+                    return Err(self.fail("function metadata on non-function"));
+                }
+                if on_global
+                    && matches!(
+                        key,
+                        "tls_for" | "force_inline" | "inline_hint" | "no_inline"
+                    )
+                {
+                    return Err(self.fail(format!("{key} metadata requires a function")));
+                }
+                if key == "tls_for" {
+                    let target = self.symbol_reference("tls_for global")?;
+                    if let Some(metadata) = symbol.as_deref_mut() {
+                        metadata.tls_for = Some(target);
+                    }
+                    if !self.accept(Kind::Comma) {
+                        break;
+                    }
+                    continue;
+                }
+                if !on_global && matches!(key, "storage" | "section") {
+                    return Err(self.fail(if key == "storage" {
+                        "storage metadata on non-global"
+                    } else {
+                        "section metadata requires a global"
+                    }));
+                }
+                let value = self.lexer.token.word();
+                if !(boundary_key
+                    || self.at(Kind::Word)
+                    || (key == "object" && self.at(Kind::Global)))
                 {
                     return Err(self.fail(format!("missing value after {key}")));
                 }
@@ -412,7 +438,7 @@ impl<'a> Parser<'a> {
                         let Some(metadata) = symbol.as_deref_mut() else {
                             return Err(self.fail("symbol metadata on call signature"));
                         };
-                        self.symbol_metadata(metadata, key)?;
+                        self.symbol_metadata(metadata, key, on_global)?;
                     }
                 }
                 self.lexer.advance();
@@ -427,13 +453,25 @@ impl<'a> Parser<'a> {
         }
         Ok(())
     }
-    fn symbol_metadata(&mut self, metadata: &mut Metadata, key: &str) -> Result<(), Error> {
+    fn symbol_metadata(
+        &mut self,
+        metadata: &mut Metadata,
+        key: &str,
+        on_global: bool,
+    ) -> Result<(), Error> {
         let value = self.lexer.token.word();
         match key {
             "role" => {
                 metadata.role = Role::parse(value);
-                if metadata.role.is_none_or(Role::global) {
+                let Some(role) = metadata.role else {
                     return Err(self.fail("invalid symbol role"));
+                };
+                if role.global() != on_global {
+                    return Err(self.fail(if on_global {
+                        "function role on global"
+                    } else {
+                        "invalid symbol role"
+                    }));
                 }
             }
             "linkage" => {
@@ -456,12 +494,20 @@ impl<'a> Parser<'a> {
                 };
                 metadata.object = Some(self.program.names.intern(&value)?);
             }
-            "storage" => return Err(self.fail("storage metadata on non-global")),
-            "section" => return Err(self.fail("section metadata requires a global")),
-            "tls_for" => {
-                return Err(Error::NotImplemented(
-                    "LowIR symbol and object boundary relations",
-                ));
+            "storage" => {
+                metadata.storage = Storage::parse(value);
+                if metadata.storage.is_none() {
+                    return Err(self.fail("invalid global storage metadata"));
+                }
+            }
+            "section" => {
+                if !value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.'))
+                {
+                    return Err(self.fail("invalid global section name"));
+                }
+                metadata.section = Some(self.program.names.intern(value)?);
             }
             _ => {
                 if !self.at_word("yes") {

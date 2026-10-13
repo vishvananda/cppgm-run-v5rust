@@ -1,30 +1,117 @@
 //! Bounded streaming serializer over typed `LowIR` facts. See NOTICE.
 use super::{
     model::{
-        Arity, Body, Call, Facts, Function, InstructionKind as I, Linkage, Metadata, Program,
-        Returns, Signature, Unwind, Value,
+        Arity, Body, Call, DataItem, Facts, Function, Global, GlobalInit, InstructionKind as I,
+        Linkage, Metadata, Program, Returns, Signature, Unwind, Value,
     },
     vocabulary::Type,
 };
 use std::io::{self, Write};
 pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     let mut written = false;
-    for definition in [false, true] {
+    for phase in 0..4 {
         let mut phase_written = false;
-        for function in program
-            .functions()
-            .iter()
-            .filter(|f| f.body.is_some() == definition)
-        {
-            if written && !phase_written {
-                writeln!(out)?;
+        if phase == 0 || phase == 2 {
+            for global in program
+                .globals()
+                .iter()
+                .filter(|g| matches!(g.init, GlobalInit::Declaration) == (phase == 0))
+            {
+                if written && !phase_written {
+                    writeln!(out)?;
+                }
+                phase_written = true;
+                write_global(program, global, &mut out)?;
             }
-            phase_written = true;
-            write_function(program, function, &mut out)?;
+        } else {
+            for function in program
+                .functions()
+                .iter()
+                .filter(|f| f.body.is_some() == (phase == 3))
+            {
+                if written && !phase_written {
+                    writeln!(out)?;
+                }
+                phase_written = true;
+                write_function(program, function, &mut out)?;
+            }
         }
         written |= phase_written;
     }
+    for alias in program.aliases() {
+        writeln!(
+            out,
+            "alias object {} = @{}",
+            program.names.get(alias.object),
+            program.names.get(program.symbol(alias.target).name)
+        )?;
+    }
     out.flush()
+}
+fn write_address(
+    program: &Program,
+    target: super::model::SymbolId,
+    addend: i64,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    write!(
+        out,
+        "addr @{}",
+        program.names.get(program.symbol(target).name)
+    )?;
+    if addend > 0 {
+        write!(out, " + {addend}")?;
+    }
+    if addend < 0 {
+        write!(out, " - {}", addend.unsigned_abs())?;
+    }
+    Ok(())
+}
+fn write_global(program: &Program, global: &Global, out: &mut impl Write) -> io::Result<()> {
+    let declaration = matches!(global.init, GlobalInit::Declaration);
+    write!(
+        out,
+        "{}global @{}",
+        if declaration { "declare " } else { "" },
+        program.names.get(global.name)
+    )?;
+    if let Some(ty) = global.ty {
+        write!(out, " : {ty}")?;
+    }
+    metadata(program, Some(&global.metadata), None, out)?;
+    if declaration {
+        return writeln!(out);
+    }
+    write!(out, " = ")?;
+    match &global.init {
+        GlobalInit::Declaration => return Ok(()),
+        GlobalInit::Zero => write!(out, "zero")?,
+        GlobalInit::Integer(bits) => write!(
+            out,
+            "{}",
+            integer_text(*bits, global.ty.unwrap_or(Type::Void))
+        )?,
+        GlobalInit::Address(target, addend) => write_address(program, *target, *addend, out)?,
+        GlobalInit::Data(items) => {
+            writeln!(out, "{{")?;
+            for item in items {
+                write!(out, "  ")?;
+                match item {
+                    DataItem::Zero(amount) => write!(out, "zero {amount}")?,
+                    DataItem::Integer(ty, bits) => {
+                        write!(out, "{ty} {}", integer_text(*bits, *ty))?;
+                    }
+                    DataItem::Address(target, addend) => {
+                        write!(out, "ptr ")?;
+                        write_address(program, *target, *addend, out)?;
+                    }
+                }
+                writeln!(out)?;
+            }
+            write!(out, "}}")?;
+        }
+    }
+    writeln!(out)
 }
 fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::Result<()> {
     write!(
@@ -35,7 +122,7 @@ fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::
     )?;
     let signature = program.signature(f.signature);
     parameters(program, signature, out)?;
-    metadata(program, Some(&f.metadata), signature, out)?;
+    metadata(program, Some(&f.metadata), Some(signature), out)?;
     let Some(body) = &f.body else {
         return writeln!(out);
     };
@@ -100,27 +187,35 @@ fn parameters(program: &Program, signature: &Signature, out: &mut impl Write) ->
 fn metadata(
     program: &Program,
     symbol: Option<&Metadata>,
-    signature: &Signature,
+    signature: Option<&Signature>,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    let m = &signature.boundary;
     let mut fields = Vec::new();
-    if m.arity == Arity::Variadic {
-        fields.push("arity=variadic".into());
-    }
-    if let Some(effects) = m.effects {
-        fields.push(format!("effects={}", effects.spelling()));
-    }
-    if m.unwind == Unwind::No {
-        fields.push("unwind=no".into());
-    }
-    if m.returns == Returns::NoReturn {
-        fields.push("return=noreturn".into());
-    }
-    if let Some(classes) = m.result_classes {
-        fields.push(format!("result_classes={classes}"));
+    if let Some(signature) = signature {
+        let m = &signature.boundary;
+        if m.arity == Arity::Variadic {
+            fields.push("arity=variadic".into());
+        }
+        if let Some(effects) = m.effects {
+            fields.push(format!("effects={}", effects.spelling()));
+        }
+        if m.unwind == Unwind::No {
+            fields.push("unwind=no".into());
+        }
+        if m.returns == Returns::NoReturn {
+            fields.push("return=noreturn".into());
+        }
+        if let Some(classes) = m.result_classes {
+            fields.push(format!("result_classes={classes}"));
+        }
     }
     if let Some(m) = symbol {
+        if let Some(storage) = m.storage {
+            fields.push(format!("storage={}", storage.spelling()));
+        }
+        if let Some(section) = m.section {
+            fields.push(format!("section={}", program.names.get(section)));
+        }
         if let Some(role) = m.role {
             fields.push(format!("role={}", role.spelling()));
         }
@@ -135,6 +230,12 @@ fn metadata(
         }
         if let Some(object) = m.object {
             fields.push(format!("object={}", program.names.get(object)));
+        }
+        if let Some(target) = m.tls_for {
+            fields.push(format!(
+                "tls_for=@{}",
+                program.names.get(program.symbol(target).name)
+            ));
         }
         for (i, name) in [
             "keep_alias",
@@ -222,7 +323,7 @@ impl<W: Write> InstructionWriter<'_, W> {
             write!(self.out, " as ")?;
             let signature = self.program.signature(id);
             parameters(self.program, signature, self.out)?;
-            metadata(self.program, None, signature, self.out)?;
+            metadata(self.program, None, Some(signature), self.out)?;
         }
         Ok(())
     }

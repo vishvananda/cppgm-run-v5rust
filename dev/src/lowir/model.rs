@@ -1,9 +1,11 @@
 //! One unit of typed `LowIR`, with private ID stores and function-owned bodies. See NOTICE.
 use super::{
     Error,
-    vocabulary::{Binary, Binding, Compare, Convert, Effects, Pass, Projection, Role, Type, Unary},
+    vocabulary::{
+        Binary, Binding, Compare, Convert, Effects, Pass, Projection, Role, Storage, Type, Unary,
+    },
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
@@ -21,7 +23,8 @@ identity!(
     LiteralId,
     SymbolId,
     SignatureId,
-    SourceId
+    SourceId,
+    GlobalId
 );
 #[derive(Default)]
 pub(super) struct Names {
@@ -51,11 +54,14 @@ pub(super) struct Program {
     index: HashMap<NameId, SymbolId>,
     signatures: Vec<Signature>,
     sources: Vec<String>,
+    globals: Vec<Global>,
+    aliases: Vec<ObjectAlias>,
+    alias_names: HashSet<NameId>,
 }
 impl Program {
     pub(super) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
-        self.symbols[symbol.0 as usize].function = Some(id);
+        self.symbols[symbol.0 as usize].detail = SymbolDetail::Function(id);
         self.functions.push(function);
         Ok(())
     }
@@ -71,7 +77,7 @@ impl Program {
         let id = SymbolId(u32::try_from(self.symbols.len()).map_err(|_| Error::Limit)?);
         self.symbols.push(Symbol {
             name,
-            function: None,
+            detail: SymbolDetail::Unresolved,
             source,
             line,
         });
@@ -88,7 +94,7 @@ impl Program {
     }
     pub(super) fn finish_symbols(&self) -> Result<(), Error> {
         for symbol in &self.symbols {
-            if symbol.function.is_none() {
+            if matches!(symbol.detail, SymbolDetail::Unresolved) {
                 return Err(Error::Diagnostic(format!(
                     "undefined top-level symbol: {} at {}:{}",
                     self.names.get(symbol.name),
@@ -115,11 +121,10 @@ impl Program {
             .map(|f| self.signature(f.signature))
     }
     pub(super) fn callee_function(&self, value: Value) -> Option<&Function> {
-        if let Value::Symbol(id) = value {
-            return self
-                .symbol(id)
-                .function
-                .map(|id| &self.functions[id.0 as usize]);
+        if let Value::Symbol(id) = value
+            && let SymbolDetail::Function(id) = self.symbol(id).detail
+        {
+            return Some(&self.functions[id.0 as usize]);
         }
         None
     }
@@ -133,7 +138,56 @@ impl Program {
     pub(super) fn functions_in_symbol_order(&self) -> impl Iterator<Item = &Function> {
         self.symbols
             .iter()
-            .filter_map(|symbol| symbol.function.map(|id| &self.functions[id.0 as usize]))
+            .filter_map(|symbol| match symbol.detail {
+                SymbolDetail::Function(id) => Some(&self.functions[id.0 as usize]),
+                _ => None,
+            })
+    }
+    pub(super) fn add_global(&mut self, symbol: SymbolId, global: Global) -> Result<(), Error> {
+        let id = GlobalId(u32::try_from(self.globals.len()).map_err(|_| Error::Limit)?);
+        self.symbols[symbol.0 as usize].detail = SymbolDetail::Global(id);
+        self.globals.push(global);
+        Ok(())
+    }
+    pub(super) fn globals(&self) -> &[Global] {
+        &self.globals
+    }
+    pub(super) fn symbols(&self) -> &[Symbol] {
+        &self.symbols
+    }
+    pub(super) fn symbol_metadata(&self, symbol: &Symbol) -> Option<&Metadata> {
+        match symbol.detail {
+            SymbolDetail::Function(id) => Some(&self.functions[id.0 as usize].metadata),
+            SymbolDetail::Global(id) => Some(&self.globals[id.0 as usize].metadata),
+            SymbolDetail::Unresolved => None,
+        }
+    }
+    pub(super) fn function(&self, symbol: &Symbol) -> Option<&Function> {
+        if let SymbolDetail::Function(id) = symbol.detail {
+            Some(&self.functions[id.0 as usize])
+        } else {
+            None
+        }
+    }
+    pub(super) fn global(&self, symbol: &Symbol) -> Option<&Global> {
+        if let SymbolDetail::Global(id) = symbol.detail {
+            Some(&self.globals[id.0 as usize])
+        } else {
+            None
+        }
+    }
+    pub(super) fn add_alias(&mut self, alias: ObjectAlias) -> bool {
+        if !self.alias_names.insert(alias.object) {
+            return false;
+        }
+        self.aliases.push(alias);
+        true
+    }
+    pub(super) fn has_alias(&self, name: NameId) -> bool {
+        self.alias_names.contains(&name)
+    }
+    pub(super) fn aliases(&self) -> &[ObjectAlias] {
+        &self.aliases
     }
     pub(super) fn legacy_roles(&mut self) {
         if self
@@ -161,9 +215,42 @@ impl Program {
 }
 pub(super) struct Symbol {
     pub(super) name: NameId,
-    pub(super) function: Option<FunctionId>,
+    pub(super) detail: SymbolDetail,
     source: SourceId,
     line: u32,
+}
+#[derive(Clone, Copy)]
+pub(super) enum SymbolDetail {
+    Unresolved,
+    Function(FunctionId),
+    Global(GlobalId),
+}
+impl Symbol {
+    pub(super) fn declared(&self) -> bool {
+        !matches!(self.detail, SymbolDetail::Unresolved)
+    }
+}
+pub(super) struct Global {
+    pub(super) name: NameId,
+    pub(super) ty: Option<Type>,
+    pub(super) metadata: Metadata,
+    pub(super) init: GlobalInit,
+}
+pub(super) enum GlobalInit {
+    Declaration,
+    Zero,
+    Integer(u128),
+    Address(SymbolId, i64),
+    Data(Vec<DataItem>),
+}
+pub(super) enum DataItem {
+    Zero(i64),
+    Integer(Type, u128),
+    Address(SymbolId, i64),
+}
+pub(super) struct ObjectAlias {
+    pub(super) object: NameId,
+    pub(super) target: SymbolId,
 }
 pub(super) struct Signature {
     pub(super) parameters: Vec<Parameter>,
@@ -209,6 +296,9 @@ pub(super) struct Metadata {
     pub(super) binding: Option<Binding>,
     pub(super) flags: u8,
     pub(super) object: Option<NameId>,
+    pub(super) storage: Option<Storage>,
+    pub(super) section: Option<NameId>,
+    pub(super) tls_for: Option<SymbolId>,
 }
 pub(super) struct Parameter {
     pub(super) name: NameId,
@@ -555,6 +645,12 @@ impl InstId {
     }
 }
 impl BlockId {
+    pub(super) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl SymbolId {
     pub(super) fn index(self) -> usize {
         self.0 as usize
     }

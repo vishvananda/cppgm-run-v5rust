@@ -82,7 +82,7 @@ impl std::fmt::Display for Type {
 // These paired tables are the shared reader/writer vocabulary, not implementation fragments.
 macro_rules! vocabulary {
     ($name:ident { $($variant:ident => $word:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub(super) enum $name { $($variant),+ }
         impl $name {
             pub(super) fn parse(text: &str) -> Option<Self> {
@@ -127,6 +127,7 @@ pub(super) fn named_literal(text: &str) -> bool {
     matches!(base, "inf" | "INFINITY" | "nan" | "NAN" | "snan" | "SNAN")
 }
 vocabulary!(Binding { Internal => "internal", Strong => "strong", Weak => "weak" });
+vocabulary!(Storage { ReadOnly => "readonly", ThreadLocal => "thread_local" });
 vocabulary!(Effects { ReadNone => "readnone", ReadOnly => "readonly" });
 vocabulary!(Pass { IndirectResult => "indirect_result", ByAddress => "by_address" });
 vocabulary!(Projection { ArrayElement => "array_element", Field => "field" });

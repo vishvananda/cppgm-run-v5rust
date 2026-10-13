@@ -2,27 +2,65 @@
 use super::{
     Error,
     model::{
-        Arity, BlockId, Body, Call, Function, Instruction, InstructionKind as I, Program, Value,
+        Arity, BlockId, Body, Call, Function, Instruction, InstructionKind as I, Program,
+        SymbolDetail, Value,
     },
-    vocabulary::{Binary, Convert, Role, Type, Unary},
+    vocabulary::{Binary, Convert, Role, Storage, Type, Unary},
 };
 use std::collections::HashSet;
 pub(super) fn validate(program: &Program) -> Result<(), Error> {
     let mut roles = HashSet::new();
-    for function in program.functions_in_symbol_order() {
-        if let Some(role) = function.metadata.role {
-            if !roles.insert(role.spelling()) {
-                return Err(Error::Diagnostic(format!(
-                    "duplicate singleton role: {}",
-                    program.names.get(function.name)
-                )));
+    let mut wrapped = vec![false; program.symbols().len()];
+    for symbol in program.symbols() {
+        let Some(metadata) = program.symbol_metadata(symbol) else {
+            continue;
+        };
+        let error = |message: &str, name| {
+            Error::Diagnostic(format!("{message}: {}", program.names.get(name)))
+        };
+        let function = matches!(symbol.detail, SymbolDetail::Function(_));
+        if let Some(role) = metadata.role {
+            if role.global() == function {
+                return Err(error(
+                    if function {
+                        "invalid symbol role"
+                    } else {
+                        "function role on global"
+                    },
+                    symbol.name,
+                ));
             }
-            if role == Role::Entry && function.body.is_none() {
-                return Err(Error::Diagnostic(format!(
-                    "entry role requires a function definition: {}",
-                    program.names.get(function.name)
-                )));
+            if role != Role::RttiData && !roles.insert(role) {
+                return Err(error("duplicate singleton role", symbol.name));
             }
+            if role == Role::Entry && program.function(symbol).is_none_or(|f| f.body.is_none()) {
+                return Err(error(
+                    "entry role requires a function definition",
+                    symbol.name,
+                ));
+            }
+        }
+        if function && (metadata.storage.is_some() || metadata.section.is_some()) {
+            return Err(error("storage metadata on non-global", symbol.name));
+        }
+        if let Some(target) = metadata.tls_for {
+            if !function {
+                return Err(error("tls_for metadata requires a function", symbol.name));
+            }
+            let target_symbol = program.symbol(target);
+            if program
+                .global(target_symbol)
+                .is_none_or(|g| g.metadata.storage != Some(Storage::ThreadLocal))
+            {
+                return Err(error(
+                    "tls_for target is not thread-local global",
+                    target_symbol.name,
+                ));
+            }
+            if wrapped[target.index()] {
+                return Err(error("duplicate tls wrapper", target_symbol.name));
+            }
+            wrapped[target.index()] = true;
         }
     }
     for function in program.functions_in_symbol_order() {

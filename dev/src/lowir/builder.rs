@@ -26,7 +26,7 @@ impl<'a> FunctionBuilder<'a> {
         let name = program.names.intern(name)?;
         let source = program.add_source("")?;
         let symbol = program.reference(name, source, 0)?;
-        if program.symbol(symbol).function.is_some() {
+        if program.symbol(symbol).declared() {
             return Err(Error::Diagnostic("duplicate constructed function".into()));
         }
         let mut signature = Signature {

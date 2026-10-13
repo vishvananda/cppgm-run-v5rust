@@ -1,6 +1,7 @@
 //! Reusable `LowIR` reader, function-owned model, validator and writer. See NOTICE.
 mod builder;
 mod exercises;
+mod globals;
 mod instructions;
 mod lexer;
 mod model;

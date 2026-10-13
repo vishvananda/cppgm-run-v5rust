@@ -46,7 +46,7 @@ impl Parser<'_> {
             Kind::Temp | Kind::Slot | Kind::Global | Kind::Number | Kind::Minus
         ) || (self.at(Kind::Word) && named_literal(self.lexer.token.word()))
     }
-    fn integer(&mut self, context: Type) -> Result<u128, Error> {
+    pub(super) fn integer(&mut self, context: Type) -> Result<u128, Error> {
         let negative = self.accept(Kind::Minus);
         let token = self.lexer.token;
         if self.accept_word("nullptr") {
