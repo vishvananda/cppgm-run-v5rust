@@ -3,8 +3,8 @@ use super::{
     Error,
     lexer::{Kind, Lexer},
     model::{
-        Arity, Body, Boundary, Function, Linkage, Metadata, NameId, Parameter, Program, Returns,
-        Signature, SignatureId, SourceId, Unwind, Value,
+        Arity, Body, Boundary, DebugLocation, Function, Linkage, Metadata, NameId, Parameter,
+        Program, Returns, Signature, SignatureId, SourceId, Unwind, Value,
     },
     vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Storage, Type},
 };
@@ -41,6 +41,18 @@ impl<'a> Parser<'a> {
     pub(super) fn fail_at(&self, line: u32, message: impl Into<String>) -> Error {
         Error::Diagnostic(format!("{} at {}:{line}", message.into(), self.source))
     }
+    /// Render a token only at a diagnostic boundary, retaining arbitrary debug-file bytes.
+    pub(super) fn fail_token(&self, prefix: &str, suffix: &str) -> Error {
+        if let Kind::Invalid(problem) = self.lexer.token.kind {
+            return self.fail_at(self.lexer.token.line, problem);
+        }
+        let mut message = prefix.as_bytes().to_vec();
+        self.lexer.token.append_spelling(&mut message);
+        message.extend_from_slice(suffix.as_bytes());
+        message
+            .extend_from_slice(format!(" at {}:{}", self.source, self.lexer.token.line).as_bytes());
+        Error::ByteDiagnostic(message)
+    }
     pub(super) fn at(&self, kind: Kind) -> bool {
         self.lexer.token.kind == kind
     }
@@ -65,18 +77,12 @@ impl<'a> Parser<'a> {
         if self.accept(kind) {
             Ok(())
         } else {
-            Err(self.fail(format!(
-                "expected '{text}', got '{}'",
-                self.lexer.token.spelling()
-            )))
+            Err(self.fail_token(&format!("expected '{text}', got '"), "'"))
         }
     }
     pub(super) fn name(&mut self, kind: Kind, what: &str) -> Result<NameId, Error> {
         if !self.at(kind) {
-            return Err(self.fail(format!(
-                "expected {what}, got '{}'",
-                self.lexer.token.spelling()
-            )));
+            return Err(self.fail_token(&format!("expected {what}, got '"), "'"));
         }
         let name = self.program.names.intern(self.lexer.token.word())?;
         self.lexer.advance();
@@ -111,7 +117,7 @@ impl<'a> Parser<'a> {
                 return Ok(Type::Object { bytes, align });
             }
         }
-        Err(self.fail(format!("unknown LowIR type: {}", token.spelling())))
+        Err(self.fail_token("unknown LowIR type: ", ""))
     }
     pub(super) fn positive(&self, text: &str) -> Result<u64, Error> {
         let mut value = 0_u64;
@@ -168,15 +174,34 @@ impl<'a> Parser<'a> {
             signature,
             metadata,
             body: None,
+            location: None,
         };
         if definition {
-            if self.at(Kind::Debug) {
-                return Err(Error::NotImplemented("LowIR debug locations"));
+            if self.at(Kind::Debug) || matches!(self.lexer.token.kind, Kind::Invalid(_)) {
+                function.location = Some(self.debug_location()?);
             }
             self.expect(Kind::LBrace, "{")?;
             function.body = Some(self.body(&function)?);
         }
         self.program.add(symbol, function)
+    }
+    pub(super) fn debug_location(&mut self) -> Result<DebugLocation, Error> {
+        let token = self.lexer.token;
+        let debug = token
+            .debug
+            .ok_or_else(|| self.fail("malformed !dbg(file, line, column) location"))?;
+        for (field, value) in [("line", debug.line), ("column", debug.column)] {
+            if value == 0 || value > u64::from(u32::MAX) {
+                return Err(self.fail_token(&format!("invalid positive integer: {field} of "), ""));
+            }
+        }
+        let location = DebugLocation {
+            file: self.program.names.intern_bytes(debug.file)?,
+            line: u32::try_from(debug.line).map_err(|_| Error::Limit)?,
+            column: u32::try_from(debug.column).map_err(|_| Error::Limit)?,
+        };
+        self.lexer.advance();
+        Ok(location)
     }
     pub(super) fn signature(
         &mut self,
@@ -316,10 +341,7 @@ impl<'a> Parser<'a> {
         while self.accept(Kind::LBracket) {
             loop {
                 if !self.at(Kind::Word) {
-                    return Err(self.fail(format!(
-                        "expected metadata key, got '{}'",
-                        self.lexer.token.spelling()
-                    )));
+                    return Err(self.fail_token("expected metadata key, got '", "'"));
                 }
                 let key = self.lexer.token.word();
                 if !matches!(

@@ -57,6 +57,7 @@ impl<'a> FunctionBuilder<'a> {
             signature,
             metadata: Metadata::default(),
             body: None,
+            location: None,
         };
         Ok(Self {
             program,
@@ -133,14 +134,7 @@ impl<'a> FunctionBuilder<'a> {
         let block = self
             .block
             .ok_or_else(|| Error::Diagnostic("instruction outside constructed block".into()))?;
-        let _ = self.body.append(
-            block,
-            Instruction {
-                kind,
-                result,
-                line: 0,
-            },
-        )?;
+        let _ = self.body.append(block, Instruction::new(result, kind, 0))?;
         Ok(())
     }
     pub(super) fn finish(mut self) -> Result<(), Error> {
@@ -153,6 +147,51 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn sparse_locations_survive_reassignment_and_another_function() -> Result<(), Error> {
+        use crate::lowir::{model::DebugLocation, writer};
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "located", &[], Type::I64)?;
+        let file = builder.program.names.intern_bytes(b"source\xff.cpp")?;
+        let location = DebugLocation {
+            file,
+            line: 7,
+            column: 9,
+        };
+        builder.function.location = Some(location);
+        builder.block("entry")?;
+        let literal = builder.integer(1)?;
+        let value = builder.value(I::Const(Type::I64, literal), "v")?;
+        let Value::Temp(temp) = value else {
+            return Err(Error::Limit);
+        };
+        let id = builder.body.temp(temp).definition.ok_or(Error::Limit)?;
+        builder.body.set_location(id, location)?;
+        // Replacing one instruction's location does not retarget any other instruction.
+        builder.body.set_location(
+            id,
+            DebugLocation {
+                line: 8,
+                ..location
+            },
+        )?;
+        builder.effect(I::Return(Type::I64, Some(value)))?;
+        builder.finish()?;
+        exercises::build(&mut program, "sum")?;
+        validator::validate_constructed(&program)?;
+        let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+        assert_eq!(
+            body.location(body.instruction(id)).map(|loc| loc.line),
+            Some(8)
+        );
+        assert!(body.location(&body.instructions()[1]).is_none());
+        let mut output = Vec::new();
+        writer::write(&program, &mut output).map_err(Error::Output)?;
+        let expected = b"function @located() -> i64 !dbg(source\xff.cpp, 7, 9) {\n  block ^entry:\n    %v = const i64 1 !dbg(source\xff.cpp, 8, 9)\n    return i64 %v\n}\n";
+        assert!(output.starts_with(expected));
+        Ok(())
+    }
 
     #[test]
     fn runtime_operands_count_repeated_uses_and_survive_other_function_construction()

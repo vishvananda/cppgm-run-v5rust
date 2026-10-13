@@ -14,7 +14,7 @@ impl Parser<'_> {
             return Err(self.fail(format!("invalid {what}")));
         }
         let bits = self.integer(Type::I64).map_err(|error| match error {
-            Error::Diagnostic(_) => self.fail(format!("invalid {what}")),
+            Error::Diagnostic(_) | Error::ByteDiagnostic(_) => self.fail(format!("invalid {what}")),
             error => error,
         })?;
         let low = u64::try_from(bits & u128::from(u64::MAX)).map_err(|_| Error::Limit)?;
@@ -51,7 +51,7 @@ impl Parser<'_> {
             Kind::Block => Err(self.fail("block label used as value")),
             _ => {
                 if !self.value_start() {
-                    return Err(self.fail(format!("expected value, got '{}'", token.spelling())));
+                    return Err(self.fail_token("expected value, got '", "'"));
                 }
                 let bits = self.integer(context)?;
                 body.integer(bits)
@@ -128,7 +128,7 @@ impl Parser<'_> {
             value = value.wrapping_mul(base).wrapping_add(digit);
         }
         if !valid {
-            return Err(self.fail(format!("invalid integer literal: {}", token.spelling())));
+            return Err(self.fail_token("invalid integer literal: ", ""));
         }
         if negative {
             value = value.wrapping_neg();
@@ -159,10 +159,7 @@ impl Parser<'_> {
             None
         };
         let Some(operation) = operation else {
-            return Err(self.fail(format!(
-                "unknown LowIR operation: {}",
-                self.lexer.token.spelling()
-            )));
+            return Err(self.fail_token("unknown LowIR operation: ", ""));
         };
         self.lexer.advance();
         Ok(operation)
@@ -182,11 +179,14 @@ impl Parser<'_> {
         };
         let head = self.lexer.token;
         if head.kind != Kind::Word {
-            return Err(self.fail(format!(
-                "unknown {}instruction: {}",
-                if result.is_some() { "rvalue " } else { "" },
-                head.spelling()
-            )));
+            return Err(self.fail_token(
+                if result.is_some() {
+                    "unknown rvalue instruction: "
+                } else {
+                    "unknown instruction: "
+                },
+                "",
+            ));
         }
         self.lexer.advance();
         let kind = if result.is_some() {
@@ -201,9 +201,12 @@ impl Parser<'_> {
             }
             body.temp_mut(result).ty = Some(ty);
         }
-        let _ = body.append(block, Instruction { result, kind, line })?;
-        if self.at(Kind::Debug) {
-            return Err(Error::NotImplemented("LowIR debug locations"));
+        let id = body.append(block, Instruction::new(result, kind, line))?;
+        if self.at(Kind::Debug)
+            || matches!(self.lexer.token.kind, Kind::Invalid(_))
+                && self.lexer.token.text.starts_with(b"!")
+        {
+            body.set_location(id, self.debug_location()?)?;
         }
         Ok(())
     }
@@ -327,10 +330,10 @@ impl Parser<'_> {
     fn call(&mut self, body: &mut Body) -> Result<Call, Error> {
         let result = self.parse_type()?;
         if !matches!(self.lexer.token.kind, Kind::Global | Kind::Temp) {
-            return Err(self.fail(format!(
-                "expected a function, global or temporary callee, got '{}'",
-                self.lexer.token.spelling()
-            )));
+            return Err(self.fail_token(
+                "expected a function, global or temporary callee, got '",
+                "'",
+            ));
         }
         let callee = self.value(body, Type::Void)?;
         self.expect(Kind::LParen, "(")?;

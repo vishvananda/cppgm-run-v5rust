@@ -1,8 +1,8 @@
 //! Bounded streaming serializer over typed `LowIR` facts. See NOTICE.
 use super::{
     model::{
-        Arity, Body, Call, DataItem, Facts, Function, Global, GlobalInit, InstructionKind as I,
-        Linkage, Metadata, Program, Returns, Signature, Unwind, Value,
+        Arity, Body, Call, DataItem, DebugLocation, Facts, Function, Global, GlobalInit,
+        InstructionKind as I, Linkage, Metadata, Program, Returns, Signature, Unwind, Value,
     },
     vocabulary::Type,
 };
@@ -126,6 +126,7 @@ fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::
     let Some(body) = &f.body else {
         return writeln!(out);
     };
+    write_location(program, f.location, out)?;
     writeln!(out, " {{")?;
     for slot in body.slots() {
         writeln!(
@@ -152,10 +153,29 @@ fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::
             }
             let mut writer = InstructionWriter { program, body, out };
             writer.instruction(&inst.kind)?;
+            write_location(program, body.location(inst), out)?;
             writeln!(out)?;
         }
     }
     writeln!(out, "}}")
+}
+fn write_location(
+    program: &Program,
+    location: Option<DebugLocation>,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    if let Some(location) = location {
+        write!(out, " !dbg(")?;
+        // C++'s location writer uses a C string, even though the interner keeps its full bytes.
+        let file = program.names.bytes(location.file);
+        let end = file
+            .iter()
+            .position(|&byte| byte == 0)
+            .unwrap_or(file.len());
+        out.write_all(&file[..end])?;
+        write!(out, ", {}, {})", location.line, location.column)?;
+    }
+    Ok(())
 }
 fn parameters(program: &Program, signature: &Signature, out: &mut impl Write) -> io::Result<()> {
     write!(out, "(")?;

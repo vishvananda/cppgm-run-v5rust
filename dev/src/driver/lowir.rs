@@ -11,6 +11,14 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
             eprintln!("ERROR: {message}");
             std::process::ExitCode::FAILURE
         }
+        Err(Error::ByteDiagnostic(message)) => {
+            let mut stderr = io::stderr().lock();
+            let _ = stderr
+                .write_all(b"ERROR: ")
+                .and_then(|()| stderr.write_all(&message))
+                .and_then(|()| stderr.write_all(b"\n"));
+            std::process::ExitCode::FAILURE
+        }
         Err(Error::Construction(message)) => {
             eprintln!("internal compiler error: invalid exercise program: {message}");
             std::process::ExitCode::from(70)

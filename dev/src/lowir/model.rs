@@ -7,6 +7,7 @@ use super::{
     },
 };
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
@@ -29,21 +30,28 @@ identity!(
 );
 #[derive(Default)]
 pub(super) struct Names {
-    text: Vec<Arc<str>>,
-    index: HashMap<Arc<str>, NameId>,
+    text: Vec<Arc<[u8]>>,
+    index: HashMap<Arc<[u8]>, NameId>,
 }
 impl Names {
     pub(super) fn intern(&mut self, text: &str) -> Result<NameId, Error> {
+        self.intern_bytes(text.as_bytes())
+    }
+    pub(super) fn intern_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
         if let Some(&id) = self.index.get(text) {
             return Ok(id);
         }
         let id = NameId(u32::try_from(self.text.len()).map_err(|_| Error::Limit)?);
-        let text: Arc<str> = Arc::from(text);
+        let text: Arc<[u8]> = Arc::from(text);
         self.text.push(Arc::clone(&text));
         self.index.insert(text, id);
         Ok(id)
     }
     pub(super) fn get(&self, id: NameId) -> &str {
+        // Grammar names are ASCII; only debug file tokens use the byte view.
+        std::str::from_utf8(self.bytes(id)).unwrap_or("")
+    }
+    pub(super) fn bytes(&self, id: NameId) -> &[u8] {
         &self.text[id.0 as usize]
     }
 }
@@ -314,7 +322,17 @@ pub(super) struct Function {
     pub(super) signature: SignatureId,
     pub(super) metadata: Metadata,
     pub(super) body: Option<Body>,
+    pub(super) location: Option<DebugLocation>,
 }
+#[derive(Clone, Copy)]
+pub(super) struct DebugLocation {
+    pub(super) file: NameId,
+    pub(super) line: u32,
+    pub(super) column: u32,
+}
+/// One-based body-local identity: absence needs no extra instruction word.
+#[derive(Clone, Copy)]
+pub(super) struct LocationId(NonZeroU32);
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Value {
     Temp(TempId),
@@ -347,6 +365,7 @@ pub(super) struct Body {
     slots: Vec<Slot>,
     blocks: Vec<Block>,
     instructions: Vec<Instruction>,
+    locations: Vec<DebugLocation>,
     temp_index: HashMap<NameId, TempId>,
     slot_index: HashMap<NameId, SlotId>,
     block_index: HashMap<NameId, BlockId>,
@@ -379,6 +398,26 @@ impl Body {
     }
     pub(super) fn instruction(&self, id: InstId) -> &Instruction {
         &self.instructions[id.0 as usize]
+    }
+    pub(super) fn set_location(
+        &mut self,
+        inst: InstId,
+        location: DebugLocation,
+    ) -> Result<(), Error> {
+        let next = self.locations.len().checked_add(1).ok_or(Error::Limit)?;
+        let next = u32::try_from(next).map_err(|_| Error::Limit)?;
+        let id = LocationId(NonZeroU32::new(next).ok_or(Error::Limit)?);
+        let instruction = self
+            .instructions
+            .get_mut(inst.index())
+            .ok_or(Error::Limit)?;
+        self.locations.push(location);
+        instruction.location = Some(id);
+        Ok(())
+    }
+    pub(super) fn location(&self, inst: &Instruction) -> Option<DebugLocation> {
+        inst.location
+            .map(|id| self.locations[(id.0.get() - 1) as usize])
     }
     pub(super) fn integer(&mut self, bits: u128) -> Result<Value, Error> {
         let id = LiteralId(u32::try_from(self.literals.len()).map_err(|_| Error::Limit)?);
@@ -489,6 +528,17 @@ pub(super) struct Instruction {
     pub(super) result: Option<TempId>,
     pub(super) kind: InstructionKind,
     pub(super) line: u32,
+    location: Option<LocationId>,
+}
+impl Instruction {
+    pub(super) fn new(result: Option<TempId>, kind: InstructionKind, line: u32) -> Self {
+        Self {
+            result,
+            kind,
+            line,
+            location: None,
+        }
+    }
 }
 pub(super) enum InstructionKind {
     Const(Type, Value),

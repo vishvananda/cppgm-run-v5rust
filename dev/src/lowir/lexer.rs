@@ -24,25 +24,36 @@ pub(super) enum Kind {
     Invalid(&'static str),
 }
 #[derive(Clone, Copy)]
+pub(super) struct DebugToken<'a> {
+    pub(super) file: &'a [u8],
+    pub(super) line: u64,
+    pub(super) column: u64,
+}
+#[derive(Clone, Copy)]
 pub(super) struct Token<'a> {
     pub(super) kind: Kind,
     pub(super) text: &'a [u8],
     pub(super) line: u32,
+    pub(super) debug: Option<DebugToken<'a>>,
 }
 impl<'a> Token<'a> {
     pub(super) fn word(self) -> &'a str {
         std::str::from_utf8(self.text).unwrap_or("")
     }
-    pub(super) fn spelling(self) -> String {
+    pub(super) fn append_spelling(self, out: &mut Vec<u8>) {
         let sigil = match self.kind {
             Kind::Temp => "%",
             Kind::Slot => "$",
             Kind::Global => "@",
             Kind::Block => "^",
-            Kind::End => return "end of input".into(),
+            Kind::End => {
+                out.extend_from_slice(b"end of input");
+                return;
+            }
             _ => "",
         };
-        format!("{sigil}{}", String::from_utf8_lossy(self.text))
+        out.extend_from_slice(sigil.as_bytes());
+        out.extend_from_slice(self.text);
     }
 }
 pub(super) struct Lexer<'a> {
@@ -61,6 +72,7 @@ impl<'a> Lexer<'a> {
                 kind: Kind::End,
                 text: &[],
                 line: 1,
+                debug: None,
             },
         };
         lexer.advance();
@@ -91,10 +103,12 @@ impl<'a> Lexer<'a> {
                 kind: Kind::End,
                 text: &[],
                 line,
+                debug: None,
             };
             return;
         };
         self.position += 1;
+        let mut debug = None;
         let kind = match c {
             b'%' | b'$' | b'@' | b'^' => {
                 start += 1;
@@ -134,7 +148,11 @@ impl<'a> Lexer<'a> {
             b':' => Kind::Colon,
             b'=' => Kind::Equals,
             b'+' => Kind::Plus,
-            b'!' => Kind::Debug,
+            b'!' => {
+                let (kind, payload) = self.scan_debug(start);
+                debug = payload;
+                kind
+            }
             c if c.is_ascii_digit()
                 || (c == b'.'
                     && self
@@ -189,7 +207,77 @@ impl<'a> Lexer<'a> {
             kind,
             text: &self.source[start..self.position],
             line,
+            debug,
         };
+    }
+    fn scan_debug(&mut self, start: usize) -> (Kind, Option<DebugToken<'a>>) {
+        let malformed = Kind::Invalid("malformed !dbg(file, line, column) location");
+        if !self.source[start..].starts_with(b"!dbg") {
+            return (Kind::Invalid("unexpected character"), None);
+        }
+        self.position = start + 4;
+        if !self.debug_punctuation(b'(') {
+            return (malformed, None);
+        }
+        self.space();
+        let file_start = self.position;
+        while self
+            .source
+            .get(self.position)
+            .is_some_and(|&c| !is_space(c) && !matches!(c, b',' | b'(' | b')'))
+        {
+            self.position += 1;
+        }
+        if self.position == file_start {
+            return (malformed, None);
+        }
+        let file = &self.source[file_start..self.position];
+        if !self.debug_punctuation(b',') {
+            return (malformed, None);
+        }
+        let Some(line) = self.debug_decimal() else {
+            return (malformed, None);
+        };
+        if !self.debug_punctuation(b',') {
+            return (malformed, None);
+        }
+        let Some(column) = self.debug_decimal() else {
+            return (malformed, None);
+        };
+        if !self.debug_punctuation(b')') {
+            return (malformed, None);
+        }
+        (Kind::Debug, Some(DebugToken { file, line, column }))
+    }
+    fn debug_punctuation(&mut self, expected: u8) -> bool {
+        self.space();
+        if self.source.get(self.position) != Some(&expected) {
+            return false;
+        }
+        self.position += 1;
+        true
+    }
+    fn debug_decimal(&mut self) -> Option<u64> {
+        self.space();
+        let start = self.position;
+        let mut value = 0_u64;
+        let mut overflow = false;
+        while let Some(&digit) = self
+            .source
+            .get(self.position)
+            .filter(|c| c.is_ascii_digit())
+        {
+            overflow |= value > (u64::MAX - 9) / 10;
+            value = value.wrapping_mul(10).wrapping_add(u64::from(digit - b'0'));
+            self.position += 1;
+        }
+        if self.position == start {
+            None
+        } else if overflow || self.source[start] == b'0' {
+            Some(0)
+        } else {
+            Some(value)
+        }
     }
 }
 fn name_char(c: u8) -> bool {

@@ -129,10 +129,7 @@ impl Parser<'_> {
     }
     pub(super) fn object_alias(&mut self) -> Result<(), Error> {
         if !self.accept_word("object") {
-            return Err(self.fail(format!(
-                "expected 'object', got '{}'",
-                self.lexer.token.spelling()
-            )));
+            return Err(self.fail_token("expected 'object', got '", "'"));
         }
         let line = self.lexer.token.line;
         if !self.at(Kind::Word) {

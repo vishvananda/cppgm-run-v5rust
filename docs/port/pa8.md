@@ -3,6 +3,194 @@
 Stage base commit: `2bf11a2456047bffa7598407a9d32533f8f4fdd5`.
 Last audited commit: INITIAL (no PA8 acceptance audit; unchanged by implementation).
 
+## Debug-location checkpoint — 2026-10-13
+
+Current coherent partial handoff: **112/125 fixed cases pass; 13 fail**, down
+from **15 failures** at clean entry `1da72fffef6dcb051af8253201b606e664527657`. All
+**110/110** entry passing identities survive, with two existing failures gained
+and no change to manifest hash or case identities. This supersedes older
+remaining-case lists below; it does not claim full-stage PA8 acceptance.
+Stage base and last-audited commit above remain unchanged. The implementation
+commit contains this entry; its hash is recorded after commit in external
+`handoff.json`.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa8-debug-20261013/`.
+The previous goal turn is progress: its committed runtime group reduced fixed
+failures 24→15. This turn inspected the clean checkout and authoritative entry
+results (`entry.json`, `stage-entry.json`); no interrupted process was assumed
+live or restarted.
+
+### Owners, completed behavior and typed data flow
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete PA8 handout,
+docs/rust-clone-plan.md and prior ledger. Consulted frozen C++ snapshot
+`883778fdfa45d523cf9e135d15169af976f451a8`: `dev/lowir.cpp` error routing;
+`lowir/text_lexer.{cpp,h}` debug token/decimal scanning;
+`text_parser.cpp` spelling/failure/definition-location parsing;
+`text_parser_body.cpp` instruction-location attachment;
+`instruction.h`, `program.h`, `builder.{cpp,h}` location storage/reassignment;
+`name_table.{cpp,h}` byte interning; `text_writer.cpp` location output; and
+`validator.cpp` instruction-field checks. Source-map rows identify Rust owners.
+
+- `lexer.rs` scans each entire `!dbg(file, line, column)` once. Its optional
+  token payload borrows filename bytes and stores u64 numeric fields; the
+  token retains its starting source line while interior whitespace/comments
+  advance the next token's line. Filename delimiters, prefix case, malformed
+  consumption, leading zeros and conservative u64 decimal overflow match C++.
+- `model.rs` changes the single shared interner to `Arc<[u8]>` spellings with
+  private byte/text views, preserving arbitrary filename bytes, deduplication
+  and stable compact NameIds without a second spelling pool. Ordinary grammar
+  names remain ASCII. A function has an optional typed DebugLocation. Each
+  body owns a sparse location vector; private one-based LocationIds use
+  NonZeroU32, so absence takes one instruction word. `Instruction::new` starts
+  unlocated; checked `Body::set_location` appends and reassigns exactly as C++.
+  IDs and facts survive vector growth and construction of other functions.
+- `reader.rs` checks line before column, requires positive u32 values, interns
+  the filename, and advances once. Definitions accept the optional location;
+  declarations retain C++'s top-level rejection. `instructions.rs` attaches
+  after appending the instruction, including effect/terminator/EH instructions,
+  preserving the invalid-`!` versus ordinary invalid-token diagnostic rules.
+- Token-spelling errors now render bytes only on failure via
+  `Parser::fail_token` and Error::ByteDiagnostic. The driver writes those bytes
+  directly, including embedded NULs, matching C++'s string error path rather
+  than replacing invalid UTF-8. Invalid scanner diagnostics still take
+  precedence. Signed addend/order/selector error conversion accepts both
+  string and byte diagnostics, retaining its original error priority.
+- `writer.rs` emits definition and instruction locations from typed records
+  after metadata/instruction facts. It preserves exact commas/spaces/numbers
+  and arbitrary file bytes. C++'s location writer uses a C string: retain full
+  interned bytes but stop filename emission at its first NUL. The parser's
+  diagnostic spelling instead retains full token bytes.
+- The private location field/setter makes out-of-range body location IDs
+  unconstructible through the store API, satisfying C++'s instruction-field
+  check without a new validation pass. C++ does not add constructed line or
+  column checks here; Rust does not strengthen those rules. The builder's
+  storage test checks reassignment, absent-location instructions, another
+  function's construction and exact non-UTF-8 output without parsing text.
+
+Architecture review: one shared unit model, one borrowed current token,
+interned byte identity, private checked IDs and body-owned location storage.
+No source/token replay, extra semantic representation, pointer graph, global
+location scans, unsafe/FFI, dependency, phase environment read or implementation
+subprocess. Optimizer, code generator and register allocator are unchanged.
+General insertion/generated names, host-object extensions and statistics remain
+at their owning dependency boundaries.
+
+### Validation and retained evidence
+
+- `make build`: pass (`build-handoff.log`, release compilation **16.97 s**).
+  Candidate LowIR SHA-256: `096e295cc541b4f726da341883cc0826f1f29eee493b08e52b9247fce14e3b6f`.
+  `source-hashes.json` records all reviewed LowIR source hashes.
+- `make test-pa8`, invoking the required
+  `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa8`:
+  **112 pass, 13 fail** (`stage-handoff.log`, `stage-handoff.json`).
+  `preservation.json` proves equal coverage/manifest, **15→13** fixed failures,
+  110 retained passes, two gains, zero regressions. Manifest SHA-256:
+  `3cc0c62abe169d83ff54140690c5c8798d9223f005cbb44a2cb0d7f08bb84e6b`.
+  `fixed-case-evidence/` snapshots all course logs/receipts with raw diagnostics
+  and artifact mismatch paths; `remaining-clusters.json` records the 13 first
+  divergent receipts, all explicit floating-literal status 86 boundaries.
+- `make course-pa8`: still fails on floating support, **109/122** specification
+  comparisons and **3/3** exercises (`course-handoff.log`, `course-course.log`,
+  `course-course-result.json`, `course-trace.jsonl`, and external
+  `artifacts/clone/course/pa8/test/`). The protected runner rejects the inner
+  make's exit 0 plus `.test_failed`; no rejecting compiler status is replaced.
+- `... clone_check.py prior pa8`: pass, all PA1–PA7 differential/course lanes
+  (`prior-final.log`, `prior-paN.json`, `prior-paN-course.json`, and external
+  `artifacts/clone/course/paN/test/`). Counts remain **58/58, 26/26, 20/20,
+  106/106, 196/196, 121/121, 214/214**.
+- `make lint` (protected `clone_quality.py`): pass (`lint-handoff.log`), including
+  rustfmt, strict all-feature Clippy, debug/release tests (**192** library tests),
+  supported feature configurations and source audit. `make audit-rust`: pass,
+  **148 files, zero findings** (`audit-handoff.log`). No lint suppression added.
+- `... clone_check.py preflight pa8`: pass (`preflight-final.log`).
+  `... clone_check.py preserve pa8`: pass, **110/110** historical identities
+  (`preserve-final.log`), supplemented by exact entry/final preservation above.
+- `probe.py`, `probe-results.json`, `probes-handoff.log`, `probes.trace.jsonl`:
+  **115/115** protected receipts match: valid files/bytes/delimiters/comments,
+  numeric limits/overflow/leading zeros, malformed tokens, diagnostic priority,
+  source-line tracking, repeated and misplaced locations, cross-file names,
+  EH/control records, raw non-UTF-8 and NUL diagnostics. Initial four mismatches
+  and their raw streams/artifacts remain in `probes-first.log`,
+  `probes-first.trace.jsonl`, `mismatches/`; all are resolved.
+- `runtime-regression/` and `globals-regression/` reuse the previous groups'
+  generated probes against the final binary: **111/111** and **102/102** match
+  (`runtime-regression.log`, `globals-regression.log`). This checks the common
+  interner/token-diagnostic change across existing scalar/storage/runtime paths.
+- The four existing `pa8/tests/debuginfo/o0/*.t` reader inputs also match,
+  including zero-line rejection and an empty EH filter carrying a debug
+  location (`supplemental-o0.json`, `supplemental-o0.trace.jsonl`). These are
+  supplementary LowIR reader checks; no later-stage native/debugger claim.
+- `measure.py`, `scaling-handoff.log`, `scaling.trace.jsonl`, `measurements.json`:
+  **6/6** supported scaling receipts match, three warm timings per input,
+  all candidate exits 0 and stable output hashes. Each count has one copy and
+  location per instruction, with either a shared or unique debug filename.
+
+All supplemental comparisons use the protected adapter receipt's `match`.
+These iterative LowIR inputs did not exhaust native stack. No native exhaustion
+cutoff or diagnostic-position calibration was performed; resource-limited
+future driver probes retain CLONE_CONTRACT.md's stack qualification. PA34
+object/tool fixed-point proof remains a later gate.
+
+Measurements use wall timing and `/usr/bin/time` on the shared host during
+validation; they are observations, not performance parity or PA35 targets.
+
+| Filename workload | Instructions | Source bytes | Wall seconds | Peak RSS KiB |
+| --- | --- | --- | --- | --- |
+| shared-file | 1,000 | 54,869 | 0.0048–0.0055 | 2,212–2,216 |
+| shared-file | 10,000 | 567,870 | 0.0158–0.0172 | 5,016–5,040 |
+| shared-file | 100,000 | 5,877,871 | 0.1410–0.1630 | 29,888–29,916 |
+| unique-file | 1,000 | 55,759 | 0.0043–0.0050 | 2,208–2,220 |
+| unique-file | 10,000 | 586,760 | 0.0192–0.0199 | 5,700–5,744 |
+| unique-file | 100,000 | 6,166,761 | 0.1771–0.2144 | 38,844–39,384 |
+
+### Accounting discrepancy, next boundary and exact remaining cases
+
+`coverage-accounting-reproducer.py` reads the protected manifest, result and
+Ralph state without modifying them. `coverage-accounting.json` shows **125**
+manifest cases, result cases and Ralph targets with equal identities, while
+Ralph declares **143** aggregate targets. The external stageProgress check
+previously rejected exact accounting for the 18 unrun aggregate targets; this
+handoff proves fixed-manifest reduction independently and does not claim that
+external check is green. Ralph owns accounting correction and checkpoint audit.
+No protected checks, policies, state, fixtures, references or oracle sources
+were changed. There was no oracle instability in this group.
+
+The next coherent dependency is **floating bits and spelling** shared by
+instruction constants/operands, scalar/structured globals and call contexts.
+Port `lowir/literals.cpp` and the shared numeric owners, preserving decimal/hex
+rounding, binary32/binary64/x87, intermediate conversion rounding, signed zero,
+subnormal/infinity/signaling-NaN behavior and exact 20/21-digit or hex spelling;
+ordinary host f64 cannot represent x87. Statistics, generated-name construction
+and host-object details remain independent consuming-owner work. Debug scanning,
+typed storage, parser placement and reader serialization are now complete for
+the introductory interface; machine/DWARF/debugger consumers remain PA24+.
+
+Review questions: audit raw-byte versus C-string output boundaries, malformed
+scanner consumption and starting-line provenance, line-before-column priority,
+private sparse LocationId reassignment and owner lifetime, and diagnostic-kind
+conversion on shared signed-integer paths. Verify the next numeric group's
+rounding and output contexts against C++, not fixture values.
+
+Exact remaining fixed case IDs (prefix `pa8/`):
+
+```text
+tests/spec/100-f32-global.t
+tests/spec/100-f64-arith-cmp.t
+tests/spec/100-signaling-nan-literal-roundtrip.t
+tests/spec/100-subnormal-floating-literal.t
+tests/spec/200-f64-direct-call.t
+tests/spec/200-f80-direct-call.t
+tests/spec/200-f80-global.t
+tests/spec/200-f80-unary-binary-cmp.t
+tests/spec/200-float-width-conversions.t
+tests/spec/200-integral-float-conversions.t
+tests/spec/200-structured-float-data.t
+tests/spec/300-bad-nowrap-on-float.t
+tests/spec/300-instruction-facts.t
+```
+
 ## Atomic, EH and runtime instruction checkpoint — 2026-10-13
 
 Current coherent partial handoff: **110/125 fixed cases pass; 15 fail**, down

@@ -15,6 +15,7 @@ mod writer;
 #[derive(Debug)]
 pub enum Error {
     Diagnostic(String),
+    ByteDiagnostic(Vec<u8>),
     Construction(String),
     NotImplemented(&'static str),
     Limit,
