@@ -2,7 +2,7 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `f50f537` (accepted audit start).
-Last audited commit: `4ee457b718cb6c5e6a549054338ccb2450dec4d6` (independent partial checkpoint audit).
+Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
 
 ## Independent checkpoint audit — 2026-10-13
 
@@ -14,14 +14,14 @@ implementation and reduced the fixed-manifest failures. This audit reviewed
 and repaired their combined implementation; it does not certify future
 class/member/template/interpreter behavior or advance PA7.
 
-Reviewed implementation commit: `4ee457b718cb6c5e6a549054338ccb2450dec4d6`. The following documentation
+Reviewed implementation commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`. The following documentation
 commit records the audit of that implementation. The fixed manifest remains
 **179/198**, with exactly the same **19** failing identities listed under
 “Exact remaining fixed identities” below. All **179** accepted passing
-identities and all **198** covered identities are preserved. Thirty required
+identities and all **198** covered identities are preserved. Thirty-one required
 regressions were added under `pa7/tests/general/890-audit-*.t`; each passes
 both the protected exact comparator and its original course comparison.
-The course lane now reports **209/228**; its overall failure marker still
+The course lane now reports **210/229**; its overall failure marker still
 represents the same unfinished 19 cases. Added passes did not compensate for
 any additional fixed-manifest failure.
 
@@ -38,13 +38,16 @@ any additional fixed-manifest failure.
 | Target-directed overload casts had incorrect diagnostic bytes/location and missed reference-to-pointer targets | Strip reference then pointer; diagnose at the cast with the frozen spelling. `analyzer_expressions.cpp::explicit_conversion/select_overloaded` |
 | Function designation facts were recursively overwritten through nested unary nodes | Use the lookup representative initially; publish the selected designation and immediate unary operand only, retaining deeper independently typed facts. `analyzer_expressions.cpp::resolve_overloaded` |
 | Retyped reference-cast presentation incorrectly changed call category and selected function-id type | The view reads the call's category/declared result and selected function's canonical type as the frozen printer does. `semantics_dump.cpp::call/id_node` |
+| A repeated default label after a local initializer reported the bypass error before the duplicate error | Check duplicate-default state first, retaining exact frozen diagnostic precedence. `analyzer_bodies.cpp::statement`, `procedural_statements.rs::semantic_jump` |
 | Winning overloaded arguments were selected again; semantic constants rederived published name/type facts; scratch retained completed-query contents | Carry the selected `BindingId` with each candidate conversion; publish without a second selection. Reuse original-AST binding/type facts in semantic constant reads/casts. Clear candidate/sequence contents on success and failure, retaining capacity. `procedural_calls.rs`, `constants.rs`, `declarators.rs` |
 
 The independent pre-repair probes reproduce 14 mismatches across the first
-39 cases; supplementary array probes retain three further mismatches.
+39 cases; supplementary array probes retain three further mismatches. A final failure-path
+probe reproduced duplicate-default diagnostic precedence before its repair
+(`before-default-probes.jsonl`).
 `before-probes.jsonl`, `before-probe-summary.json` and
 `before-array-probes.jsonl` retain their exact diagnostics and output bytes.
-After repair, **54/54** expanded audit probes and **78/78** initialization
+After repair, **55/55** expanded audit probes and **78/78** initialization
 probes match exactly. Course regressions also cover repaired diagnostics,
 reference and pointer rankings, enum mutation/promotions, array qualifier
 retention, bool compound assignment and nested function designation output.
@@ -106,7 +109,7 @@ template, deferred-demand and interpreter owners listed below.
 Artifact root:
 `/home/vishvananda/work/private/v5rust/artifacts/pa7-checkpoint-audit-20261013/`.
 Final candidate cppgm SHA-256:
-`4dac281e6a3a571fd1ebe7c6b74df3492066bf3afa45cd9fe482d821222abd62`.
+`9fb82d645dfba02d3bfb9192d6a1bf83818ab1905a54b64ac72b340f082428ec`.
 Frozen C++ cppgm++ SHA-256:
 `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
 
@@ -115,13 +118,13 @@ Frozen C++ cppgm++ SHA-256:
 | `make build` | PASS, locked release workspace | `build.log` |
 | Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 179/198, same 19 unfinished failures; exit 1 | `stage-required.log`, `fixed-manifest.json` |
 | `make test-pa7` | Same 179/198; exit 2 from make | `stage.log` |
-| `make course-pa7` | 209/228; all 30 new regressions pass, same unfinished 19; overall failure retained | `course.log`, `regression-receipts.json`; `../clone/course/pa7/test/course-result.json` |
+| `make course-pa7` | 210/229; all 31 new regressions pass, same unfinished 19; overall failure retained | `course.log`, `regression-receipts.json`; `../clone/course/pa7/test/course-result.json` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, PA1–PA6 fixed differential and original course lanes | `prior.log`, `prior-summary.json` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
 | `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS, 179/179; independently same 198 identities, zero new failures | `preserve.log`, `turn-start-manifest.json`, `preservation.json` |
 | `make lint` (protected `clone_quality.py`) | PASS, rustfmt, strict all-feature Clippy, debug/release tests and file audit | `lint.log`, `quality-final.log` |
 | `make audit-rust` | PASS, 126 files, zero findings | `audit.log` |
-| `python3 .../pa7-checkpoint-audit-20261013/probe.py` | 54/54 exact matches | `probe-summary.json`, `probes.jsonl` |
+| `python3 .../pa7-checkpoint-audit-20261013/probe.py` | 55/55 exact matches | `probe-summary.json`, `probes.jsonl` |
 | `python3 .../initialization/probe.py` | 78/78 exact matches | `initialization/probe-summary.json`, `initialization/probes.jsonl` |
 | `python3 .../pa7-checkpoint-audit-20261013/measure.py` | Paired output equality and two native qualification receipts pass | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
 
@@ -140,12 +143,12 @@ PA35 generated-code improvement claim.
 
 | Arrays / explicit elements | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
 | --- | --- | --- |
-| 128 / 4 | 6.23 / 6536 | 21.24 / 8002 |
-| 512 / 4 | 9.58 / 7210 | 26.48 / 8000 |
-| 2048 / 4 | 18.93 / 9280 | 48.12 / 8662 |
-| 128 / 16 | 7.00 / 6504 | 21.50 / 8378 |
-| 128 / 64 | 12.57 / 7166 | 32.55 / 8744 |
-| 128 / 256 | 31.62 / 10742 | 76.19 / 12810 |
+| 128 / 4 | 6.59 / 6524 | 21.88 / 8746 |
+| 512 / 4 | 9.12 / 7220 | 25.88 / 7988 |
+| 2048 / 4 | 19.56 / 9288 | 48.77 / 8596 |
+| 128 / 16 | 7.61 / 6478 | 22.40 / 8382 |
+| 128 / 64 | 11.80 / 7176 | 31.89 / 8372 |
+| 128 / 256 | 30.79 / 10688 | 72.02 / 12872 |
 
 Final native probes retain 1,500 unary operators and 1,000 ordinary nested
 calls in array initializers, starting at 1 MiB. Both adapter receipts have
@@ -153,8 +156,8 @@ calls in array initializers, starting at 1 MiB. Both adapter receipts have
 identical output at a shared 16 MiB stack. Judge those protected receipts,
 not the adapter's retained original exits or exhaustion positions. Raw
 attempts/retries remain under `stack-qualifications/`. No stack cutoff,
-frame size or diagnostic position was calibrated. Shared storage was about
-26.0 GB used under the 107.4 GB capacity ceiling; artifacts remain outside
+frame size or diagnostic position was calibrated. Shared filesystem storage was about
+28.3 GB used under the 107.4 GB capacity ceiling; artifacts remain outside
 the committed checkout.
 
 ## Accepted implementation before this audit
