@@ -62,6 +62,9 @@ pub(super) struct ExprFacts {
     pub conversion: Option<Conversion>,
     pub commuted: bool,
     pub folded: Option<u64>,
+    // Query constants retain their value without replacing the source query's
+    // sizeof-expression presentation. Constant reads do not type its operand again.
+    pub query_value: Option<u64>,
     pub reference_cast: Option<TypeId>,
     pub functional_call: bool,
     pub functions: Option<super::function_resolution::OverloadId>,
@@ -77,6 +80,7 @@ impl ExprFacts {
             conversion: None,
             commuted: false,
             folded: None,
+            query_value: None,
             reference_cast: None,
             functional_call: false,
             functions: None,

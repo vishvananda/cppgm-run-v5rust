@@ -1,8 +1,201 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `f50f537` (accepted audit start).
+Current implementation group base: `9d32c2a1988e4e1fa30a5a6b503fc66d978c5cce` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Member-pointer scalar implementation checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase. PA7
+remains incomplete. This group reduces fixed-manifest failures from 19 to 17:
+**179/198 → 181/198**, preserving every prior passing identity and all 198
+covered identities. The preceding completed goal turn is classified as
+progress: its independent audit repaired the implementation and left the
+reviewed `a05b466` implementation recorded by clean documentation commit
+`9d32c2a`. This turn re-read the actual checkout, fixed manifest, protected
+traces and frozen source owners. The last-audited commit above is unchanged;
+this implementation checkpoint does not advance the assignment or certify
+class/member/template call semantics.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-member-pointer-20261013/`.
+The two newly passing fixed identities are:
+
+```text
+tests/general/300-member-function-pointer-type-alias-and-function.t
+tests/general/300-member-pointer-type-alias-and-function.t
+```
+
+### Failure clustering and frozen owners
+
+The turn-start protected traces divide the 19 failures by earliest divergence:
+member-pointer type formation (2); class inheritance formation (2); class
+function/member declaration and demand (8); template specialization lookup (1);
+class construction/copy initialization (1); unsupported extended/member
+expressions (2); and successful-output differences in anonymous-union storage
+(2) and class-construction presentation in a reference-binding case (1).
+The exact trace diagnostics, rather than the
+fixture names, determined the group. The two member-pointer aliases fail at
+`analyzer_types.cpp::ptr_operator`, before any class body or member selection
+is needed. Their ordinary function parameters and returns then exercise the
+shared canonical type and scalar conversion owners.
+
+Consulted frozen files directly under
+`/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/`:
+`analyzer_types.cpp::{ptr_operator,declarator}`,
+`type_table.cpp::{member_pointer,canonical_of}`, `semantic_types.h`,
+`conversions.cpp::{SimilarLevels,reference,value_conversion,const_castable,
+casts_away_constness}`, `analyzer_member_pointers.cpp::{member_pointer_cast,
+static_member_pointer_cast,composite_pointer,cv_combined}`,
+`analyzer_expressions.cpp::{explicit_conversion,typed,size_of}`,
+`analyzer_calls.cpp::associated`, `layout.cpp::type_size`,
+`semantics_dump.cpp::{AppendType,expression}` and
+`analyzer_declarations.cpp::{check_parameter_redeclaration,declare_variable}`.
+`docs/port/source-map.tsv` records each translated responsibility and the
+remaining owner boundaries.
+
+### Completed behavior and typed flow
+
+- `declarators.rs` consumes the original ptr-operator and Prefix lookup.
+  It strips owner cv, checks class/dependent-owner identity, rejects void or
+  reference members at the root declarator location, and publishes a qualified
+  `MemberPointer { owner: TypeId, element: TypeId }`. An incomplete owner is
+  sufficient; no class body, layout or constructor is demanded.
+- `types.rs` interns both edges as immutable structural identity and walks
+  both during iterative canonical DAG completion. Canonical member functions
+  adjust by-value parameters and retain their independent function cv/ref
+  qualifiers. Aliased owners share identity; different owners, function cv
+  and function ref qualifiers remain distinct. `pointer_level` is a borrowed
+  typed view of an ordinary/member pointer shell, not a rendered type key.
+- `scalar_conversions.rs` uses the shared shell view for mixed-level
+  qualification, canonical owner matching, intermediate const checks,
+  array/function member shape, null/zero and bool conversions, and CWG 2352
+  reference qualification. Existing candidate ranking consumes those same
+  conversions; unsuccessful candidates still return compact optional facts.
+- `scalar_operators.rs` accepts member-pointer equality and null composites,
+  rejects relational/arithmetic/dereference/inc/dec operations, and combines
+  comparison cv levels with const above differing levels. Conditional member
+  pointers require conversion to one operand's qualified type, as the frozen
+  owner does. The iterative cv-combination scratch is O(pointer depth), dies
+  with the query, and preserves ordinary-pointer behavior.
+- `scalar_casts.rs` retains typed owner/member shape for const casts and data
+  versus function category for reinterpret casts. Static member-pointer casts
+  record the selected conversion and the frozen value-retyping presentation.
+  Array-member const casts use the same array-shape check. Member designation,
+  bound member calls and inheritance adjustments remain separate dependencies.
+- `queries.rs` implements the Itanium 8/8 data-member and 16/8 function-member
+  size/alignment rules without completing the owner. Semantic `alignof` checks
+  its typed unevaluated operand, strips reference/array shells, and renders as
+  `sizeof-expression`. Dense original-ExprId `query_value` facts preserve size
+  and alignment for constant reads without another operand analysis or
+  changing source presentation. `call_lookup.rs` follows both member-pointer
+  type edges and associates an incomplete class through its recorded home.
+- A related parenthesized declaration probe exposed a diagnostic-location
+  gap: `M(p);` is a declaration, and its forbidden parameter redeclaration
+  diagnoses at the original root `(`, rather than the nested identifier.
+  `ValueScope` carries that source location separately; lookup, declaration
+  identity and other name diagnostics continue to use their own locations.
+
+Ownership review: one parsed syntax tree and unit-owned immutable type store;
+original AST IDs carry dense semantic facts. Canonical identity comparisons
+remain constant-time after memoized completion. All changed algorithms stay
+in their existing semantic owners, with no mechanical module split, text
+transport, environment read, external implementation, unsafe code, new
+optimizer transformation or whole-program scan. Two unit regressions verify
+owner/function identity and query facts while the owner stays incomplete.
+The 62 protected success/rejection probes cover the production invariants,
+including aliases, redeclarations, nulls, casts, mixed levels, array members,
+ADL and queries; they retain raw receipts and reproducible sources outside the
+checkout. Frozen fixtures, references, checker policy and Ralph state remain
+unchanged.
+
+### Next dependency boundary and exact remaining identities
+
+Next work needs class member/function designation, implicit object parameters,
+construction/storage facts and demand before member addresses or calls can
+be resolved. Inheritance formation/access paths, template specialization and
+member-target deduction, deferred demand closure and interpretation remain
+separate C++ owners. This checkpoint makes no PA34 object/tool-equality claim;
+code generation, optimization and register allocation are unchanged.
+
+```text
+tests/general/100-distinct-anonymous-type-identities.t
+tests/general/100-namespace-static-anonymous-union-injected-members.t
+tests/general/100-private-nested-out-of-class-constructor-definition.t
+tests/general/100-private-nested-out-of-class-member-definition.t
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/200-local-anonymous-union-variable.t
+tests/general/300-block-anonymous-union-injected-members.t
+tests/general/300-default-argument-nonstatic-member-bad.t
+tests/general/300-deferred-demand-closure.t
+tests/general/300-elaborated-local-struct-copy-init.t
+tests/general/300-member-cv-overload-identity.t
+tests/general/300-member-function-pointer-return-pointer-const.t
+tests/general/300-most-vexing-local-function-member-call-bad.t
+tests/general/300-reference-binding-pointee-const-pointer.t
+tests/general/300-static-cast-member-overload-prefers-nontemplate.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
+
+### Final validation evidence
+
+Candidate cppgm SHA-256:
+`3204e6b79b74513910a464a6c20ef612e3f110df73523fd2e85d980013cd5a16`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+All following paths are relative to this checkpoint's artifact root.
+
+| Command / check | Result | Evidence |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 181/198; exit 1, exactly 17 unfinished cases | `stage-required.log`, `fixed-manifest.json`, `checks.json` |
+| `make test-pa7` | Same 181/198; make exit 2 | `stage.log`, `checks.json` |
+| `make course-pa7` | 212/229, same 17 unfinished cases; course failure marker retained, make exit 2 | `course.log`, `course-result.json`; `../clone/course/pa7/test/trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, all PA1–PA6 fixed differential and original course lanes | `prior.log`, `prior-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log`, `checks.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS, 179/179 historical identities; independent final-manifest comparison has zero lost passes and identical coverage | `preserve.log`, `turn-start-manifest.json`, `turn-start.log`, `preservation.json` |
+| `make lint` (`python3 /home/vishvananda/work/v5rust-control/clone_quality.py`) | PASS, rustfmt, strict all-feature Clippy, debug/release tests and file audit | `lint.log` |
+| `make audit-rust` | PASS, 126 files, zero findings | `audit.log`, `checks.json` |
+| `python3 .../pa7-member-pointer-20261013/probe.py` | 62/62 protected byte/diagnostic matches | `probe-summary.json`, `probes.jsonl`, probe sources |
+| `python3 .../pa7-member-pointer-20261013/measure.py` | All paired outputs and 12 protected workload receipts match; two native stack receipts qualify | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl`, `stack-qualifications/` |
+
+The 527 earlier fixed cases pass (PA1 58/58, PA2 26/26, PA3 20/20,
+PA4 106/106, PA5 196/196, PA6 121/121). Original earlier course counts are
+58/58, 28/28, 20/20, 112/112, 296/296 and 694/694; all have exit 0 with
+no failed-comparison markers. Stage progress is demonstrated by exact identity
+sets: 198 inputs before/after, 179 prior passes retained, two new fixed passes,
+and failures reduced 19 → 17. No added passing fixture substituted for a
+fixed-manifest failure reduction. Full PA7 gates correctly remain failing.
+
+### Measured resource costs and stack qualification
+
+Warm measurements used final binaries after test jobs ended: A/A calibration,
+then ABBA/BAAB paired blocks. Raw timings/RSS, source/binary SHA-256 and output
+hashes/lengths are retained. Inputs scale independent ordinary functions
+making calls over overloads with distinct member-pointer owner identities.
+Numbers include process startup and semantic-dump I/O; no PA35 generated-code
+improvement or runtime equality requirement is imposed.
+
+| Functions / overloads | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| 128 / 4 | 5.84 / 6496 | 19.40 / 8776 |
+| 512 / 4 | 10.39 / 7178 | 30.52 / 8356 |
+| 2048 / 4 | 24.60 / 10696 | 65.53 / 10656 |
+| 128 / 16 | 6.90 / 6480 | 20.39 / 8002 |
+| 128 / 64 | 7.61 / 6446 | 24.08 / 8008 |
+| 128 / 256 | 13.31 / 7200 | 30.13 / 8376 |
+
+Native probes retain 1,000 nested ordinary calls carrying a member pointer
+and 1,500 unary operators starting with a member-pointer operand, both starting
+at 1 MiB. Both protected receipts have `match: true` and
+`stack_qualification.passed: true`; both tools succeed with identical output
+at a shared 16 MiB stack. Judge these receipts rather than the adapter's
+retained original exit, exhaustion depth or diagnostic position. Raw attempts
+and reruns are retained. The genuine byte-budget guard is unchanged; native
+cutoffs and frame sizes were not calibrated. Shared storage was 28.38 GB used
+within the 107.37 GB ceiling. Generated outputs and evidence remain outside
+the commit.
 
 ## Independent checkpoint audit — 2026-10-13
 
@@ -352,7 +545,7 @@ tests/general/300-subscript-commuted-expression.t
 tests/general/300-subscript-unscoped-enum-index.t
 ```
 
-## Exact remaining fixed identities
+## Exact remaining fixed identities at the preceding independent audit
 
 ```text
 tests/general/100-distinct-anonymous-type-identities.t

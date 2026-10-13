@@ -125,6 +125,11 @@ impl Analyzer<'_> {
                 self.typed_expression(index, scope)?;
                 self.scalar_subscript(id, base, index)?
             }
+            ExprKind::TypeTrait {
+                keyword: Keyword::Alignof,
+                ty,
+                operand,
+            } => self.semantic_alignment(ty, operand, scope, node.location)?,
             ExprKind::Sizeof { ty, operand, .. } => {
                 let ty = if let Some(ty) = ty {
                     self.type_syntax(ty, scope)?
@@ -155,9 +160,11 @@ impl Analyzer<'_> {
                         "sizeof of an incomplete or function type",
                     ));
                 }
-                self.type_size(ty, node.location)?;
+                let (size, _) = self.type_size(ty, node.location)?;
                 let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
-                self.new_expression_facts(ty, V::Prvalue)?
+                let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+                facts.query_value = Some(size);
+                facts
             }
             ExprKind::Call { callee, arguments } => {
                 self.procedural_call(id, callee, arguments, scope)?

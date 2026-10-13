@@ -189,10 +189,45 @@ impl Analyzer<'_> {
             for pointer in self.tree.pointers.get(node.pointers) {
                 parameters = None;
                 function_qualifiers = None;
-                if pointer.class_name.is_some() {
-                    return Err(Error::Missing("member pointer type construction"));
-                }
                 let cv = Self::cv(self.tree.cvs.get(pointer.cv));
+                if let Some(owner) = pointer.class_name {
+                    let binding =
+                        self.lookup(owner, environment.lookup, super::lookup::Filter::Prefix)?;
+                    let binding = self.graph.binding(binding);
+                    let owner = if matches!(
+                        binding.kind,
+                        super::graph::BindingKind::Type | super::graph::BindingKind::Alias
+                    ) {
+                        binding.ty
+                    } else {
+                        None
+                    };
+                    let owner = owner.ok_or_else(|| {
+                        Error::at(node.location, "pointer to member of a non-class")
+                    })?;
+                    let owner = self.bare_type(owner)?;
+                    if !matches!(
+                        self.graph.types.get(owner).kind,
+                        TypeKind::Class(_) | TypeKind::TemplateParameter { .. }
+                    ) {
+                        return Err(Error::at(node.location, "pointer to member of a non-class"));
+                    }
+                    match self.graph.types.get(ty).kind {
+                        TypeKind::Reference { .. } => {
+                            return Err(Error::at(
+                                node.location,
+                                "pointer to member of reference type",
+                            ));
+                        }
+                        TypeKind::Scalar(Scalar::Void) => {
+                            return Err(Error::at(node.location, "pointer to member of type void"));
+                        }
+                        _ => (),
+                    }
+                    let member = self.graph.types.member_pointer(owner, ty)?;
+                    ty = self.graph.types.qualify(member, cv)?;
+                    continue;
+                }
                 match pointer.op.token.as_punctuator() {
                     Some(Punctuator::Multiply) => {
                         if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {

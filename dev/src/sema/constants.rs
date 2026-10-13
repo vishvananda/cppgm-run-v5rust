@@ -95,7 +95,7 @@ impl Analyzer<'_> {
         self.check_stack()?;
         if self.semantic()
             && let Ok(facts) = self.graph.expression_facts.get(id)
-            && let Some(bits) = facts.folded
+            && let Some(bits) = facts.folded.or(facts.query_value)
         {
             return Ok(Constant { bits, ty: facts.ty });
         }

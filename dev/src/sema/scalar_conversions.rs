@@ -99,10 +99,10 @@ impl Analyzer<'_> {
             C::FloatingPromotion
         } else if matches!(gk, TypeKind::Scalar(Scalar::Bool)) {
             if self.is_arithmetic_operand(source)
-                || matches!(sk, TypeKind::Pointer(_))
+                || sk.pointer_level().is_some()
                 || direct && matches!(sk, TypeKind::Scalar(Scalar::Nullptr))
             {
-                if matches!(sk, TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr)) {
+                if sk.pointer_level().is_some() || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)) {
                     C::PointerBoolean
                 } else {
                     C::Boolean
@@ -113,7 +113,7 @@ impl Analyzer<'_> {
         } else if self.is_arithmetic_operand(source) && self.is_arithmetic_type(goal) {
             C::Arithmetic
         } else if (facts.null_literal || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)))
-            && (matches!(gk, TypeKind::Pointer(_))
+            && (gk.pointer_level().is_some()
                 || facts.null_literal && matches!(gk, TypeKind::Scalar(Scalar::Nullptr)))
         {
             C::NullPointer
@@ -153,33 +153,35 @@ impl Analyzer<'_> {
         mut b: TypeId,
     ) -> Result<bool, Error> {
         let mut const_so_far = true;
-        let mut level = 0;
         loop {
-            let (TypeKind::Pointer(ea), TypeKind::Pointer(eb)) =
-                (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
-            else {
+            let (Some((oa, ea)), Some((ob, eb))) = (
+                self.graph.types.get(a).kind.pointer_level(),
+                self.graph.types.get(b).kind.pointer_level(),
+            ) else {
                 return Ok(false);
             };
-            let ca = self.type_cv(*ea).0;
-            let cb = self.type_cv(*eb).0;
+            if oa != ob {
+                return Ok(false);
+            }
+            let ca = self.type_cv(ea).0;
+            let cb = self.type_cv(eb).0;
             if ca & !cb != 0 || ca != cb && !const_so_far {
                 return Ok(false);
             }
             const_so_far &= cb & 1 != 0;
-            level += 1;
-            a = *ea;
-            b = *eb;
+            a = ea;
+            b = eb;
             let ak = &self.graph.types.get(a).kind;
             let bk = &self.graph.types.get(b).kind;
-            if !matches!(ak, TypeKind::Pointer(_)) || !matches!(bk, TypeKind::Pointer(_)) {
+            if ak.pointer_level().is_none() || bk.pointer_level().is_none() {
                 if matches!(ak, TypeKind::Array { .. }) || matches!(bk, TypeKind::Array { .. }) {
                     return Ok(self.same_array_shape(a, b));
                 }
-                return Ok(level != 0 && ak == bk);
+                return Ok(ak == bk);
             }
         }
     }
-    fn same_array_shape(&self, mut a: TypeId, mut b: TypeId) -> bool {
+    pub(super) fn same_array_shape(&self, mut a: TypeId, mut b: TypeId) -> bool {
         while let (
             TypeKind::Array {
                 element: ae,
@@ -226,8 +228,14 @@ impl Analyzer<'_> {
             let reference_qualification = if !related
                 && lvalue
                 && facts.category == V::Lvalue
-                && matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_))
-                && matches!(self.graph.types.get(element).kind, TypeKind::Pointer(_))
+                && self
+                    .graph
+                    .types
+                    .get(facts.ty)
+                    .kind
+                    .pointer_level()
+                    .is_some()
+                && self.graph.types.get(element).kind.pointer_level().is_some()
             {
                 let from = self.graph.types.pointer(facts.ty)?;
                 let to = self.graph.types.pointer(element)?;

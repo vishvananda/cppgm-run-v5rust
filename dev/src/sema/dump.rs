@@ -326,6 +326,12 @@ impl Graph {
                     output.write_all(b"pointer to ")?;
                     tasks.push(Task::Type(*element));
                 }
+                TypeKind::MemberPointer { owner, element } => {
+                    output.write_all(b"member-pointer of ")?;
+                    tasks.push(Task::Type(*element));
+                    tasks.push(Task::Text(" to "));
+                    tasks.push(Task::Type(*owner));
+                }
                 TypeKind::Reference { element, kind } => {
                     output.write_all(if *kind == RefKind::Lvalue {
                         b"lvalue-reference to "

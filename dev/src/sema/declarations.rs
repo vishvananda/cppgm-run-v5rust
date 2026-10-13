@@ -22,6 +22,7 @@ pub(super) struct ValueScope {
     pub print: ScopeId,
     pub head: Option<super::templates::HeadId>,
     pub definition: Definition,
+    pub declarator_location: SourceOffset,
 }
 impl Analyzer<'_> {
     pub(super) fn namespace_definition(
@@ -491,6 +492,7 @@ impl Analyzer<'_> {
                 print: info.home.unwrap_or(scope),
                 head: self.active_template_head(scope),
                 definition: Definition::Declaration,
+                declarator_location: self.tree.declarators.get(init.declarator).location,
             },
             BindingKind::Variable,
             location,
@@ -698,6 +700,7 @@ impl Analyzer<'_> {
             print,
             head,
             definition,
+            declarator_location,
         } = context;
         if let Some(name) = name.identifier() {
             self.check_template_parameter_name(print, name, location)?;
@@ -714,7 +717,7 @@ impl Analyzer<'_> {
                 .is_some_and(|entry| entry.value.is_some())
         {
             return Err(Error::at(
-                location,
+                declarator_location,
                 "redeclaration of a name of the enclosing construct",
             ));
         }

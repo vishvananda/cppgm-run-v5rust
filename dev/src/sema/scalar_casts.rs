@@ -18,46 +18,47 @@ impl Analyzer<'_> {
     fn cast_constness(&self, mut from: TypeId, mut to: TypeId) -> bool {
         let mut const_so_far = true;
         loop {
-            let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (
-                &self.graph.types.get(from).kind,
-                &self.graph.types.get(to).kind,
+            let (Some((_, a)), Some((_, b))) = (
+                self.graph.types.get(from).kind.pointer_level(),
+                self.graph.types.get(to).kind.pointer_level(),
             ) else {
                 return false;
             };
-            let ca = self.type_cv(*a).0;
-            let cb = self.type_cv(*b).0;
+            let ca = self.type_cv(a).0;
+            let cb = self.type_cv(b).0;
             if ca & !cb != 0 || ca != cb && !const_so_far {
                 return true;
             }
             const_so_far &= cb & 1 != 0;
-            from = *a;
-            to = *b;
+            from = a;
+            to = b;
         }
     }
-    fn const_castable(&self, mut from: TypeId, mut to: TypeId) -> Result<bool, Error> {
+    fn const_castable(&self, mut from: TypeId, mut to: TypeId) -> bool {
         let mut levels = 0;
         loop {
             let a = &self.graph.types.get(from).kind;
             let b = &self.graph.types.get(to).kind;
-            if let (TypeKind::Pointer(ea), TypeKind::Pointer(eb)) = (a, b) {
-                if matches!(self.graph.types.get(*ea).kind, TypeKind::Function { .. })
-                    || matches!(self.graph.types.get(*eb).kind, TypeKind::Function { .. })
-                {
-                    return Ok(levels != 0
-                        && self.graph.types.canonical_view(from)
-                            == self.graph.types.canonical_view(to));
+            if let (Some((oa, ea)), Some((ob, eb))) = (a.pointer_level(), b.pointer_level()) {
+                if oa != ob {
+                    return false;
                 }
-                from = *ea;
-                to = *eb;
+                if matches!(self.graph.types.get(ea).kind, TypeKind::Function { .. })
+                    || matches!(self.graph.types.get(eb).kind, TypeKind::Function { .. })
+                {
+                    return levels != 0
+                        && self.graph.types.canonical_view(from)
+                            == self.graph.types.canonical_view(to);
+                }
+                from = ea;
+                to = eb;
                 levels += 1;
             } else {
-                if matches!(a, TypeKind::Array { .. }) || matches!(b, TypeKind::Array { .. }) {
-                    return Err(Error::Missing("array reference and qualification casts"));
-                }
-                return Ok(levels != 0
-                    && !matches!(a, TypeKind::Pointer(_) | TypeKind::Function { .. })
-                    && !matches!(b, TypeKind::Pointer(_))
-                    && a == b);
+                return levels != 0
+                    && a.pointer_level().is_none()
+                    && !matches!(a, TypeKind::Function { .. })
+                    && b.pointer_level().is_none()
+                    && self.same_array_shape(from, to);
             }
         }
     }
@@ -97,8 +98,7 @@ impl Analyzer<'_> {
             let from_pointer = self.graph.types.pointer(source.ty)?;
             let to_pointer = self.graph.types.pointer(element)?;
             let keeps_const = !self.cast_constness(from_pointer, to_pointer);
-            let mut allowed =
-                glvalue && constness && self.const_castable(from_pointer, to_pointer)?;
+            let mut allowed = glvalue && constness && self.const_castable(from_pointer, to_pointer);
             if !allowed && static_kind {
                 let related = self.bare_type(element)? == self.bare_type(source.ty)?;
                 allowed = glvalue && related && (keeps_const || constness);
@@ -147,6 +147,35 @@ impl Analyzer<'_> {
             return self.new_expression_facts(goal, V::Prvalue);
         }
         let from = self.decayed_type(source.ty)?;
+        // analyzer_member_pointers.cpp shows a successful static member-pointer
+        // cast as the value itself, retyped, rather than a cast-expression node.
+        if static_kind
+            && matches!(
+                self.graph.types.get(goal).kind,
+                TypeKind::MemberPointer { .. }
+            )
+        {
+            if let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
+                conversion.initialization = false;
+                let mut facts = source;
+                facts.conversion = Some(conversion);
+                self.graph.expression_facts.set(operand, facts);
+                let mut result = self.new_expression_facts(goal, V::Prvalue)?;
+                result.reference_cast = Some(goal);
+                return Ok(result);
+            }
+            if !c_style
+                || !matches!(
+                    self.graph.types.get(from).kind,
+                    TypeKind::MemberPointer { .. }
+                )
+            {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "invalid conversion to a pointer to member",
+                ));
+            }
+        }
         if static_kind && let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
             conversion.initialization = false;
             let mut facts = source;
@@ -168,10 +197,22 @@ impl Analyzer<'_> {
                 && (constness || !self.cast_constness(from, goal));
         }
         if !allowed && constness {
-            allowed = self.const_castable(from, goal)?;
+            allowed = self.const_castable(from, goal);
         }
         if !allowed && reinterpret {
-            allowed = if matches!(fk, TypeKind::Pointer(_)) && matches!(gk, TypeKind::Pointer(_)) {
+            let member_pair = match (fk, gk) {
+                (
+                    TypeKind::MemberPointer { element: a, .. },
+                    TypeKind::MemberPointer { element: b, .. },
+                ) => {
+                    matches!(self.graph.types.get(*a).kind, TypeKind::Function { .. })
+                        == matches!(self.graph.types.get(*b).kind, TypeKind::Function { .. })
+                }
+                _ => false,
+            };
+            allowed = if matches!(fk, TypeKind::Pointer(_)) && matches!(gk, TypeKind::Pointer(_))
+                || member_pair
+            {
                 constness || !self.cast_constness(from, goal)
             } else if matches!(fk, TypeKind::Pointer(_)) {
                 self.integral_kind(goal).is_some_and(|kind| kind.bits >= 64)
@@ -247,7 +288,10 @@ impl Analyzer<'_> {
         let ty = self.bare_type(target)?;
         if !matches!(
             self.graph.types.get(ty).kind,
-            TypeKind::Scalar(_) | TypeKind::Pointer(_) | TypeKind::Enum(_)
+            TypeKind::Scalar(_)
+                | TypeKind::Pointer(_)
+                | TypeKind::MemberPointer { .. }
+                | TypeKind::Enum(_)
         ) {
             return Err(Error::Missing("nonscalar value initialization"));
         }

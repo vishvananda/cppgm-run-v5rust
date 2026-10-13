@@ -25,6 +25,75 @@ fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     check(&mut graph, cursor);
 }
 #[test]
+fn member_pointer_identity_keeps_owner_and_function_qualifiers_after_parameter_adjustment() {
+    analyze(
+        b"struct C;struct D;using Owner=C;using A=int(Owner::*)(const int)const&;using B=int(C::*)(int)const&;using OtherOwner=int(D::*)(int)const&;using OtherCv=int(C::*)(int)&;using OtherRef=int(C::*)(int)const&&;",
+        |graph, cursor| {
+            let mut types = Vec::new();
+            for spelling in [b"A".as_slice(), b"B", b"OtherOwner", b"OtherCv", b"OtherRef"] {
+                let name = cursor.intern_name(spelling).unwrap();
+                let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
+                let ty = graph.binding(binding).ty.unwrap();
+                types.push(graph.types.canonical_function(ty).unwrap());
+            }
+            assert_eq!(types[0], types[1]);
+            for &other in &types[2..] {
+                assert_ne!(types[0], other);
+            }
+            let TypeKind::MemberPointer { owner, element } = graph.types.get(types[0]).kind else {
+                panic!("alias lost its member-pointer identity");
+            };
+            assert!(matches!(graph.types.get(owner).kind, TypeKind::Class(_)));
+            let TypeKind::Function { cv, reference, .. } = graph.types.get(element).kind else {
+                panic!("member pointer lost its function type");
+            };
+            assert_eq!(cv, Cv::CONST);
+            assert_eq!(reference, Some(RefKind::Lvalue));
+        },
+    );
+}
+#[test]
+fn member_pointer_size_queries_retain_constants_without_replacing_the_syntax_view() {
+    use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind};
+    let source = SourceBuffer::new(
+        b"struct C;using M=int(C::*)();unsigned long a=sizeof(M);unsigned long b=alignof(M);"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"query-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    for (&declaration, expected) in tree.decl_lists.get(declarations)[2..].iter().zip([16, 8]) {
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("query declaration expected");
+        };
+        let initializer = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let InitializerKind::Assign(query) = initializer.kind else {
+            panic!("query initializer expected");
+        };
+        assert!(matches!(
+            tree.expressions.get(query).kind,
+            ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. }
+        ));
+        let facts = graph.expression_facts.get(query).unwrap();
+        assert_eq!(facts.query_value, Some(expected));
+        assert!(facts.folded.is_none());
+        assert_eq!(graph.expression_type(query), Some(facts.ty));
+    }
+    let name = cursor.intern_name(b"C").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+        .entity;
+    assert!(!graph.entity(class).complete);
+    assert!(graph.entity(class).scope.is_none());
+}
+#[test]
 fn control_and_handler_bindings_have_local_owners_and_do_not_leak() {
     analyze(
         b"void f(int n){if(int c=n){int a=c;}else int b=c;for(int i=0;i<n;++i){int j=i;}try{}catch(const int& e){int k=e;}}",

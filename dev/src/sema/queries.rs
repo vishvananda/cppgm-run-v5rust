@@ -14,6 +14,43 @@ use crate::{
     types::FundamentalType as F,
 };
 impl Analyzer<'_> {
+    pub(super) fn semantic_alignment(
+        &mut self,
+        ty: Option<ast::TypeId>,
+        operand: Option<ast::ExprId>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<super::expression_facts::ExprFacts, Error> {
+        let mut ty = if let Some(ty) = ty {
+            self.type_syntax(ty, scope)?
+        } else {
+            let operand = operand.ok_or(Error::Invariant("alignof without operand"))?;
+            self.unevaluated += 1;
+            let result = self.typed_expression(operand, scope);
+            self.unevaluated -= 1;
+            let facts = result?;
+            self.check_resolved_function(operand)?;
+            facts.ty
+        };
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        if !self.query_complete(ty) {
+            return Err(Error::at(
+                location,
+                "alignof of an incomplete or function type",
+            ));
+        }
+        let (_, alignment) = self.type_size(ty, location)?;
+        let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
+        let mut facts =
+            self.new_expression_facts(ty, super::expression_facts::ValueCategory::Prvalue)?;
+        facts.query_value = Some(alignment);
+        Ok(facts)
+    }
     pub(super) fn binding_expression_type(&self, binding: BindingId) -> Result<TypeId, Error> {
         let binding = self.graph.binding(binding);
         let ty = if binding.kind == BindingKind::Variable
@@ -75,11 +112,16 @@ impl Analyzer<'_> {
                 scope,
             )?
         };
-        let ty = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+        let mut ty = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
             element
         } else {
             ty
         };
+        if alignment {
+            while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+                ty = element;
+            }
+        }
         if self.evaluating_noexcept && !self.query_complete(ty) {
             return Err(Error::at(
                 location,
@@ -148,6 +190,17 @@ impl Analyzer<'_> {
             TypeKind::Scalar(Scalar::Nullptr)
             | TypeKind::Pointer(_)
             | TypeKind::Reference { .. } => 8,
+            TypeKind::MemberPointer { element, .. } => {
+                alignment = Some(8);
+                if matches!(
+                    self.graph.types.get(element).kind,
+                    TypeKind::Function { .. }
+                ) {
+                    16
+                } else {
+                    8
+                }
+            }
             TypeKind::Function { .. } => {
                 return Err(Error::at(location, "size of a function type"));
             }

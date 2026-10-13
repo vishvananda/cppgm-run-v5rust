@@ -270,6 +270,7 @@ impl Analyzer<'_> {
                 print: info.home.unwrap_or(scope),
                 head,
                 definition,
+                declarator_location: location,
             },
             BindingKind::Function,
             location,

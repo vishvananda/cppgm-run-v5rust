@@ -49,6 +49,10 @@ impl Analyzer<'_> {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => types.push((*element, depth + 1)),
+                TypeKind::MemberPointer { owner, element } => {
+                    types.push((*element, depth + 1));
+                    types.push((*owner, depth + 1));
+                }
                 TypeKind::Function {
                     parameters, result, ..
                 } => {
@@ -60,9 +64,7 @@ impl Analyzer<'_> {
                     let owner = if let Some(enumeration) = entity.enumeration {
                         Some(enumeration.owner)
                     } else {
-                        entity
-                            .scope
-                            .and_then(|scope| self.graph.scope(scope).parent)
+                        entity.home
                     };
                     if let Some(owner) = owner {
                         namespaces.push(self.associated_namespace(owner));

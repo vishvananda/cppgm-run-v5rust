@@ -201,11 +201,13 @@ impl Analyzer<'_> {
                 a
             } else {
                 let pointer = self
-                    .composite_pointer(lf, rf)?
+                    .composite_pointer(lf, rf, true)?
                     .ok_or_else(|| self.operator_error(id, "invalid operands to a comparison"))?;
                 if !matches!(
                     self.graph.types.get(pointer).kind,
-                    TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr)
+                    TypeKind::Pointer(_)
+                        | TypeKind::MemberPointer { .. }
+                        | TypeKind::Scalar(Scalar::Nullptr)
                 ) {
                     return Err(self.operator_error(id, "invalid operands to a comparison"));
                 }
@@ -214,7 +216,7 @@ impl Analyzer<'_> {
             if !matches!(op, P::Equal | P::NotEqual)
                 && matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Scalar(Scalar::Nullptr)
+                    TypeKind::Scalar(Scalar::Nullptr) | TypeKind::MemberPointer { .. }
                 )
             {
                 return Err(self.operator_error(id, "invalid operands to a comparison"));
@@ -290,6 +292,7 @@ impl Analyzer<'_> {
         &mut self,
         a: ExprFacts,
         b: ExprFacts,
+        comparison: bool,
     ) -> Result<Option<TypeId>, Error> {
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;
@@ -316,13 +319,46 @@ impl Analyzer<'_> {
             ));
         }
         if a_null {
-            return Ok(matches!(self.graph.types.get(bt).kind, TypeKind::Pointer(_)).then_some(bt));
+            return Ok(self
+                .graph
+                .types
+                .get(bt)
+                .kind
+                .pointer_level()
+                .is_some()
+                .then_some(bt));
         }
         if b_null {
-            return Ok(matches!(self.graph.types.get(at).kind, TypeKind::Pointer(_)).then_some(at));
+            return Ok(self
+                .graph
+                .types
+                .get(at)
+                .kind
+                .pointer_level()
+                .is_some()
+                .then_some(at));
         }
         if at == bt {
             return Ok(Some(at));
+        }
+        if matches!(
+            self.graph.types.get(at).kind,
+            TypeKind::MemberPointer { .. }
+        ) && matches!(
+            self.graph.types.get(bt).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            if self.pointer_qualification(at, bt)? {
+                return Ok(Some(bt));
+            }
+            if self.pointer_qualification(bt, at)? {
+                return Ok(Some(at));
+            }
+            return if comparison {
+                self.combined_pointer_cv(at, bt)
+            } else {
+                Ok(None)
+            };
         }
         let (TypeKind::Pointer(pa), TypeKind::Pointer(pb)) = (
             self.graph.types.get(at).kind.clone(),
@@ -374,13 +410,16 @@ impl Analyzer<'_> {
     ) -> Result<Option<TypeId>, Error> {
         // CWG 1512: union each level's cv and add const above differing levels.
         let mut levels = Vec::new();
-        while let (TypeKind::Pointer(ea), TypeKind::Pointer(eb)) = (
-            self.graph.types.get(a).kind.clone(),
-            self.graph.types.get(b).kind.clone(),
+        while let (Some((oa, ea)), Some((ob, eb))) = (
+            self.graph.types.get(a).kind.pointer_level(),
+            self.graph.types.get(b).kind.pointer_level(),
         ) {
+            if oa != ob {
+                return Ok(None);
+            }
             let ca = self.graph.types.get(ea).cv.0;
             let cb = self.graph.types.get(eb).cv.0;
-            levels.push((ca | cb, ca != cb));
+            levels.push((oa, ca | cb, ca != cb));
             a = self.bare_type(ea)?;
             b = self.bare_type(eb)?;
         }
@@ -392,10 +431,14 @@ impl Analyzer<'_> {
         }
         let mut result = a;
         let mut outer_const = false;
-        for (cv, differs) in levels.into_iter().rev() {
+        for (owner, cv, differs) in levels.into_iter().rev() {
             let cv = super::types::Cv(cv | u8::from(outer_const));
             let element = self.graph.types.qualify(result, cv)?;
-            result = self.graph.types.pointer(element)?;
+            result = if let Some(owner) = owner {
+                self.graph.types.member_pointer(owner, element)?
+            } else {
+                self.graph.types.pointer(element)?
+            };
             outer_const |= differs;
         }
         Ok(Some(result))
@@ -526,7 +569,7 @@ impl Analyzer<'_> {
         } else if self.is_arithmetic_operand(at) && self.is_arithmetic_operand(bt) {
             self.arithmetic_type(at, bt)?
         } else {
-            self.composite_pointer(a, b)?
+            self.composite_pointer(a, b, false)?
                 .ok_or_else(|| self.operator_error(id, "incompatible operands of ?:"))?
         };
         self.convert_operand_scalar(left, ty, false)?;

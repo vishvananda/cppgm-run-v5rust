@@ -54,6 +54,10 @@ pub(super) enum TypeKind {
         template: bool,
     },
     Pointer(TypeId),
+    MemberPointer {
+        owner: TypeId,
+        element: TypeId,
+    },
     Reference {
         element: TypeId,
         kind: RefKind,
@@ -74,6 +78,17 @@ pub(super) enum TypeKind {
 pub(super) struct Type {
     pub cv: Cv,
     pub kind: TypeKind,
+}
+impl TypeKind {
+    /// A pointer level and its member owner, if any. Matching the owner as
+    /// well as the level kind preserves mixed ordinary/member pointer shapes.
+    pub(super) fn pointer_level(&self) -> Option<(Option<TypeId>, TypeId)> {
+        match *self {
+            Self::Pointer(element) => Some((None, element)),
+            Self::MemberPointer { owner, element } => Some((Some(owner), element)),
+            _ => None,
+        }
+    }
 }
 #[derive(Default)]
 pub(super) struct Types {
@@ -204,6 +219,13 @@ impl Types {
     pub(super) fn pointer(&mut self, element: TypeId) -> Result<TypeId, Error> {
         self.intern(TypeKind::Pointer(element), Cv::default())
     }
+    pub(super) fn member_pointer(
+        &mut self,
+        owner: TypeId,
+        element: TypeId,
+    ) -> Result<TypeId, Error> {
+        self.intern(TypeKind::MemberPointer { owner, element }, Cv::default())
+    }
     pub(super) fn parameter_object(&mut self, id: TypeId) -> Result<TypeId, Error> {
         match self.get(id).kind {
             TypeKind::Array { element, .. } => self.pointer(element),
@@ -244,6 +266,10 @@ impl Types {
                     TypeKind::Pointer(element)
                     | TypeKind::Reference { element, .. }
                     | TypeKind::Array { element, .. } => work.push((*element, false)),
+                    TypeKind::MemberPointer { owner, element } => {
+                        work.push((*owner, false));
+                        work.push((*element, false));
+                    }
                     TypeKind::Function {
                         result, parameters, ..
                     } => {
@@ -260,6 +286,10 @@ impl Types {
             let node = self.get(id).clone();
             let kind = match node.kind {
                 TypeKind::Pointer(element) => TypeKind::Pointer(self.canonical_child(element)?),
+                TypeKind::MemberPointer { owner, element } => TypeKind::MemberPointer {
+                    owner: self.canonical_child(owner)?,
+                    element: self.canonical_child(element)?,
+                },
                 TypeKind::Reference { element, kind } => TypeKind::Reference {
                     element: self.canonical_child(element)?,
                     kind,

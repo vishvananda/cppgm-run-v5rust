@@ -309,6 +309,10 @@ impl Analyzer<'_> {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::MemberPointer { owner, element } => {
+                    work.push(*owner);
+                    work.push(*element);
+                }
                 TypeKind::Function {
                     result, parameters, ..
                 } => {
