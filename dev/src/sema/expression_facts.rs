@@ -45,6 +45,16 @@ pub(super) enum ConversionRank {
     Ellipsis,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum ReferenceSource {
+    Other,
+    FunctionLvalue,
+}
+impl ReferenceSource {
+    pub(super) fn is_function_lvalue(self) -> bool {
+        matches!(self, Self::FunctionLvalue)
+    }
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Conversion {
     pub target: TypeId,
     pub result: TypeId,
@@ -54,6 +64,7 @@ pub(super) struct Conversion {
     pub qualification: bool,
     pub initialization: bool,
     pub temporary: bool,
+    pub reference_source: ReferenceSource,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
@@ -182,6 +193,7 @@ mod tests {
             qualification: false,
             initialization: true,
             temporary: false,
+            reference_source: ReferenceSource::Other,
         });
         facts.set(outer, updated);
         assert_eq!(facts.get(leaf).unwrap().ty, int);

@@ -1077,7 +1077,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             && let Some(binding) = facts.function
         {
             self.function_type(binding)?;
-        } else {
+        } else if !matches!(node.kind, ExprKind::Unary { .. }) || facts.functions.is_none() {
+            // An unresolved unary overload designation has no expression type.
+            // Selection rewrites its outermost node and immediate operand only.
             self.ty(ty)?;
         }
         match node.kind {

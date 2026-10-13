@@ -63,7 +63,10 @@ impl Analyzer<'_> {
         postfix: bool,
     ) -> Result<ExprFacts, Error> {
         let facts = self.graph.expression_facts.get(operand)?;
-        if facts.functions.is_some() && matches!(op, P::BitAnd | P::Multiply) {
+        if facts.functions.is_some()
+            && self.ordinary_function_operand(facts).is_none()
+            && matches!(op, P::BitAnd | P::Multiply)
+        {
             let ty = if op == P::BitAnd {
                 self.graph.types.pointer(facts.ty)?
             } else {
@@ -92,7 +95,9 @@ impl Analyzer<'_> {
                 return Err(self.operator_error(id, "taking the address of an rvalue"));
             }
             let ty = self.graph.types.pointer(facts.ty)?;
-            return self.new_expression_facts(ty, V::Prvalue);
+            let mut result = self.new_expression_facts(ty, V::Prvalue)?;
+            result.function = facts.function;
+            return Ok(result);
         }
         if matches!(op, P::Increment | P::Decrement) {
             if !self.modifiable(facts) {
@@ -137,7 +142,9 @@ impl Analyzer<'_> {
                 ));
             }
             self.convert_operand_scalar(operand, ty, false)?;
-            return self.new_expression_facts(element, V::Lvalue);
+            let mut result = self.new_expression_facts(element, V::Lvalue)?;
+            result.function = facts.function;
+            return Ok(result);
         }
         if op == P::LogicalNot {
             self.convert_bool(operand)?;

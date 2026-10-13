@@ -318,6 +318,15 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(root).location,
             )?;
         }
+        // Ordinary unary designations are already typed, including their
+        // function-to-pointer operand conversions. Only unresolved overload
+        // designations use the oracle's immediate-unary rewrite below.
+        if self.graph.expression_facts.get(root)?.functions.is_none() {
+            if self.unevaluated == 0 {
+                self.demand_function(binding, false);
+            }
+            return Ok(());
+        }
         let inner = match self.tree.expressions.get(root).kind {
             ast::ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
@@ -439,8 +448,8 @@ impl Analyzer<'_> {
             self.graph.types.get(a.target).kind.clone(),
             self.graph.types.get(b.target).kind.clone(),
         ) {
-            let af = matches!(self.graph.types.get(ae).kind, TypeKind::Function { .. });
-            let bf = matches!(self.graph.types.get(be).kind, TypeKind::Function { .. });
+            let af = a.reference_source.is_function_lvalue();
+            let bf = b.reference_source.is_function_lvalue();
             if ak != bk && af == bf {
                 return Ok(if (ak == RefKind::Rvalue) == af {
                     Ordering::Less

@@ -1,9 +1,234 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `6ef88b8823f646a16bb17f0725394a355c48b635` (clean declaration/linkage audit entry).
+Current implementation group base: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753` (clean call/conversion acceptance audit entry).
 Last audited implementation commit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` (declaration/linkage and scalar source/validation reviewed; full-stage acceptance pending). Previous partial audit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e`.
 
+
+## Call/conversion and association acceptance audit checkpoint — 2026-10-13
+
+Reviewed entry: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753`.
+Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+The preceding goal turn made authoritative progress in the declaration/linkage
+implementation `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` and its reviewed
+handoff `9f47dc9`. This turn verified the clean checkout, preceding source
+hashes, source ledger and current protected checks before extending the audit.
+**Six Rust findings are resolved; full exact acceptance remains unproven on
+the sixteen reproducible frozen-oracle crash probes listed below.** No goal,
+Ralph state, protected policy, oracle source or existing reference was changed.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-conversion-audit-20261013/`.
+Final Rust cppgm SHA-256: `09fd062faca2cebd2d54da1d468100e147bd4ac66082877ede44bcaf5b53a1b3`.
+Frozen cppgm++ SHA-256: `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+`checks-final.json`, `reviewed-source.json`, `responsibility-census.json`,
+`preceding-source-review.json`, `course-preservation.json` and `handoff.json`
+retain the source/build/validation evidence. Initial mismatches, final inputs,
+raw streams and protected output receipts remain under that root. No generated
+output, Cargo target, scratch script or log is committed.
+
+### Source responsibilities and completeness reasoning
+
+Read `AGENTS.md`, `CLONE_CONTRACT.md`, `spec.md`, the complete PA7 handout,
+`docs/rust-clone-plan.md`, source map and cumulative stage checkpoints. The
+handout defines the due procedural slice; the fixed manifest and all original
+course cases remain mandatory, including inherited extensions. Later class
+calls, user conversions, arbitrary template bodies, floating object execution,
+exceptions and backend work remain explicit future owners, not accepted Rust
+rejection stubs. No PA33 release/census or PA34 object proof is claimed at PA7.
+
+Consulted frozen C++ `analyzer_calls.cpp` directly, including `call`,
+`result_category`, association/argument-dependent lookup, `indirect_call`,
+`implicit_sequence`, `resolve`, `compare_candidates`, `best_viable`, default
+visibility and `convert_arguments`; `conversions.cpp/.h`'s scalar/reference
+formation, qualification, integral promotions and sequence comparison;
+`analyzer_expressions.cpp`'s binding/function designation, unary/address typing,
+`select_overloaded` and `resolve_overloaded`; and `semantics_dump.cpp/.h`'s
+expression type, unary, id and call presentation. Also reviewed
+`analysis_records.h`, `statement_facts.h`, `semantic_graph.h` and frontend source
+composition against the Rust owners. The source map now identifies the due
+analysis working records and correctly leaves range expansion with PA20.
+
+The cumulative source census reconciles the following responsibilities with
+this review and the earlier reviewed checkpoints, rather than treating green
+fixtures as completeness proof. Thirteen of the preceding declaration audit's
+fifteen source hashes remain unchanged; the changed operator and printer
+owners are reviewed here. `responsibility-census.json` retains all 121 relevant
+entry/type/syntax/sema source rows, including their explicitly partial future
+responsibilities. This is stage ownership review, not PA33's complete-port census.
+
+| C++ responsibility | Rust owner / evidence and retained boundary |
+| --- | --- |
+| `cppgm++.cpp` emit modes, per-input wrappers, output failures and diagnostics | `dev/bin/cppgm.rs`, `driver/ast.rs`; one source/syntax/graph owner per unit, command-line source order, shared AST/types/semantics modes; other compiler modes return 86 |
+| Shared preprocessing, syntax, locations, name interning and rollback | `preprocess/`, `syntax/`, `support/source.rs`; PA1–PA6 exact/full lanes, original typed AST and prior rollback/storage audits retained |
+| `analyzer.cpp`, `analyzer_declarations.cpp`, lookup and canonical type/declarator owners | `analyzer.rs`, `declarations.rs`, `linkage.rs`, `lookup.rs`, `graph.rs`, `types.rs`, `declarators.rs`; indexed source visibility, entity/denotation distinction, immutable type identities and original declaration facts; preceding declaration review preserved |
+| `analyzer_bodies.cpp` procedural scopes/control/returns | `statements.rs`, `procedural_statements.rs`; original StmtIds, function-local context and typed condition/conversion facts; procedural recheck retains 411/411 due cases |
+| Scalar expressions, casts and integral arithmetic | `scalar_expressions.rs`, `scalar_operators.rs`, `scalar_casts.rs`, `integral.rs`; target arithmetic and operand/failure order; preceding operator/address review plus 1,940 conversion and 198 promotion/array-reference probes |
+| `analyzer_initialization.cpp` scalar/list/array and defaults | `initialization.rs`, `default_arguments.rs`, `declarations.rs`; original expression/list IDs and selected conversions, bound completion, zero tails, declaration-time visibility; 78/78 initialization rechecks |
+| `conversions.cpp/.h`, ordinary calls and overloaded designation selection | `scalar_conversions.rs`, `procedural_calls.rs`, `function_resolution.rs`, `call_lookup.rs`; six findings below; 232/232 function, 24/24 depth and 20/20 failure-order probes |
+| Integral/address constants and builtin queries | `constants.rs`, `constant_addresses.rs`, `constant_pointer_operations.rs`, `constant_mutations.rs`, `builtin_calls.rs`, `queries.rs`; short-circuit/unevaluated effects, symbolic identities and deliberate target arithmetic; 147/147 address and 86/86 query rechecks; general floating/frame execution is later |
+| Inherited anonymous storage, direct designation, scalar construction, nonvirtual base/member-pointer and signature-template extensions | `anonymous_types.rs`, `data_members.rs`, `construction.rs`, `copy_initialization.rs`, `inheritance.rs`, `member_expressions.rs`, `function_templates.rs`, `function_demands.rs`; retain audited source/demand identities and the exact fixed cases, plus 70/70 signature-template rechecks; full class/operator/template/interpreter paths remain later owners |
+| `semantic_dump.cpp/.h`, `semantics_dump.cpp/.h` | `dump.rs`, `semantics_dump.rs`; source then demand traversal, recorded result/operand/default/conversion facts, declared function result types and exact unresolved unary output; no semantic lookup, substitution or demand during printing |
+| `analysis_records.h` working frames and candidates | `procedural_statements.rs`, `procedural_calls.rs`, `analyzer.rs`, `copy_initialization.rs`; ephemeral body/query owners, compact IDs, selected outcomes and cleared scratch; lambda/goto/deferred-access/hosted frames are later |
+
+### Findings and translated behavior
+
+- Genuine overloaded function arguments rank as exact target matches before the
+  selected expression's actual scalar binding is applied. Rust previously
+  filtered an overloaded address-to-function-reference candidate too soon,
+  changing both ambiguity/selection and failure bytes. Each candidate now owns
+  its ranking conversion, optional application conversion and selected BindingId.
+  Selection publishes that binding once; an unavailable application fails at
+  the argument after ranking, without rerunning lookup or target selection.
+- Reference ranking retains typed `ReferenceSource::FunctionLvalue`, including
+  a function lvalue used to initialize a temporary pointer-reference. Inferring
+  this fact from the referenced target type incorrectly preferred rvalue pointer
+  references and made function-reference/pointer-reference calls ambiguous.
+  Comparison now consumes the recorded source fact. No lint waiver was added:
+  the initial fourth boolean was replaced with a semantic enum.
+- Ordinary unary function designations resolve before amp/star typing, retaining
+  the actual function-to-pointer operand conversion, result type/category and
+  direct function identity. They no longer pass through the genuine-overload
+  immediate-unary rewrite. Direct calls consume the retained designation;
+  parameter function references and indirect pointers retain their own paths.
+- Genuine overload selection rewrites only its root and immediate operand as
+  C++ does. A deeper unresolved unary node has no resolved expression type;
+  the printer now emits that empty type from the retained pending set, while
+  its id-expression still has its entity type. Printing performs no resolution.
+- ADL deduplication was keyed by type alone despite the inherited depth budget.
+  A deep first visit could suppress a later shallower visit to the same type,
+  losing its associated namespace. The query now records minimum reached depth
+  and revisits only when it strictly decreases, at most 65 visits per type.
+  Namespace/function deduplication, inline edges, directive exclusion and
+  block/qualified-call suppression are preserved. No class/body is newly demanded.
+- A named non-function callee is checked once before its arguments are typed.
+  Namespace/namespace-alias values and forbidden local/default callee names
+  therefore win over competing bad argument names, matching frozen control
+  flow. Function sets retain their separate call checking order. A cohesive
+  `publish_named_callee` helper owns original facts and parenthesis aliases;
+  the authoritative audit rejected the intermediate 248-code-line function,
+  and the factored final source passes without a length/nesting allowance.
+
+One ownership regression verifies unchanged AST expression count, function
+lvalue result type/category, original operand decay, source reference-ranking
+facts, the selected reference overload and retained direct call identity.
+Nineteen minimal required regressions live in PA7's executed `tests/general/`
+lane. Their new references were generated only from the frozen oracle after
+exact adapter comparison; no existing fixture or reference was modified.
+
+### Validation and preservation
+
+All final commands below have exit 0 in `checks-final.json`. The fixed manifest
+still contains exactly 198 identities. The full course lane contains the same
+311 identities from the independently enumerated `9f47dc9` tree plus exactly
+19 new regressions: 330/330 protected receipts, zero lost identities, exit 0,
+no failed comparison counts and no `.test_failed` marker. `course-trace.jsonl`,
+`course-result.json`, `course-preservation.json` and `prior-summary.json` retain
+actual candidate routes and case-level evidence.
+
+| Check | Final result | Artifact relative to root |
+| --- | --- | --- |
+| `make build` | locked release workspace PASS | `build-final.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 198/198 PASS | `stage-required-final.log`, `fixed-manifest.json` |
+| `make test-pa7` | 198/198 PASS | `stage-make-final.log` |
+| `make course-pa7` | 330/330 PASS, every original/new case retained | `course-final.log`, `course-result.json`, `course-trace.jsonl` |
+| `python3 .../clone_check.py prior pa7` | PA1–PA6 fixed and full original course lanes PASS | `prior-final.log`, `prior-summary.json`; `../clone/course/paN/test/` |
+| `python3 .../clone_check.py preflight pa7` | oracle/protected/tool routing PASS | `preflight-final.log` |
+| `python3 .../clone_check.py preserve pa7` | PASS; independent committed course identity comparison also PASS | `preserve-final.log`, `course-preservation.json` |
+| `make lint` / protected `clone_quality.py` | rustfmt, strict all-feature Clippy, debug/release workspace tests PASS | `lint-final.log` |
+| `make audit-rust` | 136 files, zero findings | `audit-final.log` |
+| Final-binary conversion sweep | 1,940/1,940 exact exit/streams/output matches | `probe-final-binary.log`, `summary.json`, `probes.jsonl` |
+| Final-binary function designations/ranking | 232/232 exact matches | `function-final-binary.log`, `function-summary.json`, `function-probes.jsonl` |
+| Final-binary type-depth association | 24/24 exact matches, both parameter orders and function/address forms | `adl-final-binary.log`, `adl-depth-summary.json`, `adl-depth-probes.jsonl` |
+| Final-binary extended integral promotions/array references | 198/198 exact matches | `promotion-final-binary.log`, `promotion-summary.json`, `promotion-probes.jsonl` |
+| Final-binary competing call failures | 20/20 exact matches | `callee-final-binary.log`, `callee-summary.json`, `callee-probes.jsonl` |
+| Prior independent source/probe groups | addresses 147/147, queries 86/86, signatures 70/70, initialization 78/78, declarations 112/112, procedural due 411/411 | `rechecks.json` and isolated `pa7-*-20261013/` |
+| Protected resource observations | paired bytes equal and two shared larger-stack qualifications PASS | `measure-final.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+The prior procedural suite's `case-float-id-bad` still reaches its individually
+recorded outside-PA7 floating-object execution boundary (86), not a matched
+rejection. Source review and full PA7 gates distinguish that later dependency.
+The first broad exploratory run overlapped the first rebuild; its observations
+are retained as discovery evidence only. Acceptance evidence uses the final
+fixed binary, source hashes and separately retained final sweeps. No oracle
+crash, Rust stub, panic, timeout or failed receipt is counted as a passing case.
+
+### Architecture, numeric rules and resources
+
+One source buffer/syntax unit and one owned Graph live per translation unit.
+Dense facts address original ExprId/StmtId/DeclaratorId records; parentheses
+share those facts. Canonical TypeIds and indexed names drive comparison and
+lookup. Candidate rejection remains compact optional data; only final input
+errors render diagnostics. Call scratch resets contents on every return and
+retains capacity, with nested argument calls finished before borrowing it.
+Rank and application facts are distinct bounded per-candidate data, not copies
+of expression subtrees. ADL's per-query `(TypeId, minimum depth)` visitation
+state expires with the query; strictly improving depths bound rework without
+unrelated scans or global invalidation. Persistent signature caches/demand
+remain under their earlier typed owners and complete keys.
+
+Target integral width/sign, promotion and wrap/truncation owners are unchanged;
+wide character/fixed/range enum conversions and pointer/array qualification were
+compared beyond fixtures. No host signed overflow, float approximation or native
+pointer identity was added. Syntax, body and default ownership stay parse-once;
+no semantic text transport, speculative class completion, unsafe code, new
+dependency, C++ compiler subprocess or implementation environment read exists
+in this change. Source/function/nesting checks remain authoritative alongside
+rustfmt and strict Clippy. Optimizer, allocator, backend policies and per-function
+lifetimes are unchanged. PA35 optimization objectives are not imposed.
+
+Final warm observations use A/A calibration followed by paired ABBA/BAAB blocks,
+with every source/binary hash, wall/RSS sample and output digest retained. These
+measure complete process startup, parsing, semantics and dump I/O. Equality is
+proved separately by protected receipts; timing/RSS equality is not required.
+
+| Workload / calls | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| function-reference-ranking / 128 | 5.20 / 5836 | 17.32 / 8006 |
+| shared-adl-depth / 128 | 6.08 / 6558 | 17.21 / 8000 |
+| function-reference-ranking / 512 | 6.90 / 6528 | 19.45 / 8746 |
+| shared-adl-depth / 512 | 7.61 / 6572 | 23.68 / 8000 |
+| function-reference-ranking / 2048 | 10.94 / 7274 | 30.79 / 8368 |
+| shared-adl-depth / 2048 | 14.29 / 7280 | 43.88 / 8002 |
+
+The native probes start at 1 MiB and retain 1,500 function dereferences and 1,000
+nested ordinary calls. Both adapter receipts have `match: true` and
+`stack_qualification.passed: true`, with both tools succeeding with identical
+streams/output at the same 16 MiB retry. Raw original attempts and retries are
+retained under `stack-qualifications/`. No exhaustion cutoff, frame size or
+native diagnostic position was calibrated; the genuine byte-budget guard is
+unchanged. Shared storage remains below the 107,374,182,400-byte ceiling.
+
+### Remaining exact audit failures and next dependency boundary
+
+No frozen PA7 case, course identity or normal-result probe in this checkpoint
+still fails. The independently revalidated frozen-oracle failures are exactly:
+
+```text
+binary-023 binary-051 binary-079 binary-107 binary-135 binary-163
+binary-191 binary-219 binary-247 binary-275 binary-303 binary-331
+binary-359 binary-387 binary-415 binary-443
+```
+
+`oracle-issue-probes.jsonl` preserves protected infrastructure-failure receipts.
+`oracle-crash-reproduction.json` revalidates all sixteen sources at both 16 and
+64 MiB: 32/32 SIGSEGV exits (-11), no diagnostic and empty output. The pinned
+operator-candidate path dereferences an unresolved overloaded function's null
+type while processing the enum operand (`analyzer_operators.cpp` and
+`conversions.h::ClassOf`), as recorded in the preceding review. No successful
+larger-stack outcome exists, so protected stack qualification cannot qualify
+these as language results. They are baseline issues under CLONE_CONTRACT.md,
+not Rust defects to reproduce or permission to change references/policy.
+
+The next acceptance boundary is disposition of these frozen baseline issues and
+final cumulative stage signoff using the retained responsibility census. The
+stage-owned normal-result corrections and all due lanes are now verified, but
+full exact-clone acceptance is not asserted while those comparisons have no
+valid oracle outcome. Ralph's existing goal remains active; it has not been
+reset, narrowed, marked complete or advanced. Later class/operator/template/
+interpreter work and PA33/PA34 implementation-wide obligations retain their own
+stage boundaries.
 
 ## Declaration/linkage and scalar failure-order audit checkpoint — 2026-10-13
 

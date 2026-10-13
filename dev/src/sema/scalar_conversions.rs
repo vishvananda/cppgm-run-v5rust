@@ -4,8 +4,8 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{
-        Conversion, ConversionRank as R, ExprFacts, LvalueTransform as L, ValueCategory as V,
-        ValueConversion as C,
+        Conversion, ConversionRank as R, ExprFacts, LvalueTransform as L, ReferenceSource,
+        ValueCategory as V, ValueConversion as C,
     },
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
@@ -151,6 +151,7 @@ impl Analyzer<'_> {
             qualification,
             initialization: true,
             temporary: false,
+            reference_source: ReferenceSource::Other,
         }))
     }
     pub(super) fn pointer_qualification(
@@ -271,6 +272,11 @@ impl Analyzer<'_> {
                     temporary: facts.category == V::Prvalue
                         && !function
                         && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)),
+                    reference_source: if function && facts.category == V::Lvalue {
+                        ReferenceSource::FunctionLvalue
+                    } else {
+                        ReferenceSource::Other
+                    },
                 })
             } else if lvalue && !constant
                 || related
@@ -287,6 +293,11 @@ impl Analyzer<'_> {
                         element
                     };
                     c.temporary = true;
+                    c.reference_source = if function && facts.category == V::Lvalue {
+                        ReferenceSource::FunctionLvalue
+                    } else {
+                        ReferenceSource::Other
+                    };
                 }
                 conversion
             }

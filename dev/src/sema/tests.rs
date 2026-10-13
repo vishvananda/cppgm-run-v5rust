@@ -1861,6 +1861,81 @@ fn resolved_call_keeps_source_operands_and_selected_sequences_on_original_nodes(
 }
 
 #[test]
+fn function_designations_keep_unary_types_and_reference_source_facts() {
+    use super::expression_facts::{LvalueTransform, ValueCategory};
+    use super::function_resolution::CallTarget;
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(
+        b"int h(int);void g(int(*const&)(int));void g(int(*&&)(int));void f(){g(*h);(*&h)(1);}"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"function-designation-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let expression_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), expression_count);
+    let declaration_ids = tree.decl_lists.get(declarations);
+    let DeclKind::Function { body, .. } = tree.declarations.get(declaration_ids[3]).kind else {
+        panic!("function body expected")
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected")
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected")
+    };
+    let statements = tree.stmt_lists.get(statements);
+    let StmtKind::Expression(Some(call)) = tree.statements.get(statements[0]).kind else {
+        panic!("call statement expected")
+    };
+    let ExprKind::Call { arguments, .. } = tree.expressions.get(call).kind else {
+        panic!("call expected")
+    };
+    let unary = tree.expr_lists.get(arguments)[0];
+    let facts = graph.expression_facts.get(unary).unwrap();
+    assert!(matches!(
+        graph.types.get(facts.ty).kind,
+        TypeKind::Function { .. }
+    ));
+    assert_eq!(facts.category, ValueCategory::Lvalue);
+    assert!(facts.functions.is_none());
+    let conversion = facts.conversion.unwrap();
+    assert!(conversion.reference_source.is_function_lvalue());
+    assert!(conversion.temporary);
+    assert_eq!(conversion.first, LvalueTransform::FunctionToPointer);
+    let selected = graph.call_binding(call).unwrap();
+    let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration_ids[1]).kind
+    else {
+        panic!("function declaration expected")
+    };
+    let declarator = tree.init_declarators.get(declarators)[0].declarator;
+    assert_eq!(
+        selected,
+        graph.declared_bindings[declarator.index()].unwrap()
+    );
+    let ExprKind::Unary { operand, .. } = tree.expressions.get(unary).kind else {
+        panic!("unary expected")
+    };
+    let inner = graph.expression_facts.get(operand).unwrap();
+    assert_eq!(inner.ty, facts.ty);
+    let conversion = inner.conversion.unwrap();
+    assert_eq!(conversion.first, LvalueTransform::FunctionToPointer);
+    assert!(!conversion.initialization);
+    let StmtKind::Expression(Some(call)) = tree.statements.get(statements[1]).kind else {
+        panic!("call statement expected")
+    };
+    assert!(matches!(
+        graph.expression_facts.get(call).unwrap().call,
+        Some(CallTarget::Direct(_))
+    ));
+}
+
+#[test]
 fn overload_visibility_keeps_earlier_entities_across_interleaved_redeclarations() {
     use super::graph::{Binding, BindingKind};
     use crate::lex::vocabulary::Keyword;

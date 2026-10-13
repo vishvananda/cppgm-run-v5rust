@@ -3,7 +3,10 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    expression_facts::{Conversion, ConversionRank as R, ExprFacts, ValueCategory as V},
+    expression_facts::{
+        Conversion, ConversionRank as R, ExprFacts, LvalueTransform as L, ReferenceSource,
+        ValueCategory as V, ValueConversion as C,
+    },
     function_resolution::CallTarget,
     graph::{BindingId, ScopeId},
     types::{RefKind, Scalar, TypeId, TypeKind},
@@ -22,6 +25,9 @@ pub(super) struct CallScratch {
 #[derive(Clone, Copy)]
 struct ArgumentSequence {
     conversion: Conversion,
+    // An overload designation ranks as an exact target match, even when its
+    // actual unary shape cannot bind that target. Diagnose only after selection.
+    application: Option<Conversion>,
     function: Option<BindingId>,
 }
 impl Analyzer<'_> {
@@ -69,6 +75,13 @@ impl Analyzer<'_> {
                     return Ok(facts);
                 }
             }
+            let named_value = if found.binding.is_some_and(|binding| {
+                self.graph.binding(binding).kind != super::graph::BindingKind::Function
+            }) {
+                Some(self.named_expression(named, &found, scope)?)
+            } else {
+                None
+            };
             for &argument in self.tree.expr_lists.get(arguments) {
                 self.typed_expression(argument, scope)?;
             }
@@ -100,17 +113,12 @@ impl Analyzer<'_> {
             {
                 self.explicit_function_specializations(*component, &mut found, scope, true)?;
             }
-            let facts = self.named_expression(named, &found, scope)?;
-            self.graph.expression_facts.set(named, facts);
-            super::record(&mut self.graph.expression_types, named.index(), facts.ty);
-            let mut outer = callee;
-            while outer != named {
-                self.graph.expression_facts.share(outer, named);
-                let ast::ExprKind::Paren(inner) = self.tree.expressions.get(outer).kind else {
-                    return Err(Error::Invariant("named callee without parentheses"));
-                };
-                outer = inner;
-            }
+            let facts = if let Some(facts) = named_value {
+                facts
+            } else {
+                self.named_expression(named, &found, scope)?
+            };
+            self.publish_named_callee(callee, named, facts)?;
             facts
         } else {
             let facts = self.typed_expression(callee, scope)?;
@@ -119,7 +127,14 @@ impl Analyzer<'_> {
             }
             facts
         };
-        if let Some(set) = facts.functions {
+        let designation = if let Some(set) = facts.functions {
+            Some(set)
+        } else if let Some(binding) = facts.function {
+            Some(self.graph.overloads.add(&[binding])?)
+        } else {
+            None
+        };
+        if let Some(set) = designation {
             let mut designator = callee;
             let mut levels = 0;
             loop {
@@ -256,12 +271,33 @@ impl Analyzer<'_> {
         facts.call = Some(CallTarget::Indirect(function));
         Ok(facts)
     }
+    fn publish_named_callee(
+        &mut self,
+        callee: ast::ExprId,
+        named: ast::ExprId,
+        facts: ExprFacts,
+    ) -> Result<(), Error> {
+        self.graph.expression_facts.set(named, facts);
+        super::record(&mut self.graph.expression_types, named.index(), facts.ty);
+        let mut outer = callee;
+        while outer != named {
+            self.graph.expression_facts.share(outer, named);
+            let ast::ExprKind::Paren(inner) = self.tree.expressions.get(outer).kind else {
+                return Err(Error::Invariant("named callee without parentheses"));
+            };
+            outer = inner;
+        }
+        Ok(())
+    }
     fn argument_sequence(
         &mut self,
-        mut facts: ExprFacts,
+        id: ast::ExprId,
         target: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
+        let mut facts = self.graph.expression_facts.get(id)?;
         let mut function = None;
+        let overloaded =
+            facts.functions.is_some() && self.ordinary_function_operand(facts).is_none();
         if facts.functions.is_some() {
             let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
                 Some(binding)
@@ -279,7 +315,16 @@ impl Analyzer<'_> {
             )?;
             facts.ty = if facts.member_address_scope.is_some() {
                 self.function_address_type(binding, ty)?
-            } else if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_)) {
+            } else if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_))
+                || overloaded
+                    && matches!(
+                        self.tree
+                            .expressions
+                            .get(self.graph.expression_facts.root(id))
+                            .kind,
+                        ast::ExprKind::Unary { .. }
+                    )
+            {
                 self.graph.types.pointer(ty)?
             } else {
                 ty
@@ -287,12 +332,43 @@ impl Analyzer<'_> {
             facts.functions = None;
             function = Some(binding);
         }
-        Ok(self
-            .scalar_sequence(facts, target, false)?
-            .map(|conversion| ArgumentSequence {
-                conversion,
+        let application = self.scalar_sequence(facts, target, false)?;
+        if overloaded {
+            return Ok(Some(ArgumentSequence {
+                conversion: Conversion {
+                    target,
+                    result: target,
+                    first: if matches!(
+                        self.graph.types.get(target).kind,
+                        TypeKind::Reference { .. }
+                    ) {
+                        L::None
+                    } else {
+                        L::FunctionToPointer
+                    },
+                    second: C::None,
+                    rank: R::Exact,
+                    qualification: false,
+                    initialization: true,
+                    temporary: false,
+                    reference_source: if matches!(
+                        self.graph.types.get(target).kind,
+                        TypeKind::Reference { .. }
+                    ) {
+                        ReferenceSource::FunctionLvalue
+                    } else {
+                        ReferenceSource::Other
+                    },
+                },
+                application,
                 function,
-            }))
+            }));
+        }
+        Ok(application.map(|conversion| ArgumentSequence {
+            conversion,
+            application: Some(conversion),
+            function,
+        }))
     }
     fn check_class_arguments(
         &mut self,
@@ -371,7 +447,7 @@ impl Analyzer<'_> {
                 let facts = self.graph.expression_facts.get(arg)?;
                 let sequence = if index < count {
                     let target = self.graph.types.function_parameter(ty, index)?;
-                    let Some(conversion) = self.argument_sequence(facts, target)? else {
+                    let Some(conversion) = self.argument_sequence(arg, target)? else {
                         viable = false;
                         break;
                     };
@@ -422,7 +498,10 @@ impl Analyzer<'_> {
                     self.select_function_designation(arg, binding)?;
                     facts = self.graph.expression_facts.get(arg)?;
                 }
-                facts.conversion = Some(sequence.conversion);
+                facts.conversion = Some(sequence.application.ok_or(Error::at(
+                    self.tree.expressions.get(arg).location,
+                    "invalid implicit conversion",
+                ))?);
                 self.graph.expression_facts.set(arg, facts);
             } else {
                 self.ellipsis_argument(arg)?;

@@ -11,7 +11,7 @@ use crate::{
     lex::identifiers::NameId,
     syntax::{ast, storage::List},
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 impl Analyzer<'_> {
     pub(super) fn argument_dependent_lookup(
         &self,
@@ -39,12 +39,16 @@ impl Analyzer<'_> {
                 types.push((facts.ty, 0u32));
             }
         }
-        let mut seen_types = HashSet::new();
+        // The same type may be reached with more association depth remaining.
+        // Revisit only for a shorter path; every successful revisit decreases
+        // its depth, bounded by the inherited 64-level type budget.
+        let mut seen_types = HashMap::new();
         let mut namespaces = Vec::new();
         while let Some((ty, depth)) = types.pop() {
-            if depth > 64 || !seen_types.insert(ty) {
+            if depth > 64 || seen_types.get(&ty).is_some_and(|&earlier| earlier <= depth) {
                 continue;
             }
+            seen_types.insert(ty, depth);
             match &self.graph.types.get(ty).kind {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }

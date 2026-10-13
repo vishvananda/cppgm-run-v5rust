@@ -4,8 +4,8 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{
-        Conversion, ConversionRank as R, ExprFacts, LvalueTransform as L, ValueCategory as V,
-        ValueConversion as C,
+        Conversion, ConversionRank as R, ExprFacts, LvalueTransform as L, ReferenceSource,
+        ValueCategory as V, ValueConversion as C,
     },
     graph::ScopeId,
     types::{RefKind, Scalar, TypeId, TypeKind},
@@ -291,6 +291,7 @@ impl Analyzer<'_> {
             qualification: false,
             initialization: false,
             temporary: false,
+            reference_source: ReferenceSource::Other,
         });
         self.graph.expression_facts.set(operand, facts);
         self.new_expression_facts(goal, V::Prvalue)
@@ -408,6 +409,7 @@ impl Analyzer<'_> {
             qualification: false,
             initialization: false,
             temporary: false,
+            reference_source: ReferenceSource::Other,
         });
         self.graph.expression_facts.set(operand, facts);
         let mut facts = self.new_expression_facts(goal, V::Prvalue)?;
