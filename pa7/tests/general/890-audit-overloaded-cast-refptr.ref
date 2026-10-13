@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration f function of (int) returning int
+  function-declaration f function of (double) returning int
+  function-definition g function of () returning void
+    compound-statement
+      expression-statement
+        id-expression lvalue function of (int) returning int f
+end translation unit

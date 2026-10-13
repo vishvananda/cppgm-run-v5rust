@@ -101,8 +101,7 @@ impl Analyzer<'_> {
                 self.graph.types.get(facts.ty).kind,
                 TypeKind::Scalar(Scalar::Bool)
             ) && op == P::Decrement
-                || !(self.is_arithmetic_operand(facts.ty)
-                    || self.object_pointer(facts.ty).is_some())
+                || !(self.is_arithmetic_type(facts.ty) || self.object_pointer(facts.ty).is_some())
             {
                 return Err(self.operator_error(id, "invalid operand of increment or decrement"));
             }
@@ -351,7 +350,12 @@ impl Analyzer<'_> {
             return self.graph.types.pointer(element).map(Some);
         }
         let bare = self.bare_type(pa)?;
-        if bare == self.bare_type(pb)? {
+        let same_pointee = if matches!(self.graph.types.get(pa).kind, TypeKind::Array { .. }) {
+            pa == pb
+        } else {
+            bare == self.bare_type(pb)?
+        };
+        if same_pointee {
             let element = self.graph.types.qualify(bare, cv)?;
             return self.graph.types.pointer(element).map(Some);
         }
@@ -429,6 +433,17 @@ impl Analyzer<'_> {
                 self.complete_pointer(target, id)?;
                 let promoted = self.promoted_type(rt)?;
                 self.convert_operand_scalar(right, promoted, false)?;
+            } else if op == P::AddAssign
+                && matches!(
+                    self.graph.types.get(target).kind,
+                    TypeKind::Scalar(Scalar::Bool)
+                )
+                && self.object_pointer(rt).is_some()
+            {
+                // The frozen owner's E1 = E1 + E2 rule admits bool plus an
+                // object pointer, converting the pointer result back to bool.
+                self.complete_pointer(rt, id)?;
+                self.convert_operand_scalar(right, rt, false)?;
             } else {
                 let integral_only = matches!(
                     op,
@@ -439,7 +454,7 @@ impl Analyzer<'_> {
                         | P::OrAssign
                         | P::XorAssign
                 );
-                if !self.is_arithmetic_operand(target)
+                if !self.is_arithmetic_type(target)
                     || !self.is_arithmetic_operand(rt)
                     || integral_only
                         && (!self.is_integral_operand(target) || !self.is_integral_operand(rt))
@@ -489,9 +504,17 @@ impl Analyzer<'_> {
         }
         let ac = self.graph.types.get(a.ty).cv.0;
         let bc = self.graph.types.get(b.ty).cv.0;
+        // The C++ conditional owner compares shallow unqualified identities:
+        // unlike reference-relatedness, an array retains its element cv here.
+        let same_glvalue_type = if matches!(self.graph.types.get(a.ty).kind, TypeKind::Array { .. })
+        {
+            a.ty == b.ty
+        } else {
+            at == bt
+        };
         if a.category == b.category
             && a.category != V::Prvalue
-            && at == bt
+            && same_glvalue_type
             && (ac & bc == ac.min(bc))
         {
             return self.new_expression_facts(if ac & !bc == 0 { b.ty } else { a.ty }, a.category);

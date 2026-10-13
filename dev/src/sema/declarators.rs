@@ -81,7 +81,7 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn type_syntax(&mut self, id: ast::TypeId, scope: ScopeId) -> Result<TypeId, Error> {
-        if self.evaluating_noexcept
+        if (self.evaluating_noexcept || self.semantic())
             && let Some(ty) = self.graph.type_fact(id)
         {
             return Ok(ty);

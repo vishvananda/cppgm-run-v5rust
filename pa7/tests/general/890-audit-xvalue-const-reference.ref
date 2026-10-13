@@ -1,0 +1,8 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration g function of () returning rvalue-reference to int
+  variable r lvalue-reference to const int
+    call-expression xvalue rvalue-reference to int
+      callee g function of () returning rvalue-reference to int
+end translation unit

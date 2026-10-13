@@ -202,7 +202,7 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
-            let facts = self.function_designation(found.functions.as_slice())?;
+            let facts = self.function_designation(binding, found.functions.as_slice())?;
             return Ok(facts);
         }
         let binding = self.graph.binding(binding);

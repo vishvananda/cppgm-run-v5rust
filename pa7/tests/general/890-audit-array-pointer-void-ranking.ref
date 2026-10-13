@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration f function of (pointer to void) returning int
+  function-declaration f function of (pointer to const void) returning int
+  variable a array of 2 int
+  function-definition g function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee f function of (pointer to void) returning int
+          unary-expression prvalue pointer to array of 2 int OP_AMP:&
+            id-expression lvalue array of 2 int a
+end translation unit

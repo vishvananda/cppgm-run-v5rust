@@ -1,0 +1,16 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable a array of 2 const int
+    braced-init-list lvalue array of 2 const int
+  variable b array of 2 int
+  function-definition f function of () returning void
+    compound-statement
+      expression-statement
+        conditional-expression prvalue pointer to array of 2 const int
+          literal prvalue bool KW_TRUE:true
+          unary-expression prvalue pointer to array of 2 const int OP_AMP:&
+            id-expression lvalue array of 2 const int a
+          unary-expression prvalue pointer to array of 2 int OP_AMP:&
+            id-expression lvalue array of 2 int b
+end translation unit

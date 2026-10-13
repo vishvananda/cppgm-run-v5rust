@@ -145,7 +145,7 @@ impl Analyzer<'_> {
                 self.scalar_constant(0, Scalar::Nullptr)?
             }
             ExprKind::Paren(inner) => self.evaluate_constant(inner, scope, skipping)?,
-            ExprKind::Id(name) => self.constant_named_value(name, scope, skipping, location)?,
+            ExprKind::Id(name) => self.constant_named_value(id, name, scope, skipping, location)?,
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
@@ -207,7 +207,9 @@ impl Analyzer<'_> {
                 arguments,
                 braced,
             } => {
-                let ty = if self.evaluating_noexcept {
+                let ty = if self.evaluating_noexcept
+                    || self.semantic() && self.graph.expression_type(id).is_some()
+                {
                     self.graph
                         .expression_type(id)
                         .ok_or(Error::Invariant("untyped exception cast"))?
@@ -287,15 +289,18 @@ impl Analyzer<'_> {
     }
     fn constant_named_value(
         &mut self,
+        id: ast::ExprId,
         name: ast::Name,
         scope: ScopeId,
         skipping: bool,
         location: SourceOffset,
     ) -> Result<Constant, Error> {
-        let found = if self.evaluating_noexcept {
+        let found = if self.evaluating_noexcept
+            || self.semantic() && self.graph.expression_facts.get(id).is_ok()
+        {
             self.graph
                 .resolved_name(name)
-                .ok_or(Error::Invariant("unresolved exception operand name"))?
+                .ok_or(Error::Invariant("unresolved constant operand name"))?
         } else {
             self.lookup(name, scope, Filter::Ordinary)?
         };
@@ -717,7 +722,13 @@ impl Analyzer<'_> {
             inner = id;
         }
         let value = if reference && let ExprKind::Id(name) = self.tree.expressions.get(inner).kind {
-            let found = self.lookup(name, scope, Filter::Ordinary)?;
+            let found = if self.semantic() {
+                self.graph
+                    .resolved_name(name)
+                    .ok_or(Error::Invariant("unresolved reference initializer"))?
+            } else {
+                self.lookup(name, scope, Filter::Ordinary)?
+            };
             let binding = self.graph.binding(found);
             if binding.kind == BindingKind::Variable
                 && let ConstantState::Value(value) = self.graph.entity(binding.entity).constant

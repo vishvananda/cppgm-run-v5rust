@@ -820,6 +820,42 @@ fn standard_conversions_keep_rank_and_recursive_qualification_facts() {
         .unwrap();
     assert_eq!(conversion.rank, ConversionRank::Exact);
     assert!(conversion.qualification);
+    let void = analyzer.graph.types.scalar(Scalar::Void).unwrap();
+    let cvoid = analyzer.graph.types.qualify(void, Cv::CONST).unwrap();
+    let void_pointer = analyzer.graph.types.pointer(void).unwrap();
+    let const_void_pointer = analyzer.graph.types.pointer(cvoid).unwrap();
+    let facts = ExprFacts::new(pointer, ValueCategory::Lvalue);
+    let plain = analyzer
+        .standard_conversion(facts, void_pointer, false)
+        .unwrap()
+        .unwrap();
+    let qualified = analyzer
+        .standard_conversion(facts, const_void_pointer, false)
+        .unwrap()
+        .unwrap();
+    assert!(!plain.qualification);
+    assert!(qualified.qualification);
+    assert_eq!(
+        analyzer.compare_sequences(plain, qualified).unwrap(),
+        std::cmp::Ordering::Greater
+    );
+    let reference = analyzer
+        .graph
+        .types
+        .intern(
+            TypeKind::Reference {
+                element: int,
+                kind: super::types::RefKind::Lvalue,
+            },
+            Cv::default(),
+        )
+        .unwrap();
+    assert!(
+        analyzer
+            .scalar_sequence(ExprFacts::new(int, ValueCategory::Xvalue), reference, false)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

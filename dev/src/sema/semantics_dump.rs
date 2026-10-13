@@ -516,7 +516,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .expression_facts
             .get(id)
             .map_err(|_| io::Error::other("expression without facts"))?;
-        let (mut ty, category) = retyped.unwrap_or((facts.ty, facts.category));
+        let (mut ty, mut category) = retyped.unwrap_or((facts.ty, facts.category));
         if !bare
             && let Some(conversion) = facts.conversion
             && conversion.initialization
@@ -591,6 +591,20 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 return Err(io::Error::other("call without function type"));
             };
             ty = result;
+            // Printer::call uses the call's own category and declared result,
+            // including when a reference cast retypes its presentation item.
+            category = facts.category;
+        }
+        if matches!(node.kind, ExprKind::Id(_))
+            && let Some(binding) = facts.function
+        {
+            // Printer::id_node spells a selected function's canonical type,
+            // even when a surrounding reference cast retypes the view.
+            ty = self
+                .graph
+                .binding(binding)
+                .ty
+                .ok_or_else(|| io::Error::other("function without type"))?;
         }
         let label = match node.kind {
             ExprKind::Id(_) => "id-expression",

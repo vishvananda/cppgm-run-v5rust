@@ -47,11 +47,12 @@ impl FunctionSets {
 impl Analyzer<'_> {
     pub(super) fn function_designation(
         &mut self,
+        binding: BindingId,
         functions: &[BindingId],
     ) -> Result<ExprFacts, Error> {
-        let binding = *functions
-            .first()
-            .ok_or(Error::Invariant("empty function lookup"))?;
+        if functions.is_empty() {
+            return Err(Error::Invariant("empty function lookup"));
+        }
         let ty = self
             .graph
             .binding(binding)
@@ -91,7 +92,11 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let target = match self.graph.types.get(target).kind {
-            TypeKind::Reference { element, .. } | TypeKind::Pointer(element) => element,
+            TypeKind::Reference { element, .. } => element,
+            _ => target,
+        };
+        let target = match self.graph.types.get(target).kind {
+            TypeKind::Pointer(element) => element,
             _ => target,
         };
         if !matches!(self.graph.types.get(target).kind, TypeKind::Function { .. }) {
@@ -139,20 +144,21 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("function without type"))?;
         let ty = self.graph.types.canonical_function(ty)?;
-        let mut current = id;
-        loop {
-            current = self.graph.expression_facts.root(current);
-            let node = self.tree.expressions.get(current);
-            let next = match node.kind {
-                ast::ExprKind::Unary { op, operand }
-                    if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
-                {
-                    Some((op, operand))
-                }
-                _ => None,
-            };
+        let root = self.graph.expression_facts.root(id);
+        let inner = match self.tree.expressions.get(root).kind {
+            ast::ExprKind::Unary { op, operand }
+                if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
+            {
+                Some(operand)
+            }
+            _ => None,
+        };
+        // resolve_overloaded publishes only the designation and its immediate
+        // unary operand. Deeper unary nodes retain their independently typed facts.
+        for current in std::iter::once(root).chain(inner) {
+            let current = self.graph.expression_facts.root(current);
             let mut facts = self.graph.expression_facts.get(current)?;
-            facts.ty = if next.is_some_and(|(op, _)| op.token.as_punctuator() == Some(P::BitAnd)) {
+            facts.ty = if current == root && inner.is_some() {
                 self.graph.types.pointer(ty)?
             } else {
                 ty
@@ -164,10 +170,6 @@ impl Analyzer<'_> {
             );
             self.graph.expression_facts.set(current, facts);
             super::record(&mut self.graph.expression_types, current.index(), facts.ty);
-            let Some((_, operand)) = next else {
-                break;
-            };
-            current = operand;
         }
         Ok(())
     }

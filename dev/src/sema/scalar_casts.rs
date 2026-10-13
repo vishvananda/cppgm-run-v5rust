@@ -24,8 +24,8 @@ impl Analyzer<'_> {
             ) else {
                 return false;
             };
-            let ca = self.graph.types.get(*a).cv.0;
-            let cb = self.graph.types.get(*b).cv.0;
+            let ca = self.type_cv(*a).0;
+            let cb = self.type_cv(*b).0;
             if ca & !cb != 0 || ca != cb && !const_so_far {
                 return true;
             }
@@ -74,8 +74,8 @@ impl Analyzer<'_> {
         if source.functions.is_some() {
             let binding = self.matching_function(source, target)?.ok_or_else(|| {
                 Error::at(
-                    self.tree.expressions.get(operand).location,
-                    "no overloaded function matches the target type",
+                    self.tree.expressions.get(id).location,
+                    "no overloaded function matches the cast's type",
                 )
             })?;
             self.select_function_designation(operand, binding)?;

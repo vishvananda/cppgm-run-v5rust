@@ -1,0 +1,13 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration f function of (pointer to volatile void) returning int
+  function-declaration f function of (pointer to const volatile void) returning int
+  function-definition g function of (pointer to volatile int) returning int
+    parameter p pointer to volatile int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee f function of (pointer to volatile void) returning int
+          id-expression lvalue pointer to volatile int p
+end translation unit

@@ -17,7 +17,12 @@ use std::cmp::Ordering;
 #[derive(Default)]
 pub(super) struct CallScratch {
     candidates: Vec<(BindingId, usize)>,
-    sequences: Vec<Option<Conversion>>,
+    sequences: Vec<Option<ArgumentSequence>>,
+}
+#[derive(Clone, Copy)]
+struct ArgumentSequence {
+    conversion: Conversion,
+    function: Option<BindingId>,
 }
 impl Analyzer<'_> {
     pub(super) fn procedural_call(
@@ -104,6 +109,8 @@ impl Analyzer<'_> {
             // Nested argument calls finish before this query borrows the reusable scratch.
             let mut scratch = std::mem::take(&mut self.call_scratch);
             let chosen = self.resolve_call(id, set, arguments, &mut scratch);
+            scratch.candidates.clear();
+            scratch.sequences.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
             self.select_function_designation(callee, binding)?;
@@ -172,7 +179,8 @@ impl Analyzer<'_> {
         &mut self,
         mut facts: ExprFacts,
         target: TypeId,
-    ) -> Result<Option<Conversion>, Error> {
+    ) -> Result<Option<ArgumentSequence>, Error> {
+        let mut function = None;
         if facts.functions.is_some() {
             let Some(binding) = self.matching_function(facts, target)? else {
                 return Ok(None);
@@ -189,8 +197,14 @@ impl Analyzer<'_> {
                 ty
             };
             facts.functions = None;
+            function = Some(binding);
         }
-        self.scalar_sequence(facts, target, false)
+        Ok(self
+            .scalar_sequence(facts, target, false)?
+            .map(|conversion| ArgumentSequence {
+                conversion,
+                function,
+            }))
     }
     fn resolve_call(
         &mut self,
@@ -277,24 +291,14 @@ impl Analyzer<'_> {
             }
         }
         let (binding, first) = scratch.candidates[best];
-        let ty = self
-            .graph
-            .binding(binding)
-            .ty
-            .ok_or(Error::Invariant("selected function without type"))?;
-        let ty = self.graph.types.canonical_function(ty)?;
         for (index, &arg) in args.iter().enumerate() {
-            if let Some(conversion) = scratch.sequences[first + index] {
+            if let Some(sequence) = scratch.sequences[first + index] {
                 let mut facts = self.graph.expression_facts.get(arg)?;
-                if facts.functions.is_some() {
-                    let target = self.graph.types.function_parameter(ty, index)?;
-                    let binding = self
-                        .matching_function(facts, target)?
-                        .ok_or(Error::Invariant("selected function argument disappeared"))?;
+                if let Some(binding) = sequence.function {
                     self.select_function_designation(arg, binding)?;
                     facts = self.graph.expression_facts.get(arg)?;
                 }
-                facts.conversion = Some(conversion);
+                facts.conversion = Some(sequence.conversion);
                 self.graph.expression_facts.set(arg, facts);
             } else {
                 self.ellipsis_argument(arg)?;
@@ -315,7 +319,7 @@ impl Analyzer<'_> {
         let mut worse = false;
         for index in 0..count {
             let order = match (scratch.sequences[af + index], scratch.sequences[bf + index]) {
-                (Some(a), Some(b)) => self.compare_sequences(a, b)?,
+                (Some(a), Some(b)) => self.compare_sequences(a.conversion, b.conversion)?,
                 (Some(_), None) => Ordering::Greater,
                 (None, Some(_)) => Ordering::Less,
                 (None, None) => Ordering::Equal,

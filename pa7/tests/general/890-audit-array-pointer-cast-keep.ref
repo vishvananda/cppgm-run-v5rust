@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable a array of 2 const int
+    braced-init-list lvalue array of 2 const int
+  variable p pointer to const void
+    cast-expression prvalue pointer to const void KW_REINTERPET_CAST:reinterpret_cast
+      unary-expression prvalue pointer to array of 2 const int OP_AMP:&
+        id-expression lvalue array of 2 const int a
+end translation unit

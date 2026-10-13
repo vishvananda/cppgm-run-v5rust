@@ -56,6 +56,10 @@ impl Analyzer<'_> {
                 ))
             )
     }
+    pub(super) fn is_arithmetic_type(&self, ty: TypeId) -> bool {
+        !matches!(self.graph.types.get(ty).kind, TypeKind::Enum(_))
+            && self.is_arithmetic_operand(ty)
+    }
     pub(super) fn standard_conversion(
         &mut self,
         facts: ExprFacts,
@@ -71,11 +75,14 @@ impl Analyzer<'_> {
             _ if facts.category != V::Prvalue => L::Read,
             _ => L::None,
         };
-        let qualification = source != goal && self.pointer_qualification(source, goal)?;
+        let mut qualification = source != goal && self.pointer_qualification(source, goal)?;
         let promotion = self.is_integral_operand(source)
-            && self.is_integral_operand(goal)
+            && self.is_arithmetic_type(goal)
             && source != goal
-            && self.promoted_type(source)? == goal;
+            && (self.promoted_type(source)? == goal
+                || matches!(self.graph.types.get(source).kind, TypeKind::Enum(entity)
+                    if self.graph.entity(entity).enumeration.is_some_and(|info|
+                        info.fixed && info.underlying == Some(goal))));
         let sk = &self.graph.types.get(source).kind;
         let gk = &self.graph.types.get(goal).kind;
         let second = if source == goal || qualification {
@@ -103,7 +110,7 @@ impl Analyzer<'_> {
             } else {
                 return Ok(None);
             }
-        } else if self.is_arithmetic_operand(source) && self.is_arithmetic_operand(goal) {
+        } else if self.is_arithmetic_operand(source) && self.is_arithmetic_type(goal) {
             C::Arithmetic
         } else if (facts.null_literal || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)))
             && (matches!(gk, TypeKind::Pointer(_))
@@ -115,8 +122,9 @@ impl Analyzer<'_> {
                 self.graph.types.get(*b).kind,
                 TypeKind::Scalar(Scalar::Void)
             ) && !matches!(self.graph.types.get(*a).kind, TypeKind::Function { .. })
-                && self.graph.types.get(*a).cv.0 & !self.graph.types.get(*b).cv.0 == 0
+                && self.type_cv(*a).0 & !self.type_cv(*b).0 == 0
             {
+                qualification = self.type_cv(*a) != self.type_cv(*b);
                 C::Pointer
             } else {
                 return Ok(None);
@@ -230,8 +238,7 @@ impl Analyzer<'_> {
             if reference_qualification
                 || compatible
                     && (lvalue && facts.category == V::Lvalue
-                        || facts.category == V::Xvalue
-                        || function
+                        || (!lvalue || constant) && (facts.category == V::Xvalue || function)
                         || facts.category == V::Prvalue && (constant || !lvalue))
             {
                 Some(Conversion {
