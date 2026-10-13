@@ -1,0 +1,24 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias integer int
+  type-alias boolean bool
+  variable object int
+  variable value const int
+    cast-expression prvalue const int
+      literal prvalue int 3
+  variable zero const int
+    literal prvalue const int 0
+  variable truth const bool
+    cast-expression prvalue const bool
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int object
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            id-expression lvalue const int value
+            id-expression lvalue const int zero
+          id-expression lvalue const bool truth
+end translation unit

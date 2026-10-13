@@ -1,0 +1,45 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable text const pointer to const char
+    literal lvalue const pointer to const char "abc"
+  variable same const bool
+    binary-expression prvalue const bool OP_EQ:==
+      binary-expression prvalue pointer to const char OP_PLUS:+
+        id-expression lvalue const pointer to const char text
+        literal prvalue int 1
+      binary-expression prvalue pointer to const char OP_PLUS:+
+        literal lvalue array of 4 const char "abc"
+        literal prvalue int 1
+  variable distance const long int
+    binary-expression prvalue const long int OP_MINUS:-
+      binary-expression prvalue pointer to const char OP_PLUS:+
+        id-expression lvalue const pointer to const char text
+        literal prvalue int 3
+      id-expression lvalue const pointer to const char text
+  variable element const int
+    unary-expression lvalue const char OP_STAR:*
+      binary-expression prvalue pointer to const char OP_PLUS:+
+        id-expression lvalue const pointer to const char text
+        literal prvalue int 1
+  variable reference lvalue-reference to const char
+    subscript-expression lvalue const char
+      literal lvalue array of 4 const char "abc"
+      literal prvalue int 2
+  variable referred const int
+    id-expression lvalue const char reference
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue long int OP_PLUS:+
+          binary-expression prvalue long int OP_PLUS:+
+            binary-expression prvalue long int OP_PLUS:+
+              binary-expression prvalue long int OP_PLUS:+
+                binary-expression prvalue long int OP_PLUS:+
+                  id-expression lvalue const bool same
+                  id-expression lvalue const long int distance
+                id-expression lvalue const int element
+              id-expression lvalue const int referred
+            literal prvalue int 1
+          literal prvalue int 0
+end translation unit

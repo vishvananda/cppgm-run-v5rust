@@ -55,7 +55,11 @@ impl Analyzer<'_> {
             Ok(())
         }
     }
-    fn check_constant_bool(&self, value: Constant, location: SourceOffset) -> Result<(), Error> {
+    pub(super) fn check_constant_bool(
+        &self,
+        value: Constant,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         if self.evaluating_noexcept {
             self.exception_bool(value.ty, location)
         } else {
@@ -117,6 +121,14 @@ impl Analyzer<'_> {
             && let Some(bits) = facts.folded.or(facts.query_value)
         {
             return Ok(Constant { bits, ty: facts.ty });
+        }
+        if self.semantic()
+            && let Some(value) = self.address_integral_value(id, scope, skipping)?
+        {
+            if !skipping {
+                super::record(&mut self.graph.constant_facts, id.index(), value);
+            }
+            return Ok(value);
         }
         if self.evaluating_noexcept
             && let Some(value) = self.graph.constant_fact(id)
@@ -278,6 +290,28 @@ impl Analyzer<'_> {
                 }
             }
             ExprKind::Call { .. } if self.semantic() => {
+                if self.graph.expression_facts.get(id)?.functional_call {
+                    let ExprKind::Call { arguments, .. } = expr.kind else {
+                        return Err(Error::Invariant("functional call without arguments"));
+                    };
+                    let ty = self.graph.expression_facts.get(id)?.ty;
+                    let values = self.tree.expr_lists.get(arguments);
+                    let values = if let [value] = values
+                        && let ExprKind::Braced { elements, .. } =
+                            self.tree.expressions.get(*value).kind
+                    {
+                        self.tree.expr_lists.get(elements)
+                    } else {
+                        values
+                    };
+                    return self.constant_cast(
+                        ty,
+                        values.first().copied(),
+                        scope,
+                        skipping,
+                        location,
+                    );
+                }
                 return self.constant_call(id, scope, skipping);
             }
             _ => {
@@ -308,12 +342,8 @@ impl Analyzer<'_> {
                 "constant conditional without conditional syntax",
             ));
         };
-        let condition_value = self.evaluate_constant(condition, scope, skipping)?;
-        self.check_constant_bool(
-            condition_value,
-            self.tree.expressions.get(condition).location,
-        )?;
-        let (selected, other) = if condition_value.bits != 0 {
+        let truth = self.constant_truth(condition, scope, skipping)?;
+        let (selected, other) = if truth {
             (then_expr, else_expr)
         } else {
             (else_expr, then_expr)
@@ -382,8 +412,20 @@ impl Analyzer<'_> {
         let ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("constant call without call syntax"));
         };
-        self.evaluate_constant(callee, scope, false)?;
-        Err(Error::Missing("constant indirect call evaluation"))
+        let address = self.evaluate_address(callee, scope)?;
+        let super::constant_addresses::Root::Function(entity) = address.root else {
+            return Err(not_constant(
+                self.tree.expressions.get(id).location,
+                "a call through a pointer that designates no function",
+            ));
+        };
+        if !self.graph.entity(entity).constexpr {
+            return Err(not_constant(
+                self.tree.expressions.get(id).location,
+                "a call of a function that is not constexpr",
+            ));
+        }
+        Err(Error::Missing("constexpr function interpretation"))
     }
     fn constant_assignment(
         &mut self,
@@ -525,6 +567,12 @@ impl Analyzer<'_> {
             self.lookup(name, scope, Filter::Ordinary)?
         };
         let binding = self.graph.binding(found);
+        if self.semantic() && !skipping && binding.kind == BindingKind::Variable
+            && binding.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Reference { element, .. } if self.integral_kind(element).is_some()))
+        {
+            let place = self.constant_place(id, scope)?;
+            return self.read_constant_integer(place, location);
+        }
         if matches!(
             binding.kind,
             BindingKind::Type
@@ -635,7 +683,7 @@ impl Analyzer<'_> {
             left, assignment, ..
         } = self.tree.expressions.get(id).kind
         {
-            if self.semantic() && assignment {
+            if self.semantic() && (assignment || self.consumes_address(id)) {
                 break;
             }
             self.constant_spine.push(id);
@@ -927,12 +975,18 @@ impl Analyzer<'_> {
         initializer: ast::Initializer,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        if self.semantic() {
+            self.record_address_initializer(entity, initializer, scope)?;
+        }
         let ty = self
             .graph
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("constant object without type"))?;
         let reference = matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. });
+        if self.semantic() && reference {
+            return Ok(());
+        }
         let object = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
             element
         } else {
@@ -964,7 +1018,27 @@ impl Analyzer<'_> {
         while let ExprKind::Paren(id) = self.tree.expressions.get(inner).kind {
             inner = id;
         }
-        let value = if reference && let ExprKind::Id(name) = self.tree.expressions.get(inner).kind {
+        let value = if self.semantic()
+            && matches!(
+                self.graph.types.get(object).kind,
+                TypeKind::Scalar(Scalar::Bool)
+            )
+            && self.is_address_expression(expr)
+        {
+            match self.constant_truth(expr, scope, false) {
+                Ok(value) => Some(Constant {
+                    bits: u64::from(value),
+                    ty: self.bare_type(object)?,
+                }),
+                Err(Error::NonConstant { location, message })
+                    if self.graph.entity(entity).constexpr =>
+                {
+                    return Err(Error::at(location, message));
+                }
+                Err(Error::NonConstant { .. }) => None,
+                Err(error) => return Err(error),
+            }
+        } else if reference && let ExprKind::Id(name) = self.tree.expressions.get(inner).kind {
             let found = if self.semantic() {
                 self.graph
                     .resolved_name(name)

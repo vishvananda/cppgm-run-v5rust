@@ -94,6 +94,7 @@ pub(super) struct VariableProperties {
     // The C++ entity retains these facts from its first declaration.
     pub is_extern: bool,
     pub automatic: bool,
+    pub thread_storage: super::specifiers::ThreadStorage,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum MemberKind {
@@ -186,6 +187,7 @@ pub(crate) struct Graph {
     pub(super) binding_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) special_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
+    pub(super) constant_addresses: super::constant_addresses::Addresses,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
@@ -309,6 +311,7 @@ impl Graph {
             binding_labels: HashMap::new(),
             special_labels: HashMap::new(),
             constant_facts: Vec::new(),
+            constant_addresses: super::constant_addresses::Addresses::default(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
             expression_scopes: Vec::new(),

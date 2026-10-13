@@ -72,15 +72,7 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let target = self.graph.types.canonical_function(target)?;
         let source = self.typed_expression(operand, scope)?;
-        if source.functions.is_some() {
-            let binding = self.matching_function(source, target)?.ok_or_else(|| {
-                Error::at(
-                    self.tree.expressions.get(id).location,
-                    "no overloaded function matches the cast's type",
-                )
-            })?;
-            self.select_function_designation(operand, binding)?;
-        }
+        self.resolve_cast_function(id, operand, source, target)?;
         let source = self.graph.expression_facts.get(operand)?;
         if cast == Some(K::DynamicCast) {
             return Err(Error::Missing("class explicit conversions"));
@@ -158,6 +150,11 @@ impl Analyzer<'_> {
             } else {
                 V::Xvalue
             };
+            let mut converted = self.graph.expression_facts.get(operand)?;
+            if let Some(conversion) = converted.conversion.as_mut() {
+                conversion.initialization = false;
+            }
+            self.graph.expression_facts.set(operand, converted);
             let mut facts = self.new_expression_facts(element, category)?;
             facts.reference_cast = Some(target);
             return Ok(facts);
@@ -297,6 +294,29 @@ impl Analyzer<'_> {
         });
         self.graph.expression_facts.set(operand, facts);
         self.new_expression_facts(goal, V::Prvalue)
+    }
+    fn resolve_cast_function(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+        source: ExprFacts,
+        target: TypeId,
+    ) -> Result<(), Error> {
+        if source.functions.is_none() {
+            return Ok(());
+        }
+        let binding = if let Some(binding) = self.ordinary_function_operand(source) {
+            Some(binding)
+        } else {
+            self.matching_function(source, target)?
+        };
+        let binding = binding.ok_or_else(|| {
+            Error::at(
+                self.tree.expressions.get(id).location,
+                "no overloaded function matches the cast's type",
+            )
+        })?;
+        self.select_function_designation(operand, binding)
     }
     fn reference_hierarchy_cast(
         &mut self,

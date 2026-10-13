@@ -16,6 +16,11 @@ impl<T> PartialEq for Id<T> {
     }
 }
 impl<T> Eq for Id<T> {}
+impl<T> std::hash::Hash for Id<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.0, state);
+    }
+}
 impl<T> Clone for Id<T> {
     fn clone(&self) -> Self {
         *self

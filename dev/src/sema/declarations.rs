@@ -824,6 +824,7 @@ impl Analyzer<'_> {
             if kind == BindingKind::Variable {
                 self.graph.entity_mut(entity).variable = Some(super::graph::VariableProperties {
                     is_extern: specs.is_extern,
+                    thread_storage: specs.thread_storage,
                     automatic: self.graph.scope(home).kind == ScopeKind::Block
                         && !specs.is_static
                         && !specs.is_extern

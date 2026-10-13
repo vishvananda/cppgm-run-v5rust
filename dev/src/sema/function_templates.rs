@@ -37,6 +37,9 @@ pub(super) struct FunctionTemplates {
     demanded_bodies: HashSet<EntityId>,
 }
 impl FunctionTemplates {
+    pub(super) fn requires_target(&self, binding: BindingId) -> bool {
+        self.explicit.contains_key(&binding)
+    }
     pub(super) fn body_demanded(&self, primary: EntityId) -> bool {
         self.demanded_bodies.contains(&primary)
     }

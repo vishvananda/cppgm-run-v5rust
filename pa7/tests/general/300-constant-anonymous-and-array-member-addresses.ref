@@ -1,0 +1,47 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable __anonymous_union_storage__1_10 union __anonymous_union_type__1_10
+    constructor-action __anonymous_union_type__1_10::__anonymous_union_type__1_10
+      call-expression prvalue void
+        callee __anonymous_union_type__1_10::__anonymous_union_type__1_10 function of (pointer to union __anonymous_union_type__1_10) returning void
+        unary-expression prvalue pointer to union __anonymous_union_type__1_10 OP_AMP:&
+          id-expression lvalue union __anonymous_union_type__1_10 __anonymous_union_storage__1_10
+  variable object struct object_type
+    constructor-action object_type::object_type
+      call-expression prvalue void
+        callee object_type::object_type function of (pointer to struct object_type) returning void
+        unary-expression prvalue pointer to struct object_type OP_AMP:&
+          id-expression lvalue struct object_type object
+  variable aliases const bool
+    binary-expression prvalue const bool OP_EQ:==
+      unary-expression prvalue pointer to int OP_AMP:&
+        member-expression lvalue int first
+          id-expression lvalue union __anonymous_union_type__1_10 __anonymous_union_storage__1_10
+      unary-expression prvalue pointer to int OP_AMP:&
+        member-expression lvalue int second
+          id-expression lvalue union __anonymous_union_type__1_10 __anonymous_union_storage__1_10
+  variable element const bool
+    binary-expression prvalue const bool OP_EQ:==
+      binary-expression prvalue pointer to int OP_PLUS:+
+        member-expression lvalue array of 3 int OP_DOT:array
+          id-expression lvalue struct object_type object
+        literal prvalue int 2
+      unary-expression prvalue pointer to int OP_AMP:&
+        subscript-expression lvalue int
+          member-expression lvalue array of 3 int OP_DOT:array
+            id-expression lvalue struct object_type object
+          literal prvalue int 2
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          id-expression lvalue const bool aliases
+          id-expression lvalue const bool element
+  function-definition __anonymous_union_type__1_10::__anonymous_union_type__1_10 function of (pointer to union __anonymous_union_type__1_10) returning void
+    parameter this pointer to union __anonymous_union_type__1_10
+    compound-statement
+  function-definition object_type::object_type function of (pointer to struct object_type) returning void
+    parameter this pointer to struct object_type
+    compound-statement
+end translation unit

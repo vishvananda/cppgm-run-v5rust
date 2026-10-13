@@ -1,8 +1,189 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `fd213562ce8bebe7a4bb1ed0e3fba1944e1535f4` (clean full-stage audit entry).
-Last audited commit: `fd213562ce8bebe7a4bb1ed0e3fba1944e1535f4` (full-stage entry audit; acceptance withheld). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+Current implementation group base: `47bb96aef40fbfb74c1c064747685eeb779f989d` (clean continued audit entry).
+Last audited commit: `47bb96aef40fbfb74c1c064747685eeb779f989d` (continued full-stage entry audit; acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+
+
+## Symbolic address acceptance-audit checkpoint — 2026-10-13
+
+The preceding turn made authoritative progress in `47bb96a`; this turn inspected
+its clean worktree, current ledger, source map and retained receipts before
+continuing the same full-stage audit. **The six preceding address findings are
+resolved. Full-stage acceptance remains open pending the remaining complete
+stage-owned source-responsibility review.** Passing this checkpoint's fixtures
+and probes is not a substitute for that review or for later implementation-wide
+PA33 ownership/release checks. Ralph's existing goal/state and acceptance policy
+were not changed or replaced.
+
+Reviewed entry/group base:
+`47bb96aef40fbfb74c1c064747685eeb779f989d`.
+Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-address-audit-20261013/`.
+`checks.json` records final command exits and costs; `handoff.json` records the
+committed checkpoint and explicit still-open audit status. Final Rust cppgm
+SHA-256: `2f1998fc86dac9aeb980a4612efad1ae446078bc2d20e537d544e4a67dee1d94`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+### Reviewed C++ responsibilities and Rust ownership
+
+Read the owning handout and current contracts/plan/ledger; consulted frozen
+`sema/constant_values.h`, `constant_interpreter.cpp`'s literal identity,
+read/storage, array bounds, advance, publication and reference-temporary rules,
+`constant_expressions.cpp`'s rvalue/glvalue, entity/member/reference-cast places,
+scalar conversions, pointer arithmetic/comparison and conditional control flow,
+`constant_statements.cpp`'s indirect-call/evaluable paths,
+`constant_evaluator.cpp`'s initializer/variable-value entries,
+`analyzer_builtins.cpp::constant_p_call`, `entity_records.h::VariableEntity`,
+`analyzer_expressions.cpp`'s singleton function and explicit/reference casts,
+`analyzer_calls.cpp`'s sequences/ADL, and `semantics_dump.cpp`'s initializing
+versus explicit conversion views. Source-map rows record partial ownership and
+future interpreter/class/template boundaries explicitly.
+
+- `constant_addresses.rs` owns symbolic null, variable, function, literal,
+  extended scalar temporary and query-local scalar temporary roots. Values
+  retain canonical designated `TypeId`, deliberate signed target byte offsets
+  and one-past flags. Private typed stores distinguish evaluating, unavailable
+  and successful values. Original committed `EntityId`/`ExprId` keys replace host
+  pointers; generic syntax-ID hashing follows ordinal equality without payload
+  trait bounds. Hash iteration never controls output order.
+- Places and reads remain different operations. Taking an object's address or
+  walking its array consumes its type/layout without reading variable storage.
+  Scalar/reference reads preserve volatile, uninitialized, nonconstant,
+  null-indirection and one-past diagnostics. Literal reads consume decoded bytes
+  through checked host offsets. Array/subarray and class/anonymous-member bounds
+  preserve source order, C++'s 256-level walk and first matching subobject rules.
+  Pointer moves/differences use explicit target wrapping and scalar/object bounds,
+  not host addresses or fabricated zero adjustments.
+- `constant_pointer_operations.rs` consumes recorded expression facts for
+  null/object/function/literal equality, order, difference, truth, short-circuit
+  logic and pointer/integer casts. Literal identity uses type/kind and decoded
+  code units, preserving the frozen literal-merging choice. Reference casts use
+  their original selected conversions, including scalar temporary binding;
+  unsupported inherited layouts, member-pointer adjustments and general object
+  interpretation retain explicit dependencies.
+- Pointer/null constants and references are checked at their declaration.
+  Publishing an address requires static non-thread storage; ordinary evaluation
+  can use local addresses to form an integer result. First-declaration typed
+  `ThreadStorage` is retained beside automatic/extern facts. Direct scalar
+  temporaries may persist with their reference; a glvalue reference cast's
+  query-local temporary cannot be published by pretending it has static lifetime.
+  Successful immutable cast-temporary values are memoized by their original
+  bound expression identity. Frame-dependent/instantiated body evaluation cannot
+  enter this memo; it remains an explicit missing owner.
+- Integral reference initialization binds a place instead of prematurely reading
+  its referent. Later reads consume the recorded place and view. Implicit
+  pointer/function-to-bool constants use that same scalar truth operation.
+  Integer type-name calls consume original argument ranges and retained cast
+  facts, while alias reference forms follow the C++ glvalue rule. Static member
+  designation evaluates its object expression, preserving the frozen distinction
+  between a static member reached through null and a nonstatic null-member access.
+- `__builtin_constant_p` returns one for supported integral values or symbolic
+  null/literal roots and zero for genuine nonconstant results or other addresses.
+  An unported execution path still returns 86; no generic zero hides missing
+  semantics. Indirect function-reference/pointer constant calls consume the
+  retained function identity and diagnose null/non-constexpr calls. Actual
+  constexpr bodies/frames remain a later owning group.
+- Singleton ordinary function operands retain their known identity for casts,
+  standard conversion sequences and ADL of their signature types. Genuine
+  overload sets and partial explicit template bindings still require target
+  deduction. The selected function/conversion remains recorded on the original
+  operand; losing candidates publish no selection. Explicit reference-cast
+  conversions are noninitializing facts, preventing an extra fabricated
+  temporary-conversion node in the semantic view.
+
+No syntax/tree copy, text transport, reparse, source recognition, C++ production
+fallback, new dependency, unsafe code, environment read, blanket lint allowance
+or policy change was added. The two new files own distinct value/place and
+arithmetic/bounds algorithms. When strict Clippy and the companion audit caught
+oversized dispatchers, their cohesive reference-cast and function-selection
+algorithms were extracted without a waiver or a mechanical part split. Backend,
+optimizer, allocator and generated-code policies are untouched; PA35 targets and
+PA34 object equality are not claimed by semantic-view comparisons.
+
+The ownership test proves compact array root identity, target byte offset 12 and
+one-past state, a reference's distinct pointer-object view, retained literal
+syntax identity, extended scalar storage, and integer result publication. Integer
+facts never stand in for an address. Twenty-three required new regressions and
+new immutable-oracle-derived references live in PA7's executed general lane;
+existing compiler inputs, references and protected manifests were not changed.
+
+### Exact validation and preservation evidence
+
+| Command / check | Final result | Artifact relative to root |
+| --- | --- | --- |
+| `make build` | Pass, locked release workspace | `build-final.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | Pass, 198/198 fixed identities | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | Pass, same fixed coverage | `stage-make.log` |
+| `make course-pa7` | Pass, 263/263, no failure marker | `course-final.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | Pass, all PA1–PA6 fixed and full course lanes | `prior-final.log`, `prior-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | Pass | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | Pass | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | Pass, rustfmt, strict Clippy, 182 library tests in debug/release plus tool/doc tests and file audit | `lint-final.log` |
+| `make audit-rust` | Pass, 134 files, zero findings | `audit-final.log` |
+| `python3 .../pa7-address-audit-20261013/probe.py` | 147/147 protected address/conversion/publication comparisons | `address-probes.jsonl`, `address-summary.json`, `address-initial.jsonl` |
+| Copied preceding full-stage `inherited-probe.py` | 62/62; all six preceding failures resolved | `baseline-probe.log`, `probes.jsonl`, `probe-summary.json` |
+| Copied signature/initialization/scalar audit probes | 70/70, 78/78, 55/55 | `templates/`, `initialization/`, `scalar-audit/` probe summaries/receipts |
+| `python3 .../pa7-address-audit-20261013/measure.py` | Exact workload outputs, 12 scaling receipts and two protected native qualifications | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+Fixed preservation is independently 198 entry/current passes, zero lost and
+unchanged manifest coverage. `stage-entry.log` reuses the verified entry commit's
+preceding checkpoint receipt; final gates were actually executed on this binary.
+Full-lane identity preservation compares the entry commit's 240 `.t` identities
+with the final trace: every entry ran and matched, exactly 23 new cases ran, and
+all 263 receipts match. PA1–PA6 retain 58/26/20/106/196/121 fixed passes and
+58/28/20/112/296/694 full-course passes. Raw outputs/traces remain under the
+protected clone case/course artifact roots as well as supplementary mismatch
+receipts. The transient xvalue-reference regression was caught by both the
+preceding scalar probe and full course lane, corrected and rerun;
+`course-regression-trace.jsonl` and `course-regression-result.json` retain that
+failed attempt rather than presenting it as an accepted negative case.
+
+### Resource observations and protected native qualification
+
+Accepted warm measurements ran alone after all gate and probe jobs finished,
+using A/A calibration followed by ABBA/BAAB samples. All source/binary hashes,
+wall/RSS readings and output digests are retained; every digest agrees and all
+12 protected scaling receipts match. An earlier overlapping-probe measurement
+is retained with `-contended` filenames and is excluded from this table. Counts
+are pointer/boolean declaration pairs; distinct-root inputs additionally declare
+one array per pair. Observations include startup and dump I/O and make no
+hardware-counter, equal-runtime or generated-code improvement claim.
+
+| Workload / pairs | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| shared-root / 128 | 7.91 / 6476 | 25.73 / 8752 |
+| distinct-roots / 128 | 7.14 / 6494 | 20.39 / 7994 |
+| shared-root / 512 | 15.28 / 7222 | 38.06 / 8374 |
+| distinct-roots / 512 | 16.21 / 7854 | 35.48 / 8370 |
+| shared-root / 2048 | 32.83 / 11434 | 71.98 / 14156 |
+| distinct-roots / 2048 | 34.03 / 12092 | 88.96 / 16310 |
+
+Native probes fix 1,000 nested pointer conditionals and 1,500 parentheses around
+an address comparison, starting at 1 MiB. Both protected receipts report
+`match: true` and `stack_qualification.passed: true`, with identical successful
+streams/files at a shared 16 MiB stack. Raw attempts/retries are retained under
+`stack-qualifications/`; original exhaustion positions/exits are not treated as
+language defects or calibrated to C++ frame sizes. The genuine byte-budget guard
+is unchanged. Shared storage remains about 28.59 GB used under the
+107,374,182,400-byte ceiling.
+
+### Remaining acceptance work and next boundary
+
+There are **no failing fixed/course identities or executed supplementary probe
+IDs in this checkpoint**. The six sources listed by the preceding audit now all
+match, including nonconstant pointer/array queries, null casts, object-address
+queries, pointer comparisons and constexpr null equality. This closes that
+concrete finding group, not the entire acceptance audit.
+
+Continue the complete PA7 source-responsibility census/review of declaration and
+procedural control flow, default visibility, conversion/ranking and semantic
+rendering beyond these address paths. Keep the named later-class/template/
+constexpr-frame boundaries recorded below distinct from due procedural work.
+Do not infer full-stage acceptance from the green counts, erase unfinished
+production owners, advance Ralph's stage, or claim PA33/PA34 obligations are met.
 
 
 ## Full-stage acceptance audit checkpoint — 2026-10-13

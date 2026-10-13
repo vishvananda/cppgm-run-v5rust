@@ -1,0 +1,67 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable first int
+  variable second int
+  function-declaration function function of (int) returning int
+  variable null_equal const bool
+    binary-expression prvalue const bool OP_EQ:==
+      literal prvalue nullptr_t KW_NULLPTR:nullptr
+      literal prvalue nullptr_t KW_NULLPTR:nullptr
+  variable same const bool
+    binary-expression prvalue const bool OP_EQ:==
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+  variable different const bool
+    binary-expression prvalue const bool OP_NE:!=
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int second
+  variable function_equal const bool
+    binary-expression prvalue const bool OP_EQ:==
+      unary-expression prvalue pointer to function of (int) returning int OP_AMP:&
+        id-expression lvalue function of (int) returning int function
+      unary-expression prvalue pointer to function of (int) returning int OP_AMP:&
+        id-expression lvalue function of (int) returning int function
+  variable implicit const bool
+    unary-expression prvalue pointer to int OP_AMP:&
+      id-expression lvalue int first
+  variable function_implicit const bool
+    id-expression lvalue function of (int) returning int function
+  variable truth const bool
+    binary-expression prvalue const bool OP_LOR:||
+      literal prvalue nullptr_t KW_NULLPTR:nullptr
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+  variable selected const pointer to int
+    conditional-expression prvalue const pointer to int
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int first
+      literal prvalue nullptr_t KW_NULLPTR:nullptr
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  binary-expression prvalue int OP_PLUS:+
+                    binary-expression prvalue int OP_PLUS:+
+                      id-expression lvalue const bool null_equal
+                      id-expression lvalue const bool same
+                    id-expression lvalue const bool different
+                  id-expression lvalue const bool function_equal
+                id-expression lvalue const bool implicit
+              id-expression lvalue const bool function_implicit
+            id-expression lvalue const bool truth
+          binary-expression prvalue bool OP_EQ:==
+            id-expression lvalue const pointer to int selected
+            unary-expression prvalue pointer to int OP_AMP:&
+              id-expression lvalue int first
+end translation unit

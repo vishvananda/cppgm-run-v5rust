@@ -97,14 +97,18 @@ impl Analyzer<'_> {
                     ..
                 })
         );
-        if !constant
+        if !constant && self.is_address_expression(operand) {
+            constant = self.address_value(operand, scope)?.is_some_and(|value| {
+                matches!(
+                    value.root,
+                    super::constant_addresses::Root::Null
+                        | super::constant_addresses::Root::Literal(_)
+                )
+            });
+        } else if !constant
             && matches!(
                 self.graph.types.get(facts.ty).kind,
-                TypeKind::Pointer(_)
-                    | TypeKind::Array { .. }
-                    | TypeKind::Scalar(
-                        Scalar::Nullptr | Scalar::Basic(F::Float | F::Double | F::LongDouble)
-                    )
+                TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
             )
         {
             return Err(Error::Missing(

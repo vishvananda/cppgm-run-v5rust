@@ -1,0 +1,44 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable array array of 3 int
+  variable pointer const pointer to int
+    id-expression lvalue const pointer to int array
+  variable pointer_reference lvalue-reference to const pointer to int
+    id-expression lvalue const pointer to int pointer
+  variable element_reference lvalue-reference to int
+    subscript-expression lvalue int
+      id-expression lvalue array of 3 int array
+      literal prvalue int 1
+  variable temporary lvalue-reference to const int
+    literal prvalue int 7
+  variable object const int
+    literal prvalue int 3
+  variable value const int
+    unary-expression lvalue const int OP_STAR:*
+      unary-expression prvalue pointer to const int OP_AMP:&
+        id-expression lvalue const int object
+  variable same const bool
+    binary-expression prvalue const bool OP_EQ:==
+      id-expression lvalue const pointer to int pointer_reference
+      id-expression lvalue array of 3 int array
+  variable element const bool
+    binary-expression prvalue const bool OP_EQ:==
+      unary-expression prvalue pointer to int OP_AMP:&
+        id-expression lvalue int element_reference
+      binary-expression prvalue pointer to int OP_PLUS:+
+        id-expression lvalue array of 3 int array
+        literal prvalue int 1
+  variable extended const int
+    id-expression lvalue const int temporary
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              id-expression lvalue const int value
+              id-expression lvalue const bool same
+            id-expression lvalue const bool element
+          id-expression lvalue const int extended
+end translation unit

@@ -1,0 +1,26 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable object int
+  variable array array of 3 int
+  function-declaration function function of (int) returning int
+  variable zero const pointer to int
+    literal prvalue nullptr_t KW_NULLPTR:nullptr
+  function-definition queries function of (pointer to int) returning int
+    parameter pointer pointer to int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  binary-expression prvalue int OP_PLUS:+
+                    literal prvalue int 0
+                    literal prvalue int 0
+                  literal prvalue int 0
+                literal prvalue int 0
+              literal prvalue int 1
+            literal prvalue int 1
+          literal prvalue int 1
+end translation unit

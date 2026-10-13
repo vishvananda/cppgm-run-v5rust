@@ -239,7 +239,12 @@ impl Analyzer<'_> {
     ) -> Result<Option<ArgumentSequence>, Error> {
         let mut function = None;
         if facts.functions.is_some() {
-            let Some(binding) = self.matching_function(facts, target)? else {
+            let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
+                Some(binding)
+            } else {
+                self.matching_function(facts, target)?
+            };
+            let Some(binding) = binding else {
                 return Ok(None);
             };
             let ty = self.graph.types.canonical_function(

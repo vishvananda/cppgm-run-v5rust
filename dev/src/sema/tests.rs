@@ -13,6 +13,83 @@ use crate::{
 };
 
 #[test]
+fn constant_addresses_keep_root_identity_views_offsets_and_extended_storage() {
+    use super::{constant_addresses::Root, constants::ConstantState};
+    let source = SourceBuffer::new(b"int a[3];constexpr int*p=a+3;int*const&r=p;constexpr long distance=p-a;constexpr const char*t=\"abc\";constexpr bool equal=t+1==\"abc\"+1;const int&temporary=7;constexpr int read=temporary;int f(int);constexpr bool callable=f;".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"address-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let mut entity = |spelling: &[u8]| {
+        let name = cursor.intern_name(spelling).unwrap();
+        graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity
+    };
+    let array = entity(b"a");
+    let pointer = entity(b"p");
+    let reference = entity(b"r");
+    let value = graph.constant_addresses.value(pointer).unwrap();
+    assert_eq!(value.root, Root::Variable(array));
+    assert_eq!(value.offset, 12);
+    assert!(value.past_end);
+    assert!(matches!(
+        graph.types.get(value.designated).kind,
+        TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))
+    ));
+    let view = graph.constant_addresses.value(reference).unwrap();
+    assert_eq!(view.root, Root::Variable(pointer));
+    assert_eq!(view.offset, 0);
+    assert!(!view.past_end);
+    assert!(matches!(
+        graph.types.get(view.designated).kind,
+        TypeKind::Pointer(_)
+    ));
+    assert_ne!(view.designated, value.designated);
+    for (spelling, expected) in [
+        (b"distance".as_slice(), 3),
+        (b"equal", 1),
+        (b"read", 7),
+        (b"callable", 1),
+    ] {
+        let ConstantState::Value(constant) = graph.entity(entity(spelling)).constant else {
+            panic!("published integer expected");
+        };
+        assert_eq!(constant.bits, expected);
+    }
+    let temporary = entity(b"temporary");
+    assert_eq!(
+        graph.constant_addresses.value(temporary).unwrap().root,
+        Root::Temporary(temporary)
+    );
+    assert_eq!(
+        graph.constant_addresses.temporary(temporary).unwrap().bits,
+        7
+    );
+    let text = graph.constant_addresses.value(entity(b"t")).unwrap();
+    let Root::Literal(literal) = text.root else {
+        panic!("retained literal root expected");
+    };
+    assert!(matches!(
+        tree.expressions.get(literal).kind,
+        crate::syntax::ast::ExprKind::Literal(_)
+    ));
+    // Pointer/reference values have their own typed store; integral facts never
+    // stand in for an address, and string objects need no per-character graph.
+    assert!(matches!(
+        graph.entity(pointer).constant,
+        ConstantState::None
+    ));
+    assert!(matches!(
+        graph.entity(reference).constant,
+        ConstantState::None
+    ));
+}
+
+#[test]
 fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() {
     use super::{
         constants::ConstantState, expression_facts::ValueCategory, function_resolution::CallTarget,

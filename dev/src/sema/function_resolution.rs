@@ -197,6 +197,18 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    pub(super) fn ordinary_function_operand(&self, facts: ExprFacts) -> Option<BindingId> {
+        let bindings = self.graph.overloads.get(facts.functions?);
+        let [binding] = bindings else {
+            return None;
+        };
+        let entity = self.graph.entity(self.graph.binding(*binding).entity);
+        (entity.template_head.is_none()
+            && !self.graph.function_templates.requires_target(*binding)
+            && (self.member_function_owner(*binding).is_none()
+                || facts.member_address_scope.is_some()))
+        .then_some(*binding)
+    }
     pub(super) fn matching_function(
         &mut self,
         facts: ExprFacts,

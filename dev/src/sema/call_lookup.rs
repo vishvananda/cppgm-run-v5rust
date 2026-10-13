@@ -33,7 +33,7 @@ impl Analyzer<'_> {
         let mut types = Vec::new();
         for &argument in self.tree.expr_lists.get(arguments) {
             let facts = self.graph.expression_facts.get(argument)?;
-            if facts.functions.is_none()
+            if (facts.functions.is_none() || self.ordinary_function_operand(facts).is_some())
                 && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Scalar(_))
             {
                 types.push((facts.ty, 0u32));

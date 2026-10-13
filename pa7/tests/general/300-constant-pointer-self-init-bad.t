@@ -1,0 +1,1 @@
+constexpr int* pointer = pointer;

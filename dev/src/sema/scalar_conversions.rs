@@ -303,7 +303,12 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
         if facts.functions.is_some() {
-            if let Some(binding) = self.matching_function(facts, target)? {
+            let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
+                Some(binding)
+            } else {
+                self.matching_function(facts, target)?
+            };
+            if let Some(binding) = binding {
                 self.select_function_designation(id, binding)?;
             } else {
                 return Err(Error::at(

@@ -1,0 +1,28 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable object struct object_type
+    constructor-action object_type::object_type
+      call-expression prvalue void
+        callee object_type::object_type function of (pointer to struct object_type) returning void
+        unary-expression prvalue pointer to struct object_type OP_AMP:&
+          id-expression lvalue struct object_type object
+  variable pointer const pointer to int
+    unary-expression prvalue const pointer to int OP_AMP:&
+      member-expression lvalue int OP_ARROW:value
+        cast-expression prvalue pointer to struct object_type OP_LPAREN:
+          literal prvalue int 0
+  variable same const bool
+    binary-expression prvalue const bool OP_EQ:==
+      id-expression lvalue const pointer to int pointer
+      unary-expression prvalue pointer to int OP_AMP:&
+        member-expression lvalue int OP_DOT:value
+          id-expression lvalue struct object_type object
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        id-expression lvalue const bool same
+  function-definition object_type::object_type function of (pointer to struct object_type) returning void
+    parameter this pointer to struct object_type
+    compound-statement
+end translation unit

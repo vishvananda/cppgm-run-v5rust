@@ -1,0 +1,58 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable array array of 3 int
+  variable matrix array of 2 array of 3 int
+  variable end const pointer to int
+    binary-expression prvalue const pointer to int OP_PLUS:+
+      id-expression lvalue array of 3 int array
+      literal prvalue int 3
+  variable previous const pointer to int
+    binary-expression prvalue const pointer to int OP_MINUS:-
+      id-expression lvalue const pointer to int end
+      literal prvalue int 1
+  variable same const bool
+    binary-expression prvalue const bool OP_EQ:==
+      id-expression lvalue const pointer to int previous
+      unary-expression prvalue pointer to int OP_AMP:&
+        subscript-expression lvalue int
+          id-expression lvalue array of 3 int array
+          literal prvalue int 2
+  variable distance const long int
+    binary-expression prvalue const long int OP_MINUS:-
+      id-expression lvalue const pointer to int end
+      id-expression lvalue array of 3 int array
+  variable reverse const long int
+    binary-expression prvalue const long int OP_MINUS:-
+      id-expression lvalue array of 3 int array
+      id-expression lvalue const pointer to int end
+  variable ordered const bool
+    binary-expression prvalue const bool OP_LT:<
+      id-expression lvalue array of 3 int array
+      id-expression lvalue const pointer to int end
+  variable row const bool
+    binary-expression prvalue const bool OP_EQ:==
+      binary-expression prvalue pointer to int OP_PLUS:+
+        subscript-expression lvalue array of 3 int
+          id-expression lvalue array of 2 array of 3 int matrix
+          literal prvalue int 1
+        literal prvalue int 2
+      unary-expression prvalue pointer to int OP_AMP:&
+        subscript-expression lvalue int
+          subscript-expression lvalue array of 3 int
+            id-expression lvalue array of 2 array of 3 int matrix
+            literal prvalue int 1
+          literal prvalue int 2
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue long int OP_PLUS:+
+          binary-expression prvalue long int OP_PLUS:+
+            binary-expression prvalue long int OP_PLUS:+
+              binary-expression prvalue long int OP_PLUS:+
+                id-expression lvalue const bool same
+                id-expression lvalue const long int distance
+              id-expression lvalue const long int reverse
+            id-expression lvalue const bool ordered
+          id-expression lvalue const bool row
+end translation unit
