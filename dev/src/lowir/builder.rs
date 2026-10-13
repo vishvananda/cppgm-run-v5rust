@@ -1,6 +1,7 @@
 //! Typed construction over the same private stores used by the reader. See NOTICE.
 use super::{
     Error,
+    literals::Constant,
     model::{
         BlockId, Body, Boundary, Function, Instruction, InstructionKind, Metadata, Parameter,
         Program, Signature, SymbolId, Value,
@@ -97,7 +98,10 @@ impl<'a> FunctionBuilder<'a> {
             .ok_or(Error::Limit)
     }
     pub(super) fn integer(&mut self, value: u128) -> Result<Value, Error> {
-        self.body.integer(value)
+        self.constant(Constant::Integer(value))
+    }
+    pub(super) fn constant(&mut self, value: Constant) -> Result<Value, Error> {
+        self.body.constant(value)
     }
     pub(super) fn arguments(&mut self, values: &[Value]) -> Result<super::model::Arguments, Error> {
         self.body.add_arguments(values)
@@ -292,6 +296,35 @@ mod tests {
         assert!(
             matches!(error, Err(Error::Diagnostic(message)) if message == "value instruction without its result temporary in function @bad_result")
         );
+        Ok(())
+    }
+    #[test]
+    fn floating_constants_keep_bits_and_kind_in_their_body() -> Result<(), Error> {
+        use super::super::{literals::FloatKind, writer};
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "floating", &[], Type::F80)?;
+        builder.block("entry")?;
+        let bits = (0x3fff_u128 << 64) | 0x8000_0000_0000_0001;
+        let literal = builder.constant(Constant::Float(FloatKind::F80, bits))?;
+        let result = builder.value(I::Const(Type::F80, literal), "x")?;
+        builder.effect(I::Return(Type::F80, Some(result)))?;
+        builder.finish()?;
+        exercises::build(&mut program, "sum")?;
+        validator::validate_constructed(&program)?;
+        let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+        let Value::Float(id, kind) = literal else {
+            return Err(Error::Limit);
+        };
+        assert_eq!(kind, FloatKind::F80);
+        assert_eq!(body.literal(id), bits);
+        let Value::Temp(result) = result else {
+            return Err(Error::Limit);
+        };
+        assert_eq!(body.temp(result).uses, 1);
+        let mut output = Vec::new();
+        writer::write(&program, &mut output).map_err(Error::Output)?;
+        let output = String::from_utf8(output).map_err(|_| Error::Limit)?;
+        assert!(output.contains("const f80 1.0000000000000000001L"));
         Ok(())
     }
 }

@@ -2,6 +2,7 @@
 use super::{
     Error,
     lexer::Kind,
+    literals::{self, Constant, FloatKind},
     model::{BlockId, Body, Call, Facts, Instruction, InstructionKind as I, Value},
     reader::Parser,
     vocabulary::{Binary, Compare, Convert, Projection, Type, Unary, named_literal},
@@ -53,8 +54,8 @@ impl Parser<'_> {
                 if !self.value_start() {
                     return Err(self.fail_token("expected value, got '", "'"));
                 }
-                let bits = self.integer(context)?;
-                body.integer(bits)
+                let constant = self.constant(context)?;
+                body.constant(constant)
             }
         }
     }
@@ -65,49 +66,41 @@ impl Parser<'_> {
         ) || (self.at(Kind::Word) && named_literal(self.lexer.token.word()))
     }
     pub(super) fn integer(&mut self, context: Type) -> Result<u128, Error> {
+        match self.constant(context)? {
+            Constant::Integer(bits) => Ok(bits),
+            Constant::Float(..) => Err(self.fail("invalid floating literal")),
+        }
+    }
+    pub(super) fn constant(&mut self, context: Type) -> Result<Constant, Error> {
         let negative = self.accept(Kind::Minus);
         let token = self.lexer.token;
         if self.accept_word("nullptr") {
             if negative {
                 return Err(self.fail("expected literal"));
             }
-            if context.float_rank() != 0 {
-                return Err(Error::NotImplemented("LowIR floating literals"));
-            }
-            return Ok(0);
+            return Ok(Constant::Integer(0));
         }
         let text = token.word();
         if token.kind != Kind::Number {
             if token.kind == Kind::Word && named_literal(text) {
                 self.lexer.advance();
-                return Err(if context.bits() != 0 || context == Type::Ptr {
-                    self.fail("invalid floating literal")
-                } else {
-                    Error::NotImplemented("LowIR floating literals")
-                });
+                if context.bits() != 0 || context == Type::Ptr {
+                    return Err(self.fail("invalid floating literal"));
+                }
+                return Ok(literals::special(text, context, negative));
             }
             return Err(self.fail("expected literal"));
         }
-        if context.float_rank() != 0 {
-            return Err(Error::NotImplemented("LowIR floating literals"));
+        if literals::floating_spelling(text) {
+            if context.bits() != 0 || context == Type::Ptr {
+                return Err(self.fail("invalid floating literal"));
+            }
+            let result = literals::scan(&mut self.floating, text, context, negative)?
+                .ok_or_else(|| self.fail("invalid floating literal"))?;
+            self.lexer.advance();
+            return Ok(result);
         }
         let hex = text.starts_with("0x") || text.starts_with("0X");
-        let floating = text.contains('.')
-            || text.bytes().any(|b| {
-                if hex {
-                    matches!(b, b'p' | b'P')
-                } else {
-                    matches!(b, b'e' | b'E')
-                }
-            })
-            || (!hex && text.len() > 1 && text.ends_with(['f', 'F', 'l', 'L']));
-        if floating {
-            return Err(if context == Type::Void {
-                Error::NotImplemented("LowIR floating literals")
-            } else {
-                self.fail("invalid floating literal")
-            });
-        }
         let (base, digits) = if hex {
             (16_u128, &text[2..])
         } else if text.len() > 1 && text.starts_with('0') {
@@ -133,14 +126,20 @@ impl Parser<'_> {
         if negative {
             value = value.wrapping_neg();
         }
-        if !matches!(context, Type::I128 | Type::Void) {
-            value &= u128::from(u64::MAX);
-            if value & (1_u128 << 63) != 0 {
-                value |= u128::MAX << 64;
+        let result = if let Some(kind) = FloatKind::from_type(context) {
+            let bits = literals::integer_as_float(&mut self.floating, value, kind, negative)?;
+            Constant::Float(kind, bits)
+        } else {
+            if !matches!(context, Type::I128 | Type::Void) {
+                value &= u128::from(u64::MAX);
+                if value & (1_u128 << 63) != 0 {
+                    value |= u128::MAX << 64;
+                }
             }
-        }
+            Constant::Integer(value)
+        };
         self.lexer.advance();
-        Ok(value)
+        Ok(result)
     }
     pub(super) fn target(&mut self, body: &mut Body) -> Result<BlockId, Error> {
         if !self.at(Kind::Block) {
@@ -222,8 +221,8 @@ impl Parser<'_> {
                 {
                     return Err(self.fail("expected literal"));
                 }
-                let bits = self.integer(ty)?;
-                I::Const(ty, body.integer(bits)?)
+                let constant = self.constant(ty)?;
+                I::Const(ty, body.constant(constant)?)
             }
             "copy" => {
                 let ty = self.parse_type()?;

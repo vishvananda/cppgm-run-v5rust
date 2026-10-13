@@ -4,6 +4,7 @@ mod exercises;
 mod globals;
 mod instructions;
 mod lexer;
+mod literals;
 mod model;
 mod reader;
 mod runtime;

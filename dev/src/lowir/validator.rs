@@ -232,7 +232,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                         let actual = match *v {
                             Value::Temp(t) => body.temp(t).ty,
                             Value::Slot(s) => Some(body.slot(s).ty),
-                            Value::Integer(_) | Value::Symbol(_) => None,
+                            Value::Integer(_) | Value::Float(..) | Value::Symbol(_) => None,
                         };
                         if actual == Some(Type::I128) && *ty != Type::I128 {
                             return Err(error("comparison operand type mismatch"));
@@ -270,19 +270,6 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                     if let Some(message) = call_error(program, body, call) {
                         return Err(fail(program, function, body, inst, message));
                     }
-                    // Integer spellings can still demand the deferred floating literal owner.
-                    if program.call_boundary(call).is_some_and(|signature| {
-                        signature
-                            .parameters
-                            .iter()
-                            .zip(body.arguments(call.arguments))
-                            .any(|(parameter, argument)| {
-                                parameter.ty.float_rank() != 0
-                                    && matches!(argument, Value::Integer(_))
-                            })
-                    }) {
-                        return Err(Error::NotImplemented("LowIR floating call operands"));
-                    }
                 }
                 I::Runtime(inst) => {
                     if let Some(message) = runtime_error(program, function, body, inst) {
@@ -300,7 +287,7 @@ fn value_type(body: &Body, value: Value) -> Option<Type> {
         Value::Temp(id) => body.temp(id).ty,
         Value::Slot(id) => Some(body.slot(id).ty),
         Value::Symbol(_) => Some(Type::Ptr),
-        Value::Integer(_) => None,
+        Value::Integer(_) | Value::Float(..) => None,
     }
 }
 fn runtime_error(
@@ -452,6 +439,9 @@ fn phi_error(
             }
             Value::Integer(_) if ty.bits() == 0 && ty != Type::Ptr => {
                 return Some("phi integer literal type mismatch".into());
+            }
+            Value::Float(_, kind) if kind.ty() != ty => {
+                return Some("phi floating literal type mismatch".into());
             }
             Value::Symbol(_) if ty != Type::Ptr => {
                 return Some("phi global operand requires ptr type".into());

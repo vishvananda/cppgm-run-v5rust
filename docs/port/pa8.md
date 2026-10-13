@@ -3,6 +3,193 @@
 Stage base commit: `2bf11a2456047bffa7598407a9d32533f8f4fdd5`.
 Last audited commit: INITIAL (no PA8 acceptance audit; unchanged by implementation).
 
+## Floating-literal checkpoint — 2026-10-13
+
+This coherent implementation group passes **125/125 fixed PA8 cases**, up
+from **112/125** at clean entry `2d4fba1a4ac0f2c7786f642dd0f337e77dce64d0`. Fixed failures fall
+**13→0**, all **112/112** prior passing identities survive, and manifest hash
+and case identities are unchanged. The course suite also passes **122/122**
+specification comparisons and **3/3** construction exercises. This is a
+behavior-group handoff to Ralph, not a stage advancement or implementation-wide
+completion claim. Stage base and last-audited commit above remain unchanged.
+The implementation commit contains this entry; its hash is recorded afterward
+in external `handoff.json`.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa8-floats-20261013/`.
+The previous goal turn is progress: the committed debug-location group reduced
+fixed failures 15→13. `entry.json` records the inspected clean checkout; no
+interrupted process was assumed live or restarted.
+
+### Owners, translated behavior and typed data flow
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete PA8 README,
+docs/rust-clone-plan.md and this ledger. Consulted frozen C++ commit
+`883778fdfa45d523cf9e135d15169af976f451a8`: `lowir/literals.{cpp,h}`
+classification, scans, special values, conversions and serialization;
+`text_parser.cpp` constant contexts/suffixes/diagnostic priority;
+`text_parser_body.cpp` instruction/value/storage/call/phi/switch grammar;
+`text_lexer.cpp` number token boundaries; `text_writer.cpp` operands, globals,
+structured data and call-boundary emission; `validator.cpp` literal-kind
+permissiveness and phi rules; `builder.cpp`/`program.h` body-owned literal
+storage; and `lex/interchange_float.cpp` shared integer-limb rounding.
+Source-map rows identify all corresponding Rust responsibilities.
+
+- `types/floating.rs` owns the existing exact decimal rounding algorithm,
+  moved intact from the lexer, plus checked binary-rational rounding,
+  bounded hexadecimal mantissas with sticky digits, and exact terminating
+  decimal extraction. Limb, divisor and decimal-chunk scratch retain only
+  capacity between literals. `lex/floating.rs` re-exports the existing public
+  scanner/bytes API, preserving prior tokenizer behavior. This shared numeric
+  owner permits LowIR to consume target facts without a lexer dependency;
+  the protected architecture audit caught and resolved the initial placement.
+- `lowir/literals.rs` owns FloatKind and Constant, floating-spelling/suffix
+  classification, the strto* grammar, named specials and canonical LowIR text.
+  Decimal/hex input rounds directly to the selected binary32/binary64/x87
+  format. An explicit floating context overrides a suffix; a hexadecimal
+  trailing f is a digit until a binary exponent precedes it. Malformed
+  spellings and target overflow reject at the original parser boundary;
+  gradual underflow, signed zero and signaling NaNs retain their bits.
+  Unsuffixed `inf` is f64 despite its final f; suffixed `inff` is f32.
+- Integer spellings in a floating context scan modulo 128 bits as signed
+  magnitude, round the exact high*2^64+low addition to x87, then convert to
+  the target format, matching C++'s intermediate rounding. `-0` preserves
+  its sign during that conversion. `nullptr` remains an integer constant.
+  Call arguments parsed without a type retain their original integer/float
+  kind; integer zero has no retained spelling sign when converted later.
+- `model.rs` retains FloatKind beside each body-local checked LiteralId;
+  the same body's bit pool serves integer and floating values. Scalar and
+  structured global records own typed Constants. No literal spelling is
+  retained as semantic identity. `reader.rs` owns reusable numeric scratch;
+  `instructions.rs` consumes constants once across all instruction operands,
+  and `globals.rs` uses that same constant grammar. `builder.rs` constructs
+  Constants through the same private body store, with no text dependency.
+- `writer.rs` streams those typed facts, using reusable numeric scratch.
+  It preserves the literal's own floating kind, context-sensitive integer
+  conversion, and f64 `.0` marking where an untyped operand otherwise becomes
+  integer. Direct/explicit call boundaries are consulted at emission, after
+  forward symbols are known; integer arguments preserve their bits in integer
+  parameters and convert only for floating parameters.
+- Canonical finite text rounds exact decimal digits to 20 significant digits,
+  ties to even, applies C `%g` fixed/scientific thresholds, strips trailing
+  zeros and preserves signed zero. An x87 value uses 21 digits only when
+  the C++ owner's 20-digit read-back check requires it. That isolated check
+  is a writer spelling decision, not textual phase transport. Subnormals
+  use exact `%a`/`%La` hexadecimal conventions; specials use the course's
+  infinity/quiet/signaling names and f32/f80 suffixes without host floating
+  arithmetic or signaling-NaN quieting.
+- `validator.rs` retains C++'s permissive literal operands: floating literals
+  have no temporary/slot type for ordinary operand checks, while phi incoming
+  floating kinds must match the phi type. Existing f80 phi rejection remains.
+  The deferred floating-call status-86 boundary is removed.
+
+Architecture review: one immutable input buffer/current token, one unit model,
+typed Constant/FloatKind and compact body-owned LiteralIds, direct typed
+builder/validator/writer flow and capacity-reusing numeric scratch. No replay,
+second semantic tree, pointer graph, whole-program work on a literal hot path,
+unsafe/FFI, dependency, environment read or subprocess implementation. Optimizer,
+register allocator and code generator are unchanged. Two narrow truncation
+expectations document base-2^32 limb extraction/division; no blanket suppression.
+The new Rust invariant tests cover x87 intermediate rounding versus direct
+binary64 rounding, special/subnormal/signed-zero spelling, and constructed
+floating bit/kind/use-count retention after another function is constructed.
+
+### Validation and retained evidence
+
+- `make build`: pass (`build-final-checked.log`), release compile **17.18 s**.
+  Candidate LowIR SHA-256: `a54e240668437478ae5efa17da70bf98bfdac40feff1d41991b87910e462af54`.
+  `source-hashes.json` records the reviewed LowIR/shared numeric source hashes.
+- `make test-pa8`, invoking the required
+  `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa8`:
+  **125 pass, zero failures** (`stage-final.log`, `stage-final.json`).
+  `preservation.json` proves **13→0**, 112 retained passes, 13 gains, zero
+  regressions and identical coverage. Manifest SHA-256:
+  `3cc0c62abe169d83ff54140690c5c8798d9223f005cbb44a2cb0d7f08bb84e6b`.
+  `fixed-case-evidence/` snapshots every case's course logs/receipts; receipts
+  retain the protected trace paths for raw diagnostics and generated outputs.
+- `make course-pa8`: pass, **122/122** specification comparisons and **3/3**
+  exercises (`course-final.log`, `course-course-result.json`, `course-course.log`,
+  `course-trace.jsonl`, and external `artifacts/clone/course/pa8/test/`).
+  Receipt exit is zero, with no `.test_failed` marker or failed comparison count.
+- `... clone_check.py prior pa8`: PA1–PA7 differential/course validation
+  (`prior-handoff.log`, `prior-paN.json`, `prior-paN-course.json`, external
+  `artifacts/clone/course/paN/test/`). Final binary identity is recorded in
+  `prior-summary.json`; counts are **58/58, 26/26, 20/20, 106/106, 196/196,
+  121/121, 214/214**. The earlier successful run is retained in `prior-final.log`.
+- `make lint` (protected `clone_quality.py`): pass (`lint-final-checked.log`),
+  including rustfmt, strict all-feature Clippy, debug/release tests (**195**
+  library tests), feature configurations and source audit. `make audit-rust`:
+  pass, **150 files, zero findings** (`audit-final-checked.log`).
+- `... clone_check.py preflight pa8`: pass (`preflight-final.log`).
+  `... clone_check.py preserve pa8`: pass, **112/112** historical identities
+  (`preserve-final.log`), supplemented by exact entry/final preservation above.
+- `probe.py`, `probe-results.json`, `probes-final.log`, `probes.trace.jsonl`:
+  **261/261** protected receipts match. Valid probes include 750 random target
+  significand/exponent inputs across all formats, halfway/border/subnormal/
+  overflow values, suffix/context precedence, scalar/structured data, forward
+  calls, explicit-boundary precedence, variadic/untyped marking and named
+  specials. Malformed probes retain diagnostic priority and position. Two
+  200,000-digit mantissas verify sticky-digit rounding and bounded scratch.
+  `probes-first.log`/`probes-handoff.log` retain development observations;
+  final call/variadic sources use the actual `[arity=variadic]` grammar and
+  succeed, so comparison coverage does not rely on those initial rejections.
+- `measure.py`, `measurements.json`, `scaling-final.log`, `scaling.trace.jsonl`:
+  **9/9** supported scaling receipts match, three warm timings per input,
+  all exits zero and stable output hashes. Each workload is one function
+  with constants of `0.1` in the indicated target format.
+
+Every supplemental comparison uses the protected receipt's `match`. These
+iterative LowIR inputs did not exhaust native stack; no native cutoff or
+diagnostic position was calibrated. Resource-limited future driver probes
+retain CLONE_CONTRACT.md's protected stack qualification. PA34 object/tool
+fixed-point proof remains a later gate.
+
+Measurements use wall timing and `/usr/bin/time` on the shared host during
+validation; they are observations, not runtime parity or PA35 improvement targets.
+
+| Format | Instructions | Source bytes | Wall seconds | Peak RSS KiB |
+| --- | --- | --- | --- | --- |
+| f32 | 1,000 | 22,940 | 0.0044–0.0053 | 2,216–2,240 |
+| f32 | 10,000 | 238,940 | 0.0214–0.0227 | 5,036–5,072 |
+| f32 | 100,000 | 2,488,940 | 0.1997–0.2516 | 26,404–26,432 |
+| f64 | 1,000 | 22,940 | 0.0063–0.0081 | 2,224–2,244 |
+| f64 | 10,000 | 238,940 | 0.0269–0.0344 | 5,036–5,044 |
+| f64 | 100,000 | 2,488,940 | 0.2490–0.2642 | 26,408–26,448 |
+| f80 | 1,000 | 22,940 | 0.0061–0.0078 | 2,228–2,256 |
+| f80 | 10,000 | 238,940 | 0.0363–0.0369 | 5,044–5,072 |
+| f80 | 100,000 | 2,488,940 | 0.3354–0.3485 | 26,052–26,428 |
+
+### Accounting discrepancy and next dependency boundary
+
+No failing fixed-manifest case IDs remain; the 13 exact gained IDs are listed
+in `preservation.json`, and earlier remaining-case lists below are superseded.
+The read-only `coverage-accounting-reproducer.py` / `coverage-accounting.json`
+show **125** manifest cases, result cases and Ralph targets with equal identities,
+while Ralph declares **143** aggregate targets. The prior external
+`/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high/checks/last-stageProgress.log`
+rejects exact accounting for 18 unrun aggregate targets. This handoff proves
+full fixed-manifest success and reduction independently; it does not change
+state/policy or claim that Ralph's external aggregate check has been repaired.
+Ralph owns its checkpoint/final audit, accounting and stage advancement.
+
+The next introductory-tool dependency is **model statistics** (`--stats` is
+still an explicit 86 boundary): translate the name-table sentinel/vocabulary
+census and deterministic counters, read/validate/serialize instrumentation,
+and driver flag/error routing from the actual C++ owners. General generated
+local-name collision handling, complete constructed-field census/mutation
+interfaces and host-object facts remain at their consuming producer boundaries.
+NaN payload notation/exact object-mode output and binary16/binary128/bfloat16
+belong to later numeric/object dialect demands, not an implicit extension of
+this reader's course mode. Do not advance PA8 solely from the 125 passing cases.
+
+Review questions: verify direct target scan versus x87 intermediate integer
+conversion, named-literal suffix classification, subnormal `%a`/`%La` layouts,
+conditional 21-digit decision, forward/explicit call context selection, typed
+literal lifetime/kind retention and the shared types owner after the lexer
+move. Audit the next statistics owner without changing name or emission order.
+No fixture, reference, oracle source, protected checker, policy or Ralph state
+was modified. Shared storage remains below the 100 GiB ceiling.
+
 ## Debug-location checkpoint — 2026-10-13
 
 Current coherent partial handoff: **112/125 fixed cases pass; 13 fail**, down

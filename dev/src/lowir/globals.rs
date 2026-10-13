@@ -60,7 +60,7 @@ impl Parser<'_> {
                         self.address_initializer("address initializer symbol")?;
                     GlobalInit::Address(target, addend)
                 } else {
-                    GlobalInit::Integer(self.integer(ty)?)
+                    GlobalInit::Constant(self.constant(ty)?)
                 }
             }
         } else {
@@ -95,7 +95,7 @@ impl Parser<'_> {
                     let (target, addend) = self.address_initializer("address target")?;
                     DataItem::Address(target, addend)
                 } else {
-                    DataItem::Integer(ty, self.integer(ty)?)
+                    DataItem::Constant(ty, self.constant(ty)?)
                 }
             };
             u32::try_from(items.len()).map_err(|_| Error::Limit)?;

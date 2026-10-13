@@ -1,4 +1,5 @@
 //! One unit of typed `LowIR`, with private ID stores and function-owned bodies. See NOTICE.
+use super::literals::{Constant, FloatKind};
 use super::{
     Error,
     vocabulary::{
@@ -248,13 +249,13 @@ pub(super) struct Global {
 pub(super) enum GlobalInit {
     Declaration,
     Zero,
-    Integer(u128),
+    Constant(Constant),
     Address(SymbolId, i64),
     Data(Vec<DataItem>),
 }
 pub(super) enum DataItem {
     Zero(i64),
-    Integer(Type, u128),
+    Constant(Type, Constant),
     Address(SymbolId, i64),
 }
 pub(super) struct ObjectAlias {
@@ -338,6 +339,7 @@ pub(super) enum Value {
     Temp(TempId),
     Slot(SlotId),
     Integer(LiteralId),
+    Float(LiteralId, FloatKind),
     Symbol(SymbolId),
 }
 pub(super) struct Temp {
@@ -423,6 +425,16 @@ impl Body {
         let id = LiteralId(u32::try_from(self.literals.len()).map_err(|_| Error::Limit)?);
         self.literals.push(bits);
         Ok(Value::Integer(id))
+    }
+    pub(super) fn constant(&mut self, constant: Constant) -> Result<Value, Error> {
+        let (bits, kind) = match constant {
+            Constant::Integer(bits) => (bits, None),
+            Constant::Float(kind, bits) => (bits, Some(kind)),
+        };
+        let Value::Integer(id) = self.integer(bits)? else {
+            return Err(Error::Limit);
+        };
+        Ok(kind.map_or(Value::Integer(id), |kind| Value::Float(id, kind)))
     }
     pub(super) fn literal(&self, id: LiteralId) -> u128 {
         self.literals[id.0 as usize]

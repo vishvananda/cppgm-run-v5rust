@@ -1,13 +1,16 @@
 //! Bounded streaming serializer over typed `LowIR` facts. See NOTICE.
 use super::{
+    literals::{self, Constant, FloatKind},
     model::{
         Arity, Body, Call, DataItem, DebugLocation, Facts, Function, Global, GlobalInit,
         InstructionKind as I, Linkage, Metadata, Program, Returns, Signature, Unwind, Value,
     },
     vocabulary::Type,
 };
+use crate::types::floating::FloatingScanner;
 use std::io::{self, Write};
 pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
+    let mut floating = FloatingScanner::default();
     let mut written = false;
     for phase in 0..4 {
         let mut phase_written = false;
@@ -21,7 +24,7 @@ pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
                     writeln!(out)?;
                 }
                 phase_written = true;
-                write_global(program, global, &mut out)?;
+                write_global(program, global, &mut floating, &mut out)?;
             }
         } else {
             for function in program
@@ -33,7 +36,7 @@ pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
                     writeln!(out)?;
                 }
                 phase_written = true;
-                write_function(program, function, &mut out)?;
+                write_function(program, function, &mut floating, &mut out)?;
             }
         }
         written |= phase_written;
@@ -67,7 +70,12 @@ fn write_address(
     }
     Ok(())
 }
-fn write_global(program: &Program, global: &Global, out: &mut impl Write) -> io::Result<()> {
+fn write_global(
+    program: &Program,
+    global: &Global,
+    floating: &mut FloatingScanner,
+    out: &mut impl Write,
+) -> io::Result<()> {
     let declaration = matches!(global.init, GlobalInit::Declaration);
     write!(
         out,
@@ -86,10 +94,12 @@ fn write_global(program: &Program, global: &Global, out: &mut impl Write) -> io:
     match &global.init {
         GlobalInit::Declaration => return Ok(()),
         GlobalInit::Zero => write!(out, "zero")?,
-        GlobalInit::Integer(bits) => write!(
+        GlobalInit::Constant(constant) => write_constant(
             out,
-            "{}",
-            integer_text(*bits, global.ty.unwrap_or(Type::Void))
+            floating,
+            *constant,
+            global.ty.unwrap_or(Type::Void),
+            false,
         )?,
         GlobalInit::Address(target, addend) => write_address(program, *target, *addend, out)?,
         GlobalInit::Data(items) => {
@@ -98,8 +108,9 @@ fn write_global(program: &Program, global: &Global, out: &mut impl Write) -> io:
                 write!(out, "  ")?;
                 match item {
                     DataItem::Zero(amount) => write!(out, "zero {amount}")?,
-                    DataItem::Integer(ty, bits) => {
-                        write!(out, "{ty} {}", integer_text(*bits, *ty))?;
+                    DataItem::Constant(ty, constant) => {
+                        write!(out, "{ty} ")?;
+                        write_constant(out, floating, *constant, *ty, false)?;
                     }
                     DataItem::Address(target, addend) => {
                         write!(out, "ptr ")?;
@@ -113,7 +124,12 @@ fn write_global(program: &Program, global: &Global, out: &mut impl Write) -> io:
     }
     writeln!(out)
 }
-fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::Result<()> {
+fn write_function(
+    program: &Program,
+    f: &Function,
+    floating: &mut FloatingScanner,
+    out: &mut impl Write,
+) -> io::Result<()> {
     write!(
         out,
         "{}function @{}",
@@ -151,7 +167,12 @@ fn write_function(program: &Program, f: &Function, out: &mut impl Write) -> io::
             if let Some(t) = inst.result {
                 write!(out, "%{} = ", program.names.get(body.temp(t).name))?;
             }
-            let mut writer = InstructionWriter { program, body, out };
+            let mut writer = InstructionWriter {
+                program,
+                body,
+                out,
+                floating,
+            };
             writer.instruction(&inst.kind)?;
             write_location(program, body.location(inst), out)?;
             writeln!(out)?;
@@ -282,6 +303,7 @@ struct InstructionWriter<'a, W> {
     program: &'a Program,
     body: &'a Body,
     out: &'a mut W,
+    floating: &'a mut FloatingScanner,
 }
 impl<W: Write> InstructionWriter<'_, W> {
     fn value(&mut self, value: Value, ty: Type) -> io::Result<()> {
@@ -301,9 +323,20 @@ impl<W: Write> InstructionWriter<'_, W> {
                 "@{}",
                 self.program.names.get(self.program.symbol(id).name)
             ),
-            Value::Integer(id) => self
-                .out
-                .write_all(integer_text(self.body.literal(id), ty).as_bytes()),
+            Value::Integer(id) => write_constant(
+                self.out,
+                self.floating,
+                Constant::Integer(self.body.literal(id)),
+                ty,
+                false,
+            ),
+            Value::Float(id, kind) => write_constant(
+                self.out,
+                self.floating,
+                Constant::Float(kind, self.body.literal(id)),
+                ty,
+                false,
+            ),
         }
     }
     fn block(&mut self, block: super::model::BlockId) -> io::Result<()> {
@@ -333,7 +366,22 @@ impl<W: Write> InstructionWriter<'_, W> {
             if index != 0 {
                 self.comma()?;
             }
-            self.value(argument, Type::Void)?;
+            let kind = self
+                .program
+                .call_boundary(call)
+                .and_then(|s| s.parameters.get(index))
+                .and_then(|p| FloatKind::from_type(p.ty));
+            if let (Value::Integer(id), Some(kind)) = (argument, kind) {
+                write_constant(
+                    self.out,
+                    self.floating,
+                    Constant::Integer(self.body.literal(id)),
+                    kind.ty(),
+                    true,
+                )?;
+            } else {
+                self.value(argument, Type::Void)?;
+            }
         }
         write!(self.out, ")")?;
         if call.copy_elision {
@@ -581,6 +629,29 @@ impl<W: Write> InstructionWriter<'_, W> {
         }
         Ok(())
     }
+}
+fn write_constant(
+    out: &mut impl Write,
+    scanner: &mut FloatingScanner,
+    constant: Constant,
+    context: Type,
+    marked: bool,
+) -> io::Result<()> {
+    let text = match constant {
+        Constant::Integer(bits) => {
+            if let Some(kind) = FloatKind::from_type(context) {
+                literals::integer_as_float(scanner, bits, kind, false)
+                    .and_then(|bits| literals::text(scanner, kind, bits, marked))
+            } else {
+                Ok(integer_text(bits, context))
+            }
+        }
+        Constant::Float(kind, bits) => {
+            literals::text(scanner, kind, bits, context.float_rank() == 0)
+        }
+    }
+    .map_err(|_| io::Error::other("floating literal storage limit"))?;
+    out.write_all(text.as_bytes())
 }
 fn integer_text(mut bits: u128, ty: Type) -> String {
     let width = if ty == Type::Ptr { 64 } else { ty.bits() };

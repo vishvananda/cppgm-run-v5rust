@@ -15,6 +15,7 @@ pub(super) struct Parser<'a> {
     pub(super) source: &'a str,
     pub(super) source_id: SourceId,
     pub(super) arguments: Vec<Value>,
+    pub(super) floating: crate::types::floating::FloatingScanner,
 }
 impl<'a> Parser<'a> {
     pub(super) fn new(
@@ -29,6 +30,7 @@ impl<'a> Parser<'a> {
             source: path,
             source_id,
             arguments: Vec::new(),
+            floating: crate::types::floating::FloatingScanner::default(),
         })
     }
     pub(super) fn fail(&self, message: impl Into<String>) -> Error {
