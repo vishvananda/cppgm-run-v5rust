@@ -1,5 +1,30 @@
 # Frozen preparation baseline
 
+## Current oracle refresh — 2026-10-13 (PA9 reader)
+
+The reference is cppgm-extended `ee3596b2df2dadf70d7d2028a6a32d18e1923761`,
+pushed to main after PR #69 passed the full GCC/libstdc++ and clang/libc++
+CI matrix. Its PA9 reader accepts the handout's optional template-argument
+references on dependent `member` facts, using the existing graph and encoder.
+Only `abimangle` changes; the other eight tools, including `cppgm++`, retain
+their exact binary hashes. The graph-storage comparison correction remains
+in effect. Performance evidence is in `docs/v5/abi-member-template-facts.md`
+of the reference: +0.0142% instructions on the legacy-member stress input,
++0.00034% on mixed PA9 facts, no clear throughput regression.
+
+The four new PA9 fixtures and generated references are added to the protected
+manifest without dropping any case. PA9 grows from 119 to 123 frozen cases.
+Protected-input preflight and oracle self-comparison pass (123/123). Rust
+retains all original 119 passes; the four new comparisons fail until its
+reader supports the updated contract and rejection diagnostics. This is an
+implementation boundary, not a completed audit. Evidence and before/after
+manifests are in `artifacts/observer/baseline-ee3596b2/`.
+
+There is no current `obj/bootstrap` cache. Earlier archived bootstrap and
+fixed-point receipts remain historical; PA34 must build against this source,
+even though the C++ seed compiler hash is unchanged. Ralph state and native
+goal status are not edited by this baseline refresh.
+
 ## PA9 statistics policy correction — 2026-10-13
 
 The acceptance owner authorized excluding `abimangle stats:` numeric

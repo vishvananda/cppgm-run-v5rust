@@ -1,5 +1,19 @@
 # PA9 port ledger
 
+## Reviewed oracle refresh — 2026-10-13
+
+The baseline is now cppgm-extended `ee3596b2` (PR #69, all CI checks passed).
+The documented `member` form now accepts trailing argument references; the
+protected gate adds four owning PA9 fixtures and their generated references.
+Oracle self-check passes 123/123. Rust preserves all 119 original passes and
+fails the four new comparisons, including the updated malformed-argument
+diagnostic. Port the reader change from the refreshed source, then rerun the
+current-stage, course, prior-stage and quality gates and revise the audit.
+The storage-counter discrepancy below was already resolved by `daf4144`.
+Historical findings below remain evidence for the earlier frozen baseline.
+No stage or goal is completed by this refresh. See `docs/port/baseline.md`
+and `artifacts/observer/baseline-ee3596b2/`.
+
 ## Acceptance-owner correction — 2026-10-13
 
 The graph-storage comparison gap recorded below is resolved by the reviewed
