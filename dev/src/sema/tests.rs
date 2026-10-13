@@ -13,6 +13,104 @@ use crate::{
 };
 
 #[test]
+fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() {
+    use super::{
+        constants::ConstantState, expression_facts::ValueCategory, function_resolution::CallTarget,
+    };
+    use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind, Suffix};
+    let source = SourceBuffer::new(b"unsigned long side();inline int choose(int x){return x;}long choose(long);constexpr unsigned long n=true?1:side();int array[sizeof(choose(1))];struct Base{};struct Derived:Base{};Derived*advance(Derived*p){++p;p+=2;return p+1;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"constant-query-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let name = cursor.intern_name(b"n").unwrap();
+    let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
+    let ConstantState::Value(value) = graph.entity(graph.binding(binding).entity).constant else {
+        panic!("conditional constant expected");
+    };
+    assert_eq!(value.bits, 1);
+    assert!(matches!(
+        graph.types.get(value.ty).kind,
+        TypeKind::Scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))
+    ));
+    let DeclKind::Simple { declarators, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[3])
+        .kind
+    else {
+        panic!("constant declaration expected");
+    };
+    let InitializerKind::Assign(expression) = tree.init_declarators.get(declarators)[0]
+        .initializer
+        .unwrap()
+        .kind
+    else {
+        panic!("conditional initializer expected");
+    };
+    let ExprKind::Conditional {
+        then_expr,
+        else_expr,
+        ..
+    } = tree.expressions.get(expression).kind
+    else {
+        panic!("original conditional expected");
+    };
+    let selected = graph.expression_facts.get(then_expr).unwrap();
+    assert_eq!(selected.category, ValueCategory::Prvalue);
+    assert_ne!(selected.ty, value.ty);
+    assert_eq!(selected.conversion.unwrap().target, value.ty);
+    assert!(matches!(
+        graph.expression_facts.get(else_expr).unwrap().call,
+        Some(CallTarget::Direct(_))
+    ));
+    assert!(graph.constant_fact(else_expr).is_none());
+    let DeclKind::Simple { declarators, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[4])
+        .kind
+    else {
+        panic!("array declaration expected");
+    };
+    let declarator = tree.init_declarators.get(declarators)[0].declarator;
+    let Suffix::Array(Some(bound)) =
+        tree.suffixes.get(tree.declarators.get(declarator).suffixes)[0]
+    else {
+        panic!("original array bound expected");
+    };
+    assert_eq!(
+        graph.expression_facts.get(bound).unwrap().query_value,
+        Some(4)
+    );
+    let ExprKind::Sizeof {
+        operand: Some(call),
+        ..
+    } = tree.expressions.get(bound).kind
+    else {
+        panic!("sizeof call expected");
+    };
+    let Some(CallTarget::Direct(chosen)) = graph.expression_facts.get(call).unwrap().call else {
+        panic!("selected overload expected");
+    };
+    assert!(graph.entity(graph.binding(chosen).entity).defined);
+    assert!(super::function_demands::trailing(&graph).is_empty());
+    let name = cursor.intern_name(b"Derived").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+        .entity;
+    assert!(matches!(
+        graph.entity(class).layout,
+        super::layout::LayoutState::NotStarted
+    ));
+    assert!(matches!(
+        graph.entity(class).default_construction,
+        super::construction::ConstructorState::NotStarted
+    ));
+}
+
+#[test]
 fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected_functions() {
     use super::{
         function_demands::{self, Demand},
@@ -1349,7 +1447,7 @@ fn overload_visibility_keeps_earlier_entities_across_interleaved_redeclarations(
 #[test]
 fn array_initialization_completes_identity_and_retains_source_operand_conversions() {
     use super::expression_facts::{ConversionRank, ValueCategory};
-    use crate::syntax::ast::{DeclKind, ExprKind};
+    use crate::syntax::ast::{DeclKind, ExprKind, Suffix};
     let source =
         SourceBuffer::new(b"short x; long a[][2]={x,2,3,4}; int tail[1000000000]={1};".to_vec())
             .unwrap();
@@ -1401,8 +1499,21 @@ fn array_initialization_completes_identity_and_retains_source_operand_conversion
     let conversion = operand.conversion.unwrap();
     assert_eq!(conversion.target, element);
     assert_eq!(conversion.rank, ConversionRank::Conversion);
-    // The billion-element tail creates no per-element semantic records.
-    assert_eq!(graph.expression_types.iter().flatten().count(), 7);
+    // Two written bounds now retain their source typing alongside the seven
+    // initializer records. The billion-element tail creates no element records.
+    for &declaration in &tree.decl_lists.get(declarations)[1..] {
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("array declaration expected");
+        };
+        let declarator = tree.init_declarators.get(declarators)[0].declarator;
+        for suffix in tree.suffixes.get(tree.declarators.get(declarator).suffixes) {
+            if let Suffix::Array(Some(bound)) = *suffix {
+                assert!(graph.expression_facts.get(bound).is_ok());
+                assert!(graph.constant_fact(bound).is_some());
+            }
+        }
+    }
+    assert_eq!(graph.expression_types.iter().flatten().count(), 9);
 }
 
 #[test]

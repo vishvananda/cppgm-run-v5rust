@@ -148,7 +148,11 @@ impl Analyzer<'_> {
                 let Some(kind) = IntegralKind::of(scalar) else {
                     return Err(not_constant(
                         location,
-                        "floating-point constant evaluation is not supported here",
+                        if self.semantic() {
+                            "not an integral constant expression"
+                        } else {
+                            "floating-point constant evaluation is not supported here"
+                        },
                     ));
                 };
                 let mut bytes = [0u8; 8];
@@ -165,48 +169,27 @@ impl Analyzer<'_> {
             }
             ExprKind::Paren(inner) => self.evaluate_constant(inner, scope, skipping)?,
             ExprKind::Id(name) => self.constant_named_value(id, name, scope, skipping, location)?,
+            ExprKind::Binary {
+                assignment: true,
+                left,
+                right,
+                op,
+            } if self.semantic() => self.constant_assignment(
+                id,
+                left,
+                right,
+                op.token.as_punctuator(),
+                scope,
+                skipping,
+            )?,
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
             }
-            ExprKind::Conditional {
-                condition,
-                then_expr,
-                else_expr,
-            } => {
-                let condition_value = self.evaluate_constant(condition, scope, skipping)?;
-                self.check_constant_bool(
-                    condition_value,
-                    self.tree.expressions.get(condition).location,
-                )?;
-                let (selected, other) = if condition_value.bits != 0 {
-                    (then_expr, else_expr)
-                } else {
-                    (else_expr, then_expr)
-                };
-                let chosen = self.evaluate_constant(selected, scope, skipping)?;
-                let unchosen = self.evaluate_constant(other, scope, true)?;
-                if chosen.ty == unchosen.ty {
-                    chosen
-                } else {
-                    self.check_integral(chosen, self.tree.expressions.get(selected).location)?;
-                    self.check_integral(unchosen, self.tree.expressions.get(other).location)?;
-                    let ty = if self.evaluating_noexcept {
-                        self.graph
-                            .expression_type(id)
-                            .ok_or(Error::Invariant("untyped exception conditional"))?
-                    } else {
-                        self.common_integral_type(chosen.ty, unchosen.ty)?
-                    };
-                    let kind = self
-                        .integral_kind(ty)
-                        .ok_or(Error::Invariant("common nonintegral type"))?;
-                    Constant {
-                        bits: kind.convert(chosen.bits),
-                        ty,
-                    }
-                }
+            ExprKind::Postfix { op, operand } if self.semantic() => {
+                self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
             }
+            ExprKind::Conditional { .. } => self.constant_conditional(id, scope, skipping)?,
             ExprKind::Cast {
                 keyword,
                 ty,
@@ -294,6 +277,9 @@ impl Analyzer<'_> {
                     ));
                 }
             }
+            ExprKind::Call { .. } if self.semantic() => {
+                return self.constant_call(id, scope, skipping);
+            }
             _ => {
                 return Err(not_constant(
                     location,
@@ -305,6 +291,152 @@ impl Analyzer<'_> {
             super::record(&mut self.graph.constant_facts, id.index(), value);
         }
         Ok(value)
+    }
+    fn constant_conditional(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Constant, Error> {
+        let ExprKind::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } = self.tree.expressions.get(id).kind
+        else {
+            return Err(Error::Invariant(
+                "constant conditional without conditional syntax",
+            ));
+        };
+        let condition_value = self.evaluate_constant(condition, scope, skipping)?;
+        self.check_constant_bool(
+            condition_value,
+            self.tree.expressions.get(condition).location,
+        )?;
+        let (selected, other) = if condition_value.bits != 0 {
+            (then_expr, else_expr)
+        } else {
+            (else_expr, then_expr)
+        };
+        let chosen = self.evaluate_constant(selected, scope, skipping)?;
+        if self.semantic()
+            && let Ok(facts) = self.graph.expression_facts.get(id)
+            && let Some(kind) = self.integral_kind(facts.ty)
+        {
+            // Both arms were checked by expression analysis. Evaluation
+            // visits only the selected arm and consumes the recorded
+            // result type, including its usual arithmetic conversion.
+            return Ok(Constant {
+                bits: kind.convert(chosen.bits),
+                ty: self.bare_type(facts.ty)?,
+            });
+        }
+        let unchosen = self.evaluate_constant(other, scope, true)?;
+        Ok(if chosen.ty == unchosen.ty {
+            chosen
+        } else {
+            self.check_integral(chosen, self.tree.expressions.get(selected).location)?;
+            self.check_integral(unchosen, self.tree.expressions.get(other).location)?;
+            let ty = if self.evaluating_noexcept {
+                self.graph
+                    .expression_type(id)
+                    .ok_or(Error::Invariant("untyped exception conditional"))?
+            } else {
+                self.common_integral_type(chosen.ty, unchosen.ty)?
+            };
+            let kind = self
+                .integral_kind(ty)
+                .ok_or(Error::Invariant("common nonintegral type"))?;
+            Constant {
+                bits: kind.convert(chosen.bits),
+                ty,
+            }
+        })
+    }
+    fn constant_call(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Constant, Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        if skipping {
+            return Ok(Constant {
+                bits: 0,
+                ty: facts.ty,
+            });
+        }
+        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call {
+            if !self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .constexpr
+            {
+                return Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "a call of a function that is not constexpr",
+                ));
+            }
+            return Err(Error::Missing("constexpr function interpretation"));
+        }
+        let ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("constant call without call syntax"));
+        };
+        self.evaluate_constant(callee, scope, false)?;
+        Err(Error::Missing("constant indirect call evaluation"))
+    }
+    fn constant_assignment(
+        &mut self,
+        id: ast::ExprId,
+        mut left: ast::ExprId,
+        right: ast::ExprId,
+        op: Option<P>,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Constant, Error> {
+        if skipping {
+            return Ok(Constant {
+                bits: 0,
+                ty: self.graph.expression_facts.get(id)?.ty,
+            });
+        }
+        // The frozen simple-assignment interpreter evaluates the right operand
+        // before locating and writing the left object. Compound assignments read
+        // the left object first. No interpreter frame owns storage in this slice.
+        if op == Some(P::Assign) {
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
+                if let Some(&element) = self.tree.expr_lists.get(elements).first() {
+                    self.evaluate_constant(element, scope, false)?;
+                }
+            } else {
+                self.evaluate_constant(right, scope, false)?;
+            }
+        } else {
+            self.evaluate_constant(left, scope, false)?;
+            self.evaluate_constant(right, scope, false)?;
+        }
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(left).kind {
+            left = inner;
+        }
+        if let ExprKind::Id(name) = self.tree.expressions.get(left).kind {
+            let binding = self
+                .graph
+                .resolved_name(name)
+                .ok_or(Error::Invariant("unresolved assignment object"))?;
+            let location = self.tree.expressions.get(id).location;
+            return match self.graph.binding(binding).kind {
+                BindingKind::Variable => Err(not_constant(
+                    location,
+                    "a modification of an object whose lifetime began outside the evaluation",
+                )),
+                BindingKind::Parameter => Err(not_constant(
+                    self.tree.expressions.get(left).location,
+                    "a parameter is not usable in a constant expression",
+                )),
+                _ => Err(Error::Invariant("assignment target without object")),
+            };
+        }
+        Err(Error::Missing("constant assignment place evaluation"))
     }
     fn constant_member_object(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
@@ -418,6 +550,12 @@ impl Analyzer<'_> {
             BindingKind::Variable if reference => {
                 "a reference is not usable in a constant expression"
             }
+            BindingKind::Variable if self.semantic() && self.graph.types.get(ty).cv.0 & 2 != 0 => {
+                "a read of a volatile glvalue"
+            }
+            BindingKind::Variable if self.semantic() => {
+                "a variable is not usable in a constant expression"
+            }
             BindingKind::Variable => "variable is not usable in a constant expression",
             BindingKind::Parameter => "a parameter is not usable in a constant expression",
             _ => "not an integral constant expression",
@@ -493,7 +631,13 @@ impl Analyzer<'_> {
         // Parser-built binary left spines are unbounded; they consume no native recursion.
         let base = self.constant_spine.len();
         let mut id = root;
-        while let ExprKind::Binary { left, .. } = self.tree.expressions.get(id).kind {
+        while let ExprKind::Binary {
+            left, assignment, ..
+        } = self.tree.expressions.get(id).kind
+        {
+            if self.semantic() && assignment {
+                break;
+            }
             self.constant_spine.push(id);
             id = left;
         }
@@ -673,7 +817,18 @@ impl Analyzer<'_> {
                 "operator is not allowed in a constant expression",
             ));
         }
-        let value = self.evaluate_constant(operand, scope, skipping)?;
+        let value = self
+            .evaluate_constant(operand, scope, skipping)
+            .map_err(|error| {
+                if self.semantic() && matches!(op, Some(P::Increment | P::Decrement)) {
+                    match error {
+                        Error::NonConstant { message, .. } => not_constant(location, message),
+                        other => other,
+                    }
+                } else {
+                    error
+                }
+            })?;
         if op == Some(P::LogicalNot) {
             self.check_constant_bool(value, self.tree.expressions.get(operand).location)?;
             return self.boolean(value.bits == 0);
@@ -859,6 +1014,9 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
+        if self.semantic() && self.template_depth == 0 {
+            self.expression(expr, scope)?;
+        }
         let value = self.constant_value(expr, scope, self.template_depth == 0)?;
         let Some(value) = value else {
             self.expression(expr, scope)?;

@@ -38,17 +38,21 @@ impl Analyzer<'_> {
             None
         }
     }
-    fn complete_pointer(&mut self, ty: TypeId, id: ast::ExprId) -> Result<(), Error> {
+    fn complete_pointer(&self, ty: TypeId, id: ast::ExprId) -> Result<(), Error> {
         let element = self
             .object_pointer(ty)
             .ok_or(Error::Invariant("nonobject pointer"))?;
         if matches!(
             self.graph.types.get(element).kind,
-            TypeKind::Scalar(Scalar::Void)
+            TypeKind::Scalar(Scalar::Void) | TypeKind::Array { bound: 0, .. }
         ) {
             return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete type"));
         }
-        self.type_size(element, self.tree.expressions.get(id).location)?;
+        if let Some(class) = self.graph.class_of(element)
+            && !self.graph.entity(class).complete
+        {
+            return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete class"));
+        }
         Ok(())
     }
     pub(super) fn scalar_unary(
@@ -593,10 +597,15 @@ impl Analyzer<'_> {
         } else {
             (bt, base, at, true)
         };
-        if self.object_pointer(pointer).is_none() || !self.is_integral_operand(it) {
+        if self.object_pointer(pointer).is_none_or(|element| {
+            matches!(
+                self.graph.types.get(element).kind,
+                TypeKind::Scalar(Scalar::Void)
+            )
+        }) || !self.is_integral_operand(it)
+        {
             return Err(self.operator_error(id, "invalid subscript operands"));
         }
-        self.complete_pointer(pointer, id)?;
         self.convert_operand_scalar(if commuted { index } else { base }, pointer, false)?;
         let promoted = self.promoted_type(it)?;
         self.convert_operand_scalar(integer, promoted, false)?;

@@ -1,8 +1,184 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `77d7de1287bf976a9495422b8b0318b2a5ced489` (clean implementation entry).
-Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+Current implementation group base: `fd213562ce8bebe7a4bb1ed0e3fba1944e1535f4` (clean full-stage audit entry).
+Last audited commit: `fd213562ce8bebe7a4bb1ed0e3fba1944e1535f4` (full-stage entry audit; acceptance withheld). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
+
+
+## Full-stage acceptance audit checkpoint — 2026-10-13
+
+**Full-stage acceptance is withheld.** The clean reviewed entry was
+`fd213562ce8bebe7a4bb1ed0e3fba1944e1535f4`. Its fixed and course lanes passed,
+but independent source review and protected probes found missing PA7 behavior.
+This checkpoint fixes a coherent integral-conditional, unevaluated-bound and
+pointer-completeness group. Six successful-oracle address/constant probes remain
+mismatched, and the broader stage-owned responsibility review must continue.
+Neither passing fixtures nor this commit completes Ralph's existing phase goal.
+Ralph state, goals, acceptance policy, frozen sources and protected files are
+unchanged. The previous goal turn was authoritative progress in `fd21356`;
+this audit revalidated the actual clean entry and its passing fixed identities.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-full-stage-audit-20261013/`.
+`audit-scope.json` records the reviewed head, requirement digests and the explicit
+nonacceptance decision. `checks.json` retains final commands, exits and elapsed
+costs; `handoff.json` records this checkpoint's final commit and binary hashes.
+Final candidate cppgm SHA-256:
+`c89003571c08e0e3c803132303f7971190d75694057d1733c4095fb00229652f`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+### Responsibilities reviewed and corrected
+
+Read `AGENTS.md`, `CLONE_CONTRACT.md`, `spec.md`, `docs/rust-clone-plan.md`,
+the full PA7 handout, current ledger and relevant source-map responsibilities.
+Consulted frozen C++ owners directly under
+`/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/`:
+`analyzer_types.cpp::array_bound`, `analyzer_expressions.cpp`'s scalar operators,
+`complete_pointee` and `subscript`, `analyzer_bodies.cpp`'s conditions, cases,
+returns and control contexts, `analyzer_calls.cpp`'s indirect/resolved calls,
+`conversions.cpp`, `analyzer_builtins.cpp::constant_p_call`,
+`constant_evaluator.cpp`'s evaluator/conditional/size entries,
+`constant_expressions.cpp::{conditional_value,assignment,increment}`,
+`constant_interpreter.cpp`'s variable storage/read failures, and
+`constant_statements.cpp`'s call/evaluable control flow.
+`source-map.tsv` records the corresponding partial Rust owners.
+
+- `constants.rs::constant_conditional` evaluates only the selected integral arm
+  after semantic typing has checked both. It consumes the original expression's
+  common `TypeId` and explicit target conversion, then publishes its constant
+  fact. An untaken ordinary call, assignment, increment, pointer conversion,
+  indirection or volatile read imposes no evaluation obligation. Types mode
+  retains its distinct integral evaluator and common-type behavior.
+- Non-template semantic array bounds type the original expression before
+  constant evaluation, matching the C++ entry. Ordinary/overloaded/indirect
+  calls inside `sizeof`, prefix mutations and assignments therefore use the
+  shared PA7 typed-expression path. Evaluation reads the recorded query value;
+  it does not repeat overload selection or type an unevaluated operand again.
+  Wrong arity and invalid operands still fail at the C++ owning boundary.
+- Typed direct calls reject non-constexpr evaluation using the selected binding.
+  Semantic variable reads preserve the leading article, volatile-read failure
+  and prefix/postfix read location. Simple external scalar assignments check
+  the right value before the left place/write; compound assignments read the
+  left first. Parameters, ordinary variables and unsupported places remain
+  distinct. General constexpr execution and pointer-place state remain explicit
+  missing dependencies, rather than fabricated successful rejections.
+- `scalar_operators.rs::complete_pointer` is now read-only. It checks void,
+  unknown-bound-array and direct incomplete-class pointees without demanding
+  size/layout. This preserves arithmetic on complete derived-class pointers
+  even while class layout is a later owner. Incomplete-class arithmetic uses
+  the exact arithmetic diagnostic. Subscripts reject void, but preserve the
+  frozen C++ acceptance of incomplete-class/unknown-bound-array pointees.
+  Pointer subtraction's separate existing control flow is unchanged.
+
+Eleven new `.t` regressions and their immutable-oracle-generated new `.ref`
+pairs live in PA7's executed `tests/general/` lane. They cover untaken effects,
+`sizeof` call/effect bounds, invalid indirect arity, selected call/variable/
+assignment/increment/volatile failures, incomplete-class subscripts/arithmetic,
+and complete derived-pointer arithmetic without layout demand. Existing inputs
+and reference files were not modified or formatted.
+
+The ownership test traces a mixed-type conditional and a `sizeof` overload
+through their original syntax IDs. The selected literal retains its source
+category/type and conversion; the untaken call retains its selected binding
+without a value fact. The query retains the selected defined overload, with no
+trailing function demand. Derived-pointer arithmetic leaves both layout and
+construction unstarted. The billion-element-tail invariant now verifies the
+new facts on both written array bounds: nine bounded source/initializer records
+instead of seven initializer-only records, and no zero-tail element work.
+
+Strict Clippy initially caught a 249-line evaluator after the fixes; conditional
+evaluation was moved into its cohesive owning algorithm, without a waiver or
+mechanical split. The existing storage test initially caught the two additional
+bound facts; its corrected assertion explicitly proves their original IDs and
+constant facts. Final debug/release tests and the companion source audit pass.
+No unsafe code, new dependency, blanket allowance, environment read, fixture
+recognition, production C++ delegation, syntax clone or text transport was added.
+The semantic tool still runs the shared Rust frontend directly; oracle adapter
+invocations supply comparison evidence only. No lowering, optimizer, allocator,
+backend lifetime, code-generation policy or PA35 target was changed.
+
+### Validation and preservation
+
+| Command / evidence | Final result | Artifact relative to root |
+| --- | --- | --- |
+| `make build` | Pass, locked release workspace | `build-final.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | Pass, 198/198 fixed identities | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | Pass, same 198/198 | `stage-make.log` |
+| `make course-pa7` | Pass, 240/240; original 229 plus 11 new | `course-final.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | Pass, all PA1–PA6 fixed and original course lanes | `prior-final.log`, `prior-summary.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | Pass | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | Pass | `preserve.log` |
+| `make lint` / protected `clone_quality.py` | Pass, rustfmt, strict all-feature Clippy, debug/release unit/doc tests and audit | `lint-final.log` |
+| `make audit-rust` | Pass, 132 files, zero findings | `audit-final.log` |
+| `python3 .../pa7-full-stage-audit-20261013/probe.py` | 56/62; six explicit acceptance findings remain | `entry-probes.jsonl`, `entry-probe-summary.json`, `probes.jsonl`, `probe-summary.json` |
+| `python3 .../pa7-full-stage-audit-20261013/supplement.py` | 20/20 selected-failure/type/completeness comparisons | `entry-supplement.jsonl`, `supplement.jsonl`, `supplement-summary.json` |
+| `python3 .../pa7-full-stage-audit-20261013/measure.py` | Exact paired workload results and two protected native qualifications | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+`preservation.json` independently compares all 198 entry passes by identity:
+198 retained, zero lost, unchanged fixed coverage. `course-preservation.json`
+compares the entry commit's source identities with the final full-lane trace:
+all original 229 ran, all 240 receipts match, and exactly 11 new cases ran.
+No failed count or course failure marker remains. PA1–PA6 fixed counts are
+58/26/20/106/196/121; their full course counts are 58/28/20/112/296/694, all
+passing. These proofs establish preservation and the corrected group, not full
+stage completeness. PA33 release/census and PA34 object equality are not due
+at PA7, and no such completion claim is made.
+
+### Resource observations and stack qualification
+
+Final-binary warm process measurements ran after the gate jobs ended, with A/A
+calibration followed by paired ABBA/BAAB samples. Every source/binary digest,
+wall/RSS sample and output digest is retained. All 12 protected scaling receipts
+match, and all measured semantic outputs agree. These observations include
+startup and dump I/O; they do not measure native generated-code improvements.
+
+| Workload / declarations | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| selected-conditionals / 128 | 7.43 / 6516 | 22.53 / 8368 |
+| unevaluated-bounds / 128 | 7.19 / 5780 | 19.99 / 8740 |
+| selected-conditionals / 512 | 9.78 / 6498 | 25.25 / 8366 |
+| unevaluated-bounds / 512 | 9.05 / 6452 | 23.75 / 8002 |
+| selected-conditionals / 2048 | 19.20 / 8628 | 47.01 / 9296 |
+| unevaluated-bounds / 2048 | 14.88 / 8584 | 41.06 / 9274 |
+
+Native probes fix 1,000 nested ordinary calls inside an array-bound `sizeof`
+and 1,000 nested conditional branches with an untaken call, starting at 1 MiB.
+Both protected receipts report `match: true` and
+`stack_qualification.passed: true`. Both tools succeed with identical bytes at
+a shared 16 MiB stack; raw attempts/retries remain under `stack-qualifications/`.
+Only the protected receipt's match establishes qualification. Original adapter
+exits and physical exhaustion positions are retained, not calibrated. The
+genuine byte-budget guard remains intact. Shared storage was about 28.55 GB
+used, below the 107,374,182,400-byte budget.
+
+### Exact open findings and next dependency boundary
+
+The following source identities, relative to this artifact root, have successful
+C++ results and remain mismatched after the fixes:
+
+```text
+builtin-pointer-nonconstant.cpp       Rust 86, C++ 0
+builtin-array-object.cpp              Rust 86, C++ 0
+builtin-null-cast.cpp                 Rust 86, C++ 0
+builtin-address-object.cpp            Rust 86, C++ 0
+builtin-pointer-compare.cpp           both 0, wrong folded semantic bytes
+constexpr-null-compare.cpp            Rust 1, C++ 0
+```
+
+The first four expose the broad `builtin_calls.rs` missing-address boundary;
+the last two expose integral evaluation of pointer/null comparisons. They are
+not accepted negative cases, resource qualifications or oracle issues. Sources,
+exact streams and mismatch directories remain in the protected probe receipts.
+The next coherent group is typed symbolic null/object/function/literal address
+facts and the owning constant place/scalar conversion/equality operations:
+`constant_interpreter.cpp`, `constant_expressions.cpp`, `constant_values.h`,
+`analyzer_builtins.cpp`, `constants.rs` and `builtin_calls.rs`. Preserve compact
+entity identity and target offsets; do not return zero generically for an
+unsupported constant query. Then resume the complete stage-owned C++ census,
+control-flow, conversion/ranking and dump review beyond the current probes.
+Existing later template-body/class-construction boundaries remain separately
+recorded below; passing their limited PA7 fixtures does not erase them.
 
 ## Ordinary function-template signature checkpoint — 2026-10-13
 

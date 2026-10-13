@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-declaration choose function of (int) returning int
+  function-declaration choose function of (long int) returning long int
+  variable pointer pointer to function of (int) returning int
+  variable value int
+  variable direct array of 4 int
+  variable indirect array of 4 int
+  variable dereferenced array of 4 int
+  variable increment array of 4 int
+  variable assignment array of 4 int
+  function-definition local function of () returning void
+    compound-statement
+      simple-declaration
+        variable array array of 4 int
+end translation unit
