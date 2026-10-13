@@ -386,9 +386,6 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::ExplicitInstantiation { .. } => {
                 Err(Error::Missing("explicit template instantiation"))
             }
-            ast::DeclKind::SpecialMember { .. } if self.semantic() => {
-                Err(Error::Missing("class semantic members"))
-            }
             ast::DeclKind::SpecialMember { .. } => self.special_member(id, scope),
             ast::DeclKind::BitField { .. } => Err(Error::Missing("bit-field declarations")),
         }
@@ -563,10 +560,26 @@ impl<'tree> Analyzer<'tree> {
                 "a constexpr function with a function-try-block",
             ));
         }
-        // Types mode walks only the mem-initializer expressions. Target lookup,
-        // subobject conversion and construction plans belong to semantic mode.
-        for initializer in self.tree.mem_initializers.get(parsed.initializers) {
-            self.initializer_names(initializer.initializer, scope, body.ty)?;
+        if self.semantic()
+            && self.template_depth == 0
+            && let Some(key) = self.graph.entity(body.entity).member_function
+            && key.kind == super::graph::MemberKind::Destructor
+        {
+            self.require_scalar_destruction(key.class)?;
+        }
+        if self.semantic()
+            && self.template_depth == 0
+            && self
+                .graph
+                .entity(body.entity)
+                .member_function
+                .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor)
+        {
+            self.written_constructor_plan(body.entity, parsed, scope)?;
+        } else {
+            for initializer in self.tree.mem_initializers.get(parsed.initializers) {
+                self.initializer_names(initializer.initializer, scope, body.ty)?;
+            }
         }
         self.substatement(parsed.compound, scope)?;
         if let Some(handlers) = parsed.handlers {

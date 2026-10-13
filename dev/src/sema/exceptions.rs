@@ -21,6 +21,12 @@ pub(super) enum ExceptionSet {
     None,
     Dynamic(Vec<TypeId>),
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum DestructorSpecification {
+    #[default]
+    Explicit,
+    Implicit,
+}
 #[derive(Clone, Debug)]
 pub(super) enum ExceptionState {
     Absent,

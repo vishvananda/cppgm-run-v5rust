@@ -122,6 +122,9 @@ pub(super) struct Entity {
     pub constant: super::constants::ConstantState,
     pub implicit_default: Option<ScopeId>,
     pub user_constructor: Option<BindingId>,
+    pub declared_constructors: Vec<BindingId>,
+    pub special_definition: Option<super::special_members::SpecialDefinition>,
+    pub destructor_specification: super::exceptions::DestructorSpecification,
     pub data_member: Option<DataMemberKind>,
     pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
@@ -407,6 +410,9 @@ impl Graph {
             constant: super::constants::ConstantState::None,
             implicit_default: None,
             user_constructor: None,
+            declared_constructors: Vec::new(),
+            special_definition: None,
+            destructor_specification: super::exceptions::DestructorSpecification::Explicit,
             data_member: None,
             mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
@@ -454,6 +460,11 @@ impl Graph {
                 _ => entry.value,
             })
             .filter(|&id| self.binding(id).entity == binding.entity)
+            .or_else(|| {
+                self.entity(binding.entity)
+                    .member_function
+                    .and_then(|key| self.member_function(key))
+            })
             .or_else(|| {
                 if binding.kind != BindingKind::Function {
                     return None;
@@ -650,6 +661,20 @@ impl Graph {
         self.member_functions.insert(key, binding);
         self.entity_mut(self.binding(binding).entity)
             .member_function = Some(key);
+        if key.kind == MemberKind::Constructor {
+            let entity = self.binding(binding).entity;
+            let earlier = self
+                .entity(key.class)
+                .declared_constructors
+                .iter()
+                .position(|&id| self.binding(id).entity == entity);
+            let constructors = &mut self.entity_mut(key.class).declared_constructors;
+            if let Some(index) = earlier {
+                constructors[index] = binding;
+            } else {
+                constructors.push(binding);
+            }
+        }
     }
     pub(super) fn resolved_name(&self, name: crate::syntax::ast::Name) -> Option<BindingId> {
         self.resolved_names.get(name.index()).copied().flatten()

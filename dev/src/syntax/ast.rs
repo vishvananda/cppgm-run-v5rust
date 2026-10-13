@@ -284,13 +284,6 @@ pub(crate) enum QualifierKind {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Initializer {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The owning syntax location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub kind: InitializerKind,
 }
@@ -367,10 +360,6 @@ pub(crate) struct BitField {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct MemInitializer {
-    #[expect(
-        dead_code,
-        reason = "Initializer source location is retained for later constructor analysis"
-    )]
     pub location: SourceOffset,
     pub name: Name,
     pub initializer: Initializer,

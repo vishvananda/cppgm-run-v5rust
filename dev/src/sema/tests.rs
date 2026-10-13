@@ -1313,3 +1313,94 @@ fn member_addresses_select_canonical_cv_identity_and_close_only_the_selected_dem
         super::construction::ConstructorState::NotStarted
     ));
 }
+
+#[test]
+fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
+    use super::{
+        construction::ConstructorState, graph::MemberKind, special_members::SpecialDefinition,
+    };
+    use crate::syntax::ast::InitializerKind;
+    let source = SourceBuffer::new(b"struct C{long x;int y=7;C();C(int n):y(n),x(n){}};C c;C::C():x(3){} C d;struct Unused{int&r;Unused()=default;};".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"constructor-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let class_name = cursor.intern_name(b"C").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, class_name, Filter::Prefix).unwrap())
+        .entity;
+    let ConstructorState::Ready(plan) = graph.entity(class).default_construction else {
+        panic!("default constructor was not memoized");
+    };
+    let selected = graph.constructors.get(plan);
+    let binding = selected.binding.unwrap();
+    let function = graph.binding(binding).entity;
+    assert_eq!(binding, graph.function_origin(function).unwrap());
+    assert_eq!(graph.entity(function).constructor, Some(plan));
+    assert_eq!(
+        graph.entity(function).member_function.unwrap().kind,
+        MemberKind::Constructor
+    );
+    assert!(matches!(
+        graph.entity(function).special_definition,
+        Some(SpecialDefinition::Body(_))
+    ));
+    assert_eq!(selected.members.len(), 2);
+    for (&member, &(target, _)) in graph.entity(class).members.iter().zip(&selected.members) {
+        assert_eq!(member, target);
+    }
+    let x = selected.members[0].0;
+    let x_init = selected.members[0].1.unwrap();
+    let InitializerKind::Parenthesized(arguments) = x_init.kind else {
+        panic!("written mem-initializer lost its original argument list");
+    };
+    let expression = tree.expr_lists.get(arguments)[0];
+    let facts = graph.expression_facts.get(expression).unwrap();
+    assert_eq!(
+        facts.conversion.unwrap().target,
+        graph.entity(x).ty.unwrap()
+    );
+    assert_ne!(facts.ty, facts.conversion.unwrap().target);
+    let y = selected.members[1].0;
+    let y_init = graph.entity(y).member_initializer.unwrap();
+    let InitializerKind::Assign(original) = y_init.kind else {
+        panic!("member default lost its original expression");
+    };
+    assert!(
+        matches!(selected.members[1].1.unwrap().kind, InitializerKind::Assign(id) if id == original)
+    );
+    for spelling in [b"c".as_slice(), b"d"] {
+        let name = cursor.intern_name(spelling).unwrap();
+        let object = graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity;
+        assert_eq!(graph.entity(object).constructor, Some(plan));
+    }
+    let other = graph.entity(class).declared_constructors[1];
+    let other_plan = graph
+        .entity(graph.binding(other).entity)
+        .constructor
+        .unwrap();
+    assert_ne!(other_plan, plan);
+    let record = graph.constructors.get(other_plan);
+    assert_eq!(record.members[0].0, x);
+    assert_eq!(record.members[1].0, y);
+    let name = cursor.intern_name(b"Unused").unwrap();
+    let unused = graph
+        .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+        .entity;
+    assert!(matches!(
+        graph.entity(unused).default_construction,
+        ConstructorState::NotStarted
+    ));
+    let declaration = graph.entity(unused).declared_constructors[0];
+    assert!(
+        graph
+            .entity(graph.binding(declaration).entity)
+            .constructor
+            .is_none()
+    );
+}

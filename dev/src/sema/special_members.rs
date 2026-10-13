@@ -25,6 +25,15 @@ pub(super) struct MemberDeclaration {
     pub body: Option<ast::BodyId>,
     pub implicit_type: bool,
 }
+#[derive(Clone, Copy)]
+pub(super) enum SpecialDefinition {
+    Defaulted {
+        first: bool,
+        body: Option<ast::BodyId>,
+    },
+    Body(ast::BodyId),
+    Deleted,
+}
 impl Analyzer<'_> {
     pub(super) fn special_member(&mut self, id: ast::DeclId, scope: ScopeId) -> Result<(), Error> {
         let declaration = *self.tree.declarations.get(id);
@@ -144,6 +153,16 @@ impl Analyzer<'_> {
             binding,
         );
         let function = self.graph.binding(binding).entity;
+        let first = self.graph.function_origin(function)? == binding;
+        if self.semantic() {
+            self.record_function_defaults(
+                function,
+                info.parameters
+                    .ok_or(Error::Invariant("special member without parameters"))?,
+                info.lookup,
+                info.ty,
+            )?;
+        }
         if kind != MemberKind::Constructor {
             self.graph.special_labels.insert(binding, name);
             if self.graph.entity(function).special_name.is_none() {
@@ -151,9 +170,44 @@ impl Analyzer<'_> {
             }
         }
         self.record_function_exceptions(function, info, info.lookup, location, limit)?;
+        if first && self.semantic() && kind == MemberKind::Destructor {
+            self.graph.entity_mut(function).destructor_specification =
+                if self.declarator_specifies_exceptions(Some(declarator)) {
+                    super::exceptions::DestructorSpecification::Explicit
+                } else {
+                    super::exceptions::DestructorSpecification::Implicit
+                };
+        }
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default)) {
-            self.default_special_member(class, kind, info, location)?;
+            self.default_special_member(function, class, kind, info, location)?;
+            let old = self.graph.entity(function).special_definition;
+            let old_body = match old {
+                Some(
+                    SpecialDefinition::Body(body)
+                    | SpecialDefinition::Defaulted {
+                        body: Some(body), ..
+                    },
+                ) => Some(body),
+                _ => None,
+            };
             self.graph.entity_mut(function).defined = true;
+            self.graph.entity_mut(function).special_definition =
+                Some(SpecialDefinition::Defaulted {
+                    first: first
+                        || matches!(old, Some(SpecialDefinition::Defaulted { first: true, .. })),
+                    body: old_body,
+                });
+            if first {
+                self.graph.entity_mut(function).definition_emission =
+                    super::function_demands::DefinitionEmission::Demanded;
+            } else if self.semantic() && self.template_depth == 0 {
+                self.defaulted_constructor_definition(function, class, kind, location)?;
+            }
+        }
+        if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Delete)) {
+            self.graph.entity_mut(function).availability =
+                super::graph::FunctionAvailability::Deleted;
+            self.graph.entity_mut(function).special_definition = Some(SpecialDefinition::Deleted);
         }
         if kind == MemberKind::Constructor && implicit_type {
             let signature = self.graph.types.canonical_function(info.ty)?;
@@ -170,6 +224,14 @@ impl Analyzer<'_> {
             self.graph.entity_mut(class).user_constructor = Some(binding);
         }
         if let Some(body) = body {
+            self.graph.entity_mut(function).special_definition =
+                Some(SpecialDefinition::Body(body));
+            self.graph.entity_mut(function).definition_emission =
+                if self.class_depth != 0 || specs.constexpr {
+                    super::function_demands::DefinitionEmission::Demanded
+                } else {
+                    super::function_demands::DefinitionEmission::Always
+                };
             let deferred = DeferredBody {
                 entity: function,
                 name: (kind == MemberKind::Constructor)
@@ -498,6 +560,7 @@ impl Analyzer<'_> {
 
     fn default_special_member(
         &self,
+        function: EntityId,
         class: EntityId,
         kind: MemberKind,
         info: &DeclaratorInfo,
@@ -506,7 +569,19 @@ impl Analyzer<'_> {
         let count = self.graph.types.function_parameter_count(info.ty)?;
         let special = match kind {
             MemberKind::Destructor => true,
-            MemberKind::Constructor if count == 0 => true,
+            MemberKind::Constructor
+                if count == 0
+                    || self.semantic()
+                        && (0..count).all(|index| {
+                            self.graph
+                                .entity(function)
+                                .defaults
+                                .get(index)
+                                .is_some_and(Option::is_some)
+                        }) =>
+            {
+                true
+            }
             MemberKind::Constructor if count == 1 => {
                 let parameter = self.graph.types.function_parameter(info.ty, 0)?;
                 matches!(self.graph.types.get(parameter).kind,
@@ -519,6 +594,19 @@ impl Analyzer<'_> {
             return Err(Error::at(
                 location,
                 "only special member functions can be defaulted",
+            ));
+        }
+        if self.semantic()
+            && self
+                .graph
+                .entity(function)
+                .defaults
+                .iter()
+                .any(Option::is_some)
+        {
+            return Err(Error::at(
+                location,
+                "an explicitly defaulted function has a default argument",
             ));
         }
         Ok(())

@@ -565,6 +565,13 @@ impl Analyzer<'_> {
         } else if self.semantic() && definition {
             self.default_initialize_declaration(binding, location)?;
         }
+        if self.semantic()
+            && self.template_depth == 0
+            && !member
+            && (definition || init.initializer.is_some())
+        {
+            self.variable_destruction(binding, info.lookup, location, init.initializer.is_some())?;
+        }
         Ok(())
     }
     fn complete_initializer_array(
@@ -1234,6 +1241,9 @@ impl Analyzer<'_> {
         self.class_depth -= 1;
         self.graph.entity_mut(entity).complete = true;
         self.finish_class_initializers(entity, node.location)?;
+        if self.semantic() && self.template_depth == 0 {
+            self.complete_scalar_destructor_exceptions(entity)?;
+        }
         if self.class_depth == 0 {
             self.finish_class_exceptions()?;
             let bodies = std::mem::take(&mut self.deferred);

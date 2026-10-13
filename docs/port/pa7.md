@@ -1,8 +1,214 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `4663046a410b80aa3f53857525c941b937a8767c` (clean implementation entry).
+Current implementation group base: `71998f27499a12f5728b781f9c1545f78d698d6a` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Scalar special-member definitions and construction checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The preceding goal turn is classified as progress:
+`71998f2` translated class-function identity/address/demand and reduced fixed
+failures from 12 to 6. This entry revalidated the clean checkout, read the
+owning guides, inspected frozen C++ owners and reran the complete turn-start
+manifest. Stage base and last-audited commit remain unchanged; implementation
+does not advance the stage or the independent audit pointer.
+
+The fixed manifest improves **192/198 → 194/198**, **6 → 4 failures**,
+with identical coverage and all 192 previously passing identities retained.
+The original course lane improves **223/229 → 225/229**, with those same four
+failures. The additional 31 course regressions all execute and pass. No
+fixtures, references, C++ sources, protected checks, Ralph state or acceptance
+policy changed. Optimizer, code generator, register allocator and backend
+lifetimes are unchanged. This frontend group makes no PA34 object-parity claim.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-special-members-20261013/`.
+All generated sources, dumps, diagnostic attempts, receipts, logs and timings
+remain outside the committed checkout. `baseline.log` and
+`baseline-manifest.json` retain the exact entry coverage; `preservation.json`
+retains the complete identity comparison. Raw per-case protected traces and
+mismatch files remain under `../clone/cases/pa7/<case-hash>/`.
+
+### Frozen owners and typed responsibilities
+
+Consulted `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/` directly:
+`analyzer_declarations.cpp::{special_member,declare_function,redeclare_function,
+default_definition,declare_variable}`, `analyzer_initialization.cpp::{
+implicit_constructor,default_initialize,check_const_default}`,
+`analyzer_construction.cpp::{implicit_default_facts,constructor_plan,
+member_plans,member_plan,mem_initializer_target,declare_destructor,
+check_destruction,check_subobject_destruction}`, `analyzer_bodies.cpp::
+function_body` and `semantics_dump.cpp::{declaration,constructor_action,
+function_definition,schedule,trailing}`. `source-map.tsv` records these
+partial translations and their remaining dependent owners.
+
+- `special_members.rs` uses the existing canonical `MemberKey`/function
+  identities in semantic mode. The `SpecialDefinition` enum retains written
+  `BodyId`, deletion, and first-versus-later defaulted state. Special-member
+  defaults use the existing typed expression/visibility and class-completion
+  queue. Default-argument diagnostics include defaults retained from an earlier
+  declaration. First-defaulted constructors defer scalar planning until use;
+  later defaulted definitions plan immediately and reject deletion there.
+  The frozen implementation permits repeated late default definitions; that
+  behavior, original body retention and first-defaulted state are preserved.
+- `graph.rs` indexes constructors by canonical signature and retains only
+  their own class's source-ordered bindings for zero-argument selection. A
+  compatible special redeclaration inherits the original binding's access and
+  visibility ordinal. Constructor labels never enter ordinary name lookup.
+  Default selection inspects that named set, including recorded parameter
+  defaults, prefers callable non-templates, diagnoses ambiguity/absence and
+  memoizes the selected compact `ConstructorId`. Template deduction remains
+  an explicit incomplete dependency when no ordinary constructor qualifies.
+- `construction.rs` owns private unit constructor records and original
+  `(member EntityId, Initializer)` plans. Each written body plans scalar
+  members in declaration order; a mem-initializer takes precedence over the
+  member default. Name lookup follows class then function context. Duplicate,
+  invalid target, reference/const omission, narrowing, conversion and union
+  designation checks use the frozen ordering and diagnostics. A temporary
+  hash map indexes the written designations during this body only. The plan
+  retains conversions on original `ExprId`s without synthesized syntax or
+  reparsing. An earlier selected declaration and its later definition share
+  the same constructor record ID; a later plan updates that record once.
+- `analyzer.rs` uses the existing deferred-body queue, function scope and
+  ephemeral `BodyContext`. Constructor plans run before the original compound
+  statement with parameters visible; inline-body dependencies stay with that
+  function, while ordinary definitions publish root demand. Scalar destructor
+  bodies/defaulted definitions check their supported subobjects. At class
+  completion, the typed `DestructorSpecification` enum selects the omitted
+  scalar destructor exception fact; explicit specifications retain their
+  existing owner. Variable lifetime checks diagnose deleted/inaccessible
+  destruction and count nontrivial automatic initialization exactly once.
+  The frozen `check_destruction` does **not** demand a destructor definition
+  in this semantic view; that distinction is preserved.
+- `semantics_dump.rs` reads original special-member declarations and recorded
+  body facts. Defaulted definitions have an empty compound view; written
+  constructor/destructor bodies retain the additional enclosing compound.
+  Explicit constructor actions omit the synthesized implicit-constructor call.
+  Demanded written bodies versus bodyless defaulted declarations use the
+  existing member queue and identity deduplication. Standalone local class
+  definitions omit the frozen printer's absent empty simple-declaration line.
+  The printer performs no name lookup, typing or semantic planning.
+
+Architecture review: one parsed AST, immutable canonical types and dense
+expression facts; typed class-local callable indexes and constructor records;
+completion events rather than whole-unit retries. Member planning is linear
+in that class's members/designations, with average constant-time typed lookup.
+Repeated zero-argument selection uses the cached identity. Undemanded first-
+defaulted constructor plans stay absent. Scope scratch dies with each body;
+original initializers retain only IDs/ranges into the unit-owned syntax. The
+new ownership regression proves selected origin stability across a later
+out-of-class definition, repeated object reuse, member-order plans over written
+reverse order, original member-default expressions and retained scalar operand
+conversions, with an unrelated deleted-on-use constructor left undemanded.
+No dependency, unsafe code, FFI, environment read, subprocess fallback, blanket
+lint suppression or new lint expectation was added. Two stale syntax-location
+expectations were removed because semantic planning now consumes those fields.
+
+### Validation evidence
+
+`validate.py` and `checks.json` retain terminal exits, commands, binary/log hashes
+and elapsed wall time. Candidate cppgm SHA-256:
+`092791d4ee674f01050613bb38b6ad79a7b9d885b3242f56e10e67221033e3fb`. Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+The independent identity comparison proves both full fixed coverage and zero lost passes. Course failure markers are retained and are not
+reported as successful validation.
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 194/198, four failures; exit 1 | `stage-required.log`, `protected-stage-result.json`, `fixed-manifest.json` |
+| `make test-pa7` | Same fixed identities/counts; make exit 2 | `stage.log` |
+| `make course-pa7` | 225/229, same four failures; marker retained; make exit 2 | `course.log`, `course-result.json`; `../clone/course/pa7/test/trace.jsonl` |
+| `python3 .../clone_check.py prior pa7` | PASS, every PA1–PA6 fixed and course lane | `prior.log`, `prior-summary.json` |
+| `python3 .../clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 .../clone_check.py preserve pa7` | PASS; independent 192-identity preservation also passes | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all-feature Clippy, 176 debug/release library tests each and file audit | `lint.log` |
+| `make audit-rust` | PASS, 129 files, zero findings | `audit.log` |
+| `python3 .../pa7-special-members-20261013/probe.py` | 90/90 exact protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl`, sources |
+| `python3 .../pa7-special-members-20261013/measure.py` | Exact supported scaling and qualified native receipts | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+The probes cover first/later default definitions, declarations alone,
+zero-argument defaults/ambiguity, private access including later definitions,
+deleted functions, const/reference default deletion, explicit/member-default
+initialization, scalar conversion/narrowing and reference binding, missing/
+static/function/type targets, duplicate designations, unions, local classes,
+parameter shadowing, function-try blocks, nested demand and repeat selection,
+scalar destruction/access/deletion/exception compatibility, and switch bypass
+counts. They supplement the unchanged fixed and course suites. Class-subobject,
+anonymous-inner, delegation, copy/move and template construction remain
+explicit status-86 dependencies, rather than fabricated successful rejections.
+
+The existing Ralph stage-progress receipt incorrectly treats the fixed lane's
+198 results as a 229-case run and reports 31 unrun cases. The required fixed
+command executes all 198 manifest entries; `make course-pa7` executes all 229
+course identities. `harness-counts.json` retains the reproducer commands and
+both complete receipts alongside the unchanged external failure log. No
+checker policy or Ralph state was edited. Exact fixed reduction and all course
+outcomes are supplied for checkpoint review; external advancement remains
+Ralph's decision.
+
+### Resource measurements and protected stack qualification
+
+Warm observations run after the test jobs finish, with A/A calibration then
+paired ABBA/BAAB blocks. `measurements.json` retains source/binary hashes,
+output digests, every sample and peak RSS. All output hashes agree and all 18
+protected workload receipts match. Workloads scale distinct first-defaulted
+classes with initialized scalar members, repeated zero-argument selection from
+one class, and reverse-written scalar mem-initializers in one constructor.
+Measurements include process startup, parsing, analysis and semantic output;
+no cold-cache or hardware-counter claim is made. PA35 generated-code
+improvement targets do not apply to this exact frontend translation.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| defaulted-classes / 128 | 6.05 / 6490 | 20.40 / 8362 |
+| shared-selection / 128 | 5.16 / 5806 | 16.50 / 8368 |
+| defaulted-classes / 512 | 10.48 / 8622 | 27.81 / 8368 |
+| shared-selection / 512 | 5.84 / 6498 | 20.08 / 8378 |
+| defaulted-classes / 2048 | 29.37 / 15650 | 64.56 / 14930 |
+| shared-selection / 2048 | 9.89 / 7508 | 28.39 / 8364 |
+| scalar-members / 16 | 4.48 / 5818 | 15.52 / 8354 |
+| scalar-members / 64 | 4.72 / 5778 | 17.00 / 8368 |
+| scalar-members / 256 | 5.25 / 6450 | 18.13 / 8376 |
+
+Native probes fix 1,000 nested ordinary calls, 1,500 unary operators and 1,500
+parentheses inside a scalar mem-initializer, starting at a 1 MiB stack. All
+three protected receipts have `match: true` and `stack_qualification.passed:
+true`; both tools succeed identically at a shared 16 MiB retry. Raw initial
+attempts/retries remain in `stack-qualifications/<receipt-id>/`. Only the
+protected receipt establishes qualification; the genuine byte-budget guard
+is unchanged. No native exhaustion depth, frame size or diagnostic position
+was calibrated. Shared storage measured 28.52 GB used under the 107.37 GB
+capacity ceiling.
+
+### Exact newly passing fixed identities
+
+```text
+tests/general/100-private-nested-out-of-class-constructor-definition.t
+tests/general/300-most-vexing-local-function-member-call-bad.t
+```
+
+### Remaining identities and next dependency boundary
+
+The coherent group completes scalar special-member definitions, default
+constructor selection/plans, destruction checks and their semantic views.
+The next construction boundary is typed class-subobject/anonymous-inner plans,
+copy/move selection and prvalue copy elision, delegation and implicit-object
+expressions. These need the frozen class-construction/conversion owners;
+scalar default plans cannot substitute for them. Inheritance must retain typed
+base paths and conversion/access facts. Template target deduction remains a
+separate owner, consuming retained parsed patterns rather than replaying tokens.
+Constexpr object interpretation and virtual destruction also remain dependent
+work. A partial handoff is justified by the completed production group and
+exact preserved reduction; the stage has not passed or advanced.
+
+```text
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/300-elaborated-local-struct-copy-init.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
 
 ## Class-function identity, addresses and demand checkpoint — 2026-10-13
 

@@ -1,13 +1,14 @@
 // Translated from sema/analyzer_initialization.cpp and analyzer_construction.cpp. See NOTICE.
-//! Demand-only implicit default construction for classes with scalar subobjects.
+//! Demand-only default construction and source-ordered scalar subobject plans.
 //! Records are unit-owned; declarations and expressions retain compact identities.
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{BindingId, EntityId},
+    graph::{BindingId, EntityId, MemberKind, ScopeId},
+    special_members::SpecialDefinition,
     types::{Cv, Scalar, TypeId, TypeKind},
 };
-use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
+use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ConstructorId(u32);
@@ -20,12 +21,32 @@ pub(super) enum ConstructorState {
 }
 pub(super) struct Constructor {
     pub class: EntityId,
+    pub binding: Option<BindingId>,
     pub object_pointer: TypeId,
     // The dump's function type includes its implicit object parameter.
     pub presentation_type: TypeId,
     deleted: bool,
     const_default: bool,
-    initializers: usize,
+    pub members: Vec<(EntityId, Option<ast::Initializer>)>,
+}
+impl Constructor {
+    fn initialized_members(&self) -> usize {
+        self.members
+            .iter()
+            .filter(|(_, source)| source.is_some())
+            .count()
+    }
+    pub(super) fn nontrivial(&self, graph: &super::graph::Graph) -> bool {
+        self.initialized_members() != 0
+            || self.binding.is_some_and(|binding| {
+                !matches!(
+                    graph
+                        .entity(graph.binding(binding).entity)
+                        .special_definition,
+                    Some(SpecialDefinition::Defaulted { first: true, .. })
+                )
+            })
+    }
 }
 #[derive(Default)]
 pub(super) struct Constructors {
@@ -43,6 +64,9 @@ impl Constructors {
     pub(super) fn get(&self, id: ConstructorId) -> &Constructor {
         &self.records[id.0 as usize]
     }
+    fn replace(&mut self, id: ConstructorId, record: Constructor) {
+        self.records[id.0 as usize] = record;
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn default_initialize_declaration(
@@ -59,7 +83,7 @@ impl Analyzer<'_> {
             .is_some_and(|properties| properties.automatic)
             && variable
                 .constructor
-                .is_some_and(|id| self.graph.constructors.get(id).initializers != 0)
+                .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
         {
             self.note_local_initializer();
         }
@@ -93,10 +117,17 @@ impl Analyzer<'_> {
             object = element;
         }
         if let TypeKind::Class(class) = self.graph.types.get(object).kind {
-            let constructor = self.implicit_scalar_constructor(class)?;
+            let constructor = self.default_constructor(class, location)?;
             let record = self.graph.constructors.get(constructor);
             if record.deleted {
                 return Err(Error::at(location, "use of a deleted function"));
+            }
+            if let Some(selected) = record.binding {
+                self.check_direct_member_access(
+                    selected,
+                    self.graph.binding_scope(binding),
+                    location,
+                )?;
             }
             if self.graph.types.get(object).cv.0 & 1 != 0 && !record.const_default {
                 return Err(Error::at(
@@ -113,7 +144,11 @@ impl Analyzer<'_> {
             if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
                 && self.unevaluated == 0
             {
-                self.record_demand(super::function_demands::Demand::Constructor(constructor));
+                if let Some(selected) = self.graph.constructors.get(constructor).binding {
+                    self.demand_function(selected, true);
+                } else {
+                    self.record_demand(super::function_demands::Demand::Constructor(constructor));
+                }
             }
         } else if self.graph.types.get(object).cv.0 & 1 != 0
             && !self
@@ -129,7 +164,11 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn implicit_scalar_constructor(&mut self, class: EntityId) -> Result<ConstructorId, Error> {
+    fn default_constructor(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<ConstructorId, Error> {
         match self.graph.entity(class).default_construction {
             ConstructorState::Ready(id) => return Ok(id),
             ConstructorState::InProgress => {
@@ -138,9 +177,35 @@ impl Analyzer<'_> {
             ConstructorState::NotStarted => (),
         }
         if self.graph.entity(class).user_constructor.is_some() {
-            return Err(Error::Missing(
-                "user-declared default constructor selection",
-            ));
+            let mut selected = None;
+            let mut templates = false;
+            for &binding in &self.graph.entity(class).declared_constructors {
+                let entity = self.graph.entity(self.graph.binding(binding).entity);
+                let count = self.graph.types.function_parameter_count(
+                    entity
+                        .ty
+                        .ok_or(Error::Invariant("constructor without type"))?,
+                )?;
+                if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none)) {
+                    continue;
+                }
+                if entity.template_head.is_some() {
+                    templates = true;
+                    continue;
+                }
+                if selected.replace(binding).is_some() {
+                    return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
+                }
+            }
+            if let Some(binding) = selected {
+                let id = self.declared_constructor_plan(binding)?;
+                self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
+                return Ok(id);
+            }
+            if templates {
+                return Err(Error::Missing("default constructor template deduction"));
+            }
+            return Err(Error::at(location, "no default constructor for the class"));
         }
         if !self.graph.entity(class).complete {
             return Err(Error::Invariant("constructor of an incomplete class"));
@@ -149,7 +214,7 @@ impl Analyzer<'_> {
             return Err(Error::Missing("class template default construction"));
         }
         self.graph.entity_mut(class).default_construction = ConstructorState::InProgress;
-        let result = self.scalar_constructor_facts(class);
+        let result = self.scalar_constructor_facts(class, None);
         self.graph.entity_mut(class).default_construction =
             result.as_ref().map_or(ConstructorState::NotStarted, |&id| {
                 ConstructorState::Ready(id)
@@ -157,18 +222,24 @@ impl Analyzer<'_> {
         result
     }
 
-    fn scalar_constructor_facts(&mut self, class: EntityId) -> Result<ConstructorId, Error> {
+    fn scalar_constructor_facts(
+        &mut self,
+        class: EntityId,
+        binding: Option<BindingId>,
+    ) -> Result<ConstructorId, Error> {
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut deleted = false;
-        let initialized = self.graph.entity(class).initialized_members;
-        for &member in &self.graph.entity(class).members {
-            let member = self.graph.entity(member);
+        let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
+        for &member_id in &self.graph.entity(class).members {
+            let member = self.graph.entity(member_id);
             let mut ty = member
                 .ty
                 .ok_or(Error::Invariant("constructor member without type"))?;
             if member.member_initializer.is_some() {
+                plans.push((member_id, member.member_initializer));
                 continue;
             }
+            plans.push((member_id, None));
             while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                 ty = element;
             }
@@ -181,6 +252,7 @@ impl Analyzer<'_> {
             }
         }
         let members = self.graph.entity(class).members.len();
+        let initialized = self.graph.entity(class).initialized_members;
         let const_default = members == 0
             || if union {
                 initialized == 1
@@ -207,13 +279,385 @@ impl Analyzer<'_> {
             },
             Cv::default(),
         )?;
-        self.graph.constructors.add(Constructor {
+        if let Some(binding) = binding {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
+        }
+        let record = Constructor {
             class,
+            binding,
             object_pointer,
             presentation_type,
             deleted,
-            const_default,
-            initializers: initialized,
+            const_default: const_default
+                || binding.is_some_and(|binding| {
+                    matches!(
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .special_definition,
+                        Some(SpecialDefinition::Defaulted { first: false, .. })
+                    )
+                }),
+            members: plans,
+        };
+        self.publish_constructor(record)
+    }
+
+    fn publish_constructor(&mut self, record: Constructor) -> Result<ConstructorId, Error> {
+        let function = record
+            .binding
+            .map(|binding| self.graph.binding(binding).entity);
+        if let Some(id) = function.and_then(|entity| self.graph.entity(entity).constructor) {
+            self.graph.constructors.replace(id, record);
+            return Ok(id);
+        }
+        let id = self.graph.constructors.add(record)?;
+        if let Some(entity) = function {
+            self.graph.entity_mut(entity).constructor = Some(id);
+        }
+        Ok(id)
+    }
+
+    fn declared_constructor_plan(&mut self, binding: BindingId) -> Result<ConstructorId, Error> {
+        let entity = self.graph.binding(binding).entity;
+        if let Some(id) = self.graph.entity(entity).constructor {
+            return Ok(id);
+        }
+        let class = self
+            .graph
+            .entity(entity)
+            .member_function
+            .ok_or(Error::Invariant("constructor without owner"))?
+            .class;
+        if matches!(
+            self.graph.entity(entity).special_definition,
+            Some(SpecialDefinition::Defaulted { .. })
+        ) {
+            if self.graph.types.function_parameter_count(
+                self.graph
+                    .entity(entity)
+                    .ty
+                    .ok_or(Error::Invariant("constructor without type"))?,
+            )? != 0
+            {
+                return Err(Error::Missing("defaulted copy or move constructor plans"));
+            }
+            return self.scalar_constructor_facts(class, Some(binding));
+        }
+        // A user-provided declaration alone has no subobject plan to demand.
+        let ty = self
+            .graph
+            .entity(class)
+            .ty
+            .ok_or(Error::Invariant("constructor owner without type"))?;
+        let object_pointer = self.graph.types.pointer(ty)?;
+        let signature = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("constructor without signature"))?;
+        let TypeKind::Function {
+            result,
+            ref parameters,
+            variadic,
+            ..
+        } = self.graph.types.get(signature).kind
+        else {
+            return Err(Error::Invariant("constructor signature is not a function"));
+        };
+        let mut parameters = parameters.clone();
+        parameters.insert(0, object_pointer);
+        let presentation_type = self.graph.types.intern(
+            TypeKind::Function {
+                result,
+                parameters,
+                variadic,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        self.publish_constructor(Constructor {
+            class,
+            binding: Some(binding),
+            object_pointer,
+            presentation_type,
+            deleted: self.graph.entity(entity).availability
+                == super::graph::FunctionAvailability::Deleted,
+            const_default: true,
+            members: Vec::new(),
         })
+    }
+
+    pub(super) fn defaulted_constructor_definition(
+        &mut self,
+        function: EntityId,
+        class: EntityId,
+        kind: MemberKind,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if kind == MemberKind::Destructor {
+            return self.require_scalar_destruction(class);
+        }
+        if kind != MemberKind::Constructor {
+            return Err(Error::Invariant("defaulted conversion function"));
+        }
+        if self.graph.types.function_parameter_count(
+            self.graph
+                .entity(function)
+                .ty
+                .ok_or(Error::Invariant("constructor without type"))?,
+        )? != 0
+        {
+            return Err(Error::Missing("defaulted copy or move constructor plans"));
+        }
+        let binding = self.graph.function_origin(function)?;
+        let id = self.scalar_constructor_facts(class, Some(binding))?;
+        if self.graph.constructors.get(id).deleted {
+            return Err(Error::at(
+                location,
+                "an explicitly defaulted function is defined as deleted",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn require_scalar_destruction(&self, class: EntityId) -> Result<(), Error> {
+        for &member in &self.graph.entity(class).members {
+            let mut ty = self
+                .graph
+                .entity(member)
+                .ty
+                .ok_or(Error::Invariant("member without type"))?;
+            while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+                ty = element;
+            }
+            if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
+                return Err(Error::Missing("class subobject destruction plans"));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn variable_destruction(
+        &mut self,
+        binding: BindingId,
+        scope: ScopeId,
+        location: SourceOffset,
+        initialized: bool,
+    ) -> Result<(), Error> {
+        let mut ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("object without type"))?;
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(());
+        };
+        let Some(destructor) = self.scalar_destructor_binding(class)? else {
+            return Ok(());
+        };
+        self.require_scalar_destruction(class)?;
+        let entity = self.graph.entity(self.graph.binding(destructor).entity);
+        if entity.availability == super::graph::FunctionAvailability::Deleted {
+            return Err(Error::at(location, "use of a deleted function"));
+        }
+        self.check_direct_member_access(destructor, scope, location)?;
+        let nontrivial = !matches!(
+            entity.special_definition,
+            Some(SpecialDefinition::Defaulted { first: true, .. })
+        );
+        let object = self.graph.entity(self.graph.binding(binding).entity);
+        if nontrivial
+            && !initialized
+            && object
+                .variable
+                .is_some_and(|properties| properties.automatic)
+            && !object
+                .constructor
+                .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
+        {
+            self.note_local_initializer();
+        }
+        Ok(())
+    }
+
+    fn scalar_destructor_binding(&mut self, class: EntityId) -> Result<Option<BindingId>, Error> {
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        let signature = self.graph.types.intern(
+            TypeKind::Function {
+                result: void,
+                parameters: Vec::new(),
+                variadic: false,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        Ok(self.graph.member_function(super::graph::MemberKey {
+            class,
+            kind: MemberKind::Destructor,
+            signature,
+            shape: None,
+        }))
+    }
+
+    pub(super) fn complete_scalar_destructor_exceptions(
+        &mut self,
+        class: EntityId,
+    ) -> Result<(), Error> {
+        let Some(binding) = self.scalar_destructor_binding(class)? else {
+            return Ok(());
+        };
+        let entity = self.graph.binding(binding).entity;
+        if self.graph.entity(entity).destructor_specification
+            == super::exceptions::DestructorSpecification::Implicit
+        {
+            self.require_scalar_destruction(class)?;
+            self.graph.entity_mut(entity).exceptions =
+                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
+        }
+        Ok(())
+    }
+
+    pub(super) fn written_constructor_plan(
+        &mut self,
+        function: EntityId,
+        body: &ast::FunctionBody,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let binding = self.graph.function_origin(function)?;
+        let id = self.declared_constructor_plan(binding)?;
+        let class = self.graph.constructors.get(id).class;
+        let location = self.tree.statements.get(body.compound).location;
+        let owner = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("constructor owner without scope"))?;
+        let mut written = std::collections::HashMap::new();
+        for initializer in self.tree.mem_initializers.get(body.initializers) {
+            if initializer.pack {
+                return Err(Error::Missing("constructor initializer pack expansion"));
+            }
+            let member = self.constructor_member_target(initializer, owner, scope, class)?;
+            if written.insert(member, initializer.initializer).is_some() {
+                return Err(Error::at(
+                    initializer.location,
+                    "a member or base initialized twice",
+                ));
+            }
+        }
+        if self.graph.entity(class).key == Keyword::Union && written.len() > 1 {
+            let second = self.tree.mem_initializers.get(body.initializers)[1].location;
+            return Err(Error::at(
+                second,
+                "a union's constructor initializes several members",
+            ));
+        }
+        let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
+        for index in 0..self.graph.entity(class).members.len() {
+            let member = self.graph.entity(class).members[index];
+            let ty = self
+                .graph
+                .entity(member)
+                .ty
+                .ok_or(Error::Invariant("member without type"))?;
+            let variant = self.graph.entity(class).key == Keyword::Union;
+            let source = written.get(&member).copied().or_else(|| {
+                if variant && !written.is_empty() {
+                    None
+                } else {
+                    self.graph.entity(member).member_initializer
+                }
+            });
+            if let Some(initializer) = written.get(&member).copied() {
+                self.object_initializer(initializer, scope, ty, initializer.location)?;
+            } else if source.is_none() && !variant {
+                let mut object = ty;
+                while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
+                    object = element;
+                }
+                if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
+                    return Err(Error::Missing("class subobject constructor plans"));
+                }
+                if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
+                    return Err(Error::at(location, "a reference member is not initialized"));
+                }
+                if self.graph.types.get(object).cv.0 & 1 != 0 {
+                    return Err(Error::at(location, "a const member is not initialized"));
+                }
+            }
+            plans.push((member, source));
+        }
+        self.graph.constructors.records[id.0 as usize].members = plans;
+        Ok(())
+    }
+
+    fn constructor_member_target(
+        &mut self,
+        initializer: &ast::MemInitializer,
+        owner: ScopeId,
+        scope: ScopeId,
+        class: EntityId,
+    ) -> Result<EntityId, Error> {
+        let name = self.tree.names.get(initializer.name);
+        let parts = self.tree.name_lists.get(name.components);
+        let own = if !name.global && parts.len() == 1 {
+            if let ast::NameKind::Identifier(key) = parts[0].kind {
+                self.graph.own(owner, key, super::lookup::Filter::Ordinary)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let binding = if let Some(binding) = own {
+            Some(binding)
+        } else {
+            self.lookup_result(initializer.name, scope, super::lookup::Filter::Ordinary)?
+                .binding
+        }
+        .ok_or_else(|| Error::at(initializer.location, "the mem-initializer names nothing"))?;
+        let node = self.graph.binding(binding);
+        let member = self.graph.entity(node.entity);
+        if node.kind == super::graph::BindingKind::Variable {
+            if member.data_member == Some(super::graph::DataMemberKind::Instance)
+                && member.home == Some(owner)
+            {
+                return Ok(node.entity);
+            }
+            if member
+                .home
+                .and_then(|home| self.graph.scope(home).owner)
+                .is_some_and(|owner| self.graph.entity(owner).anonymous_storage.is_some())
+            {
+                return Err(Error::Missing("anonymous subobject constructor plans"));
+            }
+            return Err(Error::at(
+                initializer.location,
+                "the mem-initializer does not name a non-static data member of the class",
+            ));
+        }
+        if !matches!(
+            node.kind,
+            super::graph::BindingKind::Type | super::graph::BindingKind::Alias
+        ) {
+            return Err(Error::at(
+                initializer.location,
+                "the mem-initializer does not name a member or base",
+            ));
+        }
+        self.check_direct_member_access(binding, scope, initializer.location)?;
+        if node.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity) if entity == class)) {
+            return Err(Error::Missing("delegating constructor plans"));
+        }
+        Err(Error::at(
+            initializer.location,
+            "the mem-initializer does not name a direct or virtual base",
+        ))
     }
 }

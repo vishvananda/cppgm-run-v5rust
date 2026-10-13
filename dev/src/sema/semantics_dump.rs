@@ -87,7 +87,19 @@ impl Graph {
                 Item::Storage(id) => printer.storage_expression(id, depth)?,
                 Item::Constructor(id) => printer.constructor_definition(id, depth)?,
                 Item::DemandedFunction(binding) => {
-                    if let Some(declaration) = printer
+                    if let Some(
+                        super::special_members::SpecialDefinition::Body(body)
+                        | super::special_members::SpecialDefinition::Defaulted {
+                            body: Some(body),
+                            ..
+                        },
+                    ) = printer
+                        .graph
+                        .entity(printer.graph.binding(binding).entity)
+                        .special_definition
+                    {
+                        printer.function_definition(binding, Some(body), depth)?;
+                    } else if let Some(declaration) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)
                         .function_definition
@@ -99,7 +111,7 @@ impl Graph {
                                 "demanded definition without function syntax",
                             ));
                         };
-                        printer.function_definition(binding, body, depth)?;
+                        printer.function_definition(binding, Some(body), depth)?;
                     } else {
                         printer.binding_header(binding, "function-declaration", depth)?;
                     }
@@ -218,12 +230,28 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     .definition_emission
                     == super::function_demands::DefinitionEmission::Always
                 {
+                    self.function_definition(binding, Some(body), depth)?;
+                }
+            }
+            DeclKind::SpecialMember {
+                declarator,
+                initializer,
+                body,
+                ..
+            } => {
+                let binding = self.declared(declarator)?;
+                if body.is_some()
+                    || initializer
+                        .is_some_and(|init| matches!(init.kind, ast::InitializerKind::Default))
+                {
                     self.function_definition(binding, body, depth)?;
+                } else if block {
+                    self.binding_header(binding, "function-declaration", depth)?;
                 }
             }
             DeclKind::Linkage { declarations, .. } => self.declarations(declarations, depth, block),
-            DeclKind::Class(_) => {
-                if block {
+            DeclKind::Class(specifier) => {
+                if block && !matches!(specifier.kind, ast::SpecifierKind::Class(_)) {
                     self.line("simple-declaration", depth)?;
                 }
                 if let Some(storage) = self
@@ -233,6 +261,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     .copied()
                     .flatten()
                 {
+                    if block && matches!(specifier.kind, ast::SpecifierKind::Class(_)) {
+                        self.line("simple-declaration", depth)?;
+                    }
                     self.work
                         .push((Item::Binding(storage, None), depth + usize::from(block)));
                 }
@@ -247,7 +278,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     fn function_definition(
         &mut self,
         binding: BindingId,
-        body: ast::BodyId,
+        body: Option<ast::BodyId>,
         depth: usize,
     ) -> io::Result<()> {
         let b = self.graph.binding(binding);
@@ -258,6 +289,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.object_pointer(object, cv)?;
             writeln!(self.output)?;
         }
+        let Some(body) = body else {
+            return self.line("compound-statement", depth + 1);
+        };
         let scope = self
             .graph
             .entity(b.entity)
@@ -290,11 +324,35 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let ast::Body::Parsed(body) = self.tree.bodies.get(body) else {
             return Err(io::Error::other("unparsed semantic body"));
         };
-        self.work.push((Item::Statement(body.compound), depth + 1));
+        let special = self
+            .graph
+            .entity(b.entity)
+            .member_function
+            .is_some_and(|key| {
+                matches!(
+                    key.kind,
+                    super::graph::MemberKind::Constructor | super::graph::MemberKind::Destructor
+                )
+            });
+        if special {
+            self.line("compound-statement", depth + 1)?;
+        }
+        self.work.push((
+            Item::Statement(body.compound),
+            depth + 1 + usize::from(special),
+        ));
         Ok(())
     }
     fn function_name(&mut self, id: BindingId) -> io::Result<()> {
         let binding = self.graph.binding(id);
+        let entity = self.graph.entity(binding.entity);
+        if let Some(key) = entity.member_function
+            && key.kind == super::graph::MemberKind::Constructor
+        {
+            return self
+                .graph
+                .write_constructor_name(key.class, self.cursor, self.output, true);
+        }
         let mut parts = Vec::new();
         let mut scope = Some(self.graph.binding_scope(id));
         while let Some(id) = scope {
@@ -311,7 +369,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.name(Some(name))?;
             self.output.write_all(b"::")?;
         }
-        self.name(binding.name)?;
+        if let Some(name) = entity.special_name {
+            crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
+        } else {
+            self.name(binding.name)?;
+        }
         Ok(())
     }
     fn binding_header(&mut self, id: BindingId, label: &str, depth: usize) -> io::Result<()> {
@@ -532,6 +594,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(b"constructor-action ")?;
         self.constructor_name(id, false)?;
         writeln!(self.output)?;
+        if self.graph.constructors.get(id).binding.is_some() {
+            return Ok(());
+        }
         self.line("call-expression prvalue void", depth + 1)?;
         self.indent(depth + 2)?;
         self.output.write_all(b"callee ")?;
