@@ -1,7 +1,181 @@
 # PA8 port ledger
 
 Stage base commit: `2bf11a2456047bffa7598407a9d32533f8f4fdd5`.
-Last audited commit: INITIAL (no PA8 acceptance audit; unchanged by implementation).
+Last audited commit: `b9bc99aa804db7eb182e1da9a610a1f218d01876` (PA8 full-stage acceptance).
+
+
+## Full-stage acceptance audit — 2026-10-13
+
+**Accepted for the PA8 introductory LowIR tool and model contract.** Reviewed
+all six implementation increments from the stage base through clean input
+`f8143de9bc1d5ca46aa279b74ac04c179b8cf32d`, then audited the fixes in
+`b9bc99aa804db7eb182e1da9a610a1f218d01876`. Reviewed increments:
+`4fe8f03`, `8d8a57c`, `50b3fc7`, `1da72ff`, `2d4fba1`, `f8143de`.
+This entry supersedes the historical missing-owner lists and INITIAL audit
+status below. No failing fixed case IDs or unresolved stage-owned findings
+remain. The prior floating checkpoint made concrete progress; this audit
+inspected its clean committed state and found no live interrupted job.
+
+Evidence root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa8-audit-20261013/`.
+`source-hashes.json` anchors the reviewed Rust and frozen C++ owners;
+`gate-snapshot/` retains all PA1–PA8 result records, course logs/receipts and
+PA8 per-case evidence. The documentation commit records this acceptance;
+its hash and clean status are recorded afterward in external `handoff.json`.
+
+### Responsibilities, completeness and order review
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, docs/rust-clone-plan.md,
+the complete PA8 handout and grammar, format requirements and stage ledger.
+Compared frozen C++ commit `883778fdfa45d523cf9e135d15169af976f451a8`:
+`dev/lowir.cpp`, all `lowir/` implementation/interface files,
+`lowir_model.h`, `ir_symbol_model.h`, and the help/telemetry owners.
+Source-map rows record the Rust owners and distinguish later interfaces.
+
+| C++ responsibility | Reviewed Rust owner and completeness reasoning |
+| --- | --- |
+| CLI, help, batch scaffold, statistics | `dev/bin/lowir.rs`, `driver/lowir.rs`, `lowir/mod.rs`, `statistics.rs`: exact option precedence, repeated/empty values and errors, file/exercise selection, byte argv, inherited no-runner batch framing and every statistics field. |
+| Names, vocabulary, types and model identity | `model.rs`, `vocabulary.rs`, `lexer.rs`: unit interner, sentinel, all course type/operator/metadata words, compact checked IDs, explicit symbol kind and signature facts, and per-function stores. |
+| Unit/function/global/data/alias grammar | `reader.rs`, `globals.rs`, `instructions.rs`, `runtime.rs`: file-order parse once, unused declarations retained, forward symbols/locals, object storage/classes, metadata placement and duplication, TLS, complete instruction/runtime records and debug locations. |
+| Integer/floating literals and writer contexts | `instructions.rs`, `literals.rs`, shared `types/floating.rs`: deliberate 128-bit wrapping, 64-bit sign extension, conservative positive-number grammar, direct target float scans, x87 intermediate integer conversion, signed zero/specials/subnormals, suffix/context selection and canonical digits. |
+| Structural/operand/call/phi validation | `validator.rs`, `model.rs`: first-reference symbol order, layout-order uses, deferred final noreturn boundary, singleton roles/TLS, every ordinary predecessor once, handler exclusion, call/slot rules and constructed result/link checks. C++ permissiveness is preserved, including equal-type conversions, literal operand treatment and lack of extra atomic-order/EH-stack restrictions. |
+| Serialization and local names | `writer.rs`, `literals.rs`: four declaration/definition phases then aliases, declaration order within each phase, unchanged instruction/data/pair order, metadata order, operand contexts and arbitrary debug filename bytes with the original C-string NUL cutoff. All PA8 text and exercise recipes use explicit plain names. |
+| Construction recipes and storage lifetime | `builder.rs`, `exercises.rs`, `model.rs`: one shared typed model/writer, exact closed-form sum, load-before-store swap and two ordered indirect calls; incremental temporary uses and body-owned literals/arguments/locations. No text recipe or oracle execution performs construction. |
+
+No stage-owned capability is deferred behind status 86. The inherited
+`--batch-stdin` no-runner response remains byte-exact with C++, not an
+implementation path for the reader or exercises. Later producer interfaces
+(generated/inlined names, general mutation/definition streaming, host-object
+classes/payloads and builtin forward memos) do not arise from this tool's
+course-mode input or its three recipes; they remain explicitly mapped at
+PA10/PA26/PA32 boundaries. PA8 does not claim a Rust native backend, source
+lowering, optimizer, DWARF integration or PA34 bootstrap. The handout assigns
+its debug-info tool lanes to PA24/PA32/PA33. Those release/ownership-census
+obligations are not due at PA8. Existing optimizer/backend policies are
+preserved; PA35 generated-code optimization targets are excluded.
+
+### Findings resolved and architecture review
+
+- **PA8-AUDIT-STATS:** `--stats` at `f8143de` returned the explicit unported
+  status 86 despite green fixtures. Implemented the actual model census,
+  empty-name sentinel and frozen parser vocabulary, seeded once per unit.
+  Every scanned word/name/debug filename is interned as C++ does; numeric
+  tokens are not. Counts include body literal instances, typed phi/switch
+  pairs and call/filter operand spans, without replacing them with text.
+  Statistics are requested explicitly; the normal invocation does not census
+  the completed model. Timers delimit actual read/parse, final validation,
+  construction and writing. `name_arena_bytes` measures Rust's owned name
+  payload bytes; timings, storage and RSS remain resource observations.
+- **PA8-AUDIT-ARGV-BYTES:** three protected initial probes showed a Rust
+  `std::env::args()` panic (101), while C++ succeeded or normally rejected a
+  filename containing byte FF (`cli-bytes-first.trace.jsonl` and raw
+  `mismatches/`). `args_os`, OsString/PathBuf boundaries and raw byte error
+  assembly now preserve input/output filenames, unknown options, exercise
+  names and parser/deferred diagnostics. Batch lines are read as bytes.
+  The permanent driver/executable regression tests cover original bytes and
+  early/deferred error paths, plus successful file output. Platform-specific
+  test setup belongs in `dev/bin/`, as enforced by the file audit.
+- **PA8-AUDIT-PROVENANCE:** bodies now retain optional compact SourceIds into
+  the unit's PathBuf store, avoiding an owning path copy per function.
+  Symbols retain first-use SourceId/line facts independently of emission
+  order. Numeric scanning, instruction use counts and locations retain their
+  existing owning phase/function lifetimes.
+
+One immutable input buffer and one current borrowed token feed one typed
+unit. The reader makes no speculative replay/checkpoint clones. Unit name and
+symbol indexes have complete keys in their owning unit; local indexes belong
+to their function. Vocabulary publication is monotonic and initialized once.
+Final direct/explicit call lookup uses retained signatures, not reparsed text.
+The validator's position/predecessor/handler scratch is per function; HashSet
+iteration does not determine diagnostics or serialization. Each function owns
+editable vectors, and append maintains use counts. Writer scratch is reused;
+no output text serves as inter-phase transport. x87 canonical read-back is the
+frozen writer's spelling decision, not a semantic transport step.
+
+No unsafe code, new dependencies, environment reads in compiler phases,
+subprocess implementation, fixture recognition, blanket allowances or
+mechanical implementation splits were added. The paired vocabulary macro
+remains data only. Strict Clippy and the companion file/function/nesting audit
+pass. An initial platform-test placement finding and constructor-field-order
+lint were resolved without allowances. `lint-field-order-binaries.json` proves
+that the final field-order cleanup preserves all nine executable hashes, so
+prior-stage and probe evidence uses the final executable bytes.
+
+### Validation and concrete retained evidence
+
+All commands below exited 0; `final-gates.json` records durations and logs.
+
+- `make build`: pass (`build-source-ids.log`, `build-final-lint.log`). Final
+  LowIR SHA-256:
+  `a5ab088d09c33c4dde388e8d380224cf41498245c82c22f2c3605d681e21a94d`.
+- `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa8`:
+  pass (`preflight-final.log`); protected inputs, oracle sources/tools and
+  candidate routes unchanged.
+- Exact required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa8`:
+  **125/125**, zero failures (`stage-final.log`, repeated on final checkout
+  in `stage-handoff.log`, `gate-snapshot/pa8.json`). Manifest SHA-256:
+  `3cc0c62abe169d83ff54140690c5c8798d9223f005cbb44a2cb0d7f08bb84e6b`.
+- `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa8`:
+  **741/741** fixed PA1–PA7 cases, plus every original full earlier course
+  suite (`prior-final.log`, `gate-snapshot/paN.json`, `paN-course/`). Counts:
+  58, 26, 20, 106, 196, 121 and 214, all passing.
+- `python3 /home/vishvananda/work/v5rust-control/clone_quality.py` and
+  `make lint`: pass (`quality-final.log`, supporting lint logs), rustfmt,
+  strict all-target/all-feature Clippy and debug/release Rust tests, including
+  both new regression tests. Cargo has no optional feature configurations.
+- `make audit-rust`: **151 files, zero findings** (`audit-final.log`).
+- `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa8`:
+  **125/125** retained identities (`preserve-final.log`).
+- `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa8`:
+  full original `make test` passes **122/122** specification comparisons and
+  **3/3** exercises, no failure marker (`course-final.log`,
+  `gate-snapshot/pa8-course/`). Its backend is the documented frozen evaluator;
+  LowIR generation/validation/writing/construction runs in the Rust binary.
+- Beyond fixtures: **1,368/1,368** protected receipts (`probe-summary.json`):
+  statistics 132; independent semantic/metadata/type/order/grammar mutations
+  511; byte CLI/path/batch cases 40; retained function-core/call/global/runtime/
+  debug/floating probes 27/64/102/111/115/261; scaling receipts 3 and 2.
+  Raw statistics and artifact hashes are retained with every invocation.
+  `verified-probe-runs.json` verifies unchanged executable bytes across the
+  final probe run; `source-hashes.json` records the final owners.
+
+Every supplemental comparison judges the protected adapter's receipt `match`.
+The iterative LowIR workloads exhausted no native stack; no native cutoff,
+frame size or diagnostic position was reproduced or calibrated. Any qualified
+exhaustion is judged by the shared larger-stack successful byte comparison,
+under CLONE_CONTRACT.md, rather than raw exhausted attempts.
+
+The frozen manifest and Ralph's named PA8 target records each contain 125
+cases. Ralph's supplied 143 aggregate count is recorded separately and is not
+used as evidence of 143 executed identities; its current stage status is pass.
+This audit runs every fixed identity and all due course lanes and reviews the
+full owning implementation, rather than certifying from that aggregate count.
+No checker, acceptance policy or Ralph state was edited.
+
+### Resource observations and next boundary
+
+`scaling/measurements.json` records three direct Rust runs per mode/size;
+`many-functions/measurements.json` measures body lifetime/provenance with
+293–294-byte source paths. All exit 0, and all protected scaling receipts
+match exact successful output. Wall time and RSS are observations on the
+shared host, separate from generated-output equality.
+
+| Copy instructions | Source bytes | Statistics | Wall seconds | Peak RSS KiB |
+| --- | --- | --- | --- | --- |
+| 1,000 | 20,828 | off | 0.0043–0.0053 | 2,208–2,216 |
+| 1,000 | 20,828 | on | 0.0036–0.0048 | 2,200–2,204 |
+| 10,000 | 227,828 | off | 0.0144–0.0165 | 4,996–5,016 |
+| 10,000 | 227,828 | on | 0.0153–0.0179 | 4,316–5,020 |
+| 100,000 | 2,477,828 | off | 0.1424–0.1611 | 26,376–26,492 |
+| 100,000 | 2,477,828 | on | 0.1175–0.1730 | 26,368–26,380 |
+
+1,000 functions (50,890 source bytes) take 0.0061–0.0087 s and 2,904–2,908
+KiB; 10,000 functions (518,890 bytes) take 0.0310–0.0396 s and
+14,168–14,180 KiB. These results do not impose timing equality or a new
+optimization target. No PA8 failing case IDs remain. The next assignment
+boundary is PA9's typed ABI adapter/encoder; later LowIR producers extend the
+same function-owned model. Ralph owns advancement and its existing phase goal.
+
 
 ## Floating-literal checkpoint — 2026-10-13
 
