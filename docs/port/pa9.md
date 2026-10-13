@@ -1,5 +1,18 @@
 # PA9 port ledger
 
+## Acceptance-owner correction — 2026-10-13
+
+The graph-storage comparison gap recorded below is resolved by the reviewed
+contract/comparator update in cppgm-ralph `daf4144`. All 120 current PA9
+`--stats` comparisons now pass while retaining raw allocations; graph node
+counts and deterministic work remain exact. Harness tests pass 30/30 and
+protected-input preflight passes. Evidence: `artifacts/observer/pa9-policy-20261013/`.
+
+The separate documented member-template argument form still needs the C++
+reader correction and reviewed oracle refresh, then a Rust implementation
+and fresh acceptance evidence. Historical audit findings below are retained.
+No goal or stage state is advanced by this correction.
+
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
 Last audited commit: `624273b1e25ece742d81dc5f275e2e7a75595b57` (standalone parity and quality reviewed; full-stage acceptance withheld).
 

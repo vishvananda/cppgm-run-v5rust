@@ -1,5 +1,23 @@
 # Frozen preparation baseline
 
+## PA9 statistics policy correction — 2026-10-13
+
+The acceptance owner authorized excluding `abimangle stats:` numeric
+`peak_graph_bytes` from exact comparison because it counts reserved graph
+storage. Graph nodes, work counters, source/output bytes and ordinary
+diagnostics remain exact; raw receipts retain both measured allocations.
+The comparator, contract and tests are installed in the protected control
+bundle and checkout, with only their three protected hashes updated.
+All 30 harness tests and the full protected-input preflight pass.
+A fresh sweep of all 120 PA9 inputs with `--stats` passes 120/120, with
+zero deterministic counter or output differences. Evidence is retained in
+`artifacts/observer/pa9-policy-20261013/`. Examples are upstream in
+cppgm-ralph commit `daf4144`.
+
+The reference remains `883778fd`: its independent member-template fact-reader
+gap is being corrected and validated upstream. This policy correction does
+not certify that syntax or complete the PA9 audit.
+
 ## Current oracle refresh — 2026-10-13
 
 The reference is cppgm-extended `883778fdfa45d523cf9e135d15169af976f451a8`,
