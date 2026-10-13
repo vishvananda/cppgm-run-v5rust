@@ -155,6 +155,51 @@ mod tests {
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
 
     #[test]
+    fn runtime_operands_count_repeated_uses_and_survive_other_function_construction()
+    -> Result<(), Error> {
+        use crate::lowir::{model::RuntimeInstruction as R, vocabulary::MemoryOrder};
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(
+            &mut program,
+            "atomic",
+            &[("p", Type::Ptr), ("n", Type::I64)],
+            Type::I64,
+        )?;
+        builder.block("entry")?;
+        let address = builder.parameter(0)?;
+        let desired = builder.parameter(1)?;
+        let result = builder.value(
+            I::Runtime(R::AtomicCompareExchange {
+                ty: Type::I64,
+                address,
+                expected: address,
+                desired,
+                success: MemoryOrder::SequentiallyConsistent,
+                failure: MemoryOrder::Acquire,
+            }),
+            "ok",
+        )?;
+        builder.effect(I::Return(Type::I64, Some(result)))?;
+        builder.finish()?;
+        exercises::build(&mut program, "sum")?;
+        validator::validate_constructed(&program)?;
+        let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+        let Value::Temp(address) = address else {
+            return Err(Error::Limit);
+        };
+        let Value::Temp(desired) = desired else {
+            return Err(Error::Limit);
+        };
+        let Value::Temp(result) = result else {
+            return Err(Error::Limit);
+        };
+        assert_eq!(body.temp(address).uses, 2);
+        assert_eq!(body.temp(desired).uses, 1);
+        assert_eq!(body.temp(result).uses, 1);
+        Ok(())
+    }
+
+    #[test]
     fn calls_keep_body_owned_argument_slices_and_count_callee_uses() -> Result<(), Error> {
         let mut program = Program::default();
         exercises::build(&mut program, "call")?;

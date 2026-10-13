@@ -3,7 +3,7 @@ use super::{
     Error,
     model::{
         Arity, BlockId, Body, Call, Function, Instruction, InstructionKind as I, Program,
-        SymbolDetail, Value,
+        RuntimeInstruction as R, SymbolDetail, Value,
     },
     vocabulary::{Binary, Convert, Role, Storage, Type, Unary},
 };
@@ -130,6 +130,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
     }
     let mut positions = vec![0; body.instructions().len()];
     let mut predecessors = vec![HashSet::new(); body.blocks().len()];
+    let mut handlers = vec![false; body.blocks().len()];
     let mut position = 0;
     for &block in &body.layout {
         let last = body.block(block).instructions.last().copied();
@@ -146,6 +147,11 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
             body.instruction(id).kind.visit_targets(|target| {
                 predecessors[target.index()].insert(block);
             });
+            if let I::Runtime(inst) = &body.instruction(id).kind
+                && let Some(target) = inst.handler_target()
+            {
+                handlers[target.index()] = true;
+            }
         }
     }
     for &block in &body.layout {
@@ -251,6 +257,9 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                     }
                 }
                 I::Phi(ty, pairs) => {
+                    if handlers[block.index()] {
+                        return Err(error("phi is not permitted in an exception handler block"));
+                    }
                     if let Some(message) =
                         phi_error(program, body, *ty, pairs, &predecessors[block.index()])
                     {
@@ -275,11 +284,68 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                         return Err(Error::NotImplemented("LowIR floating call operands"));
                     }
                 }
+                I::Runtime(inst) => {
+                    if let Some(message) = runtime_error(program, function, body, inst) {
+                        return Err(error(message));
+                    }
+                }
                 _ => {}
             }
         }
     }
     Ok(())
+}
+fn value_type(body: &Body, value: Value) -> Option<Type> {
+    match value {
+        Value::Temp(id) => body.temp(id).ty,
+        Value::Slot(id) => Some(body.slot(id).ty),
+        Value::Symbol(_) => Some(Type::Ptr),
+        Value::Integer(_) => None,
+    }
+}
+fn runtime_error(
+    program: &Program,
+    function: &Function,
+    body: &Body,
+    inst: &R,
+) -> Option<&'static str> {
+    match *inst {
+        R::VaStart(list) => {
+            if program.signature(function.signature).boundary.arity != Arity::Variadic {
+                return Some("va_start requires a variadic function");
+            }
+            if value_type(body, list) != Some(Type::Ptr) {
+                return Some("va_start requires a pointer value");
+            }
+        }
+        R::VaArg(ty, list) => {
+            if value_type(body, list) != Some(Type::Ptr) {
+                return Some("va_arg requires a pointer value");
+            }
+            if !matches!(
+                ty,
+                Type::I8
+                    | Type::U8
+                    | Type::I16
+                    | Type::U16
+                    | Type::I32
+                    | Type::U32
+                    | Type::I64
+                    | Type::F64
+                    | Type::Ptr
+            ) {
+                return Some("va_arg scalar type is not supported");
+            }
+        }
+        R::StackAlloc(size)
+            if !matches!(size, Value::Integer(_))
+                && value_type(body, size).is_none_or(|ty| ty.bits() == 0) =>
+        {
+            return Some("stack_alloc requires an integer size");
+        }
+        _ => {}
+    }
+    None
 }
 fn call_error(program: &Program, body: &Body, call: &Call) -> Option<String> {
     let direct = program.callee_function(call.callee).is_some();

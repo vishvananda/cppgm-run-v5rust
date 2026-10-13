@@ -132,6 +132,35 @@ vocabulary!(Effects { ReadNone => "readnone", ReadOnly => "readonly" });
 vocabulary!(Pass { IndirectResult => "indirect_result", ByAddress => "by_address" });
 vocabulary!(Projection { ArrayElement => "array_element", Field => "field" });
 vocabulary!(EightbyteClass { None => "none", Integer => "integer", Sse => "sse" });
+vocabulary!(AtomicUpdate { AddFetch => "atomic_add_fetch", Exchange => "atomic_exchange" });
+vocabulary!(Fence { Thread => "atomic_thread_fence", Signal => "atomic_signal_fence" });
+/// GNU/Clang atomic ordering numbers, retained without strengthening C++'s rules.
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub(super) enum MemoryOrder {
+    Relaxed,
+    Consume,
+    Acquire,
+    Release,
+    AcquireRelease,
+    SequentiallyConsistent,
+}
+impl MemoryOrder {
+    pub(super) fn from_number(number: i64) -> Option<Self> {
+        Some(match number {
+            0 => Self::Relaxed,
+            1 => Self::Consume,
+            2 => Self::Acquire,
+            3 => Self::Release,
+            4 => Self::AcquireRelease,
+            5 => Self::SequentiallyConsistent,
+            _ => return None,
+        })
+    }
+    pub(super) fn number(self) -> u8 {
+        self as u8
+    }
+}
 #[derive(Clone, Copy)]
 pub(super) enum ObjectClasses {
     Memory,

@@ -2,7 +2,8 @@
 use super::{
     Error,
     vocabulary::{
-        Binary, Binding, Compare, Convert, Effects, Pass, Projection, Role, Storage, Type, Unary,
+        AtomicUpdate, Binary, Binding, Compare, Convert, Effects, Fence, MemoryOrder, Pass,
+        Projection, Role, Storage, Type, Unary,
     },
 };
 use std::collections::{HashMap, HashSet};
@@ -505,11 +506,90 @@ pub(super) enum InstructionKind {
     CopyObject(u64, u8, Value, Value),
     ZeroInit(u64, u8, Value),
     Call(Call),
+    Runtime(RuntimeInstruction),
     Jump(BlockId),
     Branch(Value, BlockId, BlockId),
     Switch(Value, BlockId, Vec<(Value, BlockId)>),
     Return(Type, Option<Value>),
     Unreachable,
+}
+/// Runtime facts only: later consumers implement their machine/runtime effects.
+pub(super) enum RuntimeInstruction {
+    AtomicLoad(Type, Value, MemoryOrder),
+    AtomicStore(Type, Value, Value, MemoryOrder),
+    AtomicUpdate(AtomicUpdate, Type, Value, Value, MemoryOrder),
+    AtomicCompareExchange {
+        ty: Type,
+        address: Value,
+        expected: Value,
+        desired: Value,
+        success: MemoryOrder,
+        failure: MemoryOrder,
+    },
+    Fence(Fence, MemoryOrder),
+    VaStart(Value),
+    VaArg(Type, Value),
+    StackAlloc(Value),
+    Exception(Type),
+    ExceptionSelector(Type),
+    EhTry(BlockId),
+    EhCleanup(Option<BlockId>),
+    EhCatch(SymbolId, Option<i64>),
+    EhFilter(Arguments, Option<i64>),
+    EhCatchAll(Option<i64>),
+    EhEnd,
+    Throw(Type, Value),
+    Resume,
+}
+impl RuntimeInstruction {
+    /// Handler references are distinct from ordinary control-flow successors.
+    pub(super) fn handler_target(&self) -> Option<BlockId> {
+        match self {
+            Self::EhTry(block) | Self::EhCleanup(Some(block)) => Some(*block),
+            _ => None,
+        }
+    }
+    fn result_type(&self) -> Type {
+        match self {
+            Self::AtomicLoad(ty, ..)
+            | Self::AtomicUpdate(_, ty, ..)
+            | Self::VaArg(ty, _)
+            | Self::Exception(ty) => *ty,
+            Self::AtomicCompareExchange { .. } | Self::ExceptionSelector(_) => Type::I64,
+            Self::StackAlloc(_) => Type::Ptr,
+            _ => Type::Void,
+        }
+    }
+    fn visit_values(&self, operands: &[Value], mut visit: impl FnMut(Value)) {
+        match self {
+            Self::AtomicLoad(_, v, _)
+            | Self::VaStart(v)
+            | Self::VaArg(_, v)
+            | Self::StackAlloc(v)
+            | Self::Throw(_, v) => visit(*v),
+            Self::AtomicStore(_, a, b, _) | Self::AtomicUpdate(_, _, a, b, _) => {
+                visit(*a);
+                visit(*b);
+            }
+            Self::AtomicCompareExchange {
+                address,
+                expected,
+                desired,
+                ..
+            } => {
+                visit(*address);
+                visit(*expected);
+                visit(*desired);
+            }
+            Self::EhCatch(symbol, _) => visit(Value::Symbol(*symbol)),
+            Self::EhFilter(arguments, _) => {
+                for &value in arguments.slice(operands) {
+                    visit(value);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 pub(super) struct Call {
     pub(super) result: Type,
@@ -560,6 +640,7 @@ impl InstructionKind {
                 | Self::Switch(..)
                 | Self::Return(..)
                 | Self::Unreachable
+                | Self::Runtime(RuntimeInstruction::Throw(..) | RuntimeInstruction::Resume)
         )
     }
     pub(super) fn result_type(&self) -> Type {
@@ -575,11 +656,13 @@ impl InstructionKind {
             Self::Compare(..) => Type::I64,
             Self::Addr(_) | Self::Index(..) => Type::Ptr,
             Self::Call(call) => call.result,
+            Self::Runtime(inst) => inst.result_type(),
             _ => Type::Void,
         }
     }
     fn visit_values(&self, operands: &[Value], mut visit: impl FnMut(Value)) {
         match self {
+            Self::Runtime(inst) => inst.visit_values(operands, visit),
             Self::Const(_, v)
             | Self::Copy(_, v)
             | Self::Unary(_, _, v)

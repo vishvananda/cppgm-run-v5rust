@@ -6,6 +6,7 @@ mod instructions;
 mod lexer;
 mod model;
 mod reader;
+mod runtime;
 mod validator;
 mod vocabulary;
 mod writer;

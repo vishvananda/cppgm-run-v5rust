@@ -7,7 +7,25 @@ use super::{
     vocabulary::{Binary, Compare, Convert, Projection, Type, Unary, named_literal},
 };
 impl Parser<'_> {
-    fn value(&mut self, body: &mut Body, context: Type) -> Result<Value, Error> {
+    /// Shared signed target word scanner for addends, selectors and memory orders.
+    pub(super) fn small_integer(&mut self, what: &str) -> Result<i64, Error> {
+        let negative = self.accept(Kind::Minus);
+        if !self.at(Kind::Number) {
+            return Err(self.fail(format!("invalid {what}")));
+        }
+        let bits = self.integer(Type::I64).map_err(|error| match error {
+            Error::Diagnostic(_) => self.fail(format!("invalid {what}")),
+            error => error,
+        })?;
+        let low = u64::try_from(bits & u128::from(u64::MAX)).map_err(|_| Error::Limit)?;
+        let value = i64::from_le_bytes(low.to_le_bytes());
+        Ok(if negative {
+            value.wrapping_neg()
+        } else {
+            value
+        })
+    }
+    pub(super) fn value(&mut self, body: &mut Body, context: Type) -> Result<Value, Error> {
         let token = self.lexer.token;
         match token.kind {
             Kind::Temp => {
@@ -124,7 +142,7 @@ impl Parser<'_> {
         self.lexer.advance();
         Ok(value)
     }
-    fn target(&mut self, body: &mut Body) -> Result<BlockId, Error> {
+    pub(super) fn target(&mut self, body: &mut Body) -> Result<BlockId, Error> {
         if !self.at(Kind::Block) {
             return Err(self.fail("undefined or invalid block target"));
         }
@@ -298,19 +316,9 @@ impl Parser<'_> {
                 I::Index(ty, projection, a, self.value(body, Type::Void)?)
             }
             "call" => I::Call(self.call(body)?),
-            "atomic_load"
-            | "atomic_add_fetch"
-            | "atomic_exchange"
-            | "atomic_compare_exchange"
-            | "va_arg"
-            | "stack_alloc"
-            | "exception"
-            | "exception_selector" => {
-                return Err(Error::NotImplemented(
-                    "LowIR calls, atomic and exception instructions",
-                ));
-            }
-            _ => return Err(self.fail_at(line, format!("unknown rvalue instruction: {head}"))),
+            _ => I::Runtime(self.runtime_rvalue(body, head)?.ok_or_else(|| {
+                self.fail_at(line, format!("unknown rvalue instruction: {head}"))
+            })?),
         })
     }
     fn memory_facts(&mut self) -> Facts {
@@ -443,19 +451,10 @@ impl Parser<'_> {
                 }
                 I::Call(call)
             }
-            "atomic_store"
-            | "atomic_thread_fence"
-            | "atomic_signal_fence"
-            | "va_start"
-            | "eh_try"
-            | "eh_cleanup"
-            | "eh_catch"
-            | "eh_filter"
-            | "eh_catch_all"
-            | "eh_end"
-            | "throw"
-            | "resume" => return Err(Error::NotImplemented("LowIR effect instructions")),
-            _ => return Err(self.fail_at(line, format!("unknown instruction: {head}"))),
+            _ => I::Runtime(
+                self.runtime_effect(body, head)?
+                    .ok_or_else(|| self.fail_at(line, format!("unknown instruction: {head}")))?,
+            ),
         })
     }
 }

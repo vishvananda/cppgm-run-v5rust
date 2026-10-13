@@ -127,23 +127,6 @@ impl Parser<'_> {
         self.program
             .reference(name, self.source_id, self.lexer.token.line)
     }
-    fn small_integer(&mut self, what: &str) -> Result<i64, Error> {
-        let negative = self.accept(Kind::Minus);
-        if !self.at(Kind::Number) {
-            return Err(self.fail(format!("invalid {what}")));
-        }
-        let bits = self.integer(Type::I64).map_err(|error| match error {
-            Error::Diagnostic(_) => self.fail(format!("invalid {what}")),
-            error => error,
-        })?;
-        let low = u64::try_from(bits & u128::from(u64::MAX)).map_err(|_| Error::Limit)?;
-        let value = i64::from_le_bytes(low.to_le_bytes());
-        Ok(if negative {
-            value.wrapping_neg()
-        } else {
-            value
-        })
-    }
     pub(super) fn object_alias(&mut self) -> Result<(), Error> {
         if !self.accept_word("object") {
             return Err(self.fail(format!(

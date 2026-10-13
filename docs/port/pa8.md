@@ -3,6 +3,185 @@
 Stage base commit: `2bf11a2456047bffa7598407a9d32533f8f4fdd5`.
 Last audited commit: INITIAL (no PA8 acceptance audit; unchanged by implementation).
 
+## Atomic, EH and runtime instruction checkpoint — 2026-10-13
+
+Current coherent partial handoff: **110/125 fixed cases pass; 15 fail**, down
+from **24 failures** at clean entry `50b3fc7`. All **101/101** entry passing
+identities survive; nine existing failures become passes, with identical
+manifest hash and case identities. This supersedes the remaining lists below
+and does not claim PA8 full-stage acceptance. Stage base and last-audited
+commit above remain unchanged. The implementation commit contains this entry;
+its hash is recorded afterward in the external `handoff.json`.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa8-runtime-20261013/`.
+The previous goal turn is progress: the committed globals group reduced fixed
+failures from 52 to 24. Entry state was inspected directly; no interrupted
+process was assumed live or restarted. `entry.json` retains the full entry HEAD.
+
+### Owners, completed behavior and typed data flow
+
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, PA8 README,
+docs/rust-clone-plan.md and this ledger. Consulted frozen C++ commit
+`883778fdfa45d523cf9e135d15169af976f451a8`: `lowir/text_parser_body.cpp`
+value/memory/effect/control/EH grammar, `text_parser.cpp` signed target words,
+`text_writer.cpp` value/atomic/EH/effect emission, `validator.cpp` operand
+rules, result types, layout/targets/uses/phi and runtime validation,
+`lowir_model.h` opcode/order vocabulary and `lowir/instruction.h` payloads.
+
+- `vocabulary.rs` owns typed atomic updates, fences and MemoryOrder, preserving
+  the six GNU/Clang numeric order values. C++ accepts all six on loads, stores,
+  updates and success/failure orders; no extra ordering restriction is added.
+- `model.rs` owns RuntimeInstruction payloads: atomic load/store/update/CAS,
+  fences, va_start/va_arg, stack_alloc, exception/exception_selector, EH region
+  facts, catch/filter/catch-all selectors, throw and resume. EH selectors are
+  optional signed i64 values, preserving absence versus an explicit zero.
+  Handler targets use BlockId and are separate from ordinary CFG successors.
+  Filters use checked Arguments spans in the owning body's operand store.
+  All temporary operands participate in checked incremental use counting,
+  including repeated CAS address/expected uses. Results preserve C++'s i64
+  selectors/CAS and ptr stack allocations independently of written types.
+- New `runtime.rs` owns the related runtime grammar. It consumes the existing
+  one-token borrowed lexer once, shares parser operand scratch, and records
+  typed facts directly. Catch/filter symbol references preserve their distinct
+  before/after-advance C++ location rules, including forward references across
+  files. Selector-only filters accept both input spellings and serialize with
+  the C++ writer's comma omission. `instructions.rs` now owns the shared signed
+  target-word scanner formerly local to globals; addends, selectors and memory
+  orders all reuse its explicit wrapping/truncation without reparsing text.
+- `validator.rs` builds a dense per-function handler marker array, independent
+  of ordinary predecessor sets. Handler phis reject before type/predecessor
+  checks, including handlers with ordinary incoming branches. Runtime operand
+  use ordering remains the common body check. va_start checks the variadic
+  boundary before pointer type; va_arg checks pointer before supported scalar
+  type; stack_alloc accepts integer literals or typed integer values exactly
+  as C++. This tool does not enable later host-object va_arg class extensions.
+  C++ adds no EH region balancing or extra atomic operand-type rule here.
+- `writer.rs` streams runtime records directly from typed fields with exact
+  operand contexts, number spelling, selector separators and ordering.
+  Throw/resume end blocks; EH markers and fences do not. No optimizer,
+  register allocator or code generator is changed. `builder.rs` adds a
+  construction invariant test for repeated CAS operands and retention after
+  constructing another function; there is no textual construction path.
+
+Architecture review: one unit model, private checked compact IDs, body-owned
+operands/instructions/literals and function-local validation scratch. No new
+pointer graph, replay, second representation, speculative program work,
+unsafe/FFI, dependency, environment read or compiler subprocess implementation.
+General construction link/name census, host-object facts and later mutation
+APIs remain at their consuming dependency boundaries.
+
+### Validation and retained evidence
+
+- `make build`: pass (`build-handoff.log`, release compilation 15.50 s).
+- `make test-pa8` invokes the required
+  `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa8`:
+  **110 pass, 15 fail** (`stage-final.log`, `stage-final.json`).
+  `preservation.json` proves **24→15** fixed failures, 101 retained passes,
+  nine gained identities, zero regressions and equal manifest/coverage.
+  Manifest SHA-256:
+  `3cc0c62abe169d83ff54140690c5c8798d9223f005cbb44a2cb0d7f08bb84e6b`.
+  `fixed-case-evidence/` snapshots every case's logs/receipts and links raw
+  diagnostics/artifact mismatch directories. All 15 remaining failures reach
+  explicit status 86 boundaries; ordinary rejection is not substituted.
+- `make course-pa8`: fails with **107/122 specification comparisons and
+  3/3 exercises** (`course-final.log`, `course-course-result.json`,
+  `course-course.log`, `course-trace.jsonl`, and external
+  `artifacts/clone/course/pa8/test/`). The inner keep-going make exits 0 with
+  `.test_failed`; the protected course runner correctly fails the lane.
+- `... clone_check.py prior pa8`: pass, all PA1–PA7 differential and course
+  lanes (`prior-final.log`, `prior-summary.json`, `prior-pa1.json` through
+  `prior-pa7.json`, `prior-paN-course.json`, and external
+  `artifacts/clone/course/paN/test/`). Fixed counts: **58/58, 26/26, 20/20,
+  106/106, 196/196, 121/121 and 214/214**.
+- `make lint` (protected `clone_quality.py`): pass (`lint-final.log`), including
+  rustfmt, strict all-feature Clippy, debug/release tests (191 library tests),
+  supported feature configurations and source audit. `make audit-rust`: pass,
+  **148 files, zero findings** (`audit-final.log`). No lint suppression added.
+- `... clone_check.py preflight pa8`: pass (`preflight-final.log`).
+  `... clone_check.py preserve pa8`: pass, **101/101** historical identities
+  (`preserve-final.log`), supplemented by entry/final fixed preservation above.
+- `probe.py`, `probes-final.log`, `probe-results.json`, `probes.trace.jsonl`:
+  **111/111** protected receipts match. Coverage includes all memory orders,
+  wrapped orders/widths, malformed orders/selectors, variadic boundary and
+  pointer/type diagnostic priorities, slots/globals/literals, stack sizes,
+  early temporary uses, result types, terminator placement, optional EH facts,
+  forward symbol references and handler-phi rejection priorities.
+  `probes-first.log` / `probes-first.trace.jsonl` preserve the four initial
+  mismatches (filter provenance and handler phis) resolved in this group.
+- `measure.py`, `scaling.log`, `scaling.trace.jsonl`, `measurements.json`:
+  **6/6** scaling receipts match, three warm Rust timings per supported input,
+  all exits 0 and stable output hashes. `source-hashes.json` retains compiler
+  source hashes; lowir binary SHA-256:
+  `1ffd6d0e3d104aa6afff832f5eb56347ba1f448e28b771621d8cfd25017a2442`.
+
+Every supplemental comparison uses the protected adapter receipt's `match`.
+These iterative LowIR paths did not exhaust native stack; no native exhaustion
+cutoff or diagnostic position is calibrated. Future resource-limited driver
+probes remain subject to CLONE_CONTRACT.md's protected stack qualification.
+PA8 oracle-backend course execution is not a Rust backend or PA34 proof.
+
+Measurements use wall timing and `/usr/bin/time` on the shared host while
+other validation was active. They are observations, not a performance parity
+or PA35 generated-code improvement claim. The atomic workload has one CAS
+per count; the EH workload has one two-symbol filter per count.
+
+| Workload | Count | Source bytes | Wall seconds | Peak RSS KiB |
+| --- | --- | --- | --- | --- |
+| atomic | 1,000 | 53,976 | 0.0045–0.0050 | 2,204–2,220 |
+| atomic | 10,000 | 548,976 | 0.0181–0.0227 | 5,020–5,032 |
+| atomic | 100,000 | 5,588,976 | 0.1643–0.1659 | 27,824–27,832 |
+| EH filter | 1,000 | 22,976 | 0.0031–0.0041 | 2,148–2,204 |
+| EH filter | 10,000 | 238,976 | 0.0096–0.0125 | 2,908–2,920 |
+| EH filter | 100,000 | 2,488,976 | 0.0680–0.0703 | 13,468–13,480 |
+
+### Protected accounting discrepancy and next boundary
+
+The read-only `coverage-accounting-reproducer.py` and `coverage-accounting.json`
+again show 125 manifest cases, 125 result cases and 125 Ralph targets with equal
+identities, while Ralph declares 143 aggregate targets. Its prior external
+stageProgress log rejects exact failure accounting with 18 unrun targets.
+`preservation.json` independently proves this turn's fixed-manifest reduction.
+No checker, policy, target count, fixture, reference, oracle or Ralph state is
+changed. This handoff does not claim automated stageProgress acceptance;
+Ralph owns the checkpoint accounting/audit.
+
+`remaining-clusters.json` records every first-divergence receipt: **13 floating
+literal boundaries and two debug-location boundaries**. The next coherent
+group is floating bits and spelling shared by instructions, scalar/structured
+globals and call contexts. It requires decimal/hex rounding, binary32/binary64/
+x87, special/subnormal/signaling-NaN forms and exact 20/21-digit output; consult
+`literals.cpp` and the shared numeric owners rather than approximating x87 with
+host f64. Debug scanning/locations and statistics remain separate owners.
+Host-object records, generated names and the full construction census remain
+with their consuming producers. No ordinary mismatch remains in this group's
+111 probes; no oracle instability was found.
+
+Review questions: audit before/after-advance filter/catch provenance, signed
+selector wrap, handler marking before phi validation, ordinary versus handler
+edges, runtime result types, body operand-span lifetimes and duplicate use
+counts, varargs diagnostic priority and exact C++ permissive atomic orders.
+
+Exact remaining fixed case IDs (prefix `pa8/`):
+
+```text
+tests/spec/100-f32-global.t
+tests/spec/100-f64-arith-cmp.t
+tests/spec/100-function-and-instruction-debug-locations.t
+tests/spec/100-signaling-nan-literal-roundtrip.t
+tests/spec/100-subnormal-floating-literal.t
+tests/spec/200-bad-function-debug-zero-line.t
+tests/spec/200-f64-direct-call.t
+tests/spec/200-f80-direct-call.t
+tests/spec/200-f80-global.t
+tests/spec/200-f80-unary-binary-cmp.t
+tests/spec/200-float-width-conversions.t
+tests/spec/200-integral-float-conversions.t
+tests/spec/200-structured-float-data.t
+tests/spec/300-bad-nowrap-on-float.t
+tests/spec/300-instruction-facts.t
+```
+
 ## Globals, structured data, aliases and TLS checkpoint — 2026-10-13
 
 Current coherent partial handoff: **101/125 fixed cases pass; 24 fail**, down

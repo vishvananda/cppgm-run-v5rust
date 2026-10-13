@@ -461,7 +461,105 @@ impl<W: Write> InstructionWriter<'_, W> {
             }
             I::Call(call) => self.call(call),
             I::Unreachable => write!(self.out, "unreachable"),
+            I::Runtime(inst) => self.runtime_instruction(inst),
         }
+    }
+    fn runtime_instruction(&mut self, inst: &super::model::RuntimeInstruction) -> io::Result<()> {
+        use super::model::RuntimeInstruction as R;
+        match inst {
+            R::AtomicLoad(ty, address, order) => {
+                write!(self.out, "atomic_load {ty} ")?;
+                self.value(*address, Type::Ptr)?;
+                write!(self.out, ", {}", order.number())
+            }
+            R::AtomicStore(ty, value, address, order) => {
+                write!(self.out, "atomic_store {ty} ")?;
+                self.value(*value, *ty)?;
+                self.comma()?;
+                self.value(*address, Type::Ptr)?;
+                write!(self.out, ", {}", order.number())
+            }
+            R::AtomicUpdate(operation, ty, address, value, order) => {
+                write!(self.out, "{} {ty} ", operation.spelling())?;
+                self.value(*address, Type::Ptr)?;
+                self.comma()?;
+                self.value(*value, *ty)?;
+                write!(self.out, ", {}", order.number())
+            }
+            R::AtomicCompareExchange {
+                ty,
+                address,
+                expected,
+                desired,
+                success,
+                failure,
+            } => {
+                write!(self.out, "atomic_compare_exchange {ty} ")?;
+                self.value(*address, Type::Ptr)?;
+                self.comma()?;
+                self.value(*expected, Type::Ptr)?;
+                self.comma()?;
+                self.value(*desired, *ty)?;
+                write!(self.out, ", {}, {}", success.number(), failure.number())
+            }
+            R::Fence(fence, order) => write!(self.out, "{} {}", fence.spelling(), order.number()),
+            R::VaStart(list) => {
+                write!(self.out, "va_start ")?;
+                self.value(*list, Type::Void)
+            }
+            R::VaArg(ty, list) => {
+                write!(self.out, "va_arg {ty} ")?;
+                self.value(*list, Type::Ptr)
+            }
+            R::StackAlloc(size) => {
+                write!(self.out, "stack_alloc ")?;
+                self.value(*size, Type::Void)
+            }
+            R::Exception(ty) => write!(self.out, "exception {ty}"),
+            R::ExceptionSelector(ty) => write!(self.out, "exception_selector {ty}"),
+            R::EhTry(block) => {
+                write!(self.out, "eh_try ")?;
+                self.block(*block)
+            }
+            R::EhCleanup(block) => {
+                write!(self.out, "eh_cleanup")?;
+                if let Some(block) = block {
+                    write!(self.out, " ")?;
+                    self.block(*block)?;
+                }
+                Ok(())
+            }
+            R::EhCatch(symbol, selector) => {
+                write!(self.out, "eh_catch ")?;
+                self.value(Value::Symbol(*symbol), Type::Void)?;
+                self.selector(*selector, ", ")
+            }
+            R::EhFilter(arguments, selector) => {
+                write!(self.out, "eh_filter")?;
+                let symbols = self.body.arguments(*arguments);
+                for (index, &symbol) in symbols.iter().enumerate() {
+                    write!(self.out, "{}", if index == 0 { " " } else { ", " })?;
+                    self.value(symbol, Type::Void)?;
+                }
+                self.selector(*selector, if symbols.is_empty() { " " } else { ", " })
+            }
+            R::EhCatchAll(selector) => {
+                write!(self.out, "eh_catch_all")?;
+                self.selector(*selector, ", ")
+            }
+            R::EhEnd => write!(self.out, "eh_end"),
+            R::Throw(ty, value) => {
+                write!(self.out, "throw {ty} ")?;
+                self.value(*value, *ty)
+            }
+            R::Resume => write!(self.out, "resume"),
+        }
+    }
+    fn selector(&mut self, selector: Option<i64>, separator: &str) -> io::Result<()> {
+        if let Some(selector) = selector {
+            write!(self.out, "{separator}{selector}")?;
+        }
+        Ok(())
     }
 }
 fn integer_text(mut bits: u128, ty: Type) -> String {
