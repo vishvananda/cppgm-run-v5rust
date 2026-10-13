@@ -195,7 +195,15 @@ impl<'tree> Analyzer<'tree> {
             self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
         }
         match declaration.kind {
-            ast::DeclKind::Empty | ast::DeclKind::Access(_) => Ok(()),
+            ast::DeclKind::Empty => Ok(()),
+            ast::DeclKind::Access(keyword) => {
+                self.graph.scope_mut(scope).member_access = match keyword {
+                    Keyword::Private => super::graph::Access::Private,
+                    Keyword::Protected => super::graph::Access::Protected,
+                    _ => super::graph::Access::Public,
+                };
+                Ok(())
+            }
             ast::DeclKind::Namespace {
                 name,
                 inline,
@@ -300,6 +308,7 @@ impl<'tree> Analyzer<'tree> {
                         role: super::specifiers::DeclarationRole::Ordinary,
                         is_extern: false,
                         is_static: false,
+                        mutability: super::graph::Mutability::Ordinary,
                         virtuality: super::specifiers::Virtuality::NonVirtual,
                         constexpr: false,
                         thread_storage: super::specifiers::ThreadStorage::Ordinary,

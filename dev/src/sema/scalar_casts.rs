@@ -82,10 +82,7 @@ impl Analyzer<'_> {
             self.select_function_designation(operand, binding)?;
         }
         let source = self.graph.expression_facts.get(operand)?;
-        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
-            || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_))
-            || cast == Some(K::DynamicCast)
-        {
+        if cast == Some(K::DynamicCast) {
             return Err(Error::Missing("class explicit conversions"));
         }
         let c_style = cast.is_none();
@@ -101,6 +98,14 @@ impl Analyzer<'_> {
             let mut allowed = glvalue && constness && self.const_castable(from_pointer, to_pointer);
             if !allowed && static_kind {
                 let related = self.bare_type(element)? == self.bare_type(source.ty)?;
+                if !related
+                    && (matches!(self.graph.types.get(element).kind, TypeKind::Class(_))
+                        || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)))
+                {
+                    return Err(Error::Missing(
+                        "class hierarchy and user reference conversions",
+                    ));
+                }
                 allowed = glvalue && related && (keeps_const || constness);
                 if !allowed {
                     match self.convert_scalar(operand, target, true) {
@@ -138,6 +143,11 @@ impl Analyzer<'_> {
             let mut facts = self.new_expression_facts(element, category)?;
             facts.reference_cast = Some(target);
             return Ok(facts);
+        }
+        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
+            || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_))
+        {
+            return Err(Error::Missing("class explicit conversions"));
         }
         let goal = self.bare_type(target)?;
         if matches!(

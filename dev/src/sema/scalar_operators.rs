@@ -540,11 +540,6 @@ impl Analyzer<'_> {
             }
             return Err(self.operator_error(id, "only one operand of ?: is void"));
         }
-        if matches!(self.graph.types.get(at).kind, TypeKind::Class(_))
-            || matches!(self.graph.types.get(bt).kind, TypeKind::Class(_))
-        {
-            return Err(Error::Missing("class conditional expressions"));
-        }
         let ac = self.graph.types.get(a.ty).cv.0;
         let bc = self.graph.types.get(b.ty).cv.0;
         // The C++ conditional owner compares shallow unqualified identities:
@@ -561,6 +556,11 @@ impl Analyzer<'_> {
             && (ac & bc == ac.min(bc))
         {
             return self.new_expression_facts(if ac & !bc == 0 { b.ty } else { a.ty }, a.category);
+        }
+        if matches!(self.graph.types.get(at).kind, TypeKind::Class(_))
+            || matches!(self.graph.types.get(bt).kind, TypeKind::Class(_))
+        {
+            return Err(Error::Missing("class conditional expressions"));
         }
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;

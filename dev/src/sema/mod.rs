@@ -23,6 +23,7 @@ mod initialization;
 mod integral;
 mod layout;
 mod lookup;
+mod member_expressions;
 mod name_keys;
 mod procedural_calls;
 mod procedural_statements;

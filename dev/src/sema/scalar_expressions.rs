@@ -34,7 +34,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Id(name) => {
                 let found = self.lookup_result(name, scope, Filter::Ordinary)?;
-                self.named_expression(id, &found)?
+                self.named_expression(id, &found, scope)?
             }
             ExprKind::Literal(literal) => {
                 let (ty, category) = match literal.kind {
@@ -120,6 +120,9 @@ impl Analyzer<'_> {
                 let b = self.graph.expression_facts.get(else_expr)?;
                 self.scalar_conditional(id, then_expr, else_expr, a, b)?
             }
+            ExprKind::Member { base, op, member } => {
+                self.data_member_expression(id, base, op, member, scope)?
+            }
             ExprKind::Subscript { base, index } => {
                 self.typed_expression(base, scope)?;
                 self.typed_expression(index, scope)?;
@@ -204,6 +207,7 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         found: &super::lookup::LookupResult,
+        scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
         let binding = found
             .binding
@@ -212,6 +216,7 @@ impl Analyzer<'_> {
             let facts = self.function_designation(binding, found.functions.as_slice())?;
             return Ok(facts);
         }
+        self.check_direct_member_access(binding, scope, self.tree.expressions.get(id).location)?;
         let binding = self.graph.binding(binding);
         if matches!(
             binding.kind,
@@ -281,6 +286,24 @@ impl Analyzer<'_> {
             )
         {
             facts.anonymous_member = Some(storage);
+        }
+        if self.unevaluated == 0
+            && facts.anonymous_member.is_none()
+            && self.graph.entity(binding.entity).data_member
+                == Some(super::graph::DataMemberKind::Instance)
+        {
+            if self
+                .graph
+                .entity(binding.entity)
+                .home
+                .is_some_and(|home| self.graph.encloses(home, scope))
+            {
+                return Err(Error::Missing("implicit object member designation"));
+            }
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "non-static data member used without an object",
+            ));
         }
         if binding.kind == BindingKind::Enumerator {
             let super::constants::ConstantState::Value(value) =

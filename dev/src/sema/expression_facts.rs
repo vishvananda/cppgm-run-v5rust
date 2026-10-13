@@ -71,6 +71,8 @@ pub(super) struct ExprFacts {
     pub function: Option<super::graph::BindingId>,
     pub call: Option<super::function_resolution::CallTarget>,
     pub anonymous_member: Option<super::graph::BindingId>,
+    // Explicit designation retains the selected entity independently of spelling.
+    pub member: Option<super::graph::BindingId>,
 }
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
@@ -88,6 +90,7 @@ impl ExprFacts {
             function: None,
             call: None,
             anonymous_member: None,
+            member: None,
         }
     }
 }

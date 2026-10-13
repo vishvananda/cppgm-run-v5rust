@@ -656,6 +656,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         Ok(())
     }
+    fn member_node(
+        &mut self,
+        base: ast::ExprId,
+        op: ast::Operator,
+        facts: super::expression_facts::ExprFacts,
+        depth: usize,
+    ) -> io::Result<()> {
+        let binding = facts
+            .member
+            .ok_or_else(|| io::Error::other("member without designation"))?;
+        write!(self.output, " {}:", op.token.name())?;
+        self.name(self.graph.binding(binding).name)?;
+        self.expr(base, depth + 1);
+        Ok(())
+    }
     fn expression(
         &mut self,
         id: ast::ExprId,
@@ -774,6 +789,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             ExprKind::Conditional { .. } => "conditional-expression",
             ExprKind::Subscript { .. } => "subscript-expression",
+            ExprKind::Member { .. } => "member-expression",
             ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
@@ -894,6 +910,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.expr(id, depth + 1);
                 }
             }
+            ExprKind::Member { base, op, .. } => self.member_node(base, op, facts, depth)?,
             ExprKind::Subscript { base, index } => {
                 self.expr(if facts.commuted { base } else { index }, depth + 1);
                 self.expr(if facts.commuted { index } else { base }, depth + 1);

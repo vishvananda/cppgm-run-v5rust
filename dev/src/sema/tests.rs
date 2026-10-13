@@ -1162,3 +1162,84 @@ fn array_initialization_completes_identity_and_retains_source_operand_conversion
     // The billion-element tail creates no per-element semantic records.
     assert_eq!(graph.expression_types.iter().flatten().count(), 7);
 }
+
+#[test]
+fn member_designation_retains_shared_entity_and_binding_access_without_layout_demand() {
+    use super::{expression_facts::ValueCategory, graph::Access};
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(
+        b"struct A{union{int x;};};int f(const A&a){return a.x;}class Hidden{union{int x;};};"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"member-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[1])
+        .kind
+    else {
+        panic!("function expected")
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected")
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected")
+    };
+    let StmtKind::Return(Some(expr)) = tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+    else {
+        panic!("return expected")
+    };
+    let ExprKind::Member { base, member, .. } = tree.expressions.get(expr).kind else {
+        panic!("member expected")
+    };
+    let facts = graph.expression_facts.get(expr).unwrap();
+    let binding = facts.member.unwrap();
+    assert_eq!(graph.resolved_name(member), Some(binding));
+    assert_eq!(facts.category, ValueCategory::Lvalue);
+    assert_eq!(graph.types.get(facts.ty).cv, Cv::CONST);
+    let member_entity = graph.binding(binding).entity;
+    assert_eq!(
+        graph.types.get(graph.entity(member_entity).ty.unwrap()).cv,
+        Cv::default()
+    );
+    let base_ty = graph.expression_facts.get(base).unwrap().ty;
+    assert!(matches!(graph.types.get(base_ty).kind, TypeKind::Class(_)));
+    let x = cursor.intern_name(b"x").unwrap();
+    for spelling in [b"A".as_slice(), b"Hidden"] {
+        let name = cursor.intern_name(spelling).unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        let scope = graph.entity(class).scope.unwrap();
+        let injected = graph.own(scope, x, Filter::Ordinary).unwrap();
+        let entity = graph.binding(injected).entity;
+        let original_scope = graph.entity(entity).home.unwrap();
+        let original = graph.own(original_scope, x, Filter::Ordinary).unwrap();
+        assert_ne!(original, injected);
+        assert_eq!(graph.binding(original).entity, entity);
+        assert!(graph.binding_access(original) == Access::Public);
+        assert!(
+            graph.binding_access(injected)
+                == if spelling == b"A" {
+                    Access::Public
+                } else {
+                    Access::Private
+                }
+        );
+        assert!(matches!(
+            graph.entity(class).layout,
+            super::layout::LayoutState::NotStarted
+        ));
+        assert!(matches!(
+            graph.entity(class).default_construction,
+            super::construction::ConstructorState::NotStarted
+        ));
+    }
+}

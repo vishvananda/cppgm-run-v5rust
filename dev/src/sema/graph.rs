@@ -56,6 +56,7 @@ pub(super) struct Scope {
     pub inline_members: Vec<ScopeEdge>,
     pub is_inline: bool,
     pub guarded: bool,
+    pub member_access: Access,
     pub written_name: Option<crate::syntax::ast::Name>,
 }
 #[derive(Clone, Copy)]
@@ -67,6 +68,19 @@ pub(super) struct ScopeEdge {
 pub(super) enum DataMemberKind {
     Instance,
     Static,
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Mutability {
+    #[default]
+    Ordinary,
+    Mutable,
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Access {
+    #[default]
+    Public,
+    Protected,
+    Private,
 }
 #[derive(Clone, Copy)]
 pub(super) struct FunctionProperties {
@@ -109,6 +123,7 @@ pub(super) struct Entity {
     pub implicit_default: Option<ScopeId>,
     pub user_constructor: Option<BindingId>,
     pub data_member: Option<DataMemberKind>,
+    pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
     pub constexpr: bool,
     pub function: Option<FunctionProperties>,
@@ -145,6 +160,7 @@ pub(crate) struct Graph {
     bindings: Vec<Binding>,
     ordinals: Vec<usize>,
     binding_scopes: Vec<ScopeId>,
+    binding_access: Vec<Access>,
     pub(super) lookup_limit: Option<usize>,
     pub(super) global: ScopeId,
     // Dense facts refer to the original AST. No duplicate semantic syntax tree.
@@ -256,12 +272,14 @@ impl Graph {
                 inline_members: Vec::new(),
                 is_inline: false,
                 guarded: false,
+                member_access: Access::Public,
                 written_name: None,
             }],
             entities: Vec::new(),
             bindings: Vec::new(),
             ordinals: Vec::new(),
             binding_scopes: Vec::new(),
+            binding_access: Vec::new(),
             lookup_limit: None,
             global: ScopeId(0),
             declarator_types: Vec::new(),
@@ -352,6 +370,7 @@ impl Graph {
             inline_members: Vec::new(),
             is_inline: false,
             guarded: false,
+            member_access: Access::Public,
             written_name: None,
         });
         if let Some(print) = print {
@@ -384,6 +403,7 @@ impl Graph {
             implicit_default: None,
             user_constructor: None,
             data_member: None,
+            mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
             constexpr: false,
             function: None,
@@ -449,6 +469,10 @@ impl Graph {
         if self.entity(binding.entity).home.is_none() {
             self.entity_mut(binding.entity).home = Some(scope);
         }
+        let access = earlier.map_or(self.scope(scope).member_access, |id| {
+            self.binding_access(id)
+        });
+        self.binding_access.push(access);
         self.bindings.push(binding);
         self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
@@ -591,6 +615,9 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+    pub(super) fn binding_access(&self, id: BindingId) -> Access {
+        self.binding_access[id.0 as usize]
     }
     pub(super) fn binding_scope(&self, id: BindingId) -> ScopeId {
         self.binding_scopes[id.0 as usize]

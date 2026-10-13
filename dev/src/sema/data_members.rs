@@ -6,14 +6,103 @@ use super::{
     analyzer::Analyzer,
     constants::ConstantState,
     declarators::DeclaratorInfo,
-    graph::{BindingKind, DataMemberKind, ScopeId, ScopeKind},
+    graph::{BindingId, BindingKind, DataMemberKind, Mutability, ScopeId, ScopeKind},
     lookup::Filter,
-    specifiers::Specifiers,
+    specifiers::{DeclarationRole, Specifiers},
     types::TypeKind,
 };
 use crate::{support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn check_mutable_declarator(
+        &self,
+        specs: Specifiers,
+        info: &DeclaratorInfo,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if specs.mutability == Mutability::Mutable
+            && (specs.role == DeclarationRole::Typedef
+                || matches!(
+                    self.graph.types.get(info.ty).kind,
+                    TypeKind::Function { .. }
+                ))
+        {
+            return Err(Error::at(
+                location,
+                "mutable in a typedef or function declaration",
+            ));
+        }
+        Ok(())
+    }
+    pub(super) fn record_data_member(
+        &mut self,
+        binding: BindingId,
+        specs: Specifiers,
+        info: &DeclaratorInfo,
+        init: ast::InitDeclarator,
+        home: ScopeId,
+    ) -> Result<(), Error> {
+        let entity = self.graph.binding(binding).entity;
+        if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
+            self.graph.entity_mut(entity).member_initializer = init.initializer;
+            self.graph.entity_mut(entity).mutability = specs.mutability;
+            self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
+                DataMemberKind::Static
+            } else {
+                DataMemberKind::Instance
+            });
+        }
+        if self.graph.scope(home).kind == ScopeKind::Class
+            && !specs.is_static
+            && info.home.is_none()
+        {
+            let owner = self
+                .graph
+                .scope(home)
+                .owner
+                .ok_or(Error::Invariant("class scope without owner"))?;
+            self.graph.entity_mut(owner).members.push(entity);
+            let mut declarator = Some(init.declarator);
+            while let Some(id) = declarator {
+                let node = self.tree.declarators.get(id);
+                if !node.attributes.is_empty() {
+                    self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+                }
+                declarator = node.nested;
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn check_mutable_variable(
+        &self,
+        specs: Specifiers,
+        info: &DeclaratorInfo,
+        home: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let in_class = self.graph.scope(home).kind == ScopeKind::Class;
+        if specs.mutability == Mutability::Mutable {
+            let mut object = info.ty;
+            while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
+                object = element;
+            }
+            if !in_class
+                || info.home.is_some()
+                || specs.is_static
+                || self.graph.types.get(object).cv.0 & 1 != 0
+                || matches!(
+                    self.graph.types.get(info.ty).kind,
+                    TypeKind::Reference { .. }
+                )
+            {
+                return Err(Error::at(
+                    location,
+                    "mutable on a variable that is no non-const, non-reference data member",
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(super) fn finish_class_initializers(
         &mut self,
         class: super::graph::EntityId,

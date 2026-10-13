@@ -1,8 +1,219 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `8e3665e7b101ad33e94150a67a949e662ec064e2` (clean implementation entry).
+Current implementation group base: `0808a9169dca5eed4c67f1771c690eebc58ad426` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Explicit data-member designation checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The previous goal turn is classified as progress:
+`0808a91` translated anonymous storage and scalar default construction,
+reducing fixed failures from 17 to 14. This entry revalidated the clean
+checkout and reran every fixed case to establish the turn-start baseline.
+Stage base and last-audited commit above are unchanged. Implementation work
+does not certify or advance the stage.
+
+This group reduces fixed failures **14 → 12**, **184/198 → 186/198**,
+with identical coverage and all 184 previously passing identities preserved.
+The original course lane improves **215/229 → 217/229**, with those same 12
+failures. The 31 additional existing course regressions all execute and pass.
+Both lanes completed; no unrun cases are being counted as passing. The two
+newly passing fixed identities are:
+
+```text
+tests/general/100-distinct-anonymous-type-identities.t
+tests/general/200-local-anonymous-union-variable.t
+```
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-members-20261013/`.
+All generated sources, outputs, traces, measurements and scripts remain
+outside the commit. No oracle, fixture, reference, protected checker, Ralph
+state or acceptance policy changed.
+
+### Frozen owners and completed behavior
+
+The full baseline's 14 failures cluster by earliest divergence into class
+function/member declaration and demand (8), inheritance formation (2),
+template specialization lookup (1), copy initialization (1), and explicit
+member expression analysis (2). The last two now pass declarations and default
+construction, then stop at the missing expression path. The protected traces
+and raw output establish that boundary; the final 12 traces and diagnostics
+are summarized in `failure-clusters.json`.
+
+Consulted the frozen owners directly under
+`/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/`:
+`analyzer_expressions.cpp::{member_access,member_qualifier,member_of_object,
+binding_expression,explicit_conversion,static_constant}`,
+`analyzer_access.cpp::{declare_in,member_access,redeclared_access,check_access}`,
+`analyzer_classes.cpp::anonymous_union`,
+`analyzer_declarations.cpp::{simple_declaration,check_variable_specifiers}`,
+`analyzer_types.cpp::specifiers`, `analyzer_conversions.cpp::conditional`,
+`semantic_graph.h::Binding`, `expression_facts.h`,
+`constant_evaluator.cpp::{eval,DesignatesWithoutEffects}`,
+`constant_expressions.cpp::{rvalue,member_object,glvalue}`,
+`constant_statements.cpp::evaluable`, and
+`semantics_dump.cpp::expression`. `source-map.tsv` records each partial
+responsibility and its remaining boundary.
+
+- `member_expressions.rs` analyzes the original base expression, preserves
+  arrow's pointer conversion, reads an already-complete class scope and
+  resolves the original member name through indexed qualified lookup.
+  Dot on an lvalue gives an lvalue; dot on a prvalue/xvalue gives an xvalue;
+  arrow gives an lvalue. Instance member cv joins object cv, with mutable
+  removing only the object's const bit. Arrays qualify their elements;
+  reference members retain their referent type and lvalue category. Static
+  members retain their own type and lvalue category. Enumerators retain their
+  typed folded value and literal presentation. Every explicit designation
+  publishes a compact selected `BindingId` on its original `ExprId`.
+- Own-class qualified and aliased names follow the frozen class-first,
+  then contextual prefix lookup. Namespace prefixes remain typed `ScopeId`
+  edges. The path checks incomplete/nonclass objects, invalid arrow operands,
+  missing names, wrong qualifiers and non-value members at their original
+  source locations. Binding access is checked before ordinary member typing.
+- `graph.rs` owns a private dense access store indexed by `BindingId`.
+  Access belongs to a declaration: anonymous injection preserves its shared
+  `EntityId` but receives the enclosing class's declaration access; ordinary
+  compatible redeclarations retain prior access. Each class scope retains
+  typed formation access, initialized from its defining class-key and updated
+  by access declarations. Direct public/private/protected checks use lexical
+  class enclosure; inheritance and friend access remain separate dependencies.
+- `specifiers.rs` and `data_members.rs` retain typed `Mutability`, validate
+  mutable declarations against the frozen typedef/function/static/const/
+  reference/array rules, and record member properties and source order.
+  Diagnostic locations use the original root declarator for mutable checks.
+  The owning data-member publication helper preserves existing initializer,
+  layout-attribute and instance-storage behavior. No lint suppression or
+  mechanical split was added.
+- Named variable designation checks direct member access, diagnoses evaluated
+  nonstatic members without an object, and retains the unevaluated form.
+  Namespace/block anonymous storage retains its existing explicit edge.
+  Implicit object designation inside a class remains a status-86 boundary.
+- Same-class reference casts use the existing reference conversion rules
+  before class-by-value construction demand. The cast's target and category
+  remain typed presentation facts. The conditional owner now tests compatible
+  same-class glvalues before class copying/conversion, in the frozen order.
+- `constants.rs` reads flattened original-expression aliases before folded
+  enumerator evaluation and checks supported object designations and their
+  effects. Skipped conditional/logical operands do not evaluate their object.
+  Named/member/comma/conditional/reference-cast/array forms use recorded facts;
+  selected non-constexpr calls diagnose at their original call location.
+  Semantic constexpr integral initialization requests required evaluation.
+  Pointer places, constexpr function execution and general object state still
+  report their explicit implementation boundaries.
+- `semantics_dump.rs` renders explicit `member-expression` from its selected
+  binding and original base child, preserving operator spelling and child
+  order. Folded enumerators remain literals. Dump work is iterative and
+  performs no lookup, expression analysis or text reparsing.
+
+Ownership/architecture review: one parsed syntax tree and unit-owned graph;
+private compact binding/access stores; immutable interned type identities;
+dense original-AST semantic facts and separately retained operand conversions.
+A member query visits only the named class and required qualifier/lexical
+edges. No whole-program scan or unrelated class/member demand was introduced.
+Member access does not demand layout, constructors or a function body.
+Representation storage is flat and released with its translation unit;
+query scratch dies with the query. The new ownership regression verifies
+shared injected entity identity, distinct binding access, original immutable
+member type versus use-site const type, retained designation and undemanded
+layout/construction. Existing optimizer, register allocator, code generator
+and per-function backend lifetimes are preserved. PA34 object/tool equality
+remains a later proof.
+
+### Remaining identities and next dependency boundary
+
+Explicit ordinary data-member designation is complete for the supported
+non-inherited, non-bit-field objects in this group, including related cv,
+reference, static, qualification and value-category behavior. The next fixed
+failure group needs class function declaration identity, implicit object
+parameters and bound member designation/calls, plus function-owned demand
+lists. Private nested qualified definitions and default arguments depend on
+those contexts. Class copy/subobject construction, inheritance/access paths,
+member-pointer designation, special member/arrow operators, bit fields and
+template target deduction remain separate owning groups. Full constant object
+places and constexpr call/frame execution are also pending; scalar folded
+member reads do not stand in for that interpreter. Missing implementation
+status 86 remains a failed case, including the two oracle rejections.
+
+```text
+tests/general/100-private-nested-out-of-class-constructor-definition.t
+tests/general/100-private-nested-out-of-class-member-definition.t
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/300-default-argument-nonstatic-member-bad.t
+tests/general/300-deferred-demand-closure.t
+tests/general/300-elaborated-local-struct-copy-init.t
+tests/general/300-member-cv-overload-identity.t
+tests/general/300-member-function-pointer-return-pointer-const.t
+tests/general/300-most-vexing-local-function-member-call-bad.t
+tests/general/300-static-cast-member-overload-prefers-nontemplate.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
+
+### Validation and measured costs
+
+Candidate cppgm SHA-256:
+`7684577287db71831c50791f94c1c79cf7014ec927ed3cac468e8e0146031ce8`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+`checks.json` retains the commands, terminal exits, binary hashes and artifact
+paths. `baseline.log`/`baseline-manifest.json` and `stage-required.log`/
+`fixed-manifest.json` retain exact identity sets; `preservation.json` proves
+unchanged 198-case coverage, failure reduction and zero lost passing identities.
+The required protected stage command and make wrapper both run the full fixed
+manifest. The course result retains its failure marker rather than treating
+its process exit alone as success.
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log`, `checks.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 186/198, exactly 12 failures; exit 1 | `stage-required.log`, `protected-stage-result.json`, `fixed-manifest.json` |
+| `make test-pa7` | Same 186/198; make exit 2 | `stage.log` |
+| `make course-pa7` | 217/229, same 12 failures; marker retained; make exit 2 | `course.log`, `course-result.json`; `../clone/course/pa7/test/trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, all PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json`, `prior-course-results.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS, 184/184 identities; independently verified against the full baseline | `preserve.log`, `preservation.json` |
+| `make lint` | PASS, rustfmt, strict all-feature Clippy, debug/release workspace tests including 174 library tests in each profile, file audit | `lint.log` |
+| `make audit-rust` | PASS, 128 implementation files, zero findings | `audit.log` |
+| `python3 .../pa7-members-20261013/probe.py` | 74/74 protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl`, sources |
+| `python3 .../pa7-members-20261013/measure.py` | All paired output hashes and 18 protected workload receipts match; 3/3 native matches, 2 protected qualifications | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl`, `stack-qualifications/` |
+
+Earlier fixed counts are PA1 58/58, PA2 26/26, PA3 20/20, PA4 106/106,
+PA5 196/196 and PA6 121/121. Earlier course counts are 58/58, 28/28, 20/20,
+112/112, 296/296 and 694/694, all with no failure marker.
+
+Measurements run after test jobs finish, using A/A calibration and warm paired
+ABBA/BAAB samples. Source/binary hashes, output hashes/lengths and every time/
+RSS sample are retained. Observations include process startup and dump I/O.
+Workloads independently scale distinct classes with arrow access, functions
+sharing one class with const dot access, and direct members of one wide class.
+The wide-class expression is an ordinary left binary spine; indexed member
+lookup never scans all its other fields. No generated-code improvement or
+C++/Rust runtime equality requirement is imposed.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| classes / 128 | 5.97 / 6468 | 19.23 / 8000 |
+| shared-class / 128 | 5.10 / 6498 | 17.44 / 8752 |
+| wide-class / 128 | 4.61 / 6492 | 16.55 / 7994 |
+| classes / 512 | 12.23 / 8564 | 30.41 / 8794 |
+| shared-class / 512 | 7.95 / 7222 | 24.62 / 8730 |
+| wide-class / 512 | 6.67 / 6438 | 23.62 / 7990 |
+| classes / 2048 | 34.81 / 16354 | 82.41 / 15636 |
+| shared-class / 2048 | 19.82 / 10706 | 50.34 / 10014 |
+| wide-class / 2048 | 28.87 / 8632 | 71.53 / 7996 |
+
+Native probes start with a 1 MiB stack: 1,000 nested calls around dot access,
+1,500 unary operators over arrow access, and a 600-link chain of pointer-valued
+data members ending in a scalar member. All three protected receipts have `match: true`.
+Calls and unary probes qualify with both tools succeeding with identical
+streams, deterministic counters and files at the shared 16 MiB stack; the
+member chain succeeds on the initial stack. Raw attempts and qualification
+reruns are retained. The genuine byte-budget guard is unchanged; native
+exhaustion depths and diagnostic positions were not calibrated. Shared
+storage was 28.43 GB used within the 107.37 GB ceiling.
 
 ## Anonymous storage and scalar default-construction checkpoint — 2026-10-13
 

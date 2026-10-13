@@ -351,6 +351,11 @@ impl Analyzer<'_> {
         let info = self.declarator(Some(init.declarator), specs.ty, scope)?;
         let member = self.declared_member(&info, scope)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
+        self.check_mutable_declarator(
+            specs,
+            &info,
+            self.tree.declarators.get(init.declarator).location,
+        )?;
         let class_name = self.graph.scope(home).kind == ScopeKind::Class
             && self.graph.scope(home).owner.is_some_and(|class| {
                 info.name.is_some() && info.name == self.graph.entity(class).name
@@ -469,6 +474,12 @@ impl Analyzer<'_> {
                 "qualified definition does not match a declaration",
             ));
         }
+        self.check_mutable_variable(
+            specs,
+            &info,
+            home,
+            self.tree.declarators.get(init.declarator).location,
+        )?;
         self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
         if info.home.is_none()
             && self.graph.scope(home).kind == ScopeKind::Class
@@ -507,33 +518,7 @@ impl Analyzer<'_> {
         if self.semantic() {
             ty = self.graph.publish_variable_type(binding)?;
         }
-        if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
-            self.graph.entity_mut(entity).member_initializer = init.initializer;
-            self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
-                super::graph::DataMemberKind::Static
-            } else {
-                super::graph::DataMemberKind::Instance
-            });
-        }
-        if self.graph.scope(home).kind == ScopeKind::Class
-            && !specs.is_static
-            && info.home.is_none()
-        {
-            let owner = self
-                .graph
-                .scope(home)
-                .owner
-                .ok_or(Error::Invariant("class scope without owner"))?;
-            self.graph.entity_mut(owner).members.push(entity);
-            let mut declarator = Some(init.declarator);
-            while let Some(id) = declarator {
-                let node = self.tree.declarators.get(id);
-                if !node.attributes.is_empty() {
-                    self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
-                }
-                declarator = node.nested;
-            }
-        }
+        self.record_data_member(binding, specs, &info, init, home)?;
         if (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some())
         {
@@ -1220,6 +1205,11 @@ impl Analyzer<'_> {
             .add_scope(ScopeKind::Class, parent, Some(home), name)?;
         self.graph.entity_mut(entity).scope = Some(class);
         self.graph.scope_mut(class).owner = Some(entity);
+        self.graph.scope_mut(class).member_access = if node.key == Keyword::Class {
+            super::graph::Access::Private
+        } else {
+            super::graph::Access::Public
+        };
         if node.packing != 0 || !node.attributes.is_empty() {
             self.graph.entity_mut(entity).layout = super::layout::LayoutState::Unsupported;
         }

@@ -79,7 +79,7 @@ impl Analyzer<'_> {
                     },
                 ));
             }
-            let facts = self.named_expression(callee, &found)?;
+            let facts = self.named_expression(callee, &found, scope)?;
             self.graph.expression_facts.set(callee, facts);
             super::record(&mut self.graph.expression_types, callee.index(), facts.ty);
             facts

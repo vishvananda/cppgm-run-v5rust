@@ -93,6 +93,25 @@ impl Analyzer<'_> {
         skipping: bool,
     ) -> Result<Constant, Error> {
         self.check_stack()?;
+        let id = if self.semantic() {
+            self.graph.expression_facts.root(id)
+        } else {
+            id
+        };
+        if self.semantic()
+            && !skipping
+            && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
+            && self
+                .graph
+                .expression_facts
+                .get(id)
+                .is_ok_and(|facts| facts.folded.is_some())
+        {
+            if op.token.as_punctuator() == Some(P::Arrow) {
+                return Err(Error::Missing("constant pointer-object evaluation"));
+            }
+            self.constant_member_object(base, scope)?;
+        }
         if self.semantic()
             && let Ok(facts) = self.graph.expression_facts.get(id)
             && let Some(bits) = facts.folded.or(facts.query_value)
@@ -286,6 +305,75 @@ impl Analyzer<'_> {
             super::record(&mut self.graph.constant_facts, id.index(), value);
         }
         Ok(value)
+    }
+    fn constant_member_object(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+        self.check_stack()?;
+        let node = *self.tree.expressions.get(id);
+        match node.kind {
+            ExprKind::Id(_) | ExprKind::Literal(_) | ExprKind::Keyword(_) => Ok(()),
+            ExprKind::Member { op, .. } if op.token.as_punctuator() == Some(P::Arrow) => {
+                Err(Error::Missing("constant pointer-object evaluation"))
+            }
+            ExprKind::Paren(inner) | ExprKind::Member { base: inner, .. } => {
+                self.constant_member_object(inner, scope)
+            }
+            ExprKind::Subscript { base, index } => {
+                self.constant_member_object(base, scope)?;
+                self.evaluate_constant(index, scope, false).map(|_| ())
+            }
+            ExprKind::Binary {
+                op, left, right, ..
+            } if op.token.as_punctuator() == Some(P::Comma) => {
+                self.constant_member_object(left, scope)?;
+                self.constant_member_object(right, scope)
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                let value = self.evaluate_constant(condition, scope, false)?;
+                self.constant_member_object(
+                    if value.bits == 0 {
+                        else_expr
+                    } else {
+                        then_expr
+                    },
+                    scope,
+                )
+            }
+            ExprKind::Cast {
+                keyword: None | Some(Keyword::StaticCast | Keyword::ConstCast),
+                operand,
+                ..
+            } if self
+                .graph
+                .expression_facts
+                .get(id)?
+                .reference_cast
+                .is_some() =>
+            {
+                self.constant_member_object(operand, scope)
+            }
+            ExprKind::Call { .. } => {
+                let facts = self.graph.expression_facts.get(id)?;
+                if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+                    && !self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .constexpr
+                {
+                    return Err(not_constant(
+                        node.location,
+                        "a call of a function that is not constexpr",
+                    ));
+                }
+                Err(Error::Missing(
+                    "constexpr member-object function evaluation",
+                ))
+            }
+            _ => Err(Error::Missing("constant member-object place evaluation")),
+        }
     }
     fn constant_named_value(
         &mut self,
@@ -738,7 +826,11 @@ impl Analyzer<'_> {
                 None
             }
         } else {
-            self.constant_value(expr, scope, false)?
+            self.constant_value(
+                expr,
+                scope,
+                self.semantic() && self.graph.entity(entity).constexpr,
+            )?
         };
         self.graph.entity_mut(entity).constant = ConstantState::None;
         if let Some(value) = value {

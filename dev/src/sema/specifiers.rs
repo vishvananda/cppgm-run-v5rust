@@ -2,7 +2,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::ScopeId,
+    graph::{Mutability, ScopeId},
     types::{Cv, Scalar, TypeId},
 };
 use crate::{
@@ -35,6 +35,7 @@ pub(super) struct Specifiers {
     pub role: DeclarationRole,
     pub is_extern: bool,
     pub is_static: bool,
+    pub mutability: Mutability,
     pub virtuality: Virtuality,
     pub constexpr: bool,
     pub thread_storage: ThreadStorage,
@@ -67,6 +68,7 @@ impl Analyzer<'_> {
         let mut typedef = false;
         let mut is_extern = false;
         let mut is_static = false;
+        let mut mutability = Mutability::Ordinary;
         let mut virtuality = Virtuality::NonVirtual;
         let mut constexpr = false;
         let mut thread_storage = ThreadStorage::Ordinary;
@@ -88,11 +90,12 @@ impl Analyzer<'_> {
                     Keyword::Extern => is_extern = true,
                     Keyword::Constexpr => constexpr = true,
                     Keyword::Static => is_static = true,
+                    Keyword::Mutable => mutability = Mutability::Mutable,
                     Keyword::Virtual => virtuality = Virtuality::Virtual,
                     Keyword::ThreadLocal => thread_storage = ThreadStorage::ThreadLocal,
                     Keyword::Inline | Keyword::Register => (),
                     Keyword::Explicit if special => (),
-                    Keyword::Auto | Keyword::Friend | Keyword::Explicit | Keyword::Mutable => {
+                    Keyword::Auto | Keyword::Friend | Keyword::Explicit => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
                         ));
@@ -154,6 +157,7 @@ impl Analyzer<'_> {
                 },
                 is_extern,
                 is_static,
+                mutability,
                 virtuality,
                 constexpr,
                 thread_storage,
