@@ -2,12 +2,13 @@
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 Current implementation group base: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753` (clean call/conversion acceptance audit entry).
-Last audited implementation commit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` (declaration/linkage and scalar source/validation reviewed; full-stage acceptance pending). Previous partial audit: `ee02b39f602ab94d4d286e97e1d39649d6b5643e`.
+Last audited implementation commit: `01cdba770e15010228180780457d1d7f5b47faca` (call/conversion/association source, complete due lanes and resource evidence reviewed; full-stage acceptance pending frozen-oracle baseline disposition). Previous audit: `743155c1cd0d29b13aa35346a67a4ab5f95cd92e`.
 
 
 ## Call/conversion and association acceptance audit checkpoint — 2026-10-13
 
 Reviewed entry: `9f47dc928ae7e5a28edfdf050b15a55a2a84d753`.
+Reviewed implementation commit: `01cdba770e15010228180780457d1d7f5b47faca`.
 Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
 The preceding goal turn made authoritative progress in the declaration/linkage
 implementation `743155c1cd0d29b13aa35346a67a4ab5f95cd92e` and its reviewed
