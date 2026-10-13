@@ -14,6 +14,10 @@ use crate::{
     types::FundamentalType as F,
 };
 #[derive(Clone, Copy)]
+pub(super) enum BuiltinFunction {
+    Abort,
+}
+#[derive(Clone, Copy)]
 pub(super) struct BuiltinNames {
     pub abort: NameId,
     pub constant_p: NameId,
@@ -48,6 +52,7 @@ impl Analyzer<'_> {
                 Cv::default(),
             )?;
             let entity = self.graph.add_entity(Some(ty), Some(key), Keyword::Int)?;
+            self.graph.entity_mut(entity).builtin = Some(BuiltinFunction::Abort);
             let binding = self.graph.add_binding(
                 self.graph.global,
                 None,

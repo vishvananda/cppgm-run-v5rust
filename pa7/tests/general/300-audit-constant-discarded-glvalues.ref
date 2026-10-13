@@ -1,0 +1,57 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable x int
+  variable y int
+  variable v volatile int
+  function-declaration function function of () returning void
+  variable a const int
+    binary-expression prvalue const int OP_COMMA:,
+      id-expression lvalue int x
+      literal prvalue int 4
+  variable b const int
+    binary-expression prvalue const int OP_COMMA:,
+      binary-expression lvalue int OP_COMMA:,
+        cast-expression prvalue void OP_LPAREN:
+          id-expression lvalue int x
+        id-expression lvalue int x
+      literal prvalue int 4
+  variable c const int
+    binary-expression prvalue const int OP_COMMA:,
+      cast-expression prvalue void OP_LPAREN:
+        binary-expression lvalue int OP_COMMA:,
+          id-expression lvalue int x
+          id-expression lvalue int y
+      literal prvalue int 4
+  variable d const int
+    binary-expression prvalue const int OP_COMMA:,
+      id-expression lvalue volatile int v
+      literal prvalue int 4
+  variable e const int
+    binary-expression prvalue const int OP_COMMA:,
+      id-expression lvalue function of () returning void function
+      literal prvalue int 4
+  variable f const int
+    binary-expression prvalue const int OP_COMMA:,
+      conditional-expression prvalue void
+        literal prvalue bool KW_TRUE:true
+        cast-expression prvalue void OP_LPAREN:
+          id-expression lvalue int x
+        cast-expression prvalue void OP_LPAREN:
+          id-expression lvalue int y
+      literal prvalue int 4
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  id-expression lvalue const int a
+                  id-expression lvalue const int b
+                id-expression lvalue const int c
+              id-expression lvalue const int d
+            id-expression lvalue const int e
+          id-expression lvalue const int f
+end translation unit

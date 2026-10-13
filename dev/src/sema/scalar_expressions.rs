@@ -11,7 +11,6 @@ use super::{
 use crate::{
     lex::{PostTokenKind, vocabulary::Keyword},
     syntax::ast::{self, ExprKind},
-    types::FundamentalType as F,
 };
 impl Analyzer<'_> {
     pub(super) fn typed_expression(
@@ -150,44 +149,11 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
-            ExprKind::Sizeof { ty, operand, .. } => {
-                let ty = if let Some(ty) = ty {
-                    self.type_syntax(ty, scope)?
-                } else if let Some(operand) = operand {
-                    self.unevaluated += 1;
-                    let result = self.typed_expression(operand, scope).and_then(|facts| {
-                        self.check_resolved_function(operand)?;
-                        Ok(facts)
-                    });
-                    self.unevaluated -= 1;
-                    let facts = result?;
-                    facts.ty
-                } else {
-                    return Err(Error::Invariant("sizeof without operand"));
-                };
-                let ty = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind
-                {
-                    element
-                } else {
-                    ty
-                };
-                if matches!(
-                    self.graph.types.get(ty).kind,
-                    TypeKind::Function { .. }
-                        | TypeKind::Scalar(Scalar::Void)
-                        | TypeKind::Array { bound: 0, .. }
-                ) {
-                    return Err(Error::at(
-                        node.location,
-                        "sizeof of an incomplete or function type",
-                    ));
-                }
-                let (size, _) = self.type_size(ty, node.location)?;
-                let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
-                let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-                facts.query_value = Some(size);
-                facts
-            }
+            ExprKind::Sizeof {
+                ty,
+                operand,
+                parenthesized,
+            } => self.semantic_size(ty, operand, parenthesized, scope, node.location)?,
             ExprKind::Call { callee, arguments } => {
                 self.procedural_call(id, callee, arguments, scope)?
             }

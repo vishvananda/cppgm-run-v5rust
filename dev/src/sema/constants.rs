@@ -122,37 +122,7 @@ impl Analyzer<'_> {
         } else {
             id
         };
-        if self.semantic()
-            && !skipping
-            && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
-            && self
-                .graph
-                .expression_facts
-                .get(id)
-                .is_ok_and(|facts| facts.folded.is_some())
-        {
-            if op.token.as_punctuator() == Some(P::Arrow) {
-                return Err(Error::Missing("constant pointer-object evaluation"));
-            }
-            self.constant_member_object(base, scope)?;
-        }
-        if self.semantic()
-            && let Ok(facts) = self.graph.expression_facts.get(id)
-            && let Some(bits) = facts.folded.or(facts.query_value)
-        {
-            return Ok(Constant { bits, ty: facts.ty });
-        }
-        if self.semantic()
-            && let Some(value) = self.address_integral_value(id, scope, skipping)?
-        {
-            if !skipping {
-                super::record(&mut self.graph.constant_facts, id.index(), value);
-            }
-            return Ok(value);
-        }
-        if self.evaluating_noexcept
-            && let Some(value) = self.graph.constant_fact(id)
-        {
+        if let Some(value) = self.recorded_constant(id, scope, skipping)? {
             return Ok(value);
         }
         let expr = *self.tree.expressions.get(id);
@@ -222,6 +192,17 @@ impl Analyzer<'_> {
                     )?;
                     self.read_constant_integer(place, location)?
                 }
+            }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: false,
+            } if self.semantic() && op.token.as_punctuator() == Some(P::Comma) => {
+                if !skipping {
+                    self.discard_constant(left, scope)?;
+                }
+                self.evaluate_constant(right, scope, skipping)?
             }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::Unary { op, operand } => {
@@ -355,6 +336,47 @@ impl Analyzer<'_> {
         }
         Ok(value)
     }
+    fn recorded_constant(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Option<Constant>, Error> {
+        if self.semantic()
+            && !skipping
+            && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
+            && self
+                .graph
+                .expression_facts
+                .get(id)
+                .is_ok_and(|facts| facts.folded.is_some())
+        {
+            if op.token.as_punctuator() == Some(P::Arrow) {
+                return Err(Error::Missing("constant pointer-object evaluation"));
+            }
+            self.constant_member_object(base, scope)?;
+        }
+        if self.semantic()
+            && let Ok(facts) = self.graph.expression_facts.get(id)
+            && let Some(bits) = facts.folded.or(facts.query_value)
+        {
+            return Ok(Some(Constant { bits, ty: facts.ty }));
+        }
+        if self.semantic()
+            && let Some(value) = self.address_integral_value(id, scope, skipping)?
+        {
+            if !skipping {
+                super::record(&mut self.graph.constant_facts, id.index(), value);
+            }
+            return Ok(Some(value));
+        }
+        if self.evaluating_noexcept
+            && let Some(value) = self.graph.constant_fact(id)
+        {
+            return Ok(Some(value));
+        }
+        Ok(None)
+    }
     fn constant_conditional(
         &mut self,
         id: ast::ExprId,
@@ -426,6 +448,17 @@ impl Analyzer<'_> {
             });
         }
         if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call {
+            if self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .builtin
+                .is_some()
+            {
+                return Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "a builtin function that is not a constant expression",
+                ));
+            }
             if !self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -656,10 +689,17 @@ impl Analyzer<'_> {
         let base = self.constant_spine.len();
         let mut id = root;
         while let ExprKind::Binary {
-            left, assignment, ..
+            left,
+            assignment,
+            op,
+            ..
         } = self.tree.expressions.get(id).kind
         {
-            if self.semantic() && (assignment || self.consumes_address(id)) {
+            if self.semantic()
+                && (assignment
+                    || self.consumes_address(id)
+                    || op.token.as_punctuator() == Some(P::Comma))
+            {
                 break;
             }
             self.constant_spine.push(id);

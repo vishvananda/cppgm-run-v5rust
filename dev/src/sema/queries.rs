@@ -14,6 +14,104 @@ use crate::{
     types::FundamentalType as F,
 };
 impl Analyzer<'_> {
+    pub(super) fn semantic_size(
+        &mut self,
+        ty: Option<ast::TypeId>,
+        operand: Option<ast::ExprId>,
+        parenthesized: bool,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<super::expression_facts::ExprFacts, Error> {
+        let mut ty = if let Some(ty) = ty {
+            Some(self.type_syntax(ty, scope)?)
+        } else {
+            None
+        };
+        if ty.is_none() && parenthesized {
+            let operand = operand.ok_or(Error::Invariant("sizeof without operand"))?;
+            if let ExprKind::Id(name) = self.tree.expressions.get(operand).kind {
+                let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+                if let Some(binding) = found.binding
+                    && matches!(
+                        self.graph.binding(binding).kind,
+                        BindingKind::Type | BindingKind::Alias
+                    )
+                {
+                    ty = Some(self.binding_expression_type(binding)?);
+                }
+            }
+            if ty.is_none() && self.empty_query_cast(operand, scope)? {
+                return Err(Error::at(location, "sizeof of a function type"));
+            }
+        }
+        let ty = if let Some(ty) = ty {
+            ty
+        } else {
+            let operand = operand.ok_or(Error::Invariant("sizeof without operand"))?;
+            self.unevaluated += 1;
+            let result = self.typed_expression(operand, scope).and_then(|mut facts| {
+                if let Some(binding) = self.ordinary_function_operand(facts) {
+                    self.select_function_designation(operand, binding)?;
+                    facts = self.graph.expression_facts.get(operand)?;
+                }
+                if facts.functions.is_some()
+                    || matches!(
+                        self.graph.types.get(facts.ty).kind,
+                        TypeKind::Function { .. }
+                    )
+                {
+                    return Err(Error::at(location, "sizeof of a function"));
+                }
+                Ok(facts.ty)
+            });
+            self.unevaluated -= 1;
+            result?
+        };
+        let ty = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            element
+        } else {
+            ty
+        };
+        if matches!(
+            self.graph.types.get(ty).kind,
+            TypeKind::Function { .. }
+                | TypeKind::Scalar(Scalar::Void)
+                | TypeKind::Array { bound: 0, .. }
+        ) {
+            return Err(Error::at(
+                location,
+                "sizeof of an incomplete or function type",
+            ));
+        }
+        let (size, _) = self.type_size(ty, location)?;
+        let target = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
+        let mut facts =
+            self.new_expression_facts(target, super::expression_facts::ValueCategory::Prvalue)?;
+        facts.query_value = Some(size);
+        Ok(facts)
+    }
+
+    fn empty_query_cast(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<bool, Error> {
+        match self.tree.expressions.get(id).kind {
+            ExprKind::FunctionalCast {
+                arguments, braced, ..
+            } => Ok(arguments.is_empty() && braced.is_none()),
+            ExprKind::Call { callee, arguments } if arguments.is_empty() => {
+                let ExprKind::Id(name) = self.tree.expressions.get(callee).kind else {
+                    return Ok(false);
+                };
+                let found = self.lookup_call_result(name, scope)?;
+                Ok(found.binding.is_some_and(|binding| {
+                    matches!(
+                        self.graph.binding(binding).kind,
+                        BindingKind::Type | BindingKind::Alias
+                    )
+                }))
+            }
+            _ => Ok(false),
+        }
+    }
+
     pub(super) fn semantic_alignment(
         &mut self,
         ty: Option<ast::TypeId>,

@@ -13,6 +13,82 @@ use crate::{
 };
 
 #[test]
+fn constant_discards_use_places_and_restore_scratch_after_failure() {
+    use super::{builtin_calls::BuiltinFunction, constants::ConstantState};
+    use crate::syntax::ast::{DeclKind, ExprKind, InitializerKind};
+    let source = SourceBuffer::new(b"int x;constexpr int n=((void)x,x,4);constexpr int failure=__builtin_constant_p((__builtin_abort(),4));".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"discard-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let marker = 0u8;
+    analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+    let scope = analyzer.graph.global;
+    for &decl in tree.decl_lists.get(declarations) {
+        analyzer.declaration(decl, scope).unwrap();
+    }
+    assert_eq!(tree.expressions.mark(), count);
+    for (index, expected) in [(0, None), (1, Some(4)), (2, Some(0))] {
+        let DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[index])
+            .kind
+        else {
+            panic!("simple declaration expected");
+        };
+        let init = tree.init_declarators.get(declarators)[0];
+        let binding = analyzer.graph.declared_bindings[init.declarator.index()].unwrap();
+        match analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity)
+            .constant
+        {
+            ConstantState::Value(value) => assert_eq!(Some(value.bits), expected),
+            ConstantState::None => assert!(expected.is_none()),
+            ConstantState::Evaluating => panic!("unfinished constant"),
+        }
+        if index != 2 {
+            continue;
+        }
+        let InitializerKind::Assign(query) = init.initializer.unwrap().kind else {
+            panic!("query initializer expected");
+        };
+        let ExprKind::Call { arguments, .. } = tree.expressions.get(query).kind else {
+            panic!("query call expected");
+        };
+        let operand = tree.expr_lists.get(arguments)[0];
+        let ExprKind::Paren(comma) = tree.expressions.get(operand).kind else {
+            panic!("parenthesized comma expected");
+        };
+        let ExprKind::Binary { left, .. } = tree.expressions.get(comma).kind else {
+            panic!("comma expected");
+        };
+        let binding = analyzer.graph.call_binding(left).unwrap();
+        assert!(matches!(
+            analyzer
+                .graph
+                .entity(analyzer.graph.binding(binding).entity)
+                .builtin,
+            Some(BuiltinFunction::Abort)
+        ));
+        for _ in 0..2 {
+            assert!(matches!(
+                analyzer.constant_value(operand, scope, true),
+                Err(Error::Diagnostic {
+                    message: "a builtin function that is not a constant expression",
+                    ..
+                })
+            ));
+            assert!(analyzer.constant_discard_work.is_empty());
+            assert!(analyzer.constant_evaluation.is_none());
+        }
+    }
+}
+
+#[test]
 fn declared_conditions_keep_read_and_target_facts_separate_from_initializers() {
     use super::expression_facts::{LvalueTransform, ValueConversion};
     use crate::syntax::ast::{Body, Condition, DeclKind, StmtKind};

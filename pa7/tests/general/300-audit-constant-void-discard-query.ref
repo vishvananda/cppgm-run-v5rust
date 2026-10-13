@@ -1,0 +1,26 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable x int
+  variable a const int
+    binary-expression prvalue const int OP_COMMA:,
+      cast-expression prvalue void OP_LPAREN:
+        literal prvalue int 3
+      literal prvalue int 4
+  variable b const int
+    binary-expression prvalue const int OP_COMMA:,
+      cast-expression prvalue void OP_LPAREN:
+        unary-expression lvalue int OP_INC:++
+          literal lvalue lvalue-reference to const int 3
+      literal prvalue int 4
+  function-definition f function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              id-expression lvalue const int a
+              id-expression lvalue const int b
+            literal prvalue int 1
+          literal prvalue int 0
+end translation unit

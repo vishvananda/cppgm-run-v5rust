@@ -935,14 +935,71 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let facts = self.graph.expression_facts.get(id)?;
-        if facts.category != ValueCategory::Prvalue {
-            self.constant_place(id, scope).map(|_| ())
-        } else if self.is_address_expression(id) {
-            self.evaluate_address(id, scope).map(|_| ())
-        } else {
-            self.evaluate_constant(id, scope, false).map(|_| ())
-        }
+        let base = self.constant_discard_work.len();
+        self.constant_discard_work.push(id);
+        let result = (|| {
+            while self.constant_discard_work.len() > base {
+                self.check_stack()?;
+                let id = self
+                    .constant_discard_work
+                    .pop()
+                    .ok_or(Error::Invariant("discard work disappeared"))?;
+                let id = self.graph.expression_facts.root(id);
+                let node = *self.tree.expressions.get(id);
+                let facts = self.graph.expression_facts.get(id)?;
+                let void = matches!(
+                    self.graph.types.get(facts.ty).kind,
+                    TypeKind::Scalar(Scalar::Void)
+                );
+                match node.kind {
+                    ExprKind::Binary {
+                        op,
+                        left,
+                        right,
+                        assignment: false,
+                    } if op.token.as_punctuator() == Some(P::Comma) => {
+                        self.constant_discard_work.push(right);
+                        self.constant_discard_work.push(left);
+                    }
+                    ExprKind::Cast { operand, .. } if void => {
+                        self.constant_discard_work.push(operand);
+                    }
+                    ExprKind::Conditional {
+                        condition,
+                        then_expr,
+                        else_expr,
+                    } if void => {
+                        let selected = self.constant_truth(condition, scope, false)?;
+                        self.constant_discard_work.push(if selected {
+                            then_expr
+                        } else {
+                            else_expr
+                        });
+                    }
+                    ExprKind::Call { .. } if void => {
+                        self.evaluate_constant(id, scope, false)?;
+                    }
+                    _ if void => {
+                        return Err(nonconstant(
+                            node.location,
+                            "a void expression outside constant evaluation",
+                        ));
+                    }
+                    _ if facts.category != ValueCategory::Prvalue => {
+                        self.constant_place(id, scope)?;
+                    }
+                    _ if self.is_address_expression(id) => {
+                        self.evaluate_address(id, scope)?;
+                    }
+                    _ => {
+                        self.evaluate_constant(id, scope, false)?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.constant_discard_work.truncate(base);
+        result
     }
     pub(super) fn record_address_initializer(
         &mut self,

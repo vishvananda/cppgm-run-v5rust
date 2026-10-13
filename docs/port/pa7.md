@@ -1,9 +1,161 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `a4f09d05042874cc9e4e1224f2a206df61de5dc7` (clean continued audit entry).
+Current implementation group base: `223cb4a5c3b422323dcc8f672189f4be701c8065` (clean continued query audit entry).
 Last audited implementation commit: `67419338047bc8419b75b35d334efecc2c6eec29` (source/fixes and validation reviewed; full-stage acceptance pending). Previous partial audit: `a05b466c47eac23ca20be5d23d5bed00183e72b8`.
 
+
+## Type-query and discarded-value audit checkpoint — 2026-10-13
+
+Reviewed clean entry/group base:
+`223cb4a5c3b422323dcc8f672189f4be701c8065`.
+The previous turn made authoritative progress in implementation commit
+`6741933` and ledger commit `223cb4a`; their clean worktree, ledger and retained
+handoff were inspected before continuing the existing phase goal.
+Stage base remains `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
+**The nine query-group divergences below are resolved. Full-stage acceptance
+remains open for the cumulative declaration/operator/dump source census.**
+No executed probe in this group fails. Ralph state, goal and acceptance policy
+were neither reset nor edited.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-query-audit-20261013/`.
+Final Rust cppgm SHA-256:
+`31a22019dc5241025ec182b0ff02de6f0da4f41859a5307446ba423da8aaba81`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+Commands/costs are in `checks.json`; raw source probes, initial mismatches,
+final comparisons, quality results and measurements are retained under that
+root. `handoff.json` records the reviewed source commit and still-open goal.
+
+### Reviewed responsibilities and corrected behavior
+
+Consulted frozen `analyzer_expressions.cpp::size_of`, `empty_functional_cast`,
+`resolve_lone_function`, `typed_value` and `check_resolved`; `layout.cpp::type_size`;
+`analyzer_builtins.cpp::constant_p_call`; `constant_expressions.cpp::discard` and
+its comma/rvalue/glvalue paths; and `constant_statements.cpp`'s builtin-call
+failure. Compared their Rust owners and current source-map responsibilities.
+
+- `queries.rs::semantic_size` owns semantic sizeof analysis over the original AST.
+  A function operand or unresolved overload is rejected at the query location
+  with `sizeof of a function`, rather than an operand-target or generic incomplete
+  type diagnostic. A lone ordinary function is selected through the existing
+  designation API; deleted-function failures retain their order. Written type-id
+  queries keep their distinct incomplete/function-type path. A parenthesized bare
+  name that now denotes a type uses that binding without a reparse. An empty
+  functional cast/type-name call directly under parenthesized sizeof follows the
+  frozen function-type reading, while extra parentheses and braced value
+  initialization remain expressions. This fixes the previously successful
+  `sizeof(I())` alias case. Successful queries retain size_t `TypeId` and
+  `query_value`, with no copied operand tree or printer-time type calculation.
+- Reviewed scalar/enum/reference/pointer/member-pointer sizes, alignments, unknown
+  bounds and incomplete types against `layout.cpp`. Checked array multiplication
+  is deliberate target overflow checking, and element failures precede outer
+  overflow. The large scalar/nested/incomplete-array probes match; no wrapping
+  size or host-size rejection was substituted for the frozen rule. Unevaluated
+  null indirection, increments and direct/indirect call operands remain typed
+  without interpreting their values.
+- Semantic comma evaluation in `constants.rs` now discards its left operand
+  rather than reading it as an integer. Integral binary spines stop before a
+  semantic comma and consume its recorded result normally; PA6's name/integral
+  evaluator keeps its existing path. `constant_addresses.rs::discard_constant`
+  walks original IDs iteratively: comma effects stay left-to-right, void casts
+  discard their operand, void conditionals visit only the selected arm, calls
+  retain their normal constant-evaluation boundary, and source glvalues designate
+  a place without reading variable storage. Parentheses use existing flattened
+  facts. Nested operations reuse `constant_discard_work` with an explicit saved
+  base, and both success/failure restore it while retaining capacity.
+- Synthesized abort entities retain a typed `BuiltinFunction::Abort` origin fact.
+  Required constant evaluation emits the frozen `a builtin function that is not
+  a constant expression` failure. It does not infer builtin origin from a source
+  spelling or turn a missing constexpr body into a generic zero. Ordinary user
+  functions still have their separate non-constexpr failure. The builtin remains
+  recognized semantically without executing abort or requiring later lowering.
+
+Exact initial failing IDs were `sizeof-function`, `sizeof-function-parens`,
+`sizeof-overload`, `sizeof-overload-address`, `sizeof-empty-alias`,
+`sizeof-function-reference`, `query-void-discard`, `constant-void-discard` and
+`constant-abort-discard`. All are resolved. The expanded 86-case set includes
+unread ordinary/volatile glvalues, nested commas under arithmetic, void casts and
+selected/unselected void calls, mutable scalar temporary effects, query results,
+function pointers/references/deleted functions, template-id address queries,
+fundamental/reference/array sizes, alignment and overflow/failure ordering.
+Initial failed receipts and output files are retained in `probes-initial.jsonl`,
+`probe-initial.log` and `mismatches/`; stale build-attempt logs are not final proof.
+
+The new ownership test checks that the source expression count stays unchanged,
+unread storage remains nonconstant, query results are published correctly,
+builtin origin travels with the selected entity, and repeated failing evaluation
+restores the same discard/evaluation scratch state. Strict Clippy required the
+cohesive recorded-constant fact path to be extracted from the dispatcher; no
+length waiver, blanket allowance or mechanical file split was added. No new
+module, dependency, unsafe code, FFI, text transport, environment read, source
+recognition or C++ production fallback was introduced. Parser ownership, compact
+IDs, explicit demand, complete query ownership and backend/optimizer/allocator
+policies remain intact. Seven new regressions and their new oracle-derived
+references are in the earliest executed PA7 lane; existing inputs and references
+were not formatted or changed.
+
+### Validation and preservation
+
+| Command/check | Final result | Artifact relative to root |
+| --- | --- | --- |
+| `make build` | Pass, locked release workspace | `build-final.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 198/198 fixed cases | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | Pass, same fixed coverage | `stage-make.log` |
+| `make course-pa7` | 296/296, no failure marker | `course-final.log`, `course-result.json`, `course-counts.txt` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | All PA1–PA6 fixed/full-course lanes pass | `prior-final.log`, `prior-summary.json` |
+| Protected preflight/preservation | Pass | `preflight.log`, `preserve.log`, `preservation.json` |
+| `make lint` / protected quality checker | rustfmt, strict Clippy, 186 library tests in debug/release plus tools/docs, file audit pass | `lint-final.log` |
+| `make audit-rust` | 135 files, zero findings | `audit-final.log` |
+| `python3 .../pa7-query-audit-20261013/probe.py` | 86/86 | `probe-expanded.log`, `summary.json`, `probes.jsonl` |
+| Re-executed preceding probes | 147/147, 62/62, 70/70, 78/78, 55/55 and 411/411 PA7-scope procedural probes | `addresses/`, `preceding/`, `templates/`, `initialization/`, `scalar-audit/`, `procedural/` |
+| New fixture comparisons | 7/7 | `fixture-probes.jsonl`; final full-course trace |
+| Resource/native probes | 12 exact scaling receipts, two protected native qualifications | `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl`, `measure.log` |
+
+Independent preservation is 198 entry/current fixed passes with zero lost.
+Full-course identity preservation is 289 entry cases retained, seven new cases
+and all 296 exact receipts, recorded in `course-preservation.json`. The original
+229-case lane remains included. PA1–PA6 fixed counts remain
+58/26/20/106/196/121, full-course counts 58/28/20/112/296/694.
+The preceding procedural probe's explicitly outside-PA7 floating-object mismatch
+remains recorded separately; it is not an accepted negative or a gate exception.
+
+### Resources and next boundary
+
+All gate/quality/probe jobs were terminal before measurement. Same supported
+inputs/output paths and 16 MiB stacks were used, warm A/A then ABBA/BAAB sampling
+with four measured runs per tool and two protected receipts per input. Counts
+mean discarded void-cast comma operands or sizeof queries. Source/binary/output
+hashes and individual timing/RSS samples remain in `measurements.json`.
+
+| Workload | Count | C++ median ms / peak KiB | Rust median ms / peak KiB |
+| --- | ---: | ---: | ---: |
+| Discarded comma | 128 | 7.34 / 6,492 | 20.99 / 7,998 |
+| Sizeof queries | 128 | 8.15 / 5,820 | 21.80 / 8,744 |
+| Discarded comma | 512 | 9.24 / 6,512 | 27.34 / 8,368 |
+| Sizeof queries | 512 | 10.95 / 6,466 | 25.79 / 8,376 |
+| Discarded comma | 2,048 | 25.04 / 7,154 | 64.00 / 8,374 |
+| Sizeof queries | 2,048 | 20.87 / 7,200 | 52.99 / 8,366 |
+
+These are process-level observations, separate from semantic-byte equality and
+from any generated-code optimization objective. Scratch values are reclaimed at
+query boundaries, capacities reused, and the discard traversal is iterative.
+No PA35 target or PA34 object/bootstrap proof is inferred.
+
+The inherited 1,000-deep pointer conditional and 1,500-parenthesis address probes
+were executed from a 1 MiB stack. Both receipts report `match=true` and
+`stack_qualification.passed=true`, with both tools succeeding identically at
+16 MiB. Raw original exhaustion attempts remain retained. No cutoff or diagnostic
+position was calibrated; the typed byte-budget guard remains in production.
+
+No executed finding from this group remains open. The next dependency boundary
+is still the cumulative ordinary declaration/redeclaration, scalar operator and
+semantic dump census, reconciling these query/effect corrections with earlier
+partial ownership rows. Full class/template/constexpr-frame responsibilities stay
+with the documented later contracts; status 86 is never a successful rejection.
+Full-stage acceptance and Ralph's existing goal remain open until that complete
+source review, rather than fixture totals, justifies acceptance.
 
 ## Procedural acceptance-audit checkpoint — 2026-10-13
 
