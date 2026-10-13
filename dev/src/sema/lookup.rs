@@ -11,7 +11,7 @@ use crate::{
     lex::identifiers::NameId,
     syntax::ast::{Name, NameKind},
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Filter {
     Ordinary,
@@ -102,6 +102,82 @@ impl Analyzer<'_> {
             };
         LookupResult { binding, functions }
     }
+    fn class_lookup(
+        &self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        let own = self.own_lookup(scope, key, filter);
+        if own.binding.is_some() || self.graph.scope(scope).kind != ScopeKind::Class {
+            return Ok(own);
+        }
+        // A result names its representative declaring scope. Its overload set
+        // is collected only once, after the graph walk, rather than copied at
+        // every inherited level. Query memos store absence or this compact fact.
+        let mut memo = HashMap::<ScopeId, Option<ScopeId>>::new();
+        let mut work = vec![(scope, 0usize, None)];
+        while let Some((current, next, result)) = work.last_mut() {
+            let owner = self
+                .graph
+                .scope(*current)
+                .owner
+                .ok_or(Error::Invariant("class lookup without owner"))?;
+            if let Some(edge) = self.graph.entity(owner).bases.get(*next) {
+                let base = self
+                    .graph
+                    .entity(edge.class)
+                    .scope
+                    .ok_or(Error::Invariant("base without scope"))?;
+                let found = if let Some(&cached) = memo.get(&base) {
+                    cached
+                } else {
+                    let own = self.graph.own_key(base, key, filter).map(|_| base);
+                    if own.is_none() && !self.graph.entity(edge.class).bases.is_empty() {
+                        work.push((base, 0, None));
+                        continue;
+                    }
+                    memo.insert(base, own);
+                    own
+                };
+                // Nonvirtual branches merge equal declaration/type sets. Unlike
+                // namespaces, different functions in different bases are ambiguous.
+                if let (Some(a), Some(b)) = (*result, found) {
+                    let a = self.graph.binding(
+                        self.graph
+                            .own_key(a, key, filter)
+                            .ok_or(Error::Invariant("base representative without name"))?,
+                    );
+                    let b = self.graph.binding(
+                        self.graph
+                            .own_key(b, key, filter)
+                            .ok_or(Error::Invariant("base representative without name"))?,
+                    );
+                    if a.entity != b.entity
+                        && !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
+                            && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
+                            && a.ty == b.ty)
+                    {
+                        return Err(Error::at(self.lookup_location, "ambiguous name"));
+                    }
+                } else if result.is_none() {
+                    *result = found;
+                }
+                *next += 1;
+            } else {
+                let (current, _, found) = work
+                    .pop()
+                    .ok_or(Error::Invariant("missing class lookup frame"))?;
+                if current == scope {
+                    return Ok(found.map_or_else(LookupResult::default, |found| {
+                        self.own_lookup(found, key, filter)
+                    }));
+                }
+                memo.insert(current, found);
+            }
+        }
+        Err(Error::Invariant("class lookup without result"))
+    }
     fn inline_set(
         &self,
         scope: ScopeId,
@@ -145,7 +221,7 @@ impl Analyzer<'_> {
         filter: Filter,
     ) -> Result<LookupResult, Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
-            return Ok(self.own_lookup(scope, name, filter));
+            return self.class_lookup(scope, name, filter);
         }
         let mut visited = HashSet::new();
         let mut level = vec![scope];
@@ -205,7 +281,7 @@ impl Analyzer<'_> {
         let mut pending = Vec::new();
         let mut current = Some(scope);
         while let Some(scope) = current {
-            let mut result = self.own_lookup(scope, name, filter);
+            let mut result = self.class_lookup(scope, name, filter)?;
             let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
             while let Some(nominated) = frontier.pop() {
                 if !visited.insert(nominated) {
@@ -271,12 +347,26 @@ impl Analyzer<'_> {
             } else {
                 self.unqualified(scope, key, Filter::Prefix)?
             };
-            let binding = self.graph.binding(found.ok_or_else(|| {
+            let binding_id = found.ok_or_else(|| {
                 Error::at(
                     component.location,
                     "undeclared name in a nested-name-specifier",
                 )
-            })?);
+            })?;
+            if let Some(search) = prefix
+                && let Some(naming) = self.graph.scope(search).owner
+                && self.graph.scope(search).kind == ScopeKind::Class
+                && self.graph.binding_scope(binding_id) != search
+            {
+                self.check_named_member_access(
+                    binding_id,
+                    naming,
+                    naming,
+                    scope,
+                    component.location,
+                )?;
+            }
+            let binding = self.graph.binding(binding_id);
             let entity = self.graph.entity(binding.entity);
             prefix = entity.scope;
             if prefix.is_none()
@@ -343,6 +433,13 @@ impl Analyzer<'_> {
             self.unqualified_result(scope, key.into(), filter)?
         };
         if let Some(binding) = found.binding {
+            if let Some(search) = prefix
+                && let Some(naming) = self.graph.scope(search).owner
+                && self.graph.scope(search).kind == ScopeKind::Class
+                && self.graph.binding_scope(binding) != search
+            {
+                self.check_named_member_access(binding, naming, naming, scope, node.location)?;
+            }
             super::record(&mut self.graph.resolved_names, name.index(), binding);
         }
         Ok(found)

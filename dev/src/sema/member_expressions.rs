@@ -66,14 +66,44 @@ impl Analyzer<'_> {
         }
         let search = self.data_member_qualifier(name, class, scope)?;
         self.lookup_location = node.location;
-        let found = self.qualified_result(search, key.into(), Filter::Ordinary)?;
+        let found = self
+            .qualified_result(search, key.into(), Filter::Ordinary)
+            .map_err(|error| match error {
+                Error::Diagnostic {
+                    message: "ambiguous name",
+                    ..
+                } => Error::at(node.location, "ambiguous member name"),
+                other => other,
+            })?;
         let binding = found
             .binding
             .ok_or_else(|| Error::at(node.location, "no member of that name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
             return Err(Error::Missing("bound member function designation"));
         }
-        self.check_direct_member_access(binding, scope, node.location)?;
+        let naming = self
+            .graph
+            .scope(search)
+            .owner
+            .ok_or(Error::Invariant("member search without class"))?;
+        let entity = self.graph.entity(self.graph.binding(binding).entity);
+        if entity.data_member == Some(DataMemberKind::Instance) {
+            let home = entity
+                .home
+                .and_then(|home| self.graph.scope(home).owner)
+                .ok_or(Error::Invariant("member without class"))?;
+            if self.graph.base_count(class, naming) > 1 || self.graph.base_count(naming, home) > 1 {
+                return Err(Error::at(
+                    node.location,
+                    "a non-static member of an ambiguous base class subobject",
+                ));
+            }
+            if class != naming {
+                let path = self.graph.retain_base_path(class, naming)?;
+                self.check_base_path_access(path, scope, node.location)?;
+            }
+        }
+        self.check_named_member_access(binding, naming, class, scope, node.location)?;
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         let member = self.graph.binding(binding);
         let entity = self.graph.entity(member.entity);
@@ -119,6 +149,7 @@ impl Analyzer<'_> {
             }
         };
         facts.member = Some(binding);
+        facts.member_naming = Some(naming);
         Ok(facts)
     }
 
@@ -155,7 +186,7 @@ impl Analyzer<'_> {
             let found = if let Some(prefix) = prefix {
                 self.qualified(prefix, key, Filter::Prefix)?
             } else if let Some(binding) = self.qualified(class_scope, key, Filter::Prefix)? {
-                self.check_direct_member_access(binding, scope, node.location)?;
+                self.check_named_member_access(binding, class, class, scope, node.location)?;
                 Some(binding)
             } else {
                 self.unqualified(scope, key, Filter::Prefix)?
@@ -180,13 +211,16 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        if prefix != Some(class_scope) {
+        if !prefix
+            .and_then(|scope| self.graph.scope(scope).owner)
+            .is_some_and(|base| base == class || self.graph.is_base_of(base, class))
+        {
             return Err(Error::at(
                 node.location,
                 "qualified member name does not name a base class",
             ));
         }
-        Ok(class_scope)
+        prefix.ok_or(Error::Invariant("member qualifier without scope"))
     }
 
     pub(super) fn check_direct_member_access(
@@ -196,9 +230,45 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let home = self.graph.binding_scope(binding);
-        if self.graph.binding_access(binding) != Access::Public && !self.graph.encloses(home, scope)
+        let owner = self.graph.scope(home).owner;
+        if self.graph.binding_access(binding) != Access::Public
+            && !self.graph.encloses(home, scope)
+            && !(self.graph.binding_access(binding) == Access::Protected
+                && owner.is_some_and(|class| self.class_context(scope, class)))
         {
             return Err(Error::at(location, "inaccessible member"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn check_named_member_access(
+        &self,
+        binding: BindingId,
+        naming: EntityId,
+        object: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.check_direct_member_access(binding, scope, location)?;
+        let home = self.graph.binding_scope(binding);
+        let Some(owner) = self.graph.scope(home).owner else {
+            return Ok(());
+        };
+        if naming != owner && !self.accessible_base_name(naming, owner, scope) {
+            return Err(Error::at(location, "inaccessible member"));
+        }
+        if self.graph.binding_access(binding) == Access::Protected
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .data_member
+                == Some(DataMemberKind::Instance)
+            && !self.protected_object_accessible(scope, owner, object)
+        {
+            return Err(Error::at(
+                location,
+                "protected member accessed through an object of another class",
+            ));
         }
         Ok(())
     }

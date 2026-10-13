@@ -98,6 +98,9 @@ impl Analyzer<'_> {
         class: EntityId,
         kind: RefKind,
     ) -> Result<bool, Error> {
+        if !self.graph.entity(class).bases.is_empty() {
+            return Err(Error::Missing("base subobject copy and move plans"));
+        }
         let mut deleted = false;
         for &member in &self.graph.entity(class).members {
             let mut ty = self

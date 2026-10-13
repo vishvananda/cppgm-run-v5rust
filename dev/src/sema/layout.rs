@@ -33,6 +33,9 @@ impl Analyzer<'_> {
         if !self.graph.entity(entity).complete {
             return Err(Error::at(location, "size of an incomplete class"));
         }
+        if !self.graph.entity(entity).bases.is_empty() {
+            return Err(Error::Missing("nonvirtual base subobject layout"));
+        }
         match self.graph.entity(entity).layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),

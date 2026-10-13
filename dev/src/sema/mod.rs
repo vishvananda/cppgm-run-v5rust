@@ -21,6 +21,7 @@ mod function_demands;
 mod function_names;
 mod function_resolution;
 mod graph;
+mod inheritance;
 mod initialization;
 mod integral;
 mod layout;

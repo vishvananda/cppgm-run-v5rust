@@ -13,6 +13,108 @@ use crate::{
 };
 
 #[test]
+fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand_local() {
+    use super::{
+        construction::ConstructorState, expression_facts::ValueConversion, function_demands::Demand,
+    };
+    use crate::syntax::ast::{Body, DeclKind, StmtKind};
+    let source = SourceBuffer::new(b"struct B{int x;};struct M:B{};struct D:M{};B*a(D*d){return d;}B*b(D*d){return d;}int member(const D&d){return d.B::x;}void init(){D d;D e;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"base-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let mut paths = Vec::new();
+    for index in [3, 4] {
+        let DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[index])
+            .kind
+        else {
+            panic!("function expected");
+        };
+        let Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body expected");
+        };
+        let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound expected");
+        };
+        let StmtKind::Return(Some(expression)) =
+            tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+        else {
+            panic!("return expected");
+        };
+        let facts = graph.expression_facts.get(expression).unwrap();
+        let conversion = facts.conversion.unwrap();
+        assert_eq!(conversion.second, ValueConversion::DerivedToBase);
+        assert_ne!(facts.ty, conversion.result);
+        assert_eq!(graph.expression_type(expression), Some(facts.ty));
+        paths.push(facts.base_path.unwrap());
+    }
+    assert_eq!(paths[0], paths[1]);
+    assert_eq!(graph.base_paths.get(paths[0]).len(), 2);
+    let mut classes = Vec::new();
+    for spelling in [b"B".as_slice(), b"M", b"D"] {
+        let name = cursor.intern_name(spelling).unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        assert!(matches!(
+            graph.entity(class).layout,
+            super::layout::LayoutState::NotStarted
+        ));
+        let ConstructorState::Ready(plan) = graph.entity(class).default_construction else {
+            panic!("demanded base plan expected");
+        };
+        classes.push((class, plan));
+    }
+    assert_eq!(
+        graph.constructors.get(classes[2].1).bases,
+        vec![classes[1].1]
+    );
+    assert_eq!(
+        graph.constructors.get(classes[1].1).bases,
+        vec![classes[0].1]
+    );
+    assert_eq!(graph.entity(classes[2].0).bases[0].class, classes[1].0);
+    let trailing = super::function_demands::trailing(&graph);
+    assert!(matches!(trailing.as_slice(), [Demand::Constructor(id)] if *id == classes[2].1));
+}
+
+#[test]
+fn repeated_nonvirtual_subobjects_saturate_without_enumerating_paths_or_demanding_layout() {
+    let mut source = String::from("struct B{};struct L0:B{};struct R0:B{};");
+    for index in 1..64 {
+        use std::fmt::Write;
+        let previous = index - 1;
+        write!(source, "struct L{index}:L{previous},R{previous}{{}};struct R{index}:L{previous},R{previous}{{}};").unwrap();
+    }
+    analyze(source.as_bytes(), |graph, cursor| {
+        let mut classes = Vec::new();
+        for spelling in [b"B".as_slice(), b"L0", b"L63"] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert!(matches!(
+                graph.entity(class).layout,
+                super::layout::LayoutState::NotStarted
+            ));
+            assert!(matches!(
+                graph.entity(class).default_construction,
+                super::construction::ConstructorState::NotStarted
+            ));
+            classes.push(class);
+        }
+        assert_eq!(graph.base_count(classes[1], classes[0]), 1);
+        assert_eq!(graph.base_count(classes[2], classes[0]), 2);
+        assert_eq!(graph.base_count(classes[0], classes[2]), 0);
+    });
+}
+
+#[test]
 fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
     use super::{copy_initialization::CopyOrigin, expression_facts::ValueCategory};
     use crate::syntax::ast::{DeclKind, InitializerKind};

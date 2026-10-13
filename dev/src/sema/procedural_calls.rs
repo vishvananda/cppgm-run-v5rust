@@ -113,6 +113,19 @@ impl Analyzer<'_> {
             scratch.sequences.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
+            for &argument in self.tree.expr_lists.get(arguments) {
+                let mut facts = self.graph.expression_facts.get(argument)?;
+                if let Some(conversion) = facts.conversion {
+                    facts.base_path = self.conversion_base_path(
+                        facts,
+                        conversion,
+                        scope,
+                        self.tree.expressions.get(argument).location,
+                        true,
+                    )?;
+                    self.graph.expression_facts.set(argument, facts);
+                }
+            }
             self.check_class_arguments(binding, arguments, scope)?;
             self.check_direct_member_access(
                 binding,

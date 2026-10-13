@@ -35,6 +35,7 @@ pub(super) enum ValueConversion {
     PointerBoolean,
     NullPointer,
     Pointer,
+    DerivedToBase,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ConversionRank {
@@ -73,6 +74,8 @@ pub(super) struct ExprFacts {
     pub anonymous_member: Option<super::graph::BindingId>,
     // Explicit designation retains the selected entity independently of spelling.
     pub member: Option<super::graph::BindingId>,
+    pub member_naming: Option<super::graph::EntityId>,
+    pub base_path: Option<super::inheritance::BasePathId>,
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
     pub elided_copy: Option<super::copy_initialization::CopySelection>,
@@ -94,6 +97,8 @@ impl ExprFacts {
             call: None,
             anonymous_member: None,
             member: None,
+            member_naming: None,
+            base_path: None,
             member_address_scope: None,
             elided_copy: None,
         }

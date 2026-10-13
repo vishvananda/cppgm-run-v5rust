@@ -97,7 +97,14 @@ impl Analyzer<'_> {
             let keeps_const = !self.cast_constness(from_pointer, to_pointer);
             let mut allowed = glvalue && constness && self.const_castable(from_pointer, to_pointer);
             if !allowed && static_kind {
-                let related = self.bare_type(element)? == self.bare_type(source.ty)?;
+                let hierarchy = self
+                    .graph
+                    .class_of(source.ty)
+                    .zip(self.graph.class_of(element));
+                let related = self.bare_type(element)? == self.bare_type(source.ty)?
+                    || hierarchy.is_some_and(|(from, to)| {
+                        self.graph.is_base_of(from, to) || self.graph.is_base_of(to, from)
+                    });
                 if !related
                     && (matches!(self.graph.types.get(element).kind, TypeKind::Class(_))
                         || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)))
@@ -107,6 +114,17 @@ impl Analyzer<'_> {
                     ));
                 }
                 allowed = glvalue && related && (keeps_const || constness);
+                if allowed
+                    && let Some(facts) = self.reference_hierarchy_cast(
+                        source,
+                        target,
+                        scope,
+                        self.tree.expressions.get(id).location,
+                        c_style,
+                    )?
+                {
+                    return Ok(facts);
+                }
                 if !allowed {
                     match self.convert_scalar(operand, target, true) {
                         Ok(()) => allowed = true,
@@ -201,6 +219,13 @@ impl Analyzer<'_> {
         if static_kind && let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
             conversion.initialization = false;
             let mut facts = source;
+            facts.base_path = self.conversion_base_path(
+                source,
+                conversion,
+                scope,
+                self.tree.expressions.get(id).location,
+                !c_style,
+            )?;
             facts.conversion = Some(conversion);
             self.graph.expression_facts.set(operand, facts);
             return self.new_expression_facts(goal, V::Prvalue);
@@ -218,9 +243,18 @@ impl Analyzer<'_> {
             ) && !matches!(self.graph.types.get(*b).kind, TypeKind::Function { .. })
                 && (constness || !self.cast_constness(from, goal));
         }
+        if !allowed
+            && static_kind
+            && let Some(facts) =
+                self.pointer_hierarchy_cast(id, operand, source, goal, scope, c_style)?
+        {
+            return Ok(facts);
+        }
         if !allowed && constness {
             allowed = self.const_castable(from, goal);
         }
+        let fk = &self.graph.types.get(from).kind;
+        let gk = &self.graph.types.get(goal).kind;
         if !allowed && reinterpret {
             let member_pair = match (fk, gk) {
                 (
@@ -264,6 +298,103 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(operand, facts);
         self.new_expression_facts(goal, V::Prvalue)
     }
+    fn reference_hierarchy_cast(
+        &mut self,
+        source: ExprFacts,
+        target: TypeId,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+        c_style: bool,
+    ) -> Result<Option<ExprFacts>, Error> {
+        let TypeKind::Reference { element, kind } = self.graph.types.get(target).kind else {
+            return Err(Error::Invariant(
+                "hierarchy reference cast without reference type",
+            ));
+        };
+        let Some((from, to)) = self
+            .graph
+            .class_of(source.ty)
+            .zip(self.graph.class_of(element))
+        else {
+            return Ok(None);
+        };
+        if from == to {
+            return Ok(None);
+        }
+        let downcast = self.graph.is_base_of(from, to);
+        let (derived, base) = if downcast { (to, from) } else { (from, to) };
+        let path = self.checked_base_path(derived, base, scope, location, !c_style, downcast)?;
+        let mut facts = self.new_expression_facts(
+            element,
+            if kind == RefKind::Rvalue {
+                V::Xvalue
+            } else {
+                V::Lvalue
+            },
+        )?;
+        facts.reference_cast = Some(target);
+        facts.base_path = Some(path);
+        Ok(Some(facts))
+    }
+
+    fn pointer_hierarchy_cast(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+        source: ExprFacts,
+        goal: TypeId,
+        scope: ScopeId,
+        c_style: bool,
+    ) -> Result<Option<ExprFacts>, Error> {
+        let from = self.decayed_type(source.ty)?;
+        let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (
+            &self.graph.types.get(from).kind,
+            &self.graph.types.get(goal).kind,
+        ) else {
+            return Ok(None);
+        };
+        let (Some(from_class), Some(to_class)) = (self.graph.class_of(*a), self.graph.class_of(*b))
+        else {
+            return Ok(None);
+        };
+        if !c_style && self.cast_constness(from, goal) {
+            return Ok(None);
+        }
+        let downcast = self.graph.is_base_of(from_class, to_class);
+        if !(downcast || c_style && self.graph.is_base_of(to_class, from_class)) {
+            return Ok(None);
+        }
+        let (derived, base) = if downcast {
+            (to_class, from_class)
+        } else {
+            (from_class, to_class)
+        };
+        let path = self.checked_base_path(
+            derived,
+            base,
+            scope,
+            self.tree.expressions.get(id).location,
+            !c_style,
+            downcast,
+        )?;
+        let mut facts = source;
+        facts.base_path = Some(path);
+        facts.conversion = Some(Conversion {
+            target: goal,
+            result: goal,
+            first: L::None,
+            second: C::None,
+            rank: R::Conversion,
+            qualification: false,
+            initialization: false,
+            temporary: false,
+        });
+        self.graph.expression_facts.set(operand, facts);
+        let mut facts = self.new_expression_facts(goal, V::Prvalue)?;
+        facts.base_path = Some(path);
+        Ok(Some(facts))
+    }
+
     pub(super) fn scalar_functional_cast(
         &mut self,
         id: ast::ExprId,

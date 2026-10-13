@@ -73,10 +73,47 @@ impl Analyzer<'_> {
         if !node.global && self.tree.name_lists.get(node.components).len() == 1 {
             return Ok(None);
         }
-        let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+        let last = self
+            .tree
+            .name_lists
+            .get(node.components)
+            .last()
+            .ok_or(Error::Invariant("empty address name"))?;
+        if last.arguments.is_some() {
+            return Err(Error::Missing("template specialization lookup"));
+        }
+        let ast::NameKind::Identifier(key) = last.kind else {
+            return Err(Error::at(
+                node.location,
+                "operator and special member names are not supported here",
+            ));
+        };
+        let location = node.location;
+        let prefix = self
+            .prefix(name, scope)?
+            .ok_or(Error::Invariant("qualified address without prefix"))?;
+        self.lookup_location = location;
+        let found = self
+            .qualified_result(prefix, key.into(), Filter::Ordinary)
+            .map_err(|error| match error {
+                Error::Diagnostic {
+                    message: "ambiguous name",
+                    ..
+                } if self.graph.scope(prefix).kind == ScopeKind::Class => {
+                    Error::at(location, "ambiguous member")
+                }
+                other => other,
+            })?;
         let binding = found
             .binding
             .ok_or(Error::Invariant("address lookup without binding"))?;
+        super::record(&mut self.graph.resolved_names, name.index(), binding);
+        if let Some(naming) = self.graph.scope(prefix).owner
+            && self.graph.scope(prefix).kind == ScopeKind::Class
+            && self.graph.binding_scope(binding) != prefix
+        {
+            self.check_named_member_access(binding, naming, naming, scope, location)?;
+        }
         if self.graph.binding(binding).kind != BindingKind::Function {
             return Ok(None);
         }
@@ -301,6 +338,29 @@ impl Analyzer<'_> {
         let bb = b.second == C::PointerBoolean;
         if ab != bb {
             return Ok(bb.cmp(&ab));
+        }
+        if a.second == C::DerivedToBase && b.second == C::Pointer {
+            return Ok(Ordering::Greater);
+        }
+        if b.second == C::DerivedToBase && a.second == C::Pointer {
+            return Ok(Ordering::Less);
+        }
+        if a.second == C::DerivedToBase && b.second == C::DerivedToBase {
+            let class = |ty| {
+                let ty = match self.graph.types.get(ty).kind {
+                    TypeKind::Pointer(element) => element,
+                    _ => ty,
+                };
+                self.graph.class_of(ty)
+            };
+            if let (Some(a), Some(b)) = (class(a.result), class(b.result)) {
+                if self.graph.is_base_of(b, a) {
+                    return Ok(Ordering::Greater);
+                }
+                if self.graph.is_base_of(a, b) {
+                    return Ok(Ordering::Less);
+                }
+            }
         }
         let ar = matches!(
             self.graph.types.get(a.target).kind,

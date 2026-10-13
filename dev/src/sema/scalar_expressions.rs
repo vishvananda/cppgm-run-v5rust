@@ -19,6 +19,7 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        super::record(&mut self.graph.expression_scopes, id.index(), scope);
         let node = *self.tree.expressions.get(id);
         self.check_stack().map_err(|error| match error {
             Error::Limit("constructs nested too deeply") => {
@@ -376,6 +377,7 @@ impl Analyzer<'_> {
             self.typed_expression(current, scope)?;
             for index in (base..self.binary_spine.len()).rev() {
                 let current = self.binary_spine[index];
+                super::record(&mut self.graph.expression_scopes, current.index(), scope);
                 let ExprKind::Binary {
                     op, left, right, ..
                 } = self.tree.expressions.get(current).kind

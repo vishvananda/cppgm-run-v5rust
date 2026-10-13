@@ -846,11 +846,62 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let binding = facts
             .member
             .ok_or_else(|| io::Error::other("member without designation"))?;
+        if facts.member_naming.is_none() {
+            return Err(io::Error::other("member without naming class"));
+        }
         write!(self.output, " {}:", op.token.name())?;
         self.name(self.graph.binding(binding).name)?;
         self.expr(base, depth + 1);
         Ok(())
     }
+    fn conversion_node(
+        &mut self,
+        id: ast::ExprId,
+        facts: super::expression_facts::ExprFacts,
+        depth: usize,
+        retyped: Option<(TypeId, V)>,
+    ) -> io::Result<bool> {
+        let conversion = facts
+            .conversion
+            .ok_or_else(|| io::Error::other("conversion view without facts"))?;
+        if conversion.second == C::DerivedToBase
+            || conversion.temporary
+                && (conversion.second != C::None
+                    || matches!(conversion.first, L::ArrayToPointer | L::FunctionToPointer))
+        {
+            self.indent(depth)?;
+            if conversion.second == C::DerivedToBase && facts.base_path.is_none() {
+                return Err(io::Error::other("base conversion without retained path"));
+            }
+            self.output.write_all(b"cast-expression ")?;
+            let category = if conversion.temporary {
+                V::Prvalue
+            } else {
+                match self.graph.types.get(conversion.target).kind {
+                    TypeKind::Reference {
+                        kind: super::types::RefKind::Lvalue,
+                        ..
+                    } => V::Lvalue,
+                    TypeKind::Reference { .. } => V::Xvalue,
+                    _ => V::Prvalue,
+                }
+            };
+            write!(self.output, "{} ", category.spelling())?;
+            self.ty(conversion.result)?;
+            writeln!(self.output)?;
+            self.work.push((
+                Item::Expression {
+                    id,
+                    bare: true,
+                    retyped,
+                },
+                depth + 1,
+            ));
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     fn expression(
         &mut self,
         id: ast::ExprId,
@@ -869,22 +920,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             && let Some(conversion) = facts.conversion
             && conversion.initialization
         {
-            if conversion.temporary
-                && (conversion.second != C::None
-                    || matches!(conversion.first, L::ArrayToPointer | L::FunctionToPointer))
-            {
-                self.indent(depth)?;
-                self.output.write_all(b"cast-expression prvalue ")?;
-                self.ty(conversion.result)?;
-                writeln!(self.output)?;
-                self.work.push((
-                    Item::Expression {
-                        id,
-                        bare: true,
-                        retyped,
-                    },
-                    depth + 1,
-                ));
+            if self.conversion_node(id, facts, depth, retyped)? {
                 return Ok(());
             }
             if conversion.second == C::NullPointer && facts.null_literal {

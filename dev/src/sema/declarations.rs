@@ -1116,9 +1116,6 @@ impl Analyzer<'_> {
     }
     pub(super) fn class_type(&mut self, id: ast::ClassId, scope: ScopeId) -> Result<TypeId, Error> {
         let node = *self.tree.classes.get(id);
-        if !node.bases.is_empty() {
-            return Err(Error::Missing("class inheritance"));
-        }
         let Some(name) = node.name else {
             let entity = self.new_class(node.key, None)?;
             self.graph.entity_mut(entity).anonymous_class =
@@ -1223,6 +1220,11 @@ impl Analyzer<'_> {
             self.graph.entity_mut(entity).layout = super::layout::LayoutState::Unsupported;
         }
         self.graph.entity_mut(entity).defined = true;
+        self.graph.entity_mut(entity).derivation = if node.final_specifier {
+            super::inheritance::Derivation::Final
+        } else {
+            super::inheritance::Derivation::Allowed
+        };
         if name.is_some() {
             self.graph.add_binding(
                 class,
@@ -1236,6 +1238,7 @@ impl Analyzer<'_> {
                 },
             )?;
         }
+        self.class_bases(node, entity, parent)?;
         self.class_depth += 1;
         self.declarations(node.members, class)?;
         self.class_depth -= 1;

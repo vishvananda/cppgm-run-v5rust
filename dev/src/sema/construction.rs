@@ -28,6 +28,7 @@ pub(super) struct Constructor {
     deleted: bool,
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
+    pub bases: Vec<ConstructorId>,
 }
 impl Constructor {
     fn initialized_members(&self) -> usize {
@@ -37,6 +38,13 @@ impl Constructor {
             .count()
     }
     pub(super) fn nontrivial(&self, graph: &super::graph::Graph) -> bool {
+        self.own_action(graph)
+            || self
+                .bases
+                .iter()
+                .any(|&base| graph.constructors.get(base).own_action(graph))
+    }
+    fn own_action(&self, graph: &super::graph::Graph) -> bool {
         self.initialized_members() != 0
             || self.binding.is_some_and(|binding| {
                 !matches!(
@@ -169,6 +177,39 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
+        // Ordinary nonvirtual bases are completed bottom-up on demand. A deep
+        // hierarchy must not consume one native Rust frame per base.
+        let mut work = vec![(class, 0usize)];
+        while let Some((current, next)) = work.last_mut() {
+            if matches!(
+                self.graph.entity(*current).default_construction,
+                ConstructorState::Ready(_)
+            ) {
+                work.pop();
+            } else if self.graph.entity(*current).user_constructor.is_some() {
+                // A user-provided declaration does not ask for its bases'
+                // default constructors. Written/defaulted plans own that demand.
+                self.select_default_constructor(*current, location)?;
+                work.pop();
+            } else if let Some(edge) = self.graph.entity(*current).bases.get(*next) {
+                *next += 1;
+                work.push((edge.class, 0));
+            } else {
+                self.select_default_constructor(*current, location)?;
+                work.pop();
+            }
+        }
+        let ConstructorState::Ready(id) = self.graph.entity(class).default_construction else {
+            return Err(Error::Invariant("uncompleted default constructor"));
+        };
+        Ok(id)
+    }
+
+    fn select_default_constructor(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<ConstructorId, Error> {
         match self.graph.entity(class).default_construction {
             ConstructorState::Ready(id) => return Ok(id),
             ConstructorState::InProgress => {
@@ -229,6 +270,33 @@ impl Analyzer<'_> {
     ) -> Result<ConstructorId, Error> {
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut deleted = false;
+        let mut bases_const_default = true;
+        let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
+        for edge in &self.graph.entity(class).bases {
+            if matches!(
+                self.graph.entity(edge.class).layout,
+                super::layout::LayoutState::Unsupported
+            ) {
+                return Err(Error::Missing("extended base subobject constructor plans"));
+            }
+            let ConstructorState::Ready(base) = self.graph.entity(edge.class).default_construction
+            else {
+                return Err(Error::Missing("defaulted base subobject constructor plans"));
+            };
+            bases.push(base);
+            let base = self.graph.constructors.get(base);
+            if base.nontrivial(&self.graph) || base.binding.is_some() {
+                return Err(Error::Missing(
+                    "nontrivial base subobject constructor actions",
+                ));
+            }
+            // implicit_default_facts plans its bases with location zero;
+            // default_constructor checks deletion at that plan's location.
+            if base.deleted {
+                return Err(Error::at(SourceOffset(0), "use of a deleted function"));
+            }
+            bases_const_default &= base.const_default;
+        }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         for &member_id in &self.graph.entity(class).members {
             let member = self.graph.entity(member_id);
@@ -253,12 +321,13 @@ impl Analyzer<'_> {
         }
         let members = self.graph.entity(class).members.len();
         let initialized = self.graph.entity(class).initialized_members;
-        let const_default = members == 0
-            || if union {
-                initialized == 1
-            } else {
-                initialized == members
-            };
+        let const_default = bases_const_default
+            && (members == 0
+                || if union {
+                    initialized == 1
+                } else {
+                    initialized == members
+                });
         let ty = self
             .graph
             .entity(class)
@@ -299,6 +368,7 @@ impl Analyzer<'_> {
                     )
                 }),
             members: plans,
+            bases,
         };
         self.publish_constructor(record)
     }
@@ -386,6 +456,7 @@ impl Analyzer<'_> {
                 == super::graph::FunctionAvailability::Deleted,
             const_default: true,
             members: Vec::new(),
+            bases: Vec::new(),
         })
     }
 
@@ -432,7 +503,29 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn require_scalar_destruction(&self, class: EntityId) -> Result<(), Error> {
+    pub(super) fn require_scalar_destruction(&mut self, class: EntityId) -> Result<(), Error> {
+        let mut work = vec![class];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(current) = work.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            if current != class && self.scalar_destructor_binding(current)?.is_some() {
+                return Err(Error::Missing("base subobject destructor plans"));
+            }
+            work.extend(
+                self.graph
+                    .entity(current)
+                    .bases
+                    .iter()
+                    .map(|edge| edge.class),
+            );
+            self.require_scalar_members_destruction(current)?;
+        }
+        Ok(())
+    }
+
+    fn require_scalar_members_destruction(&self, class: EntityId) -> Result<(), Error> {
         for &member in &self.graph.entity(class).members {
             let mut ty = self
                 .graph
@@ -467,6 +560,9 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Ok(());
         };
+        if !self.graph.entity(class).bases.is_empty() {
+            self.require_scalar_destruction(class)?;
+        }
         let Some(destructor) = self.scalar_destructor_binding(class)? else {
             return Ok(());
         };
@@ -504,6 +600,9 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Ok(());
         };
+        if !self.graph.entity(class).bases.is_empty() {
+            self.require_scalar_destruction(class)?;
+        }
         let Some(binding) = self.scalar_destructor_binding(class)? else {
             return Ok(());
         };
@@ -569,6 +668,9 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(function)?;
         let id = self.declared_constructor_plan(binding)?;
         let class = self.graph.constructors.get(id).class;
+        if !self.graph.entity(class).bases.is_empty() {
+            return Err(Error::Missing("written base subobject constructor plans"));
+        }
         let location = self.tree.statements.get(body.compound).location;
         let owner = self
             .graph

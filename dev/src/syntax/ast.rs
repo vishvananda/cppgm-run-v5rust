@@ -321,10 +321,6 @@ pub(crate) enum Body {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Base {
-    #[expect(
-        dead_code,
-        reason = "Base source location is retained for later access and inheritance diagnostics"
-    )]
     pub location: SourceOffset,
     pub name: Name,
     pub access: Option<Keyword>,

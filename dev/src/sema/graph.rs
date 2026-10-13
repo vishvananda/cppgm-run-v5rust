@@ -140,6 +140,8 @@ pub(super) struct Entity {
     pub member_function: Option<MemberKey>,
     pub special_name: Option<crate::syntax::ast::Name>,
     pub members: Vec<EntityId>,
+    pub bases: Vec<super::inheritance::BaseClass>,
+    pub derivation: super::inheritance::Derivation,
     pub layout: super::layout::LayoutState,
     pub member_offset: Option<u64>,
     // Presentation provenance for an unnamed class, never a lookup key.
@@ -164,6 +166,7 @@ pub(super) struct Binding {
 }
 pub(crate) struct Graph {
     pub(super) types: Types,
+    pub(super) base_paths: super::inheritance::BasePaths,
     pub(super) templates: super::templates::Templates,
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
@@ -184,6 +187,7 @@ pub(crate) struct Graph {
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
+    pub(super) expression_scopes: Vec<Option<ScopeId>>,
     pub(super) constructors: super::construction::Constructors,
     pub(super) root_demands: super::function_demands::DemandList,
     pub(super) declaration_storage: Vec<Option<BindingId>>,
@@ -269,6 +273,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             types: Types::default(),
+            base_paths: super::inheritance::BasePaths::default(),
             templates: super::templates::Templates::default(),
             scopes: vec![Scope {
                 kind: ScopeKind::Namespace,
@@ -303,6 +308,7 @@ impl Graph {
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
+            expression_scopes: Vec::new(),
             constructors: super::construction::Constructors::default(),
             root_demands: super::function_demands::DemandList::default(),
             declaration_storage: Vec::new(),
@@ -432,6 +438,8 @@ impl Graph {
             member_function: None,
             special_name: None,
             members: Vec::new(),
+            bases: Vec::new(),
+            derivation: super::inheritance::Derivation::Allowed,
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,
             anonymous_class: None,

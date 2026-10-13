@@ -118,7 +118,13 @@ impl Analyzer<'_> {
         {
             C::NullPointer
         } else if let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (sk, gk) {
-            if matches!(
+            if let (Some(derived), Some(base)) = (self.graph.class_of(*a), self.graph.class_of(*b))
+                && self.graph.is_base_of(base, derived)
+                && self.type_cv(*a).0 & !self.type_cv(*b).0 == 0
+            {
+                qualification = self.type_cv(*a) != self.type_cv(*b);
+                C::DerivedToBase
+            } else if matches!(
                 self.graph.types.get(*b).kind,
                 TypeKind::Scalar(Scalar::Void)
             ) && !matches!(self.graph.types.get(*a).kind, TypeKind::Function { .. })
@@ -217,7 +223,12 @@ impl Analyzer<'_> {
         let conversion = if let TypeKind::Reference { element, kind } =
             self.graph.types.get(target).kind
         {
-            let related = self.bare_type(element)? == self.bare_type(facts.ty)?;
+            let derived = self
+                .graph
+                .class_of(facts.ty)
+                .zip(self.graph.class_of(element))
+                .is_some_and(|(derived, base)| self.graph.is_base_of(base, derived));
+            let related = derived || self.bare_type(element)? == self.bare_type(facts.ty)?;
             let compatible = related && self.type_cv(facts.ty).0 & !self.type_cv(element).0 == 0;
             let function = matches!(
                 self.graph.types.get(facts.ty).kind,
@@ -253,8 +264,8 @@ impl Analyzer<'_> {
                     target,
                     result: element,
                     first: L::None,
-                    second: C::None,
-                    rank: R::Exact,
+                    second: if derived { C::DerivedToBase } else { C::None },
+                    rank: if derived { R::Conversion } else { R::Exact },
                     qualification: reference_qualification,
                     initialization: true,
                     temporary: facts.category == V::Prvalue
@@ -310,6 +321,17 @@ impl Analyzer<'_> {
             ));
         };
         let mut facts = facts;
+        if conversion.second == C::DerivedToBase {
+            let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant("base conversion without expression scope"))?;
+            facts.base_path = self.conversion_base_path(
+                facts,
+                conversion,
+                scope,
+                self.tree.expressions.get(id).location,
+                true,
+            )?;
+        }
         facts.conversion = Some(conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())

@@ -1,8 +1,219 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `2aed55f1e7ff6aab7b18f35d7899bf8c0e3eb156` (clean implementation entry).
+Current implementation group base: `ba31318e0b60de4e51a284b15a34026b7d218b9a` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Ordinary nonvirtual inheritance checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The preceding turn was progress: `ba31318` completed
+checked scalar-class prvalue copy elision and reduced fixed failures from four
+to three. This entry inspected the clean checkout, reread the contract, spec,
+plan, handout and ledger, consulted frozen C++ owners, and reran all 198 entry
+cases. Stage base and last-audited commit above remain unchanged; implementation
+does not advance Ralph's stage or audit pointer.
+
+The fixed manifest improves **195/198 → 197/198**, **3 → 1 failures**,
+with identical case identities and all 195 previous passes preserved. The
+original course lane improves **226/229 → 228/229**; its additional 31 cases
+execute and pass. Both lanes still fail on the function-template case below.
+Fixtures, references, frozen C++ sources, protected checks, Ralph state and
+acceptance policy are unchanged. Optimizer, register allocator, lower/native
+code and backend lifetimes are unchanged; no PA34 object-parity claim is made.
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-inheritance-20261013/`.
+`baseline.log` and `baseline-manifest.json` retain entry coverage. Final
+`protected-stage-result.json`, `course-result.json`, `preservation.json`,
+`checks.json` and `handoff.json` retain exits, identities and binary/evidence
+hashes. Per-case protected diagnostics and raw outputs remain under
+`../clone/cases/pa7/<case-hash>/`; supplementary attempts are in `probes.jsonl`,
+`boundary.jsonl`, `mismatches/` and the generated source files. Artifacts and
+scratch inputs are not committed.
+
+### Frozen owners and typed responsibilities
+
+Consulted `/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/` directly:
+`analyzer_classes.cpp::{class_body,base_classes,distinct_direct_bases}`,
+`lookup.cpp::{class_members,merge_base,derives_from}`,
+`conversions.cpp::{is_base_of,reference_related,standard,reference,compare}`,
+`analyzer_access.cpp::{check_base_access,base_accessible,check_unqualified_access}`,
+`analyzer_member_pointers.cpp::{member_subobject,check_conversion_access,
+upcast_base,downcast_base}`, `analyzer_expressions.cpp::{member_access,
+member_qualifier,member_of_object,explicit_conversion}`,
+`analyzer_calls.cpp::associated`, `analyzer_initialization.cpp::implicit_constructor`,
+`analyzer_construction.cpp::{implicit_default_facts,constructor_plan,
+default_constructor,declare_destructor}` and `semantics_dump.cpp::conversion_node`.
+`source-map.tsv` records the partial translations and dependent owners.
+
+- `inheritance.rs` owns source-ordered `BaseClass` edges, enum-valued derivation
+  permission and a private unit path store. Formation resolves elaborated or
+  decltype base names in the class's parent scope before members, strips type
+  cv by canonical class identity, then checks completeness, final/union/pack
+  rules, duplicate direct identities and access. Dependent and virtual bases
+  remain explicit status-86 boundaries. No member body or layout is demanded.
+- `lookup.rs` searches indexed own names before source-ordered base edges.
+  Explicit frames and query-local scope memos avoid native recursion and
+  repeated shared-graph traversal. A memo retains a representative declaring
+  scope or absence, collecting its overload vector only once at the result.
+  Qualified class-function addresses retain the frozen ambiguous-member diagnostic.
+  Own declarations hide branches; equal entities/designated types converge;
+  differing declarations from nonvirtual branches remain ambiguous. This is
+  separate from namespace overload merging. Memos live for one query, so no
+  declaration event can make a cached absence stale.
+- `inheritance.rs` counts subobjects with a graph walk, saturating at two;
+  repeated nonvirtual paths never expand exponentially. Successful unique
+  paths are memoized by canonical `(derived EntityId, base EntityId)` and
+  retained through compact `BasePathId` facts. The base graph is immutable
+  after formation. Failed counts and context-dependent access are query-local.
+  Member access retains original designated `BindingId`, naming class, cv and
+  value category. Object-to-naming and naming-to-declaring ambiguities are
+  checked separately. Static members, enumerators and types use accessible
+  edge walks independently of instance multiplicity. Protected object checks
+  consume lexical, declaring and object class identities.
+- `scalar_conversions.rs` records typed `DerivedToBase` pointer and direct
+  reference sequences, with exact cv/qualification flags and conversion rank.
+  `function_resolution.rs` preserves subsequence ordering, less-qualified and
+  nearer-base preferences, and base-versus-void ranking. Ranking performs no
+  access check; the selected call or initializing conversion checks ambiguity
+  and access, then retains its path. Original argument locations are preserved.
+  Dense original-AST expression scopes provide the conversion's access point.
+- `scalar_casts.rs` owns separate reference hierarchy and inverse pointer
+  conversion helpers. Static hierarchy casts require an unambiguous accessible
+  base; C-style casts retain their access/cv freedom while still rejecting
+  ambiguous bases. Original operand types/categories remain beneath carriers.
+  `semantics_dump.rs::conversion_node` consumes recorded initializing
+  conversions to print exact pointer/reference cast wrappers; it performs no
+  lookup, ranking, path query or demand.
+- `construction.rs` completes implicit trivial nonvirtual base plans bottom-up
+  on demand and retains source-ordered child `ConstructorId`s. Already completed
+  plans are reused. User-provided declarations do not demand their bases'
+  default construction. Trivial base plans create no extra definition roots.
+  Deleted implicit base construction retains the frozen location-zero planning
+  diagnostic. Nontrivial/declared/defaulted/written or extended base action
+  plans and demanded declared base destruction remain explicit incomplete
+  dependencies; layout and copy/move consumers also guard their missing base
+  plans rather than silently ignoring bases.
+- `call_lookup.rs` adds complete direct/indirect base types to ADL without
+  counting inheritance depth against the original nested-type budget. No
+  unrelated namespace or declaration is scanned.
+
+Architecture review: one parsed AST, canonical compact identities, dense facts,
+private path-store APIs, explicit successful construction states and separate
+emission demand. The two new ownership regressions prove shared path identity,
+original operand typing, retained child plans, no speculative layout or extra
+base emission roots, and saturated counts on a 64-level shared diamond graph.
+Query storage is reclaimed with its query. No syntax synthesis, reparsing,
+whole-program retry, compiler subprocess, environment read, unsafe code,
+new dependency or lint suppression was introduced.
+
+### Validation and evidence
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log` |
+| Required `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 197/198, one failure, exit 1 | `stage-required.log`, `protected-stage-result.json` |
+| `make test-pa7` | Same fixed coverage/results, make exit 2 | `stage.log` |
+| `make course-pa7` | 228/229, same failure, make exit 2 | `course.log`, `course-result.json`, `../clone/course/pa7/test/trace.jsonl` |
+| `python3 .../clone_check.py prior pa7` | PASS, PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json` |
+| `python3 .../clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 .../clone_check.py preserve pa7` | PASS; independent 195-identity preservation also passes | `preserve.log`, `preservation.json` |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all-feature Clippy, 179 debug/release library tests each | `lint.log` |
+| `make audit-rust` | PASS, 131 files, zero findings | `audit.log` |
+| `python3 .../pa7-inheritance-20261013/probe.py` | 87/87 exact protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl` |
+| `python3 .../pa7-inheritance-20261013/boundary.py` | Nine status-86 boundaries, oracle success | `boundary.log`, `boundary.jsonl` |
+| `python3 .../pa7-inheritance-20261013/measure.py` | Exact supported scaling and protected native qualification | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl` |
+
+The 87 supplementary probes cover formation and alias/decltype lookup,
+qualification and hiding, repeated subobjects versus static/type names,
+private/protected access and object restrictions, ADL, implicit trivial base
+construction and nondemanded declared constructors, cv-qualified pointer and
+reference initialization, hierarchy casts, qualification/base/void overload
+ranking, selected-call access and ambiguity diagnostics. The nine successful-
+oracle boundary reproducers cover virtual formation, base layout/copy,
+written/declared/defaulted/nontrivial/polymorphic base construction and base
+destruction. Their status 86 is an implementation failure, never a matching
+C++ rejection. Stage/course exits above remain failing checks.
+
+The unchanged Ralph progress receipt treats 198 fixed results as a 229-case
+run and reports 31 unrun cases. `harness-counts.json` retains the external
+failure log, manifest cardinality and the complete fixed/course receipts as a
+reproducer. The commands actually execute 198 fixed and 229 course entries;
+`preservation.json` proves exact fixed failure reduction from three to one.
+No checker policy or Ralph state was edited; advancement is Ralph's decision.
+
+### Resource measurements and protected stack qualification
+
+Measurements ran after gate jobs completed, with A/A calibration followed by
+paired ABBA/BAAB blocks. Inputs and both binaries are hashed; each sample
+retains wall time, peak RSS, exit, output size and digest. All successful raw
+output digests agree and all 18 protected workload receipts match. The three
+workloads scale distinct base/member queries, repeated conversions sharing a
+path, and one hierarchy's depth plus an implicit trivial construction demand.
+Hot-path runs use a fixed shared 16 MiB stack. These are warm process
+observations including startup, parsing, semantics and dump I/O, not a cold
+cache or hardware-counter gate; PA35 improvement targets do not apply.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| distinct-bases / 128 | 8.16 / 7180 | 23.15 / 7986 |
+| shared-path / 128 | 7.32 / 6504 | 19.92 / 8746 |
+| base-depth / 128 | 6.62 / 6512 | 18.32 / 8744 |
+| distinct-bases / 512 | 15.78 / 9304 | 41.98 / 8368 |
+| shared-path / 512 | 10.17 / 7182 | 28.49 / 8008 |
+| base-depth / 512 | 9.33 / 7224 | 22.82 / 8000 |
+| distinct-bases / 2048 | 45.81 / 19902 | 102.33 / 21942 |
+| shared-path / 2048 | 24.31 / 10726 | 53.96 / 10788 |
+| base-depth / 2048 | 16.69 / 12108 | 36.51 / 8740 |
+
+Native probes fix 1,000 nested ordinary pointer-returning calls with
+derived-to-base arguments and 1,500 parentheses in a pointer upcast, starting
+at a 1 MiB stack. Both protected receipts have `match: true` and
+`stack_qualification.passed: true`, with both tools succeeding identically at
+a shared 16 MiB retry. Raw original attempts and retries remain under
+`stack-qualifications/<receipt-id>/`. Only these protected receipts establish
+qualification; the adapter's original exit/streams are not successful results.
+The genuine byte-budget guard is unchanged. No native cutoff, frame size or
+exhaustion diagnostic position was calibrated. Shared storage measured
+28.53 GB used under the 107.37 GB ceiling.
+
+Candidate cppgm SHA-256:
+`f8990852e389951d8f95bd0556d06b0ad00f860b1b270e480115d4519cf59632`.
+Frozen cppgm++ SHA-256:
+`9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+
+### Newly passing identities and next dependency boundary
+
+The exact newly passing fixed identities, relative to `pa7/`, are:
+
+```text
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+```
+
+The exact remaining fixed/course identity is:
+
+```text
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
+
+It stops at `lookup.rs::lookup_result` with explicit status 86 for template
+specialization lookup. Its next coherent group is retained-pattern function
+specialization with explicit arguments, target-directed deduction and call
+deduction, from the frozen template and overload owners. Template bodies must
+retain their parsed representation and separate declaration/body/emission demand.
+
+Related inheritance dependencies remain explicit: virtual/dependent base
+formation and lookup; nonvirtual subobject layout including empty-base placement;
+written/defaulted/nontrivial/polymorphic base construction and declared base
+destruction; class subobject copying/moving/assignment; inherited member-pointer
+adjustments, bound member calls, friendship and full deferred access. The new
+base identities and path facts are ready for those owners; they must not infer
+plans from dump text or introduce speculative class/body work. This completed
+ordinary nonvirtual lookup/conversion group is a coherent partial handoff,
+not PA7 or inheritance completion.
 
 ## Checked scalar-class prvalue copy elision checkpoint — 2026-10-13
 

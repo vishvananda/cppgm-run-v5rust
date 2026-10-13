@@ -61,6 +61,17 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     let entity = self.graph.entity(*entity);
+                    if entity.complete {
+                        for base in &entity.bases {
+                            types.push((
+                                self.graph
+                                    .entity(base.class)
+                                    .ty
+                                    .ok_or(Error::Invariant("ADL base without type"))?,
+                                depth,
+                            ));
+                        }
+                    }
                     let owner = if let Some(enumeration) = entity.enumeration {
                         Some(enumeration.owner)
                     } else {
