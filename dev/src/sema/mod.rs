@@ -1,10 +1,13 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
 mod analyzer;
 mod anonymous_types;
+mod builtin_calls;
+mod call_lookup;
 mod constants;
 mod data_members;
 mod declarations;
 mod declarators;
+mod default_arguments;
 mod dump;
 mod enumerations;
 mod exception_operands;
@@ -13,11 +16,13 @@ mod expression_facts;
 mod expression_keys;
 mod expressions;
 mod function_names;
+mod function_resolution;
 mod graph;
 mod integral;
 mod layout;
 mod lookup;
 mod name_keys;
+mod procedural_calls;
 mod procedural_statements;
 mod queries;
 mod scalar_casts;

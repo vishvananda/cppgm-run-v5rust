@@ -196,11 +196,70 @@ impl Graph {
         }
         Ok(())
     }
+    fn write_class_qualifier(
+        &self,
+        mut scope: Option<super::graph::ScopeId>,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+    ) -> io::Result<()> {
+        let mut parts = Vec::new();
+        while let Some(id) = scope {
+            let current = self.scope(id);
+            if !matches!(
+                current.kind,
+                ScopeKind::Namespace
+                    | ScopeKind::Class
+                    | ScopeKind::Enum
+                    | ScopeKind::TemplateParameters
+            ) {
+                break;
+            }
+            if matches!(current.kind, ScopeKind::Namespace | ScopeKind::Class)
+                && current.parent.is_some()
+            {
+                parts.push(id);
+            }
+            scope = current.parent;
+        }
+        for scope in parts.into_iter().rev() {
+            let node = self.scope(scope);
+            if let Some(name) = node.name {
+                write_name(cursor, name, output)?;
+            } else if node.kind == ScopeKind::Namespace {
+                output.write_all(b"_GLOBAL__N_1")?;
+            } else if let Some(tokens) = node
+                .owner
+                .and_then(|id| self.entity(id).anonymous_class)
+                .and_then(super::anonymous_types::AnonymousClass::label)
+            {
+                write_anonymous_class(tokens, output)?;
+            }
+            output.write_all(b"::")?;
+        }
+        Ok(())
+    }
     pub(super) fn write_type(
         &self,
         ty: TypeId,
         cursor: &Cursor<'_>,
         output: &mut (impl Write + ?Sized),
+    ) -> io::Result<()> {
+        self.write_type_view(ty, cursor, output, false)
+    }
+    pub(super) fn write_semantic_type(
+        &self,
+        ty: TypeId,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+    ) -> io::Result<()> {
+        self.write_type_view(ty, cursor, output, true)
+    }
+    fn write_type_view(
+        &self,
+        ty: TypeId,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+        qualified_classes: bool,
     ) -> io::Result<()> {
         enum Task {
             Type(TypeId),
@@ -226,6 +285,9 @@ impl Graph {
                 TypeKind::Class(entity) => {
                     let entity = self.entity(*entity);
                     write!(output, "{} ", class_key(entity.key))?;
+                    if qualified_classes {
+                        self.write_class_qualifier(entity.home, cursor, output)?;
+                    }
                     if let Some(name) = entity.name {
                         write_name(cursor, name, output)?;
                     } else if let Some(tokens) = entity

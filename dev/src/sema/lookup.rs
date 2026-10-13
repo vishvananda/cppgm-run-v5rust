@@ -19,13 +19,54 @@ pub(super) enum Filter {
     Namespace,
     Elaborated,
 }
+#[derive(Default)]
+pub(super) enum FunctionCandidates {
+    #[default]
+    Empty,
+    One(BindingId),
+    Many(Vec<BindingId>),
+}
+impl FunctionCandidates {
+    pub(super) fn as_slice(&self) -> &[BindingId] {
+        match self {
+            Self::Empty => &[],
+            Self::One(binding) => std::slice::from_ref(binding),
+            Self::Many(bindings) => bindings,
+        }
+    }
+    pub(super) fn iter(&self) -> std::slice::Iter<'_, BindingId> {
+        self.as_slice().iter()
+    }
+    pub(super) fn push(&mut self, binding: BindingId) {
+        match self {
+            Self::Empty => *self = Self::One(binding),
+            Self::One(first) => *self = Self::Many(vec![*first, binding]),
+            Self::Many(bindings) => bindings.push(binding),
+        }
+    }
+}
+impl FromIterator<BindingId> for FunctionCandidates {
+    fn from_iter<T: IntoIterator<Item = BindingId>>(values: T) -> Self {
+        let mut result = Self::default();
+        for binding in values {
+            result.push(binding);
+        }
+        result
+    }
+}
+#[derive(Default)]
+pub(super) struct LookupResult {
+    pub binding: Option<BindingId>,
+    pub functions: FunctionCandidates,
+}
 impl Analyzer<'_> {
-    fn merge(&self, first: &mut Option<BindingId>, second: Option<BindingId>) -> Result<(), Error> {
-        if let Some(second) = second {
-            if let Some(first) = *first {
-                let a = self.graph.binding(first);
-                let b = self.graph.binding(second);
+    fn merge(&self, first: &mut LookupResult, second: &LookupResult) -> Result<(), Error> {
+        if let Some(second_id) = second.binding {
+            if let Some(first_id) = first.binding {
+                let a = self.graph.binding(first_id);
+                let b = self.graph.binding(second_id);
                 if a.entity != b.entity
+                    && !(a.kind == BindingKind::Function && b.kind == BindingKind::Function)
                     && !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
                         && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
                         && a.ty == b.ty)
@@ -36,10 +77,30 @@ impl Analyzer<'_> {
                     return Err(Error::at(self.lookup_location, "ambiguous name"));
                 }
             } else {
-                *first = Some(second);
+                first.binding = Some(second_id);
+            }
+            for &binding in second.functions.as_slice() {
+                let entity = self.graph.binding(binding).entity;
+                if !first
+                    .functions
+                    .iter()
+                    .any(|&id| self.graph.binding(id).entity == entity)
+                {
+                    first.functions.push(binding);
+                }
             }
         }
         Ok(())
+    }
+    fn own_lookup(&self, scope: ScopeId, key: ValueKey, filter: Filter) -> LookupResult {
+        let binding = self.graph.own_key(scope, key, filter);
+        let functions =
+            if binding.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function) {
+                self.graph.functions_at(scope, key).collect()
+            } else {
+                FunctionCandidates::default()
+            };
+        LookupResult { binding, functions }
     }
     fn inline_set(
         &self,
@@ -48,15 +109,15 @@ impl Analyzer<'_> {
         filter: Filter,
         visited: &mut HashSet<ScopeId>,
         members: &mut Vec<ScopeId>,
-    ) -> Result<Option<BindingId>, Error> {
-        let mut result = None;
+    ) -> Result<LookupResult, Error> {
+        let mut result = LookupResult::default();
         let mut frontier = vec![scope];
         while let Some(current) = frontier.pop() {
             if !visited.insert(current) {
                 continue;
             }
             members.push(current);
-            self.merge(&mut result, self.graph.own_key(current, name, filter))?;
+            self.merge(&mut result, &self.own_lookup(current, name, filter))?;
             frontier.extend(self.graph.visible_edges(current, true));
         }
         Ok(result)
@@ -75,19 +136,27 @@ impl Analyzer<'_> {
         name: ValueKey,
         filter: Filter,
     ) -> Result<Option<BindingId>, Error> {
+        Ok(self.qualified_result(scope, name, filter)?.binding)
+    }
+    pub(super) fn qualified_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
-            return Ok(self.graph.own_key(scope, name, filter));
+            return Ok(self.own_lookup(scope, name, filter));
         }
         let mut visited = HashSet::new();
         let mut level = vec![scope];
-        let mut result = None;
-        while !level.is_empty() && result.is_none() {
+        let mut result = LookupResult::default();
+        while !level.is_empty() && result.binding.is_none() {
             let mut next = Vec::new();
             for current in level {
                 let mut members = Vec::new();
                 let found = self.inline_set(current, name, filter, &mut visited, &mut members)?;
-                if found.is_some() {
-                    self.merge(&mut result, found)?;
+                if found.binding.is_some() {
+                    self.merge(&mut result, &found)?;
                 } else {
                     for member in members {
                         next.extend(self.graph.visible_edges(member, false).rev());
@@ -124,11 +193,19 @@ impl Analyzer<'_> {
         name: NameId,
         filter: Filter,
     ) -> Result<Option<BindingId>, Error> {
+        Ok(self.unqualified_result(scope, name.into(), filter)?.binding)
+    }
+    pub(super) fn unqualified_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
         let mut visited = HashSet::new();
         let mut pending = Vec::new();
         let mut current = Some(scope);
         while let Some(scope) = current {
-            let mut result = self.graph.own(scope, name, filter);
+            let mut result = self.own_lookup(scope, name, filter);
             let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
             while let Some(nominated) = frontier.pop() {
                 if !visited.insert(nominated) {
@@ -141,18 +218,18 @@ impl Analyzer<'_> {
             while index < pending.len() {
                 let (nominated, home) = pending[index];
                 if home == scope {
-                    self.merge(&mut result, self.graph.own(nominated, name, filter))?;
+                    self.merge(&mut result, &self.own_lookup(nominated, name, filter))?;
                     pending.swap_remove(index);
                 } else {
                     index += 1;
                 }
             }
-            if result.is_some() {
+            if result.binding.is_some() {
                 return Ok(result);
             }
             current = self.graph.scope(scope).parent;
         }
-        Ok(None)
+        Ok(LookupResult::default())
     }
     pub(super) fn component_name(kind: NameKind) -> Result<NameId, Error> {
         match kind {
@@ -232,6 +309,16 @@ impl Analyzer<'_> {
         scope: ScopeId,
         filter: Filter,
     ) -> Result<BindingId, Error> {
+        self.lookup_result(name, scope, filter)?
+            .binding
+            .ok_or_else(|| Error::at(self.tree.names.get(name).location, "undeclared name"))
+    }
+    pub(super) fn lookup_result(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
         let node = *self.tree.names.get(name);
         self.lookup_location = node.location;
         let last = self
@@ -251,12 +338,13 @@ impl Analyzer<'_> {
         };
         let prefix = self.prefix(name, scope)?;
         let found = if let Some(prefix) = prefix {
-            self.qualified(prefix, key, filter)?
+            self.qualified_result(prefix, key.into(), filter)?
         } else {
-            self.unqualified(scope, key, filter)?
+            self.unqualified_result(scope, key.into(), filter)?
         };
-        let binding = found.ok_or_else(|| Error::at(node.location, "undeclared name"))?;
-        super::record(&mut self.graph.resolved_names, name.index(), binding);
-        Ok(binding)
+        if let Some(binding) = found.binding {
+            super::record(&mut self.graph.resolved_names, name.index(), binding);
+        }
+        Ok(found)
     }
 }

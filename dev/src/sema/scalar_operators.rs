@@ -59,6 +59,25 @@ impl Analyzer<'_> {
         postfix: bool,
     ) -> Result<ExprFacts, Error> {
         let facts = self.graph.expression_facts.get(operand)?;
+        if facts.functions.is_some() && matches!(op, P::BitAnd | P::Multiply) {
+            let ty = if op == P::BitAnd {
+                self.graph.types.pointer(facts.ty)?
+            } else {
+                facts.ty
+            };
+            let mut result = self.new_expression_facts(
+                ty,
+                if op == P::BitAnd {
+                    V::Prvalue
+                } else {
+                    V::Lvalue
+                },
+            )?;
+            result.functions = facts.functions;
+            return Ok(result);
+        }
+        self.check_resolved_function(operand)?;
+        let facts = self.graph.expression_facts.get(operand)?;
         if op == P::BitAnd {
             if facts.category != V::Lvalue
                 && !matches!(
@@ -152,6 +171,8 @@ impl Analyzer<'_> {
         left: ast::ExprId,
         right: ast::ExprId,
     ) -> Result<ExprFacts, Error> {
+        self.check_resolved_function(left)?;
+        self.check_resolved_function(right)?;
         let lf = self.graph.expression_facts.get(left)?;
         let rf = self.graph.expression_facts.get(right)?;
         if op == P::Comma {
@@ -382,6 +403,7 @@ impl Analyzer<'_> {
         left: ast::ExprId,
         right: ast::ExprId,
     ) -> Result<ExprFacts, Error> {
+        self.check_resolved_function(left)?;
         let lf = self.graph.expression_facts.get(left)?;
         if !self.modifiable(lf) {
             return Err(self.operator_error(
@@ -393,6 +415,7 @@ impl Analyzer<'_> {
         if op == P::Assign {
             self.convert_scalar(right, target, false)?;
         } else {
+            self.check_resolved_function(right)?;
             let rf = self.graph.expression_facts.get(right)?;
             let rt = self.decayed_type(rf.ty)?;
             if matches!(op, P::AddAssign | P::SubtractAssign)
@@ -493,6 +516,8 @@ impl Analyzer<'_> {
         base: ast::ExprId,
         index: ast::ExprId,
     ) -> Result<ExprFacts, Error> {
+        self.check_resolved_function(base)?;
+        self.check_resolved_function(index)?;
         let a = self.graph.expression_facts.get(base)?;
         let b = self.graph.expression_facts.get(index)?;
         let at = self.decayed_type(a.ty)?;

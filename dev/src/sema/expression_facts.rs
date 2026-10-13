@@ -36,11 +36,12 @@ pub(super) enum ValueConversion {
     NullPointer,
     Pointer,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ConversionRank {
     Exact,
     Promotion,
     Conversion,
+    Ellipsis,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Conversion {
@@ -48,21 +49,7 @@ pub(super) struct Conversion {
     pub result: TypeId,
     pub first: LvalueTransform,
     pub second: ValueConversion,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Standard-conversion rank is retained for the next overload-resolution group"
-        )
-    )]
     pub rank: ConversionRank,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Qualification ranking is retained independently of the value conversion for overload resolution"
-        )
-    )]
     pub qualification: bool,
     pub initialization: bool,
     pub temporary: bool,
@@ -77,6 +64,9 @@ pub(super) struct ExprFacts {
     pub folded: Option<u64>,
     pub reference_cast: Option<TypeId>,
     pub functional_call: bool,
+    pub functions: Option<super::function_resolution::OverloadId>,
+    pub function: Option<super::graph::BindingId>,
+    pub call: Option<super::function_resolution::CallTarget>,
 }
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
@@ -89,6 +79,9 @@ impl ExprFacts {
             folded: None,
             reference_cast: None,
             functional_call: false,
+            functions: None,
+            function: None,
+            call: None,
         }
     }
 }

@@ -249,13 +249,6 @@ pub(crate) enum Suffix {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ParameterClause {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The parameter clause location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub parameters: List<Parameter>,
     pub ellipsis: bool,

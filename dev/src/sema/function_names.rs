@@ -32,7 +32,7 @@ impl SpecialName {
         matches!(self, Self::Operator { token, .. } if token.as_keyword() == Some(Keyword::Delete))
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ValueKey {
     Identifier(NameId),
     Special(SpecialName),
@@ -237,6 +237,24 @@ impl Analyzer<'_> {
             }
         }
         self.check_member_function_redeclaration(info, home, location)?;
+        if info.home.is_some() {
+            let candidates: Vec<_> = self.graph.functions_at(home, key).collect();
+            let mut matching = false;
+            for candidate in candidates {
+                let old = self
+                    .graph
+                    .binding(candidate)
+                    .ty
+                    .ok_or(Error::Invariant("function declaration without type"))?;
+                matching |= self.same_function_parameters(old, info.ty)?;
+            }
+            if !matching {
+                return Err(Error::at(
+                    location,
+                    "qualified definition does not match a declaration",
+                ));
+            }
+        }
         if info.home.is_some() && self.graph.value_binding(home, key).is_none() {
             return Err(Error::at(
                 location,
@@ -258,6 +276,17 @@ impl Analyzer<'_> {
             specs,
         )?;
         self.record_callable_label(binding, info, key)?;
+        let entity = self.graph.binding(binding).entity;
+        if definition == Definition::Deleted {
+            self.graph.entity_mut(entity).availability =
+                super::graph::FunctionAvailability::Deleted;
+        }
+        if self.semantic()
+            && self.template_depth == 0
+            && let Some(clause) = info.parameters
+        {
+            self.record_function_defaults(entity, clause, info.lookup, info.ty)?;
+        }
         Ok(binding)
     }
 

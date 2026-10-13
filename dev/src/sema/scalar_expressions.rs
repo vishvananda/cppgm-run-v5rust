@@ -33,52 +33,8 @@ impl Analyzer<'_> {
                 return Ok(facts);
             }
             ExprKind::Id(name) => {
-                let binding = self.lookup(name, scope, Filter::Ordinary)?;
-                let binding = self.graph.binding(binding);
-                if matches!(
-                    binding.kind,
-                    BindingKind::Namespace | BindingKind::NamespaceAlias
-                ) {
-                    return Err(Error::at(node.location, "namespace name used as a value"));
-                }
-                if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
-                    return Err(Error::at(node.location, "type name used as a value"));
-                }
-                if binding.kind == BindingKind::Function {
-                    return Err(Error::Missing("function expression resolution"));
-                }
-                let mut ty = binding
-                    .ty
-                    .ok_or(Error::Invariant("value binding without type"))?;
-                if binding.kind == BindingKind::Variable {
-                    ty = self
-                        .graph
-                        .entity(binding.entity)
-                        .ty
-                        .ok_or(Error::Invariant("variable without type"))?;
-                }
-                if binding.kind == BindingKind::Parameter {
-                    ty = self.graph.types.parameter_object(ty)?;
-                }
-                if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
-                    ty = element;
-                }
-                let category = if binding.kind == BindingKind::Enumerator {
-                    V::Prvalue
-                } else {
-                    V::Lvalue
-                };
-                let mut facts = self.new_expression_facts(ty, category)?;
-                if binding.kind == BindingKind::Enumerator {
-                    let super::constants::ConstantState::Value(value) =
-                        self.graph.entity(binding.entity).constant
-                    else {
-                        return Err(Error::Invariant("enumerator without value"));
-                    };
-                    facts.ty = value.ty;
-                    facts.folded = Some(value.bits);
-                }
-                facts
+                let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+                self.named_expression(id, &found)?
             }
             ExprKind::Literal(literal) => {
                 let (ty, category) = match literal.kind {
@@ -156,8 +112,12 @@ impl Analyzer<'_> {
             } => {
                 self.typed_expression(condition, scope)?;
                 self.convert_bool(condition)?;
-                let a = self.typed_expression(then_expr, scope)?;
-                let b = self.typed_expression(else_expr, scope)?;
+                self.typed_expression(then_expr, scope)?;
+                self.typed_expression(else_expr, scope)?;
+                self.check_resolved_function(then_expr)?;
+                self.check_resolved_function(else_expr)?;
+                let a = self.graph.expression_facts.get(then_expr)?;
+                let b = self.graph.expression_facts.get(else_expr)?;
                 self.scalar_conditional(id, then_expr, else_expr, a, b)?
             }
             ExprKind::Subscript { base, index } => {
@@ -169,7 +129,12 @@ impl Analyzer<'_> {
                 let ty = if let Some(ty) = ty {
                     self.type_syntax(ty, scope)?
                 } else if let Some(operand) = operand {
-                    self.typed_expression(operand, scope)?.ty
+                    self.unevaluated += 1;
+                    let result = self.typed_expression(operand, scope);
+                    self.unevaluated -= 1;
+                    let facts = result?;
+                    self.check_resolved_function(operand)?;
+                    facts.ty
                 } else {
                     return Err(Error::Invariant("sizeof without operand"));
                 };
@@ -195,29 +160,7 @@ impl Analyzer<'_> {
                 self.new_expression_facts(ty, V::Prvalue)?
             }
             ExprKind::Call { callee, arguments } => {
-                if let ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
-                    let lookup = self.lookup(name, scope, Filter::Ordinary);
-                    if let Ok(binding) = lookup {
-                        let binding = self.graph.binding(binding);
-                        if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
-                            let target = binding
-                                .ty
-                                .ok_or(Error::Invariant("cast name without type"))?;
-                            let mut facts =
-                                self.scalar_functional_cast(id, target, arguments, None, scope)?;
-                            facts.functional_call = true;
-                            self.graph.expression_facts.set(id, facts);
-                            super::record(&mut self.graph.expression_types, id.index(), facts.ty);
-                            return Ok(facts);
-                        }
-                    } else if let Err(
-                        error @ (Error::Missing(_) | Error::Invariant(_) | Error::Limit(_)),
-                    ) = lookup
-                    {
-                        return Err(error);
-                    }
-                }
-                return Err(Error::Missing("semantic calls and overload resolution"));
+                self.procedural_call(id, callee, arguments, scope)?
             }
             ExprKind::Cast {
                 keyword,
@@ -242,6 +185,88 @@ impl Analyzer<'_> {
         facts.ty = self.graph.types.canonical_function(facts.ty)?;
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), facts.ty);
+        Ok(facts)
+    }
+    pub(super) fn named_expression(
+        &mut self,
+        id: ast::ExprId,
+        found: &super::lookup::LookupResult,
+    ) -> Result<ExprFacts, Error> {
+        let binding = found
+            .binding
+            .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
+        if self.graph.binding(binding).kind == BindingKind::Function {
+            let facts = self.function_designation(found.functions.as_slice())?;
+            return Ok(facts);
+        }
+        let binding = self.graph.binding(binding);
+        if matches!(
+            binding.kind,
+            BindingKind::Namespace | BindingKind::NamespaceAlias
+        ) {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "namespace name used as a value",
+            ));
+        }
+        if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "type name used as a value",
+            ));
+        }
+        if self.default_argument_scope.is_some()
+            && self.unevaluated == 0
+            && matches!(binding.kind, BindingKind::Variable | BindingKind::Parameter)
+            && matches!(
+                self.graph
+                    .scope(
+                        self.graph.binding_scope(
+                            found
+                                .binding
+                                .ok_or(Error::Invariant("named expression without binding"))?
+                        )
+                    )
+                    .kind,
+                super::graph::ScopeKind::Block | super::graph::ScopeKind::Function
+            )
+        {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "a local variable or parameter in a default argument (8.3.6p7)",
+            ));
+        }
+        let mut ty = binding
+            .ty
+            .ok_or(Error::Invariant("value binding without type"))?;
+        if binding.kind == BindingKind::Variable {
+            ty = self
+                .graph
+                .entity(binding.entity)
+                .ty
+                .ok_or(Error::Invariant("variable without type"))?;
+        }
+        if binding.kind == BindingKind::Parameter {
+            ty = self.graph.types.parameter_object(ty)?;
+        }
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let category = if binding.kind == BindingKind::Enumerator {
+            V::Prvalue
+        } else {
+            V::Lvalue
+        };
+        let mut facts = self.new_expression_facts(ty, category)?;
+        if binding.kind == BindingKind::Enumerator {
+            let super::constants::ConstantState::Value(value) =
+                self.graph.entity(binding.entity).constant
+            else {
+                return Err(Error::Invariant("enumerator without value"));
+            };
+            facts.ty = value.ty;
+            facts.folded = Some(value.bits);
+        }
         Ok(facts)
     }
     pub(super) fn new_expression_facts(

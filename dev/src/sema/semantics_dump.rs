@@ -2,6 +2,7 @@
 //! An iterative view of original syntax and recorded semantic facts.
 use super::{
     expression_facts::{LvalueTransform as L, ValueCategory as V, ValueConversion as C},
+    function_resolution::CallTarget,
     graph::{BindingId, BindingKind, Graph, ScopeKind},
     types::{TypeId, TypeKind},
 };
@@ -86,7 +87,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         Ok(())
     }
     fn ty(&mut self, ty: TypeId) -> io::Result<()> {
-        self.graph.write_type(
+        self.graph.write_semantic_type(
             self.graph.types.canonical_view(ty),
             self.cursor,
             self.output,
@@ -205,28 +206,33 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         Ok(())
     }
+    fn function_name(&mut self, id: BindingId) -> io::Result<()> {
+        let binding = self.graph.binding(id);
+        let mut parts = Vec::new();
+        let mut scope = Some(self.graph.binding_scope(id));
+        while let Some(id) = scope {
+            let node = self.graph.scope(id);
+            if !matches!(node.kind, ScopeKind::Namespace | ScopeKind::Class) {
+                break;
+            }
+            if let Some(name) = node.name {
+                parts.push(name);
+            }
+            scope = node.parent;
+        }
+        for name in parts.into_iter().rev() {
+            self.name(Some(name))?;
+            self.output.write_all(b"::")?;
+        }
+        self.name(binding.name)?;
+        Ok(())
+    }
     fn binding_header(&mut self, id: BindingId, label: &str, depth: usize) -> io::Result<()> {
         let binding = self.graph.binding(id);
         self.indent(depth)?;
         write!(self.output, "{label} ")?;
         if binding.kind == BindingKind::Function {
-            let mut parts = Vec::new();
-            let mut scope = Some(self.graph.binding_scope(id));
-            while let Some(id) = scope {
-                let node = self.graph.scope(id);
-                if !matches!(node.kind, ScopeKind::Namespace | ScopeKind::Class) {
-                    break;
-                }
-                if let Some(name) = node.name {
-                    parts.push(name);
-                }
-                scope = node.parent;
-            }
-            for name in parts.into_iter().rev() {
-                self.name(Some(name))?;
-                self.output.write_all(b"::")?;
-            }
-            self.name(binding.name)?;
+            self.function_name(id)?;
         } else {
             self.name(binding.name)?;
         }
@@ -505,6 +511,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         {
             ty = target;
         }
+        if let Some(call) = facts.call {
+            let function = match call {
+                CallTarget::Direct(binding) => self
+                    .graph
+                    .binding(binding)
+                    .ty
+                    .ok_or_else(|| io::Error::other("call without function type"))?,
+                CallTarget::Indirect(ty) => ty,
+            };
+            let function = self.graph.types.canonical_view(function);
+            let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {
+                return Err(io::Error::other("call without function type"));
+            };
+            ty = result;
+        }
         let label = match node.kind {
             ExprKind::Id(_) => "id-expression",
             ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
@@ -521,7 +542,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Subscript { .. } => "subscript-expression",
             ExprKind::Sizeof { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
-            ExprKind::Call { .. } if facts.functional_call => "cast-expression",
+            ExprKind::Call { .. } => {
+                if facts.functional_call {
+                    "cast-expression"
+                } else {
+                    "call-expression"
+                }
+            }
             _ => return Err(io::Error::other("unsupported semantic expression view")),
         };
         self.indent(depth)?;
@@ -530,7 +557,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         match node.kind {
             ExprKind::Id(name) => {
                 self.output.write_all(b" ")?;
-                super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
+                if let Some(binding) = facts.function {
+                    self.function_name(binding)?;
+                } else {
+                    super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
+                }
             }
             ExprKind::Literal(literal) => {
                 self.output.write_all(b" ")?;
@@ -582,6 +613,37 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 for &id in self.tree.expr_lists.get(arguments).iter().rev() {
                     self.expr(id, depth + 1);
                 }
+            }
+            ExprKind::Call { callee, arguments } => {
+                writeln!(self.output)?;
+                match facts
+                    .call
+                    .ok_or_else(|| io::Error::other("call without target"))?
+                {
+                    CallTarget::Direct(binding) => {
+                        self.binding_header(binding, "callee", depth + 1)?;
+                        let entity = self.graph.binding(binding).entity;
+                        for default in self
+                            .graph
+                            .entity(entity)
+                            .defaults
+                            .iter()
+                            .skip(self.tree.expr_lists.get(arguments).len())
+                            .rev()
+                            .flatten()
+                        {
+                            self.expr(default.expression, depth + 1);
+                        }
+                    }
+                    CallTarget::Indirect(_) => (),
+                }
+                for &id in self.tree.expr_lists.get(arguments).iter().rev() {
+                    self.expr(id, depth + 1);
+                }
+                if matches!(facts.call, Some(CallTarget::Indirect(_))) {
+                    self.expr(callee, depth + 1);
+                }
+                return Ok(());
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..

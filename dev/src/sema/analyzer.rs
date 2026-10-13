@@ -38,6 +38,10 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) suppress_implicit: bool,
     mode: AnalysisMode,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
+    pub(super) default_argument_scope: Option<ScopeId>,
+    pub(super) unevaluated: u32,
+    pub(super) builtin_names: super::builtin_calls::BuiltinNames,
+    pub(super) call_scratch: super::procedural_calls::CallScratch,
     pub(super) binary_spine: Vec<ast::ExprId>,
     pub(super) specifications: Vec<super::exceptions::PendingSpecification>,
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
@@ -79,6 +83,14 @@ impl<'tree> Analyzer<'tree> {
                 key: Keyword::Typedef,
             },
         )?;
+        let builtin_names = super::builtin_calls::BuiltinNames {
+            abort: cursor
+                .intern_name(b"__builtin_abort")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            constant_p: cursor
+                .intern_name(b"__builtin_constant_p")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+        };
         let mut analyzer = Self {
             literal_bytes: &cursor.spellings,
             tree,
@@ -98,6 +110,10 @@ impl<'tree> Analyzer<'tree> {
             mode: AnalysisMode::Types,
             body_context: None,
             binary_spine: Vec::new(),
+            call_scratch: super::procedural_calls::CallScratch::default(),
+            builtin_names,
+            default_argument_scope: None,
+            unevaluated: 0,
             specifications: Vec::new(),
             pending_throws: Vec::new(),
             evaluating_noexcept: false,

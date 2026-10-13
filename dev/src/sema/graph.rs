@@ -9,6 +9,11 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum FunctionAvailability {
+    Callable,
+    Deleted,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct EntityId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BindingId(u32);
@@ -86,9 +91,12 @@ pub(super) struct MemberKey {
 pub(super) struct Entity {
     pub ty: Option<TypeId>,
     pub scope: Option<ScopeId>,
+    pub home: Option<ScopeId>,
     pub name: Option<NameId>,
     pub key: Keyword,
     pub defined: bool,
+    pub availability: FunctionAvailability,
+    pub defaults: Vec<Option<super::default_arguments::DefaultArgument>>,
     pub complete: bool,
     pub enumeration: Option<super::enumerations::EnumInfo>,
     pub constant: super::constants::ConstantState,
@@ -137,12 +145,15 @@ pub(crate) struct Graph {
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
+    pub(super) overloads: super::function_resolution::FunctionSets,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     call_bindings: Vec<Option<BindingId>>,
     member_functions: HashMap<MemberKey, BindingId>,
     prototype_parameters: HashMap<EntityId, usize>,
     special_values: HashMap<(ScopeId, super::function_names::SpecialName), BindingId>,
+    function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
+    function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
     pub(super) fn own_key(
@@ -183,6 +194,13 @@ impl Graph {
         name: super::function_names::SpecialName,
         binding: BindingId,
     ) {
+        if self.binding(binding).kind == BindingKind::Function {
+            self.record_function_binding(
+                scope,
+                super::function_names::ValueKey::Special(name),
+                binding,
+            );
+        }
         if let Some(old) = self.special_values.insert((scope, name), binding)
             && self.binding(old).entity == self.binding(binding).entity
         {
@@ -241,12 +259,15 @@ impl Graph {
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
+            overloads: super::function_resolution::FunctionSets::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
             call_bindings: Vec::new(),
             member_functions: HashMap::new(),
             prototype_parameters: HashMap::new(),
             special_values: HashMap::new(),
+            function_sets: HashMap::new(),
+            function_origins: HashMap::new(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -313,9 +334,12 @@ impl Graph {
         self.entities.push(Entity {
             ty,
             scope: None,
+            home: None,
             name,
             key,
             defined: false,
+            availability: FunctionAvailability::Callable,
+            defaults: Vec::new(),
             complete: false,
             enumeration: None,
             constant: super::constants::ConstantState::None,
@@ -356,13 +380,39 @@ impl Graph {
                 | BindingKind::NamespaceAlias => entry.ty,
                 _ => entry.value,
             })
-            .filter(|&id| self.binding(id).entity == binding.entity);
+            .filter(|&id| self.binding(id).entity == binding.entity)
+            .or_else(|| {
+                if binding.kind != BindingKind::Function {
+                    return None;
+                }
+                let key = binding
+                    .name
+                    .map(super::function_names::ValueKey::Identifier)
+                    .or_else(|| {
+                        self.entity(binding.entity).function.and_then(|properties| {
+                            properties
+                                .special
+                                .map(super::function_names::ValueKey::Special)
+                        })
+                    })?;
+                self.functions_at(scope, key)
+                    .find(|&id| self.binding(id).entity == binding.entity)
+            });
         // A compatible redeclaration is visible since the entity's first
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
         let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
+        if self.entity(binding.entity).home.is_none() {
+            self.entity_mut(binding.entity).home = Some(scope);
+        }
         self.bindings.push(binding);
         self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
+        if binding.kind == BindingKind::Function {
+            self.function_origins.entry(binding.entity).or_insert(id);
+            if let Some(name) = binding.name {
+                self.record_function_binding(scope, name.into(), id);
+            }
+        }
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
         }
@@ -384,6 +434,63 @@ impl Graph {
             }
         }
         Ok(id)
+    }
+    fn record_function_binding(
+        &mut self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        binding: BindingId,
+    ) {
+        let entity = self.binding(binding).entity;
+        let previous = self
+            .function_sets
+            .get(&(scope, key))
+            .and_then(|set| set.iter().position(|&id| self.binding(id).entity == entity));
+        let set = self.function_sets.entry((scope, key)).or_default();
+        if let Some(index) = previous {
+            set[index] = binding;
+        } else {
+            set.push(binding);
+        }
+    }
+    pub(super) fn functions_at(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+    ) -> impl Iterator<Item = BindingId> + '_ {
+        self.function_sets
+            .get(&(scope, key))
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(move |id| {
+                self.scope(scope).kind != ScopeKind::Namespace
+                    || self
+                        .lookup_limit
+                        .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+            })
+    }
+    pub(super) fn function_default(
+        &self,
+        entity: EntityId,
+        index: usize,
+    ) -> Option<crate::syntax::ast::ExprId> {
+        self.entity(entity)
+            .defaults
+            .get(index)
+            .copied()
+            .flatten()
+            .filter(|default| {
+                self.lookup_limit
+                    .is_none_or(|limit| default.introduced < limit)
+            })
+            .map(|default| default.expression)
+    }
+    pub(super) fn function_origin(&self, entity: EntityId) -> Result<BindingId, Error> {
+        self.function_origins
+            .get(&entity)
+            .copied()
+            .ok_or(Error::Invariant("function without origin"))
     }
     pub(super) fn encloses(&self, outer: ScopeId, mut inner: ScopeId) -> bool {
         loop {
@@ -408,7 +515,16 @@ impl Graph {
         {
             let visible = |id: BindingId| self.ordinals[id.0 as usize] < limit;
             entry.ty = entry.ty.filter(|&id| visible(id));
-            entry.value = entry.value.filter(|&id| visible(id));
+            let function_set = entry
+                .value
+                .is_some_and(|id| self.binding(id).kind == BindingKind::Function);
+            entry.value = entry.value.filter(|&id| visible(id)).or_else(|| {
+                if function_set {
+                    self.functions_at(scope, name.into()).next()
+                } else {
+                    None
+                }
+            });
             entry.tag = entry.tag.filter(|&id| visible(id));
         }
         let id = match filter {

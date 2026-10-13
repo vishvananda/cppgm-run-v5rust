@@ -253,6 +253,28 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
+        if self.semantic() {
+            let mut inner = operand;
+            while let ExprKind::Paren(expr) = self.tree.expressions.get(inner).kind {
+                inner = expr;
+            }
+            if !matches!(self.tree.expressions.get(inner).kind, ExprKind::Id(_)) {
+                self.unevaluated += 1;
+                let result = self.typed_expression(operand, scope);
+                self.unevaluated -= 1;
+                let facts = result?;
+                self.check_resolved_function(operand)?;
+                return match facts.category {
+                    super::expression_facts::ValueCategory::Prvalue => Ok(facts.ty),
+                    super::expression_facts::ValueCategory::Lvalue => {
+                        self.graph.types.reference(facts.ty, RefKind::Lvalue)
+                    }
+                    super::expression_facts::ValueCategory::Xvalue => {
+                        self.graph.types.reference(facts.ty, RefKind::Rvalue)
+                    }
+                };
+            }
+        }
         let mut expr = operand;
         let mut parenthesized = false;
         while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {

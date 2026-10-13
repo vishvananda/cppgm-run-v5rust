@@ -12,6 +12,7 @@ impl Analyzer<'_> {
     pub(super) fn expression(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         if self.semantic() {
             self.typed_expression(id, scope)?;
+            self.check_resolved_function(id)?;
             return Ok(());
         }
         let base = self.expression_work.len();

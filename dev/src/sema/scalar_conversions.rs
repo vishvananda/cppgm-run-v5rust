@@ -11,13 +11,29 @@ use super::{
 };
 use crate::syntax::ast;
 impl Analyzer<'_> {
-    pub(super) fn bare_type(&mut self, ty: TypeId) -> Result<TypeId, Error> {
-        let node = self.graph.types.get(ty);
-        if node.cv.0 == 0 {
-            return Ok(ty);
+    pub(super) fn type_cv(&self, mut ty: TypeId) -> Cv {
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
         }
-        let kind = node.kind.clone();
-        self.graph.types.intern(kind, Cv::default())
+        self.graph.types.get(ty).cv
+    }
+    pub(super) fn bare_type(&mut self, mut ty: TypeId) -> Result<TypeId, Error> {
+        let mut bounds = Vec::new();
+        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+            bounds.push(bound);
+            ty = element;
+        }
+        if self.graph.types.get(ty).cv.0 != 0 {
+            let kind = self.graph.types.get(ty).kind.clone();
+            ty = self.graph.types.intern(kind, Cv::default())?;
+        }
+        for bound in bounds.into_iter().rev() {
+            ty = self
+                .graph
+                .types
+                .intern(TypeKind::Array { element: ty, bound }, Cv::default())?;
+        }
+        Ok(ty)
     }
     pub(super) fn decayed_type(&mut self, ty: TypeId) -> Result<TypeId, Error> {
         match self.graph.types.get(ty).kind {
@@ -46,6 +62,7 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<Option<Conversion>, Error> {
+        let target = self.graph.types.canonical_function(target)?;
         let source = self.decayed_type(facts.ty)?;
         let goal = self.bare_type(target)?;
         let first = match self.graph.types.get(facts.ty).kind {
@@ -54,7 +71,7 @@ impl Analyzer<'_> {
             _ if facts.category != V::Prvalue => L::Read,
             _ => L::None,
         };
-        let qualification = self.pointer_qualification(source, goal)?;
+        let qualification = source != goal && self.pointer_qualification(source, goal)?;
         let promotion = self.is_integral_operand(source)
             && self.is_integral_operand(goal)
             && source != goal
@@ -135,8 +152,8 @@ impl Analyzer<'_> {
             else {
                 return Ok(false);
             };
-            let ca = self.graph.types.get(*ea).cv.0;
-            let cb = self.graph.types.get(*eb).cv.0;
+            let ca = self.type_cv(*ea).0;
+            let cb = self.type_cv(*eb).0;
             if ca & !cb != 0 || ca != cb && !const_so_far {
                 return Ok(false);
             }
@@ -148,40 +165,56 @@ impl Analyzer<'_> {
             let bk = &self.graph.types.get(b).kind;
             if !matches!(ak, TypeKind::Pointer(_)) || !matches!(bk, TypeKind::Pointer(_)) {
                 if matches!(ak, TypeKind::Array { .. }) || matches!(bk, TypeKind::Array { .. }) {
-                    return Err(Error::Missing("pointer-to-array qualification conversions"));
+                    return Ok(self.same_array_shape(a, b));
                 }
                 return Ok(level != 0 && ak == bk);
             }
         }
     }
-    pub(super) fn convert_scalar(
+    fn same_array_shape(&self, mut a: TypeId, mut b: TypeId) -> bool {
+        while let (
+            TypeKind::Array {
+                element: ae,
+                bound: ab,
+            },
+            TypeKind::Array {
+                element: be,
+                bound: bb,
+            },
+        ) = (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
+        {
+            if ab != bb {
+                return false;
+            }
+            a = *ae;
+            b = *be;
+        }
+        self.graph.types.get(a).kind == self.graph.types.get(b).kind
+    }
+    pub(super) fn scalar_sequence(
         &mut self,
-        id: ast::ExprId,
+        facts: ExprFacts,
         target: TypeId,
         direct: bool,
-    ) -> Result<(), Error> {
-        let facts = self.graph.expression_facts.get(id)?;
+    ) -> Result<Option<Conversion>, Error> {
         if matches!(
             self.graph.types.get(facts.ty).kind,
             TypeKind::Scalar(Scalar::Void)
         ) {
-            return Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "invalid implicit conversion",
-            ));
+            return Ok(None);
         }
+        let target = self.graph.types.canonical_function(target)?;
         let conversion = if let TypeKind::Reference { element, kind } =
             self.graph.types.get(target).kind
         {
             let related = self.bare_type(element)? == self.bare_type(facts.ty)?;
-            let compatible = related
-                && self.graph.types.get(facts.ty).cv.0 & !self.graph.types.get(element).cv.0 == 0;
+            let compatible = related && self.type_cv(facts.ty).0 & !self.type_cv(element).0 == 0;
             let function = matches!(
                 self.graph.types.get(facts.ty).kind,
                 TypeKind::Function { .. }
             );
             let lvalue = kind == RefKind::Lvalue;
-            let constant = self.graph.types.get(element).cv == Cv::CONST;
+            let constant = self.type_cv(element) == Cv::CONST;
             let reference_qualification = if !related
                 && lvalue
                 && facts.category == V::Lvalue
@@ -232,6 +265,27 @@ impl Analyzer<'_> {
         } else {
             self.standard_conversion(facts, target, direct)?
         };
+        Ok(conversion)
+    }
+    pub(super) fn convert_scalar(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        direct: bool,
+    ) -> Result<(), Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        if facts.functions.is_some() {
+            if let Some(binding) = self.matching_function(facts, target)? {
+                self.select_function_designation(id, binding)?;
+            } else {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "no overloaded function matches the target type",
+                ));
+            }
+        }
+        let facts = self.graph.expression_facts.get(id)?;
+        let conversion = self.scalar_sequence(facts, target, direct)?;
         let Some(conversion) = conversion else {
             return Err(Error::at(
                 self.tree.expressions.get(id).location,

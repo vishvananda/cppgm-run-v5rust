@@ -821,3 +821,122 @@ fn standard_conversions_keep_rank_and_recursive_qualification_facts() {
     assert_eq!(conversion.rank, ConversionRank::Exact);
     assert!(conversion.qualification);
 }
+
+#[test]
+fn resolved_call_keeps_source_operands_and_selected_sequences_on_original_nodes() {
+    use super::expression_facts::{ConversionRank, LvalueTransform, ValueCategory};
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(
+        b"int g(int,long);int g(long,long);int f(short x){return g(x,1);}".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"call-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[2])
+        .kind
+    else {
+        panic!("function expected")
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected")
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected")
+    };
+    let StmtKind::Return(Some(call)) = tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+    else {
+        panic!("return expected")
+    };
+    let ExprKind::Call { callee, arguments } = tree.expressions.get(call).kind else {
+        panic!("call expected")
+    };
+    let arguments = tree.expr_lists.get(arguments);
+    let selected = graph.call_binding(call).unwrap();
+    let function = graph
+        .types
+        .canonical_view(graph.binding(selected).ty.unwrap());
+    let first_parameter = graph.types.function_parameter(function, 0).unwrap();
+    assert!(matches!(
+        graph.types.get(first_parameter).kind,
+        TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))
+    ));
+    let operand = graph.expression_facts.get(arguments[0]).unwrap();
+    assert!(matches!(
+        graph.types.get(operand.ty).kind,
+        TypeKind::Scalar(Scalar::Short)
+    ));
+    assert_eq!(operand.category, ValueCategory::Lvalue);
+    let sequence = operand.conversion.unwrap();
+    assert_eq!(sequence.target, first_parameter);
+    assert_eq!(sequence.rank, ConversionRank::Promotion);
+    assert_eq!(sequence.first, LvalueTransform::Read);
+    assert_eq!(
+        graph
+            .expression_facts
+            .get(arguments[1])
+            .unwrap()
+            .conversion
+            .unwrap()
+            .rank,
+        ConversionRank::Conversion
+    );
+    let target = graph.expression_facts.get(callee).unwrap();
+    assert!(target.functions.is_none());
+    assert_eq!(
+        graph.binding(target.function.unwrap()).entity,
+        graph.binding(selected).entity
+    );
+}
+
+#[test]
+fn overload_visibility_keeps_earlier_entities_across_interleaved_redeclarations() {
+    use super::graph::{Binding, BindingKind};
+    use crate::lex::vocabulary::Keyword;
+    let mut graph = Graph::new();
+    let source = SourceBuffer::new(b";".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"overload-visibility").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (_, cursor, _) = unit.semantic_inputs().unwrap();
+    let name = cursor.intern_name(b"g").unwrap();
+    let ty = graph
+        .types
+        .scalar(Scalar::Basic(FundamentalType::Int))
+        .unwrap();
+    let a = graph
+        .add_entity(Some(ty), Some(name), Keyword::Int)
+        .unwrap();
+    let b = graph
+        .add_entity(Some(ty), Some(name), Keyword::Int)
+        .unwrap();
+    let binding = |entity| Binding {
+        kind: BindingKind::Function,
+        name: Some(name),
+        entity,
+        ty: Some(ty),
+        key: Keyword::Int,
+    };
+    graph.add_binding(graph.global, None, binding(a)).unwrap();
+    let limit = graph.binding_limit();
+    graph.add_binding(graph.global, None, binding(b)).unwrap();
+    graph.add_binding(graph.global, None, binding(a)).unwrap();
+    graph.lookup_limit = Some(limit);
+    let visible: Vec<_> = graph.functions_at(graph.global, name.into()).collect();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(graph.binding(visible[0]).entity, a);
+    assert_eq!(
+        graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity,
+        a
+    );
+    graph.lookup_limit = None;
+    assert_eq!(graph.functions_at(graph.global, name.into()).count(), 2);
+}

@@ -69,7 +69,18 @@ impl Analyzer<'_> {
         cast: Option<K>,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        let target = self.graph.types.canonical_function(target)?;
         let source = self.typed_expression(operand, scope)?;
+        if source.functions.is_some() {
+            let binding = self.matching_function(source, target)?.ok_or_else(|| {
+                Error::at(
+                    self.tree.expressions.get(operand).location,
+                    "no overloaded function matches the target type",
+                )
+            })?;
+            self.select_function_designation(operand, binding)?;
+        }
+        let source = self.graph.expression_facts.get(operand)?;
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
             || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_))
             || cast == Some(K::DynamicCast)

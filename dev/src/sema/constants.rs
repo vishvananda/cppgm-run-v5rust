@@ -93,6 +93,12 @@ impl Analyzer<'_> {
         skipping: bool,
     ) -> Result<Constant, Error> {
         self.check_stack()?;
+        if self.semantic()
+            && let Ok(facts) = self.graph.expression_facts.get(id)
+            && let Some(bits) = facts.folded
+        {
+            return Ok(Constant { bits, ty: facts.ty });
+        }
         if self.evaluating_noexcept
             && let Some(value) = self.graph.constant_fact(id)
         {

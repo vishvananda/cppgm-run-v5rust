@@ -190,23 +190,20 @@ impl Analyzer<'_> {
             ));
         }
         let target_key = self.value_name(target)?;
-        let lookup = if target_key.special().is_some() {
-            self.lookup_location = name.location;
-            let prefix = self
-                .prefix(target, scope)?
-                .ok_or(Error::Invariant("qualified using without prefix"))?;
-            self.qualified_key(prefix, target_key, Filter::Ordinary)?
-                .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))
-        } else {
-            self.lookup(target, scope, Filter::Ordinary)
-        };
-        let target_id = lookup.map_err(|error| match error {
-            Error::Diagnostic {
-                message: "undeclared name",
-                ..
-            } => Error::at(location, "undeclared name in a using-declaration"),
-            other => other,
-        })?;
+        self.lookup_location = name.location;
+        let prefix = self
+            .prefix(target, scope)?
+            .ok_or(Error::Invariant("qualified using without prefix"))?;
+        let found = self.qualified_result(prefix, target_key, Filter::Ordinary)?;
+        let target_id = found
+            .binding
+            .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))?;
+        if self.graph.binding(target_id).kind == BindingKind::Function {
+            for &target in found.functions.as_slice() {
+                self.introduce_function_using(target, target_key, scope, location)?;
+            }
+            return Ok(());
+        }
         let binding = self.graph.binding(target_id);
         if matches!(
             binding.kind,
@@ -239,6 +236,52 @@ impl Analyzer<'_> {
         }
         if let Some(declaration) = declaration {
             self.graph.record_enum_declaration(id, declaration);
+        }
+        Ok(())
+    }
+    fn introduce_function_using(
+        &mut self,
+        target: BindingId,
+        key: ValueKey,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let binding = self.graph.binding(target);
+        if self
+            .graph
+            .value_binding(scope, key)
+            .is_some_and(|id| self.graph.binding(id).kind != BindingKind::Function)
+        {
+            return Err(Error::at(
+                location,
+                "using-declaration conflicts with an earlier declaration",
+            ));
+        }
+        let existing: Vec<_> = self.graph.functions_at(scope, key).collect();
+        for existing in existing {
+            let earlier = self.graph.binding(existing);
+            if earlier.entity != binding.entity
+                && self.same_function_parameters(
+                    earlier
+                        .ty
+                        .ok_or(Error::Invariant("function using without type"))?,
+                    binding
+                        .ty
+                        .ok_or(Error::Invariant("function using without type"))?,
+                )?
+            {
+                return Err(Error::at(
+                    location,
+                    "using-declaration conflicts with a function of the same signature",
+                ));
+            }
+        }
+        let id = self.graph.add_binding(scope, Some(scope), binding)?;
+        if let Some(key) = key.special() {
+            self.graph.record_special_value(scope, key, id);
+            if let Some(&label) = self.graph.special_labels.get(&target) {
+                self.graph.special_labels.insert(id, label);
+            }
         }
         Ok(())
     }
@@ -673,7 +716,24 @@ impl Analyzer<'_> {
             ));
         }
         let mut entity = None;
-        if let Some(existing) = self.graph.value_binding(home, name) {
+        let mut existing = self.graph.value_binding(home, name);
+        if kind == BindingKind::Function
+            && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
+        {
+            existing = None;
+            let candidates: Vec<_> = self.graph.functions_at(home, name).collect();
+            for candidate in candidates {
+                let binding = self.graph.binding(candidate);
+                let old = binding
+                    .ty
+                    .ok_or(Error::Invariant("function without type"))?;
+                if self.same_function_parameters(old, ty)? {
+                    existing = Some(candidate);
+                    break;
+                }
+            }
+        }
+        if let Some(existing) = existing {
             let binding = self.graph.binding(existing);
             if matches!(
                 binding.kind,
@@ -813,6 +873,30 @@ impl Analyzer<'_> {
             };
             scope = parent;
         }
+    }
+    pub(super) fn same_function_parameters(&mut self, a: TypeId, b: TypeId) -> Result<bool, Error> {
+        let a = self.graph.types.canonical_function(a)?;
+        let b = self.graph.types.canonical_function(b)?;
+        let (
+            TypeKind::Function {
+                parameters: ap,
+                variadic: av,
+                cv: ac,
+                reference: ar,
+                ..
+            },
+            TypeKind::Function {
+                parameters: bp,
+                variadic: bv,
+                cv: bc,
+                reference: br,
+                ..
+            },
+        ) = (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
+        else {
+            return Err(Error::Invariant("function signature without function type"));
+        };
+        Ok(ap == bp && av == bv && ac == bc && ar == br)
     }
     pub(super) fn check_function_type_agreement(
         &mut self,
