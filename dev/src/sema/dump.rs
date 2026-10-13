@@ -10,6 +10,68 @@ use crate::{
 };
 use std::io::{self, Write};
 impl Graph {
+    pub(super) fn write_constructor_name(
+        &self,
+        class: super::graph::EntityId,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+        declaration: bool,
+    ) -> io::Result<()> {
+        self.write_class_qualifier(self.entity(class).home, cursor, output, declaration)?;
+        self.write_class_name(class, cursor, output, false)?;
+        output.write_all(b"::")?;
+        if let Some(name) = self.entity(class).name {
+            write_name(cursor, name, output)
+        } else {
+            self.write_class_name(class, cursor, output, false)
+        }
+    }
+    pub(super) fn write_class_name(
+        &self,
+        class: super::graph::EntityId,
+        cursor: &Cursor<'_>,
+        output: &mut (impl Write + ?Sized),
+        qualified: bool,
+    ) -> io::Result<()> {
+        let entity = self.entity(class);
+        if qualified {
+            self.write_class_qualifier(entity.home, cursor, output, true)?;
+        }
+        if let Some(ordinal) = entity.local_type_ordinal {
+            write!(output, "__local_type{ordinal}")?;
+        } else if let Some(name) = entity.name {
+            write_name(cursor, name, output)?;
+        } else if let Some(tokens) = entity
+            .anonymous_class
+            .and_then(super::anonymous_types::AnonymousClass::label)
+        {
+            write_anonymous_class(tokens, output)?;
+        }
+        Ok(())
+    }
+    pub(super) fn write_storage_name(
+        &self,
+        storage: super::graph::BindingId,
+        output: &mut (impl Write + ?Sized),
+    ) -> io::Result<()> {
+        let ty = self
+            .binding(storage)
+            .ty
+            .ok_or_else(|| io::Error::other("storage without type"))?;
+        let TypeKind::Class(class) = self.types.get(ty).kind else {
+            return Err(io::Error::other("anonymous storage without class"));
+        };
+        let tokens = self
+            .entity(class)
+            .anonymous_class
+            .and_then(super::anonymous_types::AnonymousClass::label)
+            .ok_or_else(|| io::Error::other("anonymous storage without provenance"))?;
+        write!(
+            output,
+            "__anonymous_union_storage__{}_{}",
+            tokens.begin, tokens.end
+        )
+    }
     pub(crate) fn print(
         &self,
         tree: &crate::syntax::ast::Tree,
@@ -201,6 +263,7 @@ impl Graph {
         mut scope: Option<super::graph::ScopeId>,
         cursor: &Cursor<'_>,
         output: &mut (impl Write + ?Sized),
+        types: bool,
     ) -> io::Result<()> {
         let mut parts = Vec::new();
         while let Some(id) = scope {
@@ -223,9 +286,14 @@ impl Graph {
         }
         for scope in parts.into_iter().rev() {
             let node = self.scope(scope);
-            if let Some(name) = node.name {
+            if let Some(ordinal) = node.owner.and_then(|id| self.entity(id).local_type_ordinal) {
+                write!(output, "__local_type{ordinal}")?;
+            } else if let Some(name) = node.name {
                 write_name(cursor, name, output)?;
             } else if node.kind == ScopeKind::Namespace {
+                if !types {
+                    continue;
+                }
                 output.write_all(b"_GLOBAL__N_1")?;
             } else if let Some(tokens) = node
                 .owner
@@ -283,19 +351,8 @@ impl Graph {
             match &node.kind {
                 TypeKind::Scalar(scalar) => output.write_all(scalar.name().as_bytes())?,
                 TypeKind::Class(entity) => {
-                    let entity = self.entity(*entity);
-                    write!(output, "{} ", class_key(entity.key))?;
-                    if qualified_classes {
-                        self.write_class_qualifier(entity.home, cursor, output)?;
-                    }
-                    if let Some(name) = entity.name {
-                        write_name(cursor, name, output)?;
-                    } else if let Some(tokens) = entity
-                        .anonymous_class
-                        .and_then(super::anonymous_types::AnonymousClass::label)
-                    {
-                        write_anonymous_class(tokens, output)?;
-                    }
+                    write!(output, "{} ", class_key(self.entity(*entity).key))?;
+                    self.write_class_name(*entity, cursor, output, qualified_classes)?;
                 }
                 TypeKind::Enum(entity) => {
                     let entity = self.entity(*entity);

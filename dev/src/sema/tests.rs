@@ -293,6 +293,64 @@ fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
     );
 }
 #[test]
+fn semantic_storage_is_hidden_and_default_construction_is_demanded_once() {
+    use crate::syntax::ast::DeclKind;
+    let source = SourceBuffer::new(
+        b"struct Unused {}; struct A {}; A array[2]; A first; A second; static union { int x; long y; }; int f(){return x;}"
+            .to_vec(),
+    ).unwrap();
+    let input = Preprocessor::with_name(&source, b"construction-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let unused = cursor.intern_name(b"Unused").unwrap();
+    let unused = graph
+        .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
+        .entity;
+    assert!(matches!(
+        graph.entity(unused).default_construction,
+        super::construction::ConstructorState::NotStarted
+    ));
+    let mut constructors = Vec::new();
+    for spelling in [b"array".as_slice(), b"first", b"second"] {
+        let name = cursor.intern_name(spelling).unwrap();
+        let entity = graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity;
+        constructors.push(graph.entity(entity).constructor.unwrap());
+    }
+    assert_eq!(constructors[0], constructors[1]);
+    assert_eq!(constructors[1], constructors[2]);
+    assert_eq!(graph.constructors.demands().len(), 2);
+    let anonymous = tree.decl_lists.get(declarations)[5];
+    assert!(matches!(
+        tree.declarations.get(anonymous).kind,
+        DeclKind::Simple { .. }
+    ));
+    let storage = graph.declaration_storage[anonymous.index()].unwrap();
+    assert!(graph.binding(storage).name.is_none());
+    assert!(!graph.scope(graph.global).bindings.contains(&storage));
+    let name = cursor.intern_name(b"x").unwrap();
+    let member = graph
+        .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+        .entity;
+    let class_scope = graph.entity(member).home.unwrap();
+    let class = graph.scope(class_scope).owner.unwrap();
+    assert_eq!(graph.entity(class).anonymous_storage, Some(storage));
+    assert!(matches!(
+        graph.entity(class).layout,
+        super::layout::LayoutState::NotStarted
+    ));
+    let constructor = graph
+        .entity(graph.binding(storage).entity)
+        .constructor
+        .unwrap();
+    assert_eq!(graph.constructors.get(constructor).class, class);
+}
+#[test]
 fn anonymous_names_remain_presentation_without_tag_or_constructor_publication() {
     analyze(
         b"using S=struct {}; S x; typedef enum {a} E; void f(){S();}",

@@ -70,6 +70,7 @@ pub(super) struct ExprFacts {
     pub functions: Option<super::function_resolution::OverloadId>,
     pub function: Option<super::graph::BindingId>,
     pub call: Option<super::function_resolution::CallTarget>,
+    pub anonymous_member: Option<super::graph::BindingId>,
 }
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
@@ -86,6 +87,7 @@ impl ExprFacts {
             functions: None,
             function: None,
             call: None,
+            anonymous_member: None,
         }
     }
 }

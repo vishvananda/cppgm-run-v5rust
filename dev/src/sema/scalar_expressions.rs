@@ -271,6 +271,17 @@ impl Analyzer<'_> {
             V::Lvalue
         };
         let mut facts = self.new_expression_facts(ty, category)?;
+        if binding.kind == BindingKind::Variable
+            && let Some(home) = self.graph.entity(binding.entity).home
+            && let Some(owner) = self.graph.scope(home).owner
+            && let Some(storage) = self.graph.entity(owner).anonymous_storage
+            && !matches!(
+                self.graph.scope(self.graph.binding_scope(storage)).kind,
+                super::graph::ScopeKind::Class
+            )
+        {
+            facts.anonymous_member = Some(storage);
+        }
         if binding.kind == BindingKind::Enumerator {
             let super::constants::ConstantState::Value(value) =
                 self.graph.entity(binding.entity).constant

@@ -1,8 +1,212 @@
 # PA7 port ledger
 
 Stage base commit: `9a851dcedb1e56bbc6585c84c5990f6ef1a1c372`.
-Current implementation group base: `9d32c2a1988e4e1fa30a5a6b503fc66d978c5cce` (clean implementation entry).
+Current implementation group base: `8e3665e7b101ad33e94150a67a949e662ec064e2` (clean implementation entry).
 Last audited commit: `a05b466c47eac23ca20be5d23d5bed00183e72b8` (independent partial checkpoint audit).
+
+## Anonymous storage and scalar default-construction checkpoint — 2026-10-13
+
+Coherent partial handoff for the `pa7 full-stage` implementation phase; PA7
+remains incomplete. The preceding goal turn is classified as progress: commit
+`8e3665e` translated member-pointer types/scalar semantics and reduced fixed
+failures to 17. This entry revalidated the clean checkout and collected a full
+turn-start baseline instead of using the interrupted 229-case report. The
+protected fixed manifest contains 198 cases; the original course lane contains
+229, including the 31 existing audit regressions. The fixed baseline was
+rerun here; the clean-entry course result is retained in the preceding
+checkpoint's `../pa7-member-pointer-20261013/course-result.json`. Both final
+lanes completed here. The last-audited commit is unchanged; implementation
+work does not advance the stage or certify the remaining class/template groups.
+
+This group reduces fixed failures **17 → 14**, **181/198 → 184/198**,
+with identical coverage and all 181 prior passing identities preserved. The
+course lane improves **212/229 → 215/229**, with the same 14 remaining cases.
+No fixture, reference, oracle, protected checker, Ralph state or acceptance
+policy changed. The three newly passing fixed identities are:
+
+```text
+tests/general/100-namespace-static-anonymous-union-injected-members.t
+tests/general/300-block-anonymous-union-injected-members.t
+tests/general/300-reference-binding-pointee-const-pointer.t
+```
+
+Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa7-anonymous-storage-20261013/`.
+
+### Owners, earliest divergences and completed behavior
+
+The turn-start traces split the 17 failures into inheritance formation (2),
+class function/member declaration and demand (8), template specialization
+lookup (1), class copy initialization (1), explicit member expressions (2),
+and successful-output differences in anonymous storage (2) and ordinary class
+default construction (1). The last three share the default-initialization
+owners, rather than requiring member-call overload resolution. Raw diagnostics
+and output paths are retained in the protected case traces; the final remaining
+case receipts and diagnostic clustering are in `failure-clusters.json`.
+
+Read the frozen owners directly under
+`/home/vishvananda/work/references/v5rust-cpp/dev/src/sema/`:
+`analyzer_classes.cpp::{anonymous_union,name_unnamed_type,class_body}`,
+`analyzer_declarations.cpp::{simple_declaration,declare_variable,
+earlier_variable,new_variable}`, `aggregates.h::MemberInitialized`,
+`analyzer_initialization.cpp::{implicit_constructor,default_initialize,
+check_const_default,name_local_type}`, `analyzer_construction.cpp::{
+implicit_default_facts,member_plan}`, `analyzer_expressions.cpp::{
+binding_expression,odr_use,check_not_deleted}`, `analyzer_bodies.cpp` demand
+contexts, and `semantics_dump.cpp::{simple,variable,storage,id_node,
+constructor_action,function_name,function_type,trailing}`.
+`docs/port/source-map.tsv` records their Rust responsibilities and boundaries.
+
+- `anonymous_types.rs` retains one typed hidden storage binding per anonymous
+  union, outside ordinary lookup and print bindings. Dense original `DeclId`
+  facts put its declaration at the source declaration point; injected members
+  still share their original `EntityId`. Class-held hidden storage retains
+  its separate owner and layout role. Namespace/block storage selects default
+  construction only in semantic mode outside template patterns.
+- `construction.rs` owns a private unit-local `ConstructorId` store and an
+  ordered demand queue. Each requested scalar-subobject class moves through
+  `NotStarted`, `InProgress`, `Ready(id)` and memoizes deletion, const-default
+  eligibility, canonical object pointer, presentation signature and member
+  initializer count. Const/reference fields without initializers delete a
+  nonunion implicit constructor; union variants are not default-initialized.
+  Const class/union objects use the frozen default-initialization diagnostics.
+  Scalar const objects retain the first declaration's extern rule. No class
+  layout or unrelated member body is demanded.
+- Definition declarations record the selected constructor on the variable.
+  Constructor demands are deduplicated in O(1), in first-use order. An array
+  shows one element action and never demands the constructor definition or
+  walks its bound. Ordinary automatic construction with member initializers
+  updates the switch initialization count; anonymous hidden storage preserves
+  the separate C++ path that does not update that count. Static/thread objects
+  do not count. Existing initialized static data members retain their value.
+- `data_members.rs` checks ordinary block-variable redeclarations: two extern
+  declarations may share an entity; other repeated declarations reject before
+  initialization. At class completion, it memoizes direct initialized-member
+  counts, including initialized anonymous member objects, and rejects several
+  default initializers in a union at the original class-key location.
+  `ast.rs` removes the now-unfulfilled dead-code expectation on that location.
+- Semantic anonymous classes from simple declarators receive checked stable
+  `__local_type<N>` presentation ordinals. A typedef still supplies the
+  constructor's own name; aliases retain their original token label. These
+  labels never enter lookup or structural type identity. PA6 naming is intact.
+- Dense original `ExprId` facts record an anonymous member's selected storage
+  binding. The iterative dump renders member access over that storage using
+  the existing conversion facts, with no second expression analysis or name
+  lookup. Typed variable/constructor facts drive constructor actions, array
+  actions and trailing scalar-only implicit definitions. Constructor calls
+  omit unnamed-namespace qualifiers, while definitions/types retain them.
+
+Ownership/architecture review: a single parsed tree and unit-owned graph;
+compact typed storage edges and dense declaration/expression facts; canonical
+identity stays O(1). Successful constructor facts are computed once per class,
+class completion counts only that class's ordered members, and repeated
+objects perform constant-time constructor/demand queries plus lexical-scope
+checks. The demand queue visits only requested definitions. Storage and scratch
+are flat and released with the unit; dump work is iterative. No semantic tree,
+text transport, reparsing, whole-program scan, unsafe code, new dependency or
+lint suppression was introduced. All new logic stays with its owning phase.
+Optimizer, code generator, register allocator and backend lifetimes are intact;
+this checkpoint makes no PA34 object/tool-equality claim.
+
+The ownership regression checks hidden storage outside ordinary bindings,
+shared constructor identity, array versus object demand, an unused class's
+unstarted constructor state, and undemanded layout. Protected probes exercise
+namespace/block/static storage, shadowing, qualification, arrays, pointer and
+reference members, conversions/queries, empty unions, naming/typedef identity,
+extern redeclarations, const/deleted constructors, scalar member initializers,
+union completion and switch diagnostics. Their sources and raw receipts stay
+outside the checkout.
+
+### Exact remaining identities and next dependency boundary
+
+The next coherent group needs explicit class data-member designation and
+object/member facts: both unnamed-object tests now pass declaration/default
+construction and stop at the missing member-expression phase. Member functions
+need implicit object parameters, access, overload identity and function-owned
+demand lists. Construction within member bodies returns status 86 at that
+explicit boundary instead of incorrectly publishing the body's demands as unit
+roots. Named/anonymous class subobject initialization, user-declared default
+selection, explicit/copy initialization and temporary lifetimes remain pending.
+Inheritance/access paths and template specialization/target deduction are
+separate frozen owners. Missing implementation remains a failing case even
+when the oracle rejects normally.
+
+```text
+tests/general/100-distinct-anonymous-type-identities.t
+tests/general/100-private-nested-out-of-class-constructor-definition.t
+tests/general/100-private-nested-out-of-class-member-definition.t
+tests/general/100-qualified-base-data-member-hides-function.t
+tests/general/200-derived-to-base-pointer-prefers-less-qualified-overload.t
+tests/general/200-local-anonymous-union-variable.t
+tests/general/300-default-argument-nonstatic-member-bad.t
+tests/general/300-deferred-demand-closure.t
+tests/general/300-elaborated-local-struct-copy-init.t
+tests/general/300-member-cv-overload-identity.t
+tests/general/300-member-function-pointer-return-pointer-const.t
+tests/general/300-most-vexing-local-function-member-call-bad.t
+tests/general/300-static-cast-member-overload-prefers-nontemplate.t
+tests/general/300-static-cast-overloaded-function-template-argument.t
+```
+
+### Validation and measured costs
+
+Candidate cppgm SHA-256: `a8cd1536eb587d5ecada0e4063018c0503ba16c057c8b73a042abf8be62f9d9c`.
+Frozen cppgm++ SHA-256: `9cb6584b85c16aca6af92d7efc564c29996b8e31b6cc7bad1d19b0fdc9433d5e`.
+
+Final command results, binary hashes, manifest identity sets, course results,
+measurements and protected stack receipts are retained under the artifact root.
+The fixed-manifest identity comparison is `preservation.json`; raw before/after
+logs are `baseline.log`, `stage-required.log` and `stage.log`. Commands/results:
+
+| Command | Result | Evidence relative to artifact root |
+| --- | --- | --- |
+| `make build` | PASS, locked release workspace | `build.log`, `checks.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa7` | 184/198, exactly 14 failures; exit 1 | `stage-required.log`, `fixed-manifest.json` |
+| `make test-pa7` | Same 184/198; make exit 2 | `stage.log` |
+| `make course-pa7` | 215/229, same 14 failures; course failure marker retained; make exit 2 | `course.log`, `course-result.json`; `../clone/course/pa7/test/trace.jsonl` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py prior pa7` | PASS, all PA1–PA6 fixed and course lanes | `prior.log`, `prior-summary.json`, `prior-course-results.json` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preflight pa7` | PASS | `preflight.log` |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py preserve pa7` | PASS, 181/181 prior identities, no coverage change | `preserve.log`, `preservation.json` |
+| `make lint` | PASS, rustfmt, strict all-feature Clippy, debug/release tests and file audit | `lint.log` |
+| `make audit-rust` | PASS, 127 implementation files, zero findings | `audit.log` |
+| `python3 .../pa7-anonymous-storage-20261013/probe.py` | 67/67 protected matches | `probe.log`, `probe-summary.json`, `probes.jsonl`, sources |
+| `python3 .../pa7-anonymous-storage-20261013/measure.py` | Matching paired outputs and all 18 protected workload receipts; both native probes qualify | `measure.log`, `measurements.json`, `measurement-probes.jsonl`, `native-probes.jsonl`, `stack-qualifications/` |
+
+Earlier fixed counts are PA1 58/58, PA2 26/26, PA3 20/20, PA4 106/106,
+PA5 196/196, PA6 121/121. Earlier course counts are 58/58, 28/28, 20/20,
+112/112, 296/296 and 694/694, all exit 0 with no comparison-failure markers.
+Progress is the exact fixed failure reduction 17 → 14 and preservation of
+181 passing identities, independent of the extra 31 existing course inputs.
+
+Warm measurements run after all test jobs finish: A/A calibration, followed by
+paired ABBA/BAAB observations. They include process startup and semantic-dump
+I/O. Source/binary hashes, output hashes/lengths and every RSS/time observation
+are recorded in `measurements.json`. Workloads scale independently declared
+anonymous storage/constructors and repeated objects sharing one class's
+constructor. Huge array bounds confirm that default construction performs no
+per-element semantic work. No PA35 generated-code target or equality of runtime
+costs is imposed.
+
+| Workload / count | C++ median ms / RSS KiB | Rust median ms / RSS KiB |
+| --- | --- | --- |
+| unions / 128 | 7.09 / 7172 | 20.67 / 8376 |
+| shared-class / 128 | 6.02 / 6468 | 19.48 / 8728 |
+| unions / 512 | 15.11 / 9328 | 39.50 / 8374 |
+| shared-class / 512 | 7.76 / 7246 | 25.48 / 8000 |
+| unions / 2048 | 46.41 / 17788 | 116.76 / 19102 |
+| shared-class / 2048 | 22.88 / 10710 | 52.13 / 9238 |
+| array-bound / 128 | 5.03 / 5800 | 18.84 / 8368 |
+| array-bound / 4096 | 4.89 / 5774 | 16.88 / 8002 |
+| array-bound / 100000000 | 4.81 / 5810 | 17.31 / 8372 |
+
+Native probes start with 1 MiB stacks and use 1,000 nested ordinary calls or
+1,500 unary operators over an injected anonymous member. Both protected
+receipts have `match: true` and `stack_qualification.passed: true`; both tools
+succeed with identical output at the shared 16 MiB stack. Raw attempts and
+reruns are retained. The genuine byte-budget guard is unchanged; native
+exhaustion depths and diagnostic positions were not calibrated. Shared storage
+was 28.39 GB used within the 107.37 GB ceiling; all generated evidence is
+outside the commit.
 
 ## Member-pointer scalar implementation checkpoint — 2026-10-13
 

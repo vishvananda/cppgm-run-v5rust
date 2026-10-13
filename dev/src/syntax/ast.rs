@@ -352,13 +352,6 @@ pub(crate) struct ClassSyntax {
     )]
     pub has_base_clause: bool,
     pub attributes: List<Attribute>,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Class key source location is retained for later declaration diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub key: Keyword,
     pub name: Option<Name>,

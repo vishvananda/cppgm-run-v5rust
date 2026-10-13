@@ -508,6 +508,7 @@ impl Analyzer<'_> {
             ty = self.graph.publish_variable_type(binding)?;
         }
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
+            self.graph.entity_mut(entity).member_initializer = init.initializer;
             self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
                 super::graph::DataMemberKind::Static
             } else {
@@ -576,6 +577,8 @@ impl Analyzer<'_> {
             if !member {
                 self.record_constant_initializer(entity, initializer, info.lookup)?;
             }
+        } else if self.semantic() && definition {
+            self.default_initialize_declaration(binding, location)?;
         }
         Ok(())
     }
@@ -821,8 +824,19 @@ impl Analyzer<'_> {
         let entity = if let Some(entity) = entity {
             entity
         } else {
-            self.graph
-                .add_entity(Some(ty), name.identifier(), Keyword::Int)?
+            let entity = self
+                .graph
+                .add_entity(Some(ty), name.identifier(), Keyword::Int)?;
+            if kind == BindingKind::Variable {
+                self.graph.entity_mut(entity).variable = Some(super::graph::VariableProperties {
+                    is_extern: specs.is_extern,
+                    automatic: self.graph.scope(home).kind == ScopeKind::Block
+                        && !specs.is_static
+                        && !specs.is_extern
+                        && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
+                });
+            }
+            entity
         };
         if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
             let member = self.graph.scope(home).kind == ScopeKind::Class;
@@ -1227,6 +1241,7 @@ impl Analyzer<'_> {
         self.declarations(node.members, class)?;
         self.class_depth -= 1;
         self.graph.entity_mut(entity).complete = true;
+        self.finish_class_initializers(entity, node.location)?;
         if self.class_depth == 0 {
             self.finish_class_exceptions()?;
             let bodies = std::mem::take(&mut self.deferred);

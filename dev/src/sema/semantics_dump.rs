@@ -28,6 +28,8 @@ enum Item {
         retyped: Option<(TypeId, V)>,
     },
     Binding(BindingId, Option<ast::Initializer>),
+    Storage(BindingId),
+    Constructor(super::construction::ConstructorId),
     Line(&'static str),
 }
 struct Printer<'a, 'source, W: Write + ?Sized> {
@@ -53,6 +55,13 @@ impl Graph {
             work: Vec::new(),
         };
         printer.line("translation-unit", 0)?;
+        printer.work.extend(
+            self.constructors
+                .demands()
+                .iter()
+                .rev()
+                .map(|&id| (Item::Constructor(id), 1)),
+        );
         printer.declarations(declarations, 1, false);
         while let Some((item, depth)) = printer.work.pop() {
             match item {
@@ -63,6 +72,8 @@ impl Graph {
                     printer.expression(id, depth, bare, retyped)?;
                 }
                 Item::Binding(id, initializer) => printer.binding(id, initializer, depth)?,
+                Item::Storage(id) => printer.storage_expression(id, depth)?,
+                Item::Constructor(id) => printer.constructor_definition(id, depth)?,
                 Item::Line(text) => printer.line(text, depth)?,
             }
         }
@@ -146,6 +157,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.work
                         .push((Item::Binding(binding, init.initializer), inner));
                 }
+                if let Some(storage) = self
+                    .graph
+                    .declaration_storage
+                    .get(id.index())
+                    .copied()
+                    .flatten()
+                {
+                    self.work.push((Item::Binding(storage, None), inner));
+                }
             }
             DeclKind::Alias { name, ty } => {
                 self.indent(depth)?;
@@ -199,7 +219,22 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.work.push((Item::Statement(body.compound), depth + 1));
             }
             DeclKind::Linkage { declarations, .. } => self.declarations(declarations, depth, block),
-            DeclKind::Enum { .. } | DeclKind::Class(_) if block => {
+            DeclKind::Class(_) => {
+                if block {
+                    self.line("simple-declaration", depth)?;
+                }
+                if let Some(storage) = self
+                    .graph
+                    .declaration_storage
+                    .get(id.index())
+                    .copied()
+                    .flatten()
+                {
+                    self.work
+                        .push((Item::Binding(storage, None), depth + usize::from(block)));
+                }
+            }
+            DeclKind::Enum { .. } if block => {
                 self.line("simple-declaration", depth)?;
             }
             _ => (),
@@ -234,7 +269,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         if binding.kind == BindingKind::Function {
             self.function_name(id)?;
         } else {
-            self.name(binding.name)?;
+            self.variable_name(id)?;
         }
         self.output.write_all(b" ")?;
         self.ty(binding
@@ -260,6 +295,16 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         self.binding_header(id, label, depth)?;
         if binding.kind != BindingKind::Variable {
+            return Ok(());
+        }
+        if let Some(constructor) = self.graph.entity(binding.entity).constructor
+            && !self
+                .graph
+                .entity(binding.entity)
+                .variable
+                .is_some_and(|properties| properties.is_extern)
+        {
+            self.constructor_action(id, constructor, depth + 1)?;
             return Ok(());
         }
         if let Some(init) = initializer {
@@ -316,6 +361,90 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
         }
         Ok(())
+    }
+    fn variable_name(&mut self, id: BindingId) -> io::Result<()> {
+        if let Some(name) = self.graph.binding(id).name {
+            self.name(Some(name))
+        } else {
+            self.graph.write_storage_name(id, self.output)
+        }
+    }
+    fn storage_expression(&mut self, id: BindingId, depth: usize) -> io::Result<()> {
+        let ty = self
+            .graph
+            .binding(id)
+            .ty
+            .ok_or_else(|| io::Error::other("storage without type"))?;
+        self.indent(depth)?;
+        self.output.write_all(b"id-expression lvalue ")?;
+        self.ty(ty)?;
+        self.output.write_all(b" ")?;
+        self.variable_name(id)?;
+        writeln!(self.output)
+    }
+    fn constructor_name(
+        &mut self,
+        id: super::construction::ConstructorId,
+        declaration: bool,
+    ) -> io::Result<()> {
+        let class = self.graph.constructors.get(id).class;
+        self.graph
+            .write_constructor_name(class, self.cursor, self.output, declaration)
+    }
+    fn constructor_action(
+        &mut self,
+        variable: BindingId,
+        id: super::construction::ConstructorId,
+        depth: usize,
+    ) -> io::Result<()> {
+        let ty = self
+            .graph
+            .binding(variable)
+            .ty
+            .ok_or_else(|| io::Error::other("constructed variable without type"))?;
+        self.indent(depth)?;
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
+            self.output.write_all(b"constructor-array-action ")?;
+            self.ty(ty)?;
+            writeln!(self.output)?;
+            self.indent(depth + 1)?;
+            self.output.write_all(b"constructor-action ")?;
+            self.constructor_name(id, false)?;
+            return writeln!(self.output);
+        }
+        self.output.write_all(b"constructor-action ")?;
+        self.constructor_name(id, false)?;
+        writeln!(self.output)?;
+        self.line("call-expression prvalue void", depth + 1)?;
+        self.indent(depth + 2)?;
+        self.output.write_all(b"callee ")?;
+        self.constructor_name(id, false)?;
+        self.output.write_all(b" ")?;
+        self.ty(self.graph.constructors.get(id).presentation_type)?;
+        writeln!(self.output)?;
+        self.indent(depth + 2)?;
+        self.output
+            .write_all(b"unary-expression prvalue pointer to ")?;
+        self.ty(ty)?;
+        writeln!(self.output, " OP_AMP:&")?;
+        self.storage_expression(variable, depth + 3)
+    }
+    fn constructor_definition(
+        &mut self,
+        id: super::construction::ConstructorId,
+        depth: usize,
+    ) -> io::Result<()> {
+        self.indent(depth)?;
+        self.output.write_all(b"function-definition ")?;
+        self.constructor_name(id, true)?;
+        self.output.write_all(b" ")?;
+        self.ty(self.graph.constructors.get(id).presentation_type)?;
+        writeln!(self.output)?;
+        self.indent(depth + 1)?;
+        self.output.write_all(b"parameter this ")?;
+        self.ty(self.graph.constructors.get(id).object_pointer)?;
+        writeln!(self.output)?;
+        self.line("compound-statement", depth + 1)
     }
     fn string_initializer(
         &mut self,
@@ -503,6 +632,30 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         Ok(())
     }
+    fn id_node(
+        &mut self,
+        name: ast::Name,
+        facts: super::expression_facts::ExprFacts,
+        depth: usize,
+    ) -> io::Result<()> {
+        self.output.write_all(b" ")?;
+        if let Some(storage) = facts.anonymous_member {
+            let binding = self
+                .graph
+                .resolved_names
+                .get(name.index())
+                .copied()
+                .flatten()
+                .ok_or_else(|| io::Error::other("anonymous member without designation"))?;
+            self.name(self.graph.binding(binding).name)?;
+            self.work.push((Item::Storage(storage), depth + 1));
+        } else if let Some(binding) = facts.function {
+            self.function_name(binding)?;
+        } else {
+            super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
+        }
+        Ok(())
+    }
     fn expression(
         &mut self,
         id: ast::ExprId,
@@ -607,6 +760,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .ok_or_else(|| io::Error::other("function without type"))?;
         }
         let label = match node.kind {
+            ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
             ExprKind::Id(_) => "id-expression",
             ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
             ExprKind::Unary { .. } => "unary-expression",
@@ -636,14 +790,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         write!(self.output, "{label} {} ", category.spelling())?;
         self.ty(ty)?;
         match node.kind {
-            ExprKind::Id(name) => {
-                self.output.write_all(b" ")?;
-                if let Some(binding) = facts.function {
-                    self.function_name(binding)?;
-                } else {
-                    super::dump::write_syntax_name(self.tree, self.cursor, name, self.output)?;
-                }
-            }
+            ExprKind::Id(name) => self.id_node(name, facts, depth)?,
             ExprKind::Literal(literal) => {
                 self.output.write_all(b" ")?;
                 self.output

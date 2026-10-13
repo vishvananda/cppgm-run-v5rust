@@ -33,6 +33,22 @@ impl AnonymousClass {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn name_local_class(&mut self, ty: TypeId) -> Result<(), Error> {
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(());
+        };
+        if self.semantic()
+            && self.graph.entity(class).anonymous_class.is_some()
+            && self.graph.entity(class).local_type_ordinal.is_none()
+        {
+            self.local_types = self
+                .local_types
+                .checked_add(1)
+                .ok_or(Error::Limit("unnamed class ordinal limit"))?;
+            self.graph.entity_mut(class).local_type_ordinal = Some(self.local_types);
+        }
+        Ok(())
+    }
     pub(super) fn simple_declarator_name(
         &self,
         mut id: ast::DeclaratorId,
@@ -87,18 +103,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
         after_semicolon: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<super::graph::BindingId>, Error> {
         let Some(declared) = specs.declared else {
-            return Ok(());
+            return Ok(None);
         };
         let TypeKind::Class(entity) = self.graph.types.get(declared).kind else {
-            return Ok(());
+            return Ok(None);
         };
         let Some(anonymous) = self.graph.entity(entity).anonymous_class else {
-            return Ok(());
+            return Ok(None);
         };
         if self.graph.entity(entity).name.is_some() {
-            return Ok(());
+            return Ok(None);
         }
         if specs.virtuality == super::specifiers::Virtuality::Virtual {
             return Err(Error::at(
@@ -170,7 +186,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("class without owner"))?;
             let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
             self.graph.entity_mut(owner).members.push(storage);
-            self.graph.add_binding(
+            let binding = self.graph.add_binding(
                 scope,
                 None,
                 Binding {
@@ -181,7 +197,35 @@ impl Analyzer<'_> {
                     key: Keyword::Int,
                 },
             )?;
+            self.graph.entity_mut(entity).anonymous_storage = Some(binding);
+            return Ok(None);
         }
-        Ok(())
+        if !self.semantic() || self.template_depth != 0 {
+            return Ok(None);
+        }
+        // Hidden storage has a typed binding, but no ordinary-name or print entry.
+        // Its label is derived only in dump views from the class's token provenance.
+        let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
+        self.graph.entity_mut(storage).defined = true;
+        self.graph.entity_mut(storage).variable = Some(super::graph::VariableProperties {
+            is_extern: false,
+            automatic: kind == ScopeKind::Block
+                && !specs.is_static
+                && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
+        });
+        let binding = self.graph.add_binding(
+            scope,
+            None,
+            Binding {
+                kind: BindingKind::Variable,
+                name: None,
+                entity: storage,
+                ty: Some(specs.ty),
+                key: Keyword::Int,
+            },
+        )?;
+        self.graph.entity_mut(entity).anonymous_storage = Some(binding);
+        self.default_initialize(binding, location)?;
+        Ok(Some(binding))
     }
 }

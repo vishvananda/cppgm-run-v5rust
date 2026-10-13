@@ -14,6 +14,42 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn finish_class_initializers(
+        &mut self,
+        class: super::graph::EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if !self.semantic() || self.template_depth != 0 {
+            return Ok(());
+        }
+        // MemberInitialized counts an anonymous member object's initialized
+        // children as one initialized direct member. Each child is already complete.
+        let initialized = self
+            .graph
+            .entity(class)
+            .members
+            .iter()
+            .filter(|&&member| {
+                let member = self.graph.entity(member);
+                member.member_initializer.is_some()
+                    || member.name.is_none()
+                        && member.ty.is_some_and(|ty| {
+                            matches!(self.graph.types.get(ty).kind, TypeKind::Class(inner)
+                        if self.graph.entity(inner).anonymous_class.is_some()
+                            && self.graph.entity(inner).initialized_members != 0)
+                        })
+            })
+            .count();
+        self.graph.entity_mut(class).initialized_members = initialized;
+        if self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union && initialized > 1
+        {
+            return Err(Error::at(
+                location,
+                "a union has several default member initializers",
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn check_data_member_declaration(
         &self,
         specs: Specifiers,
@@ -26,6 +62,22 @@ impl Analyzer<'_> {
             .name
             .ok_or(Error::Invariant("data declaration without name"))?;
         let in_class = self.graph.scope(home).kind == ScopeKind::Class;
+        if self.graph.scope(home).kind == ScopeKind::Block
+            && info.home.is_none()
+            && let Some(previous) = self.graph.own(home, name, Filter::Ordinary)
+            && self.graph.binding(previous).kind == BindingKind::Variable
+            && (!specs.is_extern
+                || !self
+                    .graph
+                    .entity(self.graph.binding(previous).entity)
+                    .variable
+                    .is_some_and(|properties| properties.is_extern))
+        {
+            return Err(Error::at(
+                location,
+                "redeclaration of a name in the same scope",
+            ));
+        }
         if in_class {
             let owner = self
                 .graph

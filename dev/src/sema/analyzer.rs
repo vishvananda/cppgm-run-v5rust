@@ -29,6 +29,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredBody>,
     pub(super) anonymous_enums: u32,
+    pub(super) local_types: u32,
     pub(super) class_depth: usize,
     pub(super) template_depth: usize,
     pub(super) c_language: bool,
@@ -100,6 +101,7 @@ impl<'tree> Analyzer<'tree> {
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
             anonymous_enums: 0,
+            local_types: 0,
             class_depth: 0,
             template_depth: 0,
             c_language: false,
@@ -265,8 +267,8 @@ impl<'tree> Analyzer<'tree> {
                     .map(|init| self.simple_declarator_name(init.declarator))
                     .transpose()?
                     .flatten();
-                let naming = if self.graph.scope(scope).kind != ScopeKind::Class
-                    || specs.role == super::specifiers::DeclarationRole::Typedef
+                let naming = if specs.role == super::specifiers::DeclarationRole::Typedef
+                    || !self.semantic() && self.graph.scope(scope).kind != ScopeKind::Class
                 {
                     first_name
                 } else {
@@ -275,9 +277,14 @@ impl<'tree> Analyzer<'tree> {
                 if let Some(declared) = specs.declared {
                     self.name_unnamed_enum(declared, naming)?;
                     self.name_unnamed_class(declared, naming);
+                    if !declarators.is_empty() {
+                        self.name_local_class(declared)?;
+                    }
                 }
-                if declarators.is_empty() {
-                    self.anonymous_union(specs, scope, location, false)?;
+                if declarators.is_empty()
+                    && let Some(storage) = self.anonymous_union(specs, scope, location, false)?
+                {
+                    super::record(&mut self.graph.declaration_storage, id.index(), storage);
                 }
                 for init in self.tree.init_declarators.get(declarators) {
                     self.declare_init(specs, *init, scope, location)?;
@@ -286,7 +293,7 @@ impl<'tree> Analyzer<'tree> {
             }
             ast::DeclKind::Class(specifier) => {
                 let ty = self.specifier_type(specifier, scope, true)?;
-                self.anonymous_union(
+                let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
                         ty,
                         declared: Some(ty),
@@ -300,7 +307,11 @@ impl<'tree> Analyzer<'tree> {
                     scope,
                     location,
                     true,
-                )
+                )?;
+                if let Some(storage) = storage {
+                    super::record(&mut self.graph.declaration_storage, id.index(), storage);
+                }
+                Ok(())
             }
             ast::DeclKind::Function {
                 specifiers,

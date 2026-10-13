@@ -75,6 +75,12 @@ pub(super) struct FunctionProperties {
     pub special: Option<super::function_names::SpecialName>,
     pub allocation: Option<super::function_names::AllocationOrigin>,
 }
+#[derive(Clone, Copy)]
+pub(super) struct VariableProperties {
+    // The C++ entity retains these facts from its first declaration.
+    pub is_extern: bool,
+    pub automatic: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum MemberKind {
     Constructor,
@@ -113,6 +119,13 @@ pub(super) struct Entity {
     pub member_offset: Option<u64>,
     // Presentation provenance for an unnamed class, never a lookup key.
     pub anonymous_class: Option<super::anonymous_types::AnonymousClass>,
+    pub local_type_ordinal: Option<u32>,
+    pub anonymous_storage: Option<BindingId>,
+    pub default_construction: super::construction::ConstructorState,
+    pub constructor: Option<super::construction::ConstructorId>,
+    pub member_initializer: Option<crate::syntax::ast::Initializer>,
+    pub initialized_members: usize,
+    pub variable: Option<VariableProperties>,
     pub template_parameter: Option<super::templates::ParameterInfo>,
     pub template_head: Option<super::templates::HeadId>,
 }
@@ -145,6 +158,8 @@ pub(crate) struct Graph {
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
+    pub(super) constructors: super::construction::Constructors,
+    pub(super) declaration_storage: Vec<Option<BindingId>>,
     pub(super) overloads: super::function_resolution::FunctionSets,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
@@ -259,6 +274,8 @@ impl Graph {
             constant_facts: Vec::new(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
+            constructors: super::construction::Constructors::default(),
+            declaration_storage: Vec::new(),
             overloads: super::function_resolution::FunctionSets::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
@@ -376,6 +393,13 @@ impl Graph {
             layout: super::layout::LayoutState::NotStarted,
             member_offset: None,
             anonymous_class: None,
+            local_type_ordinal: None,
+            anonymous_storage: None,
+            default_construction: super::construction::ConstructorState::NotStarted,
+            constructor: None,
+            member_initializer: None,
+            initialized_members: 0,
+            variable: None,
             template_parameter: None,
             template_head: None,
         });
