@@ -1,3 +1,5 @@
 {
-  "dev/src/sema/expression_facts.rs": "model"
+  "dev/src/sema/expression_facts.rs": "model",
+  "dev/src/abi/graph.rs": "model",
+  "dev/src/abi/vocabulary.rs": "interface"
 }

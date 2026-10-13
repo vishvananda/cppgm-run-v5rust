@@ -25,5 +25,6 @@ pub enum TokenToolError {
     Limit(&'static str),
 }
 
+pub mod abimangle;
 pub mod ast;
 pub mod lowir;
