@@ -189,6 +189,8 @@ sub write_named_status_code
 		write_file($path, "EXIT_FAILURE\n");
 		return;
 	}
+	# An internal compiler error (CPPGM_EXIT_INTERNAL_ERROR) or a crash is
+	# never the rejection a negative test expects.
 	write_file($path, $status == 0
 		? "EXIT_SUCCESS\n"
 		: $status == 124
@@ -197,7 +199,11 @@ sub write_named_status_code
 				? "EXIT_OOM\n"
 				: $status == 86
 					? "EXIT_NOT_IMPLEMENTED\n"
-					: "EXIT_FAILURE\n");
+					: $status == 70
+						? "EXIT_INTERNAL_ERROR\n"
+						: $status >= 128
+							? "EXIT_SIGNAL\n"
+							: "EXIT_FAILURE\n");
 }
 
 sub system_status_to_exit_code
@@ -422,6 +428,8 @@ sub submit_cli_request
 	return 124 if $status eq 'EXIT_TIMEOUT';
 	return 125 if $status eq 'EXIT_OOM';
 	return 86 if $status eq 'EXIT_NOT_IMPLEMENTED';
+	return 70 if $status eq 'EXIT_INTERNAL_ERROR';
+	return 128 if $status eq 'EXIT_SIGNAL';
 	return 1 if $status eq 'EXIT_FAILURE';
 	return $status if $status =~ m/^\d+$/;
 	die "Unexpected worker status '$status'\n";

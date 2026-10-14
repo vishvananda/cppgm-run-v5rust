@@ -34,6 +34,14 @@ sub definition_of_entity
 	return undef;
 }
 
+my $selection = qr/unreachable-terminator\.(?:cpp|t)$/;
+if (@ARGV && $ARGV[0] eq '--list')
+{
+	shift @ARGV;
+	print "$_\n" for map { collect_tests($_, $selection) } @ARGV;
+	exit 0;
+}
+
 if (scalar(@ARGV) != 2)
 {
 	die "Usage: check_pa11_unreachable_terminator.pl " .
@@ -41,7 +49,7 @@ if (scalar(@ARGV) != 2)
 }
 
 my ($app, $root) = @ARGV;
-my @tests = collect_tests($root, qr/unreachable-terminator\.cpp$/);
+my @tests = collect_tests($root, $selection);
 die "No PA11 unreachable-terminator properties found under $root\n" if !@tests;
 
 for my $test (@tests)

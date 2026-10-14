@@ -40,15 +40,22 @@ sub declaration_with_object
 	return undef;
 }
 
+my $selection = qr/(?:pointer-difference-strength-reduction|readonly-scalar-storage|volatile-access-markers|builtin-memory-alias-boundaries|ordinary-pointer-decay).*\.(?:cpp|t)$/;
+if (@ARGV && $ARGV[0] eq '--list')
+{
+	shift @ARGV;
+	print "$_\n" for map { collect_tests($_, $selection) } @ARGV;
+	exit 0;
+}
+
 if (scalar(@ARGV) != 2)
 {
-	die "Usage: check_pa10_lowir_controls.pl <cppgm++> <test-or-directory>\n";
+	die "Usage: check_scalar_lowir_properties.pl <cppgm++> <test-or-directory>\n";
 }
 
 my ($app, $root) = @ARGV;
-my @tests = collect_tests(
-	$root, qr/(?:pointer-difference-strength-reduction|readonly-scalar-storage|volatile-access-markers|builtin-memory-alias-boundaries|ordinary-pointer-decay).*\.cpp$/);
-die "No PA10 focused LowIR controls found under $root\n" if !@tests;
+my @tests = collect_tests($root, $selection);
+die "No scalar LowIR properties found under $root\n" if !@tests;
 
 for my $test (@tests)
 {
@@ -179,5 +186,5 @@ for my $test (@tests)
 	die "$test: no PA10 focused predicate selected\n";
 }
 
-print "PA10 focused LowIR controls: PASS (" . scalar(@tests) . "/" .
+print "Scalar LowIR properties: PASS (" . scalar(@tests) . "/" .
 	scalar(@tests) . ")\n" unless $ENV{CPPGM_REPORT_QUIET};

@@ -1,3 +1,4 @@
+// Property: complete-object extents on class results, references and direct member calls.
 struct Triple
 {
   long long first;
@@ -33,7 +34,6 @@ long long pointer_value(const long long* value)
 int main()
 {
   Triple value = make_triple(5);
-  long long (Triple::*member)() const = &Triple::total;
   return reference_total(value) != 18 || pointer_value(&value.second) != 6 ||
-    (value.*member)() != 18;
+    value.total() != 18;
 }

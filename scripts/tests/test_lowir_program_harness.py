@@ -166,7 +166,7 @@ class LowirProgramHarnessTests(unittest.TestCase):
         self.pa = self.root / "pa12"
         self.pa.mkdir()
         shutil.copy(REPO_ROOT / "pa12/Makefile", self.pa / "Makefile")
-        control = "tests/controls/200-static-reference-lifetime.cpp"
+        control = "tests/controls/200-static-reference-lifetime.t"
         (self.pa / control).parent.mkdir(parents=True)
         shutil.copy(REPO_ROOT / "pa12" / control, self.pa / control)
         compiler = REPO_ROOT / "dev/cppgm++"

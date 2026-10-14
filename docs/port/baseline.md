@@ -1,5 +1,24 @@
 # Frozen preparation baseline
 
+## Current oracle and course refresh — v5.1 (2026-10-14)
+
+The oracle is cppgm-extended `3438f5aea24d8fcc9a0113316f7e27c890cd5ac6` (v5.1); the matching
+assignment export is `0bf28e39bca37f7e4173ae1e9ca557659ada7523` (v5.1).
+This refresh imports reviewed course fixtures, references and harness changes,
+including control numbering/placement fixes and counted control_t .t inputs.
+The clone-specific harness and comparison policy are preserved.
+
+Compiler sources and all nine built oracle binaries retain their exact hashes
+from ee3596b2; there is no compiler behavior or performance change in this refresh.
+The frozen manifest expands from 6709 to 7090 anchors.
+All 390 new/renamed routes passed C++ oracle self-comparison, and
+the protected clone harness unit suite passed.
+
+The resumed target is pa11: the refreshed Rust check passes 263/409;
+all 240 previously passing case identities from the handoff remain passing.
+Validation artifacts: `/home/vishvananda/work/private/v5rust/artifacts/owner-v5.1-refresh`.
+Newly counted failures remain normal implementation work; no exceptions were added.
+
 ## Current oracle refresh — 2026-10-13 (PA9 reader)
 
 The reference is cppgm-extended `ee3596b2df2dadf70d7d2028a6a32d18e1923761`,

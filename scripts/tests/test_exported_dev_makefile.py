@@ -63,7 +63,7 @@ class ExportedDevMakefileTests(unittest.TestCase):
         fixtures = {
             'pa8/tests/general/100-valid.t': 'program input\n',
             'pa27/tests/behavior/100-layout.ref.inspect.plan': 'object contract\n',
-            'pa27/tests/controls/section-token-safe.cpp': 'graded control\n',
+            'pa27/tests/controls/200-section-token-safe.t': 'graded control\n',
         }
         excluded = [
             # Run only by the maintainer's pending-audit checker.

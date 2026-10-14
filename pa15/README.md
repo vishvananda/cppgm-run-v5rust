@@ -145,7 +145,7 @@ their leading comment (`expect exit N` or `expect reject`) or in an
 `lowir2native-ref -O0` and requires the stated exit status (and the output in
 `x.stdout`, when present), or requires your frontend to reject the program.
 The LowIR text of a control is not compared. `make test-controls` runs only
-the controls; `make check TEST=tests/controls/<name>.cpp` runs one.
+the controls; `make check TEST=tests/controls/<name>.t` runs one.
 
 ### Optional Student Test Ideas
 

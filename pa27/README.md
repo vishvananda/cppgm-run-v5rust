@@ -137,11 +137,11 @@ interoperability, host final-link behavior, symbol spelling/coalescing, and
 object inspection where the object surface is directly checked. They are
 not direct N3485 clause tests.
 
-`make test` also runs the `section-*.cpp` controls in `tests/controls/`
+`make test` also runs the `section-*.t` controls in `tests/controls/`
 (`../scripts/check_pa27_section_contract.pl`): a section name that is a safe
 token must reach the LowIR as `section=` and the object as a section of that
 name, and an unsafe or conflicting section attribute must be rejected.
-`make check TEST=tests/controls/<name>.cpp` runs one.
+`make check TEST=tests/controls/<name>.t` runs one.
 
 For each test anchor `x.t`, companion C++ sources are named:
 

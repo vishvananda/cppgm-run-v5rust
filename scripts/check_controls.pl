@@ -1,14 +1,15 @@
 #!/usr/bin/perl
 # Self-checking controls for the LowIR-graded assignments (PA10-PA23).
 #
-# A `tests/controls/*.cpp` that states its expected outcome is compiled by the
+# A `tests/controls/*.t` that states its expected outcome is compiled by the
 # student's frontend (`cppgm++ --emit-lowir -O0`), the LowIR is built by the
 # supplied reference backend (`lowir2native-ref -O0`), and the program is run
 # with no input: it must exit with the stated status, and print the stated
 # output when one is given.  A control that states a rejection must make the
 # frontend fail.  The LowIR text itself is not compared, so any LowIR whose
 # behaviour is right passes.  A program or frontend killed by a signal fails:
-# SIGABRT is not `exit 134`, nor a crashing frontend a rejection.
+# SIGABRT is not `exit 134`, nor a crashing frontend a rejection, nor a
+# frontend's internal compiler error (status 70, CPPGM_EXIT_INTERNAL_ERROR).
 #
 # The expected outcome comes from, in order:
 #   NAME.expect  one line, `exit N` or `reject`; NAME.stdout, when present,
@@ -67,7 +68,7 @@ sub leading_comment
 sub expectation
 {
 	my ($test) = @_;
-	(my $base = $test) =~ s/\.cpp$//;
+	(my $base = $test) =~ s/\.(?:cpp|t)$//;
 	my $stdout = -f "$base.stdout" ? read_file("$base.stdout") : undef;
 	if (-f "$base.expect")
 	{
@@ -137,6 +138,8 @@ sub grade
 	{
 		return 'frontend ' . ending(\%compile) . ' instead of rejecting'
 			if $compile{timed_out} || $compile{signal};
+		return 'frontend stopped with an internal compiler error (status 70) instead of rejecting'
+			if $compile{exit} == 70;
 		return $compile{exit} != 0 ? undef : 'frontend accepted an ill-formed program';
 	}
 	return 'frontend ' . ending(\%compile) . ': ' . tail_of("$directory/frontend.stderr")
@@ -176,7 +179,7 @@ if (@ARGV && $ARGV[0] eq '--owns')
 {
 	shift @ARGV;
 	die "Usage: check_controls.pl --owns <test> [<test> ...]\n" if !@ARGV;
-	my @tests = map { collect_tests($_, qr/\.cpp$/) } @ARGV;
+	my @tests = map { collect_tests($_, qr/\.(?:cpp|t)$/) } @ARGV;
 	exit 1 if !@tests;
 	for my $test (@tests)
 	{
@@ -190,7 +193,7 @@ if (@ARGV && $ARGV[0] eq '--list')
 {
 	shift @ARGV;
 	die "Usage: check_controls.pl --list <test-or-directory> [...]\n" if !@ARGV;
-	for my $test (map { collect_tests($_, qr/\.cpp$/) } @ARGV)
+	for my $test (map { collect_tests($_, qr/\.(?:cpp|t)$/) } @ARGV)
 	{
 		print "$test\n" if (expectation($test))[0] ne '';
 	}
@@ -200,7 +203,7 @@ if (@ARGV && $ARGV[0] eq '--list')
 die "Usage: check_controls.pl <cppgm++> <native-reference> <test-or-directory>\n"
 	if scalar(@ARGV) != 3;
 my ($app, $native_reference, $root) = @ARGV;
-my @candidates = collect_tests($root, qr/\.cpp$/);
+my @candidates = collect_tests($root, qr/\.(?:cpp|t)$/);
 my @tests = grep { (expectation($_))[0] ne '' } @candidates;
 if (-f $root && !@tests)
 {

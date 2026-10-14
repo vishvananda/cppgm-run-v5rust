@@ -42,6 +42,14 @@ sub structured_global_metadata
 	die "$test: addressed $symbol is not structured global data\n";
 }
 
+my $selection = qr/string-literal-readonly\.(?:cpp|t)$/;
+if (@ARGV && $ARGV[0] eq '--list')
+{
+	shift @ARGV;
+	print "$_\n" for map { collect_tests($_, $selection) } @ARGV;
+	exit 0;
+}
+
 if(scalar(@ARGV) != 2)
 {
 	die "Usage: check_pa11_string_literal_storage.pl " .
@@ -49,7 +57,7 @@ if(scalar(@ARGV) != 2)
 }
 
 my ($app, $root) = @ARGV;
-my @tests = collect_tests($root, qr/string-literal-readonly\.cpp$/);
+my @tests = collect_tests($root, $selection);
 die "No PA11 string-literal storage properties found under $root\n" if !@tests;
 
 for my $test (@tests)

@@ -439,6 +439,83 @@ class BatchTimeoutHarnessTests(unittest.TestCase):
                 "host-specific diagnostic\n",
             )
 
+    def test_internal_error_or_signal_never_matches_expected_failure(self):
+        # A negative fixture expects a rejection, EXIT_FAILURE. A tool that
+        # stops with an internal compiler error (status 70) or is killed by
+        # a signal fails it, whether the runner starts the tool per case or
+        # its batch worker reports the status as a number or by name.
+        outcomes = [
+            ("reject", "EXIT_FAILURE", None),
+            ("internal", "EXIT_INTERNAL_ERROR", "stopped with an internal compiler error"),
+            ("signal", "EXIT_SIGNAL", "was killed by a signal"),
+        ]
+        with tempfile.TemporaryDirectory(prefix="expected-failure-status.") as temp_dir:
+            root = Path(temp_dir)
+            app = root / "tool.py"
+            app.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, resource, signal, sys\n"
+                "outcome = os.environ['FAKE_OUTCOME']\n"
+                "if '--batch-stdin' in sys.argv:\n"
+                "    numbers = {'reject': 1, 'internal': 70, 'signal': 128 + signal.SIGSEGV}\n"
+                "    names = {'reject': 'EXIT_FAILURE', 'internal': 'EXIT_INTERNAL_ERROR',\n"
+                "             'signal': 'EXIT_SIGNAL'}\n"
+                "    reply = (names if os.environ['FAKE_REPLY'] == 'name' else numbers)[outcome]\n"
+                "    for line in sys.stdin:\n"
+                "        print(reply, flush=True)\n"
+                "    sys.exit(0)\n"
+                "if outcome == 'signal':\n"
+                "    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n"
+                "    os.kill(os.getpid(), signal.SIGSEGV)\n"
+                "sys.exit(70 if outcome == 'internal' else 1)\n"
+            )
+            app.chmod(0o755)
+            for outcome, status, message in outcomes:
+                for batch, reply in (("0", "number"), ("1", "number"), ("1", "name")):
+                    with self.subTest(outcome=outcome, batch=batch, reply=reply):
+                        pa = root / f"{outcome}-{batch}-{reply}" / "pa5"
+                        tests = pa / "tests"
+                        tests.mkdir(parents=True)
+                        (tests / "bad.t").write_text("ill-formed\n")
+                        (tests / "bad.ref.exit_status").write_text("EXIT_FAILURE\n")
+                        env = os.environ.copy()
+                        env.pop("KEEP_GOING", None)
+                        env.pop("CPPGM_TEXT_INPUT_PROFILE", None)
+                        env.update(
+                            CPPGM_BATCH_TESTS=batch, FAKE_OUTCOME=outcome, FAKE_REPLY=reply
+                        )
+                        run(
+                            "perl", str(REPO_ROOT / "scripts/run_all_tests_common.pl"),
+                            "text_t", str(app), "my", "tests", cwd=pa, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        )
+                        self.assertEqual(
+                            (tests / "bad.my.exit_status").read_text(), f"{status}\n"
+                        )
+                        result = run(
+                            "perl", str(REPO_ROOT / "scripts/compare_results_common.pl"),
+                            "text_t", "ref", "my", "tests", cwd=pa, env=env, check=False,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        )
+                        if message is None:
+                            self.assertEqual(result.returncode, 0, result.stdout)
+                        else:
+                            self.assertEqual(result.returncode, 1, result.stdout)
+                            self.assertIn(message, result.stdout)
+
+    def test_batch_worker_names_internal_errors_and_signals(self):
+        with tempfile.TemporaryDirectory(prefix="batch-worker-status.") as temp_dir:
+            root = Path(temp_dir)
+            run(
+                "perl", "-I", str(REPO_ROOT / "scripts"),
+                "-MCppgmBatchWorker=write_named_status_code",
+                "-e", 'write_named_status_code("$ARGV[0]/$_", $_) for (1, 70, 139);',
+                str(root),
+            )
+            self.assertEqual((root / "1").read_text(), "EXIT_FAILURE\n")
+            self.assertEqual((root / "70").read_text(), "EXIT_INTERNAL_ERROR\n")
+            self.assertEqual((root / "139").read_text(), "EXIT_SIGNAL\n")
+
     def test_driver_assignment_wrapper_uses_worker_script(self):
         with tempfile.TemporaryDirectory(prefix="pa24-worker-wrapper.") as temp_dir:
             temp = Path(temp_dir)

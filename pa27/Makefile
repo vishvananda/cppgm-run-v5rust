@@ -100,19 +100,19 @@ ifneq ($(CPPGM_BATCH_TESTS),)
 else
 endif
 	@if [ -d "$(SECTION_CONTROL_ROOT)" ]; then \
-		perl ../scripts/check_pa27_section_contract.pl \
-			$(CPPGM_TEST_APP) "$(SECTION_CONTROL_ROOT)"; \
+		perl ../scripts/run_all_tests_common.pl control_t $(CPPGM_TEST_APP) my "$(SECTION_CONTROL_ROOT)" && \
+		perl ../scripts/compare_results_common.pl control_t ref my "$(SECTION_CONTROL_ROOT)"; \
 	fi
 
 ref-test:
 	@$(REF_TEST_RUN)
 
 CHECK_RUN = case "$(TEST)" in \
-	$(SECTION_CONTROL_ROOT)/*) perl ../scripts/check_pa27_section_contract.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
+	$(SECTION_CONTROL_ROOT)/*) perl ../scripts/run_all_tests_common.pl control_t $(CPPGM_TEST_APP) check "$(TEST)" ;; \
 	*) perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_TEST_APP) check "$(TEST)" ;; \
 esac
 CHECK_COMPARE = case "$(TEST)" in \
-	$(SECTION_CONTROL_ROOT)/*) true ;; \
+	$(SECTION_CONTROL_ROOT)/*) perl ../scripts/compare_results_common.pl control_t ref check "$(TEST)" ;; \
 	*) scripts/compare_results.pl ref check "$(TEST)" ;; \
 esac
 include ../scripts/pa_run_check_targets.mk

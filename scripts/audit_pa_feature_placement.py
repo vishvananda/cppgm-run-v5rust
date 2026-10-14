@@ -151,7 +151,7 @@ LATE_PLACEMENT_ANCHOR_FEATURES = {
     "host.eh_object",
     "host.object_interop",
 }
-HOST_OBJECT_ATTRIBUTE_NAMES = {"noinline", "section", "weak"}
+HOST_OBJECT_ATTRIBUTE_NAMES = {"section", "weak"}
 PA27_HOST_OBJECT_ATTRIBUTE_NAMES = HOST_OBJECT_ATTRIBUTE_NAMES | {"visibility"}
 
 # PA5-PA7 consume C++ source but stop at AST, type/scope, or call-semantic
@@ -370,6 +370,7 @@ RULES: tuple[FeatureRule, ...] = (
         ),
     ),
     FeatureRule("function.noexcept", (rx(r"\bnoexcept\b"),)),
+    FeatureRule("function.no_inline", ()),
     FeatureRule("function.dynamic_exception_spec", ()),
     FeatureRule("exception.try_catch",
                 (rx(r"\btry\s*\{"), rx(r"\bcatch\s*\("), rx(r"\bthrow\b")),
@@ -1257,6 +1258,12 @@ def detect_features(source: str, ref_text: str = "", test_path: str = "") -> dic
     )
     if host_object_attributes:
         host_object_attribute_names = set(host_object_attributes)
+        no_inline = host_object_attribute_names & {"noinline", "__noinline__"}
+        if no_inline:
+            hits["function.no_inline"] = FeatureHit(
+                "function.no_inline",
+                [f"source:__attribute__(({name}))" for name in sorted(no_inline)],
+            )
         recognized_names = (
             PA27_HOST_OBJECT_ATTRIBUTE_NAMES
             if test_path.startswith("pa27/tests/")
@@ -1275,7 +1282,7 @@ def detect_features(source: str, ref_text: str = "", test_path: str = "") -> dic
                 "host.function_effect_attribute",
                 [f"source:__attribute__(({name}))" for name in effects],
             )
-        if host_object_attribute_names <= (recognized_names | effect_names):
+        if host_object_attribute_names <= (recognized_names | effect_names | no_inline):
             hits.pop("support.attribute", None)
         if (
             test_path.startswith("pa27/tests/")
@@ -1375,19 +1382,21 @@ def detect_features(source: str, ref_text: str = "", test_path: str = "") -> dic
     return hits
 
 
-UNJUDGED_LANE_DIRS = frozenset({"regression", "controls"})
+UNJUDGED_LANE_DIRS = frozenset({"regression"})
 
 
 def in_unjudged_lane(path: Path) -> bool:
-    """The regression lane pins the course solution's own outputs and the
-    controls are judged by their checker scripts; neither is a placed suite."""
+    """Solution regression lanes are outside the student course contract."""
     return any(part in UNJUDGED_LANE_DIRS for part in path.parts)
 
 
 def suite_test_files(test_root: Path) -> list[Path]:
+    inputs = list(test_root.rglob("*.t"))
+    control_root = test_root if test_root.name == "controls" else test_root / "controls"
+    inputs.extend(control_root.rglob("*.cpp"))
     return [
-        path for path in sorted(test_root.rglob("*.t"))
-        if not in_unjudged_lane(path.relative_to(test_root))
+        path for path in sorted(inputs)
+        if path.is_file() and not in_unjudged_lane(path.relative_to(test_root))
     ]
 
 
@@ -1882,6 +1891,8 @@ def current_pa_for(path: Path) -> str:
 
 def test_role_for(path: Path) -> str:
     parts = path.parts
+    if "controls" in parts:
+        return "control"
     if "general" in parts:
         return "general"
     if "spec" in parts:
@@ -2285,6 +2296,7 @@ def row_for(path: Path,
     input_contract = (
         "preprocessing" if current_number in {1, 2, 3, 4} else
         "lowir-introduction" if current_pa == "pa8" else
+        "lowir-backend" if current_pa == "pa24" and path.suffix != ".cpp" else
         "abi-facts" if current_pa == "pa9" else
         "cpp-source"
     )
@@ -2931,6 +2943,11 @@ def main(argv: list[str]) -> int:
     pas = tuple(args.pa) if args.pa else DEFAULT_PAS
     hygiene_pas = tuple(args.pa) if args.pa else LOCAL_TEST_HYGIENE_PAS
     tests = iter_test_files(root, pas)
+    if not args.pa:
+        # Every required control participates, including backend and host PAs.
+        for pa in COURSE_PAS:
+            if pa not in pas:
+                tests.extend(suite_test_files(root / pa / "tests" / "controls"))
     rows = [row_for(path, root, features) for path in tests]
     hygiene_findings = scan_test_hygiene(root, hygiene_pas)
     lowir_eh_findings = scan_lowir_eh_review(root, hygiene_pas)

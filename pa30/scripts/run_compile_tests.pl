@@ -56,6 +56,16 @@ sub write_named_status_code
 	{
 		print $fh "EXIT_NOT_IMPLEMENTED\n";
 	}
+	elsif ($status == 70)
+	{
+		# An internal compiler error (CPPGM_EXIT_INTERNAL_ERROR) or a crash
+		# is never the rejection a negative test expects.
+		print $fh "EXIT_INTERNAL_ERROR\n";
+	}
+	elsif ($status >= 128)
+	{
+		print $fh "EXIT_SIGNAL\n";
+	}
 	else
 	{
 		print $fh "EXIT_FAILURE\n";

@@ -136,13 +136,14 @@ constructor template, a converting constructor and an assignment operator,
 whose operands may be one object, state none.
 
 Focused course controls (the controls in `tests/controls/` that state no
-outcome, checked by `../scripts/check_pa12_survivor_properties.pl`) validate
+outcome, checked by `../scripts/check_value_survivor_properties.pl`) validate
 these boundary facts and object identity and lifetime relationships without
 comparing a complete LowIR module: the two constructor parameters versus an
 assignment operator's, the ordering and identity of construction, selected
 use and destruction within one full expression, a parameter object's extent
 and identity, the size, cookie and length check of an array new, and a named
-return object. Most also compile and execute the program. These controls run
+return object. The object-extent control uses direct member calls; member-pointer
+call extents belong to PA22. Most also compile and execute the program. These controls run
 your `cppgm++ --emit-lowir -O0` frontend, then use the supplied
 `lowir2native-ref` backend to execute its output. Native code emission and
 the compile/link driver remain PA24 and PA25 work.
@@ -300,7 +301,7 @@ their leading comment (`expect exit N` or `expect reject`) or in an
 `lowir2native-ref -O0` and requires the stated exit status (and the output in
 `x.stdout`, when present), or requires your frontend to reject the program.
 The LowIR text of a control is not compared. `make test-controls` runs only
-the controls; `make check TEST=tests/controls/<name>.cpp` runs one.
+the controls; `make check TEST=tests/controls/<name>.t` runs one.
 Controls that state no outcome are focused property checks run by this
 assignment's own checkers.
 

@@ -30,6 +30,53 @@ def write(path: Path, text: str) -> None:
 
 
 class AuditPAFeaturePlacementTests(unittest.TestCase):
+    def test_required_controls_participate_in_placement_and_numbering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cppgm-placement-controls.") as temp_dir:
+            root = Path(temp_dir)
+            bad = root / "pa12/tests/controls/536-member-call.cpp"
+            write(bad, "struct S {}; int S::*member;\n")
+            good = root / "pa12/tests/controls/200-direct-call.cpp"
+            write(good, "struct S {};\n")
+            backend = root / "pa24/tests/controls/900-backend.t"
+            write(backend, "function @class() -> void {}\n")
+            regression = root / "pa12/tests/regression/controls/536-private.cpp"
+            write(regression, "struct S {}; int S::*member;\n")
+            helper = root / "pa12/tests/general/helper.cpp"
+            write(helper, "struct S {}; int S::*member;\n")
+            self.assertEqual(audit.iter_test_files(root, ["pa12", "pa24"]),
+                             [good, bad, backend])
+            self.assertEqual(audit.suite_test_files(root / "pa12/tests/controls"),
+                             [good, bad])
+            self.assertEqual(audit.suite_test_files(root / "pa24/tests/controls"),
+                             [backend])
+            findings = audit.scan_test_hygiene(root, ["pa12", "pa24"])
+            self.assertEqual([(f.path, f.kind) for f in findings],
+                             [("pa12/tests/controls/536-member-call.cpp", "test-number")])
+            features = audit.load_feature_table(REPO_ROOT / audit.DEFAULT_TRACKER)
+            row = audit.row_for(bad, root, features)
+            self.assertEqual(row["test_role"], "control")
+            member = next(p for p in row["placements"] if p["feature"] == "class.member_pointer")
+            self.assertEqual((member["status"], member["owner_pa"]), ("violation", "pa22"))
+            self.assertEqual(audit.row_for(backend, root, features)["input_contract"], "lowir-backend")
+            misplaced_source = root / "pa24/tests/controls/900-member-source.cpp"
+            write(misplaced_source, "struct S {}; int S::*member;\n")
+            row = audit.row_for(misplaced_source, root, features)
+            self.assertEqual(row["input_contract"], "cpp-source")
+            self.assertIn("class.member_pointer", row["detected_features"])
+
+    def test_noinline_is_early_function_metadata_without_hiding_host_attributes(self) -> None:
+        features = audit.load_feature_table(REPO_ROOT / audit.DEFAULT_TRACKER)
+        for spelling in ["noinline", "__noinline__"]:
+            hits = audit.detect_features(f"__attribute__(({spelling})) int f();")
+            self.assertIn("function.no_inline", hits)
+            self.assertNotIn("host.object_attribute", hits)
+            self.assertNotIn("support.attribute", hits)
+        self.assertEqual(audit.placement_for(features["function.no_inline"], "pa11", 400)[0], "ok")
+        self.assertEqual(audit.placement_for(features["function.no_inline"], "pa10", 400)[0], "violation")
+        hits = audit.detect_features('__attribute__((noinline)) __attribute__((section("text"))) int f();')
+        self.assertIn("function.no_inline", hits)
+        self.assertIn("host.object_attribute", hits)
+
     def test_dynamic_exception_declarations_are_metadata_not_source_eh(self) -> None:
         for source in (
             "struct B { virtual void f() throw(int, double); };",

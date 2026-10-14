@@ -131,7 +131,13 @@ their leading comment (`expect exit N` or `expect reject`) or in an
 `lowir2native-ref -O0` and requires the stated exit status (and the output in
 `x.stdout`, when present), or requires your frontend to reject the program.
 The LowIR text of a control is not compared. `make test-controls` runs only
-the controls; `make check TEST=tests/controls/<name>.cpp` runs one.
+the controls; `make check TEST=tests/controls/<name>.t` runs one.
+
+The focused `300-member-pointer-object-extent-boundary.t` control checks
+complete-object extents on class references, result storage and indirect
+member-function calls, then executes the program. It uses the shared
+`check_value_survivor_properties.pl` property checker; no complete LowIR
+module is compared. PA12 checks the earlier direct-call boundaries separately.
 
 ### PA22 Syntax Spec
 

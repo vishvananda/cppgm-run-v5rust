@@ -66,16 +66,9 @@ $(OBJ)/debug/test_runner_enabled.o: $(SRC)/$(FRONTEND_TEST_RUNNER_SOURCE_ID).cpp
 # tests/controls: a control that states its expected outcome is a self-checking
 # program graded by ../scripts/check_controls.pl (see TESTING_AND_REFERENCES.md).
 CONTROLS_RUN = if [ -d "$(CONTROL_TEST_ROOT)" ]; then \
-		status=0; \
-		perl ../scripts/check_pa11_string_literal_storage.pl \
-			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
-		perl ../scripts/check_pa11_lifecycle_policy.pl \
-			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
-		perl ../scripts/check_pa11_unreachable_terminator.pl \
-			$(CPPGM_TEST_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
-		perl ../scripts/check_controls.pl \
-			$(CPPGM_TEST_APP) $(NATIVE_REFERENCE_APP) "$(CONTROL_TEST_ROOT)" || status=1; \
-		exit $$status; \
+		CPPGM_CONTROL_NATIVE_APP="$(NATIVE_REFERENCE_APP)" \
+		perl ../scripts/run_all_tests_common.pl control_t $(CPPGM_TEST_APP) my "$(CONTROL_TEST_ROOT)" && \
+		perl ../scripts/compare_results_common.pl control_t ref my "$(CONTROL_TEST_ROOT)"; \
 	fi
 
 test: $(TEST_DEPS)
@@ -106,14 +99,11 @@ REF_TEST_RUN = case "$(TEST)" in \
 esac
 
 CHECK_RUN = case "$(TEST)" in \
-	$(CONTROL_TEST_ROOT)/*string-literal-readonly*) perl ../scripts/check_pa11_string_literal_storage.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
-	$(CONTROL_TEST_ROOT)/*lifecycle-inline-policy*) perl ../scripts/check_pa11_lifecycle_policy.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
-	$(CONTROL_TEST_ROOT)/*unreachable-terminator*) perl ../scripts/check_pa11_unreachable_terminator.pl $(CPPGM_TEST_APP) "$(TEST)" ;; \
-	$(CONTROL_TEST_ROOT)/*) perl ../scripts/check_controls.pl $(CPPGM_TEST_APP) $(NATIVE_REFERENCE_APP) "$(TEST)" ;; \
+	$(CONTROL_TEST_ROOT)/*) CPPGM_CONTROL_NATIVE_APP="$(NATIVE_REFERENCE_APP)" perl ../scripts/run_all_tests_common.pl control_t $(CPPGM_TEST_APP) check "$(TEST)" ;; \
 	*) scripts/run_all_tests.pl $(CPPGM_TEST_APP) check "$(TEST)" ;; \
 esac
 CHECK_COMPARE = case "$(TEST)" in \
-	$(CONTROL_TEST_ROOT)/*) true ;; \
+	$(CONTROL_TEST_ROOT)/*) perl ../scripts/compare_results_common.pl control_t ref check "$(TEST)" ;; \
 	*) scripts/compare_results.pl ref check "$(TEST)" ;; \
 esac
 

@@ -61,6 +61,7 @@ SELECTIONS = {
     # Every paN/scripts/run_all_tests.pl runs run_all_tests_common.pl in
     # text_t mode or execs a worker that collects `.t` the same way.
     "run_all_tests.pl": (r"\.t$", True),
+    "run_all_tests_common.pl": (r"\.t$", True),
     # PA32's object round trip walks its roots itself and does not prune.
     "run_object_lowir_roundtrip_tests.pl": (r"\.(?:cpp|t)$", False),
 }

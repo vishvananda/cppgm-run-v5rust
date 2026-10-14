@@ -36,6 +36,12 @@ sub collect_tests
 			elsif (-d $root)
 			{
 				find(sub {
+					# Controls are a separate test shape and an explicit lane.
+					if (-d $_ && $_ ne $root && $_ =~ m{(?:^|/)controls$})
+					{
+						$File::Find::prune = 1;
+						return;
+					}
 					return if !-f $_;
 					push @found, $File::Find::name if $File::Find::name =~ $pattern;
 				}, $root);
@@ -4720,6 +4726,14 @@ sub status_mismatch_message
 	{
 		return "ERROR: $label did not run out of memory as expected (expected $expected_text, got $got_text)";
 	}
+	if (defined($got) && $got eq 'EXIT_INTERNAL_ERROR')
+	{
+		return "ERROR: $label stopped with an internal compiler error (expected $expected_text, got $got_text)";
+	}
+	if (defined($got) && $got eq 'EXIT_SIGNAL')
+	{
+		return "ERROR: $label was killed by a signal (expected $expected_text, got $got_text)";
+	}
 	return "ERROR: $label exit status mismatch (expected $expected_text, got $got_text)";
 }
 
@@ -4859,6 +4873,7 @@ my $host_tag = host_platform_tag();
 
 my %patterns = (
 	text_t => qr/\.t$/,
+	control_t => qr/\.t$/,
 	lowir_t => qr/\.t$/,
 	lowir_optimized_t => qr/\.t$/,
 	lowir_roundtrip_t => qr/\.t$/,
@@ -4935,7 +4950,15 @@ for my $test (@tests)
 
 	my ($ok, $message, $hint);
 	eval {
-		if ($mode eq 'text_t')
+		if ($mode eq 'control_t')
+		{
+			my $status = getdata("$testbase.$my_suffix.exit_status");
+			$ok = defined($status) && $status eq '0';
+			$message = 'ERROR: control predicate failed';
+			$message .= "\n" . (getrawdata("$testbase.$my_suffix.stdout") // '') .
+				(getrawdata("$testbase.$my_suffix.stderr") // '') if !$ok;
+		}
+		elsif ($mode eq 'text_t')
 		{
 			($ok, $message) = compare_text(qr/\.t$/, $ref_suffix, $my_suffix, $testbase, 0);
 			$hint = checked_output_hint("$testbase.$ref_suffix", "$testbase.$my_suffix");
@@ -5251,10 +5274,10 @@ if ($keep_going && $check_mode)
 	print lowir_behavior_summary();
 	print compare_label() . ": " . ($failed ? "FAIL" : "PASS") . " ($npass/$suite_total)\n";
 }
-elsif (!$keep_going)
+elsif (!$keep_going || $mode eq 'control_t')
 {
 	print lowir_behavior_summary();
-	print compare_label() . ": PASS ($npass/$suite_total)\n";
+	print compare_label() . ": " . ($failed ? 'FAIL' : 'PASS') . " ($npass/$suite_total)\n";
 }
 append_keep_going_summary($repo_root, $cwd, $npass, $suite_total, $failed)
 	if $keep_going && !$check_mode;

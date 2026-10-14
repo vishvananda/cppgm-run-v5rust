@@ -19,6 +19,14 @@ sub read_file
 	return defined($data) ? $data : '';
 }
 
+my $selection = qr/section-[^.]+\.(?:cpp|t)$/;
+if (@ARGV && $ARGV[0] eq '--list')
+{
+	shift @ARGV;
+	print "$_\n" for map { collect_tests($_, $selection) } @ARGV;
+	exit 0;
+}
+
 if (scalar(@ARGV) != 2)
 {
 	die "Usage: check_pa27_section_contract.pl " .
@@ -26,7 +34,7 @@ if (scalar(@ARGV) != 2)
 }
 
 my ($app, $root) = @ARGV;
-my @tests = collect_tests($root, qr/section-[^.]+\.cpp$/);
+my @tests = collect_tests($root, $selection);
 die "No PA27 section controls found under $root\n" if !@tests;
 
 for my $test (@tests)

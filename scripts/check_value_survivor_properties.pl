@@ -98,16 +98,23 @@ sub compile_and_run
 		if $status != 0;
 }
 
+my $selection = qr/(?:constructor-alias-boundaries|enclosing-temporary-lifetime|out-of-class-move-assignment-boundary|conditional-copy-elision-permission|(?:parameter|member-pointer)-object-extent-boundary|parameter-object-identity|parameter-destruction-full-expression|array-new-size-width|array-new-cookie-layout|array-new-length-check|array-new-braced-list|array-new-class-braced-list|named-return-object-identity|static-reference-lifetime|conditional-transfer-selection|empty-value-initialization)\.(?:cpp|t)$/;
+if (@ARGV && $ARGV[0] eq '--list')
+{
+	shift @ARGV;
+	print "$_\n" for map { collect_tests($_, $selection) } @ARGV;
+	exit 0;
+}
+
 if(scalar(@ARGV) != 3)
 {
-	die "Usage: check_pa12_survivor_properties.pl " .
+	die "Usage: check_value_survivor_properties.pl " .
 		"<cppgm++> <native-reference> <test-or-directory>\n";
 }
 
 my ($app, $native_reference, $root) = @ARGV;
-my @tests = collect_tests($root,
-	qr/(?:constructor-alias-boundaries|enclosing-temporary-lifetime|out-of-class-move-assignment-boundary|conditional-copy-elision-permission|parameter-object-extent-boundary|parameter-object-identity|parameter-destruction-full-expression|array-new-size-width|array-new-cookie-layout|array-new-length-check|array-new-braced-list|array-new-class-braced-list|named-return-object-identity|static-reference-lifetime|conditional-transfer-selection|empty-value-initialization)\.cpp$/);
-die "No PA12 survivor-property tests found under $root\n" if !@tests;
+my @tests = collect_tests($root, $selection);
+die "No value survivor-property tests found under $root\n" if !@tests;
 
 for my $test (@tests)
 {
@@ -255,7 +262,7 @@ for my $test (@tests)
 		compile_and_run($native_reference, $test, $directory, $path);
 		next;
 	}
-	if($test =~ /parameter-object-extent-boundary/) {
+	if($test =~ /(?:parameter|member-pointer)-object-extent-boundary/) {
 		# Every pointer parameter's metadata group, whatever the order of
 		# its keys.
 		my @groups = $lowir =~ /\bptr\s+\[([^\]]*)\]/g;
@@ -275,7 +282,21 @@ for my $test (@tests)
 		die "$test: O0 LowIR lacks a member-object parameter extent\n"
 			if !@object_parameters;
 		die "$test: an indirect member call lost its object extent signature\n"
-			if !@indirect_call_extents;
+			if $test =~ /member-pointer-object-extent-boundary/ && !@indirect_call_extents;
+		# A direct call uses its definition's signature; only an indirect
+		# call repeats the parameter metadata at the call site.
+		my @direct_members;
+		while($lowir =~ /^function\s+\@([A-Za-z0-9_]+)\(%\w+\s*:\s*ptr\s*
+			 \[([^\]]*)\][^\n]*\)\s*->\s*i64/mgx) {
+			my ($symbol, $metadata) = ($1, $2);
+			push @direct_members, $symbol if
+				$metadata =~ /\bobject_bytes=[1-9][0-9]*/ &&
+				$metadata !~ /\bpass=/ &&
+				$lowir =~ /\bcall\s+i64\s+\@\Q$symbol\E\(/;
+		}
+		die "$test: a direct member call lost its object extent signature\n"
+			if $test =~ /parameter-object-extent-boundary/ &&
+			   !@direct_members;
 		my %indirect_sizes = map { $_ => 1 } @indirect;
 		my $shared_extent = scalar(grep { $indirect_sizes{$_} }
 			(@by_address, @object_parameters));
@@ -292,8 +313,8 @@ for my $test (@tests)
 		compile_and_run($native_reference, $test, $directory, $path);
 		next;
 	}
-	die "$test: no PA12 survivor predicate selected\n";
+	die "$test: no value survivor predicate selected\n";
 }
 
-print "PA12 survivor properties: PASS (" . scalar(@tests) . "/" .
+print "Value survivor properties: PASS (" . scalar(@tests) . "/" .
 	scalar(@tests) . ")\n" unless $ENV{CPPGM_REPORT_QUIET};

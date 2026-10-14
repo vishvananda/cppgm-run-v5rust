@@ -42,7 +42,10 @@ Every required fixture lives under its owning `paN/tests/`. From PA5 onward,
 the three-digit prefix identifies a feature cluster (`100-`, `200-`, ...).
 PA1–PA4 use finer subgroups. The placement auditor checks the latest feature
 used; put a reducer in the earliest assignment that owns all its requirements.
-`controls/` contains focused property checks. Personal inputs and scratch
+Required `controls/` inputs follow the same feature-cluster prefixes and
+earliest-owner rule. A control grades behavior or LowIR properties instead of
+a complete reference module; its source and checker must stay within the
+owning handout's requirements. Personal inputs and scratch
 harnesses belong in `student.tests/` and are run explicitly.
 
 A fixture must also sit where a lane runs it: a fixture beside the roots its
@@ -54,6 +57,12 @@ input, a companion named after one (`x.ref*`, `x.t.N`, `x.lib.*`, ...), nor
 a header or note that a fixture uses. Lanes a Makefile cannot show, such as
 PA35's, are listed in the script with their reason.
 
+Controls are `.t` cases in `tests/controls/`, run as the `control_t` shape by
+`run_all_tests_common.pl` and `compare_results_common.pl`. They use the ordinary
+run/check commands, result files, per-lane counts and failure reporting. Their
+oracle is the stated behavior or focused predicate, so a complete `.ref` text
+output is unnecessary. They contribute to assignment and cumulative totals.
+
 In the LowIR-graded assignments (PA10–PA23), a control that states its
 expected outcome is a self-checking program: `expect exit N` or
 `expect reject` in its leading comment, or an `x.expect` sidecar (`exit N`
@@ -62,7 +71,8 @@ or `reject`, with optional exact output in `x.stdout`).
 builds the LowIR with `lowir2native-ref -O0`, runs it and checks the status
 and output, or that the frontend rejects it; the LowIR text is not compared.
 A program killed by a signal fails whatever status it states (SIGABRT is not
-`exit 134`), and a frontend killed by one does not reject.
+`exit 134`), and a frontend killed by one, or stopped by an internal compiler
+error (status 70), does not reject.
 `make test` runs controls after the LowIR suite, `make -C paN test-controls`
 runs one assignment's controls alone, and controls need no references. Use this lane for a runtime
 reducer whose features the assignment owns. Host-linked, multi-unit,
@@ -83,6 +93,10 @@ Choose the oracle required by the handout: output, exit status, a focused
 property, or a code-quality envelope. Diagnostic text is not graded. PA8's
 three construction exercises grade program outcomes through `lowir2native-ref`,
 allowing alternative valid LowIR. Informational IR/MIR sidecars are not oracles.
+
+An expected `EXIT_FAILURE` is a rejection: a tool stopped by an internal
+compiler error (status 70) or killed by a signal records `EXIT_INTERNAL_ERROR`
+or `EXIT_SIGNAL` instead, and fails the case.
 
 Regenerate references from the built solution:
 

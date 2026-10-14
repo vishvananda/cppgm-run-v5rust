@@ -51,6 +51,19 @@ sub append_file
 	close($fh) or die "Unable to close $path: $!";
 }
 
+# The implementation status recorded when the separate, direct and mixed
+# builds disagree: a failure (1), unless one of them stopped with an internal
+# compiler error (70) or a signal (128 + N). That status is kept, because it
+# is never the rejection a negative test expects.
+sub disagreeing_build_status
+{
+	for my $status (@_)
+	{
+		return $status if $status == 70 || $status >= 128;
+	}
+	return 1;
+}
+
 sub run_program
 {
 	my ($program, $test_base, $stdout_file, $stderr_file, $status_file) = @_;
@@ -268,7 +281,8 @@ sub process_one_test
 	{
 		append_file($impl_stderr,
 		            "ERROR: direct source link status differs from separate compile/link\n");
-		write_numeric_status("$test_base.$suffix.impl.exit_status", 1);
+		write_numeric_status("$test_base.$suffix.impl.exit_status",
+		                     disagreeing_build_status($impl_status, $direct_status));
 		unlink(glob("$test_base.$suffix.program"));
 		unlink(glob("$test_base.$suffix.program.exit_status"));
 		unlink(glob("$test_base.$suffix.program.stdout"));
@@ -278,7 +292,8 @@ sub process_one_test
 	{
 		append_file($impl_stderr,
 		            "ERROR: mixed source/object link status differs from separate compile/link\n");
-		write_numeric_status("$test_base.$suffix.impl.exit_status", 1);
+		write_numeric_status("$test_base.$suffix.impl.exit_status",
+		                     disagreeing_build_status($impl_status, $mixed_status));
 		unlink(glob("$test_base.$suffix.program"));
 		unlink(glob("$test_base.$suffix.program.exit_status"));
 		unlink(glob("$test_base.$suffix.program.stdout"));
