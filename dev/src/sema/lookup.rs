@@ -96,7 +96,7 @@ impl Analyzer<'_> {
         let binding = self.graph.own_key(scope, key, filter);
         let functions =
             if binding.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function) {
-                self.graph.functions_at(scope, key).collect()
+                self.graph.visible_functions_at(scope, key).collect()
             } else {
                 FunctionCandidates::default()
             };
@@ -358,10 +358,10 @@ impl Analyzer<'_> {
                 && self.graph.scope(search).kind == ScopeKind::Class
                 && self.graph.binding_scope(binding_id) != search
             {
-                self.check_named_member_access(
+                self.check_declaration_member_access(
                     binding_id,
                     naming,
-                    naming,
+                    None,
                     scope,
                     component.location,
                 )?;
@@ -464,7 +464,26 @@ impl Analyzer<'_> {
                 && self.graph.scope(search).kind == ScopeKind::Class
                 && self.graph.binding_scope(binding) != search
             {
-                self.check_named_member_access(binding, naming, naming, scope, node.location)?;
+                self.check_declaration_member_access(binding, naming, None, scope, node.location)?;
+            }
+            if self.semantic()
+                && self.template_depth == 0
+                && self.graph.binding(binding).kind != BindingKind::Function
+            {
+                if let Some(search) = prefix
+                    && self.graph.scope(search).kind == ScopeKind::Class
+                    && let Some(class) = self.graph.scope(search).owner
+                {
+                    self.check_declaration_member_access(
+                        binding,
+                        class,
+                        None,
+                        scope,
+                        node.location,
+                    )?;
+                } else {
+                    self.check_declaration_direct_access(binding, scope, node.location)?;
+                }
             }
             super::record(&mut self.graph.resolved_names, name.index(), binding);
         }

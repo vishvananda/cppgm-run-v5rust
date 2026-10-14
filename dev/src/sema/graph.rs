@@ -186,8 +186,14 @@ pub(super) struct Binding {
     pub ty: Option<TypeId>,
     pub key: Keyword,
 }
+#[derive(Clone, Copy)]
+struct FunctionPosition {
+    declared: usize,
+    visible: Option<usize>,
+}
 pub(crate) struct Graph {
     pub(super) types: Types,
+    pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: super::inheritance::BasePaths,
     pub(super) templates: super::templates::Templates,
     pub(super) function_templates: super::function_templates::FunctionTemplates,
@@ -226,6 +232,10 @@ pub(crate) struct Graph {
     prototype_parameters: HashMap<EntityId, usize>,
     special_values: HashMap<(ScopeId, super::function_names::SpecialName), BindingId>,
     function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
+    function_positions:
+        HashMap<(ScopeId, super::function_names::ValueKey, EntityId), FunctionPosition>,
+    visible_function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
+    namespace_signatures: HashMap<(ScopeId, super::function_names::ValueKey, TypeId), BindingId>,
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
@@ -237,7 +247,10 @@ impl Graph {
     ) -> Option<BindingId> {
         match key {
             super::function_names::ValueKey::Identifier(name) => self.own(scope, name, filter),
-            super::function_names::ValueKey::Special(_) => self.value_binding(scope, key),
+            super::function_names::ValueKey::Special(_) => self
+                .value_binding(scope, key)
+                .filter(|&id| !self.friendships.hidden(id))
+                .or_else(|| self.visible_functions_at(scope, key).next()),
         }
     }
     pub(super) fn value_binding(
@@ -247,7 +260,7 @@ impl Graph {
     ) -> Option<BindingId> {
         match key {
             super::function_names::ValueKey::Identifier(name) => {
-                self.own(scope, name, super::lookup::Filter::Ordinary)
+                self.declared_name(scope, name, super::lookup::Filter::Ordinary)
             }
             super::function_names::ValueKey::Special(name) => self
                 .special_values
@@ -266,19 +279,21 @@ impl Graph {
         scope: ScopeId,
         name: super::function_names::SpecialName,
         binding: BindingId,
-    ) {
+    ) -> Result<(), Error> {
         if self.binding(binding).kind == BindingKind::Function {
             self.record_function_binding(
                 scope,
                 super::function_names::ValueKey::Special(name),
                 binding,
-            );
+            )?;
         }
         if let Some(old) = self.special_values.insert((scope, name), binding)
+            && !self.friendships.hidden(old)
             && self.binding(old).entity == self.binding(binding).entity
         {
             self.ordinals[binding.0 as usize] = self.ordinals[old.0 as usize];
         }
+        Ok(())
     }
     pub(super) fn record_prototype_parameter(&mut self, entity: EntityId, index: usize) {
         self.prototype_parameters.insert(entity, index);
@@ -354,7 +369,11 @@ impl Graph {
             prototype_parameters: HashMap::new(),
             special_values: HashMap::new(),
             function_sets: HashMap::new(),
+            function_positions: HashMap::new(),
+            visible_function_sets: HashMap::new(),
+            namespace_signatures: HashMap::new(),
             function_origins: HashMap::new(),
+            friendships: super::friendships::Friendships::default(),
         }
     }
     pub(super) fn scope(&self, id: ScopeId) -> &Scope {
@@ -511,14 +530,23 @@ impl Graph {
         print: Option<ScopeId>,
         binding: Binding,
     ) -> Result<BindingId, Error> {
-        self.add_binding_inner(scope, print, binding, true)
+        self.add_binding_inner(scope, print, binding, true, false)
+    }
+    pub(super) fn add_value_binding(
+        &mut self,
+        scope: ScopeId,
+        print: Option<ScopeId>,
+        binding: Binding,
+        invisible: bool,
+    ) -> Result<BindingId, Error> {
+        self.add_binding_inner(scope, print, binding, true, invisible)
     }
     pub(super) fn add_hidden_function(
         &mut self,
         origin: BindingId,
         binding: Binding,
     ) -> Result<BindingId, Error> {
-        let id = self.add_binding_inner(self.binding_scope(origin), None, binding, false)?;
+        let id = self.add_binding_inner(self.binding_scope(origin), None, binding, false, false)?;
         self.binding_access[id.0 as usize] = self.binding_access(origin);
         Ok(id)
     }
@@ -528,6 +556,7 @@ impl Graph {
         print: Option<ScopeId>,
         binding: Binding,
         visible: bool,
+        invisible: bool,
     ) -> Result<BindingId, Error> {
         let id = BindingId(
             u32::try_from(self.bindings.len())
@@ -563,9 +592,16 @@ impl Graph {
                                 .map(super::function_names::ValueKey::Special)
                         })
                     })?;
-                self.functions_at(scope, key)
-                    .find(|&id| self.binding(id).entity == binding.entity)
+                self.function_positions
+                    .get(&(scope, key, binding.entity))
+                    .and_then(|position| {
+                        self.function_sets
+                            .get(&(scope, key))?
+                            .get(position.declared)
+                            .copied()
+                    })
             });
+        let earlier = earlier.filter(|&id| !self.friendships.hidden(id));
         // A compatible redeclaration is visible since the entity's first
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
         let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
@@ -576,13 +612,16 @@ impl Graph {
             self.binding_access(id)
         });
         self.binding_access.push(access);
+        if invisible {
+            self.friendships.hide(id);
+        }
         self.bindings.push(binding);
         self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
         if binding.kind == BindingKind::Function {
             self.function_origins.entry(binding.entity).or_insert(id);
             if visible && let Some(name) = binding.name {
-                self.record_function_binding(scope, name.into(), id);
+                self.record_function_binding(scope, name.into(), id)?;
             }
         }
         if let Some(print) = print {
@@ -612,18 +651,60 @@ impl Graph {
         scope: ScopeId,
         key: super::function_names::ValueKey,
         binding: BindingId,
-    ) {
+    ) -> Result<(), Error> {
         let entity = self.binding(binding).entity;
-        let previous = self
-            .function_sets
-            .get(&(scope, key))
-            .and_then(|set| set.iter().position(|&id| self.binding(id).entity == entity));
+        let position_key = (scope, key, entity);
+        let previous = self.function_positions.get(&position_key).copied();
         let set = self.function_sets.entry((scope, key)).or_default();
-        if let Some(index) = previous {
-            set[index] = binding;
+        let declared = if let Some(position) = previous {
+            set[position.declared] = binding;
+            position.declared
         } else {
+            let index = set.len();
             set.push(binding);
+            index
+        };
+        let mut visible = previous.and_then(|position| position.visible);
+        if !self.friendships.hidden(binding) {
+            let set = self.visible_function_sets.entry((scope, key)).or_default();
+            if let Some(index) = visible {
+                set[index] = binding;
+            } else {
+                visible = Some(set.len());
+                set.push(binding);
+            }
         }
+        self.function_positions
+            .insert(position_key, FunctionPosition { declared, visible });
+        if self.scope(scope).kind == ScopeKind::Namespace {
+            let ty = self
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("function index without type"))?;
+            let signature = self.types.declaration_signature(ty)?;
+            let signature_key = (scope, key, signature);
+            if self
+                .namespace_signatures
+                .get(&signature_key)
+                .is_none_or(|&old| self.binding(old).entity == entity)
+            {
+                self.namespace_signatures.insert(signature_key, binding);
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn namespace_function(
+        &mut self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        ty: TypeId,
+    ) -> Result<Option<BindingId>, Error> {
+        let signature = self.types.declaration_signature(ty)?;
+        Ok(self
+            .namespace_signatures
+            .get(&(scope, key, signature))
+            .copied()
+            .filter(|&id| self.binding_visible_at_limit(id)))
     }
     pub(super) fn functions_at(
         &self,
@@ -641,6 +722,24 @@ impl Graph {
                         .lookup_limit
                         .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
             })
+    }
+    pub(super) fn visible_functions_at(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+    ) -> impl Iterator<Item = BindingId> + '_ {
+        self.visible_function_sets
+            .get(&(scope, key))
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(move |&id| {
+                self.scope(scope).kind != ScopeKind::Namespace || self.binding_visible_at_limit(id)
+            })
+    }
+    pub(super) fn binding_visible_at_limit(&self, id: BindingId) -> bool {
+        self.lookup_limit
+            .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
     }
     // An ordinal cursor lets declaration matching intern canonical types without
     // borrowing the index or allocating a copy of its candidate set.
@@ -697,6 +796,27 @@ impl Graph {
         }
     }
     pub(super) fn own(
+        &self,
+        scope: ScopeId,
+        name: NameId,
+        filter: super::lookup::Filter,
+    ) -> Option<BindingId> {
+        let binding = self.declared_name(scope, name, filter)?;
+        if !self.friendships.hidden(binding) {
+            return Some(binding);
+        }
+        if self.binding(binding).kind == BindingKind::Function {
+            return self
+                .visible_functions_at(scope, name.into())
+                .next()
+                .or_else(|| {
+                    self.declared_name(scope, name, super::lookup::Filter::Prefix)
+                        .filter(|&id| !self.friendships.hidden(id))
+                });
+        }
+        None
+    }
+    pub(super) fn declared_name(
         &self,
         scope: ScopeId,
         name: NameId,

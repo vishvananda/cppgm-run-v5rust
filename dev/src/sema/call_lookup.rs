@@ -50,6 +50,9 @@ impl Analyzer<'_> {
         // its depth, bounded by the inherited 64-level type budget.
         let mut seen_types = HashMap::new();
         let mut namespaces = Vec::new();
+        let mut classes = Vec::new();
+        let mut seen_classes = HashSet::new();
+        let mut enclosing = Vec::new();
         while let Some((ty, depth)) = types.pop() {
             if depth > 64 || seen_types.get(&ty).is_some_and(|&earlier| earlier <= depth) {
                 continue;
@@ -70,7 +73,13 @@ impl Analyzer<'_> {
                     types.push((*result, depth + 1));
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
-                    let entity = self.graph.entity(*entity);
+                    let identity = *entity;
+                    let entity = self.graph.entity(identity);
+                    if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_))
+                        && seen_classes.insert(identity)
+                    {
+                        classes.push(identity);
+                    }
                     if entity.complete {
                         for base in &entity.bases {
                             types.push((
@@ -89,9 +98,19 @@ impl Analyzer<'_> {
                     };
                     if let Some(owner) = owner {
                         namespaces.push(self.associated_namespace(owner));
+                        if self.graph.scope(owner).kind == ScopeKind::Class
+                            && let Some(class) = self.graph.scope(owner).owner
+                        {
+                            enclosing.push(class);
+                        }
                     }
                 }
                 _ => (),
+            }
+        }
+        for class in enclosing {
+            if seen_classes.insert(class) {
+                classes.push(class);
             }
         }
         if namespaces.is_empty() {
@@ -114,8 +133,20 @@ impl Analyzer<'_> {
             {
                 namespaces.push(parent);
             }
-            for binding in self.graph.functions_at(scope, name.into()) {
+            for binding in self.graph.visible_functions_at(scope, name.into()) {
                 if seen_functions.insert(self.graph.binding(binding).entity) {
+                    found.functions.push(binding);
+                    if found.binding.is_none() {
+                        found.binding = Some(binding);
+                    }
+                }
+            }
+        }
+        for class in classes {
+            for &binding in self.graph.friendships.functions(class, name.into()) {
+                if self.graph.binding_visible_at_limit(binding)
+                    && seen_functions.insert(self.graph.binding(binding).entity)
+                {
                     found.functions.push(binding);
                     if found.binding.is_none() {
                         found.binding = Some(binding);

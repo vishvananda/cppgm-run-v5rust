@@ -156,7 +156,7 @@ impl Analyzer<'_> {
                     },
                 )?;
                 self.graph
-                    .record_special_value(self.graph.global, name, binding);
+                    .record_special_value(self.graph.global, name, binding)?;
             }
         }
         Ok(())
@@ -239,7 +239,53 @@ impl Analyzer<'_> {
     ) -> Result<BindingId, Error> {
         self.function_specifier_type(specs, info, scope)?;
         let key = self.declaration_key(info)?;
-        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        let befriending = if specs.friendship == super::specifiers::Friendship::Friend {
+            Some(self.friend_owner(scope, location)?)
+        } else {
+            None
+        };
+        if let Some(class) = befriending
+            && let Some(home) = info.home
+        {
+            if self.active_template_head(scope).is_some() {
+                return Err(Error::Missing("qualified friend templates"));
+            }
+            let candidate = if self.graph.scope(home).kind == ScopeKind::Namespace {
+                self.graph.namespace_function(home, key, info.ty)?
+            } else {
+                let mut next = 0;
+                let mut candidate = None;
+                while let Some(binding) = self.graph.next_function(home, key, &mut next) {
+                    let old = self
+                        .graph
+                        .binding(binding)
+                        .ty
+                        .ok_or(Error::Invariant("friend function without type"))?;
+                    if self.same_function_parameters(old, info.ty)? {
+                        candidate = Some(binding);
+                        break;
+                    }
+                }
+                candidate
+            };
+            if let Some(binding) = candidate
+                && self.graph.entity(self.graph.binding(binding).entity).home == Some(home)
+            {
+                self.graph
+                    .friendships
+                    .record(class, self.graph.binding(binding).entity);
+                return Ok(binding);
+            }
+            return Err(Error::at(
+                location,
+                "a qualified friend declaration names no declared function",
+            ));
+        }
+        let home = if befriending.is_some() {
+            self.enclosing_namespace(scope)
+        } else {
+            info.home.unwrap_or(self.declaration_scope(scope))
+        };
         if info.home.is_some() && specs.is_static && self.graph.scope(home).kind == ScopeKind::Class
         {
             return Err(Error::at(
@@ -291,7 +337,11 @@ impl Analyzer<'_> {
             super::declarations::ValueScope {
                 qualified: info.home.is_some(),
                 home,
-                print: info.home.unwrap_or(scope),
+                print: if befriending.is_some() {
+                    home
+                } else {
+                    info.home.unwrap_or(scope)
+                },
                 head,
                 definition,
                 declarator_location: location,
@@ -301,7 +351,18 @@ impl Analyzer<'_> {
             specs,
         )?;
         self.record_callable_label(binding, info, key)?;
+        if let Some(class) = befriending {
+            let entity = self.graph.binding(binding).entity;
+            self.graph.friendships.record(class, entity);
+            if self.graph.friendships.hidden(binding) {
+                self.graph.friendships.index(class, key, binding);
+            }
+            if definition == Definition::Body {
+                self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
+            }
+        }
         if self.graph.scope(scope).kind == ScopeKind::Class
+            && befriending.is_none()
             && head.is_none()
             && !matches!(definition, Definition::Defaulted | Definition::Deleted)
             && matches!(key, ValueKey::Special(SpecialName::Operator { token, array: false }) if token.as_punctuator() == Some(Punctuator::Assign))
@@ -489,9 +550,18 @@ impl Analyzer<'_> {
             Definition::Declaration
         };
         let binding = self.declare_function_value(&mut info, specs, scope, location, definition)?;
+        if specs.friendship == super::specifiers::Friendship::Friend && info.home.is_some() {
+            super::record(
+                &mut self.graph.declared_bindings,
+                init.declarator.index(),
+                binding,
+            );
+            return Ok(());
+        }
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
+        self.settle_declaration_access(Some(binding))?;
         if defaulted {
             self.default_assignment(&info, key, home, location)?;
         }

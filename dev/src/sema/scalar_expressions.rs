@@ -263,7 +263,11 @@ impl Analyzer<'_> {
             }
             return Ok(facts);
         }
-        self.check_direct_member_access(binding, scope, self.tree.expressions.get(id).location)?;
+        self.check_declaration_direct_access(
+            binding,
+            scope,
+            self.tree.expressions.get(id).location,
+        )?;
         let binding = self.graph.binding(binding);
         if matches!(
             binding.kind,

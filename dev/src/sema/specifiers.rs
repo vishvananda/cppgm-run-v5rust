@@ -45,8 +45,15 @@ pub(super) enum InlinePreference {
     Unspecified,
     Inline,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Friendship {
+    #[default]
+    Ordinary,
+    Friend,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
+    pub friendship: Friendship,
     pub auto_cv: Cv,
     pub inline: InlinePreference,
     pub ty: TypeId,
@@ -84,6 +91,7 @@ impl Analyzer<'_> {
         lone: bool,
         special: bool,
     ) -> Result<(Specifiers, Option<TypeId>), Error> {
+        let mut friendship = Friendship::Ordinary;
         let mut cv = Cv::default();
         let mut typedef = false;
         let mut is_extern = false;
@@ -120,7 +128,8 @@ impl Analyzer<'_> {
                     Keyword::Register => (),
                     Keyword::Explicit if special => explicitness = Explicitness::Explicit,
                     Keyword::Auto => auto_type = true,
-                    Keyword::Friend | Keyword::Explicit => {
+                    Keyword::Friend => friendship = Friendship::Friend,
+                    Keyword::Explicit => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
                         ));
@@ -135,7 +144,21 @@ impl Analyzer<'_> {
             if matches!(specifier.kind, SpecifierKind::Keyword(_)) {
                 continue;
             }
-            let named = self.specifier_type(specifier, scope, lone)?;
+            let named = if friendship == Friendship::Friend {
+                if matches!(specifier.kind, SpecifierKind::Class(_)) {
+                    return Err(Error::at(
+                        specifier.location,
+                        "a class defined in a friend declaration",
+                    ));
+                }
+                if let SpecifierKind::Elaborated { key, name } = specifier.kind {
+                    self.elaborated_friend_type(key, name, scope)?
+                } else {
+                    self.specifier_type(specifier, scope, lone)?
+                }
+            } else {
+                self.specifier_type(specifier, scope, lone)?
+            };
             if ty.is_some() || !fundamental.is_empty() {
                 return Err(Error::at(
                     specifier.location,
@@ -184,6 +207,7 @@ impl Analyzer<'_> {
         };
         Ok((
             Specifiers {
+                friendship,
                 auto_cv: cv,
                 inline,
                 ty,

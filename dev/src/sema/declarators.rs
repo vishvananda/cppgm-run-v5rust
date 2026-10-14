@@ -11,6 +11,7 @@ use crate::{
 };
 #[derive(Clone, Copy)]
 pub(super) struct DeclaratorEnvironment {
+    pub friendship: super::specifiers::Friendship,
     pub auto_operators: bool,
     pub placeholder_function: Option<ast::DeclaratorId>,
     pub home: Option<ScopeId>,
@@ -136,6 +137,7 @@ impl Analyzer<'_> {
             probe = node.nested;
         }
         Ok(DeclaratorEnvironment {
+            friendship: super::specifiers::Friendship::Ordinary,
             auto_operators: false,
             placeholder_function: None,
             home,
@@ -178,6 +180,7 @@ impl Analyzer<'_> {
         let mut specified = false;
         let mut derivations = 0_u8;
         let DeclaratorEnvironment {
+            friendship,
             home,
             lookup: after,
             declaring,
@@ -185,7 +188,9 @@ impl Analyzer<'_> {
             auto_operators,
             placeholder_function,
         } = environment;
-        if home.is_some_and(|home| !self.graph.encloses(declaring, home)) {
+        if friendship != super::specifiers::Friendship::Friend
+            && home.is_some_and(|home| !self.graph.encloses(declaring, home))
+        {
             return Err(Error::at(
                 declaration_location.unwrap_or(
                     self.tree

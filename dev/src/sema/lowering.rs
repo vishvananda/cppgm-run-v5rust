@@ -722,7 +722,7 @@ impl Graph {
                 .into()
         };
         Ok(self
-            .functions_at(home, name)
+            .visible_functions_at(home, name)
             .map(|binding| self.binding(binding).entity)
             .filter(move |&id| self.entity(id).home == Some(home)))
     }

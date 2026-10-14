@@ -13,6 +13,47 @@ use crate::{
 };
 
 #[test]
+fn hidden_friend_identity_and_visibility_have_distinct_source_boundaries() {
+    let source = SourceBuffer::new(b"struct X{friend int f(X&);friend int f(X&);};struct Y{friend int f(X&);};int g(X&x){return f(x);}int f(X&){return 7;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"friendship-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let mut graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), count);
+    let f = cursor.intern_name(b"f").unwrap();
+    let visible = graph.own(graph.global, f, Filter::Ordinary).unwrap();
+    let entity = graph.binding(visible).entity;
+    assert_eq!(graph.friendships.granting(entity).len(), 2);
+    let x = cursor.intern_name(b"X").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, x, Filter::Prefix).unwrap())
+        .entity;
+    let hidden = graph.friendships.functions(class, f.into())[0];
+    assert_eq!(graph.binding(hidden).entity, entity);
+    assert!(graph.friendships.hidden(hidden));
+    assert!(!graph.friendships.hidden(visible));
+    assert_eq!(graph.entity(entity).home, Some(graph.global));
+    let body = graph.entity(entity).scope.unwrap();
+    assert_eq!(graph.scope(body).owner, Some(entity));
+    // Later namespace visibility must not reach backward into an earlier body,
+    // while the earlier class's hidden-friend edge remains available to ADL.
+    let first_visible = (0..=graph.binding_limit())
+        .find(|&limit| {
+            graph.lookup_limit = Some(limit);
+            graph.own(graph.global, f, Filter::Ordinary).is_some()
+        })
+        .unwrap();
+    graph.lookup_limit = Some(first_visible - 1);
+    assert!(graph.own(graph.global, f, Filter::Ordinary).is_none());
+    assert!(graph.binding_visible_at_limit(hidden));
+    assert_eq!(graph.friendships.functions(class, f.into()).len(), 2);
+}
+
+#[test]
 fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
     use super::{graph::ScopeKind, linkage::Language};
     let source = SourceBuffer::new(b"extern \"C\" {int h(int=1);extern int a[3];}const int x=7;void f(){extern int a[];extern const int x;int h(int=2);h();}int k(int);void __builtin_abort()noexcept(false);namespace{void unseen(){int missing(int);}}".to_vec()).unwrap();
@@ -2051,21 +2092,47 @@ fn overload_visibility_keeps_earlier_entities_across_interleaved_redeclarations(
     unit.parse().unwrap();
     let (_, cursor, _) = unit.semantic_inputs().unwrap();
     let name = cursor.intern_name(b"g").unwrap();
-    let ty = graph
+    let int = graph
         .types
         .scalar(Scalar::Basic(FundamentalType::Int))
+        .unwrap();
+    let ty = graph
+        .types
+        .intern(
+            TypeKind::Function {
+                result: int,
+                parameters: Vec::new(),
+                variadic: false,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )
+        .unwrap();
+    let other = graph
+        .types
+        .intern(
+            TypeKind::Function {
+                result: int,
+                parameters: vec![int],
+                variadic: false,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )
         .unwrap();
     let a = graph
         .add_entity(Some(ty), Some(name), Keyword::Int)
         .unwrap();
     let b = graph
-        .add_entity(Some(ty), Some(name), Keyword::Int)
+        .add_entity(Some(other), Some(name), Keyword::Int)
         .unwrap();
     let binding = |entity| Binding {
         kind: BindingKind::Function,
         name: Some(name),
         entity,
-        ty: Some(ty),
+        ty: Some(if entity == a { ty } else { other }),
         key: Keyword::Int,
     };
     graph.add_binding(graph.global, None, binding(a)).unwrap();

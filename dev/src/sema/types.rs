@@ -100,6 +100,7 @@ pub(super) struct Types {
     fingerprints: RandomState,
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
+    signatures: Vec<Option<TypeId>>,
     parameter_entities: HashMap<EntityId, EntityId>,
 }
 impl Types {
@@ -144,6 +145,7 @@ impl Types {
         self.records.push(ty);
         self.collisions.push(head);
         self.canonical.push(None);
+        self.signatures.push(None);
         self.index.insert(fingerprint, id);
         Ok(id)
     }
@@ -246,6 +248,37 @@ impl Types {
                 self.intern(kind, Cv::default())
             }
         }
+    }
+    // signature_of in analyzer_types.cpp: return types never key ordinary overloads.
+    // Both the canonical function and its signature are immutable unit-owned types.
+    pub(super) fn declaration_signature(&mut self, ty: TypeId) -> Result<TypeId, Error> {
+        let ty = self.canonical_function(ty)?;
+        if let Some(signature) = self.signatures[ty.0 as usize] {
+            return Ok(signature);
+        }
+        let void = self.scalar(Scalar::Void)?;
+        let TypeKind::Function {
+            parameters,
+            variadic,
+            cv,
+            reference,
+            ..
+        } = &self.get(ty).kind
+        else {
+            return Err(Error::Invariant(
+                "declaration signature without function type",
+            ));
+        };
+        let kind = TypeKind::Function {
+            result: void,
+            parameters: parameters.clone(),
+            variadic: *variadic,
+            cv: *cv,
+            reference: *reference,
+        };
+        let signature = self.intern(kind, Cv::default())?;
+        self.signatures[ty.0 as usize] = Some(signature);
+        Ok(signature)
     }
     pub(super) fn canonical_function(&mut self, id: TypeId) -> Result<TypeId, Error> {
         self.canonical_type(id)

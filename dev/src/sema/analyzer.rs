@@ -22,6 +22,7 @@ pub(super) enum AnalysisMode {
 }
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) declaration_access: super::declaration_access::DeclarationAccess,
     pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
     pub(super) tree: &'tree Tree,
     pub(super) graph: Graph,
@@ -128,6 +129,7 @@ impl<'tree> Analyzer<'tree> {
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
         };
         let mut analyzer = Self {
+            declaration_access: super::declaration_access::DeclarationAccess::default(),
             literal_bytes: &cursor.spellings,
             deduced_initializer: None,
             placeholder_scratch: super::placeholders::PlaceholderScratch::default(),
@@ -225,6 +227,16 @@ impl<'tree> Analyzer<'tree> {
         Ok(())
     }
     pub(super) fn declaration(&mut self, id: ast::DeclId, scope: ScopeId) -> Result<(), Error> {
+        let enabled = matches!(
+            self.tree.declarations.get(id).kind,
+            ast::DeclKind::Simple { .. } | ast::DeclKind::Function { .. }
+        );
+        let mark = self.begin_declaration_access(scope, enabled);
+        let result = self.declaration_in(id, scope);
+        self.finish_declaration_access(mark);
+        result
+    }
+    fn declaration_in(&mut self, id: ast::DeclId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
         let declaration = *self.tree.declarations.get(id);
         let location = declaration.location;
@@ -338,6 +350,7 @@ impl<'tree> Analyzer<'tree> {
                 let ty = self.specifier_type(specifier, scope, true)?;
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
+                        friendship: super::specifiers::Friendship::Ordinary,
                         auto_cv: super::types::Cv::default(),
                         inline: super::specifiers::InlinePreference::Unspecified,
                         ty,
@@ -449,6 +462,7 @@ impl<'tree> Analyzer<'tree> {
         let specs = self.specifiers(specifiers, scope, false)?;
         let mut environment = self.declarator_environment(Some(declarator), scope)?;
         environment.declaration_location = Some(location);
+        self.friend_environment(specs, scope, &mut environment);
         self.placeholder_environment(Some(declarator), specs, &mut environment);
         let mut info = self.declarator_in(Some(declarator), specs.ty, environment)?;
         if let Some((class, kind)) = self.declared_member(&info, scope)? {
@@ -484,7 +498,7 @@ impl<'tree> Analyzer<'tree> {
             location,
             super::function_names::Definition::Body,
         )?;
-        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        let home = self.graph.binding_scope(binding);
         super::record(
             &mut self.graph.declared_bindings,
             declarator.index(),
@@ -507,6 +521,7 @@ impl<'tree> Analyzer<'tree> {
             };
         self.graph.entity_mut(entity).constexpr = specs.constexpr;
         self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
+        self.settle_declaration_access(Some(binding))?;
         if self.graph.entity(entity).defined {
             return Err(Error::at(location, "redefinition of a function"));
         }

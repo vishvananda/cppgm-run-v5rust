@@ -39,6 +39,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<DeclaratorInfo, Error> {
         let mut environment = self.declarator_environment(id, scope)?;
+        self.friend_environment(specs, scope, &mut environment);
         self.placeholder_environment(id, specs, &mut environment);
         self.declarator_in(id, specs.ty, environment)
     }

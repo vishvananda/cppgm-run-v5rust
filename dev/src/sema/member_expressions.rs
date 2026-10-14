@@ -396,7 +396,7 @@ impl Analyzer<'_> {
         let home = self.graph.binding_scope(binding);
         let owner = self.graph.scope(home).owner;
         self.graph.binding_access(binding) == Access::Public
-            || self.graph.encloses(home, scope)
+            || owner.is_some_and(|class| self.member_or_friend(scope, class))
             || self.graph.binding_access(binding) == Access::Protected
                 && owner.is_some_and(|class| self.class_context(scope, class))
     }
@@ -406,6 +406,16 @@ impl Analyzer<'_> {
         binding: BindingId,
         naming: EntityId,
         object: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.validate_member_access(binding, naming, Some(object), scope, location)
+    }
+    pub(super) fn validate_member_access(
+        &self,
+        binding: BindingId,
+        naming: EntityId,
+        object: Option<EntityId>,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
@@ -423,7 +433,7 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .data_member
                 == Some(DataMemberKind::Instance)
-            && !self.protected_object_accessible(scope, owner, object)
+            && object.is_some_and(|object| !self.protected_object_accessible(scope, owner, object))
         {
             return Err(Error::at(
                 location,

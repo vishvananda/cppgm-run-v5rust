@@ -4,7 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Access, EntityId, Graph, ScopeId, ScopeKind},
+    graph::{Access, EntityId, Graph, ScopeId},
     lookup::Filter,
     types::{TypeId, TypeKind},
 };
@@ -288,44 +288,22 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn class_context(&self, mut scope: ScopeId, class: EntityId) -> bool {
-        loop {
-            let current = self.graph.scope(scope);
-            if current.kind == ScopeKind::Class
-                && current
-                    .owner
-                    .is_some_and(|owner| owner == class || self.graph.is_base_of(class, owner))
-            {
-                return true;
-            }
-            let Some(parent) = current.parent else {
-                return false;
-            };
-            scope = parent;
-        }
+    pub(super) fn class_context(&self, scope: ScopeId, class: EntityId) -> bool {
+        self.access_contexts(scope)
+            .any(|owner| owner == class || self.graph.is_base_of(class, owner))
     }
 
     pub(super) fn protected_object_accessible(
         &self,
-        mut scope: ScopeId,
+        scope: ScopeId,
         declaring: EntityId,
         object: EntityId,
     ) -> bool {
-        loop {
-            let current = self.graph.scope(scope);
-            if current.kind == ScopeKind::Class
-                && current.owner.is_some_and(|class| {
-                    (class == declaring || self.graph.is_base_of(declaring, class))
-                        && (class == object || self.graph.is_base_of(class, object))
-                })
-            {
-                return true;
-            }
-            let Some(parent) = current.parent else {
-                return false;
-            };
-            scope = parent;
-        }
+        self.member_or_friend(scope, declaring)
+            || self.access_contexts(scope).any(|class| {
+                (class == declaring || self.graph.is_base_of(declaring, class))
+                    && (class == object || self.graph.is_base_of(class, object))
+            })
     }
 
     pub(super) fn accessible_base_name(
@@ -346,11 +324,7 @@ impl Analyzer<'_> {
                 continue;
             }
             for edge in &self.graph.entity(class).bases {
-                let own = self
-                    .graph
-                    .entity(class)
-                    .scope
-                    .is_some_and(|home| self.graph.encloses(home, scope));
+                let own = self.member_or_friend(scope, class);
                 if edge.access == Access::Public
                     || own
                     || edge.access == Access::Protected && self.class_context(scope, class)
@@ -370,13 +344,8 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         for &(class, index) in self.graph.base_paths.get(path) {
             let edge = self.graph.entity(class).bases[index];
-            let home = self
-                .graph
-                .entity(class)
-                .scope
-                .ok_or(Error::Invariant("base owner without scope"))?;
             if edge.access != Access::Public
-                && !self.graph.encloses(home, scope)
+                && !self.member_or_friend(scope, class)
                 && !(edge.access == Access::Protected && self.class_context(scope, class))
             {
                 return Err(Error::at(
