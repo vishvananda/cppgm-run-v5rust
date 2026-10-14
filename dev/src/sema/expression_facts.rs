@@ -135,6 +135,7 @@ pub(super) struct ExprFacts {
 pub(super) enum FoldStyle {
     Literal,
     StaticMember,
+    EnclosingLocal,
 }
 impl ExprFacts {
     pub(super) fn is_bit_field(self) -> bool {

@@ -193,6 +193,7 @@ struct FunctionPosition {
     visible: Option<usize>,
 }
 pub(crate) struct Graph {
+    pub(super) local_classes: super::local_classes::LocalClasses,
     pub(super) bit_fields: super::bit_fields::BitFields,
     pub(super) types: Types,
     pub(super) friendships: super::friendships::Friendships,
@@ -339,6 +340,7 @@ impl Graph {
                 written_name: None,
             }],
             entities: Vec::new(),
+            local_classes: super::local_classes::LocalClasses::default(),
             bit_fields: super::bit_fields::BitFields::default(),
             bindings: Vec::new(),
             ordinals: Vec::new(),

@@ -94,6 +94,7 @@ impl Analyzer<'_> {
         self.check_resolved_function(operand)?;
         let facts = self.graph.expression_facts.get(operand)?;
         if op == P::BitAnd {
+            self.odr_use_constants(operand, None)?;
             if facts.is_bit_field() {
                 return Err(self.operator_error(id, "taking the address of a bit-field"));
             }

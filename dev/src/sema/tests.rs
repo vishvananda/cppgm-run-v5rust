@@ -13,6 +13,76 @@ use crate::{
 };
 
 #[test]
+fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(b"int f(){const unsigned value=17;struct A{unsigned read(){return value;}unsigned own(unsigned value){return value;}};return 0;}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"local-class-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let syntax_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_lowering();
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(syntax_count, tree.expressions.mark());
+    let f = cursor.intern_name(b"f").unwrap();
+    let function = graph
+        .binding(graph.own(graph.global, f, Filter::Ordinary).unwrap())
+        .entity;
+    let classes = graph.lower_deferred_local_classes(function);
+    assert_eq!(classes.len(), 1);
+    let scope = graph.entity(classes[0]).scope.unwrap();
+    assert_eq!(
+        graph.lower_local_class_scope(scope),
+        Some((classes[0], function, 0))
+    );
+    let mut result = |name: &[u8]| {
+        let name = cursor.intern_name(name).unwrap();
+        let member = graph
+            .binding(graph.own(scope, name, Filter::Ordinary).unwrap())
+            .entity;
+        let declaration = graph.entity(member).function_definition.unwrap();
+        let DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
+            panic!("member body");
+        };
+        let Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed body");
+        };
+        let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound body");
+        };
+        let StmtKind::Return(Some(expression)) =
+            tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+        else {
+            panic!("return expression");
+        };
+        let ExprKind::Id(name) = tree.expressions.get(expression).kind else {
+            panic!("original name expression");
+        };
+        (
+            expression,
+            graph.binding(graph.resolved_name(name).unwrap()).entity,
+        )
+    };
+    let (read, original) = result(b"read");
+    let (own, parameter) = result(b"own");
+    let facts = graph.expression_facts.get(read).unwrap();
+    assert_eq!(facts.folded, Some(17));
+    assert_eq!(
+        facts.fold_style,
+        super::expression_facts::FoldStyle::EnclosingLocal
+    );
+    assert_eq!(
+        facts.category,
+        super::expression_facts::ValueCategory::Lvalue
+    );
+    assert_eq!(facts.ty, graph.entity(original).ty.unwrap());
+    assert_ne!(original, parameter);
+    assert!(graph.expression_facts.get(own).unwrap().folded.is_none());
+    assert!(graph.lower_deferred_local_classes(parameter).is_empty());
+}
+
+#[test]
 fn field_operations_keep_canonical_types_and_enum_value_signedness() {
     let source = SourceBuffer::new(b"enum Positive{P=1};enum Negative{N=-1};struct S{bool b:1;unsigned long narrow:3;unsigned long full:64;Positive p:3;Negative n:3;};int f(){return sizeof(S);}".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"field-operation-ownership").unwrap();

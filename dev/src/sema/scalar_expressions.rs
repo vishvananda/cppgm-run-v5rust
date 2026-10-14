@@ -324,27 +324,6 @@ impl Analyzer<'_> {
                 "type name used as a value",
             ));
         }
-        if self.default_argument_scope.is_some()
-            && self.unevaluated == 0
-            && matches!(binding.kind, BindingKind::Variable | BindingKind::Parameter)
-            && matches!(
-                self.graph
-                    .scope(
-                        self.graph.binding_scope(
-                            found
-                                .binding
-                                .ok_or(Error::Invariant("named expression without binding"))?
-                        )
-                    )
-                    .kind,
-                super::graph::ScopeKind::Block | super::graph::ScopeKind::Function
-            )
-        {
-            return Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "a local variable or parameter in a default argument (8.3.6p7)",
-            ));
-        }
         let mut ty = binding
             .ty
             .ok_or(Error::Invariant("value binding without type"))?;
@@ -433,6 +412,14 @@ impl Analyzer<'_> {
             facts.field_identity = self.graph.entity(binding.entity).bit_field;
             facts.set_bit_field(facts.field_identity.is_some());
         }
+        self.local_name(
+            id,
+            &mut facts,
+            found
+                .binding
+                .ok_or(Error::Invariant("named expression without binding"))?,
+            scope,
+        )?;
         if binding.kind == BindingKind::Enumerator {
             let super::constants::ConstantState::Value(value) =
                 self.graph.entity(binding.entity).constant

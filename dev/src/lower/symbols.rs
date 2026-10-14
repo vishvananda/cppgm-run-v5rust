@@ -111,6 +111,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub data: super::data::Objects,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
+    local_discriminators: HashMap<EntityId, u32>,
     tls_wrappers: HashMap<EntityId, SymbolId>,
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
@@ -149,6 +150,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             data: super::data::Objects::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
+            local_discriminators: HashMap::new(),
             tls_wrappers: HashMap::new(),
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
@@ -504,6 +506,24 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&id) = self.scopes.get(&scope) {
             return Ok(id);
         }
+        if let Some(function) = self.graph.lower_local_scope(scope) {
+            let facts = self.graph.lower_function(function)?;
+            let node = if let FunctionName::Identifier(name) = facts.name
+                && (facts.c_linkage || self.cursor.name(name) == b"main")
+            {
+                let spelling = self.identifier(name)?;
+                let raw = format!("Z{}{spelling}E", spelling.len());
+                Node::RawFunctionScope(self.abi.string(raw.as_bytes())?)
+            } else {
+                Node::FunctionScope {
+                    encoding: self.function_encoding(function)?,
+                    default_argument: 0,
+                }
+            };
+            let id = Some(self.abi.intern(node, &[])?);
+            self.scopes.insert(scope, id);
+            return Ok(id);
+        }
         let (parent, name, namespace) = self.graph.lower_abi_scope(scope)?;
         let id = if let Some(parent) = parent {
             let parent = self.scope(parent)?;
@@ -518,6 +538,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let terminal = self
                 .abi
                 .string(name.map_or(&b"_GLOBAL__N_1"[..], |name| self.cursor.name(name)))?;
+            let occurrence = if let Some((class, function, declared)) =
+                self.graph.lower_local_class_scope(scope)
+            {
+                self.local_discriminator(class, function, name, declared)?
+            } else {
+                0
+            };
             Some(
                 self.abi
                     .intern(
@@ -525,7 +552,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                             parent,
                             terminal,
                             internal: false,
-                            occurrence: 0,
+                            occurrence,
                         },
                         &[],
                     )
@@ -536,6 +563,40 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.scopes.insert(scope, id);
         Ok(id)
+    }
+    fn local_discriminator(
+        &mut self,
+        entity: EntityId,
+        function: EntityId,
+        name: Option<crate::lex::identifiers::NameId>,
+        declared: u32,
+    ) -> Result<u32, Error> {
+        if self.graph.lower_function_visible_locals(function) {
+            return Ok(declared);
+        }
+        if let Some(&known) = self.local_discriminators.get(&entity) {
+            return Ok(known);
+        }
+        let Some(name) = name else {
+            return Ok(declared);
+        };
+        let count = self.local_counts.entry((function, name)).or_default();
+        let occurrence = *count;
+        *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
+        self.local_discriminators.insert(entity, occurrence);
+        Ok(occurrence)
+    }
+    fn name_local_classes(&mut self, function: EntityId) -> Result<(), Error> {
+        if self.graph.lower_function_visible_locals(function) {
+            return Ok(());
+        }
+        let graph = self.graph;
+        for &class in graph.lower_deferred_local_classes(function) {
+            if let Some(scope) = graph.lower_local_class_definition_scope(class) {
+                self.scope(scope)?;
+            }
+        }
+        Ok(())
     }
     fn abi_type(&mut self, ty: TypeId) -> Result<NodeId, Error> {
         self.check_stack()?;
@@ -591,11 +652,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let (home, name) = self.graph.lower_nominal_name(ty)?;
                 let parent = self.scope(home)?;
                 let terminal = self.abi.string(self.cursor.name(name))?;
+                let occurrence = if let TypeView::Class(class) = self.graph.lower_type(ty)?
+                    && let Some((function, declared)) = self.graph.lower_local_type(class)
+                {
+                    self.local_discriminator(class, function, Some(name), declared)?
+                } else {
+                    0
+                };
                 Node::Name {
                     parent,
                     terminal,
                     internal: false,
-                    occurrence: 0,
+                    occurrence,
                 }
             }
             TypeView::Function {
@@ -1099,6 +1167,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             ..Metadata::default()
         };
+        if self.graph.lower_function_local_class(entity) {
+            metadata.flags |= 2;
+        }
         if let Some(builtin) = facts.builtin {
             use crate::sema::lowering::BuiltinFunction as B;
             match builtin {
@@ -1282,6 +1353,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 4
             } else {
                 0
+            } | if self.graph.lower_scope_function(facts.home).is_some() {
+                2
+            } else {
+                0
             },
             ..Metadata::default()
         })
@@ -1293,6 +1368,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         symbol: SymbolId,
     ) -> Result<(), Error> {
         use super::construction::{Entry, Variant};
+        if let Some(function) = entry.entity(self.graph) {
+            self.name_local_classes(function)?;
+        }
         if let Entry::Constructor(id, Variant::Complete) = entry {
             if let Some(&base) = self.entries.get(&Entry::Constructor(id, Variant::Base))
                 && program.function_defined(base)

@@ -1165,7 +1165,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             {
                 "member-expression"
             }
-            ExprKind::Id(_) => "id-expression",
+            ExprKind::Id(_) | ExprKind::Keyword(Keyword::This) => "id-expression",
             ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
             ExprKind::Unary { .. } => "unary-expression",
             ExprKind::Postfix { .. } => "postfix-expression",
@@ -1209,6 +1209,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.output
                     .write_all(self.cursor.spellings.get(literal.spelling))?;
             }
+            ExprKind::Keyword(Keyword::This) => self.output.write_all(b" this")?,
             ExprKind::Keyword(keyword) => write!(
                 self.output,
                 " {}:{}",

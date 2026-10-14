@@ -1229,13 +1229,19 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn new_class(&mut self, key: Keyword, name: Option<NameId>) -> Result<EntityId, Error> {
+    fn new_class(
+        &mut self,
+        key: Keyword,
+        name: Option<NameId>,
+        home: ScopeId,
+    ) -> Result<EntityId, Error> {
         let entity = self.graph.add_entity(None, name, key)?;
         let ty = self
             .graph
             .types
             .intern(TypeKind::Class(entity), Cv::default())?;
         self.graph.entity_mut(entity).ty = Some(ty);
+        self.record_local_class(entity, home)?;
         Ok(entity)
     }
     pub(super) fn elaborated_class_entity(
@@ -1323,7 +1329,7 @@ impl Analyzer<'_> {
             if prefix.is_some() {
                 return Err(Error::at(node.location, "undeclared name"));
             }
-            self.new_class(key, Some(key_name))?
+            self.new_class(key, Some(key_name), declaration_home)?
         };
         let ty = self
             .graph
@@ -1355,7 +1361,7 @@ impl Analyzer<'_> {
     pub(super) fn class_type(&mut self, id: ast::ClassId, scope: ScopeId) -> Result<TypeId, Error> {
         let node = *self.tree.classes.get(id);
         let Some(name) = node.name else {
-            let entity = self.new_class(node.key, None)?;
+            let entity = self.new_class(node.key, None, scope)?;
             self.graph.entity_mut(entity).anonymous_class =
                 Some(super::anonymous_types::AnonymousClass::Pending(node.tokens));
             return self.define_class(node, entity, scope, scope);
@@ -1400,7 +1406,7 @@ impl Analyzer<'_> {
             }
             binding.entity
         } else {
-            self.new_class(node.key, Some(key_name))?
+            self.new_class(node.key, Some(key_name), home)?
         };
         if self.graph.entity(entity).defined {
             return Err(Error::at(qualified_name.location, "class redefinition"));

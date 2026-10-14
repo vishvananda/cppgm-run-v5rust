@@ -40,6 +40,8 @@ mod layout;
 mod layout_attributes;
 mod linkage;
 mod list_arguments;
+mod local_classes;
+mod local_names;
 mod lookup;
 pub(crate) mod lowering;
 mod member_expressions;

@@ -351,6 +351,7 @@ impl Analyzer<'_> {
                 !(member && index == 0),
             )?;
             facts.conversion = Some(conversion);
+            self.odr_use_constants(operand, Some(conversion))?;
             self.graph.expression_facts.set(operand, facts);
             if !member || index != 0 {
                 self.class_parameter_destruction(conversion.target, scope, location)?;

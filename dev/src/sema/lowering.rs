@@ -244,7 +244,8 @@ impl Graph {
                 .ok_or(Error::Invariant("constructor without class scope"))?,
             ty: plan.callable_type,
             scope: None,
-            internal: self.lower_entity_unit_local(plan.class),
+            internal: self.lower_entity_unit_local(plan.class)
+                && !self.lower_shared_local(plan.class),
             declared_linkage: DeclaredLinkage::External,
             c_linkage: false,
             emission: Emission::Demanded,
@@ -366,7 +367,7 @@ impl Graph {
             .function
             .map(|binding| self.binding(binding).entity))
     }
-    fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
+    pub(super) fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Only a function type introduces the shared component DAG worklist.
         loop {
@@ -409,7 +410,7 @@ impl Graph {
         }
         false
     }
-    fn lower_entity_unit_local(&self, mut entity: EntityId) -> bool {
+    pub(super) fn lower_entity_unit_local(&self, mut entity: EntityId) -> bool {
         use super::graph::ScopeKind;
         loop {
             let node = self.entity(entity);
@@ -652,16 +653,7 @@ impl Graph {
             )?,
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
             scope: entity.scope,
-            internal: function.internal_linkage
-                || function.language != super::linkage::Language::C
-                    && self.lower_type_unit_local(
-                        entity.ty.ok_or(Error::Invariant("function without type"))?,
-                    )
-                || entity
-                    .home
-                    .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
-                    .and_then(|home| self.scope(home).owner)
-                    .is_some_and(|class| self.lower_entity_unit_local(class)),
+            internal: self.lower_function_unit_local(id)?,
             declared_linkage: if function.internal_linkage {
                 DeclaredLinkage::Internal
             } else {

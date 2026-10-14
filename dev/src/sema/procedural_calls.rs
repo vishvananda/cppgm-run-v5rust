@@ -787,6 +787,7 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(arg).location,
                     "invalid implicit conversion",
                 ))?);
+                self.odr_use_constants(arg, facts.conversion)?;
                 self.graph.expression_facts.set(arg, facts);
             } else {
                 self.ellipsis_argument(arg)?;

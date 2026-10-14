@@ -79,7 +79,11 @@ impl Analyzer<'_> {
             self.deferred
                 .push(super::analyzer::DeferredMember::Defaults(defaults));
         } else {
-            self.type_function_defaults(defaults)?;
+            let saved = self.default_argument_scope;
+            self.default_argument_scope = Some(scope);
+            let result = self.type_function_defaults(defaults);
+            self.default_argument_scope = saved;
+            result?;
         }
         let mut seen = false;
         for default in &self.graph.entity(entity).defaults {
@@ -119,8 +123,6 @@ impl Analyzer<'_> {
                 else {
                     return Err(Error::Invariant("recorded default without expression"));
                 };
-                let saved = self.default_argument_scope;
-                self.default_argument_scope = Some(scope);
                 let target = self.graph.types.function_parameter(ty, index)?;
                 let result = (|| {
                     if matches!(
@@ -141,7 +143,6 @@ impl Analyzer<'_> {
                         )
                     }
                 })();
-                self.default_argument_scope = saved;
                 result?;
             }
             Ok(())

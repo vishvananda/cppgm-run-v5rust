@@ -141,6 +141,7 @@ impl Analyzer<'_> {
                     },
                 ));
             }
+            self.reference_cast_operand(operand)?;
             let category = if !rvalue
                 || matches!(
                     self.graph.types.get(element).kind,
@@ -150,11 +151,6 @@ impl Analyzer<'_> {
             } else {
                 V::Xvalue
             };
-            let mut converted = self.graph.expression_facts.get(operand)?;
-            if let Some(conversion) = converted.conversion.as_mut() {
-                conversion.initialization = false;
-            }
-            self.graph.expression_facts.set(operand, converted);
             let mut facts = self.new_expression_facts(element, category)?;
             facts.reference_cast = Some(target);
             return Ok(facts);
@@ -303,6 +299,15 @@ impl Analyzer<'_> {
         });
         self.graph.expression_facts.set(operand, facts);
         self.new_expression_facts(goal, V::Prvalue)
+    }
+    fn reference_cast_operand(&mut self, operand: ast::ExprId) -> Result<(), Error> {
+        let mut facts = self.graph.expression_facts.get(operand)?;
+        self.odr_use_constants(operand, facts.conversion)?;
+        if let Some(conversion) = facts.conversion.as_mut() {
+            conversion.initialization = false;
+        }
+        self.graph.expression_facts.set(operand, facts);
+        Ok(())
     }
     fn resolve_cast_function(
         &mut self,

@@ -342,6 +342,7 @@ impl Analyzer<'_> {
             ));
         };
         self.check_bit_field_binding(id, conversion)?;
+        self.odr_use_constants(id, Some(conversion))?;
         let mut facts = facts;
         if conversion.second == C::DerivedToBase {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
