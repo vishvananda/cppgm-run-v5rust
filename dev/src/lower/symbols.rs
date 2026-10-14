@@ -9,7 +9,7 @@ use crate::{
     lowir::model::{Linkage, Metadata, NameId, Program, SourceId, SymbolId, Value},
     sema::{
         Graph,
-        lowering::{EntityId, Scalar, ScopeId, TypeId, TypeView},
+        lowering::{EntityId, FunctionName, Scalar, ScopeId, TypeId, TypeView},
     },
     support::stack::StackBudget,
     syntax::{ast, cursor::Cursor},
@@ -70,6 +70,7 @@ impl SymbolTable {
 }
 pub(super) struct Symbols<'a, 'source> {
     graph: &'a Graph,
+    tree: &'a ast::Tree,
     cursor: &'a Cursor<'source>,
     abi: abi::graph::Graph,
     types: HashMap<TypeId, NodeId>,
@@ -91,6 +92,7 @@ pub(super) struct Symbols<'a, 'source> {
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
         graph: &'a Graph,
+        tree: &'a ast::Tree,
         cursor: &'a Cursor<'source>,
         budget: StackBudget,
         table: &'a mut SymbolTable,
@@ -99,6 +101,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Self {
             stack_base: std::ptr::from_ref(&marker).addr(),
             graph,
+            tree,
             cursor,
             abi: abi::graph::Graph::default(),
             types: HashMap::new(),
@@ -123,6 +126,136 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.data)
+    }
+    fn function_label(
+        &self,
+        name: FunctionName,
+        label: Option<ast::Name>,
+    ) -> Result<String, Error> {
+        if let FunctionName::Identifier(name) = name {
+            return Ok(self.identifier(name)?.to_owned());
+        }
+        let mut bytes = Vec::new();
+        if let Some(label) = label {
+            crate::syntax::write_member_label(self.tree, self.cursor, label, &mut bytes).map_err(
+                |_| Error::Semantic(crate::sema::Error::Invariant("function label rendering")),
+            )?;
+        } else {
+            match name {
+                FunctionName::Operator { token, array } => {
+                    bytes.extend_from_slice(b"operator");
+                    bytes.extend_from_slice(token.spelling().as_bytes());
+                    if array {
+                        bytes.extend_from_slice(b"[]");
+                    }
+                }
+                FunctionName::Literal(suffix) => {
+                    bytes.extend_from_slice(b"operator\"\"");
+                    bytes.extend_from_slice(self.cursor.name(suffix));
+                }
+                FunctionName::Identifier(_) => {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "ordinary function label",
+                    )));
+                }
+            }
+        }
+        // C++ AppendIdentifierSpelling: source labels are presentation only.
+        Ok(bytes
+            .into_iter()
+            .filter(|&byte| byte != b' ')
+            .map(|byte| {
+                char::from(if byte.is_ascii_alphanumeric() || byte == b'_' {
+                    byte
+                } else {
+                    b'_'
+                })
+            })
+            .collect())
+    }
+    fn function_terminal(&mut self, name: FunctionName, ty: TypeId) -> Result<NodeId, Error> {
+        let node = match name {
+            FunctionName::Identifier(name) => {
+                return Ok(self.abi.string(self.cursor.name(name))?);
+            }
+            FunctionName::Literal(suffix) => {
+                Node::LiteralOperator(self.abi.string(self.cursor.name(suffix))?)
+            }
+            FunctionName::Operator { token, array } => {
+                use crate::{
+                    abi::vocabulary::Terminal as T,
+                    lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K},
+                };
+                let terminal = match (token.as_keyword(), token.as_punctuator()) {
+                    (Some(K::New), _) => {
+                        if array {
+                            T::NewArray
+                        } else {
+                            T::New
+                        }
+                    }
+                    (Some(K::Delete), _) => {
+                        if array {
+                            T::DeleteArray
+                        } else {
+                            T::Delete
+                        }
+                    }
+                    (_, Some(op)) => match op {
+                        P::Add => T::Plus,
+                        P::Subtract => T::Minus,
+                        P::Multiply => T::Multiply,
+                        P::Divide => T::Divide,
+                        P::Remainder => T::Remainder,
+                        P::BitAnd => T::BitAnd,
+                        P::BitOr => T::BitOr,
+                        P::Xor => T::BitXor,
+                        P::Complement => T::Complement,
+                        P::Assign => T::Assign,
+                        P::AddAssign => T::PlusAssign,
+                        P::SubtractAssign => T::MinusAssign,
+                        P::MultiplyAssign => T::MultiplyAssign,
+                        P::DivideAssign => T::DivideAssign,
+                        P::RemainderAssign => T::RemainderAssign,
+                        P::AndAssign => T::AndAssign,
+                        P::OrAssign => T::OrAssign,
+                        P::XorAssign => T::XorAssign,
+                        P::ShiftLeft => T::LeftShift,
+                        P::ShiftRight => T::RightShift,
+                        P::ShiftLeftAssign => T::LeftShiftAssign,
+                        P::ShiftRightAssign => T::RightShiftAssign,
+                        P::Equal => T::Equal,
+                        P::NotEqual => T::NotEqual,
+                        P::Less => T::Less,
+                        P::Greater => T::Greater,
+                        P::LessEqual => T::LessEqual,
+                        P::GreaterEqual => T::GreaterEqual,
+                        P::LogicalNot => T::LogicalNot,
+                        P::LogicalAnd => T::LogicalAnd,
+                        P::LogicalOr => T::LogicalOr,
+                        P::Increment => T::Increment,
+                        P::Decrement => T::Decrement,
+                        P::Comma => T::Comma,
+                        P::ArrowStar => T::MemberPointer,
+                        P::Arrow => T::Arrow,
+                        P::LeftParen => T::Call,
+                        P::LeftBracket => T::Index,
+                        _ => return Err(Error::Missing("operator function ABI terminal")),
+                    },
+                    _ => return Err(Error::Missing("operator function ABI terminal")),
+                };
+                let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "operator without function type",
+                    )));
+                };
+                Node::Terminal {
+                    kind: terminal.for_operands(parameters.len()),
+                    inherited: None,
+                }
+            }
+        };
+        Ok(self.abi.intern(node, &[])?)
     }
     pub(super) fn reference_temporary_symbol(
         &mut self,
@@ -350,6 +483,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Ok(id)
     }
     pub(super) fn demand(&mut self, entity: EntityId) {
+        let entity = self.graph.lower_function_entity(entity);
         if self.seen.insert(entity) {
             self.pending.push(entity);
         }
@@ -372,13 +506,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         entity: EntityId,
     ) -> Result<SymbolId, Error> {
+        let entity = self.graph.lower_function_entity(entity);
         if let Some(Value::Symbol(symbol)) = self.callees.get(&entity) {
             return Ok(*symbol);
         }
         let name = self.name(entity)?;
         let facts = self.graph.lower_function(entity)?;
         let metadata = self.metadata(program, entity, &name)?;
-        let object = if facts.c_linkage && !facts.internal || metadata.role.is_some() {
+        let object = if facts.c_linkage && !facts.internal
+            || metadata.role == Some(crate::lowir::vocabulary::Role::Entry)
+        {
             Some(program.names.intern(&name)?)
         } else {
             metadata.object
@@ -399,6 +536,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Ok(symbol)
     }
     pub(super) fn name(&mut self, entity: EntityId) -> Result<std::sync::Arc<str>, Error> {
+        let entity = self.graph.lower_function_entity(entity);
         if let Some(name) = self.names.get(&entity) {
             return Ok(std::sync::Arc::clone(name));
         }
@@ -408,9 +546,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
         }
         let facts = self.graph.lower_function(entity)?;
-        let own = std::str::from_utf8(self.cursor.name(facts.name))
-            .map_err(|_| Error::Missing("non-ASCII symbol rendering"))?;
-        let mut components = vec![own];
+        let own = self.function_label(facts.name, facts.label)?;
+        let mut components = vec![own.as_str()];
         if !facts.c_linkage || facts.internal {
             let mut scope = facts.home;
             while let (Some(parent), name) = self.graph.lower_namespace(scope)? {
@@ -541,6 +678,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         name: &str,
     ) -> Result<Metadata, Error> {
         use crate::lowir::vocabulary::{Binding, Role};
+        let entity = self.graph.lower_function_entity(entity);
         let facts = self.graph.lower_function(entity)?;
         if name == "main" && self.graph.lower_namespace(facts.home)?.0.is_none() {
             return Ok(Metadata {
@@ -566,6 +704,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             ..Metadata::default()
         };
+        if let Some(allocation) = facts.allocation {
+            if allocation.array && facts.definition.is_none() {
+                return Err(Error::Missing("array allocation runtime forwarding"));
+            }
+            if !allocation.array {
+                metadata.role = Some(match allocation.role {
+                    crate::sema::lowering::AllocationRole::Allocate => Role::AllocateMemory,
+                    crate::sema::lowering::AllocationRole::Free => Role::FreeMemory,
+                });
+            }
+        }
         if facts.c_linkage {
             metadata.linkage = Linkage::C;
         }
@@ -576,11 +725,27 @@ impl<'a, 'source> Symbols<'a, 'source> {
             metadata.object = object;
             return Ok(metadata);
         }
+        if let Some(allocation) = facts.allocation {
+            metadata.object = Some(program.names.intern(
+                match (allocation.role, allocation.array) {
+                    (crate::sema::lowering::AllocationRole::Allocate, false) => {
+                        "cppgm_builtin_operator_new"
+                    }
+                    (crate::sema::lowering::AllocationRole::Allocate, true) => {
+                        "cppgm_builtin_operator_new_array"
+                    }
+                    (crate::sema::lowering::AllocationRole::Free, false) => {
+                        "cppgm_builtin_operator_delete"
+                    }
+                    (crate::sema::lowering::AllocationRole::Free, true) => {
+                        "cppgm_builtin_operator_delete_array"
+                    }
+                },
+            )?);
+            return Ok(metadata);
+        }
         let parent = self.scope(facts.home)?;
-        let terminal = self
-            .abi
-            .string(self.cursor.name(facts.name))
-            .map_err(Error::from)?;
+        let terminal = self.function_terminal(facts.name, facts.ty)?;
         let name = self
             .abi
             .intern(

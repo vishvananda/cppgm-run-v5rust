@@ -217,4 +217,49 @@ mod tests {
                 .any(|s| s == b"ptr addr @x")
         );
     }
+    #[test]
+    fn block_aliases_share_emission_identity_after_each_frontend_is_released() {
+        let mut output = LowIrOutput::default();
+        for (index, source) in [
+            b"namespace N{inline int f(int x){return x;}int call(){int f(int);extern int value;return f(value);}}int main(){return N::call();}".as_slice(),
+            b"namespace N{int value=0;int f(int);int other(){return f(value);}}".as_slice(),
+        ].into_iter().enumerate() {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            emit_unit(&source, b"block-aliases", &PredefinedValues::default(),
+                Destination::LowIr(&mut output), index + 1, StackBudget::default(), EmitMode::LowIr).unwrap();
+        }
+        // These symbols and signatures own only LowIR names/IDs. Both syntax
+        // units and semantic graphs have already been dropped by emit_unit.
+        let program = &output.output.program;
+        for spelling in ["N__f", "N__value"] {
+            assert_eq!(
+                program
+                    .symbols()
+                    .iter()
+                    .filter(|symbol| program.names.get(symbol.name) == spelling)
+                    .count(),
+                1
+            );
+        }
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| program.names.get(function.name) == "N__f")
+            .unwrap();
+        assert!(function.body.is_none(), "streamed body must be released");
+        assert_eq!(
+            program
+                .names
+                .get(program.signature(function.signature).parameters[0].name),
+            "x"
+        );
+        let mut text = Vec::new();
+        output.write(&mut text).unwrap();
+        let text = std::str::from_utf8(&text).unwrap();
+        assert_eq!(text.matches("function @N__f(").count(), 1);
+        assert!(
+            !text.contains("slot $value"),
+            "extern aliases own no frame storage"
+        );
+    }
 }

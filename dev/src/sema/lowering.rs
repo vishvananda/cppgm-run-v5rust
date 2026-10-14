@@ -52,8 +52,28 @@ pub(crate) enum CallTarget {
     Direct(EntityId),
     Indirect(TypeId, bool),
 }
+#[derive(Clone, Copy)]
+pub(crate) enum FunctionName {
+    Identifier(NameId),
+    Operator {
+        token: crate::lex::vocabulary::SimpleToken,
+        array: bool,
+    },
+    Literal(NameId),
+}
+#[derive(Clone, Copy)]
+pub(crate) enum AllocationRole {
+    Allocate,
+    Free,
+}
+#[derive(Clone, Copy)]
+pub(crate) struct Allocation {
+    pub role: AllocationRole,
+    pub array: bool,
+}
 pub(crate) struct FunctionFacts {
-    pub name: NameId,
+    pub name: FunctionName,
+    pub label: Option<ast::Name>,
     pub home: ScopeId,
     pub ty: TypeId,
     pub scope: Option<ScopeId>,
@@ -61,6 +81,7 @@ pub(crate) struct FunctionFacts {
     pub c_linkage: bool,
     pub emission: Emission,
     pub nothrow: bool,
+    pub allocation: Option<Allocation>,
     pub definition: Option<ast::DeclId>,
 }
 #[derive(Clone, Copy)]
@@ -76,6 +97,27 @@ pub(crate) struct Expression {
     pub reference_cast: Option<TypeId>,
 }
 impl Graph {
+    /// The semantic alias is recorded once; lowering never repeats name lookup.
+    pub(crate) fn lower_function_entity(&self, id: EntityId) -> EntityId {
+        self.entity(id)
+            .function
+            .and_then(|function| function.denotes)
+            .unwrap_or(id)
+    }
+    fn lower_linkage_scope(&self, mut scope: ScopeId) -> Result<ScopeId, Error> {
+        // A member keeps its class. A block declaration with linkage belongs
+        // to the nearest namespace, including within a member function.
+        if self.scope(scope).kind == super::graph::ScopeKind::Class {
+            return Ok(scope);
+        }
+        while self.scope(scope).kind != super::graph::ScopeKind::Namespace {
+            scope = self
+                .scope(scope)
+                .parent
+                .ok_or(Error::Invariant("local scope without parent"))?;
+        }
+        Ok(scope)
+    }
     pub(crate) fn lower_constexpr(&self, id: EntityId) -> bool {
         self.entity(id).constexpr
     }
@@ -91,9 +133,11 @@ impl Graph {
             name: entity
                 .name
                 .ok_or(Error::Missing("anonymous variable lowering"))?,
-            home: entity
-                .home
-                .ok_or(Error::Invariant("variable without home"))?,
+            home: self.lower_linkage_scope(
+                entity
+                    .home
+                    .ok_or(Error::Invariant("variable without home"))?,
+            )?,
             ty: entity.ty.ok_or(Error::Invariant("variable without type"))?,
             internal: variable.internal_linkage,
             c_linkage: variable.language == super::linkage::Language::C,
@@ -121,8 +165,12 @@ impl Graph {
     }
     pub(crate) fn lower_namespace_storage(&self, id: EntityId) -> bool {
         self.entity(id)
-            .home
-            .is_some_and(|scope| self.scope(scope).kind == super::graph::ScopeKind::Namespace)
+            .variable
+            .is_some_and(|variable| variable.is_extern)
+            || self
+                .entity(id)
+                .home
+                .is_some_and(|scope| self.scope(scope).kind == super::graph::ScopeKind::Namespace)
     }
     pub(crate) fn lower_automatic(&self, id: EntityId) -> bool {
         self.entity(id)
@@ -145,17 +193,34 @@ impl Graph {
             .ok_or(Error::Invariant("lowering declarator without binding"))
     }
     pub(crate) fn lower_function(&self, id: EntityId) -> Result<FunctionFacts, Error> {
+        let id = self.lower_function_entity(id);
         let entity = self.entity(id);
         let function = entity
             .function
             .ok_or(Error::Invariant("lowering non-function"))?;
         Ok(FunctionFacts {
-            name: entity
-                .name
-                .ok_or(Error::Missing("lowering special function names"))?,
-            home: entity
-                .home
-                .ok_or(Error::Invariant("function without home"))?,
+            name: match function.special {
+                Some(super::function_names::SpecialName::Operator { token, array }) => {
+                    FunctionName::Operator { token, array }
+                }
+                Some(super::function_names::SpecialName::Literal(name)) => {
+                    FunctionName::Literal(name)
+                }
+                Some(super::function_names::SpecialName::Destructor) => {
+                    return Err(Error::Missing("member function names"));
+                }
+                None => FunctionName::Identifier(
+                    entity
+                        .name
+                        .ok_or(Error::Missing("lowering special member names"))?,
+                ),
+            },
+            label: entity.special_name,
+            home: self.lower_linkage_scope(
+                entity
+                    .home
+                    .ok_or(Error::Invariant("function without home"))?,
+            )?,
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
             scope: entity.scope,
             internal: function.internal_linkage,
@@ -172,6 +237,25 @@ impl Graph {
                 &entity.exceptions,
                 super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
             ),
+            allocation: if function.allocation.is_some() {
+                let Some(super::function_names::SpecialName::Operator { token, array }) =
+                    function.special
+                else {
+                    return Err(Error::Invariant(
+                        "allocation function without operator name",
+                    ));
+                };
+                Some(Allocation {
+                    role: if token.as_keyword() == Some(crate::lex::vocabulary::Keyword::New) {
+                        AllocationRole::Allocate
+                    } else {
+                        AllocationRole::Free
+                    },
+                    array,
+                })
+            } else {
+                None
+            },
             definition: entity.function_definition,
         })
     }
@@ -193,12 +277,18 @@ impl Graph {
         let home = entity
             .home
             .ok_or(Error::Invariant("function without home"))?;
-        let name = entity
-            .name
-            .ok_or(Error::Missing("special name overload family"))?;
+        let name = if let Some(special) = entity.function.and_then(|function| function.special) {
+            super::function_names::ValueKey::Special(special)
+        } else {
+            entity
+                .name
+                .ok_or(Error::Invariant("function without name"))?
+                .into()
+        };
         Ok(self
-            .functions_at(home, name.into())
-            .map(|binding| self.binding(binding).entity))
+            .functions_at(home, name)
+            .map(|binding| self.binding(binding).entity)
+            .filter(move |&id| self.entity(id).home == Some(home)))
     }
     pub(crate) fn lower_parameters(
         &self,

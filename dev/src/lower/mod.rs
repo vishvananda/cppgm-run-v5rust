@@ -55,7 +55,7 @@ pub(crate) fn lower_unit(
     declarations: List<ast::DeclId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
-    let mut symbols = symbols::Symbols::new(graph, cursor, budget, &mut output.symbols);
+    let mut symbols = symbols::Symbols::new(graph, tree, cursor, budget, &mut output.symbols);
     let mut work: Vec<_> = tree
         .decl_lists
         .get(declarations)

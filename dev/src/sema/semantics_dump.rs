@@ -430,7 +430,18 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.name(Some(name))?;
             self.output.write_all(b"::")?;
         }
-        if let Some(name) = entity.special_name {
+        if let Some(super::function_names::SpecialName::Operator { token, array }) = entity
+            .function
+            .filter(|function| function.allocation.is_some())
+            .and_then(|function| function.special)
+        {
+            write!(
+                self.output,
+                "operator {}{}",
+                token.spelling(),
+                if array { "[]" } else { "" }
+            )?;
+        } else if let Some(name) = entity.special_name {
             crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
         } else {
             self.name(binding.name)?;
