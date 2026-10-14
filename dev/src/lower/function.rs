@@ -331,7 +331,7 @@ impl Function<'_, '_, '_, '_> {
             return self.local_array(entity, ty, slot, initializer);
         }
         if matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
-            return self.local_aggregate(ty, slot, initializer);
+            return self.local_aggregate(entity, ty, slot, initializer);
         }
         self.initialize_scalar(ty, slot, initializer)
     }

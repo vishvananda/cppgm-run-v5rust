@@ -239,16 +239,19 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let home = self.graph.binding_scope(binding);
-        let owner = self.graph.scope(home).owner;
-        if self.graph.binding_access(binding) != Access::Public
-            && !self.graph.encloses(home, scope)
-            && !(self.graph.binding_access(binding) == Access::Protected
-                && owner.is_some_and(|class| self.class_context(scope, class)))
-        {
+        if !self.direct_member_accessible(binding, scope) {
             return Err(Error::at(location, "inaccessible member"));
         }
         Ok(())
+    }
+
+    pub(super) fn direct_member_accessible(&self, binding: BindingId, scope: ScopeId) -> bool {
+        let home = self.graph.binding_scope(binding);
+        let owner = self.graph.scope(home).owner;
+        self.graph.binding_access(binding) == Access::Public
+            || self.graph.encloses(home, scope)
+            || self.graph.binding_access(binding) == Access::Protected
+                && owner.is_some_and(|class| self.class_context(scope, class))
     }
 
     pub(super) fn check_named_member_access(

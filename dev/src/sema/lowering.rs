@@ -18,11 +18,18 @@ pub(crate) struct VariableFacts {
     pub home: ScopeId,
     pub ty: TypeId,
     pub internal: bool,
+    pub locality: Locality,
     pub c_linkage: bool,
     pub thread_local: bool,
     pub initializer: Option<StaticValue>,
     pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub definition: Option<ast::DeclaratorId>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Locality {
+    External,
+    Unit,
 }
 
 pub(crate) enum TypeView<'a> {
@@ -100,6 +107,113 @@ pub(crate) struct Expression {
     pub reference_cast: Option<TypeId>,
 }
 impl Graph {
+    fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
+        // Scalar/object and linear pointer shells need no scratch allocation.
+        // Only a function type introduces the shared component DAG worklist.
+        loop {
+            ty = self.types.canonical_view(ty);
+            match self.types.get(ty).kind {
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::Array { element, .. } => ty = element,
+                TypeKind::Class(entity) | TypeKind::Enum(entity) => {
+                    return self.lower_entity_unit_local(entity);
+                }
+                TypeKind::Function { .. } => break,
+                _ => return false,
+            }
+        }
+        let mut work = vec![ty];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(ty) = work.pop() {
+            let ty = self.types.canonical_view(ty);
+            if !seen.insert(ty) {
+                continue;
+            }
+            match &self.types.get(ty).kind {
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::Function {
+                    result, parameters, ..
+                } => {
+                    work.push(*result);
+                    work.extend(parameters);
+                }
+                TypeKind::Class(entity) | TypeKind::Enum(entity)
+                    if self.lower_entity_unit_local(*entity) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+    fn lower_entity_unit_local(&self, mut entity: EntityId) -> bool {
+        use super::graph::ScopeKind;
+        loop {
+            let node = self.entity(entity);
+            let Some(owner) = node.home else {
+                return true;
+            };
+            let scope = self.scope(owner);
+            if scope.kind != ScopeKind::Class {
+                return matches!(scope.kind, ScopeKind::Block | ScopeKind::Function)
+                    || node.name.is_none()
+                    || self.lower_anonymous_namespace(owner);
+            }
+            let Some(outer) = scope.owner else {
+                return true;
+            };
+            entity = outer;
+        }
+    }
+    pub(crate) fn lower_presentation_scope(
+        &self,
+        id: ScopeId,
+    ) -> Result<(Option<ScopeId>, Option<NameId>), Error> {
+        let scope = self.scope(id);
+        match scope.kind {
+            super::graph::ScopeKind::Namespace => Ok((scope.parent, scope.name)),
+            super::graph::ScopeKind::Class => Ok((
+                scope.parent,
+                Some(
+                    scope
+                        .name
+                        .ok_or(Error::Missing("anonymous class helper label"))?,
+                ),
+            )),
+            _ => Ok((None, None)),
+        }
+    }
+    pub(crate) fn lower_trivial_default_construction(
+        &self,
+        entity: EntityId,
+    ) -> Result<bool, Error> {
+        let id = self.entity(entity).constructor.ok_or(Error::Invariant(
+            "default class object without construction facts",
+        ))?;
+        Ok(!self.constructors.get(id).nontrivial(self))
+    }
+    pub(crate) fn lower_empty_initialization_step(&self, entity: EntityId) -> Result<bool, Error> {
+        let node = self.entity(entity);
+        if node.constructor.is_none() {
+            return Ok(false);
+        }
+        let mut ty = self.lower_entity_type(entity)?;
+        while let TypeView::Array { element, .. } = self.lower_type(ty)? {
+            ty = element;
+        }
+        let TypeView::Class(class) = self.lower_type(ty)? else {
+            return Ok(false);
+        };
+        let owner = self
+            .entity(class)
+            .home
+            .ok_or(Error::Invariant("class without owner"))?;
+        Ok(!self.lower_anonymous_namespace(owner) && !self.entity(class).members.is_empty())
+    }
     /// The semantic alias is recorded once; lowering never repeats name lookup.
     pub(crate) fn lower_function_entity(&self, id: EntityId) -> EntityId {
         self.entity(id)
@@ -143,6 +257,15 @@ impl Graph {
             )?,
             ty: entity.ty.ok_or(Error::Invariant("variable without type"))?,
             internal: variable.internal_linkage,
+            locality: if variable.internal_linkage
+                || variable.language != super::linkage::Language::C
+                    && self.lower_type_unit_local(
+                        entity.ty.ok_or(Error::Invariant("variable without type"))?,
+                    ) {
+                Locality::Unit
+            } else {
+                Locality::External
+            },
             c_linkage: variable.language == super::linkage::Language::C,
             thread_local: variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal,
             initializer: entity.static_initializer,

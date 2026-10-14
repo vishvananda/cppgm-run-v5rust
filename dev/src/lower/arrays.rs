@@ -17,6 +17,17 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn aggregate_array_argument(
+        &mut self,
+        ty: TypeId,
+        list: &[ast::ExprId],
+        next: &mut usize,
+    ) -> Result<Value, Error> {
+        let slot = self.generated_slot("argarr", types::storage(self.graph, ty)?)?;
+        let address = self.emit(I::Addr(slot), ty)?.value;
+        self.structured_array_item(ty, address, list, next)?;
+        Ok(address)
+    }
     pub(super) fn array_temporary(
         &mut self,
         id: ast::ExprId,
@@ -70,6 +81,16 @@ impl Function<'_, '_, '_, '_> {
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
         let Some(initializer) = initializer else {
+            let mut object = ty;
+            while let TypeView::Array { element, .. } = self.graph.lower_type(object)? {
+                object = element;
+            }
+            if matches!(self.graph.lower_type(object)?, TypeView::Class(_)) {
+                self.symbols.require_trivial_storage(ty)?;
+                if !self.graph.lower_trivial_default_construction(entity)? {
+                    return Err(Error::Missing("class array default construction lowering"));
+                }
+            }
             return Ok(());
         };
         let TypeView::Array { element, bound } = self.graph.lower_type(ty)? else {
@@ -78,7 +99,10 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         if (self.graph.lower_constexpr(entity)
-            || !matches!(self.graph.lower_type(element)?, TypeView::Array { .. }))
+            || !matches!(
+                self.graph.lower_type(element)?,
+                TypeView::Array { .. } | TypeView::Class(_)
+            ))
             && self.graph.lower_cv(element) & 2 == 0
             && let Some(image) = self.graph.lower_array_image(entity)
         {
@@ -108,6 +132,17 @@ impl Function<'_, '_, '_, '_> {
         } else {
             slot
         };
+        if let TypeView::Class(class) = self.graph.lower_type(element)? {
+            self.symbols.require_trivial_storage(ty)?;
+            let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
+                return Err(Error::Missing("class array non-list initialization"));
+            };
+            let list = self.tree.expr_lists.get(elements);
+            if self.array_helper_eligible(class, bound, list, entity)? {
+                return self.aggregate_array_helpers(class, bound, base, list);
+            }
+            return self.aggregate_array(ty, base, list);
+        }
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
             let mut next = 0;
             return self.structured_array_item(ty, base, &[expr], &mut next);

@@ -31,9 +31,18 @@ impl LowIrOutput {
         crate::lowir::writer::write_globals(
             &self.output.program,
             output,
-            !self.output.definitions.is_empty(),
+            !self.output.definitions.is_empty() || self.output.initializer.is_some(),
         )?;
-        output.write_all(&self.output.definitions)
+        output.write_all(&self.output.definitions)?;
+        if let Some(symbol) = self.output.initializer {
+            let function = self
+                .output
+                .program
+                .function(self.output.program.symbol(symbol))
+                .ok_or_else(|| std::io::Error::other("missing startup function"))?;
+            crate::lowir::writer::write_definition(&self.output.program, function, output)?;
+        }
+        Ok(())
     }
 }
 pub enum Destination<'a> {

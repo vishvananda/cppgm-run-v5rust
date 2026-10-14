@@ -39,6 +39,16 @@ fn define_storage(
 ) -> Result<(), Error> {
     let facts = graph.lower_variable(entity)?;
     symbols.require_trivial_storage(facts.ty)?;
+    let mut object = facts.ty;
+    while let TypeView::Array { element, .. } = graph.lower_type(object)? {
+        object = element;
+    }
+    if initializer.is_none()
+        && matches!(graph.lower_type(object)?, TypeView::Class(_))
+        && !graph.lower_trivial_default_construction(entity)?
+    {
+        return Err(Error::Missing("global class construction lowering"));
+    }
     let array = matches!(
         graph.lower_type(facts.ty)?,
         TypeView::Array { .. } | TypeView::Class(_)
@@ -121,6 +131,9 @@ fn define_storage(
             init,
         },
     )?;
+    if initializer.is_none() && graph.lower_empty_initialization_step(entity)? {
+        symbols.request_empty_initialization(program)?;
+    }
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         symbols.data.define_reference(entity);
     }
@@ -176,6 +189,25 @@ pub(super) fn finish(
                 init: GlobalInit::Declaration,
             },
         )?;
+    }
+    if let Some(symbol) = symbols.empty_initialization
+        && !program.function_defined(symbol)
+    {
+        use crate::lowir::{
+            builder::FunctionBuilder,
+            model::{InstructionKind, Metadata},
+            vocabulary::{Binding, Role, Type},
+        };
+        let name = program.names.get(program.symbol(symbol).name).to_owned();
+        let mut builder = FunctionBuilder::new(program, &name, &[], Type::Void)?;
+        builder.metadata(Metadata {
+            role: Some(Role::Init),
+            binding: Some(Binding::Internal),
+            ..Metadata::default()
+        });
+        builder.block("entry")?;
+        builder.effect(InstructionKind::Return(Type::Void, None))?;
+        builder.finish()?;
     }
     Ok(())
 }

@@ -39,13 +39,18 @@ struct Input<'a> {
 impl Function<'_, '_, '_, '_> {
     pub(super) fn local_aggregate(
         &mut self,
+        entity: EntityId,
         ty: TypeId,
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
         self.symbols.require_trivial_storage(ty)?;
         let Some(initializer) = initializer else {
-            return Err(Error::Missing("default class construction lowering"));
+            if !self.graph.lower_trivial_default_construction(entity)? {
+                return Err(Error::Missing("default class construction lowering"));
+            }
+            self.emit(I::Addr(slot), ty)?;
+            return Ok(());
         };
         let (ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)) =
             initializer.kind
@@ -76,6 +81,21 @@ impl Function<'_, '_, '_, '_> {
         path.steps.clear();
         self.named_path = path.steps;
         result
+    }
+    pub(super) fn aggregate_array(
+        &mut self,
+        ty: TypeId,
+        address: Value,
+        values: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        self.symbols.require_trivial_storage(ty)?;
+        let mut input = Input { values, next: 0 };
+        let mut path = Path {
+            root: Root::Address(address),
+            steps: Vec::new(),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        self.named_contents(ty, &mut input, &mut path, false)
     }
     fn aggregate_stores(&self, class: EntityId) -> Result<bool, Error> {
         self.check_stack()?;

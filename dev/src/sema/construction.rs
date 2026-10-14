@@ -29,6 +29,7 @@ pub(super) struct Constructor {
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub bases: Vec<ConstructorId>,
+    pub subobjects: Vec<(EntityId, ConstructorId)>,
 }
 impl Constructor {
     fn initialized_members(&self) -> usize {
@@ -43,6 +44,10 @@ impl Constructor {
                 .bases
                 .iter()
                 .any(|&base| graph.constructors.get(base).own_action(graph))
+            || self
+                .subobjects
+                .iter()
+                .any(|&(_, id)| graph.constructors.get(id).own_action(graph))
     }
     fn own_action(&self, graph: &super::graph::Graph) -> bool {
         self.initialized_members() != 0
@@ -184,22 +189,45 @@ impl Analyzer<'_> {
         // Ordinary nonvirtual bases are completed bottom-up on demand. A deep
         // hierarchy must not consume one native Rust frame per base.
         let mut work = vec![(class, 0usize)];
+        let mut active = std::collections::HashSet::from([class]);
         while let Some((current, next)) = work.last_mut() {
+            let plan_location = if *current == class {
+                location
+            } else {
+                SourceOffset(0)
+            };
             if matches!(
                 self.graph.entity(*current).default_construction,
                 ConstructorState::Ready(_)
             ) {
+                active.remove(current);
                 work.pop();
             } else if self.graph.entity(*current).user_constructor.is_some() {
                 // A user-provided declaration does not ask for its bases'
                 // default constructors. Written/defaulted plans own that demand.
-                self.select_default_constructor(*current, location)?;
+                self.select_default_constructor(*current, plan_location)?;
+                active.remove(current);
                 work.pop();
             } else if let Some(edge) = self.graph.entity(*current).bases.get(*next) {
                 *next += 1;
+                active.insert(edge.class);
                 work.push((edge.class, 0));
+            } else if *next
+                < self.graph.entity(*current).bases.len()
+                    + self.graph.entity(*current).members.len()
+            {
+                let index = *next - self.graph.entity(*current).bases.len();
+                *next += 1;
+                let member = self.graph.entity(*current).members[index];
+                if let Some(child) = self.default_member_dependency(member)? {
+                    if !active.insert(child) {
+                        return Err(Error::at(location, "class contains itself"));
+                    }
+                    work.push((child, 0));
+                }
             } else {
-                self.select_default_constructor(*current, location)?;
+                self.select_default_constructor(*current, plan_location)?;
+                active.remove(current);
                 work.pop();
             }
         }
@@ -207,6 +235,26 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("uncompleted default constructor"));
         };
         Ok(id)
+    }
+
+    fn default_member_dependency(&self, member: EntityId) -> Result<Option<EntityId>, Error> {
+        let member = self.graph.entity(member);
+        if member.member_initializer.is_some() {
+            return Ok(None);
+        }
+        let mut ty = member
+            .ty
+            .ok_or(Error::Invariant("constructor member without type"))?;
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        Ok(
+            if let TypeKind::Class(child) = self.graph.types.get(ty).kind {
+                Some(child)
+            } else {
+                None
+            },
+        )
     }
 
     fn select_default_constructor(
@@ -302,7 +350,10 @@ impl Analyzer<'_> {
             bases_const_default &= base.const_default;
         }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
-        for &member_id in &self.graph.entity(class).members {
+        let mut subobjects = Vec::new();
+        let mut const_members = 0;
+        for index in 0..self.graph.entity(class).members.len() {
+            let member_id = self.graph.entity(class).members[index];
             let member = self.graph.entity(member_id);
             let mut ty = member
                 .ty
@@ -315,8 +366,49 @@ impl Analyzer<'_> {
             while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                 ty = element;
             }
-            if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class subobject default construction"));
+            if let TypeKind::Class(child_class) = self.graph.types.get(ty).kind {
+                let ConstructorState::Ready(id) =
+                    self.graph.entity(child_class).default_construction
+                else {
+                    return Err(Error::Missing(
+                        "defaulted class subobject constructor plans",
+                    ));
+                };
+                let child = self.graph.constructors.get(id);
+                if child.nontrivial(&self.graph) {
+                    return Err(Error::Missing("class subobject default construction"));
+                }
+                if child.deleted {
+                    return Err(Error::at(SourceOffset(0), "use of a deleted function"));
+                }
+                let scope = self
+                    .graph
+                    .entity(class)
+                    .scope
+                    .ok_or(Error::Invariant("constructor class without scope"))?;
+                if let Some(binding) = child.binding {
+                    self.check_direct_member_access(binding, scope, SourceOffset(0))?;
+                }
+                deleted |= self
+                    .graph
+                    .entity(child_class)
+                    .declared_destructor
+                    .is_some_and(|binding| {
+                        !self.direct_member_accessible(binding, scope)
+                            || self
+                                .graph
+                                .entity(self.graph.binding(binding).entity)
+                                .availability
+                                == super::graph::FunctionAvailability::Deleted
+                    });
+                if !union && child.const_default {
+                    const_members += 1;
+                }
+                if self.graph.types.get(ty).cv.0 & 1 != 0 && !child.const_default {
+                    return Err(Error::Missing("const class subobject default construction"));
+                }
+                subobjects.push((member_id, id));
+                continue;
             }
             if !union {
                 deleted |= matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
@@ -330,7 +422,7 @@ impl Analyzer<'_> {
                 || if union {
                     initialized == 1
                 } else {
-                    initialized == members
+                    initialized + const_members == members
                 });
         let ty = self
             .graph
@@ -373,6 +465,7 @@ impl Analyzer<'_> {
                 }),
             members: plans,
             bases,
+            subobjects,
         };
         self.publish_constructor(record)
     }
@@ -461,6 +554,7 @@ impl Analyzer<'_> {
             const_default: true,
             members: Vec::new(),
             bases: Vec::new(),
+            subobjects: Vec::new(),
         })
     }
 

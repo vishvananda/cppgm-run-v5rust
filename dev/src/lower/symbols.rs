@@ -23,6 +23,7 @@ pub(super) struct SymbolTable {
     source: Option<SourceId>,
     string_literals: u32,
     reference_temporaries: u32,
+    initializer: Option<SymbolId>,
 }
 impl SymbolTable {
     fn allocate(
@@ -78,6 +79,8 @@ pub(super) struct Symbols<'a, 'source> {
     budget: StackBudget,
     stack_base: usize,
     pub pending: Vec<EntityId>,
+    pub empty_initialization: Option<SymbolId>,
+    pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<EntityId>,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
@@ -112,6 +115,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             scopes: HashMap::new(),
             budget,
             pending: Vec::new(),
+            empty_initialization: None,
+            aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
@@ -131,6 +136,54 @@ impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
             .map_err(|_| Error::Missing("local name spelling"))
+    }
+    pub(super) fn request_empty_initialization(
+        &mut self,
+        program: &mut Program,
+    ) -> Result<(), Error> {
+        let symbol = if let Some(symbol) = self.table.initializer {
+            symbol
+        } else {
+            let symbol = self.table.allocate(program, "__cppgm_init", None, true)?;
+            self.table.initializer = Some(symbol);
+            symbol
+        };
+        self.empty_initialization = Some(symbol);
+        Ok(())
+    }
+    pub(super) fn aggregate_helper_symbol(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        count: usize,
+        cv: u8,
+    ) -> Result<SymbolId, Error> {
+        let key = super::aggregate_helpers::Key { class, count, cv };
+        if let Some(symbol) = self.aggregate_helpers.get(key) {
+            return Ok(symbol);
+        }
+        let (mut scope, name) = self
+            .graph
+            .lower_nominal_name(self.graph.lower_entity_type(class)?)?;
+        let label = self.identifier(name)?;
+        let mut components = vec![format!("{label}__{label}__aggregate")];
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
+            components.push(
+                name.map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
+                    .to_owned(),
+            );
+            scope = parent;
+        }
+        components.reverse();
+        let mut spelling = components.join("__");
+        let shapes = self.aggregate_helpers.shapes(class);
+        if shapes != 0 {
+            write!(spelling, "__sym{}", shapes + 1)
+                .map_err(|_| Error::Missing("helper label formatting"))?;
+        }
+        let symbol = self.table.allocate(program, &spelling, None, true)?;
+        self.aggregate_helpers.insert(key, symbol);
+        Ok(symbol)
     }
     pub(super) fn readonly_object(&mut self, mut ty: TypeId) -> Result<bool, Error> {
         if self.graph.lower_cv(ty) != 1
@@ -708,15 +761,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )?;
             program.names.intern_bytes(&bytes)?
         };
-        let local_object =
-            if facts.internal && (facts.c_linkage || self.table.objects.contains_key(&object)) {
-                None
-            } else {
-                Some(object)
-            };
-        let symbol = self
-            .table
-            .allocate(program, &spelling, Some(object), facts.internal)?;
+        let local_object = if facts.locality == crate::sema::lowering::Locality::Unit
+            && (facts.c_linkage || self.table.objects.contains_key(&object))
+        {
+            None
+        } else {
+            Some(object)
+        };
+        let symbol = self.table.allocate(
+            program,
+            &spelling,
+            Some(object),
+            facts.locality == crate::sema::lowering::Locality::Unit,
+        )?;
         self.callees.insert(entity, Value::Symbol(symbol));
         self.objects.insert(entity, local_object);
         self.globals.push(entity);
@@ -939,14 +996,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .get(&entity)
             .copied()
             .flatten()
-            .filter(|&object| facts.internal || object != program.symbol(symbol).name);
+            .filter(|&object| {
+                facts.locality == crate::sema::lowering::Locality::Unit
+                    || object != program.symbol(symbol).name
+            });
         Ok(Metadata {
             linkage: if facts.c_linkage {
                 Linkage::C
             } else {
                 Linkage::Default
             },
-            binding: Some(if facts.internal {
+            binding: Some(if facts.locality == crate::sema::lowering::Locality::Unit {
                 crate::lowir::vocabulary::Binding::Internal
             } else {
                 crate::lowir::vocabulary::Binding::Strong

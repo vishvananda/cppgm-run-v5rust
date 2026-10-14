@@ -1,5 +1,6 @@
 // Translated from lower/program_lowering.cpp. See NOTICE.
 //! Typed, demand-driven source lowering into the shared function-owned `LowIR` model.
+mod aggregate_helpers;
 mod aggregates;
 mod arrays;
 mod conditions;
@@ -47,6 +48,7 @@ impl From<crate::abi::Error> for Error {
 pub(crate) struct Output {
     pub program: Program,
     pub definitions: Vec<u8>,
+    pub initializer: Option<crate::lowir::model::SymbolId>,
     symbols: symbols::SymbolTable,
 }
 pub(crate) fn lower_unit(
@@ -127,6 +129,12 @@ pub(crate) fn lower_unit(
         }
     }
     let mut next = 0;
+    aggregate_helpers::emit_pending(
+        &mut output.program,
+        &mut symbols,
+        graph,
+        &mut output.definitions,
+    )?;
     while let Some(&entity) = symbols.pending.get(next) {
         next += 1;
         if !emitted.insert(entity) {
@@ -152,7 +160,22 @@ pub(crate) fn lower_unit(
         output
             .program
             .stream_last_definition(&mut output.definitions)?;
+        aggregate_helpers::emit_pending(
+            &mut output.program,
+            &mut symbols,
+            graph,
+            &mut output.definitions,
+        )?;
     }
+    aggregate_helpers::emit_pending(
+        &mut output.program,
+        &mut symbols,
+        graph,
+        &mut output.definitions,
+    )?;
     globals::finish(&mut output.program, &mut symbols, graph)?;
+    if let Some(symbol) = symbols.empty_initialization {
+        output.initializer = Some(symbol);
+    }
     Ok(())
 }
