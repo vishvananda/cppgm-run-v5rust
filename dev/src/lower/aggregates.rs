@@ -38,6 +38,35 @@ struct Input<'a> {
     next: usize,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn constructor_aggregate_base(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        initializer: ast::Initializer,
+    ) -> Result<(), Error> {
+        let ast::InitializerKind::Braced(id) = initializer.kind else {
+            return Err(Error::Missing("base class copy materialization"));
+        };
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Semantic(crate::sema::Error::Invariant(
+                "base aggregate list shape",
+            )));
+        };
+        self.symbols.require_trivial_storage(ty)?;
+        let mut input = Input {
+            values: self.tree.expr_lists.get(elements),
+            next: 0,
+        };
+        let mut path = Path {
+            root: Root::Address(object),
+            steps: std::mem::take(&mut self.named_path),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        let result = self.named_contents(ty, &mut input, &mut path, false);
+        path.steps.clear();
+        self.named_path = path.steps;
+        result
+    }
     pub(super) fn local_aggregate(
         &mut self,
         entity: EntityId,

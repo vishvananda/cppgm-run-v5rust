@@ -19,7 +19,8 @@ pub(crate) struct ConstructorView<'a> {
     pub union: bool,
     pub zero_before_value: bool,
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
-    pub bases: &'a [ConstructorId],
+    pub bases: &'a [super::construction::BaseInitialization],
+    pub class: EntityId,
     pub subobjects: &'a [(EntityId, ConstructorId)],
 }
 pub(crate) struct VariableFacts {
@@ -127,13 +128,47 @@ pub(crate) struct Expression {
 }
 pub(crate) use super::expression_facts::ObjectSource;
 impl Graph {
+    pub(crate) fn lower_base_initialization_span(
+        &self,
+        class: EntityId,
+        index: usize,
+        base_entry: bool,
+    ) -> Result<(u64, bool, u64), Error> {
+        let edge = &self.entity(class).bases[index];
+        let offset = edge
+            .offset
+            .ok_or(Error::Invariant("base construction without layout"))?;
+        let super::layout::LayoutState::Value {
+            size,
+            non_virtual_size,
+            empty,
+            ..
+        } = self.entity(edge.class).layout
+        else {
+            return Err(Error::Invariant("base construction without size"));
+        };
+        let super::layout::LayoutState::Value {
+            non_virtual_size: limit,
+            ..
+        } = self.entity(class).layout
+        else {
+            return Err(Error::Invariant("constructor owner without size"));
+        };
+        let occupied = base_entry && offset.wrapping_add(size) > limit;
+        Ok((
+            offset,
+            empty,
+            if occupied { non_virtual_size } else { size },
+        ))
+    }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
-        !self.constructors.get(id).nontrivial(self)
+        !self.constructors.get(id).nontrivial()
     }
     pub(crate) fn lower_constructor(&self, id: ConstructorId) -> ConstructorView<'_> {
         let plan = self.constructors.get(id);
         ConstructorView {
             object_pointer: plan.object_pointer,
+            class: plan.class,
             zero_before_value: plan.binding.is_none_or(|binding| {
                 matches!(
                     self.entity(self.binding(binding).entity).special_definition,
@@ -391,7 +426,7 @@ impl Graph {
         let id = self.entity(entity).constructor.ok_or(Error::Invariant(
             "default class object without construction facts",
         ))?;
-        Ok(!self.constructors.get(id).nontrivial(self))
+        Ok(!self.constructors.get(id).nontrivial())
     }
     pub(crate) fn lower_empty_initialization_step(&self, entity: EntityId) -> Result<bool, Error> {
         let node = self.entity(entity);

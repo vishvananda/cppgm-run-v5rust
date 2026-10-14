@@ -368,6 +368,30 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    pub(super) fn check_special_member_access(
+        &self,
+        binding: BindingId,
+        object: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.check_direct_member_access(binding, scope, location)?;
+        let owner = self
+            .graph
+            .scope(self.graph.binding_scope(binding))
+            .owner
+            .ok_or(Error::Invariant("special member without class"))?;
+        if self.graph.binding_access(binding) == Access::Protected
+            && !self.protected_object_accessible(scope, owner, object)
+        {
+            return Err(Error::at(
+                location,
+                "protected member accessed through an object of another class",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn direct_member_accessible(&self, binding: BindingId, scope: ScopeId) -> bool {
         let home = self.graph.binding_scope(binding);
         let owner = self.graph.scope(home).owner;

@@ -27,13 +27,14 @@ impl LowIrOutput {
     ///
     /// # Errors
     /// Returns an output failure.
-    pub fn write(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+    pub fn write(&mut self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        self.output.finish_entry_aliases();
         crate::lowir::writer::write_globals(
             &self.output.program,
             output,
             !self.output.definitions.is_empty() || self.output.initializer.is_some(),
         )?;
-        output.write_all(&self.output.definitions)?;
+        self.output.definitions.write(output)?;
         if let Some(symbol) = self.output.initializer {
             let function = self
                 .output

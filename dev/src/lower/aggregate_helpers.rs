@@ -329,7 +329,7 @@ pub(super) fn emit_pending(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
-    output: &mut Vec<u8>,
+    output: &mut super::definition_order::Definitions,
 ) -> Result<(), Error> {
     while let Some(&(key, symbol)) = symbols
         .aggregate_helpers
@@ -338,7 +338,7 @@ pub(super) fn emit_pending(
     {
         symbols.aggregate_helpers.next += 1;
         emit(program, symbols, graph, key, symbol)?;
-        program.stream_last_definition(output)?;
+        output.stream(program, None)?;
     }
     Ok(())
 }

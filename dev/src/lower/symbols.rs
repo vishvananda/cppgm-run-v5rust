@@ -24,8 +24,23 @@ pub(super) struct SymbolTable {
     string_literals: u32,
     reference_temporaries: u32,
     initializer: Option<SymbolId>,
+    entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
+    pub(super) fn finish_entry_aliases(&mut self, program: &mut Program) {
+        for alias in self.entry_aliases.drain(..) {
+            if self
+                .objects
+                .get(&alias.object)
+                .is_some_and(|symbol| symbol.is_none_or(|symbol| program.function_defined(symbol)))
+            {
+                continue;
+            }
+            let object = alias.object;
+            let _inserted = program.add_alias(alias);
+            self.objects.entry(object).or_insert(None);
+        }
+    }
     fn allocate(
         &mut self,
         program: &mut Program,
@@ -84,6 +99,8 @@ pub(super) struct Symbols<'a, 'source> {
     seen: std::collections::HashSet<super::construction::Entry>,
     entries: HashMap<super::construction::Entry, SymbolId>,
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
+    entry_families:
+        HashMap<crate::sema::lowering::ConstructorId, super::definition_order::FamilyId>,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
     callees: HashMap<EntityId, Value>,
@@ -122,6 +139,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             seen: std::collections::HashSet::new(),
             entries: HashMap::new(),
             entry_objects: HashMap::new(),
+            entry_families: HashMap::new(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
             callees: HashMap::new(),
@@ -1286,12 +1304,49 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.budget,
             )?;
             let object = program.names.intern_bytes(&object)?;
-            let _inserted = program.add_alias(crate::lowir::model::ObjectAlias {
-                object,
-                target: symbol,
-            });
+            self.table
+                .entry_aliases
+                .push(crate::lowir::model::ObjectAlias {
+                    object,
+                    target: symbol,
+                });
         }
         Ok(())
+    }
+    pub(super) fn stream_definition(
+        &mut self,
+        program: &mut Program,
+        output: &mut super::definition_order::Definitions,
+        entry: super::construction::Entry,
+    ) -> Result<(), Error> {
+        let family = if let super::construction::Entry::Constructor(id, variant) = entry {
+            let family = if let Some(&family) = self.entry_families.get(&id) {
+                family
+            } else {
+                let facts = entry.facts(self.graph)?;
+                let object = if facts.internal {
+                    None
+                } else {
+                    let encoding =
+                        self.encode_function(&facts, super::construction::Variant::Base)?;
+                    let mut object = Vec::new();
+                    abi::encoder::Encoder::encode(
+                        &self.abi,
+                        abi::encoder::Target::Entity(encoding),
+                        &mut object,
+                        self.budget,
+                    )?;
+                    Some(program.names.intern_bytes(&object)?)
+                };
+                let family = output.family(object)?;
+                self.entry_families.insert(id, family);
+                family
+            };
+            Some((family, variant))
+        } else {
+            None
+        };
+        output.stream(program, family)
     }
     fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         let facts = self.graph.lower_function(entity)?;

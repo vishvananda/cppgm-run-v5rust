@@ -235,11 +235,17 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
-            self.check_direct_member_access(binding, scope, location)?;
+            self.check_special_member_access(
+                binding,
+                self.base_object
+                    .unwrap_or(self.graph.constructors.get(id).class),
+                scope,
+                location,
+            )?;
         }
         Ok(())
     }
-    fn demand_constructor_use(&mut self, id: ConstructorId) {
+    pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) {
         if self.unevaluated != 0 {
             return;
         }

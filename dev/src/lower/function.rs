@@ -220,11 +220,11 @@ pub(super) fn lower<'a>(
             Ok(body)
         })
         .transpose()?;
-    if let super::construction::Entry::Constructor(id, _) = entry {
+    if let super::construction::Entry::Constructor(id, variant) = entry {
         let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
             tree.statements.get(body.compound).location
         });
-        function.initialize_constructor(id, location)?;
+        function.initialize_constructor(id, variant, location)?;
     }
     if let Some(body) = body {
         if body.handlers.is_some() {
@@ -523,13 +523,13 @@ pub(super) fn declare(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
-    entity: EntityId,
+    entry: super::construction::Entry,
 ) -> Result<(), Error> {
-    let symbol = symbols.function_symbol(program, entity)?;
+    let symbol = symbols.entry_symbol(program, entry)?;
     if program.symbol(symbol).declared() {
         return Ok(());
     }
-    let facts = graph.lower_function(entity)?;
+    let facts = entry.facts(graph)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let signature = signature(program, graph, facts.ty, facts.nothrow)?;
     if let Some(class) = facts.object {
@@ -556,7 +556,15 @@ pub(super) fn declare(
         parameter.no_alias = parameter_no_alias(facts.builtin, index);
     }
     builtin_boundary(&mut boundary.boundary, facts.builtin);
-    let metadata = symbols.metadata(program, entity, &name)?;
+    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
+    // A declared ABI entry carries its function metadata, not the object-root
+    // flag used to retain an emitted base definition (symbol_lowering.cpp).
+    if matches!(
+        entry,
+        super::construction::Entry::Constructor(_, super::construction::Variant::Base)
+    ) {
+        metadata.flags &= !4;
+    }
     let name = program.symbol(symbol).name;
     program.add(
         symbol,

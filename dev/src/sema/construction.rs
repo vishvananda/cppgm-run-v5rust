@@ -1,6 +1,7 @@
 // Translated from sema/analyzer_initialization.cpp and analyzer_construction.cpp. See NOTICE.
 //! Demand-only default construction and source-ordered scalar subobject plans.
 //! Records are unit-owned; declarations and expressions retain compact identities.
+use super::constructor_initialization::ConstructorArguments;
 use super::{
     Error,
     analyzer::Analyzer,
@@ -9,6 +10,14 @@ use super::{
     types::{Cv, Scalar, TypeId, TypeKind},
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
+
+#[derive(Clone, Copy)]
+pub(crate) struct BaseInitialization {
+    pub class: EntityId,
+    pub constructor: Option<ConstructorId>,
+    pub arguments: Option<ConstructorArguments>,
+    pub initializer: Option<ast::Initializer>,
+}
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ConstructorExceptionSource {
@@ -26,6 +35,12 @@ pub(super) enum ConstructorState {
     InProgress,
     Ready(ConstructorId),
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Triviality {
+    #[default]
+    Trivial,
+    Nontrivial,
+}
 pub(super) struct Constructor {
     pub class: EntityId,
     pub binding: Option<BindingId>,
@@ -37,8 +52,9 @@ pub(super) struct Constructor {
     pub(super) deleted: bool,
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
-    pub bases: Vec<ConstructorId>,
+    pub bases: Vec<BaseInitialization>,
     pub subobjects: Vec<(EntityId, ConstructorId)>,
+    triviality: Triviality,
 }
 impl Constructor {
     fn initialized_members(&self) -> usize {
@@ -47,16 +63,8 @@ impl Constructor {
             .filter(|(_, source)| source.is_some())
             .count()
     }
-    pub(super) fn nontrivial(&self, graph: &super::graph::Graph) -> bool {
-        self.own_action(graph)
-            || self
-                .bases
-                .iter()
-                .any(|&base| graph.constructors.get(base).own_action(graph))
-            || self
-                .subobjects
-                .iter()
-                .any(|&(_, id)| graph.constructors.get(id).own_action(graph))
+    pub(super) fn nontrivial(&self) -> bool {
+        self.triviality == Triviality::Nontrivial
     }
     fn own_action(&self, graph: &super::graph::Graph) -> bool {
         self.initialized_members() != 0
@@ -105,7 +113,7 @@ impl Analyzer<'_> {
             .is_some_and(|properties| properties.automatic)
             && variable
                 .constructor
-                .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
+                .is_some_and(|id| self.graph.constructors.get(id).nontrivial())
         {
             self.note_local_initializer(
                 variable
@@ -149,8 +157,9 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "use of a deleted function"));
             }
             if let Some(selected) = record.binding {
-                self.check_direct_member_access(
+                self.check_special_member_access(
                     selected,
+                    self.base_object.unwrap_or(class),
                     self.graph.binding_scope(binding),
                     location,
                 )?;
@@ -376,19 +385,40 @@ impl Analyzer<'_> {
             else {
                 return Err(Error::Missing("defaulted base subobject constructor plans"));
             };
-            bases.push(base);
+            bases.push(BaseInitialization {
+                class: edge.class,
+                constructor: Some(base),
+                arguments: None,
+                initializer: None,
+            });
             let base = self.graph.constructors.get(base);
-            if base.nontrivial(&self.graph) || base.binding.is_some() {
-                return Err(Error::Missing(
-                    "nontrivial base subobject constructor actions",
-                ));
-            }
             // implicit_default_facts plans its bases with location zero;
             // default_constructor checks deletion at that plan's location.
             if base.deleted {
                 return Err(Error::at(SourceOffset(0), "use of a deleted function"));
             }
             bases_const_default &= base.const_default;
+        }
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("constructor class without scope"))?;
+        for base in &bases {
+            if let Some(binding) = base
+                .constructor
+                .and_then(|id| self.graph.constructors.get(id).binding)
+            {
+                self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
+            }
+            if let Some(binding) = self.graph.entity(base.class).declared_destructor {
+                deleted |= !self.direct_member_accessible(binding, scope)
+                    || self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .availability
+                        == super::graph::FunctionAvailability::Deleted;
+            }
         }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         let mut subobjects = Vec::new();
@@ -416,7 +446,7 @@ impl Analyzer<'_> {
                     ));
                 };
                 let child = self.graph.constructors.get(id);
-                if child.nontrivial(&self.graph) {
+                if child.nontrivial() {
                     return Err(Error::Missing("class subobject default construction"));
                 }
                 if child.deleted {
@@ -500,7 +530,11 @@ impl Analyzer<'_> {
             Cv::default(),
         )?;
         let mut nothrow = true;
-        for &id in bases.iter().chain(subobjects.iter().map(|(_, id)| id)) {
+        for id in bases
+            .iter()
+            .filter_map(|base| base.constructor)
+            .chain(subobjects.iter().map(|&(_, id)| id))
+        {
             let child = self.graph.constructors.get(id);
             if let Some(binding) = child.binding
                 && self
@@ -541,11 +575,26 @@ impl Analyzer<'_> {
             members: plans,
             bases,
             subobjects,
+            triviality: Triviality::Trivial,
         };
         self.publish_constructor(record)
     }
 
-    fn publish_constructor(&mut self, record: Constructor) -> Result<ConstructorId, Error> {
+    fn publish_constructor(&mut self, mut record: Constructor) -> Result<ConstructorId, Error> {
+        // Child default facts are ready bottom-up. Memoize transitive triviality
+        // so use sites never walk the hierarchy again.
+        record.triviality = if record.own_action(&self.graph)
+            || record
+                .bases
+                .iter()
+                .filter_map(|base| base.constructor)
+                .chain(record.subobjects.iter().map(|&(_, id)| id))
+                .any(|id| self.graph.constructors.get(id).nontrivial())
+        {
+            Triviality::Nontrivial
+        } else {
+            Triviality::Trivial
+        };
         let function = record
             .binding
             .map(|binding| self.graph.binding(binding).entity);
@@ -635,6 +684,7 @@ impl Analyzer<'_> {
             members: Vec::new(),
             bases: Vec::new(),
             subobjects: Vec::new(),
+            triviality: Triviality::Trivial,
         })
     }
 
@@ -763,7 +813,7 @@ impl Analyzer<'_> {
                 .is_some_and(|properties| properties.automatic)
             && !object
                 .constructor
-                .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
+                .is_some_and(|id| self.graph.constructors.get(id).nontrivial())
         {
             self.note_local_initializer(
                 object.home.ok_or(Error::Invariant("local without home"))?,
@@ -849,9 +899,6 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(function)?;
         let id = self.declared_constructor_plan(binding)?;
         let class = self.graph.constructors.get(id).class;
-        if !self.graph.entity(class).bases.is_empty() {
-            return Err(Error::Missing("written base subobject constructor plans"));
-        }
         let location = self.tree.statements.get(body.compound).location;
         let owner = self
             .graph
@@ -885,6 +932,40 @@ impl Analyzer<'_> {
                 second,
                 "a union's constructor initializes several members",
             ));
+        }
+        let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
+        for index in 0..self.graph.entity(class).bases.len() {
+            let base = self.graph.entity(class).bases[index].class;
+            let initializer = written.get(&base).map(|written| written.initializer);
+            let selected = if let Some(initializer) = initializer {
+                let ty = self
+                    .graph
+                    .entity(base)
+                    .ty
+                    .ok_or(Error::Invariant("base without type"))?;
+                let saved = self.base_object.replace(class);
+                let selected =
+                    self.initialize_class_object(ty, initializer, scope, initializer.location);
+                self.base_object = saved;
+                selected?
+            } else {
+                let id = self.default_constructor(base, location)?;
+                let record = self.graph.constructors.get(id);
+                if record.deleted {
+                    return Err(Error::at(location, "use of a deleted function"));
+                }
+                if let Some(binding) = record.binding {
+                    self.check_special_member_access(binding, class, scope, location)?;
+                }
+                self.demand_constructor_use(id);
+                Some((id, ConstructorArguments::Value))
+            };
+            bases.push(BaseInitialization {
+                class: base,
+                constructor: selected.map(|(id, _)| id),
+                arguments: selected.and_then(|(_, arguments)| initializer.map(|_| arguments)),
+                initializer,
+            });
         }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         for index in 0..self.graph.entity(class).members.len() {
@@ -926,6 +1007,22 @@ impl Analyzer<'_> {
             plans.push((member, source));
         }
         self.graph.constructors.records[id.0 as usize].members = plans;
+        self.graph.constructors.records[id.0 as usize].bases = bases;
+        // A non-delegating user body potentially destroys its bases even when
+        // none of the following actions can throw (12.6.2p10).
+        for edge in &self.graph.entity(class).bases {
+            if let Some(binding) = self.graph.entity(edge.class).declared_destructor {
+                if self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .availability
+                    == super::graph::FunctionAvailability::Deleted
+                {
+                    return Err(Error::at(location, "use of a deleted function"));
+                }
+                self.check_special_member_access(binding, class, scope, location)?;
+            }
+        }
         Ok(())
     }
 
@@ -986,6 +1083,16 @@ impl Analyzer<'_> {
         self.check_direct_member_access(binding, scope, initializer.location)?;
         if node.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity) if entity == class)) {
             return Err(Error::Missing("delegating constructor plans"));
+        }
+        if let Some(base) = node.ty.and_then(|ty| self.graph.class_of(ty))
+            && self
+                .graph
+                .entity(class)
+                .bases
+                .iter()
+                .any(|edge| edge.class == base)
+        {
+            return Ok(base);
         }
         Err(Error::at(
             initializer.location,

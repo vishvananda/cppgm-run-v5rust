@@ -8,6 +8,7 @@ mod conditions;
 mod construction;
 mod conversions;
 mod data;
+mod definition_order;
 mod expressions;
 mod function;
 mod globals;
@@ -49,9 +50,14 @@ impl From<crate::abi::Error> for Error {
 #[derive(Default)]
 pub(crate) struct Output {
     pub program: Program,
-    pub definitions: Vec<u8>,
+    pub definitions: definition_order::Definitions,
     pub initializer: Option<crate::lowir::model::SymbolId>,
     symbols: symbols::SymbolTable,
+}
+impl Output {
+    pub(crate) fn finish_entry_aliases(&mut self) {
+        self.symbols.finish_entry_aliases(&mut self.program);
+    }
 }
 pub(crate) fn lower_unit(
     output: &mut Output,
@@ -93,9 +99,11 @@ pub(crate) fn lower_unit(
                         Some(body),
                         budget,
                     )?;
-                    output
-                        .program
-                        .stream_last_definition(&mut output.definitions)?;
+                    symbols.stream_definition(
+                        &mut output.program,
+                        &mut output.definitions,
+                        construction::Entry::Function(entity),
+                    )?;
                 }
             }
             ast::DeclKind::SpecialMember { declarator, .. } => {
@@ -122,9 +130,11 @@ pub(crate) fn lower_unit(
                             graph.lower_function_body(entity),
                             budget,
                         )?;
-                        output
-                            .program
-                            .stream_last_definition(&mut output.definitions)?;
+                        symbols.stream_definition(
+                            &mut output.program,
+                            &mut output.definitions,
+                            entry,
+                        )?;
                     }
                 }
             }
@@ -144,9 +154,7 @@ pub(crate) fn lower_unit(
                             tree.declarators.get(declarator.declarator).location,
                         )?;
                         if symbols.emit_tls_wrapper(&mut output.program, entity)? {
-                            output
-                                .program
-                                .stream_last_definition(&mut output.definitions)?;
+                            output.definitions.stream(&mut output.program, None)?;
                         }
                     }
                 }
@@ -179,7 +187,7 @@ pub(crate) fn lower_unit(
             }
             let facts = graph.lower_function(entity)?;
             let Some(declaration) = facts.definition else {
-                function::declare(&mut output.program, &mut symbols, graph, entity)?;
+                function::declare(&mut output.program, &mut symbols, graph, entry)?;
                 continue;
             };
             if facts.emission == crate::sema::lowering::Emission::Demanded {
@@ -209,7 +217,7 @@ pub(crate) fn lower_unit(
             if let Some(entity) = graph.lower_constructor_entity(id)
                 && !graph.lower_function_defined(entity)
             {
-                function::declare(&mut output.program, &mut symbols, graph, entity)?;
+                function::declare(&mut output.program, &mut symbols, graph, entry)?;
                 continue;
             }
             let facts = entry.facts(graph)?;
@@ -232,9 +240,7 @@ pub(crate) fn lower_unit(
                 budget,
             )?;
         }
-        output
-            .program
-            .stream_last_definition(&mut output.definitions)?;
+        symbols.stream_definition(&mut output.program, &mut output.definitions, entry)?;
         aggregate_helpers::emit_pending(
             &mut output.program,
             &mut symbols,

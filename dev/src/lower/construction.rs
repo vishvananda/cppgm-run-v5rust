@@ -57,12 +57,21 @@ impl Function<'_, '_, '_, '_> {
         if matches!(arguments, Some(ConstructorArguments::Value)) {
             if self.graph.lower_constructor(id).zero_before_value {
                 // Value-initialization zeroes storage before any nontrivial call.
-                self.zero_class_object(ty, object)?;
+                self.zero_class_object(ty, object, None)?;
             }
             if self.graph.lower_constructor_trivial(id) {
                 return Ok(());
             }
         }
+        self.call_constructor(id, Variant::Complete, object, arguments)
+    }
+    fn call_constructor(
+        &mut self,
+        id: ConstructorId,
+        variant: Variant,
+        object: Value,
+        arguments: Option<ConstructorArguments>,
+    ) -> Result<(), Error> {
         let single;
         let written = match arguments {
             Some(ConstructorArguments::Values(values)) => self.tree.expr_lists.get(values),
@@ -72,7 +81,7 @@ impl Function<'_, '_, '_, '_> {
             }
             Some(ConstructorArguments::Value) | None => &[],
         };
-        let entry = Entry::Constructor(id, Variant::Complete);
+        let entry = Entry::Constructor(id, variant);
         let facts = entry.facts(self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
@@ -126,8 +135,14 @@ impl Function<'_, '_, '_, '_> {
         }))?;
         Ok(())
     }
-    fn zero_class_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+    fn zero_class_object(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        span: Option<u64>,
+    ) -> Result<(), Error> {
         let (size, alignment) = super::types::layout(self.graph, ty)?;
+        let size = span.unwrap_or(size);
         if self.graph.lower_contiguous_zero(ty)? {
             return self.effect(I::ZeroInit(size, alignment, object));
         }
@@ -164,16 +179,60 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn initialize_constructor(
         &mut self,
         id: ConstructorId,
+        variant: Variant,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(id);
-        if !plan.bases.is_empty()
-            || plan
-                .subobjects
-                .iter()
-                .any(|&(_, child)| !self.graph.lower_constructor_trivial(child))
+        if plan
+            .subobjects
+            .iter()
+            .any(|&(_, child)| !self.graph.lower_constructor_trivial(child))
         {
             return Err(Error::Missing("recursive constructor subobject lowering"));
+        }
+        for (index, base) in plan.bases.iter().enumerate() {
+            let (offset, empty, span) = self.graph.lower_base_initialization_span(
+                plan.class,
+                index,
+                variant == Variant::Base,
+            )?;
+            let trivial = base
+                .constructor
+                .is_none_or(|id| self.graph.lower_constructor_trivial(id));
+            let value = matches!(base.arguments, Some(ConstructorArguments::Value))
+                || base.initializer.is_some_and(|initializer| {
+                    if let ast::InitializerKind::Braced(id) = initializer.kind
+                        && let ast::ExprKind::Braced { elements, .. } =
+                            self.tree.expressions.get(id).kind
+                    {
+                        return self.tree.expr_lists.get(elements).is_empty();
+                    }
+                    false
+                });
+            if base.initializer.is_none() && trivial || empty && value && trivial {
+                continue;
+            }
+            let ty = self.graph.lower_entity_type(base.class)?;
+            let object = self.object_pointer(plan.object_pointer)?.value;
+            let object = self.base_projection(object, ty, offset)?;
+            if let Some(constructor) = base.constructor {
+                if value {
+                    if !empty && self.graph.lower_constructor(constructor).zero_before_value {
+                        self.zero_class_object(ty, object, Some(span))?;
+                    }
+                    if trivial {
+                        continue;
+                    }
+                }
+                self.call_constructor(constructor, Variant::Base, object, base.arguments)?;
+            } else {
+                let initializer =
+                    base.initializer
+                        .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                            "aggregate base without initializer",
+                        )))?;
+                self.constructor_aggregate_base(ty, object, initializer)?;
+            }
         }
         for &(member, initializer) in plan.members {
             let Some(initializer) = initializer else {

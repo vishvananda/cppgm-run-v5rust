@@ -697,17 +697,57 @@ fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand
         };
         classes.push((class, plan));
     }
-    assert_eq!(
-        graph.constructors.get(classes[2].1).bases,
-        vec![classes[1].1]
-    );
-    assert_eq!(
-        graph.constructors.get(classes[1].1).bases,
-        vec![classes[0].1]
-    );
+    for index in [2, 1] {
+        let bases = &graph.constructors.get(classes[index].1).bases;
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].class, classes[index - 1].0);
+        assert_eq!(bases[0].constructor, Some(classes[index - 1].1));
+        assert!(bases[0].arguments.is_none());
+        assert!(bases[0].initializer.is_none());
+    }
     assert_eq!(graph.entity(classes[2].0).bases[0].class, classes[1].0);
     let trailing = super::function_demands::trailing(&graph);
     assert!(matches!(trailing.as_slice(), [Demand::Constructor(id)] if *id == classes[2].1));
+}
+
+#[test]
+fn transitive_default_base_actions_share_ready_facts_without_syntax_growth() {
+    use super::{construction::ConstructorState, function_demands::Demand};
+    let source = SourceBuffer::new(
+        b"struct B{int x=3;};struct M:B{};struct D:M{};void f(){D a;D b;}".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"base-construction-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), count);
+    let mut plans = Vec::new();
+    for spelling in [b"B".as_slice(), b"M", b"D"] {
+        let name = cursor.intern_name(spelling).unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        let ConstructorState::Ready(id) = graph.entity(class).default_construction else {
+            panic!("default plan must be ready");
+        };
+        assert!(graph.constructors.get(id).nontrivial());
+        plans.push((class, id));
+    }
+    for index in [1, 2] {
+        let bases = &graph.constructors.get(plans[index].1).bases;
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].class, plans[index - 1].0);
+        assert_eq!(bases[0].constructor, Some(plans[index - 1].1));
+        assert!(bases[0].initializer.is_none());
+        assert!(bases[0].arguments.is_none());
+    }
+    let trailing = super::function_demands::trailing(&graph);
+    assert!(matches!(trailing.as_slice(), [Demand::Constructor(id)] if *id == plans[2].1));
 }
 
 #[test]
