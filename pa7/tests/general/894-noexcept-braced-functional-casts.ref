@@ -1,0 +1,25 @@
+1 translation units
+start translation unit 1
+translation-unit
+  type-alias I int
+  function-declaration throwing function of () returning int
+  function-declaration safe function of () returning int
+  function-declaration with_default function of (int) returning int
+  function-declaration specification function of () returning int
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  binary-expression prvalue int OP_PLUS:+
+                    literal prvalue bool 0
+                    literal prvalue bool 0
+                  literal prvalue bool 0
+                literal prvalue bool 1
+              literal prvalue bool 1
+            literal prvalue bool 0
+          literal prvalue bool 0
+end translation unit

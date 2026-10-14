@@ -211,6 +211,12 @@ impl Function<'_, '_, '_, '_> {
         if ty == Type::Ptr && matches!(op, P::AddAssign | P::SubtractAssign) {
             return self.pointer_compound(left, right, op == P::SubtractAssign, source);
         }
+        if op == P::AddAssign && types::boolean(self.graph, source)? {
+            let (operation, _) = self.graph.lower_arithmetic_types(id)?;
+            if self.pointer_element(operation)?.is_some() {
+                return self.bool_pointer_compound(left, right, source, operation);
+            }
+        }
         let (place, value) = if op == P::Assign {
             let value = self.operand(right, Context::Assignment)?;
             let place = self.scalar_place(left)?;

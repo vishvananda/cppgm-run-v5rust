@@ -148,6 +148,30 @@ impl Function<'_, '_, '_, '_> {
         ))?;
         Ok((place, value))
     }
+    pub(super) fn bool_pointer_compound(
+        &mut self,
+        left: ast::ExprId,
+        right: ast::ExprId,
+        source: TypeId,
+        operation: TypeId,
+    ) -> Result<(Value, RValue), Error> {
+        // E1 += E2 when E1 is bool and the recorded operation is a pointer:
+        // evaluate E1 once, read its count, then E2, scale and convert the sum.
+        let place = self.scalar_place(left)?;
+        let old = self.read_place(place, source)?;
+        let pointer = self.operand(right, Context::CompoundAssignment)?;
+        let sum = self.pointer_offset(pointer, old, false, operation)?;
+        let value = self.convert(sum, source, Context::CompoundAssignment)?;
+        // The frozen bool-pointer path stores the comparison directly,
+        // without the arithmetic path's fit/truncation instruction.
+        self.effect(I::Store(
+            types::memory(self.graph, source)?,
+            Type::U8,
+            value.value,
+            place,
+        ))?;
+        Ok((place, value))
+    }
     pub(super) fn pointer_arithmetic(
         &mut self,
         id: ast::ExprId,

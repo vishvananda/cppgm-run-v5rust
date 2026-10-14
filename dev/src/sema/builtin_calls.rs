@@ -22,6 +22,30 @@ pub(crate) enum BuiltinFunction {
     Memset,
     Strlen,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn deferred_queries_reuse_builtin_identity_outside_source_visibility() {
+        let source = SourceBuffer::new(b"int f()noexcept(noexcept(&__builtin_memcpy));void*(*p)(void*,const void*,unsigned long)=&__builtin_memcpy;int h(){return noexcept(f());}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let key = analyzer.builtin_names.memcpy;
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
+    }
+}
 #[derive(Clone, Copy)]
 pub(super) struct BuiltinNames {
     pub abort: NameId,
@@ -53,12 +77,26 @@ impl Analyzer<'_> {
         } else {
             return Ok(None);
         };
-        if let Some(binding) = self.graph.value_binding(self.graph.global, key.into()) {
-            return Ok(self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .builtin
-                .map(|_| binding));
+        // Registry identity is independent of a deferred query's source limit.
+        // Inspect only this global name family, including an older builtin
+        // behind an ordinary overload. A non-builtin entry blocks creation.
+        let limit = self.graph.lookup_limit.take();
+        let existing = self
+            .graph
+            .value_binding(self.graph.global, key.into())
+            .map(|_| {
+                self.graph
+                    .functions_at(self.graph.global, key.into())
+                    .find(|&binding| {
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .builtin
+                            .is_some()
+                    })
+            });
+        self.graph.lookup_limit = limit;
+        if let Some(existing) = existing {
+            return Ok(existing);
         }
         let void = self.graph.types.scalar(Scalar::Void)?;
         let (result, parameters) = if matches!(builtin, BuiltinFunction::Abort) {
@@ -130,6 +168,24 @@ impl Analyzer<'_> {
             },
         )?))
     }
+    pub(super) fn builtin_lookup(&mut self, key: NameId) -> Result<Option<LookupResult>, Error> {
+        let Some(binding) = self.ensure_builtin(key)? else {
+            return Ok(None);
+        };
+        // Like C++ builtin_lookup, this fallback returns the reserved name's
+        // entire family, not a source-filtered singleton. Ordinary lookup
+        // retains its own declaration-point visibility rules.
+        let limit = self.graph.lookup_limit.take();
+        let functions = self
+            .graph
+            .functions_at(self.graph.global, key.into())
+            .collect();
+        self.graph.lookup_limit = limit;
+        Ok(Some(LookupResult {
+            binding: Some(binding),
+            functions,
+        }))
+    }
     pub(super) fn builtin_call(
         &mut self,
         id: ast::ExprId,
@@ -146,9 +202,8 @@ impl Analyzer<'_> {
         let ast::NameKind::Identifier(key) = components[0].kind else {
             return Ok(None);
         };
-        if let Some(binding) = self.ensure_builtin(key)? {
-            found.binding = Some(binding);
-            found.functions.push(binding);
+        if let Some(builtin) = self.builtin_lookup(key)? {
+            *found = builtin;
             return Ok(None);
         }
         if key != self.builtin_names.constant_p {

@@ -144,18 +144,26 @@ impl Analyzer<'_> {
                 ExprKind::FunctionalCast {
                     arguments, braced, ..
                 } => {
-                    if let Some(braced) = braced {
-                        self.throw_work.push((braced, next));
+                    let elements = if let Some(braced) = braced {
+                        let ExprKind::Braced { elements, .. } =
+                            self.tree.expressions.get(braced).kind
+                        else {
+                            return Err(Error::Invariant("functional cast without brace elements"));
+                        };
+                        // A scalar cast records facts on its elements and result,
+                        // not on the intervening initializer-list syntax node.
+                        elements
                     } else {
-                        self.throw_work.extend(
-                            self.tree
-                                .expr_lists
-                                .get(arguments)
-                                .iter()
-                                .rev()
-                                .map(|&id| (id, next)),
-                        );
-                    }
+                        arguments
+                    };
+                    self.throw_work.extend(
+                        self.tree
+                            .expr_lists
+                            .get(elements)
+                            .iter()
+                            .rev()
+                            .map(|&id| (id, next)),
+                    );
                 }
                 ExprKind::Braced { elements, .. } => {
                     self.throw_work.extend(

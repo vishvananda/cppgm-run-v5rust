@@ -43,8 +43,19 @@ impl Function<'_, '_, '_, '_> {
         target: TypeId,
         context: Context,
     ) -> Result<RValue, Error> {
-        if value.source == target {
-            return Ok(value);
+        if value.source == target
+            || matches!(
+                (self.graph.lower_type(value.source)?, self.graph.lower_type(target)?),
+                (crate::sema::lowering::TypeView::Scalar(from), crate::sema::lowering::TypeView::Scalar(to))
+                    if from == to
+            )
+        {
+            // Scalar conversion compares unqualified identities. In particular,
+            // binding a const nullptr_t temporary must not retype its ptr value.
+            return Ok(RValue {
+                source: target,
+                ..value
+            });
         }
         let to = types::storage(self.graph, target)?;
         if to == Type::Void {

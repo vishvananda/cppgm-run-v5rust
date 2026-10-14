@@ -40,7 +40,13 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "null conversion without target",
                 )))?;
-            return self.zero(target);
+            let zero = self.zero(target)?;
+            // A converted integer null constant is a ptr value even when
+            // its semantic target is nullptr_t rather than a pointer type.
+            return Ok(RValue {
+                ty: Type::Ptr,
+                ..zero
+            });
         }
         if let Some(target) = facts.target {
             self.convert(value, target, context)
@@ -131,14 +137,17 @@ impl Function<'_, '_, '_, '_> {
                     },
                 })
             }
-            ExprKind::Keyword(Keyword::True | Keyword::False | Keyword::Nullptr) => {
-                let bits = u64::from(matches!(
-                    self.tree.expressions.get(id).kind,
-                    ExprKind::Keyword(Keyword::True)
-                ));
+            ExprKind::Keyword(keyword @ (Keyword::True | Keyword::False | Keyword::Nullptr)) => {
+                let bits = u64::from(keyword == Keyword::True);
                 Ok(RValue {
                     value: self.builder.integer(u128::from(bits))?,
-                    ty,
+                    // keyword_literal emits ptr for nullptr, independently
+                    // of nullptr_t's i64 object storage and ABI boundary.
+                    ty: if keyword == Keyword::Nullptr {
+                        Type::Ptr
+                    } else {
+                        ty
+                    },
                     source,
                     literal: true,
                     bits: Some(bits),

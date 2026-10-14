@@ -132,11 +132,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         name: FunctionName,
         label: Option<ast::Name>,
     ) -> Result<String, Error> {
-        if let FunctionName::Identifier(name) = name {
-            return Ok(self.identifier(name)?.to_owned());
-        }
         let mut bytes = Vec::new();
-        if let Some(label) = label {
+        if let FunctionName::Identifier(name) = name {
+            bytes.extend_from_slice(self.cursor.name(name));
+        } else if let Some(label) = label {
             crate::syntax::write_member_label(self.tree, self.cursor, label, &mut bytes).map_err(
                 |_| Error::Semantic(crate::sema::Error::Invariant("function label rendering")),
             )?;
@@ -551,6 +550,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let own = match facts.builtin {
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
+            _ if facts.c_linkage && !facts.internal => {
+                let FunctionName::Identifier(name) = facts.name else {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "C linkage function without identifier",
+                    )));
+                };
+                self.identifier(name)?.to_owned()
+            }
             _ => self.function_label(facts.name, facts.label)?,
         };
         let mut components = vec![own.as_str()];

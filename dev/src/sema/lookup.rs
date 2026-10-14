@@ -451,10 +451,9 @@ impl Analyzer<'_> {
         if filter == Filter::Ordinary
             && found.binding.is_none()
             && prefix.is_none_or(|prefix| prefix == self.graph.global)
-            && let Some(binding) = self.ensure_builtin(key)?
+            && let Some(builtin) = self.builtin_lookup(key)?
         {
-            found.binding = Some(binding);
-            found.functions.push(binding);
+            found = builtin;
         }
         if specialize && last.arguments.is_some() {
             self.explicit_function_specializations(*last, &mut found, scope, false)?;
