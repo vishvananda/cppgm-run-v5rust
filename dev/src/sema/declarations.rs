@@ -35,7 +35,14 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let declaration = *self.tree.declarations.get(id);
         let location = declaration.location;
-        let specs = self.specifiers(specifiers, scope, declarators.is_empty())?;
+        let first = self
+            .tree
+            .init_declarators
+            .get(declarators)
+            .first()
+            .map(|init| init.declarator);
+        let specs =
+            self.declaration_specifiers(specifiers, scope, first, declarators.is_empty())?;
         self.keep_specifier_access();
         if specs.friendship == super::specifiers::Friendship::Friend && declarators.is_empty() {
             self.friend_type(specs.ty, scope, location)?;

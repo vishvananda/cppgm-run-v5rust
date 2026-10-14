@@ -27,8 +27,32 @@ pub(super) struct DeclarationAccess {
     context: Mark,
     pending: Vec<Pending>,
     pub function: Option<EntityId>,
+    pub class: Option<ScopeId>,
 }
 impl Analyzer<'_> {
+    pub(super) fn declaration_specifiers(
+        &mut self,
+        specifiers: crate::syntax::storage::List<crate::syntax::ast::Specifier>,
+        scope: ScopeId,
+        declarator: Option<crate::syntax::ast::DeclaratorId>,
+        lone: bool,
+    ) -> Result<super::specifiers::Specifiers, Error> {
+        let saved = self.declaration_access.class;
+        let result = (|| {
+            if self.semantic()
+                && self.template_depth == 0
+                && self.graph.scope(scope).kind == ScopeKind::Namespace
+            {
+                self.declaration_access.class = self
+                    .declarator_environment(declarator, scope)?
+                    .home
+                    .filter(|&home| self.graph.scope(home).kind == ScopeKind::Class);
+            }
+            self.specifiers(specifiers, scope, lone)
+        })();
+        self.declaration_access.class = saved;
+        result
+    }
     pub(super) fn begin_declaration_access(&mut self, scope: ScopeId, enabled: bool) -> Mark {
         let mark = Mark {
             length: self.declaration_access.pending.len(),

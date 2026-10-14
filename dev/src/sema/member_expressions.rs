@@ -426,11 +426,12 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "inaccessible member"));
         }
         if self.graph.binding_access(binding) == Access::Protected
-            && self
+            && (self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .data_member
                 == Some(DataMemberKind::Instance)
+                || self.member_function_owner(binding).is_some())
             && object.is_some_and(|object| !self.protected_object_accessible(scope, owner, object))
         {
             return Err(Error::at(

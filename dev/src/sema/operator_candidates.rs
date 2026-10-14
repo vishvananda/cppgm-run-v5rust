@@ -4,7 +4,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     function_names::{SpecialName, ValueKey},
-    graph::{BindingId, BindingKind, ScopeId, ScopeKind},
+    graph::{BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::{Filter, LookupResult},
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
@@ -14,6 +14,18 @@ use crate::{
     types::FundamentalType as F,
 };
 use std::collections::HashSet;
+
+#[derive(Default)]
+pub(super) struct OperatorLookup {
+    pub bindings: Vec<BindingId>,
+    pub seen: HashSet<EntityId>,
+}
+impl OperatorLookup {
+    pub(super) fn clear(&mut self) {
+        self.bindings.clear();
+        self.seen.clear();
+    }
+}
 
 pub(super) fn operator_key(op: P) -> Result<ValueKey, Error> {
     Ok(ValueKey::Special(SpecialName::Operator {
@@ -34,12 +46,15 @@ impl Analyzer<'_> {
         op: P,
         operands: &[ast::ExprId],
         scope: ScopeId,
-    ) -> Result<Vec<BindingId>, Error> {
+        lookup: &mut OperatorLookup,
+    ) -> Result<(), Error> {
         let key = operator_key(op)?;
         self.lookup_location = self.tree.expressions.get(operands[0]).location;
         let left = self.graph.expression_facts.get(operands[0])?;
-        let mut set = Vec::new();
-        let mut seen = HashSet::new();
+        let OperatorLookup {
+            bindings: set,
+            seen,
+        } = lookup;
         if let Some(class) = self.graph.class_of(left.ty)
             && self.graph.entity(class).complete
             && let Some(home) = self.graph.entity(class).scope
@@ -60,7 +75,7 @@ impl Analyzer<'_> {
             }
         }
         if matches!(op, P::Assign | P::LeftBracket | P::Arrow) {
-            return Ok(set);
+            return Ok(());
         }
         let mut from = Some(scope);
         while let Some(scope) = from {
@@ -110,7 +125,7 @@ impl Analyzer<'_> {
                 set.push(binding);
             }
         }
-        Ok(set)
+        Ok(())
     }
 
     fn operator_promoted_type(&mut self, ty: TypeId) -> Result<TypeId, Error> {
@@ -128,7 +143,7 @@ impl Analyzer<'_> {
         operands: &[ast::ExprId],
         postfix: bool,
         same_enum_list: bool,
-    ) -> Result<Option<Vec<TypeId>>, Error> {
+    ) -> Result<Option<[TypeId; 2]>, Error> {
         let a = self.graph.expression_facts.get(operands[0])?;
         let boolean = self.graph.types.scalar(Scalar::Bool)?;
         if operands.len() == 1 {
@@ -143,7 +158,7 @@ impl Analyzer<'_> {
             return Ok((op == P::LogicalNot
                 || matches!(op, P::Add | P::Subtract) && self.is_arithmetic_operand(a.ty)
                 || op == P::Complement && self.is_integral_operand(a.ty))
-            .then_some(vec![parameter]));
+            .then_some([parameter, parameter]));
         }
         let b = self.graph.expression_facts.get(operands[1])?;
         let p1 = self.decayed_type(a.ty)?;
@@ -151,7 +166,7 @@ impl Analyzer<'_> {
         let difference = self.graph.types.scalar(Scalar::Basic(F::LongInt))?;
         let arithmetic = self.is_arithmetic_operand(a.ty) && self.is_arithmetic_operand(b.ty);
         let integral = self.is_integral_operand(a.ty) && self.is_integral_operand(b.ty);
-        let mut parameters = vec![
+        let mut parameters = [
             self.operator_promoted_type(a.ty)?,
             self.operator_promoted_type(b.ty)?,
         ];
@@ -181,10 +196,10 @@ impl Analyzer<'_> {
                 if arithmetic && op != P::LeftBracket {
                     true
                 } else if ptr1 && self.is_integral_operand(b.ty) {
-                    parameters = vec![p1, difference];
+                    parameters = [p1, difference];
                     true
                 } else if op != P::Subtract && self.is_integral_operand(a.ty) && ptr2 {
-                    parameters = vec![difference, p2];
+                    parameters = [difference, p2];
                     true
                 } else {
                     false

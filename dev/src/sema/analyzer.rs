@@ -53,6 +53,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) unevaluated: u32,
     pub(super) builtin_names: super::builtin_calls::BuiltinNames,
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
+    pub(super) operator_lookup: super::operator_candidates::OperatorLookup,
+    pub(super) association_scratch: super::call_lookup::AssociationScratch,
     pub(super) call_scratch: super::procedural_calls::CallScratch,
     pub(super) copy_scratch: super::copy_initialization::CopyScratch,
     pub(super) binary_spine: Vec<ast::ExprId>,
@@ -161,6 +163,8 @@ impl<'tree> Analyzer<'tree> {
             body_context: None,
             binary_spine: Vec::new(),
             operator_scratch: super::operator_resolution::OperatorScratch::default(),
+            operator_lookup: super::operator_candidates::OperatorLookup::default(),
+            association_scratch: super::call_lookup::AssociationScratch::default(),
             call_scratch: super::procedural_calls::CallScratch::default(),
             copy_scratch: super::copy_initialization::CopyScratch::default(),
             builtin_names,
@@ -461,7 +465,7 @@ impl<'tree> Analyzer<'tree> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let specs = self.specifiers(specifiers, scope, false)?;
+        let specs = self.declaration_specifiers(specifiers, scope, Some(declarator), false)?;
         let mut environment = self.declarator_environment(Some(declarator), scope)?;
         environment.declaration_location = Some(location);
         self.friend_environment(specs, scope, &mut environment);

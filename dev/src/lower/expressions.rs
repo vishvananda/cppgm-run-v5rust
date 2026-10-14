@@ -99,7 +99,12 @@ impl Function<'_, '_, '_, '_> {
         let source = facts.ty;
         if self.graph.lower_operator_call(id)? {
             let value = self.operator_call(id)?;
-            return if facts.is_place {
+            return if facts.is_place
+                && !matches!(
+                    self.graph.lower_type(source)?,
+                    crate::sema::lowering::TypeView::Function { .. }
+                        | crate::sema::lowering::TypeView::Array { .. }
+                ) {
                 self.read_place(value.value, source)
             } else {
                 Ok(value)

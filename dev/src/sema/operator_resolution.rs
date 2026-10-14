@@ -22,6 +22,63 @@ struct OperatorQuery<'a> {
     class_operand: bool,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn operator_scratch_restores_empty_content_after_ambiguity_and_reuse() {
+        let source = SourceBuffer::new(
+            b"struct A{};int operator+(A&,int);int operator-(A&,long);\
+              int operator-(A&,unsigned long);int bad(A&a){return a-1;}\
+              int good(A&a){return a+2;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let input = Preprocessor::with_name(&source, b"operator-rollback").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        let declarations = tree.decl_lists.get(declarations);
+        for &declaration in &declarations[..4] {
+            analyzer.declaration(declaration, scope).unwrap();
+        }
+        assert!(matches!(
+            analyzer.declaration(declarations[4], scope),
+            Err(Error::Diagnostic {
+                message: "ambiguous overloaded operator",
+                ..
+            })
+        ));
+        assert!(analyzer.operator_lookup.bindings.is_empty());
+        assert!(analyzer.operator_lookup.seen.is_empty());
+        assert!(analyzer.operator_scratch.candidates.is_empty());
+        assert!(analyzer.operator_scratch.sequences.is_empty());
+        let capacity = analyzer.operator_lookup.bindings.capacity();
+        assert!(capacity >= 2);
+        analyzer.declaration(declarations[5], scope).unwrap();
+        assert!(analyzer.operator_lookup.bindings.is_empty());
+        assert!(analyzer.operator_lookup.seen.is_empty());
+        assert!(analyzer.operator_scratch.candidates.is_empty());
+        assert!(analyzer.operator_scratch.sequences.is_empty());
+        assert!(analyzer.operator_lookup.bindings.capacity() >= capacity);
+        assert!(analyzer.declaration_access.class.is_none());
+        assert!(analyzer.declaration_access.function.is_none());
+        assert_eq!(tree.expressions.mark(), count);
+    }
+}
+
 #[derive(Default)]
 pub(super) struct OperatorScratch {
     candidates: Vec<(Option<BindingId>, usize)>,
@@ -67,23 +124,28 @@ impl Analyzer<'_> {
         if !overloadable {
             return Ok(None);
         }
-        let set = self.operator_candidates(op, operands, scope)?;
-        if set.is_empty() {
-            return Ok(None);
-        }
+        let mut lookup = std::mem::take(&mut self.operator_lookup);
         let mut scratch = std::mem::take(&mut self.operator_scratch);
-        let result = self.select_operator(
-            OperatorQuery {
-                id,
-                op,
-                operands,
-                postfix,
-                scope,
-                class_operand,
-            },
-            &set,
-            &mut scratch,
-        );
+        let result = (|| {
+            self.operator_candidates(op, operands, scope, &mut lookup)?;
+            if lookup.bindings.is_empty() {
+                return Ok(None);
+            }
+            self.select_operator(
+                OperatorQuery {
+                    id,
+                    op,
+                    operands,
+                    postfix,
+                    scope,
+                    class_operand,
+                },
+                &lookup.bindings,
+                &mut scratch,
+            )
+        })();
+        lookup.clear();
+        self.operator_lookup = lookup;
         scratch.clear();
         self.operator_scratch = scratch;
         result

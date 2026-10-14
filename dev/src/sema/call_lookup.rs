@@ -4,15 +4,39 @@ use super::{
     Error,
     analyzer::Analyzer,
     function_names::ValueKey,
-    graph::{BindingKind, ScopeId, ScopeKind},
+    graph::{BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::LookupResult,
-    types::TypeKind,
+    types::{TypeId, TypeKind},
 };
 use crate::syntax::{ast, storage::List};
 use std::collections::{HashMap, HashSet};
+
+#[derive(Default)]
+pub(super) struct AssociationScratch {
+    types: Vec<(TypeId, u32)>,
+    seen_types: HashMap<TypeId, u32>,
+    namespaces: Vec<ScopeId>,
+    classes: Vec<EntityId>,
+    seen_classes: HashSet<EntityId>,
+    enclosing: Vec<EntityId>,
+    seen_namespaces: HashSet<ScopeId>,
+    seen_functions: HashSet<EntityId>,
+}
+impl AssociationScratch {
+    fn clear(&mut self) {
+        self.types.clear();
+        self.seen_types.clear();
+        self.namespaces.clear();
+        self.classes.clear();
+        self.seen_classes.clear();
+        self.enclosing.clear();
+        self.seen_namespaces.clear();
+        self.seen_functions.clear();
+    }
+}
 impl Analyzer<'_> {
     pub(super) fn argument_dependent_lookup(
-        &self,
+        &mut self,
         name: ValueKey,
         arguments: List<ast::ExprId>,
         found: &mut LookupResult,
@@ -31,12 +55,34 @@ impl Analyzer<'_> {
         self.associated_functions(name, self.tree.expr_lists.get(arguments), found)
     }
     pub(super) fn associated_functions(
-        &self,
+        &mut self,
         name: ValueKey,
         arguments: &[ast::ExprId],
         found: &mut LookupResult,
     ) -> Result<(), Error> {
-        let mut types = Vec::new();
+        let mut scratch = std::mem::take(&mut self.association_scratch);
+        let result = self.associated_query(name, arguments, found, &mut scratch);
+        scratch.clear();
+        self.association_scratch = scratch;
+        result
+    }
+    fn associated_query(
+        &self,
+        name: ValueKey,
+        arguments: &[ast::ExprId],
+        found: &mut LookupResult,
+        scratch: &mut AssociationScratch,
+    ) -> Result<(), Error> {
+        let AssociationScratch {
+            types,
+            seen_types,
+            namespaces,
+            classes,
+            seen_classes,
+            enclosing,
+            seen_namespaces,
+            seen_functions,
+        } = scratch;
         for &argument in arguments {
             if matches!(
                 self.tree.expressions.get(argument).kind,
@@ -54,11 +100,6 @@ impl Analyzer<'_> {
         // The same type may be reached with more association depth remaining.
         // Revisit only for a shorter path; every successful revisit decreases
         // its depth, bounded by the inherited 64-level type budget.
-        let mut seen_types = HashMap::new();
-        let mut namespaces = Vec::new();
-        let mut classes = Vec::new();
-        let mut seen_classes = HashSet::new();
-        let mut enclosing = Vec::new();
         while let Some((ty, depth)) = types.pop() {
             if depth > 64 || seen_types.get(&ty).is_some_and(|&earlier| earlier <= depth) {
                 continue;
@@ -114,7 +155,7 @@ impl Analyzer<'_> {
                 _ => (),
             }
         }
-        for class in enclosing {
+        for class in enclosing.drain(..) {
             if seen_classes.insert(class) {
                 classes.push(class);
             }
@@ -122,12 +163,12 @@ impl Analyzer<'_> {
         if namespaces.is_empty() {
             return Ok(());
         }
-        let mut seen_namespaces = HashSet::new();
-        let mut seen_functions: HashSet<_> = found
-            .functions
-            .iter()
-            .map(|&id| self.graph.binding(id).entity)
-            .collect();
+        seen_functions.extend(
+            found
+                .functions
+                .iter()
+                .map(|&id| self.graph.binding(id).entity),
+        );
         while let Some(scope) = namespaces.pop() {
             if !seen_namespaces.insert(scope) {
                 continue;
@@ -148,7 +189,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        for class in classes {
+        for class in classes.drain(..) {
             for &binding in self.graph.friendships.functions(class, name) {
                 if self.graph.binding_visible_at_limit(binding)
                     && seen_functions.insert(self.graph.binding(binding).entity)

@@ -38,8 +38,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let ty = types::storage(self.graph, result)?;
         let member = function.object.is_some();
-        let mut values = Vec::with_capacity(parameters.len() + usize::from(member));
-        if member {
+        let first = if member {
             let object = operands[0];
             let mut address = self.address(object)?;
             for offset in self
@@ -50,26 +49,24 @@ impl Function<'_, '_, '_, '_> {
             {
                 address = self.base_projection(address, source, offset)?;
             }
-            values.push(address);
-        }
-        for (index, &operand) in operands.iter().skip(usize::from(member)).enumerate() {
-            let parameter = parameters[index];
-            if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                values.push(self.bind_reference(operand, parameter, Context::Argument)?);
-            } else {
-                let value = self.operand(operand, Context::Argument)?;
-                values.push(self.fit(value, parameter)?.value);
-            }
+            address
+        } else {
+            self.operator_argument(operands[0], parameters[0])?
+        };
+        // Unary and binary operators, including a postfix dummy int, carry
+        // at most two lowered values. Nested calls cannot disturb this view.
+        let mut values = [first; 2];
+        if operands.len() == 2 {
+            values[1] = self.operator_argument(operands[1], parameters[usize::from(!member)])?;
         }
         if postfix {
-            values.push(self.builder.integer(0)?);
+            values[1] = self.builder.integer(0)?;
         }
         self.symbols.demand(entity);
         let callee = self.symbols.callee(entity, &mut self.builder)?;
-        let arguments = self.builder.arguments(&values)?;
+        let arguments = self
+            .builder
+            .arguments(&values[..count + usize::from(postfix)])?;
         let call = I::Call(Call {
             result: ty,
             callee,
@@ -82,6 +79,21 @@ impl Function<'_, '_, '_, '_> {
             self.zero(source)
         } else {
             self.emit(call, source)
+        }
+    }
+    fn operator_argument(
+        &mut self,
+        operand: ast::ExprId,
+        parameter: crate::sema::lowering::TypeId,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        if matches!(
+            self.graph.lower_type(parameter)?,
+            TypeView::Reference { .. }
+        ) {
+            self.bind_reference(operand, parameter, Context::Argument)
+        } else {
+            let value = self.operand(operand, Context::Argument)?;
+            Ok(self.fit(value, parameter)?.value)
         }
     }
 }
