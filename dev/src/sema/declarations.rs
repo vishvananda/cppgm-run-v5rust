@@ -563,12 +563,8 @@ impl Analyzer<'_> {
             }
             if !member {
                 self.record_constant_initializer(entity, initializer, info.lookup)?;
-                if self.lowering()
-                    && definition
-                    && self.graph.scope(home).kind == ScopeKind::Namespace
-                {
-                    self.static_initializers
-                        .push((entity, initializer, info.lookup));
+                if self.lowering() && definition {
+                    self.request_static_initializer(entity, initializer, info.lookup, home)?;
                 }
             }
         } else if self.semantic() && definition {

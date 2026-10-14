@@ -1,5 +1,5 @@
 //! `LowIR` scalar and operation vocabulary, translated from `lowir_model.h`. See NOTICE.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Type {
     Void,
     I1,

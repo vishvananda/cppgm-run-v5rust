@@ -12,7 +12,7 @@ use crate::{
         lowering::{EntityId, Scalar, ScopeId, TypeId, TypeView},
     },
     support::stack::StackBudget,
-    syntax::cursor::Cursor,
+    syntax::{ast, cursor::Cursor},
     types::FundamentalType as F,
 };
 use std::{collections::HashMap, fmt::Write};
@@ -21,6 +21,7 @@ pub(super) struct SymbolTable {
     objects: HashMap<NameId, Option<SymbolId>>,
     suffixes: HashMap<NameId, u32>,
     source: Option<SourceId>,
+    string_literals: u32,
 }
 impl SymbolTable {
     fn allocate(
@@ -83,6 +84,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub globals: Vec<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
+    pub data: super::data::Objects,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -108,12 +110,33 @@ impl<'a, 'source> Symbols<'a, 'source> {
             table,
             globals: Vec::new(),
             objects: HashMap::new(),
+            data: super::data::Objects::default(),
             signatures: HashMap::new(),
         }
     }
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
             .map_err(|_| Error::Missing("local name spelling"))
+    }
+    pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
+        self.cursor.spellings.get(literal.data)
+    }
+    pub(super) fn data_symbol(
+        &mut self,
+        program: &mut Program,
+        image: Option<usize>,
+    ) -> Result<SymbolId, Error> {
+        let name = if let Some(index) = image {
+            format!("__constexpr_template__{}", index + 1)
+        } else {
+            self.table.string_literals = self
+                .table
+                .string_literals
+                .checked_add(1)
+                .ok_or(crate::lowir::Error::Limit)?;
+            format!("__strlit__{}", self.table.string_literals)
+        };
+        self.table.allocate(program, &name, None, true)
     }
     fn check_stack(&self) -> Result<(), Error> {
         let marker = 0u8;
@@ -193,6 +216,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 modifier: Modifier::Pointer,
                 operand: self.abi_type(element)?,
             },
+            TypeView::Array { element, bound } => Node::Modified {
+                modifier: Modifier::Array(bound),
+                operand: self.abi_type(element)?,
+            },
             TypeView::Enum(_) => {
                 let (home, name) = self.graph.lower_nominal_name(ty)?;
                 let parent = self.scope(home)?;
@@ -231,7 +258,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             (2, Modifier::Qualified(Qualifiers::VOLATILE)),
             (1, Modifier::Qualified(Qualifiers::CONST)),
         ] {
-            if self.graph.lower_cv(ty) & bit != 0 {
+            if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+                && self.graph.lower_cv(ty) & bit != 0
+            {
                 id = self
                     .abi
                     .intern(

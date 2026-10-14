@@ -57,9 +57,7 @@ pub(crate) fn write_globals(program: &Program, out: &mut impl Write) -> io::Resu
     for declaration in [true, false] {
         let mut phase_written = false;
         for global in program
-            .symbols()
-            .iter()
-            .filter_map(|symbol| program.global(symbol))
+            .globals_in_publication_order()
             .filter(|global| matches!(global.init, GlobalInit::Declaration) == declaration)
         {
             if written && !phase_written {

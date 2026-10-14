@@ -24,6 +24,7 @@ pub(super) enum Context {
     Assignment,
     CompoundAssignment,
     Cast,
+    ArrayElement,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn fit(&mut self, value: RValue, target: TypeId) -> Result<RValue, Error> {
@@ -103,6 +104,20 @@ impl Function<'_, '_, '_, '_> {
             }
             Convert::Truncate
         } else {
+            return self.convert_integer(value, target, to, to_signed, context);
+        };
+        self.emit(I::Convert(operation, to, value.ty, value.value), target)
+    }
+    pub(super) fn convert_integer(
+        &mut self,
+        value: RValue,
+        target: TypeId,
+        to: Type,
+        to_signed: bool,
+        context: Context,
+    ) -> Result<RValue, Error> {
+        let from_signed = types::signed(self.graph, value.source)?;
+        let operation = {
             if to == value.ty && from_signed == to_signed {
                 return Ok(RValue {
                     source: target,
@@ -117,7 +132,10 @@ impl Function<'_, '_, '_, '_> {
                 && if from_signed && to_signed {
                     !matches!(
                         context,
-                        Context::Operand | Context::Assignment | Context::CompoundAssignment
+                        Context::Operand
+                            | Context::Assignment
+                            | Context::CompoundAssignment
+                            | Context::ArrayElement
                     )
                 } else {
                     match context {
@@ -131,7 +149,9 @@ impl Function<'_, '_, '_, '_> {
                     }
                 };
             if let Some(bits) = value.bits
-                && (to_bits <= from_bits || widening)
+                && ((to_bits <= from_bits
+                    && (context != Context::ArrayElement || to_bits == from_bits))
+                    || widening)
             {
                 let width = to_bits.min(from_bits);
                 let mask = u64::MAX >> (64 - width);

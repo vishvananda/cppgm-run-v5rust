@@ -15,6 +15,50 @@ use crate::{
     syntax::ast::{self, Condition, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn conditional_place(
+        &mut self,
+        id: ast::ExprId,
+        condition: ast::ExprId,
+        then_expr: ast::ExprId,
+        else_expr: ast::ExprId,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        self.next_slot = self
+            .next_slot
+            .checked_add(1)
+            .ok_or(crate::lowir::Error::Limit)?;
+        let slot = self
+            .builder
+            .slot(&format!("condaddr__{}", self.next_slot), Type::Ptr)?;
+        let then_block = self.new_block("condaddr_then")?;
+        let else_block = self.new_block("condaddr_else")?;
+        let end = self.new_block("condaddr_end")?;
+        let condition = self.truth(condition)?;
+        self.effect(I::Branch(condition.value, then_block, else_block))?;
+        for (block, expr) in [(then_block, then_expr), (else_block, else_expr)] {
+            self.place(block)?;
+            let place = self.scalar_place(expr)?;
+            let address = if matches!(
+                place,
+                crate::lowir::model::Value::Slot(_) | crate::lowir::model::Value::Symbol(_)
+            ) {
+                self.emit(I::Addr(place), source)?.value
+            } else {
+                place
+            };
+            self.effect(I::Store(
+                Facts::memory(false, true),
+                Type::Ptr,
+                address,
+                slot,
+            ))?;
+            self.effect(I::Jump(end))?;
+        }
+        self.place(end)?;
+        Ok(self
+            .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
+            .value)
+    }
     fn without_parentheses(&self, mut id: ast::ExprId) -> ast::ExprId {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
             id = inner;

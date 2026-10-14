@@ -1,11 +1,14 @@
 // Translated from lower/program_lowering.cpp. See NOTICE.
 //! Typed, demand-driven source lowering into the shared function-owned `LowIR` model.
+mod arrays;
 mod conditions;
 mod conversions;
+mod data;
 mod expressions;
 mod function;
 mod globals;
 mod mutations;
+mod pointers;
 mod statements;
 mod symbols;
 mod types;
@@ -97,6 +100,7 @@ pub(crate) fn lower_unit(
                             &mut output.program,
                             &mut symbols,
                             graph,
+                            tree,
                             entity,
                             declarator.initializer,
                             tree.declarators.get(declarator.declarator).location,

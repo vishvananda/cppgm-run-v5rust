@@ -1,5 +1,6 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
+pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
     Error,
@@ -25,6 +26,10 @@ pub(crate) struct VariableFacts {
 pub(crate) enum TypeView<'a> {
     Scalar(Scalar),
     Pointer(TypeId),
+    Array {
+        element: TypeId,
+        bound: u64,
+    },
     Reference,
     Enum(TypeId),
     Function {
@@ -62,8 +67,15 @@ pub(crate) struct Expression {
     pub query: Option<u64>,
     pub is_place: bool,
     pub null_pointer: bool,
+    pub commuted: bool,
 }
 impl Graph {
+    pub(crate) fn lower_constexpr(&self, id: EntityId) -> bool {
+        self.entity(id).constexpr
+    }
+    pub(crate) fn lower_array_image(&self, id: EntityId) -> Option<&[super::static_arrays::Item]> {
+        self.array_images.get(id)
+    }
     pub(crate) fn lower_variable(&self, id: EntityId) -> Result<VariableFacts, Error> {
         let entity = self.entity(id);
         let variable = entity
@@ -198,6 +210,10 @@ impl Graph {
         Ok(match &self.types.get(self.types.canonical_view(id)).kind {
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
+            TypeKind::Array { element, bound } => TypeView::Array {
+                element: *element,
+                bound: *bound,
+            },
             TypeKind::Reference { .. } => TypeView::Reference,
             TypeKind::Enum(entity) => TypeView::Enum(
                 self.entity(*entity)
@@ -219,6 +235,10 @@ impl Graph {
         })
     }
     pub(crate) fn lower_cv(&self, id: TypeId) -> u8 {
+        let mut id = id;
+        while let TypeKind::Array { element, .. } = self.types.get(id).kind {
+            id = element;
+        }
         self.types.get(id).cv.0
     }
     pub(crate) fn lower_expression(&self, id: ast::ExprId) -> Result<Expression, Error> {
@@ -232,6 +252,7 @@ impl Graph {
             null_pointer: facts
                 .conversion
                 .is_some_and(|c| c.second == super::expression_facts::ValueConversion::NullPointer),
+            commuted: facts.commuted,
         })
     }
     pub(crate) fn lower_name(&self, name: ast::Name) -> Result<EntityId, Error> {

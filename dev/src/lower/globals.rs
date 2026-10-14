@@ -1,6 +1,6 @@
 // Translated from lower/global_lowering.cpp and program_lowering.cpp. See NOTICE.
 //! Static scalar definitions and demanded external declarations retain typed symbol identities.
-use super::{Error, symbols::Symbols, types};
+use super::{Error, data, symbols::Symbols, types};
 use crate::{
     lowir::{
         literals::{Constant, FloatKind},
@@ -18,6 +18,7 @@ pub(super) fn define(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
+    tree: &ast::Tree,
     entity: EntityId,
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
@@ -26,7 +27,12 @@ pub(super) fn define(
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference) {
         return Err(Error::Missing("global reference storage lowering"));
     }
-    let ty = types::storage(graph, facts.ty)?;
+    let array = matches!(graph.lower_type(facts.ty)?, TypeView::Array { .. });
+    let mut ty = if array {
+        None
+    } else {
+        Some(types::storage(graph, facts.ty)?)
+    };
     let symbol = symbols.variable_symbol(program, entity)?;
     if program
         .global(program.symbol(symbol))
@@ -38,7 +44,19 @@ pub(super) fn define(
         }));
     }
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
-    let init = if initializer.is_none() {
+    let init = if array {
+        GlobalInit::Data(if initializer.is_some() {
+            let image = graph
+                .lower_array_image(entity)
+                .ok_or(Error::Missing("dynamic global array initialization"))?;
+            data::items(program, symbols, graph, tree, image)?
+        } else {
+            vec![crate::lowir::model::DataItem::Zero(
+                i64::try_from(types::layout(graph, facts.ty)?.0)
+                    .map_err(|_| crate::lowir::Error::Limit)?,
+            )]
+        })
+    } else if initializer.is_none() {
         GlobalInit::Zero
     } else {
         match facts.initializer.ok_or(Error::Missing(
@@ -62,8 +80,29 @@ pub(super) fn define(
                 };
                 GlobalInit::Address(target, offset)
             }
+            value @ StaticValue::Literal(..) => {
+                let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
+                GlobalInit::Address(symbol, offset)
+            }
         }
     };
+    if array && let GlobalInit::Data(items) = &init {
+        let (bytes, align) = types::layout(graph, facts.ty)?;
+        let implied = items
+            .iter()
+            .filter_map(|item| match item {
+                crate::lowir::model::DataItem::Zero(_) => None,
+                crate::lowir::model::DataItem::Address(..) => Some(3),
+                crate::lowir::model::DataItem::Constant(ty, _) => {
+                    Some(types::storage_alignment(*ty))
+                }
+            })
+            .max()
+            .unwrap_or(0);
+        if align > implied {
+            ty = Some(crate::lowir::vocabulary::Type::Object { bytes, align });
+        }
+    }
     if graph.lower_cv(facts.ty) == 1 {
         metadata.storage = Some(Storage::ReadOnly);
     }
@@ -72,7 +111,7 @@ pub(super) fn define(
         symbol,
         Global {
             name,
-            ty: Some(ty),
+            ty,
             metadata,
             init,
         },
@@ -98,12 +137,19 @@ pub(super) fn finish(
         }
         let metadata = symbols.variable_metadata(program, entity, symbol)?;
         let name = program.symbol(symbol).name;
-        let ty = types::storage(graph, facts.ty)?;
+        let ty = if matches!(
+            graph.lower_type(facts.ty)?,
+            TypeView::Array { bound: 0, .. }
+        ) {
+            None
+        } else {
+            Some(types::storage(graph, facts.ty)?)
+        };
         program.add_global(
             symbol,
             Global {
                 name,
-                ty: Some(ty),
+                ty,
                 metadata,
                 init: GlobalInit::Declaration,
             },

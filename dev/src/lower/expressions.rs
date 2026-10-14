@@ -56,10 +56,10 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
-        let ty = types::storage(self.graph, source)?;
         if matches!(
             self.graph.lower_type(source)?,
             crate::sema::lowering::TypeView::Function { .. }
+                | crate::sema::lowering::TypeView::Array { .. }
         ) {
             let place = self.scalar_place(id)?;
             if matches!(
@@ -76,6 +76,16 @@ impl Function<'_, '_, '_, '_> {
                 bits: None,
             });
         }
+        if facts.is_place
+            && matches!(
+                self.tree.expressions.get(id).kind,
+                ExprKind::Conditional { .. }
+            )
+        {
+            let place = self.scalar_place(id)?;
+            return self.read_place(place, source);
+        }
+        let ty = types::storage(self.graph, source)?;
         if let Some(bits) = facts.query {
             let value = self.builder.integer(u128::from(bits))?;
             return self.emit(I::Const(ty, value), source);
@@ -134,7 +144,7 @@ impl Function<'_, '_, '_, '_> {
                     bits: Some(bits),
                 })
             }
-            ExprKind::Id(_) => {
+            ExprKind::Id(_) | ExprKind::Subscript { .. } => {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)
             }
@@ -219,6 +229,16 @@ impl Function<'_, '_, '_, '_> {
         }
         if matches!(op, P::LogicalAnd | P::LogicalOr) {
             return self.logical_value(id);
+        }
+        if matches!(op, P::Add | P::Subtract)
+            && (self
+                .pointer_element(self.graph.lower_expression(left)?.ty)?
+                .is_some()
+                || self
+                    .pointer_element(self.graph.lower_expression(right)?.ty)?
+                    .is_some())
+        {
+            return self.pointer_arithmetic(id, left, right, op == P::Subtract);
         }
         let comparison = matches!(
             op,

@@ -2,7 +2,7 @@
 use super::{Error, vocabulary::Type};
 use crate::{types::FundamentalType, types::floating::FloatingScanner};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum FloatKind {
     F32,
     F64,
@@ -53,7 +53,7 @@ impl FloatKind {
         }
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Constant {
     Integer(u128),
     Float(FloatKind, u128),

@@ -265,6 +265,9 @@ impl Function<'_, '_, '_, '_> {
             .builder
             .slot(spelling, types::storage(self.graph, ty)?)?;
         self.locals.insert(entity, slot);
+        if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
+            return self.local_array(entity, ty, slot, initializer);
+        }
         if let Some(initializer) = initializer {
             let value = match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {

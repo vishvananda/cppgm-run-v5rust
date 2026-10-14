@@ -20,6 +20,27 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         match self.tree.expressions.get(id).kind {
             ExprKind::Paren(inner) => self.scalar_place(inner),
+            ExprKind::Literal(literal) => {
+                let crate::sema::lowering::TypeView::Array { element, .. } =
+                    self.graph.lower_type(self.graph.lower_expression(id)?.ty)?
+                else {
+                    return Err(Error::Missing("scalar literal place"));
+                };
+                super::data::string(
+                    self.builder.program(),
+                    self.symbols,
+                    self.graph,
+                    literal,
+                    element,
+                )
+                .map(Value::Symbol)
+            }
+            ExprKind::Subscript { base, index } => self.subscript(id, base, index),
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => self.conditional_place(id, condition, then_expr, else_expr),
             ExprKind::Id(name) => {
                 let entity = self.graph.lower_name(name)?;
                 if let Some(&place) = self.locals.get(&entity) {
@@ -99,10 +120,9 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(operand)?.ty;
         let place = self.scalar_place(operand)?;
         let old = self.read_place(place, source)?;
-        if old.ty == Type::Ptr {
-            return Err(Error::Missing("pointer increment scaling"));
-        }
-        let result = if types::boolean(self.graph, source)? {
+        let result = if old.ty == Type::Ptr {
+            self.pointer_step(old, decrement)?
+        } else if types::boolean(self.graph, source)? {
             RValue {
                 value: self.builder.integer(1)?,
                 ty: old.ty,
@@ -153,6 +173,9 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(Value, RValue), Error> {
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(self.graph, source)?;
+        if ty == Type::Ptr && matches!(op, P::AddAssign | P::SubtractAssign) {
+            return self.pointer_compound(left, right, op == P::SubtractAssign, source);
+        }
         let (place, value) = if op == P::Assign {
             let value = self.operand(right, Context::Assignment)?;
             let place = self.scalar_place(left)?;
@@ -162,9 +185,6 @@ impl Function<'_, '_, '_, '_> {
             let old = self.read_place(place, source)?;
             let (operation, _) = self.graph.lower_arithmetic_types(id)?;
             let mut rhs = self.operand(right, Context::CompoundAssignment)?;
-            if ty == Type::Ptr {
-                return Err(Error::Missing("pointer compound assignment scaling"));
-            }
             if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
                 rhs = self.convert(rhs, operation, Context::CompoundAssignment)?;
             }

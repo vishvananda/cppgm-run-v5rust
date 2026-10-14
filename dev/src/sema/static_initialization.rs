@@ -17,8 +17,29 @@ pub(crate) enum Value {
     Integer(u64),
     Floating(F, u128),
     Address(EntityId, i64),
+    Literal(ast::ExprId, i64),
 }
 impl Analyzer<'_> {
+    pub(super) fn request_static_initializer(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+        home: ScopeId,
+    ) -> Result<(), Error> {
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("initializer without object type"))?;
+        let eligible_array = matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. }
+            if (self.graph.entity(entity).constexpr || !matches!(self.graph.types.get(element).kind, TypeKind::Array { .. }))
+                && self.graph.lower_cv(ty) & 2 == 0);
+        if self.graph.scope(home).kind == super::graph::ScopeKind::Namespace || eligible_array {
+            self.static_initializers.push((entity, initializer, scope));
+        }
+        Ok(())
+    }
     pub(super) fn record_static_initializer(
         &mut self,
         entity: EntityId,
@@ -30,6 +51,9 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("static object without type"))?;
+        if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+            return self.record_array_image(entity, initializer, target, scope);
+        }
         if !matches!(
             self.graph.types.get(target).kind,
             TypeKind::Scalar(_) | TypeKind::Enum(_) | TypeKind::Pointer(_)
@@ -44,7 +68,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).static_initializer = value;
         Ok(())
     }
-    fn static_scalar(
+    pub(super) fn static_scalar(
         &mut self,
         id: ast::ExprId,
         target: TypeId,
@@ -86,9 +110,17 @@ impl Analyzer<'_> {
             let value = match self.address_operand(id, scope) {
                 Ok(address) => match address.root {
                     Root::Null => Some(Value::Integer(0)),
-                    Root::Variable(entity) | Root::Function(entity) => {
+                    Root::Variable(entity)
+                        if self
+                            .graph
+                            .entity(entity)
+                            .variable
+                            .is_some_and(|variable| !variable.automatic) =>
+                    {
                         Some(Value::Address(entity, address.offset))
                     }
+                    Root::Function(entity) => Some(Value::Address(entity, address.offset)),
+                    Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
                     _ => None,
                 },
                 Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
@@ -185,9 +217,11 @@ impl Analyzer<'_> {
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,
-                Value::Address(_, _) if kind.bits == 1 => 1,
-                Value::Address(_, _) if kind.bits >= 64 => return Ok(Some(value)),
-                Value::Address(_, _) => return Ok(None),
+                Value::Address(_, _) | Value::Literal(_, _) if kind.bits == 1 => 1,
+                Value::Address(_, _) | Value::Literal(_, _) if kind.bits >= 64 => {
+                    return Ok(Some(value));
+                }
+                Value::Address(_, _) | Value::Literal(_, _) => return Ok(None),
                 Value::Floating(ty, bits) => {
                     let Some((significand, exponent, negative)) = float_parts(ty, bits) else {
                         return Ok(None);
@@ -248,7 +282,7 @@ impl Analyzer<'_> {
                         negative,
                     )
                 }
-                Value::Address(_, _) => return Ok(None),
+                Value::Address(_, _) | Value::Literal(_, _) => return Ok(None),
             };
             let bits = FloatingScanner::default()
                 .binary(significand, exponent, target)
@@ -320,7 +354,7 @@ mod tests {
     };
     #[test]
     fn images_are_demanded_after_unit_analysis_without_changing_syntax() {
-        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3);".to_vec()).unwrap();
+        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3); int *pointers[4]={&target,nullptr,0}; float values[3]={1.5f};".to_vec()).unwrap();
         let input = Preprocessor::with_name(&source, b"static-images").unwrap();
         let mut unit = SyntaxUnit::new(input);
         unit.parse().unwrap();
@@ -356,6 +390,20 @@ mod tests {
             } else {
                 assert!(x.static_initializer.is_none());
                 assert!(graph.entity(entity(b"p")).static_initializer.is_none());
+            }
+            let pointers = graph.lower_array_image(entity(b"pointers"));
+            let values = graph.lower_array_image(entity(b"values"));
+            if lowering {
+                use super::super::static_arrays::Item;
+                assert!(
+                    matches!(pointers, Some([Item::Scalar(_, Value::Address(root, 0)), Item::Zero(24)]) if *root == entity(b"target"))
+                );
+                assert!(
+                    matches!(values, Some([Item::Scalar(_, Value::Floating(F::Float, bits)), Item::Scalar(_, Value::Floating(F::Float, 0)), Item::Scalar(_, Value::Floating(F::Float, 0))]) if *bits == u128::from(1.5_f32.to_bits()))
+                );
+            } else {
+                assert!(pointers.is_none());
+                assert!(values.is_none());
             }
             assert!(
                 graph

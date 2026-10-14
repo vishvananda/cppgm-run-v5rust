@@ -353,7 +353,7 @@ impl Analyzer<'_> {
             .types
             .intern(TypeKind::Array { element, bound }, Cv::default())
     }
-    fn string_literal(&self, mut id: ast::ExprId) -> bool {
+    pub(super) fn string_literal(&self, mut id: ast::ExprId) -> bool {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
             id = inner;
         }
@@ -365,7 +365,7 @@ impl Analyzer<'_> {
             })
         )
     }
-    fn character_element(&self, ty: TypeId) -> bool {
+    pub(super) fn character_element(&self, ty: TypeId) -> bool {
         matches!(
             self.graph.types.get(ty).kind,
             TypeKind::Scalar(

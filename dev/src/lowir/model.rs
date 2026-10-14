@@ -252,6 +252,12 @@ impl Program {
     pub(crate) fn globals(&self) -> &[Global] {
         &self.globals
     }
+    pub(crate) fn globals_in_publication_order(&self) -> impl Iterator<Item = &Global> {
+        self.globals.iter().enumerate().filter_map(|(index, global)| {
+            let symbol = self.find_symbol(global.name)?;
+            matches!(self.symbol(symbol).detail, SymbolDetail::Global(id) if usize::try_from(id.0).ok() == Some(index)).then_some(global)
+        })
+    }
     pub(crate) fn symbols(&self) -> &[Symbol] {
         &self.symbols
     }
@@ -343,6 +349,7 @@ pub(crate) enum GlobalInit {
     Address(SymbolId, i64),
     Data(Vec<DataItem>),
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum DataItem {
     Zero(i64),
     Constant(Type, Constant),
