@@ -135,7 +135,12 @@ impl Function<'_, '_, '_, '_> {
             ))?;
             return Ok(self.emit(I::Addr(slot), target)?.value);
         }
-        self.address(id)
+        let address = self.address(id)?;
+        if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+            self.base_projection(address, facts.ty, offset)
+        } else {
+            Ok(address)
+        }
     }
     pub(super) fn reference_cast_place(
         &mut self,
@@ -147,6 +152,12 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_expression(operand)?.temporary.is_some()
         {
             return self.bind_reference(operand, reference, Context::Cast);
+        }
+        if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
+            && (delta != 0 || project_zero)
+        {
+            let address = self.address(operand)?;
+            return self.base_projection(address, facts.ty, delta);
         }
         self.scalar_place(operand)
     }

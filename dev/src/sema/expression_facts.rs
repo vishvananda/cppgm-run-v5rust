@@ -81,6 +81,12 @@ pub(super) struct ObjectArgument {
     pub category: ValueCategory,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) struct BaseCast {
+    pub path: super::inheritance::BasePathId,
+    pub downcast: bool,
+    pub project_zero: bool,
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
@@ -103,6 +109,10 @@ pub(super) struct ExprFacts {
     pub member_naming: Option<super::graph::EntityId>,
     pub object: Option<ObjectArgument>,
     pub base_path: Option<super::inheritance::BasePathId>,
+    // The cast's route remains separate from a later conversion on its result.
+    pub base_cast: Option<BaseCast>,
+    pub member_path: Option<super::inheritance::BasePathId>,
+    pub member_naming_path: Option<super::inheritance::BasePathId>,
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
     pub constructor: Option<super::construction::ConstructorId>,
@@ -134,6 +144,9 @@ impl ExprFacts {
             member_naming: None,
             object: None,
             base_path: None,
+            base_cast: None,
+            member_path: None,
+            member_naming_path: None,
             member_address_scope: None,
             constructor: None,
             elided_copy: None,

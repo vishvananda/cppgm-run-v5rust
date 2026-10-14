@@ -200,6 +200,82 @@ mod tests {
     use crate::support::stack::StackBudget;
 
     #[test]
+    fn inherited_inline_bodies_coalesce_across_units_and_internal_types_stay_local() {
+        for internal in [false, true] {
+            let mut output = LowIrOutput::default();
+            for (index, name) in ["f", "g"].into_iter().enumerate() {
+                let classes = "struct B{int v;int read()const{return v;}};struct D:B{int w;};";
+                let source = if internal {
+                    format!("namespace{{{classes}}} int {name}(D& d){{return d.read();}}")
+                } else {
+                    format!("{classes} int {name}(D& d){{return d.read();}}")
+                };
+                let source = SourceBuffer::new(source.into_bytes()).unwrap();
+                emit_unit(
+                    &source,
+                    b"inherited-unit-demand",
+                    &PredefinedValues::default(),
+                    Destination::LowIr(&mut output),
+                    index + 1,
+                    StackBudget::default(),
+                    EmitMode::LowIr,
+                )
+                .unwrap();
+            }
+            let program = &output.output.program;
+            let methods: Vec<_> = program
+                .functions()
+                .iter()
+                .filter(|function| program.names.get(function.name).contains("B__read"))
+                .collect();
+            assert_eq!(methods.len(), if internal { 2 } else { 1 });
+            for method in methods {
+                assert!(method.body.is_none(), "streamed inline bodies are released");
+                assert_eq!(
+                    method.metadata.binding,
+                    Some(if internal {
+                        crate::lowir::vocabulary::Binding::Internal
+                    } else {
+                        crate::lowir::vocabulary::Binding::Weak
+                    })
+                );
+                assert_eq!(
+                    program.signature(method.signature).parameters[0].object_bytes,
+                    4
+                );
+            }
+            for function in program
+                .functions()
+                .iter()
+                .filter(|function| matches!(program.names.get(function.name), "f" | "g"))
+            {
+                assert_eq!(
+                    function.metadata.binding,
+                    Some(if internal {
+                        crate::lowir::vocabulary::Binding::Internal
+                    } else {
+                        crate::lowir::vocabulary::Binding::Strong
+                    })
+                );
+                if internal {
+                    let object = program.names.get(function.metadata.object.unwrap());
+                    assert!(
+                        object.starts_with("_Z1"),
+                        "type-local signature does not give the name static linkage"
+                    );
+                }
+            }
+            let mut text = Vec::new();
+            output.write(&mut text).unwrap();
+            assert!(
+                !std::str::from_utf8(&text)
+                    .unwrap()
+                    .contains("declare function @g(")
+            );
+        }
+    }
+
+    #[test]
     fn memory_builtin_boundaries_survive_frontends_without_leaking_into_indirect_types() {
         let mut output = LowIrOutput::default();
         for (index, source) in [

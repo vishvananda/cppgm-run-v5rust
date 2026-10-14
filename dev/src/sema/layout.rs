@@ -10,6 +10,9 @@ pub(super) enum LayoutState {
     Value {
         size: u64,
         alignment: u64,
+        non_virtual_size: u64,
+        empty: bool,
+        contains_empty: bool,
         contains_volatile_or_union: bool,
     },
     Unsupported,
@@ -19,7 +22,7 @@ pub(super) enum LayoutCategory {
     Pod,
     NonPod,
 }
-fn round_up(value: u64, alignment: u64) -> u64 {
+pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
 impl Analyzer<'_> {
@@ -115,9 +118,6 @@ impl Analyzer<'_> {
         if !self.graph.entity(entity).complete {
             return Err(Error::at(location, "size of an incomplete class"));
         }
-        if !self.graph.entity(entity).bases.is_empty() {
-            return Err(Error::Missing("nonvirtual base subobject layout"));
-        }
         match self.graph.entity(entity).layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),
@@ -143,7 +143,20 @@ impl Analyzer<'_> {
                 .layout_work
                 .last()
                 .ok_or(Error::Invariant("missing layout frame"))?;
-            if let Some(&member) = self.graph.entity(entity).members.get(index) {
+            let bases = self.graph.entity(entity).bases.len();
+            if let Some(dependency) = self
+                .graph
+                .entity(entity)
+                .bases
+                .get(index)
+                .map(|edge| edge.class)
+            {
+                self.layout_work
+                    .last_mut()
+                    .ok_or(Error::Invariant("missing layout frame"))?
+                    .1 += 1;
+                self.start_layout(dependency, location)?;
+            } else if let Some(&member) = self.graph.entity(entity).members.get(index - bases) {
                 self.layout_work
                     .last_mut()
                     .ok_or(Error::Invariant("missing layout frame"))?
@@ -175,12 +188,68 @@ impl Analyzer<'_> {
     fn place_members(&mut self, entity: EntityId, location: SourceOffset) -> Result<(), Error> {
         let union = self.graph.entity(entity).key == Keyword::Union;
         let mut size = 0u64;
+        let mut data_size = 0u64;
         let mut contains_volatile_or_union = union;
+        let mut empty = self.graph.entity(entity).members.is_empty();
+        let mut contains_empty = false;
         let mut alignment = 1;
         let attributes = self.graph.entity(entity).storage_attributes;
         let pack = u64::from(self.graph.entity(entity).class_packing);
-        let mut non_pod = self.graph.entity(entity).layout_category == LayoutCategory::NonPod;
+        let mut non_pod = self.graph.entity(entity).layout_category == LayoutCategory::NonPod
+            || !self.graph.entity(entity).bases.is_empty();
         let mut packs_all = true;
+        let mut placement = super::empty_layout::EmptyPlacement::new(&self.graph, entity)?;
+        for index in 0..self.graph.entity(entity).bases.len() {
+            let base = self.graph.entity(entity).bases[index].class;
+            let LayoutState::Value {
+                size: bytes,
+                alignment: natural,
+                non_virtual_size,
+                empty: base_empty,
+                contains_empty: child_empty,
+                contains_volatile_or_union: child_volatile,
+            } = self.graph.entity(base).layout
+            else {
+                return Err(Error::Invariant("base without completed layout"));
+            };
+            empty &= base_empty;
+            contains_empty |= child_empty;
+            contains_volatile_or_union |= child_volatile;
+            let base_alignment = if base_empty || pack == 0 {
+                natural
+            } else {
+                natural.min(pack)
+            };
+            let mut offset = if base_empty {
+                0
+            } else {
+                round_up(data_size, base_alignment)
+            };
+            if placement.conflict(&self.graph, base, offset, location)? {
+                if base_empty {
+                    offset = round_up(data_size, natural);
+                }
+                while placement.conflict(&self.graph, base, offset, location)? {
+                    offset = offset.wrapping_add(natural);
+                }
+            }
+            if base_empty {
+                size = size.max(offset.wrapping_add(bytes));
+            } else {
+                data_size = offset.wrapping_add(non_virtual_size);
+                size = size.max(data_size);
+            }
+            if size >> 60 != 0 {
+                return Err(Error::at(
+                    location,
+                    "a class too large (its size reaches 2^60 bytes)",
+                ));
+            }
+            alignment = alignment.max(base_alignment);
+            self.graph.entity_mut(entity).bases[index].offset = Some(offset);
+            placement.record_base(&self.graph, base, offset, data_size, base_empty, location)?;
+        }
+        contains_empty |= empty;
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
             let ty = self
@@ -202,10 +271,14 @@ impl Analyzer<'_> {
                     child.layout_category == LayoutCategory::Pod || child.storage_attributes.packed;
                 if let LayoutState::Value {
                     contains_volatile_or_union: child,
+                    contains_empty: child_empty,
                     ..
                 } = child.layout
                 {
                     contains_volatile_or_union |= child;
+                    contains_empty |= child_empty
+                        && super::empty_layout::class_elements(&self.graph, ty)
+                            .is_some_and(|(_, count)| count != 0);
                 }
             }
             packs_all &= packable;
@@ -220,16 +293,23 @@ impl Analyzer<'_> {
             if pack != 0 {
                 member_alignment = member_alignment.min(pack);
             }
-            let offset = if union {
+            let mut offset = if union {
                 0
             } else {
-                round_up(size, member_alignment)
+                round_up(data_size, member_alignment)
             };
+            if !union {
+                while placement.member_conflict(&self.graph, ty, offset, location)? {
+                    offset = round_up(offset.wrapping_add(natural), member_alignment);
+                }
+                data_size = offset.wrapping_add(bytes);
+                placement.record_member(&self.graph, ty, offset, data_size, location)?;
+            }
             self.graph.entity_mut(member).member_offset = Some(offset);
             size = if union {
                 size.max(bytes)
             } else {
-                offset.wrapping_add(bytes)
+                size.max(data_size)
             };
             alignment = alignment.max(member_alignment);
             if (bytes | size) >> 60 != 0 {
@@ -256,9 +336,13 @@ impl Analyzer<'_> {
             LayoutCategory::Pod
         };
         self.graph.entity_mut(entity).storage_attributes.packed &= packs_all;
+        let full_size = round_up(size.max(1), alignment);
         self.graph.entity_mut(entity).layout = LayoutState::Value {
             contains_volatile_or_union,
-            size: round_up(size.max(1), alignment),
+            empty,
+            contains_empty,
+            non_virtual_size: if non_pod { size } else { full_size },
+            size: full_size,
             alignment,
         };
         Ok(())

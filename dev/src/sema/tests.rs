@@ -1548,6 +1548,71 @@ fn layout_is_demanded_once_and_records_only_ordinary_data_member_offsets() {
 }
 
 #[test]
+fn nonvirtual_layout_keeps_data_size_empty_identity_and_unused_demand_separate() {
+    use super::layout::LayoutState;
+    analyze(b"struct E{};struct P{int x;char c;};struct N{N();int x;char c;};struct D:N{char d;};struct H{E e[3];};struct C:E{H h[2];};struct Unused:D{};int sizes[sizeof(D)+sizeof(C)];", |graph, cursor| {
+        let class = |cursor: &mut Cursor<'_>, spelling| {
+            let name = cursor.intern_name(spelling).unwrap();
+            graph.binding(graph.own(graph.global, name, Filter::Elaborated).unwrap()).entity
+        };
+        let n = class(cursor, b"N");
+        let d = class(cursor, b"D");
+        let c = class(cursor, b"C");
+        assert!(matches!(graph.entity(n).layout, LayoutState::Value {size:8,non_virtual_size:5,..}));
+        assert!(matches!(graph.entity(d).layout, LayoutState::Value {size:8,non_virtual_size:6,..}));
+        assert_eq!(graph.entity(d).bases[0].offset, Some(0));
+        assert_eq!(graph.entity(graph.entity(d).members[0]).member_offset, Some(5));
+        assert!(matches!(graph.entity(c).layout, LayoutState::Value {size:7,contains_empty:true,empty:false,..}));
+        assert_eq!(graph.entity(graph.entity(c).members[0]).member_offset, Some(1));
+        for spelling in [b"P".as_slice(), b"Unused"] {
+            assert!(matches!(graph.entity(class(cursor, spelling)).layout, LayoutState::NotStarted));
+        }
+    });
+}
+
+#[test]
+fn explicit_base_cast_route_survives_conversion_of_its_result() {
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(b"struct A{int x;};struct B{int y;};struct D:A,B{};int size[sizeof(D)];B*f(A*a){return static_cast<D*>(a);}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"cast-route-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[4])
+        .kind
+    else {
+        panic!("function expected");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("body expected");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected");
+    };
+    let StmtKind::Return(Some(cast)) = tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+    else {
+        panic!("return expected");
+    };
+    assert!(matches!(
+        tree.expressions.get(cast).kind,
+        ExprKind::Cast { .. }
+    ));
+    let facts = graph.expression_facts.get(cast).unwrap();
+    assert_ne!(facts.base_cast.unwrap().path, facts.base_path.unwrap());
+    assert_eq!(
+        graph.lower_cast_base_adjustment(cast).unwrap(),
+        Some((0, false))
+    );
+    assert_eq!(graph.lower_base_conversion_offset(cast).unwrap(), Some(4));
+    assert_ne!(facts.ty, facts.conversion.unwrap().result);
+}
+
+#[test]
 fn missing_layout_and_constant_call_owners_remain_status_86_boundaries() {
     for source in [
         b"struct C{virtual void f();}; int a[sizeof(C)];".as_slice(),

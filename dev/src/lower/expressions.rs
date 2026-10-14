@@ -52,6 +52,16 @@ impl Function<'_, '_, '_, '_> {
             });
         }
         if let Some(target) = facts.target {
+            if context != Context::Cast
+                && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+            {
+                return self.adjust_base_pointer(
+                    value,
+                    target,
+                    offset,
+                    !self.nonnull_pointer(id) && offset != 0,
+                );
+            }
             self.convert(value, target, context)
         } else {
             Ok(value)
@@ -222,6 +232,16 @@ impl Function<'_, '_, '_, '_> {
                     return self.zero(source);
                 }
                 let value = self.operand(operand, Context::Cast)?;
+                if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
+                    && (delta != 0 || project_zero)
+                {
+                    return self.adjust_base_pointer(
+                        value,
+                        source,
+                        delta,
+                        delta != 0 && !self.nonnull_pointer(operand),
+                    );
+                }
                 self.convert(value, source, Context::Cast)
             }
             ExprKind::FunctionalCast {
@@ -498,6 +518,15 @@ impl Function<'_, '_, '_, '_> {
                         }
                     }
                 };
+                let mut value = value;
+                for offset in self
+                    .graph
+                    .lower_receiver_base_offsets(callee_expression)?
+                    .into_iter()
+                    .flatten()
+                {
+                    value = self.base_projection(value, source, offset)?;
+                }
                 values.push(value);
             } else if let Some(crate::sema::lowering::ObjectSource::Explicit {
                 expression,

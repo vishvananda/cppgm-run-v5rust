@@ -67,6 +67,7 @@ impl Function<'_, '_, '_, '_> {
                     } else {
                         self.address(base)?
                     };
+                    let root = self.member_base_projection(id, root, source)?;
                     let offset = self.builder.integer(u128::from(offset))?;
                     let place = self
                         .emit(
@@ -113,6 +114,7 @@ impl Function<'_, '_, '_, '_> {
                     let (entity, offset) = self.graph.lower_member(id)?;
                     let source = self.graph.lower_expression(id)?.ty;
                     let root = self.object_pointer(source)?.value;
+                    let root = self.member_base_projection(id, root, source)?;
                     let offset =
                         self.builder
                             .integer(u128::from(offset.ok_or(Error::Semantic(

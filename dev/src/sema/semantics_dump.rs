@@ -29,6 +29,8 @@ enum Item {
     },
     Binding(BindingId, Option<ast::Initializer>),
     Storage(BindingId),
+    ObjectReceiver(ast::ExprId, BindingId),
+    This(TypeId),
     Constructor(super::construction::ConstructorId),
     DemandedFunction(BindingId),
     Line(&'static str),
@@ -85,8 +87,16 @@ impl Graph {
                 }
                 Item::Binding(id, initializer) => printer.binding(id, initializer, depth)?,
                 Item::Storage(id) => printer.storage_expression(id, depth)?,
+                Item::ObjectReceiver(callee, binding) => {
+                    printer.object_receiver(callee, binding, depth)?;
+                }
+                Item::This(ty) => printer.this_pointer(ty, depth)?,
                 Item::Constructor(id) => printer.constructor_definition(id, depth)?,
                 Item::DemandedFunction(binding) => {
+                    let binding = printer
+                        .graph
+                        .function_origin(printer.graph.binding(binding).entity)
+                        .map_err(|_| io::Error::other("demanded function without origin"))?;
                     if let Some(
                         super::special_members::SpecialDefinition::Body(body)
                         | super::special_members::SpecialDefinition::Defaulted {
@@ -501,6 +511,57 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.output.write_all(b"volatile ")?;
         }
         self.ty(object)
+    }
+    fn object_receiver(
+        &mut self,
+        callee: ast::ExprId,
+        binding: BindingId,
+        depth: usize,
+    ) -> io::Result<()> {
+        let Some((owner, cv)) = self.function_object(binding) else {
+            return Ok(());
+        };
+        let facts = self
+            .graph
+            .expression_facts
+            .get(callee)
+            .map_err(|_| io::Error::other("receiver without facts"))?;
+        let Some(object) = facts.object else {
+            return Ok(());
+        };
+        let converted = facts
+            .conversion
+            .is_some_and(|conversion| conversion.second == C::DerivedToBase);
+        let at = depth + usize::from(converted);
+        if converted {
+            self.indent(depth)?;
+            self.output.write_all(b"cast-expression prvalue ")?;
+            self.object_pointer(owner, cv)?;
+            writeln!(self.output)?;
+        }
+        match object.source {
+            super::expression_facts::ObjectSource::Implicit => {
+                self.this_pointer(object.ty, at)?;
+            }
+            super::expression_facts::ObjectSource::Explicit { expression, arrow } => {
+                if !arrow {
+                    self.indent(at)?;
+                    self.output
+                        .write_all(b"unary-expression prvalue pointer to ")?;
+                    self.ty(object.ty)?;
+                    writeln!(self.output, " OP_AMP:&")?;
+                }
+                self.expr(expression, at + usize::from(!arrow));
+            }
+        }
+        Ok(())
+    }
+    fn this_pointer(&mut self, object: TypeId, depth: usize) -> io::Result<()> {
+        self.indent(depth)?;
+        self.output
+            .write_all(b"id-expression prvalue pointer to ")?;
+        self.ty(object)?;
+        writeln!(self.output, " this")
     }
     fn function_type(&mut self, id: BindingId) -> io::Result<()> {
         let ty = self
@@ -928,6 +989,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .ok_or_else(|| io::Error::other("anonymous member without designation"))?;
             self.name(self.graph.binding(binding).name)?;
             self.work.push((Item::Storage(storage), depth + 1));
+        } else if let Some(object) = facts.object
+            && matches!(
+                object.source,
+                super::expression_facts::ObjectSource::Implicit
+            )
+        {
+            let binding = facts
+                .member
+                .ok_or_else(|| io::Error::other("implicit member without designation"))?;
+            self.name(self.graph.binding(binding).name)?;
+            self.work.push((Item::This(object.ty), depth + 1));
         } else {
             crate::syntax::write_expression_name(self.tree, self.cursor, name, self.output)?;
         }
@@ -1080,6 +1152,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         let label = match node.kind {
             ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
+            ExprKind::Id(_)
+                if facts.anonymous_member.is_some()
+                    || facts.object.is_some_and(|object| {
+                        matches!(
+                            object.source,
+                            super::expression_facts::ObjectSource::Implicit
+                        )
+                    }) =>
+            {
+                "member-expression"
+            }
             ExprKind::Id(_) => "id-expression",
             ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
             ExprKind::Unary { .. } => "unary-expression",
@@ -1198,6 +1281,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
                     self.expr(callee, depth + 1);
+                } else if let Some(CallTarget::Direct(binding)) = facts.call {
+                    self.work
+                        .push((Item::ObjectReceiver(callee, binding), depth + 1));
                 }
                 return Ok(());
             }

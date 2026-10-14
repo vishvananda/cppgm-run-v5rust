@@ -40,6 +40,11 @@ pub(crate) enum Locality {
     External,
     Unit,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeclaredLinkage {
+    External,
+    Internal,
+}
 
 pub(crate) enum TypeView<'a> {
     Scalar(Scalar),
@@ -98,6 +103,7 @@ pub(crate) struct FunctionFacts {
     pub ty: TypeId,
     pub scope: Option<ScopeId>,
     pub internal: bool,
+    pub declared_linkage: DeclaredLinkage,
     pub c_linkage: bool,
     pub emission: Emission,
     pub nothrow: bool,
@@ -177,6 +183,7 @@ impl Graph {
             ty: plan.callable_type,
             scope: None,
             internal: self.lower_entity_unit_local(plan.class),
+            declared_linkage: DeclaredLinkage::External,
             c_linkage: false,
             emission: Emission::Demanded,
             nothrow: plan.nothrow,
@@ -215,6 +222,77 @@ impl Graph {
             .get(id)?
             .object
             .map(|object| object.source))
+    }
+    fn lower_path_offset(&self, path: super::inheritance::BasePathId) -> Result<u64, Error> {
+        self.base_paths
+            .get(path)
+            .iter()
+            .try_fold(0u64, |sum, &(class, index)| {
+                self.entity(class).bases[index]
+                    .offset
+                    .map(|offset| sum.wrapping_add(offset))
+                    .ok_or(Error::Invariant("base projection without completed layout"))
+            })
+    }
+    pub(crate) fn lower_member_base_offsets(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<[Option<u64>; 2], Error> {
+        let facts = self.expression_facts.get(id)?;
+        Ok([
+            facts
+                .member_naming_path
+                .map(|path| self.lower_path_offset(path))
+                .transpose()?,
+            facts
+                .member_path
+                .map(|path| self.lower_path_offset(path))
+                .transpose()?,
+        ])
+    }
+    pub(crate) fn lower_base_conversion_offset(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<u64>, Error> {
+        let facts = self.expression_facts.get(id)?;
+        if !facts.conversion.is_some_and(|conversion| {
+            conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+        }) {
+            return Ok(None);
+        }
+        let path = facts
+            .base_path
+            .ok_or(Error::Invariant("base conversion without retained path"))?;
+        self.lower_path_offset(path).map(Some)
+    }
+    pub(crate) fn lower_receiver_base_offsets(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<[Option<u64>; 2], Error> {
+        let offsets = self.lower_member_base_offsets(id)?;
+        if offsets[0].is_some() {
+            Ok(offsets)
+        } else {
+            Ok([self.lower_base_conversion_offset(id)?, None])
+        }
+    }
+    pub(crate) fn lower_cast_base_adjustment(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<(u64, bool)>, Error> {
+        let facts = self.expression_facts.get(id)?;
+        let Some(cast) = facts.base_cast else {
+            return Ok(None);
+        };
+        let offset = self.lower_path_offset(cast.path)?;
+        Ok(Some((
+            if cast.downcast {
+                offset.wrapping_neg()
+            } else {
+                offset
+            },
+            cast.project_zero,
+        )))
     }
     pub(crate) fn lower_designated_function(
         &self,
@@ -513,11 +591,20 @@ impl Graph {
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
             scope: entity.scope,
             internal: function.internal_linkage
+                || function.language != super::linkage::Language::C
+                    && self.lower_type_unit_local(
+                        entity.ty.ok_or(Error::Invariant("function without type"))?,
+                    )
                 || entity
                     .home
                     .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
                     .and_then(|home| self.scope(home).owner)
                     .is_some_and(|class| self.lower_entity_unit_local(class)),
+            declared_linkage: if function.internal_linkage {
+                DeclaredLinkage::Internal
+            } else {
+                DeclaredLinkage::External
+            },
             c_linkage: function.language == super::linkage::Language::C,
             emission: if entity.definition_emission
                 == super::function_demands::DefinitionEmission::Demanded

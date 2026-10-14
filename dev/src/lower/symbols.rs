@@ -1340,7 +1340,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Node::Name {
                     parent,
                     terminal,
-                    internal: facts.internal && !self.graph.lower_anonymous_namespace(facts.home),
+                    internal: facts.declared_linkage
+                        == crate::sema::lowering::DeclaredLinkage::Internal
+                        && !self.graph.lower_anonymous_namespace(facts.home),
                     occurrence: 0,
                 },
                 &[],

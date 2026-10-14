@@ -16,6 +16,7 @@ mod declarations;
 mod declarators;
 mod default_arguments;
 mod dump;
+mod empty_layout;
 mod enumerations;
 mod exception_operands;
 mod exceptions;

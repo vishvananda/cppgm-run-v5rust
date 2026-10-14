@@ -3,6 +3,7 @@
 mod aggregate_helpers;
 mod aggregates;
 mod arrays;
+mod base_projections;
 mod conditions;
 mod construction;
 mod conversions;
@@ -181,6 +182,12 @@ pub(crate) fn lower_unit(
                 function::declare(&mut output.program, &mut symbols, graph, entity)?;
                 continue;
             };
+            if facts.emission == crate::sema::lowering::Emission::Demanded {
+                let symbol = symbols.entry_symbol(&mut output.program, entry)?;
+                if output.program.function_defined(symbol) {
+                    continue;
+                }
+            }
             let body = match tree.declarations.get(declaration).kind {
                 ast::DeclKind::Function { body, .. } => Some(body),
                 ast::DeclKind::SpecialMember { .. } => graph.lower_function_body(entity),

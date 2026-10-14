@@ -153,7 +153,9 @@ impl Analyzer<'_> {
             .owner
             .ok_or(Error::Invariant("member search without class"))?;
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        if entity.data_member == Some(DataMemberKind::Instance) {
+        if entity.data_member == Some(DataMemberKind::Instance)
+            || self.member_function_owner(binding).is_some()
+        {
             let home = entity
                 .home
                 .and_then(|home| self.graph.scope(home).owner)
@@ -247,7 +249,41 @@ impl Analyzer<'_> {
         facts.member = Some(binding);
         self.static_member_constant(&mut facts, member.entity);
         facts.member_naming = Some(naming);
+        facts.member_path = self.data_member_path(binding, naming, location)?;
+        if class != naming
+            && self.graph.entity(member.entity).data_member == Some(DataMemberKind::Instance)
+        {
+            facts.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+        }
         Ok(facts)
+    }
+
+    pub(super) fn data_member_path(
+        &mut self,
+        binding: BindingId,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<Option<super::inheritance::BasePathId>, Error> {
+        let member = self.graph.entity(self.graph.binding(binding).entity);
+        if member.data_member != Some(DataMemberKind::Instance) {
+            return Ok(None);
+        }
+        let holder = member
+            .home
+            .and_then(|home| self.graph.scope(home).owner)
+            .ok_or(Error::Invariant("member without holder"))?;
+        // Anonymous injection owns a separate subobject route, not a base edge.
+        if self.graph.entity(holder).anonymous_storage.is_some() {
+            return Ok(None);
+        }
+        if class == holder {
+            return Ok(None);
+        }
+        let path = self.graph.retain_base_path(class, holder)?;
+        if self.lowering() {
+            self.request_storage_layout(class, location)?;
+        }
+        Ok(Some(path))
     }
 
     fn data_member_qualifier(

@@ -225,7 +225,15 @@ impl Analyzer<'_> {
             )?;
             facts.conversion = Some(conversion);
             self.graph.expression_facts.set(operand, facts);
-            return self.new_expression_facts(goal, V::Prvalue);
+            let mut result = self.new_expression_facts(goal, V::Prvalue)?;
+            if let Some(path) = facts.base_path {
+                result.base_cast = Some(super::expression_facts::BaseCast {
+                    path,
+                    downcast: false,
+                    project_zero: true,
+                });
+            }
+            return Ok(result);
         }
         let fk = &self.graph.types.get(from).kind;
         let gk = &self.graph.types.get(goal).kind;
@@ -355,6 +363,11 @@ impl Analyzer<'_> {
         )?;
         facts.reference_cast = Some(target);
         facts.base_path = Some(path);
+        facts.base_cast = Some(super::expression_facts::BaseCast {
+            path,
+            downcast,
+            project_zero: !downcast,
+        });
         Ok(Some(facts))
     }
 
@@ -414,6 +427,11 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(operand, facts);
         let mut facts = self.new_expression_facts(goal, V::Prvalue)?;
         facts.base_path = Some(path);
+        facts.base_cast = Some(super::expression_facts::BaseCast {
+            path,
+            downcast,
+            project_zero: false,
+        });
         Ok(Some(facts))
     }
 

@@ -348,6 +348,13 @@ impl Analyzer<'_> {
                 facts.object = Some(object);
                 facts.member = Some(selected);
                 facts.member_naming = self.graph.class_of(object.ty);
+                if let Some(class) = facts.member_naming {
+                    facts.member_path = self.data_member_path(
+                        selected,
+                        class,
+                        self.tree.expressions.get(id).location,
+                    )?;
+                }
                 if !matches!(
                     self.graph
                         .types

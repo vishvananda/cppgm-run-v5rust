@@ -22,6 +22,7 @@ pub(super) enum Derivation {
 pub(super) struct BaseClass {
     pub class: EntityId,
     pub access: Access,
+    pub offset: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,6 +192,9 @@ impl Analyzer<'_> {
         if access {
             self.check_base_path_access(path, scope, location)?;
         }
+        if self.lowering() {
+            self.request_storage_layout(derived, location)?;
+        }
         Ok(path)
     }
 
@@ -260,6 +264,7 @@ impl Analyzer<'_> {
             self.graph.entity_mut(class).bases.push(BaseClass {
                 class: parent,
                 access,
+                offset: None,
             });
             seen.insert(parent);
             if let Some(binding) = binding {

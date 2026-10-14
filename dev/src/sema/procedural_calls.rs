@@ -235,34 +235,7 @@ impl Analyzer<'_> {
             }
             self.check_class_arguments(binding, arguments, scope)?;
             let location = self.tree.expressions.get(id).location;
-            if let Some(object) = facts.object {
-                let class = self
-                    .graph
-                    .class_of(object.ty)
-                    .ok_or(Error::Invariant("call object without class"))?;
-                let naming = facts.member_naming.unwrap_or(class);
-                self.check_named_member_access(binding, naming, class, scope, location)?;
-                if self.member_function_owner(binding).is_some() {
-                    let conversion = self
-                        .object_sequence(object, binding, false)?
-                        .ok_or(Error::Invariant("chosen object conversion missing"))?;
-                    let object_facts = ExprFacts::new(object.ty, object.category);
-                    let path =
-                        self.conversion_base_path(object_facts, conversion, scope, location, true)?;
-                    let mut selected = self.graph.expression_facts.get(callee)?;
-                    selected.conversion = Some(conversion);
-                    selected.base_path = path;
-                    self.graph.expression_facts.set(callee, selected);
-                }
-            } else {
-                self.check_direct_member_access(binding, scope, location)?;
-                if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
-                    return Err(Error::at(
-                        location,
-                        "non-static member function called without an object",
-                    ));
-                }
-            }
+            self.record_call_receiver(callee, binding, facts, scope, location)?;
             self.select_function_designation(callee, binding)?;
             self.demand_function(binding, true);
             let ty = self.graph.types.canonical_function(
@@ -280,6 +253,74 @@ impl Analyzer<'_> {
             return Ok(facts);
         }
         self.indirect_call(id, callee, arguments, facts.ty, scope)
+    }
+    // Member access is checked through its naming declaration; the implicit
+    // object conversion retains the physical route without rechecking that access.
+    fn record_call_receiver(
+        &mut self,
+        callee: ast::ExprId,
+        binding: BindingId,
+        facts: ExprFacts,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        if let Some(object) = facts.object {
+            let class = self
+                .graph
+                .class_of(object.ty)
+                .ok_or(Error::Invariant("call object without class"))?;
+            let naming = facts.member_naming.unwrap_or(class);
+            self.check_named_member_access(binding, naming, class, scope, location)?;
+            if let Some(home_type) = self.member_function_owner(binding) {
+                let home = self
+                    .graph
+                    .class_of(home_type)
+                    .ok_or(Error::Invariant("member function owner without class"))?;
+                let access = self
+                    .tree
+                    .expressions
+                    .get(self.graph.expression_facts.root(callee));
+                let access_location = if matches!(access.kind, ast::ExprKind::Member { .. }) {
+                    access.location
+                } else {
+                    location
+                };
+                if self.graph.base_count(class, naming) > 1
+                    || self.graph.base_count(naming, home) > 1
+                {
+                    return Err(Error::at(
+                        access_location,
+                        "a non-static member of an ambiguous base class subobject",
+                    ));
+                }
+                if class != naming {
+                    self.checked_base_path(class, naming, scope, access_location, true, false)?;
+                }
+                let conversion = self
+                    .object_sequence(object, binding, false)?
+                    .ok_or(Error::Invariant("chosen object conversion missing"))?;
+                let object_facts = ExprFacts::new(object.ty, object.category);
+                let path =
+                    self.conversion_base_path(object_facts, conversion, scope, location, false)?;
+                let mut selected = self.graph.expression_facts.get(callee)?;
+                selected.conversion = Some(conversion);
+                selected.base_path = path;
+                if naming != class && naming != home {
+                    selected.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+                    selected.member_path = Some(self.graph.retain_base_path(naming, home)?);
+                }
+                self.graph.expression_facts.set(callee, selected);
+            }
+        } else {
+            self.check_direct_member_access(binding, scope, location)?;
+            if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
+                return Err(Error::at(
+                    location,
+                    "non-static member function called without an object",
+                ));
+            }
+        }
+        Ok(())
     }
     fn object_sequence(
         &mut self,
