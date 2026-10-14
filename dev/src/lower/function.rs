@@ -436,7 +436,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if !self.graph.lower_automatic(entity) {
-            if self.graph.lower_namespace_storage(entity) {
+            if self.graph.lower_program_storage(entity) {
                 return Ok(());
             }
             return self.local_static(entity, initializer);

@@ -13,6 +13,7 @@ pub(super) struct Finalizer {
     pub count: u64,
     pub element_size: u64,
     pub array: bool,
+    pub guard: Option<SymbolId>,
 }
 pub(super) fn finish(
     program: &mut Program,
@@ -29,6 +30,20 @@ pub(super) fn finish(
     builder.block("entry")?;
     let mut next_block = 0_u32;
     for finalizer in finalizers.iter().rev() {
+        let skip = if let Some(guard) = finalizer.guard {
+            let destroy = block(&mut builder, "local_static_destroy", &mut next_block)?;
+            let skip = block(&mut builder, "local_static_fini_next", &mut next_block)?;
+            let address = builder.generated(I::Addr(Value::Symbol(guard)))?;
+            let loaded =
+                builder.generated(I::Load(Facts::memory(false, true), Type::I64, address))?;
+            let zero = builder.integer(0)?;
+            let ready = builder.generated(I::Compare(Compare::Ne, Type::I64, loaded, zero))?;
+            builder.effect(I::Branch(ready, destroy, skip))?;
+            builder.place_block(destroy)?;
+            Some(skip)
+        } else {
+            None
+        };
         if finalizer.count > 8 {
             array_loop(&mut builder, finalizer, &mut next_block)?;
         } else {
@@ -58,10 +73,23 @@ pub(super) fn finish(
                 call(&mut builder, finalizer.callee, object)?;
             }
         }
+        if let Some(skip) = skip {
+            builder.effect(I::Jump(skip))?;
+            builder.place_block(skip)?;
+        }
     }
     builder.effect(I::Return(Type::Void, None))?;
     builder.finish()?;
     Ok(())
+}
+fn block(
+    builder: &mut FunctionBuilder<'_>,
+    prefix: &str,
+    next: &mut u32,
+) -> Result<crate::lowir::model::BlockId, Error> {
+    *next = next.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
+    let name = format!("{prefix}_{next}");
+    Ok(builder.block_id(&name)?)
 }
 fn call(builder: &mut FunctionBuilder<'_>, callee: SymbolId, object: Value) -> Result<(), Error> {
     let arguments = builder.arguments(&[object])?;
@@ -83,13 +111,9 @@ fn array_loop(
     let slot = builder.generated_slot("destructor_array_index", Type::I64)?;
     let count = builder.integer(u128::from(finalizer.count))?;
     builder.effect(I::Store(Facts::memory(false, true), Type::I64, count, slot))?;
-    let mut block = |prefix: &str| -> Result<_, Error> {
-        *next = next.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-        Ok(builder.block_id(&format!("{prefix}_{next}"))?)
-    };
-    let test = block("destructor_array_cond")?;
-    let body = block("destructor_array_body")?;
-    let end = block("destructor_array_end")?;
+    let test = block(builder, "destructor_array_cond", next)?;
+    let body = block(builder, "destructor_array_body", next)?;
+    let end = block(builder, "destructor_array_end", next)?;
     builder.effect(I::Jump(test))?;
     builder.place_block(test)?;
     let current = builder.generated(I::Load(Facts::memory(false, true), Type::I64, slot))?;

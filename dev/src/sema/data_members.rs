@@ -14,6 +14,43 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn request_in_class_initializer(
+        &mut self,
+        entity: super::graph::EntityId,
+    ) -> Result<(), Error> {
+        if let Some(initializer) = self.graph.entity(entity).member_initializer {
+            let home = self
+                .graph
+                .entity(entity)
+                .home
+                .ok_or(Error::Invariant("static member without class scope"))?;
+            self.request_static_initializer(entity, initializer, home, home)?;
+        }
+        Ok(())
+    }
+    pub(super) fn record_declared_constant(
+        &mut self,
+        entity: super::graph::EntityId,
+        initializer: ast::Initializer,
+        info: &DeclaratorInfo,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.record_constant_initializer(entity, initializer, info.lookup)?;
+        let variable = self.graph.entity(entity);
+        if self.semantic()
+            && self.template_depth == 0
+            && info.home.is_none()
+            && variable.data_member == Some(DataMemberKind::Static)
+            && !variable.constexpr
+            && matches!(variable.constant, ConstantState::None)
+        {
+            return Err(Error::at(
+                location,
+                "a static data member's in-class initializer is not a constant expression",
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn static_member_constant(
         &self,
         facts: &mut super::expression_facts::ExprFacts,
@@ -232,8 +269,7 @@ impl Analyzer<'_> {
         }
         if let Some(qualified) = info.home {
             let previous = self
-                .graph
-                .own(qualified, name, Filter::Ordinary)
+                .qualified(qualified, name, Filter::Ordinary)?
                 .ok_or_else(|| {
                     Error::at(
                         location,

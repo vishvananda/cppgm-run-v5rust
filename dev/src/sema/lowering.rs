@@ -34,6 +34,7 @@ pub(crate) struct VariableFacts {
     pub c_linkage: bool,
     pub thread_local: bool,
     pub initializer: Option<StaticValue>,
+    pub in_class_initializer: Option<ast::Initializer>,
     pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub definition: Option<ast::DeclaratorId>,
 }
@@ -562,6 +563,13 @@ impl Graph {
             ty: entity.ty.ok_or(Error::Invariant("variable without type"))?,
             internal: variable.internal_linkage,
             locality: if variable.internal_linkage
+                || entity.home.is_some_and(|home| {
+                    self.scope(home).kind == super::graph::ScopeKind::Class
+                        && self
+                            .scope(home)
+                            .owner
+                            .is_some_and(|class| self.lower_entity_unit_local(class))
+                })
                 || variable.language != super::linkage::Language::C
                     && self.lower_type_unit_local(
                         entity.ty.ok_or(Error::Invariant("variable without type"))?,
@@ -573,6 +581,7 @@ impl Graph {
             c_linkage: variable.language == super::linkage::Language::C,
             thread_local: variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal,
             initializer: entity.static_initializer,
+            in_class_initializer: entity.member_initializer,
             reference_temporary: entity.reference_temporary,
             definition: entity.variable_definition,
         })
@@ -593,10 +602,12 @@ impl Graph {
     pub(crate) fn lower_condition_target(&self, id: ast::DeclaratorId) -> Result<TypeId, Error> {
         Ok(self.condition_conversion(id)?.result)
     }
-    pub(crate) fn lower_namespace_storage(&self, id: EntityId) -> bool {
-        self.entity(id)
-            .variable
-            .is_some_and(|variable| variable.is_extern)
+    pub(crate) fn lower_program_storage(&self, id: EntityId) -> bool {
+        self.lower_static_member(id)
+            || self
+                .entity(id)
+                .variable
+                .is_some_and(|variable| variable.is_extern)
             || self
                 .entity(id)
                 .home
@@ -764,16 +775,6 @@ impl Graph {
         }
         let (parent, name) = self.lower_presentation_scope(id)?;
         Ok((parent, name, namespace))
-    }
-    pub(crate) fn lower_namespace(
-        &self,
-        id: ScopeId,
-    ) -> Result<(Option<ScopeId>, Option<NameId>), Error> {
-        let scope = self.scope(id);
-        if scope.kind != super::graph::ScopeKind::Namespace {
-            return Err(Error::Missing("lowering class and local scopes"));
-        }
-        Ok((scope.parent, scope.name))
     }
     pub(crate) fn lower_overloads(
         &self,

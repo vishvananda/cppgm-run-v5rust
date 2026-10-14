@@ -932,7 +932,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let facts = self.graph.lower_variable(entity)?;
         let mut components = vec![self.identifier(facts.name)?];
         let mut scope = facts.home;
-        while let (Some(parent), name) = self.graph.lower_namespace(scope)? {
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
             components.push(if let Some(name) = name {
                 self.identifier(name)?
             } else {
@@ -1008,6 +1008,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
         {
             return Ok(None);
         }
+        self.tls_wrapper_symbol(program, entity, global).map(Some)
+    }
+    pub(super) fn tls_wrapper_symbol(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+        global: SymbolId,
+    ) -> Result<SymbolId, Error> {
+        if let Some(&wrapper) = self.tls_wrappers.get(&entity) {
+            return Ok(wrapper);
+        }
         let spelling = format!(
             "__cppgm_tls_wrapper__{}",
             program.names.get(program.symbol(global).name)
@@ -1021,7 +1032,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.budget,
         )?;
         let object = program.names.intern_bytes(&bytes)?;
-        let internal = self.graph.lower_variable(entity)?.internal;
+        let internal =
+            self.graph.lower_variable(entity)?.locality == crate::sema::lowering::Locality::Unit;
         let local_object =
             (!internal || !self.table.objects.contains_key(&object)).then_some(object);
         let wrapper = self
@@ -1055,12 +1067,45 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 location: None,
             },
         )?;
-        Ok(Some(wrapper))
+        Ok(wrapper)
+    }
+    pub(super) fn tls_initialization_symbols(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<(SymbolId, SymbolId), Error> {
+        use crate::lowir::{
+            model::{Global, GlobalInit},
+            vocabulary::{Binding, Storage, Type},
+        };
+        let global = self.variable_symbol(program, entity)?;
+        let base = program.names.get(program.symbol(global).name).to_owned();
+        let guard =
+            self.table
+                .allocate(program, &format!("__cppgm_tls_guard__{base}"), None, true)?;
+        program.add_global(
+            guard,
+            Global {
+                name: program.symbol(guard).name,
+                ty: Some(Type::I64),
+                init: GlobalInit::Zero,
+                metadata: Metadata {
+                    binding: Some(Binding::Internal),
+                    storage: Some(Storage::ThreadLocal),
+                    ..Metadata::default()
+                },
+            },
+        )?;
+        let init =
+            self.table
+                .allocate(program, &format!("__cppgm_tls_init__{base}"), None, true)?;
+        Ok((guard, init))
     }
     pub(super) fn emit_tls_wrapper(
         &mut self,
         program: &mut Program,
         entity: EntityId,
+        initializer: Option<SymbolId>,
     ) -> Result<bool, Error> {
         let Some(&wrapper) = self.tls_wrappers.get(&entity) else {
             return Ok(false);
@@ -1081,6 +1126,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
         )?;
         builder.metadata(metadata);
         builder.block("entry")?;
+        if let Some(initializer) = initializer {
+            let arguments = builder.arguments(&[])?;
+            builder.effect(crate::lowir::model::InstructionKind::Call(
+                crate::lowir::model::Call {
+                    result: crate::lowir::vocabulary::Type::Void,
+                    callee: Value::Symbol(initializer),
+                    arguments,
+                    signature: None,
+                    copy_elision: false,
+                },
+            ))?;
+        }
         let address = builder.generated(crate::lowir::model::InstructionKind::Addr(
             Value::Symbol(global),
         ))?;

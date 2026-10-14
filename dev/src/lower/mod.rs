@@ -30,6 +30,7 @@ mod shutdown;
 mod startup;
 mod statements;
 mod symbols;
+mod thread_local;
 mod throw_scan;
 mod types;
 use crate::{

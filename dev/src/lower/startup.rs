@@ -87,7 +87,7 @@ impl Startup {
     }
 }
 impl Function<'_, '_, '_, '_> {
-    fn initialize_global(
+    pub(super) fn initialize_global(
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,

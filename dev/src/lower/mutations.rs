@@ -107,10 +107,7 @@ impl Function<'_, '_, '_, '_> {
                     place
                 } else {
                     self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
-                    Value::Symbol(
-                        self.symbols
-                            .variable_symbol(self.builder.program(), entity)?,
-                    )
+                    self.global_place(entity)?
                 };
                 self.reference_holder(place, self.graph.lower_entity_type(entity)?)
             }
@@ -167,36 +164,7 @@ impl Function<'_, '_, '_, '_> {
                         .function_symbol(self.builder.program(), entity)
                         .map(Value::Symbol)
                 } else {
-                    let symbol = self
-                        .symbols
-                        .variable_symbol(self.builder.program(), entity)?;
-                    let place = if self.graph.lower_variable(entity)?.thread_local {
-                        if let Some(wrapper) =
-                            self.symbols
-                                .tls_wrapper(self.builder.program(), entity, symbol)?
-                        {
-                            let arguments = self.builder.arguments(&[])?;
-                            self.emit(
-                                I::Call(crate::lowir::model::Call {
-                                    result: Type::Ptr,
-                                    callee: Value::Symbol(wrapper),
-                                    arguments,
-                                    copy_elision: false,
-                                    signature: None,
-                                }),
-                                self.graph.lower_entity_type(entity)?,
-                            )?
-                            .value
-                        } else {
-                            self.emit(
-                                I::Addr(Value::Symbol(symbol)),
-                                self.graph.lower_entity_type(entity)?,
-                            )?
-                            .value
-                        }
-                    } else {
-                        Value::Symbol(symbol)
-                    };
+                    let place = self.global_place(entity)?;
                     self.reference_holder(place, self.graph.lower_entity_type(entity)?)
                 }
             }

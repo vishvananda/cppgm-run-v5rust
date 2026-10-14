@@ -568,7 +568,7 @@ impl Analyzer<'_> {
             ty = self.graph.types.qualify(ty, Cv::CONST)?;
         }
         ty = self.complete_initializer_array(ty, init.initializer)?;
-        if info.home.is_some() && self.graph.own(home, name, Filter::Ordinary).is_none() {
+        if info.home.is_some() && self.qualified(home, name, Filter::Ordinary)?.is_none() {
             return Err(Error::at(
                 location,
                 "qualified definition does not match a declaration",
@@ -667,7 +667,7 @@ impl Analyzer<'_> {
                 self.initializer_names(initializer, info.lookup, ty)?;
             }
             if !member {
-                self.record_constant_initializer(entity, initializer, info.lookup)?;
+                self.record_declared_constant(entity, initializer, &info, location)?;
                 if self.lowering() && definition {
                     self.request_static_initializer(entity, initializer, info.lookup, home)?;
                 }
@@ -869,7 +869,11 @@ impl Analyzer<'_> {
             ));
         }
         let mut entity = None;
-        let mut existing = self.graph.value_binding(home, name);
+        let mut existing = if qualified && kind == BindingKind::Variable {
+            self.qualified_key(home, name, Filter::Ordinary)?
+        } else {
+            self.graph.value_binding(home, name)
+        };
         if kind == BindingKind::Function
             && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
         {

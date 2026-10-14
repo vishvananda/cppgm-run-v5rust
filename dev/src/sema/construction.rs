@@ -105,6 +105,9 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         self.default_initialize(binding, location)?;
+        if self.lowering() {
+            self.request_in_class_initializer(self.graph.binding(binding).entity)?;
+        }
         let variable = self.graph.entity(self.graph.binding(binding).entity);
         // declare_variable counts nontrivial automatic construction after
         // selecting it. anonymous_union's hidden-object path does not count it.

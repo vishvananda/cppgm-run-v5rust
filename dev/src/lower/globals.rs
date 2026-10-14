@@ -33,22 +33,37 @@ pub(super) fn lower_declaration<'a>(
         if graph.lower_is_variable(entity)
             && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
         {
+            let initializer = declarator
+                .initializer
+                .or(graph.lower_variable(entity)?.in_class_initializer);
             let initialization = define(
                 output.program,
                 symbols,
                 graph,
                 tree,
                 entity,
-                declarator.initializer,
+                initializer,
                 tree.declarators.get(declarator.declarator).location,
             )?;
-            if initialization == Initialization::Dynamic {
+            let mut thread_initialization = None;
+            if initialization == Initialization::Dynamic
+                && graph.lower_variable(entity)?.thread_local
+            {
+                thread_initialization = Some(super::thread_local::initialize(
+                    output,
+                    symbols,
+                    (graph, tree),
+                    entity,
+                    initializer,
+                    budget,
+                )?);
+            } else if initialization == Initialization::Dynamic {
                 output.startup.initialize(
                     output.program,
                     symbols,
                     (graph, tree),
                     entity,
-                    declarator.initializer,
+                    initializer,
                     budget,
                 )?;
             }
@@ -56,9 +71,6 @@ pub(super) fn lower_declaration<'a>(
                 symbols.storage_destructor(graph.lower_entity_type(entity)?)?
             {
                 let facts = graph.lower_variable(entity)?;
-                if facts.thread_local {
-                    return Err(Error::Missing("thread-local destructor finalization"));
-                }
                 let global = symbols.variable_symbol(output.program, entity)?;
                 let callee = symbols.function_symbol(output.program, destructor)?;
                 symbols.demand(destructor);
@@ -80,9 +92,14 @@ pub(super) fn lower_declaration<'a>(
                     count,
                     array,
                     element_size: types::layout(graph, element)?.0,
+                    guard: thread_initialization.map(|(guard, _)| guard),
                 });
             }
-            if symbols.emit_tls_wrapper(output.program, entity)? {
+            if symbols.emit_tls_wrapper(
+                output.program,
+                entity,
+                thread_initialization.map(|(_, init)| init),
+            )? {
                 output.definitions.stream(output.program, None)?;
             }
         }
@@ -205,9 +222,6 @@ fn define_storage(
             }
         }
     };
-    if dynamic && facts.thread_local {
-        return Err(Error::Missing("dynamic thread-local initialization"));
-    }
     if array && let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }
@@ -225,7 +239,10 @@ fn define_storage(
             init,
         },
     )?;
-    if initializer.is_none() && graph.lower_empty_initialization_step(entity)? {
+    if initializer.is_none()
+        && !facts.thread_local
+        && graph.lower_empty_initialization_step(entity)?
+    {
         symbols.request_initialization(program)?;
     }
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
@@ -335,7 +352,11 @@ pub(super) fn finish(
         }
         let metadata = symbols.variable_metadata(program, entity, symbol)?;
         let name = program.symbol(symbol).name;
-        let ty = if graph.lower_complete_object(facts.ty)? {
+        let ty = if graph.lower_complete_object(facts.ty)?
+            && !matches!(
+                graph.lower_type(facts.ty)?,
+                TypeView::Array { .. } | TypeView::Class(_)
+            ) {
             Some(types::storage(graph, facts.ty)?)
         } else {
             None
