@@ -195,6 +195,16 @@ impl Analyzer<'_> {
             let binding = bindings[0];
             self.select_function_designation(id, binding)?;
         }
+        self.check_bound_function(id)
+    }
+    pub(super) fn check_bound_function(&self, id: ast::ExprId) -> Result<(), Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        if facts.object.is_some() && (facts.functions.is_some() || facts.function.is_some()) {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "a member function must be called",
+            ));
+        }
         Ok(())
     }
     pub(super) fn ordinary_function_operand(&self, facts: ExprFacts) -> Option<BindingId> {

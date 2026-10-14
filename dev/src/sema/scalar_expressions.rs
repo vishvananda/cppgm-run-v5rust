@@ -81,6 +81,13 @@ impl Analyzer<'_> {
                 let ty = self.graph.types.scalar(scalar)?;
                 self.new_expression_facts(ty, V::Prvalue)?
             }
+            ExprKind::Keyword(Keyword::This) => {
+                let object = self.current_object_type()?.ok_or_else(|| {
+                    Error::at(node.location, "`this` outside a non-static member function")
+                })?;
+                let pointer = self.graph.types.pointer(object)?;
+                self.new_expression_facts(pointer, V::Prvalue)?
+            }
             ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
                 if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd)
                     && let Some(facts) = self.qualified_function_address(id, operand, scope)?
@@ -241,29 +248,19 @@ impl Analyzer<'_> {
                     "use of a deleted function",
                 ));
             }
-            if self.default_argument_scope.is_none()
-                && let Some(body) = &self.body_context
-                && !self
-                    .graph
-                    .entity(body.entity)
-                    .function
-                    .is_some_and(|props| props.is_static)
-                && let Some(home) = self.graph.entity(body.entity).home
-                && self.graph.scope(home).kind == super::graph::ScopeKind::Class
-                && let Some(object) = self
-                    .graph
-                    .scope(home)
-                    .owner
-                    .and_then(|class| self.graph.entity(class).ty)
-                && found
-                    .functions
-                    .as_slice()
-                    .iter()
-                    .any(|&function| self.member_function_owner(function) == Some(object))
+            let mut facts = self.function_designation(binding, found.functions.as_slice())?;
+            if found
+                .functions
+                .as_slice()
+                .iter()
+                .any(|&function| self.member_function_owner(function).is_some())
             {
-                return Err(Error::Missing("bound member function designation"));
+                facts.object = self.implicit_member_object(binding)?;
+                if let Some(object) = facts.object {
+                    facts.member_naming = self.graph.class_of(object.ty);
+                    facts.category = V::Prvalue;
+                }
             }
-            let facts = self.function_designation(binding, found.functions.as_slice())?;
             return Ok(facts);
         }
         self.check_direct_member_access(binding, scope, self.tree.expressions.get(id).location)?;
@@ -340,24 +337,46 @@ impl Analyzer<'_> {
         {
             facts.anonymous_member = Some(storage);
         }
-        if self.unevaluated == 0
-            && facts.anonymous_member.is_none()
+        if facts.anonymous_member.is_none()
             && self.graph.entity(binding.entity).data_member
                 == Some(super::graph::DataMemberKind::Instance)
         {
-            if self.default_argument_scope.is_none()
-                && self
-                    .graph
-                    .entity(binding.entity)
-                    .home
-                    .is_some_and(|home| self.graph.encloses(home, scope))
-            {
-                return Err(Error::Missing("implicit object member designation"));
+            let selected = found
+                .binding
+                .ok_or(Error::Invariant("implicit member without binding"))?;
+            if let Some(object) = self.implicit_member_object(selected)? {
+                facts.object = Some(object);
+                facts.member = Some(selected);
+                facts.member_naming = self.graph.class_of(object.ty);
+                if !matches!(
+                    self.graph
+                        .types
+                        .get(
+                            self.graph
+                                .entity(binding.entity)
+                                .ty
+                                .ok_or(Error::Invariant("member without type"))?
+                        )
+                        .kind,
+                    TypeKind::Reference { .. }
+                ) {
+                    let cv = self.graph.types.get(object.ty).cv;
+                    let cv = Cv(cv.0
+                        & if self.graph.entity(binding.entity).mutability
+                            == super::graph::Mutability::Mutable
+                        {
+                            !Cv::CONST.0
+                        } else {
+                            u8::MAX
+                        });
+                    facts.ty = self.graph.types.qualify(ty, cv)?;
+                }
+            } else if self.unevaluated == 0 {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "non-static data member used without an object",
+                ));
             }
-            return Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "non-static data member used without an object",
-            ));
         }
         if binding.kind == BindingKind::Enumerator {
             let super::constants::ConstantState::Value(value) =

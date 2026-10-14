@@ -328,6 +328,7 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        self.check_bound_function(id)?;
         let facts = self.graph.expression_facts.get(id)?;
         let conversion = self.scalar_sequence(facts, target, direct)?;
         let Some(conversion) = conversion else {

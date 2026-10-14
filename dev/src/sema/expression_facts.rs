@@ -67,6 +67,20 @@ pub(super) struct Conversion {
     pub reference_source: ReferenceSource,
 }
 #[derive(Clone, Copy, Debug)]
+pub(crate) enum ObjectSource {
+    Implicit,
+    Explicit {
+        expression: ast::ExprId,
+        arrow: bool,
+    },
+}
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ObjectArgument {
+    pub source: ObjectSource,
+    pub ty: TypeId,
+    pub category: ValueCategory,
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
@@ -87,6 +101,7 @@ pub(super) struct ExprFacts {
     // Explicit designation retains the selected entity independently of spelling.
     pub member: Option<super::graph::BindingId>,
     pub member_naming: Option<super::graph::EntityId>,
+    pub object: Option<ObjectArgument>,
     pub base_path: Option<super::inheritance::BasePathId>,
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
@@ -116,6 +131,7 @@ impl ExprFacts {
             anonymous_member: None,
             member: None,
             member_naming: None,
+            object: None,
             base_path: None,
             member_address_scope: None,
             elided_copy: None,

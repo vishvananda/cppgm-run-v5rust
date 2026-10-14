@@ -1,6 +1,6 @@
 // Translated from sema/analyzer_expressions.cpp's member_access,
 // member_qualifier and member_of_object, and analyzer_access.cpp. See NOTICE.
-//! Data-member designation reads class-local lookup and publishes original-AST facts.
+//! Member designation retains lookup, receiver type/category and naming-class facts.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -17,6 +17,72 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    pub(super) fn current_object_type(&mut self) -> Result<Option<super::types::TypeId>, Error> {
+        if self.default_argument_scope.is_some() {
+            return Ok(None);
+        }
+        let Some(body) = &self.body_context else {
+            return Ok(None);
+        };
+        let entity = self.graph.entity(body.entity);
+        if entity.function.is_some_and(|function| function.is_static) {
+            return Ok(None);
+        }
+        let Some(class) = entity
+            .home
+            .and_then(|home| self.graph.scope(home).owner)
+            .filter(|&class| {
+                self.graph
+                    .entity(class)
+                    .ty
+                    .is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)))
+            })
+        else {
+            return Ok(None);
+        };
+        let ty = self
+            .graph
+            .entity(class)
+            .ty
+            .ok_or(Error::Invariant("object class without type"))?;
+        let function = entity
+            .ty
+            .ok_or(Error::Invariant("member function without type"))?;
+        let TypeKind::Function { cv, .. } = self.graph.types.get(function).kind else {
+            return Err(Error::Invariant("member without function type"));
+        };
+        Ok(Some(self.graph.types.qualify(ty, cv)?))
+    }
+
+    pub(super) fn implicit_member_object(
+        &mut self,
+        binding: BindingId,
+    ) -> Result<Option<super::expression_facts::ObjectArgument>, Error> {
+        let Some(ty) = self.current_object_type()? else {
+            return Ok(None);
+        };
+        let Some(home) = self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .home
+            .and_then(|home| self.graph.scope(home).owner)
+        else {
+            return Ok(None);
+        };
+        let Some(class) = self.graph.class_of(ty) else {
+            return Ok(None);
+        };
+        Ok(
+            (home == class || self.graph.is_base_of(home, class)).then_some(
+                super::expression_facts::ObjectArgument {
+                    source: super::expression_facts::ObjectSource::Implicit,
+                    ty,
+                    category: V::Lvalue,
+                },
+            ),
+        )
+    }
+
     pub(super) fn data_member_expression(
         &mut self,
         id: ast::ExprId,
@@ -78,9 +144,6 @@ impl Analyzer<'_> {
         let binding = found
             .binding
             .ok_or_else(|| Error::at(node.location, "no member of that name"))?;
-        if self.graph.binding(binding).kind == BindingKind::Function {
-            return Err(Error::Missing("bound member function designation"));
-        }
         let naming = self
             .graph
             .scope(search)
@@ -102,6 +165,27 @@ impl Analyzer<'_> {
                 let path = self.graph.retain_base_path(class, naming)?;
                 self.check_base_path_access(path, scope, node.location)?;
             }
+        }
+        if self.graph.binding(binding).kind == BindingKind::Function {
+            let mut facts = self.function_designation(binding, found.functions.as_slice())?;
+            facts.category = if found.functions.as_slice().len() == 1
+                && self.member_function_owner(binding).is_none()
+            {
+                V::Lvalue
+            } else {
+                V::Prvalue
+            };
+            facts.object = Some(super::expression_facts::ObjectArgument {
+                source: super::expression_facts::ObjectSource::Explicit {
+                    expression: base,
+                    arrow,
+                },
+                ty,
+                category: if arrow { V::Lvalue } else { object.category },
+            });
+            facts.member_naming = Some(naming);
+            super::record(&mut self.graph.resolved_names, name.index(), binding);
+            return Ok(facts);
         }
         self.check_named_member_access(binding, naming, class, scope, node.location)?;
         if self.lowering()

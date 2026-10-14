@@ -63,6 +63,13 @@ impl Analyzer<'_> {
         postfix: bool,
     ) -> Result<ExprFacts, Error> {
         let facts = self.graph.expression_facts.get(operand)?;
+        if facts.object.is_some()
+            && facts
+                .functions
+                .is_some_and(|set| self.graph.overloads.get(set).len() == 1)
+        {
+            self.check_bound_function(operand)?;
+        }
         if facts.functions.is_some()
             && self.ordinary_function_operand(facts).is_none()
             && matches!(op, P::BitAnd | P::Multiply)
@@ -81,6 +88,7 @@ impl Analyzer<'_> {
                 },
             )?;
             result.functions = facts.functions;
+            result.object = facts.object;
             return Ok(result);
         }
         self.check_resolved_function(operand)?;

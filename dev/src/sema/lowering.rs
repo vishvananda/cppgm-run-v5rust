@@ -93,6 +93,8 @@ pub(crate) struct FunctionFacts {
     pub allocation: Option<Allocation>,
     pub builtin: Option<BuiltinFunction>,
     pub definition: Option<ast::DeclId>,
+    pub object: Option<EntityId>,
+    pub qualifiers: crate::abi::graph::Qualifiers,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Expression {
@@ -106,7 +108,18 @@ pub(crate) struct Expression {
     pub temporary: Option<TypeId>,
     pub reference_cast: Option<TypeId>,
 }
+pub(crate) use super::expression_facts::ObjectSource;
 impl Graph {
+    pub(crate) fn lower_object_source(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<ObjectSource>, Error> {
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .object
+            .map(|object| object.source))
+    }
     fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Only a function type introduces the shared component DAG worklist.
@@ -329,7 +342,33 @@ impl Graph {
         let function = entity
             .function
             .ok_or(Error::Invariant("lowering non-function"))?;
+        let object = entity
+            .home
+            .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
+            .and_then(|home| self.scope(home).owner)
+            .filter(|_| !function.is_static);
+        let mut qualifiers = crate::abi::graph::Qualifiers::default();
+        if let Some(ty) = entity.ty
+            && let TypeKind::Function { cv, reference, .. } = self.types.get(ty).kind
+        {
+            use crate::abi::graph::Qualifiers as Q;
+            if cv.0 & 1 != 0 {
+                qualifiers = qualifiers.union(Q::CONST);
+            }
+            if cv.0 & 2 != 0 {
+                qualifiers = qualifiers.union(Q::VOLATILE);
+            }
+            if let Some(reference) = reference {
+                qualifiers = qualifiers.union(if reference == super::types::RefKind::Lvalue {
+                    Q::LVALUE
+                } else {
+                    Q::RVALUE
+                });
+            }
+        }
         Ok(FunctionFacts {
+            object,
+            qualifiers,
             name: match function.special {
                 Some(super::function_names::SpecialName::Operator { token, array }) => {
                     FunctionName::Operator { token, array }
@@ -390,6 +429,17 @@ impl Graph {
             definition: entity.function_definition,
             builtin: entity.builtin,
         })
+    }
+    pub(crate) fn lower_abi_scope(
+        &self,
+        id: ScopeId,
+    ) -> Result<(Option<ScopeId>, Option<NameId>, bool), Error> {
+        let namespace = self.scope(id).kind == super::graph::ScopeKind::Namespace;
+        if !namespace && self.scope(id).kind != super::graph::ScopeKind::Class {
+            return Err(Error::Missing("lowering class and local scopes"));
+        }
+        let (parent, name) = self.lower_presentation_scope(id)?;
+        Ok((parent, name, namespace))
     }
     pub(crate) fn lower_namespace(
         &self,

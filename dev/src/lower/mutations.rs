@@ -91,6 +91,36 @@ impl Function<'_, '_, '_, '_> {
                 else_expr,
             } => self.conditional_place(id, condition, then_expr, else_expr),
             ExprKind::Id(name) => {
+                if matches!(
+                    self.graph.lower_object_source(id)?,
+                    Some(crate::sema::lowering::ObjectSource::Implicit)
+                ) {
+                    let (entity, offset) = self.graph.lower_member(id)?;
+                    let source = self.graph.lower_expression(id)?.ty;
+                    let root = self.object_pointer(source)?.value;
+                    let offset =
+                        self.builder
+                            .integer(u128::from(offset.ok_or(Error::Semantic(
+                                crate::sema::Error::Invariant(
+                                    "implicit data member without offset",
+                                ),
+                            ))?))?;
+                    let place = self
+                        .emit(
+                            I::Index(
+                                Type::I8,
+                                Some(crate::lowir::vocabulary::Projection::Field),
+                                root,
+                                offset,
+                            ),
+                            source,
+                        )?
+                        .value;
+                    if self.graph.lower_union_member(entity) {
+                        self.untyped_places.insert(place);
+                    }
+                    return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
+                }
                 let entity = self.graph.lower_name(name)?;
                 if let Some(&place) = self.locals.get(&entity) {
                     self.reference_holder(place, self.graph.lower_entity_type(entity)?)
@@ -295,8 +325,9 @@ impl Function<'_, '_, '_, '_> {
         }
         let (place, value) = if op == P::Assign {
             let value = self.operand(right, Context::Assignment)?;
+            let value = self.fit(value, source)?;
             let place = self.scalar_place(left)?;
-            (place, self.fit(value, source)?)
+            (place, value)
         } else {
             let place = self.scalar_place(left)?;
             let old = self.read_place(place, source)?;

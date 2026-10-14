@@ -85,7 +85,17 @@ impl Analyzer<'_> {
             for &argument in self.tree.expr_lists.get(arguments) {
                 self.type_call_argument(argument, scope)?;
             }
-            if callee == named && !qualified {
+            if callee == named
+                && !qualified
+                && !found.binding.is_some_and(|binding| {
+                    self.graph
+                        .entity(self.graph.binding(binding).entity)
+                        .home
+                        .is_some_and(|home| {
+                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                        })
+                })
+            {
                 let component = self.tree.name_lists.get(syntax_name.components)[0];
                 if let ast::NameKind::Identifier(key) = component.kind {
                     self.argument_dependent_lookup(key, arguments, &mut found)?;
@@ -152,7 +162,7 @@ impl Analyzer<'_> {
             }
             // Nested argument calls finish before this query borrows the reusable scratch.
             let mut scratch = std::mem::take(&mut self.call_scratch);
-            let chosen = self.resolve_call(id, set, arguments, scope, &mut scratch);
+            let chosen = self.resolve_call(id, set, arguments, scope, facts.object, &mut scratch);
             scratch.candidates.clear();
             scratch.sequences.clear();
             self.call_scratch = scratch;
@@ -171,26 +181,31 @@ impl Analyzer<'_> {
                 }
             }
             self.check_class_arguments(binding, arguments, scope)?;
-            self.check_direct_member_access(
-                binding,
-                scope,
-                self.tree.expressions.get(id).location,
-            )?;
-            if self.member_function_owner(binding).is_some() {
-                if self.body_context.as_ref().is_some_and(|body| {
-                    self.graph.entity(body.entity).home.is_some_and(|home| {
-                        self.graph.scope(home).kind == super::graph::ScopeKind::Class
-                    }) && !self
-                        .graph
-                        .entity(body.entity)
-                        .function
-                        .is_some_and(|props| props.is_static)
-                }) {
-                    return Err(Error::Missing("implicit object member calls"));
+            let location = self.tree.expressions.get(id).location;
+            if let Some(object) = facts.object {
+                let class = self
+                    .graph
+                    .class_of(object.ty)
+                    .ok_or(Error::Invariant("call object without class"))?;
+                let naming = facts.member_naming.unwrap_or(class);
+                self.check_named_member_access(binding, naming, class, scope, location)?;
+                if self.member_function_owner(binding).is_some() {
+                    let conversion = self
+                        .object_sequence(object, binding, false)?
+                        .ok_or(Error::Invariant("chosen object conversion missing"))?;
+                    let object_facts = ExprFacts::new(object.ty, object.category);
+                    let path =
+                        self.conversion_base_path(object_facts, conversion, scope, location, true)?;
+                    let mut selected = self.graph.expression_facts.get(callee)?;
+                    selected.conversion = Some(conversion);
+                    selected.base_path = path;
+                    self.graph.expression_facts.set(callee, selected);
                 }
-                if self.unevaluated == 0 {
+            } else {
+                self.check_direct_member_access(binding, scope, location)?;
+                if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
                     return Err(Error::at(
-                        self.tree.expressions.get(id).location,
+                        location,
                         "non-static member function called without an object",
                     ));
                 }
@@ -212,6 +227,41 @@ impl Analyzer<'_> {
             return Ok(facts);
         }
         self.indirect_call(id, callee, arguments, facts.ty, scope)
+    }
+    fn object_sequence(
+        &mut self,
+        object: super::expression_facts::ObjectArgument,
+        binding: BindingId,
+        ranking: bool,
+    ) -> Result<Option<Conversion>, Error> {
+        let ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("object candidate without type"))?;
+        let TypeKind::Function { cv, reference, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("object candidate without function type"));
+        };
+        let owner = if ranking {
+            self.bare_type(object.ty)?
+        } else {
+            self.member_function_owner(binding)
+                .ok_or(Error::Invariant("object sequence for static function"))?
+        };
+        let owner = self.graph.types.qualify(owner, cv)?;
+        let target = self
+            .graph
+            .types
+            .reference(owner, reference.unwrap_or(RefKind::Lvalue))?;
+        let facts = ExprFacts::new(
+            object.ty,
+            if reference.is_none() {
+                V::Lvalue
+            } else {
+                object.category
+            },
+        );
+        self.scalar_sequence(facts, target, false)
     }
     fn indirect_call(
         &mut self,
@@ -445,6 +495,7 @@ impl Analyzer<'_> {
         set: super::function_resolution::OverloadId,
         arguments: List<ast::ExprId>,
         scope: ScopeId,
+        object: Option<super::expression_facts::ObjectArgument>,
         scratch: &mut CallScratch,
     ) -> Result<BindingId, Error> {
         scratch.candidates.clear();
@@ -475,6 +526,21 @@ impl Analyzer<'_> {
                 continue;
             }
             let first = scratch.sequences.len();
+            if let Some(object) = object {
+                let sequence = if self.member_function_owner(binding).is_some() {
+                    let Some(conversion) = self.object_sequence(object, binding, true)? else {
+                        continue;
+                    };
+                    Some(ArgumentSequence {
+                        conversion,
+                        application: Some(conversion),
+                        function: None,
+                    })
+                } else {
+                    None
+                };
+                scratch.sequences.push(sequence);
+            }
             let mut viable = true;
             for (index, &arg) in args.iter().enumerate() {
                 let sequence = if index < count {
@@ -516,15 +582,19 @@ impl Analyzer<'_> {
         if scratch.candidates.is_empty() {
             return Err(Error::at(location, "no viable function for the call"));
         }
+        let object_count = usize::from(object.is_some());
         let mut best = 0;
         for index in 1..scratch.candidates.len() {
-            if self.compare_candidates(scratch, index, best, args.len())? == Ordering::Greater {
+            if self.compare_candidates(scratch, index, best, args.len(), object_count)?
+                == Ordering::Greater
+            {
                 best = index;
             }
         }
         for index in 0..scratch.candidates.len() {
             if index != best
-                && self.compare_candidates(scratch, best, index, args.len())? != Ordering::Greater
+                && self.compare_candidates(scratch, best, index, args.len(), object_count)?
+                    != Ordering::Greater
             {
                 return Err(Error::at(location, "ambiguous call to overloaded function"));
             }
@@ -532,7 +602,7 @@ impl Analyzer<'_> {
         let (binding, first) = scratch.candidates[best];
         self.check_template_call_defaults(binding, arguments)?;
         for (index, &arg) in args.iter().enumerate() {
-            if let Some(sequence) = scratch.sequences[first + index] {
+            if let Some(sequence) = scratch.sequences[first + object_count + index] {
                 if matches!(
                     self.tree.expressions.get(arg).kind,
                     ast::ExprKind::Braced { .. }
@@ -562,12 +632,19 @@ impl Analyzer<'_> {
         a: usize,
         b: usize,
         count: usize,
+        object_count: usize,
     ) -> Result<Ordering, Error> {
         let (_, af) = scratch.candidates[a];
         let (_, bf) = scratch.candidates[b];
         let mut better = false;
         let mut worse = false;
-        for index in 0..count {
+        for index in 0..count + object_count {
+            if index == 0
+                && object_count != 0
+                && (scratch.sequences[af].is_none() || scratch.sequences[bf].is_none())
+            {
+                continue;
+            }
             let order = match (scratch.sequences[af + index], scratch.sequences[bf + index]) {
                 (Some(a), Some(b)) => self.compare_sequences(a.conversion, b.conversion)?,
                 (Some(_), None) => Ordering::Greater,

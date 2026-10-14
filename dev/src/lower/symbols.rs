@@ -473,10 +473,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&id) = self.scopes.get(&scope) {
             return Ok(id);
         }
-        let (parent, name) = self.graph.lower_namespace(scope)?;
+        let (parent, name, namespace) = self.graph.lower_abi_scope(scope)?;
         let id = if let Some(parent) = parent {
             let parent = self.scope(parent)?;
-            if parent.is_none() && name.is_some_and(|name| self.cursor.name(name) == b"std") {
+            if namespace
+                && parent.is_none()
+                && name.is_some_and(|name| self.cursor.name(name) == b"std")
+            {
                 let id = Some(self.abi.intern(Node::Std, &[])?);
                 self.scopes.insert(scope, id);
                 return Ok(id);
@@ -587,23 +590,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
             TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
         };
         let mut id = self.abi.intern(node, &[]).map_err(Error::from)?;
-        for (bit, modifier) in [
-            (2, Modifier::Qualified(Qualifiers::VOLATILE)),
-            (1, Modifier::Qualified(Qualifiers::CONST)),
-        ] {
-            if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
-                && self.graph.lower_cv(ty) & bit != 0
-            {
-                id = self
-                    .abi
-                    .intern(
-                        Node::Modified {
-                            modifier,
-                            operand: id,
-                        },
-                        &[],
-                    )
-                    .map_err(Error::from)?;
+        if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
+            let mut cv = Qualifiers::default();
+            if self.graph.lower_cv(ty) & 1 != 0 {
+                cv = cv.union(Qualifiers::CONST);
+            }
+            if self.graph.lower_cv(ty) & 2 != 0 {
+                cv = cv.union(Qualifiers::VOLATILE);
+            }
+            if !cv.is_empty() {
+                id = self.abi.intern(
+                    Node::Modified {
+                        modifier: Modifier::Qualified(cv),
+                        operand: id,
+                    },
+                    &[],
+                )?;
             }
         }
         self.types.insert(ty, id);
@@ -691,7 +693,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut components = vec![own.as_str()];
         if !facts.c_linkage || facts.internal {
             let mut scope = facts.home;
-            while let (Some(parent), name) = self.graph.lower_namespace(scope)? {
+            while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
                 components.push(if let Some(name) = name {
                     self.identifier(name)?
                 } else {
@@ -748,7 +750,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let spelling = components.join("__");
         let name = self.variable_abi_name(entity)?;
         let object = if facts.c_linkage
-            || self.graph.lower_namespace(facts.home)?.0.is_none() && !facts.internal
+            || self.graph.lower_presentation_scope(facts.home)?.0.is_none() && !facts.internal
         {
             program.names.intern_bytes(self.cursor.name(facts.name))?
         } else {
@@ -1027,7 +1029,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         use crate::lowir::vocabulary::{Binding, Role};
         let entity = self.graph.lower_function_entity(entity);
         let facts = self.graph.lower_function(entity)?;
-        if name == "main" && self.graph.lower_namespace(facts.home)?.0.is_none() {
+        if name == "main" && self.graph.lower_presentation_scope(facts.home)?.0.is_none() {
             return Ok(Metadata {
                 role: Some(Role::Entry),
                 binding: Some(Binding::Strong),
@@ -1154,7 +1156,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Node::Function {
                     name,
                     result: None,
-                    qualifiers: Qualifiers::default(),
+                    qualifiers: facts.qualifiers,
                     variadic,
                 },
                 &args,

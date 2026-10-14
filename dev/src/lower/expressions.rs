@@ -181,6 +181,7 @@ impl Function<'_, '_, '_, '_> {
                     bits: Some(bits),
                 })
             }
+            ExprKind::Keyword(Keyword::This) => self.object_pointer(source),
             ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)
@@ -479,7 +480,38 @@ impl Function<'_, '_, '_, '_> {
         };
         let ty = types::storage(self.graph, result)?;
         let supplied = self.tree.expr_lists.get(arguments);
-        let mut values = Vec::with_capacity(parameters.len());
+        let mut values = Vec::with_capacity(parameters.len() + 1);
+        if let CallTarget::Direct(entity) = target {
+            let object = self.graph.lower_object_source(callee_expression)?;
+            if self.graph.lower_function(entity)?.object.is_some() {
+                let value = match object.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "member call without receiver",
+                )))? {
+                    crate::sema::lowering::ObjectSource::Implicit => {
+                        self.object_pointer(source)?.value
+                    }
+                    crate::sema::lowering::ObjectSource::Explicit { expression, arrow } => {
+                        if arrow {
+                            self.operand(expression, Context::Operand)?.value
+                        } else {
+                            self.address(expression)?
+                        }
+                    }
+                };
+                values.push(value);
+            } else if let Some(crate::sema::lowering::ObjectSource::Explicit {
+                expression,
+                arrow,
+            }) = object
+            {
+                // C++ member_object materializes the object address even for a static call.
+                if arrow {
+                    self.operand(expression, Context::Operand)?;
+                } else {
+                    self.address(expression)?;
+                }
+            }
+        }
         for (index, &parameter) in parameters.iter().enumerate() {
             let argument = supplied
                 .get(index)

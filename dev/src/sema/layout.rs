@@ -51,6 +51,9 @@ impl Analyzer<'_> {
                     work.push(self.graph.binding(*binding).entity);
                 }
             }
+            if let Some(class) = self.graph.lower_function(entity)?.object {
+                self.class_layout(class, SourceOffset(0))?;
+            }
             let ty = self.graph.lower_entity_type(entity)?;
             let count = self.graph.types.function_parameter_count(ty)?;
             for index in 0..count {

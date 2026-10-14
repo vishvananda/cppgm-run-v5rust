@@ -32,6 +32,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub untyped_places: std::collections::HashSet<Value>,
     pub named_path: Vec<super::aggregates::Step>,
     pub entity: EntityId,
+    pub this_slot: Option<Value>,
     pub next_static: u32,
     pub next_block: u32,
     pub jumps: Vec<super::statements::JumpTargets>,
@@ -77,7 +78,11 @@ pub(super) fn lower<'a>(
             reserved.insert(symbols.identifier(name)?.to_owned());
         }
     }
-    let mut names = Vec::with_capacity(parameters.len());
+    let object_count = usize::from(facts.object.is_some());
+    let mut names = Vec::with_capacity(parameters.len() + object_count);
+    if object_count != 0 {
+        names.push(("this".to_owned(), Type::Ptr));
+    }
     for &(_, name, ty) in &parameter_bindings {
         names.push((
             if let Some(name) = name {
@@ -115,9 +120,22 @@ pub(super) fn lower<'a>(
     let mut builder =
         FunctionBuilder::new(program, &name, &parameters, types::storage(graph, result)?)?;
     builder.metadata(metadata);
+    if let Some(class) = facts.object {
+        builder.parameter_boundary(
+            0,
+            None,
+            types::layout(graph, graph.lower_entity_type(class)?)?.0,
+            false,
+        )?;
+    }
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
         let (pass, bytes) = reference_boundary(graph, ty)?;
-        builder.parameter_boundary(index, pass, bytes, parameter_no_alias(facts.builtin, index))?;
+        builder.parameter_boundary(
+            index + object_count,
+            pass,
+            bytes,
+            parameter_no_alias(facts.builtin, index),
+        )?;
     }
     let mut boundary = Boundary {
         arity: if variadic {
@@ -145,6 +163,7 @@ pub(super) fn lower<'a>(
         untyped_places: std::collections::HashSet::new(),
         named_path: Vec::new(),
         entity,
+        this_slot: None,
         next_static: 0,
         next_block: 0,
         jumps: Vec::new(),
@@ -158,8 +177,20 @@ pub(super) fn lower<'a>(
         budget,
         stack_base: std::ptr::from_ref(&marker).addr(),
     };
-    for (index, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
-        let slot = if parameter_bindings[index].1.is_some() {
+    if object_count != 0 {
+        let slot = function.builder.slot("this", Type::Ptr)?;
+        let incoming = function.builder.parameter(0)?;
+        function.builder.effect(I::Store(
+            crate::lowir::model::Facts::memory(false, true),
+            Type::Ptr,
+            incoming,
+            slot,
+        ))?;
+        function.this_slot = Some(slot);
+    }
+    for (ordinal, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
+        let index = ordinal + object_count;
+        let slot = if parameter_bindings[ordinal].1.is_some() {
             function.builder.slot(&names[index].0, names[index].1)?
         } else {
             function.builder.parameter_slot(index, names[index].1)?
@@ -209,6 +240,22 @@ pub(super) fn lower<'a>(
     Ok(())
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn object_pointer(&mut self, source: TypeId) -> Result<RValue, Error> {
+        let slot = self
+            .this_slot
+            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "implicit object without this slot",
+            )))?;
+        self.emit(
+            I::Load(
+                crate::lowir::model::Facts::memory(false, true),
+                Type::Ptr,
+                slot,
+            ),
+            source,
+        )
+    }
+
     pub(super) fn check_stack(&self) -> Result<(), Error> {
         let marker = 0u8;
         if self
@@ -470,6 +517,25 @@ pub(super) fn declare(
     let facts = graph.lower_function(entity)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let signature = signature(program, graph, facts.ty, facts.nothrow)?;
+    if let Some(class) = facts.object {
+        let name = program.names.intern("arg0")?;
+        for index in 0..program.signature_mut(signature).parameters.len() {
+            let name = program.names.intern(&format!("arg{}", index + 1))?;
+            program.signature_mut(signature).parameters[index].name = name;
+        }
+        let object_bytes = types::layout(graph, graph.lower_entity_type(class)?)?.0;
+        program.signature_mut(signature).parameters.insert(
+            0,
+            crate::lowir::model::Parameter {
+                name,
+                ty: Type::Ptr,
+                pass: None,
+                object_bytes,
+                no_alias: false,
+                classes: None,
+            },
+        );
+    }
     let boundary = program.signature_mut(signature);
     for (index, parameter) in boundary.parameters.iter_mut().enumerate() {
         parameter.no_alias = parameter_no_alias(facts.builtin, index);
