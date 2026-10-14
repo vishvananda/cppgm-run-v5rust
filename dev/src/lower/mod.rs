@@ -12,6 +12,7 @@ mod data;
 mod definition_order;
 mod expressions;
 mod field_updates;
+mod floating_intrinsics;
 mod function;
 mod globals;
 mod local_storage;

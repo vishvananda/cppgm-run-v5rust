@@ -1220,7 +1220,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
             ExprKind::Call { .. } => {
-                if facts.functional_call {
+                if facts.functional_call || facts.intrinsic.is_some() {
                     "cast-expression"
                 } else {
                     "call-expression"
@@ -1288,7 +1288,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 self.expr(operand, depth + 1);
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. }
+                if facts.functional_call || facts.intrinsic.is_some() =>
+            {
                 for &id in self.tree.expr_lists.get(arguments).iter().rev() {
                     self.expr(id, depth + 1);
                 }

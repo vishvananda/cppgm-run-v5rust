@@ -184,7 +184,8 @@ impl Analyzer<'_> {
                     if matches!(
                         facts.destructor,
                         Some(super::expression_facts::DestructorTarget::Scalar)
-                    ) {
+                    ) || facts.intrinsic.is_some()
+                    {
                         self.throw_work.push((callee, next));
                         continue;
                     }

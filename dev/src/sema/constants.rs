@@ -447,6 +447,9 @@ impl Analyzer<'_> {
                 ty: facts.ty,
             });
         }
+        if let Some(kind) = facts.intrinsic {
+            return self.constant_floating_intrinsic(id, kind, scope);
+        }
         if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call {
             if self
                 .graph

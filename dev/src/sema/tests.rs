@@ -13,6 +13,65 @@ use crate::{
 };
 
 #[test]
+fn floating_intrinsics_keep_original_operands_and_registry_identity() {
+    use super::{expression_facts::LvalueTransform, floating_intrinsics::FloatingIntrinsic};
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(
+        b"int f(volatile double& x){__builtin_isfinite(x);return __builtin_isfinite(x);}".to_vec(),
+    )
+    .unwrap();
+    let mut unit =
+        SyntaxUnit::new(Preprocessor::with_name(&source, b"floating-ownership").unwrap());
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let syntax_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_lowering();
+    let key = analyzer.builtin_names.floating[0].0;
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(syntax_count, tree.expressions.mark());
+    assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[0])
+        .kind
+    else {
+        panic!("function");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound");
+    };
+    for &statement in tree.stmt_lists.get(statements) {
+        let (StmtKind::Expression(Some(call)) | StmtKind::Return(Some(call))) =
+            tree.statements.get(statement).kind
+        else {
+            panic!("call");
+        };
+        let facts = graph.expression_facts.get(call).unwrap();
+        assert_eq!(facts.intrinsic, Some(FloatingIntrinsic::IsFinite));
+        assert!(facts.call.is_none());
+        assert!(facts.folded.is_none());
+        let ExprKind::Call { callee, arguments } = tree.expressions.get(call).kind else {
+            panic!("call syntax");
+        };
+        // An intrinsic has no callable designation or synthetic source operand.
+        assert!(graph.expression_facts.get(callee).is_err());
+        let operand = graph
+            .expression_facts
+            .get(tree.expr_lists.get(arguments)[0])
+            .unwrap();
+        assert_eq!(graph.types.get(operand.ty).cv, Cv(2));
+        let conversion = operand.conversion.unwrap();
+        assert!(matches!(conversion.first, LvalueTransform::Read));
+        assert_eq!(graph.types.get(conversion.target).cv, Cv::default());
+        assert!(!conversion.initialization);
+    }
+}
+
+#[test]
 fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
     use super::expression_facts::{DestructorTarget, ObjectSource};
     use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};

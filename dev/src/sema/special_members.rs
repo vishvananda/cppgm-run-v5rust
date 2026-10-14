@@ -126,6 +126,18 @@ impl Analyzer<'_> {
                 implicit_type: true,
             },
         )?;
+        let attributes = self.layout_attributes(declaration.attributes, scope, false)?;
+        let binding = self
+            .graph
+            .declared_bindings
+            .get(declarator.index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant(
+                "special member attributes without binding",
+            ))?;
+        self.graph
+            .note_no_inline(self.graph.binding(binding).entity, attributes.no_inline)?;
         if body.is_some()
             || initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default))
         {
@@ -551,6 +563,11 @@ impl Analyzer<'_> {
             self.graph.entity_mut(function).explicitness = specs.explicitness;
         }
         self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
+            no_inline: self
+                .graph
+                .entity(function)
+                .function
+                .is_some_and(|properties| properties.no_inline),
             language: super::linkage::Language::Cpp,
             denotes: None,
             internal_linkage: false,

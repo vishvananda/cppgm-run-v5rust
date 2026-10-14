@@ -131,6 +131,7 @@ impl Analyzer<'_> {
                 };
                 let entity = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
                 self.graph.entity_mut(entity).function = Some(FunctionProperties {
+                    no_inline: false,
                     language: super::linkage::Language::Cpp,
                     denotes: None,
                     internal_linkage: false,

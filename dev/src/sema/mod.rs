@@ -27,6 +27,7 @@ mod exceptions;
 mod expression_facts;
 mod expression_keys;
 mod expressions;
+mod floating_intrinsics;
 mod friendships;
 mod function_demands;
 mod function_names;

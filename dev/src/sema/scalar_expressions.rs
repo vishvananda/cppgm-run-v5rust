@@ -272,6 +272,19 @@ impl Analyzer<'_> {
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
             if found.functions.as_slice().len() == 1
+                && matches!(
+                    self.graph
+                        .entity(self.graph.binding(binding).entity)
+                        .builtin,
+                    Some(super::builtin_calls::BuiltinFunction::Floating(_))
+                )
+            {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "a builtin expanded where it is called named other than in a call",
+                ));
+            }
+            if found.functions.as_slice().len() == 1
                 && self
                     .graph
                     .entity(self.graph.binding(binding).entity)

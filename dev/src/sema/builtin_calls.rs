@@ -21,6 +21,8 @@ pub(crate) enum BuiltinFunction {
     Memcmp,
     Memset,
     Strlen,
+    Unreachable,
+    Floating(super::floating_intrinsics::FloatingIntrinsic),
 }
 
 #[cfg(test)]
@@ -46,7 +48,7 @@ mod tests {
         assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct BuiltinNames {
     pub abort: NameId,
     pub constant_p: NameId,
@@ -55,13 +57,15 @@ pub(super) struct BuiltinNames {
     pub memcmp: NameId,
     pub memset: NameId,
     pub strlen: NameId,
+    pub unreachable: NameId,
+    pub floating: Vec<(NameId, super::floating_intrinsics::FloatingIntrinsic)>,
 }
 impl Analyzer<'_> {
     pub(super) fn ensure_builtin(
         &mut self,
         key: NameId,
     ) -> Result<Option<super::graph::BindingId>, Error> {
-        let names = self.builtin_names;
+        let names = &self.builtin_names;
         let builtin = if key == names.abort {
             BuiltinFunction::Abort
         } else if key == names.memcpy {
@@ -74,6 +78,10 @@ impl Analyzer<'_> {
             BuiltinFunction::Memset
         } else if key == names.strlen {
             BuiltinFunction::Strlen
+        } else if key == names.unreachable {
+            BuiltinFunction::Unreachable
+        } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
+            BuiltinFunction::Floating(*kind)
         } else {
             return Ok(None);
         };
@@ -99,8 +107,13 @@ impl Analyzer<'_> {
             return Ok(existing);
         }
         let void = self.graph.types.scalar(Scalar::Void)?;
-        let (result, parameters) = if matches!(builtin, BuiltinFunction::Abort) {
+        let (result, parameters) = if matches!(
+            builtin,
+            BuiltinFunction::Abort | BuiltinFunction::Unreachable
+        ) {
             (void, Vec::new())
+        } else if matches!(builtin, BuiltinFunction::Floating(_)) {
+            (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else {
             let size = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
             if matches!(builtin, BuiltinFunction::Strlen) {
@@ -128,7 +141,10 @@ impl Analyzer<'_> {
                     }
                     BuiltinFunction::Memcmp => (integer, vec![source, source, size]),
                     BuiltinFunction::Memset => (pointer, vec![pointer, integer, size]),
-                    BuiltinFunction::Abort | BuiltinFunction::Strlen => {
+                    BuiltinFunction::Abort
+                    | BuiltinFunction::Strlen
+                    | BuiltinFunction::Unreachable
+                    | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
                     }
                 }
@@ -138,7 +154,7 @@ impl Analyzer<'_> {
             TypeKind::Function {
                 result,
                 parameters,
-                variadic: false,
+                variadic: matches!(builtin, BuiltinFunction::Floating(_)),
                 cv: Cv::default(),
                 reference: None,
             },
@@ -149,6 +165,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).exceptions =
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
         self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+            no_inline: false,
             internal_linkage: false,
             language: super::linkage::Language::C,
             denotes: None,
@@ -196,6 +213,16 @@ impl Analyzer<'_> {
     ) -> Result<Option<ExprFacts>, Error> {
         let node = self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
+        if let Some(binding) = found.binding
+            && let Some(BuiltinFunction::Floating(kind)) = self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .builtin
+        {
+            return self
+                .floating_intrinsic(id, arguments, kind, scope)
+                .map(Some);
+        }
         if components.len() != 1 || found.binding.is_some() {
             return Ok(None);
         }

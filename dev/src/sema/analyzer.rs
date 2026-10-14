@@ -131,6 +131,10 @@ impl<'tree> Analyzer<'tree> {
             strlen: cursor
                 .intern_name(b"__builtin_strlen")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            unreachable: cursor
+                .intern_name(b"__builtin_unreachable")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            floating: super::floating_intrinsics::names(cursor)?,
         };
         let mut analyzer = Self {
             declaration_access: super::declaration_access::DeclarationAccess::default(),
@@ -512,11 +516,12 @@ impl<'tree> Analyzer<'tree> {
         self.graph.entity_mut(entity).function_definition = Some(declaration);
         // The frozen definition owner evaluates only leading layout attributes
         // here; unlike a simple declaration it does not reject alignas.
-        self.layout_attributes(
+        let attributes = self.layout_attributes(
             self.tree.declarations.get(declaration).attributes,
             scope,
             false,
         )?;
+        self.graph.note_no_inline(entity, attributes.no_inline)?;
         self.graph.entity_mut(entity).definition_emission =
             if self.class_depth != 0 || specs.constexpr {
                 super::function_demands::DefinitionEmission::Demanded

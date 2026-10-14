@@ -2,6 +2,7 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
+pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
@@ -841,6 +842,17 @@ impl Graph {
     }
     pub(crate) fn lower_functional_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.functional_call)
+    }
+    pub(crate) fn lower_no_inline(&self, entity: EntityId) -> bool {
+        self.entity(self.lower_function_entity(entity))
+            .function
+            .is_some_and(|properties| properties.no_inline)
+    }
+    pub(crate) fn lower_floating_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<FloatingIntrinsic>, Error> {
+        Ok(self.expression_facts.get(id)?.intrinsic)
     }
     pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)

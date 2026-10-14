@@ -515,6 +515,9 @@ impl Function<'_, '_, '_, '_> {
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
+        if let Some(kind) = self.graph.lower_floating_intrinsic(id)? {
+            return self.floating_intrinsic(id, arguments, kind);
+        }
         if self.graph.lower_destructor_evaluation_only(id)? {
             let callee = self.without_parentheses(callee_expression);
             let ExprKind::Member { base, op, .. } = self.tree.expressions.get(callee).kind else {
@@ -530,6 +533,16 @@ impl Function<'_, '_, '_, '_> {
             return self.zero(source);
         }
         let target = self.graph.lower_call(id)?;
+        if let CallTarget::Direct(entity) = target
+            && matches!(
+                self.graph.lower_function(entity)?.builtin,
+                Some(crate::sema::lowering::BuiltinFunction::Unreachable)
+            )
+        {
+            self.effect(I::Unreachable)?;
+            self.terminated = true;
+            return self.zero(source);
+        }
         let function_type = match target {
             CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;

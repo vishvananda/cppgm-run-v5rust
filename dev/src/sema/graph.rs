@@ -86,6 +86,7 @@ pub(super) enum Access {
 }
 #[derive(Clone, Copy)]
 pub(super) struct FunctionProperties {
+    pub no_inline: bool,
     pub internal_linkage: bool,
     pub language: super::linkage::Language,
     pub denotes: Option<EntityId>,
@@ -243,6 +244,18 @@ pub(crate) struct Graph {
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
+    pub(super) fn note_no_inline(
+        &mut self,
+        entity: EntityId,
+        requested: bool,
+    ) -> Result<(), Error> {
+        self.entity_mut(entity)
+            .function
+            .as_mut()
+            .ok_or(Error::Invariant("function policy owner without function"))?
+            .no_inline |= requested;
+        Ok(())
+    }
     pub(super) fn own_key(
         &self,
         scope: ScopeId,
@@ -959,6 +972,7 @@ impl Graph {
             shape: None,
         });
         entity.function = Some(FunctionProperties {
+            no_inline: false,
             language: super::linkage::Language::Cpp,
             denotes: None,
             internal_linkage: false,

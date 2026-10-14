@@ -24,6 +24,7 @@ pub(super) struct LayoutAttributes {
     alignment: u64,
     packed: bool,
     standard: Option<SourceOffset>,
+    pub no_inline: bool,
 }
 impl Analyzer<'_> {
     pub(super) fn layout_attributes(
@@ -33,11 +34,11 @@ impl Analyzer<'_> {
         class_site: bool,
     ) -> Result<LayoutAttributes, Error> {
         let mut result = LayoutAttributes::default();
-        if self.template_depth != 0 {
-            return Ok(result);
-        }
         for attribute in self.tree.attributes.get(list) {
             if (attribute.site == ast::AttributeSite::Class) != class_site {
+                continue;
+            }
+            if self.template_depth != 0 && attribute.kind != ast::AttributeKind::NoInline {
                 continue;
             }
             match attribute.kind {
@@ -78,6 +79,7 @@ impl Analyzer<'_> {
                     }
                 }
                 ast::AttributeKind::Packed => result.packed = true,
+                ast::AttributeKind::NoInline => result.no_inline = true,
                 _ => (),
             }
         }
@@ -95,6 +97,7 @@ impl Analyzer<'_> {
             let own = self.layout_attributes(node.attributes, scope, false)?;
             attributes.alignment = attributes.alignment.max(own.alignment);
             attributes.packed |= own.packed;
+            attributes.no_inline |= own.no_inline;
             attributes.standard = attributes.standard.or(own.standard);
             part = node.nested;
         }
@@ -113,6 +116,10 @@ impl Analyzer<'_> {
             .flatten()
             .ok_or(Error::Invariant("attributes without declaration"))?;
         let binding = self.graph.binding(binding);
+        if binding.kind == BindingKind::Function {
+            self.graph
+                .note_no_inline(binding.entity, attributes.no_inline)?;
+        }
         if binding.kind != BindingKind::Variable {
             if let Some(location) = attributes.standard {
                 return Err(Error::at(

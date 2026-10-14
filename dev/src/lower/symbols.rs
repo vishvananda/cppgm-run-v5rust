@@ -1176,6 +1176,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             ..Metadata::default()
         };
+        if self.graph.lower_no_inline(entity) {
+            metadata.flags |= 32;
+        }
         if self.graph.lower_function_local_class(entity) {
             metadata.flags |= 2;
         }
@@ -1190,7 +1193,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     };
                     metadata.object = Some(program.names.intern(object)?);
                 }
-                B::Memcmp | B::Memset | B::Abort => metadata.linkage = Linkage::C,
+                B::Memcmp | B::Memset | B::Abort | B::Unreachable | B::Floating(_) => {
+                    metadata.linkage = Linkage::C;
+                }
             }
             return Ok(metadata);
         }
@@ -1360,6 +1365,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }),
             flags: if facts.emission == crate::sema::lowering::Emission::Demanded {
                 16
+            } else {
+                0
+            } | if entity.is_some_and(|entity| self.graph.lower_no_inline(entity)) {
+                32
             } else {
                 0
             } | if variant == Variant::Base || facts.internal {
