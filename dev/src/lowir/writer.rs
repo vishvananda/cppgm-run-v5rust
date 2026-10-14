@@ -51,6 +51,30 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     }
     out.flush()
 }
+pub(crate) fn write_globals(program: &Program, out: &mut impl Write) -> io::Result<()> {
+    let mut floating = FloatingScanner::default();
+    let mut written = false;
+    for declaration in [true, false] {
+        let mut phase_written = false;
+        for global in program
+            .symbols()
+            .iter()
+            .filter_map(|symbol| program.global(symbol))
+            .filter(|global| matches!(global.init, GlobalInit::Declaration) == declaration)
+        {
+            if written && !phase_written {
+                writeln!(out)?;
+            }
+            phase_written = true;
+            write_global(program, global, &mut floating, out)?;
+        }
+        written |= phase_written;
+    }
+    if written {
+        writeln!(out)?;
+    }
+    Ok(())
+}
 fn write_address(
     program: &Program,
     target: super::model::SymbolId,

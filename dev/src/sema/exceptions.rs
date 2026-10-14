@@ -544,3 +544,217 @@ impl Analyzer<'_> {
         Ok(())
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TargetUnwind {
+    MayThrow,
+    NoThrow,
+}
+impl Analyzer<'_> {
+    // A declaration's exception specification is independent of canonical function type identity.
+    pub(super) fn note_nothrow_target(
+        &mut self,
+        entity: EntityId,
+        ty: TypeId,
+        mut declarator: Option<ast::DeclaratorId>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let ty = match self.graph.types.get(ty).kind {
+            TypeKind::Pointer(element)
+            | TypeKind::Reference { element, .. }
+            | TypeKind::MemberPointer { element, .. } => element,
+            _ => ty,
+        };
+        if !matches!(self.graph.types.get(ty).kind, TypeKind::Function { .. }) {
+            return Ok(());
+        }
+        let mut function = None;
+        let mut derivations = 0_usize;
+        while let Some(id) = declarator {
+            let node = self.tree.declarators.get(id);
+            derivations = derivations
+                .checked_add(self.tree.pointers.get(node.pointers).len())
+                .ok_or(Error::Limit("declarator derivation limit"))?;
+            for &suffix in self.tree.suffixes.get(node.suffixes).iter().rev() {
+                function = if let ast::Suffix::Function { qualifiers, .. } = suffix {
+                    Some(qualifiers)
+                } else {
+                    None
+                };
+                derivations = 0;
+            }
+            declarator = node.nested;
+        }
+        let Some(function) = function.filter(|_| derivations <= 1) else {
+            return Ok(());
+        };
+        for &qualifier in self.tree.qualifiers.get(function) {
+            let nothrow = match qualifier.kind {
+                QualifierKind::Throw(types) if types.is_empty() => true,
+                QualifierKind::Noexcept(None) => true,
+                QualifierKind::Noexcept(Some(_)) if self.template_depth == 0 => matches!(
+                    self.exception_set(Some(qualifier), scope)?,
+                    ExceptionSet::None
+                ),
+                _ => false,
+            };
+            if nothrow {
+                self.graph.entity_mut(entity).target_unwind = TargetUnwind::NoThrow;
+            }
+        }
+        Ok(())
+    }
+    fn designated_entity(&self, expr: ast::ExprId) -> Result<Option<EntityId>, Error> {
+        let facts = self.graph.expression_facts.get(expr)?;
+        let binding = facts.function.or(facts.member).or_else(|| {
+            if let ExprKind::Id(name) = self.tree.expressions.get(expr).kind {
+                self.graph.resolved_name(name)
+            } else {
+                None
+            }
+        });
+        Ok(binding.map(|binding| self.graph.binding(binding).entity))
+    }
+    pub(super) fn callee_target_entity(
+        &self,
+        callee: ast::ExprId,
+    ) -> Result<Option<EntityId>, Error> {
+        use crate::lex::pp_lexer::Punctuator as P;
+        let mut expr = self.graph.expression_facts.root(callee);
+        if let ExprKind::Unary { op, operand } = self.tree.expressions.get(expr).kind
+            && op.token.as_punctuator() == Some(P::Multiply)
+        {
+            expr = self.graph.expression_facts.root(operand);
+        }
+        if let ExprKind::Binary { op, right, .. } = self.tree.expressions.get(expr).kind
+            && matches!(op.token.as_punctuator(), Some(P::DotStar | P::ArrowStar))
+        {
+            expr = self.graph.expression_facts.root(right);
+        }
+        self.designated_entity(expr)
+    }
+    pub(super) fn check_nothrow_initializer(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+    ) -> Result<(), Error> {
+        use crate::lex::pp_lexer::Punctuator as P;
+        if self.graph.entity(entity).target_unwind != TargetUnwind::NoThrow {
+            return Ok(());
+        }
+        let Some(expr) = self.single_initializer(initializer) else {
+            return Ok(());
+        };
+        let mut expr = self.graph.expression_facts.root(expr);
+        if let ExprKind::Unary { op, operand } = self.tree.expressions.get(expr).kind
+            && op.token.as_punctuator() == Some(P::BitAnd)
+        {
+            expr = self.graph.expression_facts.root(operand);
+        }
+        let Some(source) = self.designated_entity(expr)? else {
+            return Ok(());
+        };
+        let allows = if self.graph.entity(source).function.is_some() {
+            if let ExceptionState::Pending(id) = self.graph.entity(source).exceptions {
+                self.resolve_specification(id)?;
+            }
+            !matches!(
+                self.graph.entity(source).exceptions,
+                ExceptionState::Value(ExceptionSet::None)
+            )
+        } else {
+            let source_type = self.graph.entity(source).ty.ok_or(Error::Invariant(
+                "function pointer initializer without type",
+            ))?;
+            let source_type = match self.graph.types.get(source_type).kind {
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::MemberPointer { element, .. } => element,
+                _ => source_type,
+            };
+            matches!(
+                self.graph.types.get(source_type).kind,
+                TypeKind::Function { .. }
+            ) && self.graph.entity(source).target_unwind != TargetUnwind::NoThrow
+        };
+        if allows {
+            return Err(Error::at(
+                initializer.location,
+                "a function pointer or reference that allows no exceptions initialized with one that does",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+    #[test]
+    fn indirect_unwind_facts_are_independent_of_canonical_pointer_type() {
+        let source = SourceBuffer::new(b"int f(int x)noexcept{return x;}int(*p)(int)noexcept=f;int(*q)(int)=f;extern int(*late)(int);int main(){return p(1)+q(2)+late(3);}extern int(*late)(int)noexcept;".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"unwind-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut entity = |name: &[u8]| {
+            let name = cursor.intern_name(name).unwrap();
+            graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .entity
+        };
+        let p = graph.entity(entity(b"p"));
+        let q = graph.entity(entity(b"q"));
+        assert_eq!(p.ty, q.ty);
+        assert!(p.target_unwind == TargetUnwind::NoThrow);
+        assert!(q.target_unwind == TargetUnwind::MayThrow);
+        let declaration = graph.entity(entity(b"main")).function_definition.unwrap();
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
+            panic!("main is not a function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("unparsed main");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("main has no compound body");
+        };
+        let ast::StmtKind::Return(Some(expr)) =
+            tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+        else {
+            panic!("main has no return");
+        };
+        let ExprKind::Binary {
+            left, right: late, ..
+        } = tree.expressions.get(expr).kind
+        else {
+            panic!("return has no outer operands");
+        };
+        let ExprKind::Binary { left, right, .. } = tree.expressions.get(left).kind else {
+            panic!("return has no inner operands");
+        };
+        let boundaries: Vec<_> = [left, right, late]
+            .into_iter()
+            .filter_map(|id| match graph.lower_call(id).unwrap() {
+                super::super::lowering::CallTarget::Indirect(ty, nothrow) => Some((ty, nothrow)),
+                super::super::lowering::CallTarget::Direct(_) => None,
+            })
+            .collect();
+        assert_eq!(boundaries.len(), 3);
+        assert_eq!(boundaries[0].0, boundaries[1].0);
+        assert!(boundaries[0].1);
+        assert!(!boundaries[1].1);
+        assert_eq!(boundaries[0].0, boundaries[2].0);
+        assert!(boundaries[2].1);
+    }
+}

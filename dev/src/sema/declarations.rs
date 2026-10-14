@@ -518,6 +518,7 @@ impl Analyzer<'_> {
         if self.semantic() {
             ty = self.graph.publish_variable_type(binding)?;
         }
+        self.note_nothrow_target(entity, ty, Some(init.declarator), info.lookup)?;
         self.record_data_member(binding, specs, &info, init, home)?;
         if (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
             && (!specs.is_extern || init.initializer.is_some())
@@ -526,6 +527,7 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "redefinition of a variable"));
             }
             self.graph.entity_mut(entity).defined = true;
+            self.graph.entity_mut(entity).variable_definition = Some(init.declarator);
         }
         let member =
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
@@ -561,6 +563,13 @@ impl Analyzer<'_> {
             }
             if !member {
                 self.record_constant_initializer(entity, initializer, info.lookup)?;
+                if self.lowering()
+                    && definition
+                    && self.graph.scope(home).kind == ScopeKind::Namespace
+                {
+                    self.static_initializers
+                        .push((entity, initializer, info.lookup));
+                }
             }
         } else if self.semantic() && definition {
             self.default_initialize_declaration(binding, location)?;

@@ -45,6 +45,7 @@ mod semantics_dump;
 mod special_members;
 mod specifiers;
 mod statements;
+mod static_initialization;
 mod template_exceptions;
 mod templates;
 mod types;

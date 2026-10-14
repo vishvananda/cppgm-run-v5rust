@@ -13,13 +13,21 @@ use crate::{
         model::{Facts, InstructionKind as I},
         vocabulary::{Binary, Compare, Type, Unary},
     },
+    sema::lowering::{CallTarget, TypeView},
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn operand(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
-        self.check_stack()?;
-        let facts = self.graph.lower_expression(id)?;
         let value = self.expression(id, context)?;
+        self.apply_conversion(id, value, context)
+    }
+    fn apply_conversion(
+        &mut self,
+        id: ast::ExprId,
+        value: RValue,
+        context: Context,
+    ) -> Result<RValue, Error> {
+        let facts = self.graph.lower_expression(id)?;
         if facts.null_pointer
             && value.bits.is_some()
             && !matches!(
@@ -45,9 +53,29 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         context: Context,
     ) -> Result<RValue, Error> {
+        self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
         let ty = types::storage(self.graph, source)?;
+        if matches!(
+            self.graph.lower_type(source)?,
+            crate::sema::lowering::TypeView::Function { .. }
+        ) {
+            let place = self.scalar_place(id)?;
+            if matches!(
+                place,
+                crate::lowir::model::Value::Symbol(_) | crate::lowir::model::Value::Slot(_)
+            ) {
+                return self.emit(I::Addr(place), source);
+            }
+            return Ok(RValue {
+                value: place,
+                ty: Type::Ptr,
+                source,
+                literal: false,
+                bits: None,
+            });
+        }
         if let Some(bits) = facts.folded.or(facts.query) {
             return Ok(RValue {
                 value: self.builder.integer(u128::from(bits))?,
@@ -102,17 +130,9 @@ impl Function<'_, '_, '_, '_> {
                     bits: Some(bits),
                 })
             }
-            ExprKind::Id(name) => {
-                let entity = self.graph.lower_name(name)?;
-                let place = self
-                    .locals
-                    .get(&entity)
-                    .copied()
-                    .ok_or(Error::Missing("global and reference value lowering"))?;
-                self.emit(
-                    I::Load(types::memory(self.graph, source)?, ty, place),
-                    source,
-                )
+            ExprKind::Id(_) => {
+                let place = self.scalar_place(id)?;
+                self.read_place(place, source)
             }
             ExprKind::Unary { op, operand } => self.unary_expression(id, op, operand),
             ExprKind::Binary {
@@ -143,8 +163,10 @@ impl Function<'_, '_, '_, '_> {
                 } else {
                     Context::Operand
                 };
-                let a = self.operand(left, context)?;
-                let b = self.operand(right, context)?;
+                let a = self.expression(left, context)?;
+                let b = self.expression(right, context)?;
+                let a = self.apply_conversion(left, a, context)?;
+                let b = self.apply_conversion(right, b, context)?;
                 if comparison {
                     let unsigned = !types::signed(self.graph, a.source)? && a.ty.float_rank() == 0;
                     let predicate = match (op, unsigned) {
@@ -222,7 +244,13 @@ impl Function<'_, '_, '_, '_> {
                 let value = self.operand(operand, Context::Operand)?;
                 self.convert(value, source, Context::Cast)
             }
-            ExprKind::Call { arguments, .. } => self.call(id, arguments),
+            ExprKind::FunctionalCast {
+                arguments, braced, ..
+            } => self.functional_cast(source, arguments, braced),
+            ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {
+                self.functional_cast(source, arguments, None)
+            }
+            ExprKind::Call { callee, arguments } => self.call(id, callee, arguments),
             ExprKind::Conditional {
                 condition,
                 then_expr,
@@ -295,23 +323,44 @@ impl Function<'_, '_, '_, '_> {
             _ => Err(Error::Missing("address and increment expression lowering")),
         }
     }
+    fn functional_cast(
+        &mut self,
+        source: crate::sema::lowering::TypeId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        braced: Option<ast::ExprId>,
+    ) -> Result<RValue, Error> {
+        let operand = braced.or_else(|| self.tree.expr_lists.get(arguments).first().copied());
+        if let Some(operand) = operand {
+            let value = self.operand(operand, Context::Operand)?;
+            self.convert(value, source, Context::Cast)
+        } else {
+            self.zero(source)
+        }
+    }
     fn call(
         &mut self,
         id: ast::ExprId,
+        callee_expression: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(self.graph, source)?;
-        let entity = self.graph.lower_call(id)?;
-        let facts = self.graph.lower_function(entity)?;
-        if facts.definition.is_none() {
-            return Err(Error::Missing("external and indirect call lowering"));
-        }
-        let crate::sema::lowering::TypeView::Function {
+        let target = self.graph.lower_call(id)?;
+        let function_type = match target {
+            CallTarget::Direct(entity) => {
+                let facts = self.graph.lower_function(entity)?;
+                if facts.definition.is_none() {
+                    return Err(Error::Missing("external function call lowering"));
+                }
+                facts.ty
+            }
+            CallTarget::Indirect(ty, _) => ty,
+        };
+        let TypeView::Function {
             parameters,
             variadic,
             ..
-        } = self.graph.lower_type(facts.ty)?
+        } = self.graph.lower_type(function_type)?
         else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "call signature missing",
@@ -326,7 +375,10 @@ impl Function<'_, '_, '_, '_> {
             let argument = supplied
                 .get(index)
                 .copied()
-                .or_else(|| self.graph.lower_default(entity, index))
+                .or_else(|| match target {
+                    CallTarget::Direct(entity) => self.graph.lower_default(entity, index),
+                    CallTarget::Indirect(_, _) => None,
+                })
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "call argument missing",
                 )))?;
@@ -334,15 +386,26 @@ impl Function<'_, '_, '_, '_> {
             let value = self.fit(value, parameter)?;
             values.push(value.value);
         }
-        self.symbols.demand(entity);
-        let callee = self.symbols.callee(entity, &mut self.builder)?;
+        let (callee, signature) = match target {
+            CallTarget::Direct(entity) => {
+                self.symbols.demand(entity);
+                (self.symbols.callee(entity, &mut self.builder)?, None)
+            }
+            CallTarget::Indirect(function_type, nothrow) => {
+                let callee = self.operand(callee_expression, Context::Operand)?.value;
+                let signature =
+                    self.symbols
+                        .call_signature(self.builder.program(), function_type, nothrow)?;
+                (callee, Some(signature))
+            }
+        };
         let arguments = self.builder.arguments(&values)?;
         let call = I::Call(crate::lowir::model::Call {
             result: ty,
             callee,
             arguments,
             copy_elision: false,
-            signature: None,
+            signature,
         });
         if ty == Type::Void {
             self.effect(call)?;

@@ -28,6 +28,7 @@ impl Analyzer<'_> {
         let target = self.graph.publish_variable_type(binding)?;
         let completed = self.object_initializer(initializer, scope, target, location)?;
         self.graph.complete_variable_type(binding, completed)?;
+        self.check_nothrow_initializer(self.graph.binding(binding).entity, initializer)?;
         Ok(completed)
     }
     pub(super) fn initial_object_type(

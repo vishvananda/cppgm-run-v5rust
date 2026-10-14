@@ -1032,7 +1032,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     .binding(binding)
                     .ty
                     .ok_or_else(|| io::Error::other("call without function type"))?,
-                CallTarget::Indirect(ty) => ty,
+                CallTarget::Indirect(ty, _) => ty,
             };
             let function = self.graph.types.canonical_view(function);
             let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {
@@ -1156,12 +1156,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                             self.expr(default.expression, depth + 1);
                         }
                     }
-                    CallTarget::Indirect(_) => (),
+                    CallTarget::Indirect(_, _) => (),
                 }
                 for &id in self.tree.expr_lists.get(arguments).iter().rev() {
                     self.expr(id, depth + 1);
                 }
-                if matches!(facts.call, Some(CallTarget::Indirect(_))) {
+                if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
                     self.expr(callee, depth + 1);
                 }
                 return Ok(());

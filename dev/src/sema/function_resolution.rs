@@ -18,7 +18,7 @@ pub(super) struct OverloadId(u32);
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CallTarget {
     Direct(BindingId),
-    Indirect(TypeId),
+    Indirect(TypeId, Option<super::graph::EntityId>),
 }
 #[derive(Default)]
 pub(super) struct FunctionSets {

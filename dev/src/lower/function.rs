@@ -85,7 +85,20 @@ pub(super) fn lower<'a>(
             types::storage(graph, ty)?,
         ));
     }
-    let name = symbols.name(entity)?;
+    let symbol = symbols.function_symbol(program, entity)?;
+    if program.symbol(symbol).declared() {
+        let declaration =
+            facts
+                .definition
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "function definition without source",
+                )))?;
+        return Err(Error::Semantic(crate::sema::Error::Diagnostic {
+            location: tree.declarations.get(declaration).location,
+            message: "redefinition of a function across translation units",
+        }));
+    }
+    let name = program.names.get(program.symbol(symbol).name).to_owned();
     let metadata = symbols.metadata(program, entity, &name)?;
     let parameters: Vec<_> = names
         .iter()
@@ -230,7 +243,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if !self.graph.lower_automatic(entity) {
-            return Err(Error::Missing("local static and extern storage lowering"));
+            if self.graph.lower_namespace_storage(entity) {
+                return Ok(());
+            }
+            return Err(Error::Missing("local static storage lowering"));
         }
         let ty = self.graph.lower_entity_type(entity)?;
         if matches!(self.graph.lower_type(ty)?, TypeView::Reference) {
@@ -269,4 +285,53 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+}
+
+pub(super) fn signature(
+    program: &mut Program,
+    graph: &Graph,
+    ty: TypeId,
+    nothrow: bool,
+) -> Result<crate::lowir::model::SignatureId, Error> {
+    use crate::lowir::model::{Arity, Parameter, Signature};
+    let TypeView::Function {
+        result,
+        parameters,
+        variadic,
+    } = graph.lower_type(ty)?
+    else {
+        return Err(Error::Semantic(crate::sema::Error::Invariant(
+            "indirect boundary without function type",
+        )));
+    };
+    if matches!(graph.lower_type(result)?, TypeView::Reference) {
+        return Err(Error::Missing("reference call result boundary lowering"));
+    }
+    let mut values = Vec::with_capacity(parameters.len());
+    for (index, &ty) in parameters.iter().enumerate() {
+        if matches!(graph.lower_type(ty)?, TypeView::Reference) {
+            return Err(Error::Missing("reference call boundary lowering"));
+        }
+        values.push(Parameter {
+            name: program.names.intern(&format!("arg{index}"))?,
+            ty: types::storage(graph, ty)?,
+            pass: None,
+            no_alias: false,
+            object_bytes: 0,
+            classes: None,
+        });
+    }
+    Ok(program.add_signature(Signature {
+        parameters: values,
+        result: types::storage(graph, result)?,
+        boundary: Boundary {
+            unwind: if nothrow { Unwind::No } else { Unwind::Default },
+            arity: if variadic {
+                Arity::Variadic
+            } else {
+                Arity::Fixed
+            },
+            ..Boundary::default()
+        },
+    })?)
 }

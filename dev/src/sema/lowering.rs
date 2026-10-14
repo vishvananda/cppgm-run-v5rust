@@ -1,5 +1,6 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
+pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
     Error,
     graph::{BindingKind, Graph},
@@ -10,6 +11,16 @@ pub(crate) use super::{
     types::{Scalar, TypeId},
 };
 use crate::{lex::identifiers::NameId, syntax::ast};
+pub(crate) struct VariableFacts {
+    pub name: NameId,
+    pub home: ScopeId,
+    pub ty: TypeId,
+    pub internal: bool,
+    pub c_linkage: bool,
+    pub thread_local: bool,
+    pub initializer: Option<StaticValue>,
+    pub definition: Option<ast::DeclaratorId>,
+}
 
 pub(crate) enum TypeView<'a> {
     Scalar(Scalar),
@@ -27,6 +38,10 @@ pub(crate) enum TypeView<'a> {
 pub(crate) enum Emission {
     Always,
     Demanded,
+}
+pub(crate) enum CallTarget {
+    Direct(EntityId),
+    Indirect(TypeId, bool),
 }
 pub(crate) struct FunctionFacts {
     pub name: NameId,
@@ -49,6 +64,26 @@ pub(crate) struct Expression {
     pub null_pointer: bool,
 }
 impl Graph {
+    pub(crate) fn lower_variable(&self, id: EntityId) -> Result<VariableFacts, Error> {
+        let entity = self.entity(id);
+        let variable = entity
+            .variable
+            .ok_or(Error::Invariant("lowering non-variable"))?;
+        Ok(VariableFacts {
+            name: entity
+                .name
+                .ok_or(Error::Missing("anonymous variable lowering"))?,
+            home: entity
+                .home
+                .ok_or(Error::Invariant("variable without home"))?,
+            ty: entity.ty.ok_or(Error::Invariant("variable without type"))?,
+            internal: variable.internal_linkage,
+            c_linkage: variable.language == super::linkage::Language::C,
+            thread_local: variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal,
+            initializer: entity.static_initializer,
+            definition: entity.variable_definition,
+        })
+    }
     pub(crate) fn lower_arithmetic_types(
         &self,
         id: ast::ExprId,
@@ -64,6 +99,11 @@ impl Graph {
     }
     pub(crate) fn lower_condition_target(&self, id: ast::DeclaratorId) -> Result<TypeId, Error> {
         Ok(self.condition_conversion(id)?.result)
+    }
+    pub(crate) fn lower_namespace_storage(&self, id: EntityId) -> bool {
+        self.entity(id)
+            .home
+            .is_some_and(|scope| self.scope(scope).kind == super::graph::ScopeKind::Namespace)
     }
     pub(crate) fn lower_automatic(&self, id: EntityId) -> bool {
         self.entity(id)
@@ -204,14 +244,34 @@ impl Graph {
             .ty
             .ok_or(Error::Invariant("lowering entity without type"))
     }
-    pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<EntityId, Error> {
-        if !matches!(
-            self.expression_facts.get(id)?.call,
-            Some(super::function_resolution::CallTarget::Direct(_))
-        ) {
-            return Err(Error::Missing("indirect call lowering"));
+    pub(crate) fn lower_functional_call(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(self.expression_facts.get(id)?.functional_call)
+    }
+    pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<CallTarget, Error> {
+        match self.expression_facts.get(id)?.call {
+            Some(super::function_resolution::CallTarget::Direct(binding)) => {
+                Ok(CallTarget::Direct(self.binding(binding).entity))
+            }
+            Some(super::function_resolution::CallTarget::Indirect(ty, entity)) => {
+                let nothrow = entity.is_some_and(|entity| {
+                    self.entity(entity).target_unwind == super::exceptions::TargetUnwind::NoThrow
+                });
+                Ok(CallTarget::Indirect(ty, nothrow))
+            }
+            None => Err(Error::Invariant("call without selected target")),
         }
-        self.call_entity(id)
+    }
+    pub(crate) fn lower_nominal_name(&self, ty: TypeId) -> Result<(ScopeId, NameId), Error> {
+        let TypeKind::Enum(id) = self.types.get(ty).kind else {
+            return Err(Error::Invariant("non-enum nominal ABI type"));
+        };
+        let entity = self.entity(id);
+        Ok((
+            entity.home.ok_or(Error::Invariant("enum without home"))?,
+            entity
+                .name
+                .ok_or(Error::Missing("anonymous enum ABI name"))?,
+        ))
     }
     pub(crate) fn lower_default(&self, entity: EntityId, index: usize) -> Option<ast::ExprId> {
         self.function_default(entity, index)

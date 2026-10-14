@@ -211,7 +211,17 @@ impl Analyzer<'_> {
             self.graph.record_call_binding(id, binding);
             return Ok(facts);
         }
-        let target = self.decayed_type(facts.ty)?;
+        self.indirect_call(id, callee, arguments, facts.ty, scope)
+    }
+    fn indirect_call(
+        &mut self,
+        id: ast::ExprId,
+        callee: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        source: TypeId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let target = self.decayed_type(source)?;
         let function = match self.graph.types.get(target).kind {
             TypeKind::Function { .. } => target,
             TypeKind::Pointer(element)
@@ -268,7 +278,10 @@ impl Analyzer<'_> {
             }
         }
         let mut facts = self.call_result(function)?;
-        facts.call = Some(CallTarget::Indirect(function));
+        facts.call = Some(CallTarget::Indirect(
+            function,
+            self.callee_target_entity(callee)?,
+        ));
         Ok(facts)
     }
     fn publish_named_callee(

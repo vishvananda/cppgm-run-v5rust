@@ -4,6 +4,7 @@ mod conditions;
 mod conversions;
 mod expressions;
 mod function;
+mod globals;
 mod mutations;
 mod statements;
 mod symbols;
@@ -40,6 +41,7 @@ impl From<crate::abi::Error> for Error {
 pub(crate) struct Output {
     pub program: Program,
     pub definitions: Vec<u8>,
+    symbols: symbols::SymbolTable,
 }
 pub(crate) fn lower_unit(
     output: &mut Output,
@@ -49,7 +51,7 @@ pub(crate) fn lower_unit(
     declarations: List<ast::DeclId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
-    let mut symbols = symbols::Symbols::new(graph, cursor, budget);
+    let mut symbols = symbols::Symbols::new(graph, cursor, budget, &mut output.symbols);
     let mut work: Vec<_> = tree
         .decl_lists
         .get(declarations)
@@ -88,8 +90,17 @@ pub(crate) fn lower_unit(
             ast::DeclKind::Simple { declarators, .. } => {
                 for declarator in tree.init_declarators.get(declarators) {
                     let entity = graph.lower_declared(declarator.declarator)?;
-                    if graph.lower_is_variable(entity) {
-                        return Err(Error::Missing("namespace variable lowering"));
+                    if graph.lower_is_variable(entity)
+                        && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
+                    {
+                        globals::define(
+                            &mut output.program,
+                            &mut symbols,
+                            graph,
+                            entity,
+                            declarator.initializer,
+                            tree.declarators.get(declarator.declarator).location,
+                        )?;
                     }
                 }
             }
@@ -127,5 +138,6 @@ pub(crate) fn lower_unit(
             .program
             .stream_last_definition(&mut output.definitions)?;
     }
+    globals::finish(&mut output.program, &mut symbols, graph)?;
     Ok(())
 }

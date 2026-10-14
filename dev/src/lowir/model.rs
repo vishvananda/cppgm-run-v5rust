@@ -140,6 +140,9 @@ impl Program {
         self.functions.push(function);
         Ok(())
     }
+    pub(crate) fn find_symbol(&self, name: NameId) -> Option<SymbolId> {
+        self.index.get(&name).copied()
+    }
     pub(crate) fn reference(
         &mut self,
         name: NameId,

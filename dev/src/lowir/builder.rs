@@ -85,10 +85,8 @@ impl<'a> FunctionBuilder<'a> {
             .map(Value::Slot)
             .ok_or(Error::Limit)
     }
-    pub(crate) fn symbol(&mut self, name: &str) -> Result<Value, Error> {
-        let name = self.program.names.intern(name)?;
-        let source = self.program.add_source(std::path::Path::new(""))?;
-        self.program.reference(name, source, 0).map(Value::Symbol)
+    pub(crate) fn program(&mut self) -> &mut Program {
+        self.program
     }
     pub(crate) fn block_id(&mut self, name: &str) -> Result<BlockId, Error> {
         let name = self.program.names.intern(name)?;

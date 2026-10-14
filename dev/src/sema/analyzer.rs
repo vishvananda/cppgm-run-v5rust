@@ -18,6 +18,7 @@ use crate::{
 pub(super) enum AnalysisMode {
     Types,
     Semantics,
+    Lowering,
 }
 
 pub(crate) struct Analyzer<'tree> {
@@ -43,6 +44,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) suppress_implicit: bool,
     mode: AnalysisMode,
+    pub(super) static_initializers: Vec<(super::graph::EntityId, ast::Initializer, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
     pub(super) default_argument_scope: Option<ScopeId>,
     pub(super) unevaluated: u32,
@@ -126,6 +128,7 @@ impl<'tree> Analyzer<'tree> {
             expression_work: Vec::new(),
             suppress_implicit: false,
             mode: AnalysisMode::Types,
+            static_initializers: Vec::new(),
             body_context: None,
             binary_spine: Vec::new(),
             call_scratch: super::procedural_calls::CallScratch::default(),
@@ -149,8 +152,14 @@ impl<'tree> Analyzer<'tree> {
             AnalysisMode::Types
         };
     }
+    pub(crate) fn set_lowering(&mut self) {
+        self.mode = AnalysisMode::Lowering;
+    }
+    pub(super) fn lowering(&self) -> bool {
+        self.mode == AnalysisMode::Lowering
+    }
     pub(super) fn semantic(&self) -> bool {
-        self.mode == AnalysisMode::Semantics
+        self.mode != AnalysisMode::Types
     }
     pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
         let marker = 0u8;
@@ -159,6 +168,9 @@ impl<'tree> Analyzer<'tree> {
         self.finish_unit_exceptions()?;
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
+        }
+        for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
+            self.record_static_initializer(entity, initializer, scope)?;
         }
         Ok(self.graph)
     }
@@ -570,6 +582,7 @@ impl<'tree> Analyzer<'tree> {
                     key: Keyword::Int,
                 },
             )?;
+            self.note_nothrow_target(entity, ty, parameter.declarator, scope)?;
         }
         let ast::Body::Parsed(parsed) = self.tree.bodies.get(body.body) else {
             return Err(Error::Invariant("unparsed body at semantic boundary"));

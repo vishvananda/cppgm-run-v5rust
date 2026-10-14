@@ -28,6 +28,7 @@ impl LowIrOutput {
     /// # Errors
     /// Returns an output failure.
     pub fn write(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        crate::lowir::writer::write_globals(&self.output.program, output)?;
         output.write_all(&self.output.definitions)
     }
 }
@@ -85,6 +86,9 @@ pub fn emit_unit(
         let analysis =
             crate::sema::Analyzer::new(tree, cursor, stack_budget).and_then(|mut analyzer| {
                 analyzer.set_semantics(matches!(mode, EmitMode::Semantics | EmitMode::LowIr));
+                if mode == EmitMode::LowIr {
+                    analyzer.set_lowering();
+                }
                 analyzer.analyze(declarations)
             });
         Some(analysis.map_err(|error| match error {

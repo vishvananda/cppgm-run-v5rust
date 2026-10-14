@@ -26,9 +26,9 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::LongDouble) => Type::F80,
             Scalar::Nullptr => Type::Ptr,
         },
-        TypeView::Pointer(_) | TypeView::Reference => Type::Ptr,
+        TypeView::Pointer(_) | TypeView::Reference | TypeView::Function { .. } => Type::Ptr,
         TypeView::Enum(underlying) => return storage(graph, underlying),
-        _ => return Err(Error::Missing("aggregate storage lowering")),
+        TypeView::Unsupported => return Err(Error::Missing("aggregate storage lowering")),
     })
 }
 pub(super) fn signed(graph: &Graph, ty: TypeId) -> Result<bool, Error> {

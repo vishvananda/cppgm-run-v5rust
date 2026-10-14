@@ -135,6 +135,7 @@ pub(super) struct Entity {
     pub data_member: Option<DataMemberKind>,
     pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
+    pub target_unwind: super::exceptions::TargetUnwind,
     pub constexpr: bool,
     pub explicitness: super::specifiers::Explicitness,
     pub implicit_copies: Option<super::copy_initialization::ImplicitCopies>,
@@ -161,6 +162,8 @@ pub(super) struct Entity {
     pub member_initializer: Option<crate::syntax::ast::Initializer>,
     pub initialized_members: usize,
     pub variable: Option<VariableProperties>,
+    pub variable_definition: Option<crate::syntax::ast::DeclaratorId>,
+    pub static_initializer: Option<super::static_initialization::Value>,
     pub template_parameter: Option<super::templates::ParameterInfo>,
     pub template_head: Option<super::templates::HeadId>,
 }
@@ -444,6 +447,7 @@ impl Graph {
             data_member: None,
             mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
+            target_unwind: super::exceptions::TargetUnwind::MayThrow,
             constexpr: false,
             explicitness: super::specifiers::Explicitness::Converting,
             implicit_copies: None,
@@ -469,6 +473,8 @@ impl Graph {
             member_initializer: None,
             initialized_members: 0,
             variable: None,
+            variable_definition: None,
+            static_initializer: None,
             template_parameter: None,
             template_head: None,
         });

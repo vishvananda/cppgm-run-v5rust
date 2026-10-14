@@ -22,10 +22,18 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Paren(inner) => self.scalar_place(inner),
             ExprKind::Id(name) => {
                 let entity = self.graph.lower_name(name)?;
-                self.locals
-                    .get(&entity)
-                    .copied()
-                    .ok_or(Error::Missing("nonlocal scalar place lowering"))
+                if let Some(&place) = self.locals.get(&entity) {
+                    Ok(place)
+                } else if !self.graph.lower_is_variable(entity) {
+                    self.symbols.demand(entity);
+                    self.symbols
+                        .function_symbol(self.builder.program(), entity)
+                        .map(Value::Symbol)
+                } else {
+                    self.symbols
+                        .variable_symbol(self.builder.program(), entity)
+                        .map(Value::Symbol)
+                }
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
                 Ok(self.operand(operand, Context::Operand)?.value)
