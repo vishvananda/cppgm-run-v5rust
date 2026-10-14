@@ -51,6 +51,42 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("static object without type"))?;
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(target).kind {
+            let Some(expr) = self.single_initializer(initializer) else {
+                return Ok(());
+            };
+            let facts = self.graph.expression_facts.get(expr)?;
+            if facts.conversion.is_some_and(|c| c.temporary) {
+                let object = facts.conversion.map_or(element, |c| c.result);
+                let value = self.static_scalar(expr, object, scope)?;
+                let entity = self.graph.entity_mut(entity);
+                entity.reference_temporary = Some(object);
+                entity.static_initializer = value;
+            } else {
+                let value = match self.constant_place(expr, scope) {
+                    Ok(address) => match address.root {
+                        Root::Variable(root)
+                            if self
+                                .graph
+                                .entity(root)
+                                .variable
+                                .is_some_and(|v| !v.automatic) =>
+                        {
+                            Some(Value::Address(root, address.offset))
+                        }
+                        Root::Temporary(root) | Root::Function(root) => {
+                            Some(Value::Address(root, address.offset))
+                        }
+                        Root::Literal(root) => Some(Value::Literal(root, address.offset)),
+                        _ => None,
+                    },
+                    Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
+                    Err(error) => return Err(error),
+                };
+                self.graph.entity_mut(entity).static_initializer = value;
+            }
+            return Ok(());
+        }
         if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
             return self.record_array_image(entity, initializer, target, scope);
         }
@@ -119,7 +155,9 @@ impl Analyzer<'_> {
                     {
                         Some(Value::Address(entity, address.offset))
                     }
-                    Root::Function(entity) => Some(Value::Address(entity, address.offset)),
+                    Root::Temporary(entity) | Root::Function(entity) => {
+                        Some(Value::Address(entity, address.offset))
+                    }
                     Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
                     _ => None,
                 },
@@ -354,7 +392,7 @@ mod tests {
     };
     #[test]
     fn images_are_demanded_after_unit_analysis_without_changing_syntax() {
-        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3); int *pointers[4]={&target,nullptr,0}; float values[3]={1.5f};".to_vec()).unwrap();
+        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3); int *pointers[4]={&target,nullptr,0}; float values[3]={1.5f}; const int &reference=y; const int &temporary=7; const int &same=temporary;".to_vec()).unwrap();
         let input = Preprocessor::with_name(&source, b"static-images").unwrap();
         let mut unit = SyntaxUnit::new(input);
         unit.parse().unwrap();
@@ -390,6 +428,31 @@ mod tests {
             } else {
                 assert!(x.static_initializer.is_none());
                 assert!(graph.entity(entity(b"p")).static_initializer.is_none());
+            }
+            let reference = graph.entity(entity(b"reference"));
+            let temporary_id = entity(b"temporary");
+            let temporary = graph.entity(temporary_id);
+            let same = graph.entity(entity(b"same"));
+            if lowering {
+                assert!(
+                    matches!(reference.static_initializer, Some(Value::Address(root, 0)) if root == entity(b"y"))
+                );
+                assert!(reference.reference_temporary.is_none());
+                assert!(matches!(
+                    temporary.static_initializer,
+                    Some(Value::Integer(7))
+                ));
+                let object = temporary.reference_temporary.unwrap();
+                assert_eq!(graph.lower_cv(object), 1);
+                assert!(
+                    matches!(same.static_initializer, Some(Value::Address(root, 0)) if root == temporary_id)
+                );
+                assert!(same.reference_temporary.is_none());
+            } else {
+                assert!(reference.static_initializer.is_none());
+                assert!(temporary.static_initializer.is_none());
+                assert!(temporary.reference_temporary.is_none());
+                assert!(same.static_initializer.is_none());
             }
             let pointers = graph.lower_array_image(entity(b"pointers"));
             let values = graph.lower_array_image(entity(b"values"));

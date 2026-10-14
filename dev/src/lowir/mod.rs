@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 pub(crate) mod builder;
+mod construction_names;
 mod exercises;
 mod globals;
 mod instructions;

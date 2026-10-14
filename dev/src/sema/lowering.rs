@@ -20,6 +20,7 @@ pub(crate) struct VariableFacts {
     pub c_linkage: bool,
     pub thread_local: bool,
     pub initializer: Option<StaticValue>,
+    pub reference_temporary: Option<TypeId>,
     pub definition: Option<ast::DeclaratorId>,
 }
 
@@ -30,7 +31,10 @@ pub(crate) enum TypeView<'a> {
         element: TypeId,
         bound: u64,
     },
-    Reference,
+    Reference {
+        element: TypeId,
+        rvalue: bool,
+    },
     Enum(TypeId),
     Function {
         result: TypeId,
@@ -68,6 +72,8 @@ pub(crate) struct Expression {
     pub is_place: bool,
     pub null_pointer: bool,
     pub commuted: bool,
+    pub temporary: Option<TypeId>,
+    pub reference_cast: Option<TypeId>,
 }
 impl Graph {
     pub(crate) fn lower_constexpr(&self, id: EntityId) -> bool {
@@ -93,6 +99,7 @@ impl Graph {
             c_linkage: variable.language == super::linkage::Language::C,
             thread_local: variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal,
             initializer: entity.static_initializer,
+            reference_temporary: entity.reference_temporary,
             definition: entity.variable_definition,
         })
     }
@@ -214,7 +221,10 @@ impl Graph {
                 element: *element,
                 bound: *bound,
             },
-            TypeKind::Reference { .. } => TypeView::Reference,
+            TypeKind::Reference { element, kind } => TypeView::Reference {
+                element: *element,
+                rvalue: *kind == super::types::RefKind::Rvalue,
+            },
             TypeKind::Enum(entity) => TypeView::Enum(
                 self.entity(*entity)
                     .enumeration
@@ -241,6 +251,10 @@ impl Graph {
         }
         self.types.get(id).cv.0
     }
+    pub(crate) fn lower_lvalue(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(self.expression_facts.get(id)?.category
+            == super::expression_facts::ValueCategory::Lvalue)
+    }
     pub(crate) fn lower_expression(&self, id: ast::ExprId) -> Result<Expression, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(Expression {
@@ -253,6 +267,8 @@ impl Graph {
                 .conversion
                 .is_some_and(|c| c.second == super::expression_facts::ValueConversion::NullPointer),
             commuted: facts.commuted,
+            temporary: facts.conversion.filter(|c| c.temporary).map(|c| c.result),
+            reference_cast: facts.reference_cast,
         })
     }
     pub(crate) fn lower_name(&self, name: ast::Name) -> Result<EntityId, Error> {

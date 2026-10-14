@@ -23,13 +23,7 @@ impl Function<'_, '_, '_, '_> {
         else_expr: ast::ExprId,
     ) -> Result<crate::lowir::model::Value, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        self.next_slot = self
-            .next_slot
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
-        let slot = self
-            .builder
-            .slot(&format!("condaddr__{}", self.next_slot), Type::Ptr)?;
+        let slot = self.generated_slot("condaddr", Type::Ptr)?;
         let then_block = self.new_block("condaddr_then")?;
         let else_block = self.new_block("condaddr_else")?;
         let end = self.new_block("condaddr_end")?;
@@ -59,7 +53,7 @@ impl Function<'_, '_, '_, '_> {
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value)
     }
-    fn without_parentheses(&self, mut id: ast::ExprId) -> ast::ExprId {
+    pub(super) fn without_parentheses(&self, mut id: ast::ExprId) -> ast::ExprId {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
             id = inner;
         }
@@ -252,14 +246,8 @@ impl Function<'_, '_, '_, '_> {
                 });
                 continue;
             }
-            self.next_slot = self
-                .next_slot
-                .checked_add(1)
-                .ok_or(crate::lowir::Error::Limit)?;
             let prefix = if conjunction { "land" } else { "lor" };
-            let slot = self
-                .builder
-                .slot(&format!("{prefix}__{}", self.next_slot), Type::I64)?;
+            let slot = self.generated_slot(prefix, Type::I64)?;
             let rhs = self.new_block(&format!("{prefix}_rhs"))?;
             let shortcut = self.new_block(&format!("{prefix}_short"))?;
             let end = self.new_block(&format!("{prefix}_end"))?;
@@ -294,9 +282,88 @@ impl Function<'_, '_, '_, '_> {
             "logical expression without operator",
         )))
     }
+    fn read_when_discarded(&self, id: ast::ExprId) -> Result<bool, Error> {
+        self.check_stack()?;
+        Ok(
+            match self.tree.expressions.get(self.without_parentheses(id)).kind {
+                ExprKind::Id(_) | ExprKind::Subscript { .. } => true,
+                ExprKind::Unary { op, .. } => op.token.as_punctuator() == Some(P::Multiply),
+                ExprKind::Conditional {
+                    then_expr,
+                    else_expr,
+                    ..
+                } => self.read_when_discarded(then_expr)? && self.read_when_discarded(else_expr)?,
+                ExprKind::Binary {
+                    op,
+                    right,
+                    assignment: false,
+                    ..
+                } if op.token.as_punctuator() == Some(P::Comma) => {
+                    self.read_when_discarded(right)?
+                }
+                _ => false,
+            },
+        )
+    }
+    fn read_discarded(&mut self, id: ast::ExprId) -> Result<(), Error> {
+        self.check_stack()?;
+        let id = self.without_parentheses(id);
+        match self.tree.expressions.get(id).kind {
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                let yes = self.new_block("discard_cond_then")?;
+                let no = self.new_block("discard_cond_else")?;
+                let end = self.new_block("discard_cond_end")?;
+                let value = self.truth(condition)?;
+                self.effect(I::Branch(value.value, yes, no))?;
+                for (block, operand) in [(yes, then_expr), (no, else_expr)] {
+                    self.place(block)?;
+                    self.read_discarded(operand)?;
+                    self.jump(end)?;
+                }
+                self.place(end)
+            }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: false,
+            } if op.token.as_punctuator() == Some(P::Comma) => {
+                self.discard(left)?;
+                self.read_discarded(right)
+            }
+            _ => {
+                let source = self.graph.lower_expression(id)?.ty;
+                let place = self.scalar_place(id)?;
+                self.emit(
+                    I::Load(
+                        Facts::memory(true, false),
+                        types::storage(self.graph, source)?,
+                        place,
+                    ),
+                    source,
+                )?;
+                Ok(())
+            }
+        }
+    }
     pub(super) fn discard(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        let facts = self.graph.lower_expression(id)?;
+        if self.graph.lower_lvalue(id)?
+            && self.graph.lower_cv(facts.ty) & 2 != 0
+            && !matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Array { .. }
+            )
+            && self.read_when_discarded(id)?
+        {
+            return self.read_discarded(id);
+        }
         match self.tree.expressions.get(id).kind {
             ExprKind::Conditional {
                 condition,
@@ -333,6 +400,10 @@ impl Function<'_, '_, '_, '_> {
             {
                 self.discard_to_void(operand)
             }
+            ExprKind::Call { callee, arguments } if !self.graph.lower_functional_call(id)? => {
+                self.call(id, callee, arguments)?;
+                Ok(())
+            }
             ExprKind::Binary {
                 assignment: true, ..
             } => {
@@ -363,6 +434,10 @@ impl Function<'_, '_, '_, '_> {
                 keyword: Keyword::Alignof,
                 ..
             } => Ok(()),
+            _ if self.graph.lower_expression(id)?.is_place => {
+                self.scalar_place(id)?;
+                Ok(())
+            }
             _ => {
                 self.expression(id, Context::Operand)?;
                 Ok(())

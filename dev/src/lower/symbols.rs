@@ -121,6 +121,38 @@ impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.data)
     }
+    pub(super) fn reference_temporary_symbol(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<(SymbolId, Option<NameId>), Error> {
+        let facts = self.graph.lower_variable(entity)?;
+        let spelling = format!("__ref_tmp__{}", self.identifier(facts.name)?);
+        let parent = self.scope(facts.home)?;
+        let terminal = self.abi.string(self.cursor.name(facts.name))?;
+        let owner = self.abi.intern(
+            Node::Name {
+                parent,
+                terminal,
+                internal: facts.internal,
+                occurrence: 0,
+            },
+            &[],
+        )?;
+        let mut bytes = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::ReferenceTemporary(owner),
+            &mut bytes,
+            self.budget,
+        )?;
+        let object = program.names.intern_bytes(&bytes)?;
+        let local_object = (!self.table.objects.contains_key(&object)).then_some(object);
+        let symbol = self
+            .table
+            .allocate(program, &spelling, Some(object), true)?;
+        Ok((symbol, local_object))
+    }
     pub(super) fn data_symbol(
         &mut self,
         program: &mut Program,
@@ -217,7 +249,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 operand: self.abi_type(element)?,
             },
             TypeView::Array { element, bound } => Node::Modified {
-                modifier: Modifier::Array(bound),
+                modifier: if bound == 0 {
+                    Modifier::UnknownArray
+                } else {
+                    Modifier::Array(bound)
+                },
+                operand: self.abi_type(element)?,
+            },
+            TypeView::Reference { element, rvalue } => Node::Modified {
+                modifier: if rvalue {
+                    Modifier::RvalueReference
+                } else {
+                    Modifier::LvalueReference
+                },
                 operand: self.abi_type(element)?,
             },
             TypeView::Enum(_) => {
@@ -251,7 +295,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.types.insert(ty, id);
                 return Ok(id);
             }
-            _ => return Err(Error::Missing("reference and aggregate ABI type lowering")),
+            TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
         };
         let mut id = self.abi.intern(node, &[]).map_err(Error::from)?;
         for (bit, modifier) in [
@@ -383,9 +427,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(*symbol);
         }
         let facts = self.graph.lower_variable(entity)?;
-        if matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference) {
-            return Err(Error::Missing("global reference place lowering"));
-        }
         if facts.thread_local {
             return Err(Error::Missing("thread-local global lowering"));
         }

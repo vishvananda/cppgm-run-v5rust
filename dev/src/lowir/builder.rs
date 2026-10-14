@@ -15,6 +15,7 @@ pub(crate) struct FunctionBuilder<'a> {
     function: Function,
     body: Body,
     block: Option<BlockId>,
+    slot_names: Vec<super::construction_names::SlotName>,
 }
 
 impl<'a> FunctionBuilder<'a> {
@@ -27,7 +28,7 @@ impl<'a> FunctionBuilder<'a> {
         let name = program.names.intern(name)?;
         let source = program.add_source(std::path::Path::new(""))?;
         let symbol = program.reference(name, source, 0)?;
-        if program.symbol(symbol).declared() {
+        if program.function_defined(symbol) {
             return Err(Error::Diagnostic("duplicate constructed function".into()));
         }
         let mut signature = Signature {
@@ -66,6 +67,7 @@ impl<'a> FunctionBuilder<'a> {
             function,
             body,
             block: None,
+            slot_names: Vec::new(),
         })
     }
     pub(crate) fn metadata(&mut self, metadata: Metadata) {
@@ -74,16 +76,37 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn boundary(&mut self, boundary: Boundary) {
         self.program.signature_mut(self.function.signature).boundary = boundary;
     }
+    pub(crate) fn parameter_boundary(
+        &mut self,
+        index: usize,
+        pass: Option<super::vocabulary::Pass>,
+        object_bytes: u64,
+    ) -> Result<(), Error> {
+        let parameter = self
+            .program
+            .signature_mut(self.function.signature)
+            .parameters
+            .get_mut(index)
+            .ok_or(Error::Limit)?;
+        parameter.pass = pass;
+        parameter.object_bytes = object_bytes;
+        Ok(())
+    }
     pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
         let name = self.program.names.intern(name)?;
-        if self.body.find_slot(name).is_some() {
-            return Err(Error::Construction("duplicate lowered slot".into()));
-        }
-        self.body.add_slot(name, ty)?;
-        self.body
-            .find_slot(name)
-            .map(Value::Slot)
-            .ok_or(Error::Limit)
+        self.slot_names
+            .push(super::construction_names::SlotName::Source(name));
+        self.body.constructed_slot(ty)
+    }
+    pub(crate) fn generated_slot(&mut self, stem: &'static str, ty: Type) -> Result<Value, Error> {
+        self.slot_names
+            .push(super::construction_names::SlotName::Generated(stem));
+        self.body.constructed_slot(ty)
+    }
+    pub(crate) fn parameter_slot(&mut self, index: usize, ty: Type) -> Result<Value, Error> {
+        self.slot_names
+            .push(super::construction_names::SlotName::Parameter(index));
+        self.body.constructed_slot(ty)
     }
     pub(crate) fn program(&mut self) -> &mut Program {
         self.program
@@ -174,6 +197,21 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {
+        let parameters: Vec<_> = self
+            .program
+            .signature(self.function.signature)
+            .parameters
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !self.slot_names.iter().any(|label| matches!(label, super::construction_names::SlotName::Parameter(position) if position == index)))
+            .map(|(_, p)| p.name)
+            .collect();
+        let names = super::construction_names::slots(
+            &mut self.program.names,
+            &self.slot_names,
+            &parameters,
+        )?;
+        self.body.name_constructed_slots(&names)?;
         self.function.body = Some(self.body);
         self.program.add(self.symbol, self.function)
     }

@@ -26,6 +26,7 @@ pub enum Target {
         base: NodeId,
     },
     TlsWrapper(NodeId),
+    ReferenceTemporary(NodeId),
     Thunk {
         function: NodeId,
         this: CallOffset,
@@ -213,6 +214,7 @@ impl<'a> Encoder<'a> {
                             self.expression(expression)?;
                             self.put(b"_");
                         }
+                        Modifier::UnknownArray => self.put(b"A_"),
                         Modifier::Array(bound) => {
                             self.put(b"A");
                             self.number(bound);
@@ -802,6 +804,11 @@ impl<'a> Encoder<'a> {
                     _ => b"_ZTT",
                 });
                 self.encode_type(id)?;
+            }
+            Target::ReferenceTemporary(id) => {
+                self.put(b"_ZGR");
+                self.name(id, Qualifiers::default())?;
+                self.put(b"_");
             }
             Target::TlsWrapper(id) => {
                 self.put(b"_ZTW");

@@ -58,11 +58,18 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Return(operand) => {
                 let ty = types::storage(self.graph, self.result)?;
                 let value = if let Some(id) = operand {
-                    let value = self.operand(id, Context::Return)?;
-                    if ty == crate::lowir::vocabulary::Type::Void {
-                        None
+                    if matches!(
+                        self.graph.lower_type(self.result)?,
+                        crate::sema::lowering::TypeView::Reference { .. }
+                    ) {
+                        Some(self.bind_reference(id, self.result, Context::Return)?)
                     } else {
-                        Some(self.fit(value, self.result)?.value)
+                        let value = self.operand(id, Context::Return)?;
+                        if ty == crate::lowir::vocabulary::Type::Void {
+                            None
+                        } else {
+                            Some(self.fit(value, self.result)?.value)
+                        }
                     }
                 } else {
                     None

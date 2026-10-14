@@ -16,6 +16,7 @@ use crate::{
 pub(super) enum Context {
     Operand,
     Initialization,
+    Argument,
     Return,
     Additive,
     Comparison,

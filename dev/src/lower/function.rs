@@ -4,7 +4,7 @@ use super::{Error, symbols::Symbols, types};
 use crate::{
     lowir::{
         builder::FunctionBuilder,
-        model::{Boundary, InstructionKind as I, Program, Unwind, Value},
+        model::{Arity, Boundary, InstructionKind as I, Program, Unwind, Value},
         vocabulary::Type,
     },
     sema::{
@@ -33,7 +33,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub jumps: Vec<super::statements::JumpTargets>,
     pub switch_blocks: HashMap<ast::StmtId, crate::lowir::model::BlockId>,
     pub label_memo: HashMap<ast::StmtId, bool>,
-    pub next_slot: u32,
+    pub conditional_slot: Option<Value>,
     pub terminated: bool,
     pub result: TypeId,
     pub budget: StackBudget,
@@ -59,34 +59,35 @@ pub(super) fn lower<'a>(
             "function signature missing",
         )));
     };
-    if matches!(graph.lower_type(result)?, TypeView::Reference) {
-        return Err(Error::Missing("reference return lowering"));
-    }
-    if variadic {
-        return Err(Error::Missing("variadic definition lowering"));
-    }
     let parameter_bindings: Vec<_> = graph.lower_parameters(facts.scope).collect();
     if parameters.len() != parameter_bindings.len() {
         return Err(Error::Semantic(crate::sema::Error::Invariant(
             "function parameter binding mismatch",
         )));
     }
+    let mut reserved = std::collections::HashSet::new();
+    for &(_, name, _) in &parameter_bindings {
+        if let Some(name) = name {
+            reserved.insert(symbols.identifier(name)?.to_owned());
+        }
+    }
     let mut names = Vec::with_capacity(parameters.len());
     for &(_, name, ty) in &parameter_bindings {
-        if matches!(graph.lower_type(ty)?, TypeView::Reference) {
-            return Err(Error::Missing("reference parameter lowering"));
-        }
         names.push((
             if let Some(name) = name {
                 symbols.identifier(name)?.to_owned()
             } else {
-                return Err(Error::Missing("unnamed parameter lowering"));
+                let mut name = format!("__param{}", names.len());
+                while reserved.contains(&name) {
+                    name.push('_');
+                }
+                name
             },
             types::storage(graph, ty)?,
         ));
     }
     let symbol = symbols.function_symbol(program, entity)?;
-    if program.symbol(symbol).declared() {
+    if program.function_defined(symbol) {
         let declaration =
             facts
                 .definition
@@ -107,7 +108,16 @@ pub(super) fn lower<'a>(
     let mut builder =
         FunctionBuilder::new(program, &name, &parameters, types::storage(graph, result)?)?;
     builder.metadata(metadata);
+    for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
+        let (pass, bytes) = reference_boundary(graph, ty)?;
+        builder.parameter_boundary(index, pass, bytes)?;
+    }
     builder.boundary(Boundary {
+        arity: if variadic {
+            Arity::Variadic
+        } else {
+            Arity::Fixed
+        },
         unwind: if facts.nothrow {
             Unwind::No
         } else {
@@ -127,14 +137,18 @@ pub(super) fn lower<'a>(
         jumps: Vec::new(),
         switch_blocks: HashMap::new(),
         label_memo: HashMap::new(),
-        next_slot: 0,
+        conditional_slot: None,
         terminated: false,
         result,
         budget,
         stack_base: std::ptr::from_ref(&marker).addr(),
     };
     for (index, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
-        let slot = function.builder.slot(&names[index].0, names[index].1)?;
+        let slot = if parameter_bindings[index].1.is_some() {
+            function.builder.slot(&names[index].0, names[index].1)?
+        } else {
+            function.builder.parameter_slot(index, names[index].1)?
+        };
         let incoming = function.builder.parameter(index)?;
         function.builder.effect(I::Store(
             // Prologue initialization uses an unqualified place. Subsequent
@@ -254,9 +268,6 @@ impl Function<'_, '_, '_, '_> {
             return Err(Error::Missing("local static storage lowering"));
         }
         let ty = self.graph.lower_entity_type(entity)?;
-        if matches!(self.graph.lower_type(ty)?, TypeView::Reference) {
-            return Err(Error::Missing("local reference lowering"));
-        }
         let name = self.graph.lower_local_name(entity).ok_or(Error::Semantic(
             crate::sema::Error::Invariant("local without name"),
         ))?;
@@ -265,6 +276,20 @@ impl Function<'_, '_, '_, '_> {
             .builder
             .slot(spelling, types::storage(self.graph, ty)?)?;
         self.locals.insert(entity, slot);
+        if let TypeView::Reference { .. } = self.graph.lower_type(ty)? {
+            let initializer = initializer.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "reference without initializer",
+            )))?;
+            let expr = self.initializer_expression(initializer)?;
+            let address =
+                self.bind_reference(expr, ty, super::conversions::Context::Initialization)?;
+            return self.effect(I::Store(
+                crate::lowir::model::Facts::memory(false, true),
+                Type::Ptr,
+                address,
+                slot,
+            ));
+        }
         if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
             return self.local_array(entity, ty, slot, initializer);
         }
@@ -312,20 +337,15 @@ pub(super) fn signature(
             "indirect boundary without function type",
         )));
     };
-    if matches!(graph.lower_type(result)?, TypeView::Reference) {
-        return Err(Error::Missing("reference call result boundary lowering"));
-    }
     let mut values = Vec::with_capacity(parameters.len());
     for (index, &ty) in parameters.iter().enumerate() {
-        if matches!(graph.lower_type(ty)?, TypeView::Reference) {
-            return Err(Error::Missing("reference call boundary lowering"));
-        }
+        let (pass, object_bytes) = reference_boundary(graph, ty)?;
         values.push(Parameter {
             name: program.names.intern(&format!("arg{index}"))?,
             ty: types::storage(graph, ty)?,
-            pass: None,
+            pass,
             no_alias: false,
-            object_bytes: 0,
+            object_bytes,
             classes: None,
         });
     }
@@ -342,4 +362,54 @@ pub(super) fn signature(
             ..Boundary::default()
         },
     })?)
+}
+
+fn parameters_types(graph: &Graph, ty: TypeId) -> Result<&[TypeId], Error> {
+    match graph.lower_type(ty)? {
+        TypeView::Function { parameters, .. } => Ok(parameters),
+        _ => Err(Error::Semantic(crate::sema::Error::Invariant(
+            "function type missing",
+        ))),
+    }
+}
+pub(super) fn reference_boundary(
+    graph: &Graph,
+    ty: TypeId,
+) -> Result<(Option<crate::lowir::vocabulary::Pass>, u64), Error> {
+    let TypeView::Reference { element, .. } = graph.lower_type(ty)? else {
+        return Ok((None, 0));
+    };
+    let bytes = match graph.lower_type(element)? {
+        TypeView::Function { .. } | TypeView::Array { bound: 0, .. } | TypeView::Unsupported => 0,
+        _ => types::layout(graph, element)?.0,
+    };
+    Ok((Some(crate::lowir::vocabulary::Pass::ByAddress), bytes))
+}
+
+pub(super) fn declare(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    entity: EntityId,
+) -> Result<(), Error> {
+    let symbol = symbols.function_symbol(program, entity)?;
+    if program.symbol(symbol).declared() {
+        return Ok(());
+    }
+    let facts = graph.lower_function(entity)?;
+    let name = program.names.get(program.symbol(symbol).name).to_owned();
+    let signature = signature(program, graph, facts.ty, facts.nothrow)?;
+    let metadata = symbols.metadata(program, entity, &name)?;
+    let name = program.symbol(symbol).name;
+    program.add(
+        symbol,
+        crate::lowir::model::Function {
+            name,
+            signature,
+            metadata,
+            body: None,
+            location: None,
+        },
+    )?;
+    Ok(())
 }

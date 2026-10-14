@@ -54,17 +54,27 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
 pub(crate) fn write_globals(program: &Program, out: &mut impl Write) -> io::Result<()> {
     let mut floating = FloatingScanner::default();
     let mut written = false;
-    for declaration in [true, false] {
+    for phase in 0..3 {
         let mut phase_written = false;
-        for global in program
-            .globals_in_publication_order()
-            .filter(|global| matches!(global.init, GlobalInit::Declaration) == declaration)
-        {
-            if written && !phase_written {
-                writeln!(out)?;
+        if phase == 1 {
+            for function in program.function_declarations() {
+                if written && !phase_written {
+                    writeln!(out)?;
+                }
+                phase_written = true;
+                write_function(program, function, &mut floating, out)?;
             }
-            phase_written = true;
-            write_global(program, global, &mut floating, out)?;
+        } else {
+            for global in program
+                .globals_in_publication_order()
+                .filter(|global| matches!(global.init, GlobalInit::Declaration) == (phase == 0))
+            {
+                if written && !phase_written {
+                    writeln!(out)?;
+                }
+                phase_written = true;
+                write_global(program, global, &mut floating, out)?;
+            }
         }
         written |= phase_written;
     }

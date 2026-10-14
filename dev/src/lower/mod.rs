@@ -9,6 +9,7 @@ mod function;
 mod globals;
 mod mutations;
 mod pointers;
+mod references;
 mod statements;
 mod symbols;
 mod types;
@@ -122,10 +123,11 @@ pub(crate) fn lower_unit(
         if !emitted.insert(entity) {
             continue;
         }
-        let declaration = graph
-            .lower_function(entity)?
-            .definition
-            .ok_or(Error::Missing("external function declaration lowering"))?;
+        let facts = graph.lower_function(entity)?;
+        let Some(declaration) = facts.definition else {
+            function::declare(&mut output.program, &mut symbols, graph, entity)?;
+            continue;
+        };
         let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
             return Err(Error::Missing("special function definition lowering"));
         };

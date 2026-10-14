@@ -26,7 +26,7 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::LongDouble) => Type::F80,
             Scalar::Nullptr => Type::Ptr,
         },
-        TypeView::Pointer(_) | TypeView::Reference | TypeView::Function { .. } => Type::Ptr,
+        TypeView::Pointer(_) | TypeView::Reference { .. } | TypeView::Function { .. } => Type::Ptr,
         TypeView::Array { element, bound } => {
             if bound == 0 {
                 return Err(Error::Missing("unknown-bound array storage layout"));

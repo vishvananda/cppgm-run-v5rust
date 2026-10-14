@@ -19,6 +19,7 @@ use std::collections::HashMap;
 pub(super) struct Objects {
     strings: HashMap<(crate::lowir::vocabulary::Type, Vec<u64>), SymbolId>,
     images: HashMap<Vec<DataItem>, SymbolId>,
+    reference_temporaries: HashMap<crate::sema::lowering::EntityId, SymbolId>,
 }
 fn integer(bits: u64) -> Constant {
     Constant::Integer(u128::from_le_bytes(
@@ -52,7 +53,11 @@ pub(super) fn address(
 ) -> Result<(SymbolId, i64), Error> {
     match value {
         StaticValue::Address(entity, offset) => {
-            let symbol = if graph.lower_is_variable(entity) {
+            let symbol = if graph.lower_is_variable(entity)
+                && graph.lower_variable(entity)?.reference_temporary.is_some()
+            {
+                reference_temporary(program, symbols, graph, entity)?
+            } else if graph.lower_is_variable(entity) {
                 symbols.variable_symbol(program, entity)?
             } else {
                 symbols.demand(entity);
@@ -170,4 +175,50 @@ fn define(program: &mut Program, symbol: SymbolId, items: Vec<DataItem>) -> Resu
         },
     )?;
     Ok(())
+}
+
+pub(super) fn reference_temporary(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    entity: crate::sema::lowering::EntityId,
+) -> Result<SymbolId, Error> {
+    if let Some(&symbol) = symbols.data.reference_temporaries.get(&entity) {
+        return Ok(symbol);
+    }
+    let facts = graph.lower_variable(entity)?;
+    let ty = facts
+        .reference_temporary
+        .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+            "reference temporary type missing",
+        )))?;
+    let value = facts
+        .initializer
+        .ok_or(Error::Missing("dynamic global reference temporary"))?;
+    let (symbol, object) = symbols.reference_temporary_symbol(program, entity)?;
+    let init = match value {
+        StaticValue::Address(..) | StaticValue::Literal(..) => GlobalInit::Zero,
+        _ => GlobalInit::Constant(constant(value)?),
+    };
+    let name = program.symbol(symbol).name;
+    program.add_global(
+        symbol,
+        Global {
+            name,
+            ty: Some(types::storage(graph, ty)?),
+            metadata: Metadata {
+                binding: Some(Binding::Internal),
+                storage: if graph.lower_cv(ty) == 1 && matches!(init, GlobalInit::Constant(_)) {
+                    Some(Storage::ReadOnly)
+                } else {
+                    None
+                },
+                object,
+                ..Metadata::default()
+            },
+            init,
+        },
+    )?;
+    symbols.data.reference_temporaries.insert(entity, symbol);
+    Ok(symbol)
 }

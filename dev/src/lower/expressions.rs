@@ -79,7 +79,7 @@ impl Function<'_, '_, '_, '_> {
         if facts.is_place
             && matches!(
                 self.tree.expressions.get(id).kind,
-                ExprKind::Conditional { .. }
+                ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
             )
         {
             let place = self.scalar_place(id)?;
@@ -377,7 +377,13 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => {}
         }
-        let value = self.operand(operand, Context::Unary)?;
+        let value = if op.token.as_punctuator() == Some(P::LogicalNot) {
+            // The boolean conversion fact belongs to semantic checking. C++
+            // emits ! as one equality comparison on the raw truth operand.
+            self.expression(operand, Context::Unary)?
+        } else {
+            self.operand(operand, Context::Unary)?
+        };
         match op.token.as_punctuator() {
             Some(P::Add) => Ok(value),
             Some(P::Subtract) => self.emit(I::Unary(Unary::Neg, value.ty, value.value), source),
@@ -408,38 +414,32 @@ impl Function<'_, '_, '_, '_> {
             self.zero(source)
         }
     }
-    fn call(
+    pub(super) fn call(
         &mut self,
         id: ast::ExprId,
         callee_expression: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        let ty = types::storage(self.graph, source)?;
         let target = self.graph.lower_call(id)?;
         let function_type = match target {
             CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
-                if facts.definition.is_none() {
-                    return Err(Error::Missing("external function call lowering"));
-                }
                 facts.ty
             }
             CallTarget::Indirect(ty, _) => ty,
         };
         let TypeView::Function {
+            result,
             parameters,
             variadic,
-            ..
         } = self.graph.lower_type(function_type)?
         else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "call signature missing",
             )));
         };
-        if variadic {
-            return Err(Error::Missing("variadic call lowering"));
-        }
+        let ty = types::storage(self.graph, result)?;
         let supplied = self.tree.expr_lists.get(arguments);
         let mut values = Vec::with_capacity(parameters.len());
         for (index, &parameter) in parameters.iter().enumerate() {
@@ -453,9 +453,21 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "call argument missing",
                 )))?;
-            let value = self.operand(argument, Context::Initialization)?;
-            let value = self.fit(value, parameter)?;
-            values.push(value.value);
+            if matches!(
+                self.graph.lower_type(parameter)?,
+                TypeView::Reference { .. }
+            ) {
+                values.push(self.bind_reference(argument, parameter, Context::Argument)?);
+            } else {
+                let value = self.operand(argument, Context::Argument)?;
+                let value = self.fit(value, parameter)?;
+                values.push(value.value);
+            }
+        }
+        if variadic {
+            for &argument in supplied.iter().skip(parameters.len()) {
+                values.push(self.operand(argument, Context::Argument)?.value);
+            }
         }
         let (callee, signature) = match target {
             CallTarget::Direct(entity) => {
@@ -499,16 +511,7 @@ impl Function<'_, '_, '_, '_> {
             self.discard(id)?;
             return self.zero(source);
         }
-        if self.graph.lower_expression(id)?.is_place {
-            return Err(Error::Missing("conditional lvalue address lowering"));
-        }
-        self.next_slot = self
-            .next_slot
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
-        let slot = self
-            .builder
-            .slot(&format!("cond__{}", self.next_slot), ty)?;
+        let slot = self.generated_slot("cond", ty)?;
         let then_name = self.block_name("cond_then")?;
         let else_name = self.block_name("cond_else")?;
         let end_name = self.block_name("cond_end")?;
@@ -540,6 +543,7 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Jump(end_block))?;
         }
         self.builder.block(&end_name)?;
+        self.conditional_slot = Some(slot);
         self.emit(
             I::Load(types::memory(self.graph, source)?, ty, slot),
             source,

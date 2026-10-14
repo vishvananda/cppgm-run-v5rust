@@ -24,9 +24,6 @@ pub(super) fn define(
     location: crate::support::source::SourceOffset,
 ) -> Result<(), Error> {
     let facts = graph.lower_variable(entity)?;
-    if matches!(graph.lower_type(facts.ty)?, TypeView::Reference) {
-        return Err(Error::Missing("global reference storage lowering"));
-    }
     let array = matches!(graph.lower_type(facts.ty)?, TypeView::Array { .. });
     let mut ty = if array {
         None
@@ -44,7 +41,20 @@ pub(super) fn define(
         }));
     }
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
-    let init = if array {
+    let init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
+        if facts.reference_temporary.is_some() {
+            GlobalInit::Address(
+                data::reference_temporary(program, symbols, graph, entity)?,
+                0,
+            )
+        } else {
+            let value = facts
+                .initializer
+                .ok_or(Error::Missing("dynamic global reference initialization"))?;
+            let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
+            GlobalInit::Address(symbol, offset)
+        }
+    } else if array {
         GlobalInit::Data(if initializer.is_some() {
             let image = graph
                 .lower_array_image(entity)
@@ -71,16 +81,7 @@ pub(super) fn define(
                 },
                 bits,
             )),
-            StaticValue::Address(entity, offset) => {
-                let target = if graph.lower_is_variable(entity) {
-                    symbols.variable_symbol(program, entity)?
-                } else {
-                    symbols.demand(entity);
-                    symbols.function_symbol(program, entity)?
-                };
-                GlobalInit::Address(target, offset)
-            }
-            value @ StaticValue::Literal(..) => {
+            value @ (StaticValue::Literal(..) | StaticValue::Address(..)) => {
                 let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
             }

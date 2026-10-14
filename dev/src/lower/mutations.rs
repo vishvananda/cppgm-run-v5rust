@@ -24,7 +24,10 @@ impl Function<'_, '_, '_, '_> {
                 let crate::sema::lowering::TypeView::Array { element, .. } =
                     self.graph.lower_type(self.graph.lower_expression(id)?.ty)?
                 else {
-                    return Err(Error::Missing("scalar literal place"));
+                    return Err(Error::Semantic(crate::sema::Error::Diagnostic {
+                        location: self.tree.expressions.get(id).location,
+                        message: "an invalid string literal",
+                    }));
                 };
                 super::data::string(
                     self.builder.program(),
@@ -44,16 +47,20 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Id(name) => {
                 let entity = self.graph.lower_name(name)?;
                 if let Some(&place) = self.locals.get(&entity) {
-                    Ok(place)
+                    self.reference_holder(place, self.graph.lower_entity_type(entity)?)
                 } else if !self.graph.lower_is_variable(entity) {
                     self.symbols.demand(entity);
                     self.symbols
                         .function_symbol(self.builder.program(), entity)
                         .map(Value::Symbol)
                 } else {
-                    self.symbols
-                        .variable_symbol(self.builder.program(), entity)
-                        .map(Value::Symbol)
+                    let symbol = self
+                        .symbols
+                        .variable_symbol(self.builder.program(), entity)?;
+                    self.reference_holder(
+                        Value::Symbol(symbol),
+                        self.graph.lower_entity_type(entity)?,
+                    )
                 }
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
@@ -94,6 +101,34 @@ impl Function<'_, '_, '_, '_> {
                 self.discard(left)?;
                 self.scalar_place(right)
             }
+            ExprKind::Cast { operand, .. } => self.reference_cast_place(id, operand),
+            ExprKind::Braced { .. } => Err(Error::Semantic(crate::sema::Error::Diagnostic {
+                location: self
+                    .tree
+                    .expressions
+                    .get(self.without_parentheses(id))
+                    .location,
+                message: "a glvalue outside the procedural lowering slice",
+            })),
+            ExprKind::FunctionalCast {
+                arguments, braced, ..
+            } => {
+                let operand = braced
+                    .or_else(|| self.tree.expr_lists.get(arguments).first().copied())
+                    .ok_or(Error::Missing("empty functional place"))?;
+                self.scalar_place(operand)
+            }
+            ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {
+                let operand = self
+                    .tree
+                    .expr_lists
+                    .get(arguments)
+                    .first()
+                    .copied()
+                    .ok_or(Error::Missing("empty functional place"))?;
+                self.scalar_place(operand)
+            }
+            ExprKind::Call { callee, arguments } => Ok(self.call(id, callee, arguments)?.value),
             _ => Err(Error::Missing("reference and aggregate place lowering")),
         }
     }

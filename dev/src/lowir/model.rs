@@ -80,6 +80,7 @@ impl Names {
 pub(crate) struct Program {
     pub(crate) names: Names,
     functions: Vec<Function>,
+    streamed_functions: HashSet<SymbolId>,
     symbols: Vec<Symbol>,
     index: HashMap<NameId, SymbolId>,
     signatures: Vec<Signature>,
@@ -227,10 +228,33 @@ impl Program {
             .last()
             .ok_or(Error::Construction("missing completed definition".into()))?;
         super::writer::write_definition(self, function, output).map_err(Error::Output)?;
+        if let Some(symbol) = self.find_symbol(function.name) {
+            self.streamed_functions.insert(symbol);
+        }
         if let Some(function) = self.functions.last_mut() {
             function.body = None;
         }
         Ok(())
+    }
+    pub(crate) fn function_defined(&self, symbol: SymbolId) -> bool {
+        self.streamed_functions.contains(&symbol)
+            || self
+                .function(self.symbol(symbol))
+                .is_some_and(|f| f.body.is_some())
+    }
+    pub(crate) fn function_declarations(&self) -> impl Iterator<Item = &Function> {
+        self.symbols
+            .iter()
+            .enumerate()
+            .filter_map(|(index, symbol)| {
+                let SymbolDetail::Function(id) = symbol.detail else {
+                    return None;
+                };
+                let symbol_id = SymbolId(u32::try_from(index).ok()?);
+                let function = &self.functions[id.0 as usize];
+                (function.body.is_none() && !self.streamed_functions.contains(&symbol_id))
+                    .then_some(function)
+            })
     }
     pub(crate) fn functions(&self) -> &[Function] {
         &self.functions
@@ -617,6 +641,32 @@ impl Body {
         let id = SlotId(u32::try_from(self.slots.len()).map_err(|_| Error::Limit)?);
         self.slots.push(Slot { name, ty });
         self.slot_index.insert(name, id);
+        Ok(())
+    }
+    pub(crate) fn constructed_slot(&mut self, ty: Type) -> Result<Value, Error> {
+        let id = SlotId(u32::try_from(self.slots.len()).map_err(|_| Error::Limit)?);
+        self.slots.push(Slot {
+            name: NameId(0),
+            ty,
+        });
+        Ok(Value::Slot(id))
+    }
+    pub(crate) fn name_constructed_slots(&mut self, names: &[NameId]) -> Result<(), Error> {
+        if self.slots.len() != names.len() {
+            return Err(Error::Construction(
+                "slot names do not match storage".into(),
+            ));
+        }
+        self.slot_index.clear();
+        for (index, (slot, &name)) in self.slots.iter_mut().zip(names).enumerate() {
+            slot.name = name;
+            let id = SlotId(u32::try_from(index).map_err(|_| Error::Limit)?);
+            if self.slot_index.insert(name, id).is_some() {
+                return Err(Error::Construction(
+                    "duplicate constructed slot name".into(),
+                ));
+            }
+        }
         Ok(())
     }
     pub(crate) fn append(
