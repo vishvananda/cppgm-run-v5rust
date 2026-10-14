@@ -450,10 +450,9 @@ impl Analyzer<'_> {
         };
         if filter == Filter::Ordinary
             && found.binding.is_none()
-            && key == self.builtin_names.abort
             && prefix.is_none_or(|prefix| prefix == self.graph.global)
+            && let Some(binding) = self.ensure_builtin(key)?
         {
-            let binding = self.ensure_abort()?;
             found.binding = Some(binding);
             found.functions.push(binding);
         }

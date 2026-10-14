@@ -733,9 +733,9 @@ impl Analyzer<'_> {
         if kind == BindingKind::Function
             && home == self.graph.global
             && head.is_none()
-            && name.identifier() == Some(self.builtin_names.abort)
+            && let Some(key) = name.identifier()
         {
-            self.ensure_abort()?;
+            self.ensure_builtin(key)?;
         }
         if kind == BindingKind::Variable
             && self.graph.scope(home).guarded

@@ -1,0 +1,73 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition copy function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void
+    parameter dst pointer to void
+    parameter src pointer to const void
+    parameter n unsigned long int
+    compound-statement
+      return-statement
+        call-expression prvalue pointer to void
+          callee __builtin_memcpy function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void
+          id-expression lvalue pointer to void dst
+          id-expression lvalue pointer to const void src
+          id-expression lvalue unsigned long int n
+  function-definition move function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void
+    parameter dst pointer to void
+    parameter src pointer to const void
+    parameter n unsigned long int
+    compound-statement
+      return-statement
+        call-expression prvalue pointer to void
+          callee __builtin_memmove function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void
+          id-expression lvalue pointer to void dst
+          id-expression lvalue pointer to const void src
+          id-expression lvalue unsigned long int n
+  function-definition fill function of (pointer to void, int, unsigned long int) returning pointer to void
+    parameter dst pointer to void
+    parameter value int
+    parameter n unsigned long int
+    compound-statement
+      return-statement
+        call-expression prvalue pointer to void
+          callee __builtin_memset function of (pointer to void, int, unsigned long int) returning pointer to void
+          id-expression lvalue pointer to void dst
+          id-expression lvalue int value
+          id-expression lvalue unsigned long int n
+  function-definition compare function of (pointer to const void, pointer to const void, unsigned long int) returning int
+    parameter a pointer to const void
+    parameter b pointer to const void
+    parameter n unsigned long int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee __builtin_memcmp function of (pointer to const void, pointer to const void, unsigned long int) returning int
+          id-expression lvalue pointer to const void a
+          id-expression lvalue pointer to const void b
+          id-expression lvalue unsigned long int n
+  function-definition length function of (pointer to const char) returning unsigned long int
+    parameter text pointer to const char
+    compound-statement
+      return-statement
+        call-expression prvalue unsigned long int
+          callee __builtin_strlen function of (pointer to const char) returning unsigned long int
+          id-expression lvalue pointer to const char text
+  variable copy_pointer pointer to function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void
+    id-expression lvalue function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void __builtin_memcpy
+  function-definition again function of (pointer to void, pointer to const void) returning pointer to void
+    parameter dst pointer to void
+    parameter src pointer to const void
+    compound-statement
+      return-statement
+        call-expression prvalue pointer to void
+          id-expression lvalue pointer to function of (pointer to void, pointer to const void, unsigned long int) returning pointer to void copy_pointer
+          id-expression lvalue pointer to void dst
+          id-expression lvalue pointer to const void src
+          literal prvalue int 4
+  function-definition query function of (pointer to void, pointer to const void) returning int
+    parameter dst pointer to void
+    parameter src pointer to const void
+    compound-statement
+      return-statement
+        literal prvalue bool 1
+end translation unit

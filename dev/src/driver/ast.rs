@@ -186,6 +186,55 @@ mod tests {
     use crate::support::stack::StackBudget;
 
     #[test]
+    fn memory_builtin_boundaries_survive_frontends_without_leaking_into_indirect_types() {
+        let mut output = LowIrOutput::default();
+        for (index, source) in [
+            b"inline void unused(char*d,const char*s){__builtin_memmove(d,s,4);}void copy(char*d,const char*s){__builtin_memcpy(d,s,4);}unsigned long length(const char*s){return __builtin_strlen(s);}".as_slice(),
+            b"void again(char*d,const char*s){__builtin_memcpy(d,s,4);}void*(*p)(void*,const void*,unsigned long)=__builtin_memcpy;void*indirect(void*d,const void*s){return p(d,s,4);}".as_slice(),
+        ].into_iter().enumerate() {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            emit_unit(&source, b"memory-boundaries", &PredefinedValues::default(),
+                Destination::LowIr(&mut output), index + 1, StackBudget::default(), EmitMode::LowIr).unwrap();
+        }
+        let program = &output.output.program;
+        let declarations: Vec<_> = program
+            .functions()
+            .iter()
+            .filter(|f| program.names.get(f.name) == "__builtin_memcpy")
+            .collect();
+        assert_eq!(declarations.len(), 1, "cross-unit builtin symbols coalesce");
+        let signature = program.signature(declarations[0].signature);
+        assert!(signature.parameters[0].no_alias && signature.parameters[1].no_alias);
+        assert!(
+            signature
+                .parameters
+                .iter()
+                .all(|p| p.pass.is_none() && p.object_bytes == 0)
+        );
+        assert!(matches!(
+            signature.boundary.unwind,
+            crate::lowir::model::Unwind::No
+        ));
+        assert_eq!(
+            program.names.get(declarations[0].metadata.object.unwrap()),
+            "cppgm_builtin_memcpy"
+        );
+        let mut text = Vec::new();
+        output.write(&mut text).unwrap();
+        let text = std::str::from_utf8(&text).unwrap();
+        assert!(
+            !text.contains("__builtin_memmove"),
+            "unused inline bodies introduce no emission demand"
+        );
+        assert!(text.contains("effects=readonly"));
+        let indirect = text.lines().find(|line| line.contains(" as (")).unwrap();
+        assert!(
+            !indirect.contains("alias=noalias") && !indirect.contains("unwind=no"),
+            "entity facts must not enter a canonical pointer signature"
+        );
+    }
+
+    #[test]
     fn integral_address_images_retain_their_storage_type_after_frontend_release() {
         // The frozen frontend emits this i64 address even though its text
         // reader accepts only ptr address items. Preserve that producer fact.

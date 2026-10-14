@@ -1,5 +1,6 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
+pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
@@ -82,6 +83,7 @@ pub(crate) struct FunctionFacts {
     pub emission: Emission,
     pub nothrow: bool,
     pub allocation: Option<Allocation>,
+    pub builtin: Option<BuiltinFunction>,
     pub definition: Option<ast::DeclId>,
 }
 #[derive(Clone, Copy)]
@@ -257,6 +259,7 @@ impl Graph {
                 None
             },
             definition: entity.function_definition,
+            builtin: entity.builtin,
         })
     }
     pub(crate) fn lower_namespace(

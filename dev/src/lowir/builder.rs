@@ -81,6 +81,7 @@ impl<'a> FunctionBuilder<'a> {
         index: usize,
         pass: Option<super::vocabulary::Pass>,
         object_bytes: u64,
+        no_alias: bool,
     ) -> Result<(), Error> {
         let parameter = self
             .program
@@ -90,6 +91,7 @@ impl<'a> FunctionBuilder<'a> {
             .ok_or(Error::Limit)?;
         parameter.pass = pass;
         parameter.object_bytes = object_bytes;
+        parameter.no_alias = no_alias;
         Ok(())
     }
     pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {

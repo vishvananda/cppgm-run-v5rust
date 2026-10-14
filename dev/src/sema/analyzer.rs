@@ -105,6 +105,21 @@ impl<'tree> Analyzer<'tree> {
             constant_p: cursor
                 .intern_name(b"__builtin_constant_p")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memcpy: cursor
+                .intern_name(b"__builtin_memcpy")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memmove: cursor
+                .intern_name(b"__builtin_memmove")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memcmp: cursor
+                .intern_name(b"__builtin_memcmp")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memset: cursor
+                .intern_name(b"__builtin_memset")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            strlen: cursor
+                .intern_name(b"__builtin_strlen")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
         };
         let mut analyzer = Self {
             literal_bytes: &cursor.spellings,

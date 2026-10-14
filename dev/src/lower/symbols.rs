@@ -513,7 +513,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name = self.name(entity)?;
         let facts = self.graph.lower_function(entity)?;
         let metadata = self.metadata(program, entity, &name)?;
-        let object = if facts.c_linkage && !facts.internal
+        let object = if facts.builtin.is_some() {
+            metadata.object.or(Some(program.names.intern(&name)?))
+        } else if facts.c_linkage && !facts.internal
             || metadata.role == Some(crate::lowir::vocabulary::Role::Entry)
         {
             Some(program.names.intern(&name)?)
@@ -546,7 +548,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
         }
         let facts = self.graph.lower_function(entity)?;
-        let own = self.function_label(facts.name, facts.label)?;
+        let own = match facts.builtin {
+            Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
+            Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
+            _ => self.function_label(facts.name, facts.label)?,
+        };
         let mut components = vec![own.as_str()];
         if !facts.c_linkage || facts.internal {
             let mut scope = facts.home;
@@ -704,6 +710,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             ..Metadata::default()
         };
+        if let Some(builtin) = facts.builtin {
+            use crate::sema::lowering::BuiltinFunction as B;
+            match builtin {
+                B::Memcpy | B::Memmove | B::Strlen => {
+                    let object = match builtin {
+                        B::Memcpy => "cppgm_builtin_memcpy",
+                        B::Memmove => "cppgm_builtin_memmove",
+                        _ => "cppgm_builtin_strlen",
+                    };
+                    metadata.object = Some(program.names.intern(object)?);
+                }
+                B::Memcmp | B::Memset | B::Abort => metadata.linkage = Linkage::C,
+            }
+            return Ok(metadata);
+        }
         if let Some(allocation) = facts.allocation {
             if allocation.array && facts.definition.is_none() {
                 return Err(Error::Missing("array allocation runtime forwarding"));

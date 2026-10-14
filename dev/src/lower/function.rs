@@ -113,9 +113,9 @@ pub(super) fn lower<'a>(
     builder.metadata(metadata);
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
         let (pass, bytes) = reference_boundary(graph, ty)?;
-        builder.parameter_boundary(index, pass, bytes)?;
+        builder.parameter_boundary(index, pass, bytes, parameter_no_alias(facts.builtin, index))?;
     }
-    builder.boundary(Boundary {
+    let mut boundary = Boundary {
         arity: if variadic {
             Arity::Variadic
         } else {
@@ -127,7 +127,9 @@ pub(super) fn lower<'a>(
             Unwind::Default
         },
         ..Boundary::default()
-    });
+    };
+    builtin_boundary(&mut boundary, facts.builtin);
+    builder.boundary(boundary);
     builder.block("entry")?;
     let marker = 0u8;
     let mut function = Function {
@@ -405,6 +407,28 @@ pub(super) fn reference_boundary(
     Ok((Some(crate::lowir::vocabulary::Pass::ByAddress), bytes))
 }
 
+fn parameter_no_alias(
+    builtin: Option<crate::sema::lowering::BuiltinFunction>,
+    index: usize,
+) -> bool {
+    matches!(
+        builtin,
+        Some(crate::sema::lowering::BuiltinFunction::Memcpy)
+    ) && index < 2
+}
+
+fn builtin_boundary(
+    boundary: &mut Boundary,
+    builtin: Option<crate::sema::lowering::BuiltinFunction>,
+) {
+    if matches!(
+        builtin,
+        Some(crate::sema::lowering::BuiltinFunction::Strlen)
+    ) {
+        boundary.effects = Some(crate::lowir::vocabulary::Effects::ReadOnly);
+    }
+}
+
 pub(super) fn declare(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
@@ -418,6 +442,11 @@ pub(super) fn declare(
     let facts = graph.lower_function(entity)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let signature = signature(program, graph, facts.ty, facts.nothrow)?;
+    let boundary = program.signature_mut(signature);
+    for (index, parameter) in boundary.parameters.iter_mut().enumerate() {
+        parameter.no_alias = parameter_no_alias(facts.builtin, index);
+    }
+    builtin_boundary(&mut boundary.boundary, facts.builtin);
     let metadata = symbols.metadata(program, entity, &name)?;
     let name = program.symbol(symbol).name;
     program.add(
