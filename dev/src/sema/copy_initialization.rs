@@ -278,24 +278,35 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.select_copy_initialization(class, facts, scope, location)
+            .map(|_| ())
+            .map_err(|error| match error {
+                Error::Diagnostic {
+                    message:
+                        "no viable function for the call"
+                        | "no constructor for the initialization"
+                        | "ambiguous call to overloaded function",
+                    ..
+                } => Error::at(
+                    location,
+                    "no unambiguous constructor initializes the object from the converted temporary",
+                ),
+                other => other,
+            })
+    }
+    pub(super) fn select_copy_initialization(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<CopySelection, Error> {
         let mut scratch = std::mem::take(&mut self.copy_scratch);
         let selected =
             self.select_elided_copy(class, facts, scope, true, location, &mut scratch.candidates);
         scratch.candidates.clear();
         self.copy_scratch = scratch;
-        selected.map(|_| ()).map_err(|error| match error {
-            Error::Diagnostic {
-                message:
-                    "no viable function for the call"
-                    | "no constructor for the initialization"
-                    | "ambiguous call to overloaded function",
-                ..
-            } => Error::at(
-                location,
-                "no unambiguous constructor initializes the object from the converted temporary",
-            ),
-            other => other,
-        })
+        selected
     }
     fn select_elided_copy(
         &mut self,

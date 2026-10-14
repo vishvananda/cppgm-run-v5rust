@@ -121,6 +121,28 @@ impl Analyzer<'_> {
                         != Explicitness::Explicit
             });
         if !offered {
+            if !converting
+                && let [argument] = args
+                && (!copy_list
+                    || !matches!(
+                        tree.expressions.get(*argument).kind,
+                        ast::ExprKind::Braced { .. }
+                    ))
+            {
+                // The frozen candidate set includes implicit copy/move members
+                // for this single-argument form, even when none is viable.
+                if matches!(
+                    tree.expressions.get(*argument).kind,
+                    ast::ExprKind::Braced { .. }
+                ) {
+                    return Err(Error::Missing(
+                        "implicit copy constructor list argument ranking",
+                    ));
+                }
+                let facts = self.graph.expression_facts.get(*argument)?;
+                self.select_copy_initialization(class, facts, scope, location)?;
+                return Err(Error::Missing("class list copy initialization"));
+            }
             return Err(Error::at(location, "no constructor for the initialization"));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);

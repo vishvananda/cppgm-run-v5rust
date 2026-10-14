@@ -98,14 +98,17 @@ impl Function<'_, '_, '_, '_> {
             let value = if facts.temporary.is_some() {
                 // bind_converted uses convert_implicit: this is not a literal
                 // written in the outer binding's conversion context.
-                self.convert(
-                    RValue {
-                        literal: false,
-                        ..value
-                    },
-                    target,
-                    context,
-                )?
+                let value = RValue {
+                    literal: false,
+                    ..value
+                };
+                if context != Context::Cast
+                    && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+                {
+                    self.adjust_base_pointer(value, target, offset, offset != 0)?
+                } else {
+                    self.convert(value, target, context)?
+                }
             } else {
                 value
             };
