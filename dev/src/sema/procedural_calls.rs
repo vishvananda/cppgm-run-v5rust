@@ -377,6 +377,14 @@ impl Analyzer<'_> {
                 }));
         }
         let mut facts = self.graph.expression_facts.get(id)?;
+        if facts.object.is_some()
+            && facts.functions.is_some()
+            && self.ordinary_function_operand(facts).is_none()
+        {
+            // The frozen implicit_sequence accepts only a lone static
+            // designation here; a bound overload set is not a value argument.
+            return Ok(None);
+        }
         let mut function = None;
         let overloaded =
             facts.functions.is_some() && self.ordinary_function_operand(facts).is_none();

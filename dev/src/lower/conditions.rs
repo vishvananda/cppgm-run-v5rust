@@ -15,6 +15,36 @@ use crate::{
     syntax::ast::{self, Condition, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    // Match the frozen address/value effect query for static member objects.
+    // Its semantic depth cap is independent of the native stack budget.
+    fn side_effect_free(&self, id: ast::ExprId, read: bool, depth: u32) -> Result<bool, Error> {
+        let id = self.without_parentheses(id);
+        if depth > 64 || read && self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 != 0 {
+            return Ok(false);
+        }
+        Ok(match self.tree.expressions.get(id).kind {
+            ExprKind::Id(_) | ExprKind::Literal(_) | ExprKind::Keyword(_) => true,
+            ExprKind::Member { base, op, .. } => {
+                self.side_effect_free(base, op.token.as_punctuator() == Some(P::Arrow), depth + 1)?
+            }
+            ExprKind::Subscript { base, index } => {
+                let array = matches!(
+                    self.graph
+                        .lower_type(self.graph.lower_expression(base)?.ty)?,
+                    crate::sema::lowering::TypeView::Array { .. }
+                );
+                self.side_effect_free(base, !array, depth + 1)?
+                    && self.side_effect_free(index, true, depth + 1)?
+            }
+            _ => false,
+        })
+    }
+    pub(super) fn member_object(&mut self, base: ast::ExprId, arrow: bool) -> Result<(), Error> {
+        if !self.side_effect_free(base, arrow, 0)? {
+            self.discard(base)?;
+        }
+        Ok(())
+    }
     pub(super) fn conditional_place(
         &mut self,
         id: ast::ExprId,

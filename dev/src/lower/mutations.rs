@@ -51,6 +51,14 @@ impl Function<'_, '_, '_, '_> {
             }
             ExprKind::Subscript { base, index } => self.subscript(id, base, index),
             ExprKind::Member { base, op, .. } => {
+                if let Some(function) = self.graph.lower_designated_function(id)? {
+                    self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+                    self.symbols.demand(function);
+                    return self
+                        .symbols
+                        .function_symbol(self.builder.program(), function)
+                        .map(Value::Symbol);
+                }
                 let (entity, offset) = self.graph.lower_member(id)?;
                 let source = self.graph.lower_expression(id)?.ty;
                 let place = if let Some(offset) = offset {
@@ -77,7 +85,7 @@ impl Function<'_, '_, '_, '_> {
                     }
                     place
                 } else {
-                    self.discard(base)?;
+                    self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
                     Value::Symbol(
                         self.symbols
                             .variable_symbol(self.builder.program(), entity)?,
@@ -91,6 +99,13 @@ impl Function<'_, '_, '_, '_> {
                 else_expr,
             } => self.conditional_place(id, condition, then_expr, else_expr),
             ExprKind::Id(name) => {
+                if let Some(function) = self.graph.lower_designated_function(id)? {
+                    self.symbols.demand(function);
+                    return self
+                        .symbols
+                        .function_symbol(self.builder.program(), function)
+                        .map(Value::Symbol);
+                }
                 if matches!(
                     self.graph.lower_object_source(id)?,
                     Some(crate::sema::lowering::ObjectSource::Implicit)

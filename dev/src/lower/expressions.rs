@@ -122,8 +122,8 @@ impl Function<'_, '_, '_, '_> {
             return self.emit(I::Const(ty, value), source);
         }
         if let Some(bits) = facts.folded {
-            if let ExprKind::Member { base, .. } = self.tree.expressions.get(id).kind {
-                self.discard(base)?;
+            if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+                self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
             }
             return Ok(RValue {
                 value: self.builder.integer(u128::from(bits))?,
@@ -504,12 +504,7 @@ impl Function<'_, '_, '_, '_> {
                 arrow,
             }) = object
             {
-                // C++ member_object materializes the object address even for a static call.
-                if arrow {
-                    self.operand(expression, Context::Operand)?;
-                } else {
-                    self.address(expression)?;
-                }
+                self.member_object(expression, arrow)?;
             }
         }
         for (index, &parameter) in parameters.iter().enumerate() {

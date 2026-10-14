@@ -202,6 +202,16 @@ impl Graph {
             .object
             .map(|object| object.source))
     }
+    pub(crate) fn lower_designated_function(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<EntityId>, Error> {
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .function
+            .map(|binding| self.binding(binding).entity))
+    }
     fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Only a function type introduces the shared component DAG worklist.

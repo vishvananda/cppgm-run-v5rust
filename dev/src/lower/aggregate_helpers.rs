@@ -105,6 +105,19 @@ impl Function<'_, '_, '_, '_> {
         for &member in members {
             let ty = self.graph.lower_entity_type(member)?;
             let present = values.is_some_and(|values| *next < values.len());
+            if let TypeView::Array { element, .. } = self.graph.lower_type(ty)?
+                && let Some(id) = values.and_then(|values| values.get(*next)).copied()
+                && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
+                && types::character(self.graph, element)?
+                && matches!(
+                    self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
+                    TypeView::Array { .. }
+                )
+            {
+                // A bare string initializes the member at its final address;
+                // the helper form would introduce an extra array transfer.
+                return Ok(None);
+            }
             if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
                 if !present
                     && (!values.is_some_and(<[ast::ExprId]>::is_empty)

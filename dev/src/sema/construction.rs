@@ -211,7 +211,19 @@ impl Analyzer<'_> {
             ) {
                 active.remove(current);
                 work.pop();
-            } else if self.graph.entity(*current).user_constructor.is_some() {
+            } else if *next == 0
+                && self.graph.entity(*current).user_constructor.is_some()
+                && !matches!(
+                    self.graph
+                        .entity(
+                            self.graph
+                                .binding(self.default_constructor_binding(*current, plan_location)?)
+                                .entity
+                        )
+                        .special_definition,
+                    Some(SpecialDefinition::Defaulted { .. })
+                )
+            {
                 // A user-provided declaration does not ask for its bases'
                 // default constructors. Written/defaulted plans own that demand.
                 self.select_default_constructor(*current, plan_location)?;
@@ -279,35 +291,10 @@ impl Analyzer<'_> {
             ConstructorState::NotStarted => (),
         }
         if self.graph.entity(class).user_constructor.is_some() {
-            let mut selected = None;
-            let mut templates = false;
-            for &binding in &self.graph.entity(class).declared_constructors {
-                let entity = self.graph.entity(self.graph.binding(binding).entity);
-                let count = self.graph.types.function_parameter_count(
-                    entity
-                        .ty
-                        .ok_or(Error::Invariant("constructor without type"))?,
-                )?;
-                if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none)) {
-                    continue;
-                }
-                if entity.template_head.is_some() {
-                    templates = true;
-                    continue;
-                }
-                if selected.replace(binding).is_some() {
-                    return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
-                }
-            }
-            if let Some(binding) = selected {
-                let id = self.declared_constructor_plan(binding)?;
-                self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
-                return Ok(id);
-            }
-            if templates {
-                return Err(Error::Missing("default constructor template deduction"));
-            }
-            return Err(Error::at(location, "no default constructor for the class"));
+            let binding = self.default_constructor_binding(class, location)?;
+            let id = self.declared_constructor_plan(binding)?;
+            self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
+            return Ok(id);
         }
         if !self.graph.entity(class).complete {
             return Err(Error::Invariant("constructor of an incomplete class"));
@@ -322,6 +309,51 @@ impl Analyzer<'_> {
                 ConstructorState::Ready(id)
             });
         result
+    }
+
+    fn default_constructor_binding(
+        &self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        let mut selected = None;
+        let mut templates = false;
+        for &binding in &self.graph.entity(class).declared_constructors {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            let count = self.graph.types.function_parameter_count(
+                entity
+                    .ty
+                    .ok_or(Error::Invariant("constructor without type"))?,
+            )?;
+            if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none)) {
+                continue;
+            }
+            if entity.template_head.is_some() {
+                templates = true;
+                continue;
+            }
+            if selected.replace(binding).is_some() {
+                return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
+            }
+        }
+        if selected.is_none() && templates {
+            return Err(Error::Missing("default constructor template deduction"));
+        }
+        selected.ok_or_else(|| Error::at(location, "no default constructor for the class"))
+    }
+
+    fn prepare_defaulted_subobjects(&mut self, class: EntityId) -> Result<(), Error> {
+        for index in 0..self.graph.entity(class).bases.len() {
+            let child = self.graph.entity(class).bases[index].class;
+            self.default_constructor(child, SourceOffset(0))?;
+        }
+        for index in 0..self.graph.entity(class).members.len() {
+            let member = self.graph.entity(class).members[index];
+            if let Some(child) = self.default_member_dependency(member)? {
+                self.default_constructor(child, SourceOffset(0))?;
+            }
+        }
+        Ok(())
     }
 
     fn scalar_constructor_facts(
@@ -468,6 +500,22 @@ impl Analyzer<'_> {
             Cv::default(),
         )?;
         let mut nothrow = true;
+        for &id in bases.iter().chain(subobjects.iter().map(|(_, id)| id)) {
+            let child = self.graph.constructors.get(id);
+            if let Some(binding) = child.binding
+                && self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .constructor_exceptions
+                    == ConstructorExceptionSource::Declared
+            {
+                // Even a trivial subobject constructor contributes its declared
+                // specification to the enclosing implicit/defaulted plan.
+                nothrow &= !self.function_may_throw(self.graph.binding(binding).entity)?;
+            } else {
+                nothrow &= child.nothrow;
+            }
+        }
         for &(_, source) in &plans {
             if let Some(source) = source {
                 nothrow &= !self.initializer_may_throw(source)?;
@@ -620,6 +668,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let binding = self.graph.function_origin(function)?;
+        self.prepare_defaulted_subobjects(class)?;
         let id = self.scalar_constructor_facts(class, Some(binding))?;
         if self.graph.constructors.get(id).deleted {
             return Err(Error::at(
@@ -812,7 +861,7 @@ impl Analyzer<'_> {
                 return Err(Error::Missing("constructor initializer pack expansion"));
             }
             let member = self.constructor_member_target(initializer, owner, scope, class)?;
-            if written.insert(member, initializer.initializer).is_some() {
+            if written.insert(member, initializer).is_some() {
                 return Err(Error::at(
                     initializer.location,
                     "a member or base initialized twice",
@@ -820,7 +869,15 @@ impl Analyzer<'_> {
             }
         }
         if self.graph.entity(class).key == Keyword::Union && written.len() > 1 {
-            let second = self.tree.mem_initializers.get(body.initializers)[1].location;
+            let second = self
+                .graph
+                .entity(class)
+                .members
+                .iter()
+                .filter_map(|member| written.get(member))
+                .nth(1)
+                .ok_or(Error::Invariant("union initializer without member"))?
+                .location;
             return Err(Error::at(
                 second,
                 "a union's constructor initializes several members",
@@ -835,14 +892,18 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("member without type"))?;
             let variant = self.graph.entity(class).key == Keyword::Union;
-            let source = written.get(&member).copied().or_else(|| {
-                if variant && !written.is_empty() {
-                    None
-                } else {
-                    self.graph.entity(member).member_initializer
-                }
-            });
-            if let Some(initializer) = written.get(&member).copied() {
+            let source = written
+                .get(&member)
+                .map(|written| written.initializer)
+                .or_else(|| {
+                    if variant && !written.is_empty() {
+                        None
+                    } else {
+                        self.graph.entity(member).member_initializer
+                    }
+                });
+            if let Some(written) = written.get(&member) {
+                let initializer = written.initializer;
                 self.object_initializer(initializer, scope, ty, initializer.location)?;
             } else if source.is_none() && !variant {
                 let mut object = ty;
