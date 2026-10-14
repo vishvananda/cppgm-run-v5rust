@@ -1,5 +1,151 @@
 # PA9 port ledger
 
+## Full-stage acceptance audit — 2026-10-14
+
+Stage base: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
+Entry HEAD: `38cd479`, clean. Reviewed implementation:
+`32503ff29f25061f37808d4e08287e5f09b93c4f`, including the prior ABI
+increments `8f54cbd`, `b7157ce`, `3750b85` and `624273b`.
+The preceding goal work was **progress**: its evidence identified the oracle
+reader/handout discrepancy, followed by the reviewed baseline refresh.
+At entry no interrupted compiler/checker process remained live.
+
+This audit supersedes the historical acceptance gaps below. The frozen oracle
+is now cppgm-extended `ee3596b2df2dadf70d7d2028a6a32d18e1923761`.
+Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the complete PA9 handout,
+rust-clone-plan.md, this ledger and source-map.tsv. Consulted the current
+read-only C++ tool, fact reader/definitions/case interface, graph, encoder,
+vocabulary and statistics owners directly. The only ABI implementation change
+between the earlier audited C++ baseline and this baseline is the dependent
+`member` production accepting trailing template-argument references; the
+retained C++ diff and source hashes identify that change.
+
+### Findings and completeness
+
+- Ported `member <owner> <flag> <name> [<argument-ref>...]` with C++ operand
+  order: compact owner, boolean, source-name interning, then left-to-right
+  argument resolution. Resolve each argument in a local vector before
+  publishing graph edges, so nested forward demands cannot overwrite an
+  enclosing list. Existing typed `ScopedMember` nodes and encoder use the
+  argument slice directly; no fact text is reparsed. The four previously
+  failing protected IDs now pass: `500-dependent-member-template-call.t`,
+  `500-forward-member-template-arguments.t`,
+  `500-qualified-member-template-expression.t` and
+  `500-reject-member-template-nonargument.t`, all under `tests/abi/`.
+- Supplemental byte-input review found six diagnostic mismatches outside the
+  fixed fixtures: C++ prints `exception::what()` as NUL-terminated text;
+  Rust printed bytes after the first NUL. The tool's error-output boundary
+  now applies the same termination. Parser facts and successful source-name
+  bytes retain their full spelling. Added required
+  `tests/abi/100-reject-nul-diagnostic.t` to the original executed PA9 course
+  lane; its newly added reference describes rejection with an empty output.
+  Unknown forms, flags, binders, qualified names, integer errors and function
+  records all match in the six original failure probes after the fix.
+- Verified the already-reviewed protected allocation measurement correction
+  using current receipts: `peak_graph_bytes` reports real Rust storage and
+  is qualified only on recognized statistics lines. Deterministic graph
+  nodes, work counts, streams and output files remain exact. No allocation
+  size is fabricated, no oracle/reference/protected policy was edited.
+
+| C++ responsibility | Rust owner and reviewed behavior |
+| --- | --- |
+| `abimangle.cpp` | `dev/bin/abimangle.rs`, `driver/abimangle.rs`: argv bytes/help scan and option precedence; output creation before input; file/error lifetimes, flush diagnostics, NUL exception emission and successful-only statistics. |
+| `abi_fact_reader.cpp`, `abi_fact_case.h` | `abi/facts.rs`, `fact_functions.rs`, `fact_contexts.rs`: streaming cases/file order, whitespace/comments, duplicate/incomplete precedence, binder indexing, explicit resolving state/cycle failures, all twelve target words and function records. |
+| `abi_fact_definitions.cpp` | `fact_types.rs`, `fact_expressions.rs`, `fact_functions.rs`, `fact_contexts.rs`: every standalone type/argument/expression/context/entity production, arities and ordered errors; new member-template arguments, forward lists, numeric bounds and flags. |
+| `abi_graph.{h,cpp}` | `abi/graph.rs`: immutable canonical typed nodes, flat owned edge/text pools, checked spans/IDs, complete intern keys including owner/qualifiers/bounds/values/argument lists, canonical byte-sorted tags and merged cv. |
+| `abi_encoder.{h,cpp}` | `abi/encoder.rs`: all standalone name/type/argument/expression/entity/special productions; per-name dense substitution slots and base-36 order; iterative prefix/modifier chains; local whole-entity discriminators and shared context dictionary; constructor/conversion exclusions and signed/virtual thunk offsets. |
+| `abi_mangle.h`, scaffold vocabulary | `abi/vocabulary.rs` and graph/fact owners: builtin widths/codes/signedness, terminals and operand-count choices, operation shape checks, standard substitutions and qualifier order. |
+| `abi_stats.h` | `abi/statistics.rs`, reader/graph/encoder/driver: printed fields/order, actual work/node/source/output counters, real storage/time/RSS observations. |
+
+Completeness follows from reviewing every reachable standalone reader
+production against its typed graph and encoding path, plus control-flow,
+error/numeric/order/byte probes; fixture counts alone are insufficient.
+The target dispatch covers the complete recognized target set: its status-86
+sentinel has no path from PA9 input. No due standalone behavior remains
+unported or delegated. All candidate naming work runs in Rust; the C++ tool
+only supplies differential observations. Earlier-stage C++ LowIR execution
+retains the handout's documented evaluation role.
+
+Architecture review: one active case owns immutable text and borrowed word
+slices; definitions resolve once with Unstarted/InProgress/Complete state.
+No speculative C++ parser or unbounded parser transaction is introduced by
+this adapter. Published graph keys include every encoding-significant field
+and ordered edge. Hash collisions compare complete facts at construction;
+substitution is ID lookup, independent of hash iteration. Graph capacity is
+reused across cases, contents reset; binder caches die per case and encoder
+scratch dies per name. Target integers use explicit wrapping/bit conversions
+and checked magnitude/index/span operations. The encoder consumes typed
+facts only. There is no unsafe code, new dependency, phase subprocess,
+environment read under dev/src, fixture tailoring, text transport, blanket
+allowance or mechanical split. Current ABI/tool maxima are 822 file code
+lines, 131 function/closure code lines and nesting 5; graph/vocabulary roles
+keep their stricter caps (`source-shape.json`). Full audit: 162 files, zero
+findings.
+
+Compiler-only APIs that the standalone reader cannot construct remain
+explicitly partial overall in source-map.tsv: implicit/hidden tag derivation,
+automatic abbreviations, data-member closure prefixes, unnamed/decomposition
+names, general template parameter heads, advanced expression/literal/array
+forms and TLS-init/guard targets. These belong to subsequent source-language
+producer milestones; PA9's handout explicitly scopes acceptance to normalized
+standalone facts. Next dependency boundary: **PA10**, consuming the shared typed
+ABI encoder for compiler-owned LowIR symbols. PA33's implementation-wide census
+and release/debug compiler lanes, and PA34's full C++ object/tool fixed point,
+remain their owning milestones. Existing optimizer/backend policy is preserved;
+PA35 optimization targets are excluded.
+
+### Validation evidence
+
+Evidence root: `/home/vishvananda/work/private/v5rust/artifacts/pa9-full-audit-20261013/`.
+Final release `abimangle` SHA-256:
+`8e15e9b9782b5ac7f7b917e2a4c93e9f015a1bb8bcd600989a75b42a277ecbfb`.
+`source-hashes.json` records both implementations; `abi-ownership.json` records all 13 ABI C++ file responsibilities and their Rust owners; `gate-snapshot/` retains
+results, raw per-case receipts, course outputs/counts and stack qualifications.
+`handoff.json` records implementation/audit commit hashes and clean status.
+Supplemental scratch was archived after execution; receipt arguments retain
+the original checkout artifact paths. Generated evidence is outside Git.
+
+| Command/evidence | Result |
+| --- | --- |
+| `make build` | PASS, locked optimized workspace, 18.64 s; `build-final.log`. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py stage pa9` (`make test-pa9`) | PASS **123/123** protected fixed identities, no removal or weakening; `stage-final.log`, `gate-snapshot/results/pa9.json`. |
+| `python3 /home/vishvananda/work/v5rust-control/clone_check.py course pa9` (`make course-pa9`) | PASS **125/125**, original full course target plus both owning regressions; exit 0, no failure marker; `course-final.log`, `gate-snapshot/course/pa9/test/course-result.json`, `counts.txt`. |
+| Protected `clone_check.py prior pa9` | PASS **866/866** fixed cases: PA1 58, PA2 26, PA3 20, PA4 106, PA5 196, PA6 121, PA7 214, PA8 125; every original full course suite passes. `prior-final.log`, `stage-summary.json`, retained per-stage case/course receipts. |
+| `make lint` / protected `clone_quality.py` | PASS, rustfmt, strict all/pedantic Clippy, all targets/features, debug/release tests (202 library tests each), layout/file checks; `lint-final.log`. |
+| `make audit-rust` | PASS, 162 files, zero findings; `audit-final.log`. |
+| Protected `clone_check.py preflight pa9` / `preserve pa9` | PASS, frozen oracle/inputs/routing intact, **119/119** previously passing identities retained; `preflight.log`, `preserve.log`. |
+| Supplemental names / expressions / contexts | **82/82**, **126/126**, **119/119** exact matches; scripts, inputs, logs and traces in matching subdirectories. Includes canonical/distinct substitutions, forward/cyclic demand, local discriminator boundaries and supported nested contexts. |
+| Supplemental member grammar and byte diagnostics | **178/178** exact matches, with stats; `member-probes.py`, `member-final.log`, `member-summary.json` and `member.trace.jsonl`. Includes argument packs/values/expressions, equivalent/distinct keys, nested forward lists, both decltype variants, owner/flag/argument failure precedence and all six NUL findings. Initial failures remain in `member-probes.log` and raw mismatches. |
+| Full-input grammar/error mutations | **4,050/4,050** exact matches; `mutations.py`, `mutations-final.log`, summary/trace. No status 86, panic, signal, timeout or output mismatch. |
+| `--stats` on every course input | **125/125** protected matches, no non-resource difference; `stats-probes.py`, `stats-final.log`, `stats-summary.json`, raw statistics/trace. |
+| CLI/I/O and device output boundaries | **8/8** protected matches plus direct empty-output and small/large `/dev/full` matches; `io-reviewed.py`, `io-final.log`, `empty-output.py`, `empty-output.json`, trace and direct raw streams. Direct device/empty-path runs retain the documented adapter limitations; these do not waive a production mismatch. |
+
+Every supported audit probe uses the protected adapter's receipt `match`;
+no exhaustion cutoff or diagnostic location is calibrated. Supported PA9
+scaling/context inputs succeed exactly. The final gates and supported probes need no protected stack
+qualification (`stack-qualifications.json` records zero); raw receipts preserve
+the adapter policy; successful larger-stack equality is the criterion,
+not native exhaustion location. Failing case IDs at handoff: **none**.
+
+### Resource observations
+
+Fixed source/binary/output digests, A/A oracle warmups, paired ABBA timing
+blocks, raw counters and `/usr/bin/time` RSS are retained in `scaling.py`,
+`scaling.json`, `member-scaling.py`, `member-scaling.json` and traces.
+All **12/12** protected workload comparisons and **96/96** measured invocations
+produce identical output bytes and deterministic counters
+(`scaling-counter-summary.json`). Resource measurements are separate from
+name-byte equality; no generated-code optimization target is imposed.
+
+The affected member argument hot path (4,000 / 8,000 / 16,000 arguments)
+measured candidate medians **7.966 / 12.538 / 20.417 ms**, with maximum RSS
+**3,632 / 5,044 / 7,864 KiB** over four candidate observations each, including
+launch/timing-wrapper overhead. Work and storage grow approximately linearly
+for these supported lists. The general independent-case, dependent-value and
+repeated-type families are separately retained in `scaling.json`; their
+independent-case graph retains capacity without retaining previous case facts.
+This is an observation on supported workloads, not a recursion-depth guarantee.
+
 ## Reviewed oracle refresh — 2026-10-13
 
 The baseline is now cppgm-extended `ee3596b2` (PR #69, all CI checks passed).
@@ -28,7 +174,7 @@ and fresh acceptance evidence. Historical audit findings below are retained.
 No goal or stage state is advanced by this correction.
 
 Stage base commit: `867f7a05e3a646f89773bd11ef7194fdb7f01056`.
-Last audited commit: `624273b1e25ece742d81dc5f275e2e7a75595b57` (standalone parity and quality reviewed; full-stage acceptance withheld).
+Last audited implementation commit: `32503ff29f25061f37808d4e08287e5f09b93c4f` (full PA9 acceptance audit below).
 
 ## Full-stage audit: findings fixed, acceptance withheld — 2026-10-13
 
