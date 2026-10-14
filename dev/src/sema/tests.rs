@@ -13,6 +13,61 @@ use crate::{
 };
 
 #[test]
+fn bit_field_layout_is_demanded_once_and_publishes_bounded_units() {
+    let source = SourceBuffer::new(b"struct Idle{unsigned a:3;};struct Mixed{long a:3;bool b:1;};struct Narrow{int lead;unsigned a:3;char tail;};struct NonPod{NonPod();long a:3;};\n#pragma pack(push,1)\nstruct Split{unsigned a:4;unsigned long b:64;};\n#pragma pack(pop)\nint f(){return sizeof(Mixed)+sizeof(Narrow)+sizeof(NonPod)+sizeof(Split);}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"bit-field-layout-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let original_expressions = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), original_expressions);
+    let mut class = |name: &[u8]| {
+        let name = cursor.intern_name(name).unwrap();
+        graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity
+    };
+    assert!(matches!(
+        graph.entity(class(b"Idle")).layout,
+        super::layout::LayoutState::NotStarted
+    ));
+    let mut field = |owner: &[u8], index| {
+        let member = graph.entity(class(owner)).members[index];
+        let id = graph.entity(member).bit_field.unwrap();
+        (
+            graph.bit_fields.width(id),
+            graph.bit_fields.storage(id).unwrap(),
+        )
+    };
+    let (width, first) = field(b"Mixed", 0);
+    let (_, second) = field(b"Mixed", 1);
+    assert_eq!(width, 3);
+    assert_eq!((first.bit, second.bit), (0, 3));
+    assert_eq!(
+        (first.offset, first.bytes, second.offset, second.bytes),
+        (0, 8, 0, 8)
+    );
+    let (_, narrow) = field(b"Narrow", 1);
+    assert_eq!((narrow.bit, narrow.offset, narrow.bytes), (32, 4, 1));
+    let (_, tail) = field(b"NonPod", 0);
+    assert_eq!((tail.offset, tail.bytes), (0, 1));
+    let (_, split) = field(b"Split", 1);
+    assert_eq!(
+        (
+            split.bit,
+            split.offset,
+            split.bytes,
+            split.split,
+            split.shared
+        ),
+        (4, 0, 16, 9, true)
+    );
+}
+
+#[test]
 fn qualified_namespace_import_keeps_its_using_conflict_diagnostic() {
     for source in [
         b"namespace B{int f(int);}namespace N{using B::f;}int N::f(int);".as_slice(),

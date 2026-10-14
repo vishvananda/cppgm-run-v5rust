@@ -2,6 +2,8 @@
 mod aggregate_initialization;
 mod analyzer;
 mod anonymous_types;
+mod bit_fields;
+mod bit_layout;
 mod builtin_calls;
 mod call_lookup;
 mod constant_addresses;

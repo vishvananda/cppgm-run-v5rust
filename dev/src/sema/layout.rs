@@ -186,11 +186,29 @@ impl Analyzer<'_> {
         Ok((size, alignment))
     }
     fn place_members(&mut self, entity: EntityId, location: SourceOffset) -> Result<(), Error> {
+        let mut bits = std::mem::take(&mut self.bit_layout);
+        let result = self.place_class_members(entity, location, &mut bits);
+        bits.clear();
+        self.bit_layout = bits;
+        result
+    }
+    fn place_class_members(
+        &mut self,
+        entity: EntityId,
+        location: SourceOffset,
+        bits: &mut super::bit_layout::BitLayout,
+    ) -> Result<(), Error> {
         let union = self.graph.entity(entity).key == Keyword::Union;
         let mut size = 0u64;
         let mut data_size = 0u64;
         let mut contains_volatile_or_union = union;
-        let mut empty = self.graph.entity(entity).members.is_empty();
+        let mut empty = self.graph.entity(entity).members.iter().all(|&member| {
+            let member = self.graph.entity(member);
+            member.name.is_none()
+                && member
+                    .bit_field
+                    .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
+        });
         let mut contains_empty = false;
         let mut alignment = 1;
         let attributes = self.graph.entity(entity).storage_attributes;
@@ -250,6 +268,7 @@ impl Analyzer<'_> {
             placement.record_base(&self.graph, base, offset, data_size, base_empty, location)?;
         }
         contains_empty |= empty;
+        let mut data_bits = data_size * 8;
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
             let ty = self
@@ -293,6 +312,29 @@ impl Analyzer<'_> {
             if pack != 0 {
                 member_alignment = member_alignment.min(pack);
             }
+            if let Some(id) = self.graph.entity(member).bit_field {
+                let named = self.graph.entity(member).name.is_some();
+                let placed = bits.place_member(
+                    &mut self.graph.bit_fields,
+                    id,
+                    super::bit_layout::Placement {
+                        data_bits,
+                        natural: bytes,
+                        requested,
+                        packed: member_attributes.packed || attributes.packed,
+                        pack,
+                        union,
+                        named,
+                        location,
+                    },
+                )?;
+                data_bits = placed.data_bits;
+                size = size.max(placed.size);
+                alignment = alignment.max(placed.alignment);
+                self.graph.entity_mut(member).member_offset = None;
+                continue;
+            }
+            data_size = round_up(data_bits, 8) / 8;
             let mut offset = if union {
                 0
             } else {
@@ -306,6 +348,8 @@ impl Analyzer<'_> {
                 placement.record_member(&self.graph, ty, offset, data_size, location)?;
             }
             self.graph.entity_mut(member).member_offset = Some(offset);
+            bits.end_run(offset);
+            data_bits = data_size * 8;
             size = if union {
                 size.max(bytes)
             } else {
@@ -337,6 +381,15 @@ impl Analyzer<'_> {
         };
         self.graph.entity_mut(entity).storage_attributes.packed &= packs_all;
         let full_size = round_up(size.max(1), alignment);
+        bits.finish(
+            &mut self.graph.bit_fields,
+            if non_pod {
+                round_up(data_bits, 8) / 8
+            } else {
+                full_size
+            },
+            location,
+        )?;
         self.graph.entity_mut(entity).layout = LayoutState::Value {
             contains_volatile_or_union,
             empty,

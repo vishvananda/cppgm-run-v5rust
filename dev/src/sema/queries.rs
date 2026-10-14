@@ -50,6 +50,9 @@ impl Analyzer<'_> {
             let operand = operand.ok_or(Error::Invariant("sizeof without operand"))?;
             self.unevaluated += 1;
             let result = self.typed_expression(operand, scope).and_then(|mut facts| {
+                if facts.is_bit_field() {
+                    return Err(Error::at(location, "sizeof of a bit-field"));
+                }
                 if let Some(binding) = self.ordinary_function_operand(facts) {
                     self.select_function_designation(operand, binding)?;
                     facts = self.graph.expression_facts.get(operand)?;

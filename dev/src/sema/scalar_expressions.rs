@@ -429,6 +429,10 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        if facts.object.is_some() || facts.anonymous_member.is_some() {
+            facts.field_identity = self.graph.entity(binding.entity).bit_field;
+            facts.set_bit_field(facts.field_identity.is_some());
+        }
         if binding.kind == BindingKind::Enumerator {
             let super::constants::ConstantState::Value(value) =
                 self.graph.entity(binding.entity).constant

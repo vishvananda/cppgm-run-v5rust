@@ -94,6 +94,9 @@ impl Analyzer<'_> {
         self.check_resolved_function(operand)?;
         let facts = self.graph.expression_facts.get(operand)?;
         if op == P::BitAnd {
+            if facts.is_bit_field() {
+                return Err(self.operator_error(id, "taking the address of a bit-field"));
+            }
             if facts.category != V::Lvalue
                 && !matches!(
                     self.graph.types.get(facts.ty).kind,
@@ -130,7 +133,10 @@ impl Analyzer<'_> {
             } else {
                 facts.ty
             };
-            return self.new_expression_facts(ty, if postfix { V::Prvalue } else { V::Lvalue });
+            let mut result =
+                self.new_expression_facts(ty, if postfix { V::Prvalue } else { V::Lvalue })?;
+            result.set_bit_field(facts.is_bit_field() && !postfix);
+            return Ok(result);
         }
         let ty = self.decayed_type(facts.ty)?;
         if op == P::Multiply {
@@ -175,7 +181,7 @@ impl Analyzer<'_> {
             ));
         }
         let result = if self.is_integral_operand(ty) {
-            self.promoted_type(ty)?
+            self.promoted_field_type(facts, ty)?
         } else {
             ty
         };
@@ -201,10 +207,14 @@ impl Analyzer<'_> {
         let lf = self.graph.expression_facts.get(left)?;
         let rf = self.graph.expression_facts.get(right)?;
         if op == P::Comma {
-            return self.new_expression_facts(rf.ty, rf.category);
+            let mut result = self.new_expression_facts(rf.ty, rf.category)?;
+            result.set_bit_field(rf.is_bit_field());
+            return Ok(result);
         }
         let a = self.decayed_type(lf.ty)?;
         let b = self.decayed_type(rf.ty)?;
+        let a = self.field_type(lf, a)?;
+        let b = self.field_type(rf, b)?;
         let compare = matches!(
             op,
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
@@ -504,7 +514,9 @@ impl Analyzer<'_> {
             ));
         }
         self.list_initialize(right, target, scope)?;
-        self.new_expression_facts(left.ty, V::Lvalue)
+        let mut result = self.new_expression_facts(left.ty, V::Lvalue)?;
+        result.set_bit_field(left.is_bit_field());
+        Ok(result)
     }
 
     pub(super) fn scalar_assignment(
@@ -572,14 +584,16 @@ impl Analyzer<'_> {
                         self.operator_error(id, "invalid operands to a compound assignment")
                     );
                 }
+                let promoted_left = self.field_type(lf, target)?;
                 let common = if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
                     self.promoted_type(rt)?
                 } else {
-                    self.arithmetic_type(target, rt)?
+                    let promoted_right = self.field_type(rf, rt)?;
+                    self.arithmetic_type(promoted_left, promoted_right)?
                 };
                 self.convert_operand_scalar(right, common, false)?;
                 operation = if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
-                    self.promoted_type(target)?
+                    self.promoted_type(promoted_left)?
                 } else {
                     common
                 };
@@ -598,7 +612,9 @@ impl Analyzer<'_> {
             self.graph
                 .record_arithmetic_types(id, operation, right_type);
         }
-        self.new_expression_facts(lf.ty, V::Lvalue)
+        let mut result = self.new_expression_facts(lf.ty, V::Lvalue)?;
+        result.set_bit_field(lf.is_bit_field());
+        Ok(result)
     }
     pub(super) fn scalar_conditional(
         &mut self,
@@ -639,7 +655,10 @@ impl Analyzer<'_> {
             && same_glvalue_type
             && (ac & bc == ac.min(bc))
         {
-            return self.new_expression_facts(if ac & !bc == 0 { b.ty } else { a.ty }, a.category);
+            let mut result =
+                self.new_expression_facts(if ac & !bc == 0 { b.ty } else { a.ty }, a.category)?;
+            result.set_bit_field(a.is_bit_field() || b.is_bit_field());
+            return Ok(result);
         }
         if matches!(self.graph.types.get(at).kind, TypeKind::Class(_))
             || matches!(self.graph.types.get(bt).kind, TypeKind::Class(_))

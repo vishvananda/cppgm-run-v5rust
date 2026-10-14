@@ -245,6 +245,8 @@ impl Analyzer<'_> {
             }
         };
         facts.member = Some(binding);
+        facts.set_bit_field(self.graph.entity(member.entity).bit_field.is_some());
+        facts.field_identity = self.graph.entity(member.entity).bit_field;
         self.static_member_constant(&mut facts, member.entity);
         facts.member_naming = Some(naming);
         facts.member_path = self.data_member_path(binding, naming, location)?;

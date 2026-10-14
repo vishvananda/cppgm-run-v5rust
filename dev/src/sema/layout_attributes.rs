@@ -179,7 +179,7 @@ impl Analyzer<'_> {
     pub(super) fn reject_bit_field_alignment(
         &self,
         leading: List<ast::Attribute>,
-        fields: List<ast::BitField>,
+        declarator: Option<ast::DeclaratorId>,
     ) -> Result<(), Error> {
         let check = |list| {
             for attribute in self.tree.attributes.get(list) {
@@ -193,13 +193,11 @@ impl Analyzer<'_> {
             Ok(())
         };
         check(leading)?;
-        for field in self.tree.bit_fields.get(fields) {
-            let mut part = field.declarator;
-            while let Some(id) = part {
-                let node = self.tree.declarators.get(id);
-                check(node.attributes)?;
-                part = node.nested;
-            }
+        let mut part = declarator;
+        while let Some(id) = part {
+            let node = self.tree.declarators.get(id);
+            check(node.attributes)?;
+            part = node.nested;
         }
         Ok(())
     }

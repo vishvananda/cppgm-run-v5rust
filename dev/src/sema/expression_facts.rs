@@ -92,9 +92,16 @@ pub(super) enum CallForm {
     Operator,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum GlvalueKind {
+    Ordinary,
+    BitField,
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
+    pub glvalue: GlvalueKind,
+    pub field_identity: Option<super::bit_fields::BitFieldId>,
     pub null_literal: bool,
     pub conversion: Option<Conversion>,
     pub commuted: bool,
@@ -130,10 +137,23 @@ pub(super) enum FoldStyle {
     StaticMember,
 }
 impl ExprFacts {
+    pub(super) fn is_bit_field(self) -> bool {
+        matches!(self.glvalue, GlvalueKind::BitField)
+    }
+    pub(super) fn set_bit_field(&mut self, value: bool) {
+        self.glvalue = if value {
+            GlvalueKind::BitField
+        } else {
+            GlvalueKind::Ordinary
+        };
+    }
+
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
         Self {
             ty,
             category,
+            glvalue: GlvalueKind::Ordinary,
+            field_identity: None,
             null_literal: false,
             conversion: None,
             commuted: false,

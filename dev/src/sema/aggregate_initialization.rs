@@ -76,6 +76,9 @@ impl Analyzer<'_> {
         let union = self.graph.entity(class).key == Keyword::Union;
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
+            if self.graph.unnamed_bit_field(member) {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(member)?;
             self.aggregate_array_element(elements, next, ty, scope, location)?;
             if union {

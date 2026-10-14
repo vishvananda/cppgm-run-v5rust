@@ -912,10 +912,7 @@ impl Graph {
         Ok((
             entity,
             if node.data_member == Some(super::graph::DataMemberKind::Instance) {
-                Some(
-                    node.member_offset
-                        .ok_or(Error::Invariant("member without offset"))?,
-                )
+                Some(self.lower_member_offset(entity)?)
             } else {
                 None
             },
@@ -940,9 +937,16 @@ impl Graph {
         ))
     }
     pub(crate) fn lower_member_offset(&self, entity: EntityId) -> Result<u64, Error> {
+        if let Some(id) = self.entity(entity).bit_field {
+            self.bit_fields.storage(id)?;
+            return Err(Error::Missing("bit-field storage access lowering"));
+        }
         self.entity(entity)
             .member_offset
             .ok_or(Error::Invariant("aggregate member without layout"))
+    }
+    pub(crate) fn lower_unnamed_bit_field(&self, entity: EntityId) -> bool {
+        self.unnamed_bit_field(entity)
     }
     pub(crate) fn lower_class_member_entities(&self, entity: EntityId) -> &[EntityId] {
         &self.entity(entity).members

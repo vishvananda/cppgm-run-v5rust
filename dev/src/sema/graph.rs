@@ -161,6 +161,7 @@ pub(super) struct Entity {
     pub class_packing: u32,
     pub layout_category: super::layout::LayoutCategory,
     pub member_offset: Option<u64>,
+    pub bit_field: Option<super::bit_fields::BitFieldId>,
     // Presentation provenance for an unnamed class, never a lookup key.
     pub anonymous_class: Option<super::anonymous_types::AnonymousClass>,
     pub local_type_ordinal: Option<u32>,
@@ -192,6 +193,7 @@ struct FunctionPosition {
     visible: Option<usize>,
 }
 pub(crate) struct Graph {
+    pub(super) bit_fields: super::bit_fields::BitFields,
     pub(super) types: Types,
     pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: super::inheritance::BasePaths,
@@ -337,6 +339,7 @@ impl Graph {
                 written_name: None,
             }],
             entities: Vec::new(),
+            bit_fields: super::bit_fields::BitFields::default(),
             bindings: Vec::new(),
             ordinals: Vec::new(),
             binding_scopes: Vec::new(),
@@ -506,6 +509,7 @@ impl Graph {
             class_packing: 0,
             layout_category: super::layout::LayoutCategory::Pod,
             member_offset: None,
+            bit_field: None,
             anonymous_class: None,
             local_type_ordinal: None,
             anonymous_storage: None,

@@ -79,7 +79,7 @@ impl Analyzer<'_> {
         let promotion = self.is_integral_operand(source)
             && self.is_arithmetic_type(goal)
             && source != goal
-            && (self.promoted_type(source)? == goal
+            && (self.promoted_field_type(facts, source)? == goal
                 || matches!(self.graph.types.get(source).kind, TypeKind::Enum(entity)
                     if self.graph.entity(entity).enumeration.is_some_and(|info|
                         info.fixed && info.underlying == Some(goal))));
@@ -257,8 +257,12 @@ impl Analyzer<'_> {
             };
             if reference_qualification
                 || compatible
-                    && (lvalue && facts.category == V::Lvalue
-                        || (!lvalue || constant) && (facts.category == V::Xvalue || function)
+                    && (lvalue
+                        && facts.category == V::Lvalue
+                        && (!facts.is_bit_field() || !constant)
+                        || (!lvalue || constant)
+                            && (facts.category == V::Xvalue || function)
+                            && !facts.is_bit_field()
                         || facts.category == V::Prvalue && (constant || !lvalue))
             {
                 Some(Conversion {
@@ -337,6 +341,7 @@ impl Analyzer<'_> {
                 "invalid implicit conversion",
             ));
         };
+        self.check_bit_field_binding(id, conversion)?;
         let mut facts = facts;
         if conversion.second == C::DerivedToBase {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]

@@ -62,6 +62,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
+    pub(super) bit_layout: super::bit_layout::BitLayout,
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
     pub(super) storage_layouts: Vec<(Option<super::graph::EntityId>, TypeId, SourceOffset)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
@@ -174,6 +175,7 @@ impl<'tree> Analyzer<'tree> {
             pending_throws: Vec::new(),
             evaluating_noexcept: false,
             layout_work: Vec::new(),
+            bit_layout: super::bit_layout::BitLayout::default(),
             boundary_roots: Vec::new(),
             storage_layouts: Vec::new(),
             exception_work: Vec::new(),
@@ -449,11 +451,7 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::BitField {
                 specifiers,
                 declarators,
-            } => {
-                self.specifiers(specifiers, scope, false)?;
-                self.reject_bit_field_alignment(declaration.attributes, declarators)?;
-                Err(Error::Missing("bit-field declarations"))
-            }
+            } => self.bit_field_declaration(id, specifiers, declarators, scope),
         }
     }
     fn function_definition(

@@ -213,6 +213,9 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let (members, _) = self.graph.lower_class_members(class)?;
         for &member in members {
+            if self.graph.lower_unnamed_bit_field(member) {
+                continue;
+            }
             let mut ty = self.graph.lower_entity_type(member)?;
             while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
                 ty = element;
@@ -239,6 +242,9 @@ impl Function<'_, '_, '_, '_> {
         }
         let (members, union) = self.graph.lower_class_members(class)?;
         for &member in members {
+            if self.graph.lower_unnamed_bit_field(member) {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(member)?;
             path.steps.push(Step {
                 ty: Type::I8,
@@ -478,6 +484,9 @@ impl Function<'_, '_, '_, '_> {
         };
         let (members, union) = self.graph.lower_class_members(class)?;
         for &member in members {
+            if self.graph.lower_unnamed_bit_field(member) {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(member)?;
             let offset = self
                 .builder

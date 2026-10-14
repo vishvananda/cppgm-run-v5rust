@@ -444,7 +444,17 @@ impl Analyzer<'_> {
         _location: SourceOffset,
         deduced: &mut Option<TypeId>,
     ) -> Result<(), Error> {
-        let mut info = self.placeholder_declarator(Some(init.declarator), specs, scope)?;
+        let info = self.placeholder_declarator(Some(init.declarator), specs, scope)?;
+        self.declare_analyzed_init(specs, init, scope, deduced, info)
+    }
+    pub(super) fn declare_analyzed_init(
+        &mut self,
+        specs: Specifiers,
+        init: ast::InitDeclarator,
+        scope: ScopeId,
+        deduced: &mut Option<TypeId>,
+        mut info: super::declarators::DeclaratorInfo,
+    ) -> Result<(), Error> {
         let member = self.declared_member(&info, scope)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
         self.check_mutable_declarator(
