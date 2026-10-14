@@ -272,6 +272,23 @@ impl Analyzer<'_> {
         let target_id = found
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))?;
+        // Access is checked for the entire named set before hiding any import.
+        // In particular, an inaccessible base overload cannot be excused by a
+        // same-signature declaration already present in the derived class.
+        if self.graph.scope(prefix).kind == ScopeKind::Class {
+            let naming = self
+                .graph
+                .scope(prefix)
+                .owner
+                .ok_or(Error::Invariant("using member without naming class"))?;
+            if self.graph.binding(target_id).kind == BindingKind::Function {
+                for &binding in found.functions.as_slice() {
+                    self.validate_member_access(binding, naming, None, scope, location)?;
+                }
+            } else {
+                self.validate_member_access(target_id, naming, None, scope, location)?;
+            }
+        }
         if self.graph.binding(target_id).kind == BindingKind::Function {
             for &target in found.functions.as_slice() {
                 self.introduce_function_using(target, target_key, scope, location)?;
@@ -331,8 +348,8 @@ impl Analyzer<'_> {
                 "using-declaration conflicts with an earlier declaration",
             ));
         }
-        let existing: Vec<_> = self.graph.functions_at(scope, key).collect();
-        for existing in existing {
+        let mut next = 0;
+        while let Some(existing) = self.graph.next_function(scope, key, &mut next) {
             let earlier = self.graph.binding(existing);
             if earlier.entity != binding.entity
                 && self.same_function_parameters(
@@ -344,6 +361,11 @@ impl Analyzer<'_> {
                         .ok_or(Error::Invariant("function using without type"))?,
                 )?
             {
+                if self.graph.scope(scope).kind == ScopeKind::Class
+                    && self.graph.entity(earlier.entity).home == Some(scope)
+                {
+                    return Ok(());
+                }
                 return Err(Error::at(
                     location,
                     "using-declaration conflicts with a function of the same signature",
@@ -770,11 +792,12 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
-            let candidates: Vec<_> = self
-                .graph
-                .functions_at(home, self.declaration_key(info)?)
-                .collect();
-            for binding in candidates {
+            let key = self.declaration_key(info)?;
+            let mut next = 0;
+            while let Some(binding) = self.graph.next_function(home, key, &mut next) {
+                if self.graph.entity(self.graph.binding(binding).entity).home != Some(home) {
+                    continue;
+                }
                 let old = self
                     .graph
                     .binding(binding)
@@ -1050,13 +1073,16 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("function without type"))?;
             if self.same_function_parameters(old, ty)? {
-                if self.graph.entity(binding.entity).home != Some(home)
-                    && self.graph.scope(home).kind != ScopeKind::Class
-                {
-                    return Err(Error::at(
-                        location,
-                        "function conflicts with a using-declaration",
-                    ));
+                if self.graph.entity(binding.entity).home != Some(home) {
+                    if self.graph.scope(home).kind != ScopeKind::Class {
+                        return Err(Error::at(
+                            location,
+                            "function conflicts with a using-declaration",
+                        ));
+                    }
+                    self.graph
+                        .remove_class_function(home, name, binding.entity)?;
+                    return Ok(None);
                 }
                 return Ok(Some(candidate));
             }

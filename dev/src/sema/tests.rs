@@ -13,6 +13,97 @@ use crate::{
 };
 
 #[test]
+fn qualified_namespace_import_keeps_its_using_conflict_diagnostic() {
+    for source in [
+        b"namespace B{int f(int);}namespace N{using B::f;}int N::f(int);".as_slice(),
+        b"namespace B{int f(int);}namespace N{using B::f;}int N::f(int){return 2;}",
+    ] {
+        for mode in 0..3 {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            let input = Preprocessor::with_name(&source, b"namespace-using-conflict").unwrap();
+            let mut unit = SyntaxUnit::new(input);
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            if mode == 1 {
+                analyzer.set_semantics(true);
+            } else if mode == 2 {
+                analyzer.set_lowering();
+            }
+            assert!(matches!(
+                analyzer.analyze(declarations),
+                Err(Error::Diagnostic {
+                    message: "function conflicts with a using-declaration",
+                    ..
+                })
+            ));
+        }
+    }
+}
+
+#[test]
+fn class_using_hiding_updates_indexes_without_changing_import_identity() {
+    let source = SourceBuffer::new(b"struct B{int f(int);int f(long);int f(char);};struct D:B{using B::f;int f(int);int f(char);using B::f;};".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"class-using-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let expression_count = tree.expressions.mark();
+    let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), expression_count);
+    let f = cursor.intern_name(b"f").unwrap();
+    let mut class_scope = |name| {
+        let name = cursor.intern_name(name).unwrap();
+        let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
+        graph.entity(graph.binding(binding).entity).scope.unwrap()
+    };
+    let base = class_scope(b"B");
+    let derived = class_scope(b"D");
+    let originals: Vec<_> = graph.functions_at(base, f.into()).collect();
+    let declared: Vec<_> = graph.functions_at(derived, f.into()).collect();
+    let visible: Vec<_> = graph.visible_functions_at(derived, f.into()).collect();
+    assert_eq!(originals.len(), 3);
+    assert_eq!(declared, visible);
+    assert_eq!(declared.len(), 3);
+    // Removal compacts both indexed sets and repairs later positions. Repeated
+    // imports update the surviving base overload without duplicating it.
+    assert_eq!(
+        graph.binding(declared[0]).entity,
+        graph.binding(originals[1]).entity
+    );
+    assert!(
+        declared[1..]
+            .iter()
+            .all(|&id| graph.entity(graph.binding(id).entity).home == Some(derived))
+    );
+    let imported: Vec<_> = graph
+        .scope(derived)
+        .bindings
+        .iter()
+        .copied()
+        .filter(|&id| graph.entity(graph.binding(id).entity).home == Some(base))
+        .collect();
+    assert_eq!(imported.len(), 4);
+    for (import, original) in imported[..3].iter().zip(&originals) {
+        assert_eq!(
+            graph.binding(*import).entity,
+            graph.binding(*original).entity
+        );
+        assert_eq!(graph.binding_scope(*import), derived);
+        assert_eq!(
+            graph
+                .function_origin(graph.binding(*import).entity)
+                .unwrap(),
+            *original
+        );
+    }
+    assert!(!declared.contains(&imported[0]));
+    assert!(!declared.contains(&imported[2]));
+    assert_eq!(declared[0], imported[3]);
+}
+
+#[test]
 fn hidden_friend_identity_and_visibility_have_distinct_source_boundaries() {
     let source = SourceBuffer::new(b"struct X{friend int f(X&);friend int f(X&);};struct Y{friend int f(X&);};int g(X&x){return f(x);}int f(X&){return 7;}".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"friendship-ownership").unwrap();

@@ -706,6 +706,71 @@ impl Graph {
             .copied()
             .filter(|&id| self.binding_visible_at_limit(id)))
     }
+    // A derived declaration hides an imported base function without changing
+    // its entity, original binding or printed declaration. Only this class's
+    // name indexes lose the import; the other overloads keep their order.
+    pub(super) fn remove_class_function(
+        &mut self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        if self.scope(scope).kind != ScopeKind::Class {
+            return Err(Error::Invariant("removing an import outside a class"));
+        }
+        let position = self
+            .function_positions
+            .remove(&(scope, key, entity))
+            .ok_or(Error::Invariant("removing an unindexed function"))?;
+        let declared = self
+            .function_sets
+            .get_mut(&(scope, key))
+            .ok_or(Error::Invariant("missing declared function set"))?;
+        declared.remove(position.declared);
+        for (index, &binding) in declared.iter().enumerate().skip(position.declared) {
+            let function = self.bindings[binding.0 as usize].entity;
+            self.function_positions
+                .get_mut(&(scope, key, function))
+                .ok_or(Error::Invariant("missing declared function position"))?
+                .declared = index;
+        }
+        let replacement = declared.last().copied();
+        if let Some(index) = position.visible {
+            let visible = self
+                .visible_function_sets
+                .get_mut(&(scope, key))
+                .ok_or(Error::Invariant("missing visible function set"))?;
+            visible.remove(index);
+            for (index, &binding) in visible.iter().enumerate().skip(index) {
+                let function = self.bindings[binding.0 as usize].entity;
+                self.function_positions
+                    .get_mut(&(scope, key, function))
+                    .ok_or(Error::Invariant("missing visible function position"))?
+                    .visible = Some(index);
+            }
+        }
+        let replace_value = self
+            .value_binding(scope, key)
+            .is_some_and(|id| self.binding(id).entity == entity);
+        match key {
+            super::function_names::ValueKey::Identifier(name) => {
+                if let Some(entry) = self.scope_mut(scope).index.get_mut(&name)
+                    && replace_value
+                {
+                    entry.value = replacement;
+                }
+            }
+            super::function_names::ValueKey::Special(name) => {
+                if replace_value {
+                    self.special_values.remove(&(scope, name));
+                    if let Some(binding) = replacement {
+                        self.special_values.insert((scope, name), binding);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub(super) fn functions_at(
         &self,
         scope: ScopeId,

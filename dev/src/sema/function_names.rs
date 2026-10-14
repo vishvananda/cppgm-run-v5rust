@@ -319,15 +319,23 @@ impl Analyzer<'_> {
         }
         self.check_member_function_redeclaration(info, home, location)?;
         if info.home.is_some() {
-            let candidates: Vec<_> = self.graph.functions_at(home, key).collect();
+            let mut next = 0;
             let mut matching = false;
-            for candidate in candidates {
+            while let Some(candidate) = self.graph.next_function(home, key, &mut next) {
+                if self.graph.scope(home).kind == ScopeKind::Class
+                    && self.graph.entity(self.graph.binding(candidate).entity).home != Some(home)
+                {
+                    continue;
+                }
                 let old = self
                     .graph
                     .binding(candidate)
                     .ty
                     .ok_or(Error::Invariant("function declaration without type"))?;
-                matching |= self.same_function_parameters(old, info.ty)?;
+                if self.same_function_parameters(old, info.ty)? {
+                    matching = true;
+                    break;
+                }
             }
             if !matching {
                 return Err(Error::at(
@@ -476,10 +484,10 @@ impl Analyzer<'_> {
         };
         // Probe only the named overload set; no unrelated declaration or
         // body is visited. Return types do not distinguish overloads.
-        let candidates: Vec<_> = self.graph.functions_at(home, key).collect();
-        for binding in candidates {
+        let mut next = 0;
+        while let Some(binding) = self.graph.next_function(home, key, &mut next) {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
+            if entity.template_head.is_some() || entity.home != Some(home) {
                 continue;
             }
             let other = entity.ty.ok_or(Error::Invariant("function without type"))?;
