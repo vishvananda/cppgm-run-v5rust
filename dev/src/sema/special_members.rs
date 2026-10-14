@@ -125,7 +125,22 @@ impl Analyzer<'_> {
                 body,
                 implicit_type: true,
             },
-        )
+        )?;
+        if body.is_some()
+            || initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default))
+        {
+            let binding = self
+                .graph
+                .declared_bindings
+                .get(declarator.index())
+                .copied()
+                .flatten()
+                .ok_or(Error::Invariant("special definition without binding"))?;
+            self.graph
+                .entity_mut(self.graph.binding(binding).entity)
+                .function_definition = Some(id);
+        }
+        Ok(())
     }
 
     pub(super) fn complete_special_member(
@@ -212,6 +227,13 @@ impl Analyzer<'_> {
                         || matches!(old, Some(SpecialDefinition::Defaulted { first: true, .. })),
                     body: old_body,
                 });
+            if first
+                && kind == MemberKind::Constructor
+                && !self.declarator_specifies_exceptions(Some(declarator))
+            {
+                self.graph.entity_mut(function).constructor_exceptions =
+                    super::construction::ConstructorExceptionSource::SubobjectPlan;
+            }
             if first {
                 self.graph.entity_mut(function).definition_emission =
                     super::function_demands::DefinitionEmission::Demanded;

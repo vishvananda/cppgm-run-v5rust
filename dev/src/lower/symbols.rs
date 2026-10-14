@@ -78,10 +78,12 @@ pub(super) struct Symbols<'a, 'source> {
     scopes: HashMap<ScopeId, Option<NodeId>>,
     budget: StackBudget,
     stack_base: usize,
-    pub pending: Vec<EntityId>,
+    pub pending: Vec<super::construction::Entry>,
     pub empty_initialization: Option<SymbolId>,
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
-    seen: std::collections::HashSet<EntityId>,
+    seen: std::collections::HashSet<super::construction::Entry>,
+    entries: HashMap<super::construction::Entry, SymbolId>,
+    entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
     callees: HashMap<EntityId, Value>,
@@ -118,6 +120,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             empty_initialization: None,
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
+            entries: HashMap::new(),
+            entry_objects: HashMap::new(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
             callees: HashMap::new(),
@@ -258,7 +262,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         label: Option<ast::Name>,
     ) -> Result<String, Error> {
         let mut bytes = Vec::new();
-        if let FunctionName::Identifier(name) = name {
+        if let FunctionName::Identifier(name) | FunctionName::Constructor(name) = name {
             bytes.extend_from_slice(self.cursor.name(name));
         } else if let Some(label) = label {
             crate::syntax::write_member_label(self.tree, self.cursor, label, &mut bytes).map_err(
@@ -277,7 +281,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     bytes.extend_from_slice(b"operator\"\"");
                     bytes.extend_from_slice(self.cursor.name(suffix));
                 }
-                FunctionName::Identifier(_) => {
+                FunctionName::Identifier(_) | FunctionName::Constructor(_) => {
                     return Err(Error::Semantic(crate::sema::Error::Invariant(
                         "ordinary function label",
                     )));
@@ -299,6 +303,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     fn function_terminal(&mut self, name: FunctionName, ty: TypeId) -> Result<NodeId, Error> {
         let node = match name {
+            FunctionName::Constructor(_) => Node::Terminal {
+                kind: abi::vocabulary::Terminal::ConstructorComplete,
+                inherited: None,
+            },
             FunctionName::Identifier(name) => {
                 return Ok(self.abi.string(self.cursor.name(name))?);
             }
@@ -613,9 +621,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn demand(&mut self, entity: EntityId) {
         let entity = self.graph.lower_function_entity(entity);
-        if self.seen.insert(entity) {
-            self.pending.push(entity);
-        }
+        let entry = if let Some(id) = self.graph.lower_construction(entity) {
+            super::construction::Entry::Constructor(id, super::construction::Variant::Complete)
+        } else {
+            super::construction::Entry::Function(entity)
+        };
+        self.demand_entry(entry);
     }
     pub(super) fn callee(
         &mut self,
@@ -672,8 +683,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(std::sync::Arc::clone(name));
         }
         if !self.ordinals.contains_key(&entity) {
-            for (index, overload) in self.graph.lower_overloads(entity)?.enumerate() {
-                self.ordinals.insert(overload, index + 1);
+            let facts = self.graph.lower_function(entity)?;
+            if matches!(facts.name, FunctionName::Constructor(_)) {
+                let class = facts
+                    .object
+                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                        "constructor without owner",
+                    )))?;
+                for (index, overload) in self.graph.lower_constructor_overloads(class).enumerate() {
+                    self.ordinals.insert(overload, index + 1);
+                }
+            } else {
+                for (index, overload) in self.graph.lower_overloads(entity)?.enumerate() {
+                    self.ordinals.insert(overload, index + 1);
+                }
             }
         }
         let facts = self.graph.lower_function(entity)?;
@@ -1120,10 +1143,181 @@ impl<'a, 'source> Symbols<'a, 'source> {
         metadata.object = Some(program.names.intern_bytes(&object)?);
         Ok(metadata)
     }
+    pub(super) fn demand_entry(&mut self, entry: super::construction::Entry) {
+        if self.seen.insert(entry) {
+            self.pending.push(entry);
+        }
+    }
+    pub(super) fn entry_symbol(
+        &mut self,
+        program: &mut Program,
+        entry: super::construction::Entry,
+    ) -> Result<SymbolId, Error> {
+        use super::construction::{Entry, Variant};
+        if let Entry::Function(entity) = entry {
+            return self.function_symbol(program, entity);
+        }
+        if let Some(&symbol) = self.entries.get(&entry) {
+            return Ok(symbol);
+        }
+        let Entry::Constructor(id, variant) = entry else {
+            return Err(Error::Missing("entry kind"));
+        };
+        if variant == Variant::Complete
+            && let Some(entity) = self.graph.lower_constructor_entity(id)
+        {
+            let symbol = self.function_symbol(program, entity)?;
+            self.entries.insert(entry, symbol);
+            return Ok(symbol);
+        }
+        let facts = entry.facts(self.graph)?;
+        let mut components = vec![self.function_label(facts.name, facts.label)?];
+        let mut scope = facts.home;
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
+            components.push(
+                name.map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
+                    .to_owned(),
+            );
+            scope = parent;
+        }
+        components.reverse();
+        let mut name = if let Some(entity) = self.graph.lower_constructor_entity(id) {
+            self.name(entity)?.to_string()
+        } else {
+            components.join("__")
+        };
+        if variant == Variant::Base {
+            name.push_str("__base_entry");
+        }
+        let metadata = self.entry_metadata(program, entry, &name)?;
+        let object = if facts.internal
+            && metadata
+                .object
+                .is_some_and(|object| self.table.objects.contains_key(&object))
+        {
+            None
+        } else {
+            metadata.object
+        };
+        let symbol = self
+            .table
+            .allocate(program, &name, metadata.object, facts.internal)?;
+        self.entry_objects.insert(entry, object);
+        self.entries.insert(entry, symbol);
+        Ok(symbol)
+    }
+    pub(super) fn entry_metadata(
+        &mut self,
+        program: &mut Program,
+        entry: super::construction::Entry,
+        name: &str,
+    ) -> Result<Metadata, Error> {
+        use super::construction::{Entry, Variant};
+        if let Entry::Function(entity) = entry {
+            return self.metadata(program, entity, name);
+        }
+        let Entry::Constructor(id, variant) = entry else {
+            return Err(Error::Missing("entry kind"));
+        };
+        if variant == Variant::Complete
+            && let Some(entity) = self.graph.lower_constructor_entity(id)
+        {
+            let mut metadata = self.metadata(program, entity, name)?;
+            if metadata.binding == Some(crate::lowir::vocabulary::Binding::Internal) {
+                metadata.flags |= 4;
+            }
+            return Ok(metadata);
+        }
+        let facts = entry.facts(self.graph)?;
+        let object = if let Some(&object) = self.entry_objects.get(&entry) {
+            object
+        } else {
+            let function = self.encode_function(&facts, variant)?;
+            let mut object = Vec::new();
+            abi::encoder::Encoder::encode(
+                &self.abi,
+                abi::encoder::Target::Entity(function),
+                &mut object,
+                self.budget,
+            )?;
+            Some(program.names.intern_bytes(&object)?)
+        };
+        Ok(Metadata {
+            object,
+            binding: Some(if facts.internal {
+                crate::lowir::vocabulary::Binding::Internal
+            } else if facts.emission == crate::sema::lowering::Emission::Demanded {
+                crate::lowir::vocabulary::Binding::Weak
+            } else {
+                crate::lowir::vocabulary::Binding::Strong
+            }),
+            flags: if facts.emission == crate::sema::lowering::Emission::Demanded {
+                16
+            } else {
+                0
+            } | if variant == Variant::Base || facts.internal {
+                4
+            } else {
+                0
+            },
+            ..Metadata::default()
+        })
+    }
+    pub(super) fn finish_entry(
+        &mut self,
+        program: &mut Program,
+        entry: super::construction::Entry,
+        symbol: SymbolId,
+    ) -> Result<(), Error> {
+        use super::construction::{Entry, Variant};
+        if let Entry::Constructor(id, Variant::Complete) = entry {
+            if let Some(&base) = self.entries.get(&Entry::Constructor(id, Variant::Base))
+                && program.function_defined(base)
+            {
+                return Ok(());
+            }
+            let facts = entry.facts(self.graph)?;
+            let encoding = self.encode_function(&facts, Variant::Base)?;
+            let mut object = Vec::new();
+            abi::encoder::Encoder::encode(
+                &self.abi,
+                abi::encoder::Target::Entity(encoding),
+                &mut object,
+                self.budget,
+            )?;
+            let object = program.names.intern_bytes(&object)?;
+            let _inserted = program.add_alias(crate::lowir::model::ObjectAlias {
+                object,
+                target: symbol,
+            });
+        }
+        Ok(())
+    }
     fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         let facts = self.graph.lower_function(entity)?;
+        self.encode_function(&facts, super::construction::Variant::Complete)
+    }
+    fn encode_function(
+        &mut self,
+        facts: &crate::sema::lowering::FunctionFacts,
+        variant: super::construction::Variant,
+    ) -> Result<NodeId, Error> {
         let parent = self.scope(facts.home)?;
-        let terminal = self.function_terminal(facts.name, facts.ty)?;
+        let terminal = if matches!(facts.name, FunctionName::Constructor(_)) {
+            self.abi.intern(
+                Node::Terminal {
+                    kind: if variant == super::construction::Variant::Base {
+                        abi::vocabulary::Terminal::ConstructorBase
+                    } else {
+                        abi::vocabulary::Terminal::ConstructorComplete
+                    },
+                    inherited: None,
+                },
+                &[],
+            )?
+        } else {
+            self.function_terminal(facts.name, facts.ty)?
+        };
         let name = self
             .abi
             .intern(

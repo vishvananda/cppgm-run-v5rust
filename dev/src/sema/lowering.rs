@@ -13,6 +13,13 @@ pub(crate) use super::{
     types::{Scalar, TypeId},
 };
 use crate::{lex::identifiers::NameId, syntax::ast};
+pub(crate) struct ConstructorView<'a> {
+    pub object_pointer: TypeId,
+    pub union: bool,
+    pub members: &'a [(EntityId, Option<ast::Initializer>)],
+    pub bases: &'a [ConstructorId],
+    pub subobjects: &'a [(EntityId, ConstructorId)],
+}
 pub(crate) struct VariableFacts {
     pub name: NameId,
     pub home: ScopeId,
@@ -61,9 +68,11 @@ pub(crate) enum CallTarget {
     Direct(EntityId),
     Indirect(TypeId, bool),
 }
+pub(crate) use super::construction::ConstructorId;
 #[derive(Clone, Copy)]
 pub(crate) enum FunctionName {
     Identifier(NameId),
+    Constructor(NameId),
     Operator {
         token: crate::lex::vocabulary::SimpleToken,
         array: bool,
@@ -110,6 +119,79 @@ pub(crate) struct Expression {
 }
 pub(crate) use super::expression_facts::ObjectSource;
 impl Graph {
+    pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
+        !self.constructors.get(id).nontrivial(self)
+    }
+    pub(crate) fn lower_constructor(&self, id: ConstructorId) -> ConstructorView<'_> {
+        let plan = self.constructors.get(id);
+        ConstructorView {
+            object_pointer: plan.object_pointer,
+            union: self.entity(plan.class).key == crate::lex::vocabulary::Keyword::Union,
+            members: &plan.members,
+            bases: &plan.bases,
+            subobjects: &plan.subobjects,
+        }
+    }
+    pub(crate) fn lower_construction(&self, entity: EntityId) -> Option<ConstructorId> {
+        self.entity(entity).constructor
+    }
+    pub(crate) fn lower_constructor_entity(&self, id: ConstructorId) -> Option<EntityId> {
+        self.constructors
+            .get(id)
+            .binding
+            .map(|binding| self.binding(binding).entity)
+    }
+    pub(crate) fn lower_constructor_function(
+        &self,
+        id: ConstructorId,
+    ) -> Result<FunctionFacts, Error> {
+        let plan = self.constructors.get(id);
+        if let Some(entity) = self.lower_constructor_entity(id) {
+            return self.lower_function(entity);
+        }
+        let class = self.entity(plan.class);
+        Ok(FunctionFacts {
+            name: FunctionName::Constructor(
+                class
+                    .name
+                    .ok_or(Error::Missing("anonymous constructor name"))?,
+            ),
+            label: None,
+            home: class
+                .scope
+                .ok_or(Error::Invariant("constructor without class scope"))?,
+            ty: plan.callable_type,
+            scope: None,
+            internal: self.lower_entity_unit_local(plan.class),
+            c_linkage: false,
+            emission: Emission::Demanded,
+            nothrow: plan.nothrow,
+            allocation: None,
+            builtin: None,
+            definition: None,
+            object: Some(plan.class),
+            qualifiers: crate::abi::graph::Qualifiers::default(),
+        })
+    }
+    pub(crate) fn lower_constructor_overloads(
+        &self,
+        class: EntityId,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.entity(class)
+            .declared_constructors
+            .iter()
+            .map(|&binding| self.binding(binding).entity)
+    }
+    pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
+        self.entity(entity).defined
+    }
+    pub(crate) fn lower_function_body(&self, id: EntityId) -> Option<ast::BodyId> {
+        match self.entity(id).special_definition {
+            Some(super::special_members::SpecialDefinition::Body(body)) => Some(body),
+            _ => None,
+        }
+    }
+
     pub(crate) fn lower_object_source(
         &self,
         id: ast::ExprId,
@@ -379,6 +461,16 @@ impl Graph {
                 Some(super::function_names::SpecialName::Destructor) => {
                     return Err(Error::Missing("member function names"));
                 }
+                None if entity
+                    .member_function
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor) =>
+                {
+                    FunctionName::Constructor(
+                        self.entity(object.ok_or(Error::Invariant("constructor without class"))?)
+                            .name
+                            .ok_or(Error::Missing("anonymous constructor name"))?,
+                    )
+                }
                 None => FunctionName::Identifier(
                     entity
                         .name
@@ -393,7 +485,12 @@ impl Graph {
             )?,
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
             scope: entity.scope,
-            internal: function.internal_linkage,
+            internal: function.internal_linkage
+                || entity
+                    .home
+                    .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
+                    .and_then(|home| self.scope(home).owner)
+                    .is_some_and(|class| self.lower_entity_unit_local(class)),
             c_linkage: function.language == super::linkage::Language::C,
             emission: if entity.definition_emission
                 == super::function_demands::DefinitionEmission::Demanded
@@ -403,10 +500,18 @@ impl Graph {
             } else {
                 Emission::Always
             },
-            nothrow: matches!(
-                &entity.exceptions,
-                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
-            ),
+            nothrow: if entity.constructor_exceptions
+                == super::construction::ConstructorExceptionSource::SubobjectPlan
+            {
+                entity
+                    .constructor
+                    .is_some_and(|id| self.constructors.get(id).nothrow)
+            } else {
+                matches!(
+                    &entity.exceptions,
+                    super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
+                )
+            },
             allocation: if function.allocation.is_some() {
                 let Some(super::function_names::SpecialName::Operator { token, array }) =
                     function.special

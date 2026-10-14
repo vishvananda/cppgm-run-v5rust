@@ -21,6 +21,9 @@ impl Analyzer<'_> {
         if self.default_argument_scope.is_some() {
             return Ok(None);
         }
+        if let Some(class) = self.member_initializer_class {
+            return Ok(Some(self.graph.lower_entity_type(class)?));
+        }
         let Some(body) = &self.body_context else {
             return Ok(None);
         };

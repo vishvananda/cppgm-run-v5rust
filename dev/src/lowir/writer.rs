@@ -41,6 +41,10 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
         }
         written |= phase_written;
     }
+    write_aliases(program, &mut out)?;
+    out.flush()
+}
+pub(crate) fn write_aliases(program: &Program, out: &mut impl Write) -> io::Result<()> {
     for alias in program.aliases() {
         writeln!(
             out,
@@ -49,7 +53,7 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
             program.names.get(program.symbol(alias.target).name)
         )?;
     }
-    out.flush()
+    Ok(())
 }
 pub(crate) fn write_globals(
     program: &Program,

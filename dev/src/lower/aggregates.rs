@@ -20,6 +20,7 @@ pub(super) struct Step {
 enum Root {
     Slot(Value),
     Address(Value),
+    This(TypeId),
 }
 struct Path {
     root: Root,
@@ -47,7 +48,7 @@ impl Function<'_, '_, '_, '_> {
         self.symbols.require_trivial_storage(ty)?;
         let Some(initializer) = initializer else {
             if !self.graph.lower_trivial_default_construction(entity)? {
-                return Err(Error::Missing("default class construction lowering"));
+                return self.default_construct(entity, ty, slot);
             }
             self.emit(I::Addr(slot), ty)?;
             return Ok(());
@@ -78,6 +79,85 @@ impl Function<'_, '_, '_, '_> {
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
         let result = self.named_members(class, &mut input, &mut path);
+        path.steps.clear();
+        self.named_path = path.steps;
+        result
+    }
+    pub(super) fn constructor_aggregate_member(
+        &mut self,
+        member: EntityId,
+        pointer: TypeId,
+        initializer: ast::Initializer,
+        union: bool,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        let ty = self.graph.lower_entity_type(member)?;
+        let values = match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+                    self.tree.expr_lists.get(elements)
+                } else if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
+                    return Err(Error::Semantic(crate::sema::Error::Diagnostic {
+                        location,
+                        message: "an array member initialized from an expression",
+                    }));
+                } else {
+                    return Err(Error::Missing(
+                        "constructor class expression member lowering",
+                    ));
+                }
+            }
+            ast::InitializerKind::Parenthesized(arguments)
+                if self.tree.expr_lists.get(arguments).is_empty() =>
+            {
+                &[]
+            }
+            ast::InitializerKind::Parenthesized(_)
+                if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) =>
+            {
+                return Err(Error::Semantic(crate::sema::Error::Diagnostic {
+                    location,
+                    message: "an array member initialized from an expression",
+                }));
+            }
+            _ => {
+                return Err(Error::Missing(
+                    "constructor class expression member lowering",
+                ));
+            }
+        };
+        self.symbols.require_trivial_storage(ty)?;
+        let mut input = Input { values, next: 0 };
+        let mut path = Path {
+            root: Root::This(pointer),
+            steps: std::mem::take(&mut self.named_path),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        path.steps.push(Step {
+            ty: Type::I8,
+            projection: Projection::Field,
+            offset: self.graph.lower_member_offset(member)?,
+            untyped: union,
+        });
+        let string = if let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
+            types::character(self.graph, element)?
+                && values.first().is_some_and(|&id| {
+                    matches!(
+                        self.tree.expressions.get(self.without_parentheses(id)).kind,
+                        ExprKind::Literal(ast::Literal {
+                            kind: crate::lex::PostTokenKind::String { .. },
+                            ..
+                        })
+                    )
+                })
+        } else {
+            false
+        };
+        let result = if string {
+            self.named_item(ty, &mut input, &mut path, Item::ArrayElement)
+        } else {
+            self.named_contents(ty, &mut input, &mut path, false)
+        };
         path.steps.clear();
         self.named_path = path.steps;
         result
@@ -153,7 +233,7 @@ impl Function<'_, '_, '_, '_> {
         item: Item,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        let value_first = matches!(item, Item::NamedMember);
+        let value_first = matches!(item, Item::NamedMember) && !matches!(path.root, Root::This(_));
         let mut expr = input.values.get(input.next).copied();
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
             && types::character(self.graph, element)?
@@ -454,6 +534,7 @@ impl Function<'_, '_, '_, '_> {
         let mut address = match path.root {
             Root::Slot(slot) => self.emit(I::Addr(slot), source)?.value,
             Root::Address(address) => address,
+            Root::This(pointer) => self.object_pointer(pointer)?.value,
         };
         let mut untyped = false;
         for step in &path.steps {

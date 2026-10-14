@@ -42,6 +42,7 @@ impl LowIrOutput {
                 .ok_or_else(|| std::io::Error::other("missing startup function"))?;
             crate::lowir::writer::write_definition(&self.output.program, function, output)?;
         }
+        crate::lowir::writer::write_aliases(&self.output.program, output)?;
         Ok(())
     }
 }

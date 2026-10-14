@@ -13,6 +13,26 @@ use super::{
 use crate::syntax::ast::{self, ExprKind};
 
 impl Analyzer<'_> {
+    pub(super) fn initializer_may_throw(
+        &mut self,
+        initializer: ast::Initializer,
+    ) -> Result<bool, Error> {
+        match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                self.expression_may_throw(id)
+            }
+            ast::InitializerKind::Parenthesized(arguments) => {
+                for &id in self.tree.expr_lists.get(arguments) {
+                    if self.expression_may_throw(id)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            _ => Ok(false),
+        }
+    }
+
     pub(super) fn noexcept_expression(
         &mut self,
         id: ast::ExprId,
@@ -39,7 +59,7 @@ impl Analyzer<'_> {
         Ok(facts)
     }
 
-    fn expression_may_throw(&mut self, root: ast::ExprId) -> Result<bool, Error> {
+    pub(super) fn expression_may_throw(&mut self, root: ast::ExprId) -> Result<bool, Error> {
         // The C++ query's semantic depth bound is independent of stack exhaustion.
         // Nested pending specifications share capacity while retaining separate bases.
         // Only capacity survives a query; the analyzer releases it before lowering.
@@ -48,6 +68,40 @@ impl Analyzer<'_> {
         let result = self.walk_throw_query(base);
         self.throw_work.truncate(base);
         result
+    }
+
+    fn aggregate_destruction_may_throw(
+        &mut self,
+        class: super::graph::EntityId,
+    ) -> Result<bool, Error> {
+        let mut work = vec![class];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(class) = work.pop() {
+            if !seen.insert(class) {
+                continue;
+            }
+            if let Some(binding) = self.graph.entity(class).declared_destructor {
+                if self.function_may_throw(self.graph.binding(binding).entity)? {
+                    return Ok(true);
+                }
+                continue;
+            }
+            work.extend(self.graph.entity(class).bases.iter().map(|base| base.class));
+            for &member in &self.graph.entity(class).members {
+                let mut ty = self
+                    .graph
+                    .entity(member)
+                    .ty
+                    .ok_or(Error::Invariant("member without type"))?;
+                while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+                    ty = element;
+                }
+                if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
+                    work.push(class);
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn walk_throw_query(&mut self, base: usize) -> Result<bool, Error> {
@@ -68,8 +122,15 @@ impl Analyzer<'_> {
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;
             }
-            if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class temporary exception queries"));
+            if let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind
+                && facts.category == ValueCategory::Prvalue
+            {
+                if !matches!(kind, ExprKind::Braced { .. }) || !self.graph.aggregate_class(class) {
+                    return Err(Error::Missing("class temporary exception queries"));
+                }
+                if self.aggregate_destruction_may_throw(class)? {
+                    return Ok(true);
+                }
             }
             let next = depth + 1;
             match kind {

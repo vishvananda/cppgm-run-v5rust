@@ -46,7 +46,10 @@ impl Function<'_, '_, '_, '_> {
         } = self.symbols.local_storage_symbols(
             self.builder.program(),
             entity,
-            self.entity,
+            self.entity
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "implicit constructor with static local",
+                )))?,
             ordinal,
             dynamic,
         )?;

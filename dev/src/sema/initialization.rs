@@ -26,7 +26,18 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
         let target = self.graph.publish_variable_type(binding)?;
-        let completed = self.object_initializer(initializer, scope, target, location)?;
+        let entity = self.graph.binding(binding).entity;
+        let saved = self.member_initializer_class;
+        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance) {
+            self.member_initializer_class = self
+                .graph
+                .entity(entity)
+                .home
+                .and_then(|home| self.graph.scope(home).owner);
+        }
+        let completed = self.object_initializer(initializer, scope, target, location);
+        self.member_initializer_class = saved;
+        let completed = completed?;
         self.graph.complete_variable_type(binding, completed)?;
         self.check_nothrow_initializer(self.graph.binding(binding).entity, initializer)?;
         Ok(completed)

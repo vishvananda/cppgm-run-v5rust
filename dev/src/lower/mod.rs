@@ -4,6 +4,7 @@ mod aggregate_helpers;
 mod aggregates;
 mod arrays;
 mod conditions;
+mod construction;
 mod conversions;
 mod data;
 mod expressions;
@@ -68,6 +69,7 @@ pub(crate) fn lower_unit(
         .copied()
         .collect();
     let mut emitted = std::collections::HashSet::new();
+    let mut emitted_entries = std::collections::HashSet::new();
     while let Some(id) = work.pop() {
         match tree.declarations.get(id).kind {
             ast::DeclKind::Namespace { declarations, .. }
@@ -86,13 +88,43 @@ pub(crate) fn lower_unit(
                         &mut symbols,
                         graph,
                         tree,
-                        entity,
-                        body,
+                        construction::Entry::Function(entity),
+                        Some(body),
                         budget,
                     )?;
                     output
                         .program
                         .stream_last_definition(&mut output.definitions)?;
+                }
+            }
+            ast::DeclKind::SpecialMember { declarator, .. } => {
+                let entity = graph.lower_declared(declarator)?;
+                let facts = graph.lower_function(entity)?;
+                if facts.emission == crate::sema::lowering::Emission::Always {
+                    let id = graph
+                        .lower_construction(entity)
+                        .ok_or(Error::Missing("special member construction plan"))?;
+                    for variant in [construction::Variant::Base, construction::Variant::Complete] {
+                        let entry = construction::Entry::Constructor(id, variant);
+                        if variant == construction::Variant::Complete
+                            && graph.lower_constructor_trivial(id)
+                        {
+                            continue;
+                        }
+                        emitted_entries.insert(entry);
+                        function::lower(
+                            &mut output.program,
+                            &mut symbols,
+                            graph,
+                            tree,
+                            construction::Entry::Constructor(id, variant),
+                            graph.lower_function_body(entity),
+                            budget,
+                        )?;
+                        output
+                            .program
+                            .stream_last_definition(&mut output.definitions)?;
+                    }
                 }
             }
             ast::DeclKind::Simple { declarators, .. } => {
@@ -135,28 +167,64 @@ pub(crate) fn lower_unit(
         graph,
         &mut output.definitions,
     )?;
-    while let Some(&entity) = symbols.pending.get(next) {
+    while let Some(&entry) = symbols.pending.get(next) {
         next += 1;
-        if !emitted.insert(entity) {
+        if !emitted_entries.insert(entry) {
             continue;
         }
-        let facts = graph.lower_function(entity)?;
-        let Some(declaration) = facts.definition else {
-            function::declare(&mut output.program, &mut symbols, graph, entity)?;
-            continue;
-        };
-        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
-            return Err(Error::Missing("special function definition lowering"));
-        };
-        function::lower(
-            &mut output.program,
-            &mut symbols,
-            graph,
-            tree,
-            entity,
-            body,
-            budget,
-        )?;
+        if let construction::Entry::Function(entity) = entry {
+            if !emitted.insert(entity) {
+                continue;
+            }
+            let facts = graph.lower_function(entity)?;
+            let Some(declaration) = facts.definition else {
+                function::declare(&mut output.program, &mut symbols, graph, entity)?;
+                continue;
+            };
+            let body = match tree.declarations.get(declaration).kind {
+                ast::DeclKind::Function { body, .. } => Some(body),
+                ast::DeclKind::SpecialMember { .. } => graph.lower_function_body(entity),
+                _ => return Err(Error::Missing("special function definition lowering")),
+            };
+            function::lower(
+                &mut output.program,
+                &mut symbols,
+                graph,
+                tree,
+                entry,
+                body,
+                budget,
+            )?;
+        } else {
+            let construction::Entry::Constructor(id, _) = entry else {
+                return Err(Error::Missing("entry kind"));
+            };
+            if let Some(entity) = graph.lower_constructor_entity(id)
+                && !graph.lower_function_defined(entity)
+            {
+                function::declare(&mut output.program, &mut symbols, graph, entity)?;
+                continue;
+            }
+            let facts = entry.facts(graph)?;
+            let symbol = symbols.entry_symbol(&mut output.program, entry)?;
+            if facts.emission == crate::sema::lowering::Emission::Demanded
+                && output.program.function_defined(symbol)
+            {
+                continue;
+            }
+            let body = graph
+                .lower_constructor_entity(id)
+                .and_then(|entity| graph.lower_function_body(entity));
+            function::lower(
+                &mut output.program,
+                &mut symbols,
+                graph,
+                tree,
+                entry,
+                body,
+                budget,
+            )?;
+        }
         output
             .program
             .stream_last_definition(&mut output.definitions)?;

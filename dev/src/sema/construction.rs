@@ -10,8 +10,15 @@ use super::{
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ConstructorExceptionSource {
+    #[default]
+    Declared,
+    SubobjectPlan,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct ConstructorId(u32);
+pub(crate) struct ConstructorId(u32);
 #[derive(Clone, Copy, Default)]
 pub(super) enum ConstructorState {
     #[default]
@@ -25,6 +32,8 @@ pub(super) struct Constructor {
     pub object_pointer: TypeId,
     // The dump's function type includes its implicit object parameter.
     pub presentation_type: TypeId,
+    pub callable_type: TypeId,
+    pub nothrow: bool,
     deleted: bool,
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
@@ -448,11 +457,29 @@ impl Analyzer<'_> {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
         }
+        let callable_type = self.graph.types.intern(
+            TypeKind::Function {
+                result: void,
+                parameters: Vec::new(),
+                variadic: false,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        let mut nothrow = true;
+        for &(_, source) in &plans {
+            if let Some(source) = source {
+                nothrow &= !self.initializer_may_throw(source)?;
+            }
+        }
         let record = Constructor {
             class,
             binding,
             object_pointer,
             presentation_type,
+            callable_type,
+            nothrow,
             deleted,
             const_default: const_default
                 || binding.is_some_and(|binding| {
@@ -549,6 +576,8 @@ impl Analyzer<'_> {
             binding: Some(binding),
             object_pointer,
             presentation_type,
+            callable_type: signature,
+            nothrow: false,
             deleted: self.graph.entity(entity).availability
                 == super::graph::FunctionAvailability::Deleted,
             const_default: true,

@@ -31,7 +31,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub locals: HashMap<EntityId, Value>,
     pub untyped_places: std::collections::HashSet<Value>,
     pub named_path: Vec<super::aggregates::Step>,
-    pub entity: EntityId,
+    pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
     pub next_static: u32,
     pub next_block: u32,
@@ -51,11 +51,12 @@ pub(super) fn lower<'a>(
     symbols: &mut Symbols<'a, '_>,
     graph: &'a Graph,
     tree: &'a ast::Tree,
-    entity: EntityId,
-    body: ast::BodyId,
+    entry: super::construction::Entry,
+    body: Option<ast::BodyId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
-    let facts = graph.lower_function(entity)?;
+    let facts = entry.facts(graph)?;
+    let entity = entry.entity(graph);
     let TypeView::Function {
         result,
         parameters,
@@ -97,7 +98,7 @@ pub(super) fn lower<'a>(
             types::storage(graph, ty)?,
         ));
     }
-    let symbol = symbols.function_symbol(program, entity)?;
+    let symbol = symbols.entry_symbol(program, entry)?;
     if program.function_defined(symbol) {
         let declaration =
             facts
@@ -111,7 +112,7 @@ pub(super) fn lower<'a>(
         }));
     }
     let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let metadata = symbols.metadata(program, entity, &name)?;
+    let metadata = symbols.entry_metadata(program, entry, &name)?;
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters: Vec<_> = names
         .iter()
@@ -209,15 +210,28 @@ pub(super) fn lower<'a>(
         ))?;
         function.locals.insert(entity, slot);
     }
-    let ast::Body::Parsed(body) = tree.bodies.get(body) else {
-        return Err(Error::Semantic(crate::sema::Error::Invariant(
-            "lowering deferred body",
-        )));
-    };
-    if body.handlers.is_some() || !tree.mem_initializers.get(body.initializers).is_empty() {
-        return Err(Error::Missing("exception and constructor lowering"));
+    let body = body
+        .map(|id| {
+            let ast::Body::Parsed(body) = tree.bodies.get(id) else {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "lowering deferred body",
+                )));
+            };
+            Ok(body)
+        })
+        .transpose()?;
+    if let super::construction::Entry::Constructor(id, _) = entry {
+        let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
+            tree.statements.get(body.compound).location
+        });
+        function.initialize_constructor(id, location)?;
     }
-    function.statement(body.compound)?;
+    if let Some(body) = body {
+        if body.handlers.is_some() {
+            return Err(Error::Missing("exception lowering"));
+        }
+        function.statement(body.compound)?;
+    }
     if !function.terminated {
         let ty = types::storage(graph, result)?;
         if ty != Type::Void
@@ -237,6 +251,7 @@ pub(super) fn lower<'a>(
         }
     }
     function.builder.finish()?;
+    symbols.finish_entry(program, entry, symbol)?;
     Ok(())
 }
 impl Function<'_, '_, '_, '_> {
