@@ -35,6 +35,10 @@ impl Analyzer<'_> {
                 .home
                 .and_then(|home| self.graph.scope(home).owner);
         }
+        let saved_initializing = self.initializing;
+        if !self.graph.lower_automatic(entity) {
+            self.initializing = Some(entity);
+        }
         let completed = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
             self.initialize_class_object(target, initializer, scope, location)
                 .map(|selected| {
@@ -47,6 +51,7 @@ impl Analyzer<'_> {
         } else {
             self.object_initializer(initializer, scope, target, location)
         };
+        self.initializing = saved_initializing;
         self.member_initializer_class = saved;
         let completed = completed?;
         self.graph.complete_variable_type(binding, completed)?;

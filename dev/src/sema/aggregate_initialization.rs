@@ -103,6 +103,12 @@ impl Analyzer<'_> {
                 location,
                 "a reference member without an initializer",
             )),
+            TypeKind::Class(class) if !self.graph.aggregate_class(class) => {
+                let constructor = self.default_constructor(class, location)?;
+                self.validate_constructor_use(constructor, scope, location)?;
+                self.demand_constructor_use(constructor);
+                Ok(())
+            }
             TypeKind::Class(class) => {
                 // Reuse one borrowed empty child slice; no synthetic syntax is published.
                 let empty = List::default();

@@ -18,7 +18,36 @@ pub(crate) struct FunctionBuilder<'a> {
     slot_names: Vec<super::construction_names::SlotName>,
 }
 
+/// A suspended body owns its construction state without borrowing the program.
+/// This permits declaration-ordered startup work between ordinary definitions.
+pub(crate) struct SuspendedFunction {
+    symbol: SymbolId,
+    function: Function,
+    body: Body,
+    block: Option<BlockId>,
+    slot_names: Vec<super::construction_names::SlotName>,
+}
+
 impl<'a> FunctionBuilder<'a> {
+    pub(crate) fn resume(program: &'a mut Program, saved: SuspendedFunction) -> Self {
+        Self {
+            program,
+            symbol: saved.symbol,
+            function: saved.function,
+            body: saved.body,
+            block: saved.block,
+            slot_names: saved.slot_names,
+        }
+    }
+    pub(crate) fn suspend(self) -> SuspendedFunction {
+        SuspendedFunction {
+            symbol: self.symbol,
+            function: self.function,
+            body: self.body,
+            block: self.block,
+            slot_names: self.slot_names,
+        }
+    }
     pub(crate) fn new(
         program: &'a mut Program,
         name: &str,
@@ -282,6 +311,48 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn suspended_body_keeps_ids_and_slot_names_across_another_definition() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "startup", &[], Type::Void)?;
+        builder.block("entry")?;
+        let slot = builder.generated_slot("value", Type::I32)?;
+        let one = builder.integer(1)?;
+        builder.effect(I::Store(
+            super::super::model::Facts::default(),
+            Type::I32,
+            one,
+            slot,
+        ))?;
+        let saved = builder.suspend();
+        let mut interposed = FunctionBuilder::new(&mut program, "ordinary", &[], Type::Void)?;
+        interposed.block("entry")?;
+        interposed.effect(I::Return(Type::Void, None))?;
+        interposed.finish()?;
+        let mut builder = FunctionBuilder::resume(&mut program, saved);
+        let other = builder.slot("value__1", Type::I32)?;
+        let value = builder.generated(I::Load(
+            super::super::model::Facts::default(),
+            Type::I32,
+            slot,
+        ))?;
+        builder.effect(I::Store(
+            super::super::model::Facts::default(),
+            Type::I32,
+            value,
+            other,
+        ))?;
+        builder.effect(I::Return(Type::Void, None))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        let mut text = Vec::new();
+        super::super::writer::write(&program, &mut text).map_err(Error::Output)?;
+        let text = String::from_utf8(text).map_err(|_| Error::Limit)?;
+        assert!(text.contains("$value__1 : i32"));
+        assert!(text.contains("$value__2 : i32"));
+        Ok(())
+    }
 
     #[test]
     fn incoming_policy_distinguishes_dead_jumps_and_branch_seeds() -> Result<(), Error> {

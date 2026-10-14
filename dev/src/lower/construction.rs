@@ -57,6 +57,15 @@ impl Function<'_, '_, '_, '_> {
             )))?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         let arguments = self.graph.lower_constructor_arguments(entity);
+        self.construct_at(id, ty, object, arguments)
+    }
+    pub(super) fn construct_at(
+        &mut self,
+        id: ConstructorId,
+        ty: TypeId,
+        object: Value,
+        arguments: Option<ConstructorArguments>,
+    ) -> Result<(), Error> {
         if matches!(arguments, Some(ConstructorArguments::Value)) {
             if self.graph.lower_constructor(id).zero_before_value {
                 // Value-initialization zeroes storage before any nontrivial call.
@@ -68,7 +77,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.call_constructor(id, Variant::Complete, object, arguments)
     }
-    fn call_constructor(
+    pub(super) fn call_constructor(
         &mut self,
         id: ConstructorId,
         variant: Variant,

@@ -62,19 +62,24 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             StmtKind::Return(operand) => {
-                let ty = types::storage(self.graph, self.result)?;
+                let result = self
+                    .result
+                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                        "source return in synthetic function",
+                    )))?;
+                let ty = types::storage(self.graph, result)?;
                 let value = if let Some(id) = operand {
                     if matches!(
-                        self.graph.lower_type(self.result)?,
+                        self.graph.lower_type(result)?,
                         crate::sema::lowering::TypeView::Reference { .. }
                     ) {
-                        Some(self.bind_reference(id, self.result, Context::Return)?)
+                        Some(self.bind_reference(id, result, Context::Return)?)
                     } else {
                         let value = self.operand(id, Context::Return)?;
                         if ty == crate::lowir::vocabulary::Type::Void {
                             None
                         } else {
-                            Some(self.fit(value, self.result)?.value)
+                            Some(self.fit(value, result)?.value)
                         }
                     }
                 } else {

@@ -503,6 +503,37 @@ impl Graph {
     pub(crate) fn lower_requested_alignment(&self, id: EntityId) -> u32 {
         self.entity(id).storage_attributes.alignment
     }
+    pub(crate) fn lower_initializer_constructors(&self, entity: EntityId) -> &[ConstructorId] {
+        self.initializer_constructors.get(entity)
+    }
+    pub(crate) fn lower_array_image_prefix(
+        &self,
+        id: EntityId,
+    ) -> Option<&[super::static_arrays::Item]> {
+        self.array_images.prefix(id)
+    }
+    pub(crate) fn lower_default_constructor(
+        &self,
+        class: EntityId,
+    ) -> Result<ConstructorId, Error> {
+        let super::construction::ConstructorState::Ready(id) =
+            self.entity(class).default_construction
+        else {
+            return Err(Error::Invariant(
+                "lowering default construction without plan",
+            ));
+        };
+        Ok(id)
+    }
+    pub(crate) fn lower_list_constructor(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<ConstructorId>, Error> {
+        Ok(self.expression_facts.get(id)?.constructor)
+    }
+    pub(crate) fn lower_aggregate_class(&self, class: EntityId) -> bool {
+        self.aggregate_class(class)
+    }
     pub(crate) fn lower_array_image(&self, id: EntityId) -> Option<&[super::static_arrays::Item]> {
         self.array_images.get(id)
     }

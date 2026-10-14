@@ -14,6 +14,7 @@ pub(super) struct Step {
     ty: Type,
     projection: Projection,
     offset: u64,
+    scale: Option<u64>,
     untyped: bool,
 }
 #[derive(Clone, Copy)]
@@ -74,6 +75,16 @@ impl Function<'_, '_, '_, '_> {
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
+        self.initialize_aggregate(entity, ty, slot, initializer, true)
+    }
+    pub(super) fn initialize_aggregate(
+        &mut self,
+        entity: EntityId,
+        ty: TypeId,
+        slot: Value,
+        initializer: Option<ast::Initializer>,
+        root_address: bool,
+    ) -> Result<(), Error> {
         self.symbols.require_trivial_storage(ty)?;
         if initializer.is_some() && self.graph.lower_constructor_arguments(entity).is_some() {
             return self.construct_local(entity, ty, slot);
@@ -98,7 +109,7 @@ impl Function<'_, '_, '_, '_> {
                 "aggregate without class",
             )));
         };
-        if self.aggregate_stores(class)? {
+        if root_address && self.aggregate_stores(class)? {
             self.emit(I::Addr(slot), ty)?;
         }
         let mut input = Input {
@@ -166,6 +177,7 @@ impl Function<'_, '_, '_, '_> {
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
         path.steps.push(Step {
+            scale: None,
             ty: Type::I8,
             projection: Projection::Field,
             offset: self.graph.lower_member_offset(member)?,
@@ -190,6 +202,34 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.named_contents(ty, &mut input, &mut path, false)
         };
+        path.steps.clear();
+        self.named_path = path.steps;
+        result
+    }
+    pub(super) fn global_class_array(
+        &mut self,
+        ty: TypeId,
+        storage: Value,
+        initializer: ast::Initializer,
+    ) -> Result<(), Error> {
+        let (ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)) =
+            initializer.kind
+        else {
+            return Err(Error::Missing("class array non-list initialization"));
+        };
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Missing("class array non-list initialization"));
+        };
+        let mut input = Input {
+            values: self.tree.expr_lists.get(elements),
+            next: 0,
+        };
+        let mut path = Path {
+            root: Root::Slot(storage),
+            steps: std::mem::take(&mut self.named_path),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        let result = self.named_contents(ty, &mut input, &mut path, false);
         path.steps.clear();
         self.named_path = path.steps;
         result
@@ -294,6 +334,7 @@ impl Function<'_, '_, '_, '_> {
         path: &mut Path,
     ) -> Result<Value, Error> {
         path.steps.push(Step {
+            scale: None,
             ty: Type::I8,
             projection: Projection::Field,
             offset: field.offset,
@@ -328,6 +369,7 @@ impl Function<'_, '_, '_, '_> {
             self.bit_initialization.unit = 0;
             let ty = self.graph.lower_entity_type(member)?;
             path.steps.push(Step {
+                scale: None,
                 ty: Type::I8,
                 projection: Projection::Field,
                 offset: self.graph.lower_member_offset(member)?,
@@ -360,6 +402,36 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let value_first = matches!(item, Item::NamedMember) && !matches!(path.root, Root::This(_));
         let mut expr = input.values.get(input.next).copied();
+        if let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && !self.graph.lower_aggregate_class(class)
+        {
+            self.symbols.require_trivial_storage(ty)?;
+            let object = self.named_address(path, ty)?;
+            let (constructor, arguments) = if let Some(id) = expr {
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+                    return Err(Error::Missing("class subobject expression materialization"));
+                };
+                input.next += 1;
+                let constructor = self
+                    .graph
+                    .lower_list_constructor(id)?
+                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                        "class list without selected constructor",
+                    )))?;
+                let arguments = if self.tree.expr_lists.get(elements).is_empty() {
+                    crate::sema::lowering::ConstructorArguments::Value
+                } else {
+                    crate::sema::lowering::ConstructorArguments::Values(elements)
+                };
+                (constructor, arguments)
+            } else {
+                (
+                    self.graph.lower_default_constructor(class)?,
+                    crate::sema::lowering::ConstructorArguments::Value,
+                )
+            };
+            return self.construct_at(constructor, ty, object, Some(arguments));
+        }
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
             && types::character(self.graph, element)?
             && let Some(id) = expr
@@ -481,6 +553,7 @@ impl Function<'_, '_, '_, '_> {
         let ty = types::storage(self.graph, element)?;
         for index in 0..bound {
             path.steps.push(Step {
+                scale: None,
                 ty,
                 projection: Projection::ArrayElement,
                 offset: index,
@@ -515,21 +588,17 @@ impl Function<'_, '_, '_, '_> {
                     return self.structured_elements(ty, element, bound, input, path, field);
                 }
                 for index in 0..bound {
-                    let (ty_ir, offset) =
+                    let (ty_ir, scale) =
                         if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
-                            (
-                                Type::I8,
-                                index
-                                    .checked_mul(types::layout(self.graph, element)?.0)
-                                    .ok_or(crate::lowir::Error::Limit)?,
-                            )
+                            (Type::I8, Some(types::layout(self.graph, element)?.0))
                         } else {
-                            (types::storage(self.graph, element)?, index)
+                            (types::storage(self.graph, element)?, None)
                         };
                     path.steps.push(Step {
+                        scale,
                         ty: ty_ir,
                         projection: Projection::ArrayElement,
-                        offset,
+                        offset: index,
                         untyped: false,
                     });
                     self.named_item(element, input, path, Item::ArrayElement)?;
@@ -685,7 +754,22 @@ impl Function<'_, '_, '_, '_> {
         };
         let mut untyped = false;
         for step in &path.steps {
-            let offset = self.builder.integer(u128::from(step.offset))?;
+            let mut offset = self.builder.integer(u128::from(step.offset))?;
+            if let Some(bytes) = step.scale {
+                let size = self.builder.integer(u128::from(bytes))?;
+                offset = self
+                    .emit(
+                        I::Binary(
+                            crate::lowir::vocabulary::Binary::Mul,
+                            Facts::default(),
+                            Type::I64,
+                            offset,
+                            size,
+                        ),
+                        source,
+                    )?
+                    .value;
+            }
             address = self
                 .emit(
                     I::Index(step.ty, Some(step.projection), address, offset),

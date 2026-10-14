@@ -20,6 +20,7 @@ mod mutations;
 mod operator_calls;
 mod pointers;
 mod references;
+mod startup;
 mod statements;
 mod symbols;
 mod types;
@@ -57,8 +58,15 @@ pub(crate) struct Output {
     pub definitions: definition_order::Definitions,
     pub initializer: Option<crate::lowir::model::SymbolId>,
     symbols: symbols::SymbolTable,
+    startup: startup::Startup,
 }
 impl Output {
+    pub(crate) fn finish_initialization(&mut self) -> Result<(), Error> {
+        if let Some(symbol) = self.initializer {
+            self.startup.finish(&mut self.program, symbol)?;
+        }
+        Ok(())
+    }
     pub(crate) fn finish_entry_aliases(&mut self) {
         self.symbols.finish_entry_aliases(&mut self.program);
     }
@@ -179,25 +187,18 @@ pub(crate) fn lower_unit(
                 }
             }
             ast::DeclKind::Simple { declarators, .. } => {
-                for declarator in tree.init_declarators.get(declarators) {
-                    let entity = graph.lower_declared(declarator.declarator)?;
-                    if graph.lower_is_variable(entity)
-                        && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
-                    {
-                        globals::define(
-                            &mut output.program,
-                            &mut symbols,
-                            graph,
-                            tree,
-                            entity,
-                            declarator.initializer,
-                            tree.declarators.get(declarator.declarator).location,
-                        )?;
-                        if symbols.emit_tls_wrapper(&mut output.program, entity)? {
-                            output.definitions.stream(&mut output.program, None)?;
-                        }
-                    }
-                }
+                globals::lower_declaration(
+                    &mut globals::GlobalOutput {
+                        program: &mut output.program,
+                        startup: &mut output.startup,
+                        definitions: &mut output.definitions,
+                    },
+                    &mut symbols,
+                    graph,
+                    tree,
+                    declarators,
+                    budget,
+                )?;
             }
             ast::DeclKind::Empty
             | ast::DeclKind::Alias { .. }
@@ -296,7 +297,7 @@ pub(crate) fn lower_unit(
     )?;
     output.definitions.release_held();
     globals::finish(&mut output.program, &mut symbols, graph)?;
-    if let Some(symbol) = symbols.empty_initialization {
+    if let Some(symbol) = symbols.initialization {
         output.initializer = Some(symbol);
     }
     Ok(())

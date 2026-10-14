@@ -34,6 +34,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub named_path: Vec<super::aggregates::Step>,
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
+    pub persistent_references: bool,
     pub next_static: u32,
     pub next_block: u32,
     pub jumps: Vec<super::statements::JumpTargets>,
@@ -43,7 +44,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub folded_targets: Vec<crate::lowir::model::BlockId>,
     pub conditional_slot: Option<Value>,
     pub terminated: bool,
-    pub result: TypeId,
+    pub result: Option<TypeId>,
     pub budget: StackBudget,
     pub stack_base: usize,
 }
@@ -162,31 +163,7 @@ pub(super) fn lower<'a>(
     builtin_boundary(&mut boundary, facts.builtin);
     builder.boundary(boundary);
     builder.block("entry")?;
-    let marker = 0u8;
-    let mut function = Function {
-        graph,
-        tree,
-        builder,
-        symbols,
-        locals: HashMap::new(),
-        untyped_places: std::collections::HashSet::new(),
-        bit_initialization: super::bit_fields::Initialization::default(),
-        named_path: Vec::new(),
-        entity,
-        this_slot: None,
-        next_static: 0,
-        next_block: 0,
-        jumps: Vec::new(),
-        switch_blocks: HashMap::new(),
-        label_memo: HashMap::new(),
-        labels: HashMap::new(),
-        folded_targets: Vec::new(),
-        conditional_slot: None,
-        terminated: false,
-        result,
-        budget,
-        stack_base: std::ptr::from_ref(&marker).addr(),
-    };
+    let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
     if object_count != 0 {
         let slot = function.builder.slot("this", Type::Ptr)?;
         let incoming = function.builder.parameter(0)?;
@@ -262,6 +239,44 @@ pub(super) fn lower<'a>(
     function.builder.finish()?;
     symbols.finish_entry(program, entry, symbol)?;
     Ok(())
+}
+impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> {
+    pub(super) fn new(
+        graph: &'a Graph,
+        tree: &'a ast::Tree,
+        builder: FunctionBuilder<'program>,
+        symbols: &'symbols mut Symbols<'a, 'source>,
+        entity: Option<EntityId>,
+        result: Option<TypeId>,
+        budget: StackBudget,
+    ) -> Self {
+        let marker = 0u8;
+        Self {
+            graph,
+            tree,
+            builder,
+            symbols,
+            locals: HashMap::new(),
+            untyped_places: std::collections::HashSet::new(),
+            bit_initialization: super::bit_fields::Initialization::default(),
+            named_path: Vec::new(),
+            entity,
+            this_slot: None,
+            persistent_references: false,
+            next_static: 0,
+            next_block: 0,
+            jumps: Vec::new(),
+            switch_blocks: HashMap::new(),
+            label_memo: HashMap::new(),
+            labels: HashMap::new(),
+            folded_targets: Vec::new(),
+            conditional_slot: None,
+            terminated: false,
+            result,
+            budget,
+            stack_base: std::ptr::from_ref(&marker).addr(),
+        }
+    }
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn object_pointer(&mut self, source: TypeId) -> Result<RValue, Error> {

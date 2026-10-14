@@ -28,6 +28,9 @@ impl LowIrOutput {
     /// # Errors
     /// Returns an output failure.
     pub fn write(&mut self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        self.output.finish_initialization().map_err(|error| {
+            std::io::Error::other(format!("startup finalization failed: {error:?}"))
+        })?;
         self.output.finish_entry_aliases();
         crate::lowir::writer::write_globals(
             &self.output.program,

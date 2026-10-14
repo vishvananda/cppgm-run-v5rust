@@ -22,6 +22,21 @@ pub(crate) enum ConstructorArguments {
     Single(ast::ExprId),
     Value,
 }
+#[derive(Default)]
+pub(super) struct InitializerConstructors {
+    values: std::collections::HashMap<EntityId, Vec<ConstructorId>>,
+}
+impl InitializerConstructors {
+    pub(super) fn note(&mut self, entity: EntityId, constructor: ConstructorId) {
+        let constructors = self.values.entry(entity).or_default();
+        if constructors.last() != Some(&constructor) {
+            constructors.push(constructor);
+        }
+    }
+    pub(super) fn get(&self, entity: EntityId) -> &[ConstructorId] {
+        self.values.get(&entity).map_or(&[], Vec::as_slice)
+    }
+}
 impl Analyzer<'_> {
     pub(super) fn initialize_class_object(
         &mut self,
@@ -225,7 +240,7 @@ impl Analyzer<'_> {
         }
         Ok(false)
     }
-    fn validate_constructor_use(
+    pub(super) fn validate_constructor_use(
         &mut self,
         id: ConstructorId,
         scope: ScopeId,
@@ -248,6 +263,12 @@ impl Analyzer<'_> {
     pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) {
         if self.unevaluated != 0 {
             return;
+        }
+        if self.body_context.is_none()
+            && self.graph.constructors.get(id).nontrivial()
+            && let Some(entity) = self.initializing
+        {
+            self.graph.initializer_constructors.note(entity, id);
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
             self.demand_function(binding, true);

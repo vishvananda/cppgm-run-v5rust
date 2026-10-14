@@ -24,11 +24,24 @@ pub(crate) enum Item {
 }
 #[derive(Default)]
 pub(super) struct Images {
-    values: HashMap<EntityId, Vec<Item>>,
+    values: HashMap<EntityId, Image>,
+}
+enum Image {
+    Constant(Vec<Item>),
+    Dynamic(Vec<Item>),
 }
 impl Images {
     pub(super) fn get(&self, entity: EntityId) -> Option<&[Item]> {
-        self.values.get(&entity).map(Vec::as_slice)
+        match self.values.get(&entity) {
+            Some(Image::Constant(items)) => Some(items),
+            _ => None,
+        }
+    }
+    pub(super) fn prefix(&self, entity: EntityId) -> Option<&[Item]> {
+        match self.values.get(&entity) {
+            Some(Image::Dynamic(items)) => Some(items),
+            _ => None,
+        }
     }
 }
 impl Analyzer<'_> {
@@ -45,9 +58,15 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let mut image = Vec::new();
-        if self.static_array_element(target, Some(expr), scope, &mut image)? {
-            self.graph.array_images.values.insert(entity, image);
-        }
+        let complete = self.static_array_element(target, Some(expr), scope, &mut image)?;
+        self.graph.array_images.values.insert(
+            entity,
+            if complete {
+                Image::Constant(image)
+            } else {
+                Image::Dynamic(image)
+            },
+        );
         Ok(())
     }
     fn static_array_element(
@@ -68,7 +87,11 @@ impl Analyzer<'_> {
             } else {
                 &[]
             };
-            return self.static_class_list(class, list, &mut 0, scope, out);
+            let constructor = expr
+                .map(|id| self.graph.lower_list_constructor(id))
+                .transpose()?
+                .flatten();
+            return self.static_class_list(class, list, &mut 0, scope, out, constructor);
         }
         if matches!(
             self.graph.types.get(target).kind,
@@ -204,7 +227,7 @@ impl Analyzer<'_> {
                     TypeKind::Array { element, .. } if self.character_element(element)))
             {
                 let evaluated = if let TypeKind::Class(class) = self.graph.types.get(element).kind {
-                    self.static_class_list(class, list, next, scope, out)?
+                    self.static_class_list(class, list, next, scope, out, None)?
                 } else {
                     self.static_array_list(element, list, next, scope, out)?
                 };
@@ -229,9 +252,12 @@ impl Analyzer<'_> {
         next: &mut usize,
         scope: ScopeId,
         out: &mut Vec<Item>,
+        constructor: Option<super::construction::ConstructorId>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
-        if !self.graph.aggregate_class(class) {
+        if !self.graph.aggregate_class(class)
+            && !self.static_memberwise_constructor(constructor, list.len() - *next)?
+        {
             return Ok(false);
         }
         let ty = self.graph.lower_entity_type(class)?;
@@ -318,7 +344,7 @@ impl Analyzer<'_> {
                     && matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. } if self.character_element(element)))
             {
                 if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
-                    self.static_class_list(class, list, next, scope, out)?
+                    self.static_class_list(class, list, next, scope, out, None)?
                 } else {
                     self.static_array_list(ty, list, next, scope, out)?
                 }
@@ -358,6 +384,75 @@ impl Analyzer<'_> {
             size.checked_sub(position)
                 .ok_or(Error::Invariant("aggregate size without member bytes"))?,
         )?;
+        Ok(true)
+    }
+    fn static_memberwise_constructor(
+        &mut self,
+        constructor: Option<super::construction::ConstructorId>,
+        count: usize,
+    ) -> Result<bool, Error> {
+        let Some(constructor) = constructor else {
+            return Ok(false);
+        };
+        let plan = self.graph.constructors.get(constructor);
+        let Some(binding) = plan.binding else {
+            return Ok(false);
+        };
+        let entity = self.graph.binding(binding).entity;
+        if self.graph.entity(entity).constexpr
+            || !plan.bases.is_empty()
+            || plan.members.len() != count
+        {
+            return Ok(false);
+        }
+        let Some(body) = self.graph.lower_function_body(entity) else {
+            return Ok(false);
+        };
+        let ast::Body::Parsed(body) = self.tree.bodies.get(body) else {
+            return Err(Error::Invariant("static constructor body still deferred"));
+        };
+        let ast::StmtKind::Compound(statements) = self.tree.statements.get(body.compound).kind
+        else {
+            return Err(Error::Invariant("static constructor body not compound"));
+        };
+        if body.handlers.is_some() || !self.tree.stmt_lists.get(statements).is_empty() {
+            return Ok(false);
+        }
+        let facts = self.graph.lower_constructor_function(constructor)?;
+        let parameters: Vec<_> = self.graph.lower_parameters(facts.scope).collect();
+        if parameters.len() != count {
+            return Ok(false);
+        }
+        for (index, &(parameter, _, parameter_ty)) in parameters.iter().enumerate() {
+            let (member, initializer) = self.graph.constructors.get(constructor).members[index];
+            if self.graph.entity(member).bit_field.is_some() {
+                return Ok(false);
+            }
+            let Some(ast::Initializer {
+                kind: ast::InitializerKind::Parenthesized(arguments),
+                ..
+            }) = initializer
+            else {
+                return Ok(false);
+            };
+            let [expr] = self.tree.expr_lists.get(arguments) else {
+                return Ok(false);
+            };
+            let mut expr = *expr;
+            while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {
+                expr = inner;
+            }
+            let ExprKind::Id(name) = self.tree.expressions.get(expr).kind else {
+                return Ok(false);
+            };
+            if self.graph.lower_name(name)? != parameter {
+                return Ok(false);
+            }
+            let member_ty = self.graph.lower_entity_type(member)?;
+            if self.bare_type(parameter_ty)? != self.bare_type(member_ty)? {
+                return Ok(false);
+            }
+        }
         Ok(true)
     }
     fn static_array_string(

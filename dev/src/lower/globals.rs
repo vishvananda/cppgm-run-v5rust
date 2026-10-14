@@ -14,7 +14,56 @@ use crate::{
     syntax::ast,
     types::FundamentalType as F,
 };
-pub(super) fn define(
+pub(super) struct GlobalOutput<'a> {
+    pub program: &'a mut Program,
+    pub startup: &'a mut super::startup::Startup,
+    pub definitions: &'a mut super::definition_order::Definitions,
+}
+pub(super) fn lower_declaration<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
+    declarators: crate::syntax::storage::List<ast::InitDeclarator>,
+    budget: crate::support::stack::StackBudget,
+) -> Result<(), Error> {
+    for declarator in tree.init_declarators.get(declarators) {
+        let entity = graph.lower_declared(declarator.declarator)?;
+        if graph.lower_is_variable(entity)
+            && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
+        {
+            let initialization = define(
+                output.program,
+                symbols,
+                graph,
+                tree,
+                entity,
+                declarator.initializer,
+                tree.declarators.get(declarator.declarator).location,
+            )?;
+            if initialization == Initialization::Dynamic {
+                output.startup.initialize(
+                    output.program,
+                    symbols,
+                    (graph, tree),
+                    entity,
+                    declarator.initializer,
+                    budget,
+                )?;
+            }
+            if symbols.emit_tls_wrapper(output.program, entity)? {
+                output.definitions.stream(output.program, None)?;
+            }
+        }
+    }
+    Ok(())
+}
+#[derive(PartialEq, Eq)]
+enum Initialization {
+    Static,
+    Dynamic,
+}
+fn define(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
@@ -22,7 +71,7 @@ pub(super) fn define(
     entity: EntityId,
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
-) -> Result<(), Error> {
+) -> Result<Initialization, Error> {
     let saved = symbols.replace_temporary_owner(Some((entity, 0)));
     let result = define_storage(program, symbols, graph, tree, entity, initializer, location);
     symbols.replace_temporary_owner(saved);
@@ -36,19 +85,16 @@ fn define_storage(
     entity: EntityId,
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
-) -> Result<(), Error> {
+) -> Result<Initialization, Error> {
     let facts = graph.lower_variable(entity)?;
     symbols.require_trivial_storage(facts.ty)?;
     let mut object = facts.ty;
     while let TypeView::Array { element, .. } = graph.lower_type(object)? {
         object = element;
     }
-    if initializer.is_none()
-        && matches!(graph.lower_type(object)?, TypeView::Class(_))
-        && !graph.lower_trivial_default_construction(entity)?
-    {
-        return Err(Error::Missing("global class construction lowering"));
-    }
+    let constructed = matches!(graph.lower_type(object)?, TypeView::Class(_))
+        && (initializer.is_some() && graph.lower_constructor_arguments(entity).is_some()
+            || initializer.is_none() && !graph.lower_trivial_default_construction(entity)?);
     let array = matches!(
         graph.lower_type(facts.ty)?,
         TypeView::Array { .. } | TypeView::Class(_)
@@ -69,39 +115,48 @@ fn define_storage(
         }));
     }
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
+    let mut dynamic = constructed;
     let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() {
             GlobalInit::Address(
                 data::reference_temporary(program, symbols, graph, tree, entity, false)?,
                 0,
             )
-        } else {
-            let value = facts
-                .initializer
-                .ok_or(Error::Missing("dynamic global reference initialization"))?;
+        } else if let Some(value) = facts.initializer {
             let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
             GlobalInit::Address(symbol, offset)
+        } else {
+            dynamic = true;
+            GlobalInit::Zero
         }
     } else if array {
-        GlobalInit::Data(if initializer.is_some() {
-            let image = graph
-                .lower_array_image(entity)
-                .ok_or(Error::Missing("dynamic global array initialization"))?;
-            data::items(program, symbols, graph, tree, image)?
-        } else {
-            vec![crate::lowir::model::DataItem::Zero(
-                i64::try_from(types::layout(graph, facts.ty)?.0)
-                    .map_err(|_| crate::lowir::Error::Limit)?,
-            )]
-        })
+        GlobalInit::Data(
+            if !constructed
+                && initializer.is_some()
+                && let Some(image) = graph.lower_array_image(entity)
+            {
+                data::items(program, symbols, graph, tree, image)?
+            } else {
+                dynamic |= initializer.is_some();
+                if !constructed && let Some(prefix) = graph.lower_array_image_prefix(entity) {
+                    // The C++ constant attempt demands addresses before publishing
+                    // the object's zero image, even when a later member is dynamic.
+                    let _ = data::items(program, symbols, graph, tree, prefix)?;
+                }
+                vec![crate::lowir::model::DataItem::Zero(
+                    i64::try_from(types::layout(graph, facts.ty)?.0)
+                        .map_err(|_| crate::lowir::Error::Limit)?,
+                )]
+            },
+        )
     } else if initializer.is_none() {
         GlobalInit::Zero
     } else {
-        match facts.initializer.ok_or(Error::Missing(
-            "dynamic and aggregate global initialization",
-        ))? {
-            StaticValue::Integer(bits) => GlobalInit::Constant(Constant::Integer(u128::from(bits))),
-            StaticValue::Floating(ty, bits) => GlobalInit::Constant(Constant::Float(
+        match facts.initializer {
+            Some(StaticValue::Integer(bits)) => {
+                GlobalInit::Constant(Constant::Integer(u128::from(bits)))
+            }
+            Some(StaticValue::Floating(ty, bits)) => GlobalInit::Constant(Constant::Float(
                 match ty {
                     F::Float => FloatKind::F32,
                     F::Double => FloatKind::F64,
@@ -109,17 +164,24 @@ fn define_storage(
                 },
                 bits,
             )),
-            value @ (StaticValue::Literal(..) | StaticValue::Address(..)) => {
+            Some(value @ (StaticValue::Literal(..) | StaticValue::Address(..))) => {
                 let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
             }
+            None => {
+                dynamic = true;
+                GlobalInit::Zero
+            }
         }
     };
+    if dynamic && facts.thread_local {
+        return Err(Error::Missing("dynamic thread-local initialization"));
+    }
     if array && let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }
     align_storage(graph, entity, &mut ty, &mut init)?;
-    if !facts.thread_local && symbols.readonly_object(facts.ty)? {
+    if !dynamic && !facts.thread_local && symbols.readonly_object(facts.ty)? {
         metadata.storage = Some(Storage::ReadOnly);
     }
     let name = program.symbol(symbol).name;
@@ -133,12 +195,24 @@ fn define_storage(
         },
     )?;
     if initializer.is_none() && graph.lower_empty_initialization_step(entity)? {
-        symbols.request_empty_initialization(program)?;
+        symbols.request_initialization(program)?;
     }
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         symbols.data.define_reference(entity);
     }
-    Ok(())
+    if !dynamic {
+        for &constructor in graph.lower_initializer_constructors(entity).iter().rev() {
+            symbols.demand_entry(super::construction::Entry::Constructor(
+                constructor,
+                super::construction::Variant::Complete,
+            ));
+        }
+    }
+    Ok(if dynamic {
+        Initialization::Dynamic
+    } else {
+        Initialization::Static
+    })
 }
 pub(super) fn align_storage(
     graph: &Graph,
@@ -244,25 +318,6 @@ pub(super) fn finish(
                 init: GlobalInit::Declaration,
             },
         )?;
-    }
-    if let Some(symbol) = symbols.empty_initialization
-        && !program.function_defined(symbol)
-    {
-        use crate::lowir::{
-            builder::FunctionBuilder,
-            model::{InstructionKind, Metadata},
-            vocabulary::{Binding, Role, Type},
-        };
-        let name = program.names.get(program.symbol(symbol).name).to_owned();
-        let mut builder = FunctionBuilder::new(program, &name, &[], Type::Void)?;
-        builder.metadata(Metadata {
-            role: Some(Role::Init),
-            binding: Some(Binding::Internal),
-            ..Metadata::default()
-        });
-        builder.block("entry")?;
-        builder.effect(InstructionKind::Return(Type::Void, None))?;
-        builder.finish()?;
     }
     Ok(())
 }

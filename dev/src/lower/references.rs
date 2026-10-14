@@ -68,6 +68,21 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let facts = self.graph.lower_expression(id)?;
+        if self.persistent_references
+            && matches!(
+                context,
+                Context::Initialization | Context::MemberInitialization
+            )
+            && (facts.temporary.is_some()
+                || !facts.is_place
+                    && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Function { .. }))
+        {
+            // A namespace object's bound temporary needs static storage, never
+            // the shared initializer's automatic frame. That owner is not ported yet.
+            return Err(Error::Missing(
+                "persistent static reference temporary lowering",
+            ));
+        }
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. })
             && !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })

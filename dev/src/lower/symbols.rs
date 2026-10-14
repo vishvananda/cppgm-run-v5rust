@@ -94,7 +94,7 @@ pub(super) struct Symbols<'a, 'source> {
     budget: StackBudget,
     stack_base: usize,
     pub pending: Vec<super::construction::Entry>,
-    pub empty_initialization: Option<SymbolId>,
+    pub initialization: Option<SymbolId>,
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<super::construction::Entry>,
     entries: HashMap<super::construction::Entry, SymbolId>,
@@ -135,7 +135,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             scopes: HashMap::new(),
             budget,
             pending: Vec::new(),
-            empty_initialization: None,
+            initialization: None,
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
             entries: HashMap::new(),
@@ -161,10 +161,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         std::str::from_utf8(self.cursor.name(name))
             .map_err(|_| Error::Missing("local name spelling"))
     }
-    pub(super) fn request_empty_initialization(
-        &mut self,
-        program: &mut Program,
-    ) -> Result<(), Error> {
+    pub(super) fn request_initialization(&mut self, program: &mut Program) -> Result<(), Error> {
         let symbol = if let Some(symbol) = self.table.initializer {
             symbol
         } else {
@@ -172,7 +169,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.table.initializer = Some(symbol);
             symbol
         };
-        self.empty_initialization = Some(symbol);
+        self.initialization = Some(symbol);
         Ok(())
     }
     pub(super) fn aggregate_helper_symbol(
