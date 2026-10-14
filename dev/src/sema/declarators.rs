@@ -155,6 +155,8 @@ impl Analyzer<'_> {
         let mut syntax_name = None;
         let mut parameters = None;
         let mut function_qualifiers = None;
+        let mut specified = false;
+        let mut derivations = 0_u8;
         let DeclaratorEnvironment {
             home,
             lookup: after,
@@ -226,6 +228,7 @@ impl Analyzer<'_> {
                     }
                     let member = self.graph.types.member_pointer(owner, ty)?;
                     ty = self.graph.types.qualify(member, cv)?;
+                    Self::exception_derivation(specified, &mut derivations, node.location)?;
                     continue;
                 }
                 match pointer.op.token.as_punctuator() {
@@ -255,6 +258,7 @@ impl Analyzer<'_> {
                     }
                     _ => return Err(Error::Missing("extended declarator pointer operator")),
                 }
+                Self::exception_derivation(specified, &mut derivations, node.location)?;
             }
             let skip = if Some(current) == root {
                 root_suffix_skip
@@ -303,6 +307,21 @@ impl Analyzer<'_> {
                         function_qualifiers = Some(qualifiers);
                     }
                 }
+                if specified && matches!(suffix, ast::Suffix::Array(_)) {
+                    return Err(Error::at(
+                        node.location,
+                        "an exception-specification on a function type nested in a declarator",
+                    ));
+                }
+                specified = function_qualifiers.is_some_and(|list| {
+                    self.tree.qualifiers.get(list).iter().any(|qualifier| {
+                        matches!(
+                            qualifier.kind,
+                            ast::QualifierKind::Throw(_) | ast::QualifierKind::Noexcept(_)
+                        )
+                    })
+                });
+                derivations = 0;
             }
             id = node.nested;
         }
@@ -321,6 +340,23 @@ impl Analyzer<'_> {
             qualifiers: function_qualifiers,
             syntax_name,
         })
+    }
+
+    fn exception_derivation(
+        specified: bool,
+        derivations: &mut u8,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        if specified {
+            *derivations += 1;
+            if *derivations > 1 {
+                return Err(Error::at(
+                    location,
+                    "an exception-specification on a function type nested in a declarator",
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn allocation_key_type(

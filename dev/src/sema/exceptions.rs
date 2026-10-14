@@ -54,6 +54,18 @@ pub(super) struct PendingSpecification {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn function_may_throw(&mut self, entity: EntityId) -> Result<bool, Error> {
+        if self.graph.entity(entity).builtin.is_some() {
+            return Ok(false);
+        }
+        if let ExceptionState::Pending(id) = self.graph.entity(entity).exceptions {
+            self.resolve_specification(id)?;
+        }
+        Ok(!matches!(
+            self.graph.entity(entity).exceptions,
+            ExceptionState::Value(ExceptionSet::None)
+        ))
+    }
     pub(super) fn declarator_specifies_exceptions(
         &self,
         mut id: Option<ast::DeclaratorId>,

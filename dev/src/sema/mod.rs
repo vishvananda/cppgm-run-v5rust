@@ -50,6 +50,7 @@ mod static_arrays;
 mod static_initialization;
 mod template_exceptions;
 mod templates;
+mod throw_queries;
 mod types;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]

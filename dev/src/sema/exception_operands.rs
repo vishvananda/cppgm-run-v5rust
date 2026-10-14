@@ -182,6 +182,11 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.exception_query(id, ty, operand, scope, true, location),
+            ExprKind::TypeTrait {
+                keyword: Keyword::Noexcept,
+                operand: Some(operand),
+                ..
+            } => Ok(self.noexcept_expression(id, operand, scope)?.ty),
             ExprKind::Unary { op, operand } => {
                 let ty = self.exception_type(operand)?;
                 if !matches!(

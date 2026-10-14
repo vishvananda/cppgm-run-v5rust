@@ -56,7 +56,13 @@ impl Analyzer<'_> {
                     "a default argument without an expression",
                 ));
             };
-            let introduced = self.graph.binding_limit();
+            // The visibility limit is the first excluded binding. A default
+            // belongs to the declaration just published, not the next one.
+            let introduced = self
+                .graph
+                .binding_limit()
+                .checked_sub(1)
+                .ok_or(Error::Invariant("default argument without declaration"))?;
             self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
                 expression,
                 introduced,

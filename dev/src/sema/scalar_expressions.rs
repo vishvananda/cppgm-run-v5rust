@@ -162,6 +162,11 @@ impl Analyzer<'_> {
                 self.scalar_subscript(id, base, index)?
             }
             ExprKind::TypeTrait {
+                keyword: Keyword::Noexcept,
+                operand: Some(operand),
+                ..
+            } => self.noexcept_expression(id, operand, scope)?,
+            ExprKind::TypeTrait {
                 keyword: Keyword::Alignof,
                 ty,
                 operand,

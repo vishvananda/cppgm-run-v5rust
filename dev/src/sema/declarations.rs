@@ -589,7 +589,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         if self.declarator_specifies_exceptions(Some(declarator)) {
             return Err(Error::at(
-                location,
+                self.tree.declarators.get(declarator).location,
                 "an exception-specification in a typedef declaration",
             ));
         }

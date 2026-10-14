@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition choose function of (int) returning int
+    parameter  int
+    compound-statement
+      return-statement
+        literal prvalue int 1
+  function-definition choose function of (long int) returning int
+    parameter  long int
+    compound-statement
+      return-statement
+        literal prvalue int 2
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          literal prvalue bool 1
+          literal prvalue bool 0
+end translation unit

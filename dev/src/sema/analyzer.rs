@@ -57,6 +57,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
+    pub(super) throw_work: Vec<(ast::ExprId, u16)>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
@@ -141,6 +142,7 @@ impl<'tree> Analyzer<'tree> {
             evaluating_noexcept: false,
             layout_work: Vec::new(),
             exception_work: Vec::new(),
+            throw_work: Vec::new(),
         };
         analyzer.predeclare_allocations()?;
         Ok(analyzer)

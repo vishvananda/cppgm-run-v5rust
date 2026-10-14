@@ -610,7 +610,7 @@ impl Analyzer<'_> {
             BindingKind::Variable if self.semantic() && self.graph.types.get(ty).cv.0 & 2 != 0 => {
                 "a read of a volatile glvalue"
             }
-            BindingKind::Variable if self.semantic() => {
+            BindingKind::Variable if self.semantic() || self.evaluating_noexcept => {
                 "a variable is not usable in a constant expression"
             }
             BindingKind::Variable => "variable is not usable in a constant expression",
