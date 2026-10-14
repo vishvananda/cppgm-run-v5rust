@@ -42,6 +42,7 @@ pub(super) enum InlinePreference {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
+    pub auto_cv: Cv,
     pub inline: InlinePreference,
     pub ty: TypeId,
     pub declared: Option<TypeId>,
@@ -89,6 +90,7 @@ impl Analyzer<'_> {
         let mut explicitness = Explicitness::Converting;
         let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
+        let mut auto_type = false;
         for specifier in self.tree.specs.get(list) {
             if let SpecifierKind::Keyword(key) = specifier.kind {
                 match key {
@@ -112,7 +114,8 @@ impl Analyzer<'_> {
                     Keyword::Inline => inline = InlinePreference::Inline,
                     Keyword::Register => (),
                     Keyword::Explicit if special => explicitness = Explicitness::Explicit,
-                    Keyword::Auto | Keyword::Friend | Keyword::Explicit => {
+                    Keyword::Auto => auto_type = true,
+                    Keyword::Friend | Keyword::Explicit => {
                         return Err(Error::Missing(
                             "deduced types and extended declaration specifiers",
                         ));
@@ -150,8 +153,15 @@ impl Analyzer<'_> {
             .map_or(crate::support::source::SourceOffset(0), |spec| {
                 spec.location
             });
-        let has_written_type = ty.is_some() || !fundamental.is_empty();
-        let ty = if let Some(ty) = ty {
+        let has_written_type = auto_type || ty.is_some() || !fundamental.is_empty();
+        let ty = if auto_type {
+            if ty.is_some() || !fundamental.is_empty() {
+                return Err(Error::at(location, "auto with another type specifier"));
+            }
+            self.graph
+                .types
+                .intern(super::types::TypeKind::Auto, Cv::default())?
+        } else if let Some(ty) = ty {
             ty
         } else {
             let scalar = if special && fundamental.is_empty() {
@@ -162,9 +172,14 @@ impl Analyzer<'_> {
             .ok_or_else(|| Error::at(location, "invalid combination of type specifiers"))?;
             self.graph.types.scalar(scalar)?
         };
-        let ty = self.graph.types.qualify(ty, cv)?;
+        let ty = if auto_type {
+            ty
+        } else {
+            self.graph.types.qualify(ty, cv)?
+        };
         Ok((
             Specifiers {
+                auto_cv: cv,
                 inline,
                 ty,
                 declared,

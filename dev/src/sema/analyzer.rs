@@ -58,6 +58,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
     pub(super) throw_work: Vec<(ast::ExprId, u16)>,
+    pub(super) deduced_initializer: Option<ast::ExprId>,
+    pub(super) placeholder_scratch: super::placeholders::PlaceholderScratch,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DeferredBody {
@@ -123,6 +125,8 @@ impl<'tree> Analyzer<'tree> {
         };
         let mut analyzer = Self {
             literal_bytes: &cursor.spellings,
+            deduced_initializer: None,
+            placeholder_scratch: super::placeholders::PlaceholderScratch::default(),
             tree,
             graph,
             stack_budget,
@@ -338,8 +342,9 @@ impl<'tree> Analyzer<'tree> {
                 {
                     super::record(&mut self.graph.declaration_storage, id.index(), storage);
                 }
+                let mut deduced = None;
                 for init in self.tree.init_declarators.get(declarators) {
-                    self.declare_init(specs, *init, scope, location)?;
+                    self.declare_init(specs, *init, scope, location, &mut deduced)?;
                 }
                 Ok(())
             }
@@ -347,6 +352,7 @@ impl<'tree> Analyzer<'tree> {
                 let ty = self.specifier_type(specifier, scope, true)?;
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
+                        auto_cv: super::types::Cv::default(),
                         inline: super::specifiers::InlinePreference::Unspecified,
                         ty,
                         declared: Some(ty),
@@ -450,6 +456,7 @@ impl<'tree> Analyzer<'tree> {
         let specs = self.specifiers(specifiers, scope, false)?;
         let mut environment = self.declarator_environment(Some(declarator), scope)?;
         environment.declaration_location = Some(location);
+        self.placeholder_environment(Some(declarator), specs, &mut environment);
         let mut info = self.declarator_in(Some(declarator), specs.ty, environment)?;
         if let Some((class, kind)) = self.declared_member(&info, scope)? {
             return self.complete_special_member(

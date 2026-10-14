@@ -192,7 +192,7 @@ impl Function<'_, '_, '_, '_> {
                     self.discard_to_void(operand)?;
                     return self.zero(source);
                 }
-                let value = self.operand(operand, Context::Operand)?;
+                let value = self.operand(operand, Context::Cast)?;
                 self.convert(value, source, Context::Cast)
             }
             ExprKind::FunctionalCast {
@@ -418,7 +418,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let operand = braced.or_else(|| self.tree.expr_lists.get(arguments).first().copied());
         if let Some(operand) = operand {
-            let value = self.operand(operand, Context::Operand)?;
+            let value = self.operand(operand, Context::Cast)?;
             self.convert(value, source, Context::Cast)
         } else {
             self.zero(source)

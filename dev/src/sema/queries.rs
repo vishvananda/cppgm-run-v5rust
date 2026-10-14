@@ -281,6 +281,9 @@ impl Analyzer<'_> {
         }
         let mut alignment = None;
         let size = match self.graph.types.get(ty).kind {
+            TypeKind::Auto => {
+                return Err(Error::Invariant("layout requested before auto deduction"));
+            }
             TypeKind::Scalar(Scalar::Basic(scalar)) => {
                 u64::try_from(scalar.size()).map_err(|_| Error::Limit("target scalar size"))?
             }
@@ -437,7 +440,16 @@ impl Analyzer<'_> {
             parenthesized = true;
         }
         if let ExprKind::Id(name) = self.tree.expressions.get(expr).kind {
-            let found = self.lookup(name, scope, Filter::Ordinary)?;
+            let result = self.lookup_result(name, scope, Filter::Ordinary)?;
+            if result.functions.as_slice().len() > 1 {
+                return Err(Error::at(
+                    self.tree.expressions.get(expr).location,
+                    "decltype of an overloaded function",
+                ));
+            }
+            let found = result.binding.ok_or_else(|| {
+                Error::at(self.tree.expressions.get(expr).location, "undeclared name")
+            })?;
             let binding = self.graph.binding(found);
             let ty = match binding.kind {
                 BindingKind::Variable => self.graph.entity(binding.entity).ty,

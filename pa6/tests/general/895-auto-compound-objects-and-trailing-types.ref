@@ -1,0 +1,22 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable x int
+    variable p pointer to int
+    variable r lvalue-reference to pointer to int
+    variable c lvalue-reference to const pointer to const int
+    variable forward lvalue-reference to int
+    variable array array of 3 const int
+    variable whole lvalue-reference to array of 3 const int
+    variable decayed pointer to const int
+    variable scalar int
+    variable pointer pointer to int
+    function identity function of (int) returning int
+    variable function_pointer pointer to function of (int) returning int
+    scope function identity
+      parameter value int
+    scope function identity
+      parameter value int
+      scope block
+end translation unit

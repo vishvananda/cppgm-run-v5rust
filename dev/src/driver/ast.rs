@@ -28,7 +28,11 @@ impl LowIrOutput {
     /// # Errors
     /// Returns an output failure.
     pub fn write(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-        crate::lowir::writer::write_globals(&self.output.program, output)?;
+        crate::lowir::writer::write_globals(
+            &self.output.program,
+            output,
+            !self.output.definitions.is_empty(),
+        )?;
         output.write_all(&self.output.definitions)
     }
 }

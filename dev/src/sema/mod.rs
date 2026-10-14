@@ -35,6 +35,7 @@ mod lookup;
 pub(crate) mod lowering;
 mod member_expressions;
 mod name_keys;
+mod placeholders;
 mod procedural_calls;
 mod procedural_statements;
 mod queries;

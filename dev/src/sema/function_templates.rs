@@ -436,7 +436,12 @@ impl Analyzer<'_> {
         let actual = self.graph.types.canonical_function(actual)?;
         let pcv = self.type_cv(pattern).0;
         let acv = self.type_cv(actual).0;
-        if let Some(index) = self.template_parameter_index(pattern, depth) {
+        let parameter = if matches!(self.graph.types.get(pattern).kind, TypeKind::Auto) {
+            Some(0)
+        } else {
+            self.template_parameter_index(pattern, depth)
+        };
+        if let Some(index) = parameter {
             if pcv & !acv != 0 && !extra_cv {
                 return Ok(false);
             }
@@ -522,7 +527,7 @@ impl Analyzer<'_> {
         }
     }
 
-    fn deduce_call_argument(
+    pub(super) fn deduce_call_argument(
         &mut self,
         mut pattern: TypeId,
         mut actual: TypeId,
@@ -533,7 +538,8 @@ impl Analyzer<'_> {
         if let TypeKind::Reference { element, kind } = self.graph.types.get(pattern).kind {
             if kind == RefKind::Rvalue
                 && self.type_cv(element).0 == 0
-                && self.template_parameter_index(element, depth).is_some()
+                && (self.template_parameter_index(element, depth).is_some()
+                    || matches!(self.graph.types.get(element).kind, TypeKind::Auto))
                 && category == ValueCategory::Lvalue
             {
                 actual = self.graph.types.reference(actual, RefKind::Lvalue)?;
@@ -632,12 +638,12 @@ impl Analyzer<'_> {
         self.complete_signature(binding, &mut arguments)
     }
 
-    fn deduce_overloaded_argument(
+    pub(super) fn deduce_overloaded_argument(
         &mut self,
         pattern: TypeId,
         set: super::function_resolution::OverloadId,
         depth: u32,
-        arguments: &mut Vec<Option<TypeId>>,
+        arguments: &mut [Option<TypeId>],
     ) -> Result<(), Error> {
         let mut found = None;
         for index in 0..self.graph.overloads.get(set).len() {
@@ -650,7 +656,7 @@ impl Analyzer<'_> {
             {
                 return Ok(());
             }
-            let mut trial = arguments.clone();
+            let mut trial = arguments.to_vec();
             let mut actual = self
                 .graph
                 .binding(function)
@@ -674,7 +680,7 @@ impl Analyzer<'_> {
             found = Some(trial);
         }
         if let Some(found) = found {
-            *arguments = found;
+            arguments.copy_from_slice(&found);
         }
         Ok(())
     }

@@ -1,0 +1,5 @@
+declare function @function(%arg0 : i32) -> i32 [binding=strong, object=_Z8functioni]
+
+global @value : i32 [binding=strong] = 3
+global @pointer : ptr [binding=strong] = addr @value
+global @address : ptr [binding=strong] = addr @function

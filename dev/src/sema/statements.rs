@@ -272,6 +272,7 @@ impl Analyzer<'_> {
                     },
                     scope,
                     self.tree.declarators.get(declarator).location,
+                    &mut None,
                 )
             }
         }

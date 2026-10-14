@@ -51,7 +51,11 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     }
     out.flush()
 }
-pub(crate) fn write_globals(program: &Program, out: &mut impl Write) -> io::Result<()> {
+pub(crate) fn write_globals(
+    program: &Program,
+    out: &mut impl Write,
+    definitions_follow: bool,
+) -> io::Result<()> {
     let mut floating = FloatingScanner::default();
     let mut written = false;
     for phase in 0..3 {
@@ -78,7 +82,7 @@ pub(crate) fn write_globals(program: &Program, out: &mut impl Write) -> io::Resu
         }
         written |= phase_written;
     }
-    if written {
+    if written && definitions_follow {
         writeln!(out)?;
     }
     Ok(())

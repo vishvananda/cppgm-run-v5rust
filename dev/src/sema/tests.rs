@@ -2294,3 +2294,68 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
             .is_none()
     );
 }
+
+#[test]
+fn placeholder_deduction_publishes_concrete_types_and_consumes_initializer_facts() {
+    use crate::syntax::ast::{DeclKind, InitializerKind};
+    let source = SourceBuffer::new(
+        b"int x;int*p=&x;auto*&r=p;const auto*const&c=p;auto&&s=x;auto a=1,*q=&x;".to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"placeholder-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let syntax_count = tree.expressions.mark();
+    let names: Vec<_> = [b"p".as_slice(), b"r", b"s", b"a", b"q"]
+        .into_iter()
+        .map(|name| cursor.intern_name(name).unwrap())
+        .collect();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let marker = 0u8;
+    analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+    let scope = analyzer.graph.global;
+    for &declaration in tree.decl_lists.get(declarations) {
+        analyzer.declaration(declaration, scope).unwrap();
+        assert!(analyzer.deduced_initializer.is_none());
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("expected simple declaration");
+        };
+        for init in tree.init_declarators.get(declarators) {
+            let binding = analyzer.graph.declared_bindings[init.declarator.index()].unwrap();
+            let ty = analyzer.graph.binding(binding).ty.unwrap();
+            assert!(!analyzer.holds_auto(ty));
+            assert_eq!(
+                analyzer.graph.declarator_types[init.declarator.index()],
+                Some(ty)
+            );
+            if let Some(initializer) = init.initializer
+                && let InitializerKind::Assign(expression) = initializer.kind
+            {
+                assert!(
+                    analyzer
+                        .graph
+                        .expression_facts
+                        .get(expression)
+                        .unwrap()
+                        .conversion
+                        .is_some()
+                );
+            }
+        }
+    }
+    assert_eq!(tree.expressions.mark(), syntax_count);
+    let types: Vec<_> = names
+        .iter()
+        .map(|&name| {
+            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+            analyzer.graph.binding(binding).ty.unwrap()
+        })
+        .collect();
+    assert_eq!(types[0], types[4]);
+    assert!(matches!(analyzer.graph.types.get(types[1]).kind,
+        TypeKind::Reference { element, kind: RefKind::Lvalue } if element == types[0]));
+    assert!(matches!(analyzer.graph.types.get(types[2]).kind,
+        TypeKind::Reference { element, kind: RefKind::Lvalue } if element == types[3]));
+}

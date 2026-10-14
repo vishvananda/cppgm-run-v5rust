@@ -46,6 +46,7 @@ pub(super) enum RefKind {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum TypeKind {
+    Auto,
     Scalar(Scalar),
     Class(EntityId),
     Enum(EntityId),
@@ -276,7 +277,8 @@ impl Types {
                         work.push((*result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
-                    TypeKind::Scalar(_)
+                    TypeKind::Auto
+                    | TypeKind::Scalar(_)
                     | TypeKind::Class(_)
                     | TypeKind::Enum(_)
                     | TypeKind::TemplateParameter { .. } => (),

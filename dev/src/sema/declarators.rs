@@ -11,6 +11,8 @@ use crate::{
 };
 #[derive(Clone, Copy)]
 pub(super) struct DeclaratorEnvironment {
+    pub auto_operators: bool,
+    pub placeholder_function: Option<ast::DeclaratorId>,
     pub home: Option<ScopeId>,
     pub lookup: ScopeId,
     pub declaring: ScopeId,
@@ -81,6 +83,14 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn type_syntax(&mut self, id: ast::TypeId, scope: ScopeId) -> Result<TypeId, Error> {
+        self.type_syntax_with_auto(id, scope, false)
+    }
+    fn type_syntax_with_auto(
+        &mut self,
+        id: ast::TypeId,
+        scope: ScopeId,
+        auto_operators: bool,
+    ) -> Result<TypeId, Error> {
         if (self.evaluating_noexcept || self.semantic())
             && let Some(ty) = self.graph.type_fact(id)
         {
@@ -88,7 +98,14 @@ impl Analyzer<'_> {
         }
         let node = *self.tree.types.get(id);
         let specs = self.specifiers(node.specifiers, scope, false)?;
-        let ty = self.declarator(node.declarator, specs.ty, scope)?.ty;
+        let mut environment = self.declarator_environment(node.declarator, scope)?;
+        environment.auto_operators = auto_operators;
+        let ty = self
+            .declarator_in(node.declarator, specs.ty, environment)?
+            .ty;
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+            return Err(Error::at(node.location, "auto in a type-id"));
+        }
         super::record(&mut self.graph.type_facts, id.index(), ty);
         Ok(ty)
     }
@@ -119,6 +136,8 @@ impl Analyzer<'_> {
             probe = node.nested;
         }
         Ok(DeclaratorEnvironment {
+            auto_operators: false,
+            placeholder_function: None,
             home,
             lookup: after,
             declaring: self.declaration_scope(scope),
@@ -155,6 +174,7 @@ impl Analyzer<'_> {
         let mut syntax_name = None;
         let mut parameters = None;
         let mut function_qualifiers = None;
+        let mut prototype = None;
         let mut specified = false;
         let mut derivations = 0_u8;
         let DeclaratorEnvironment {
@@ -162,6 +182,8 @@ impl Analyzer<'_> {
             lookup: after,
             declaring,
             declaration_location,
+            auto_operators,
+            placeholder_function,
         } = environment;
         if home.is_some_and(|home| !self.graph.encloses(declaring, home)) {
             return Err(Error::at(
@@ -191,6 +213,12 @@ impl Analyzer<'_> {
             for pointer in self.tree.pointers.get(node.pointers) {
                 parameters = None;
                 function_qualifiers = None;
+                if !auto_operators && matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+                    return Err(Error::at(
+                        node.location,
+                        "auto with a declarator operator is not supported here",
+                    ));
+                }
                 let cv = Self::cv(self.tree.cvs.get(pointer.cv));
                 if let Some(owner) = pointer.class_name {
                     let binding =
@@ -265,16 +293,20 @@ impl Analyzer<'_> {
             } else {
                 0
             };
-            for suffix in self
+            for (index, suffix) in self
                 .tree
                 .suffixes
                 .get(node.suffixes)
                 .iter()
+                .enumerate()
                 .skip(skip)
                 .rev()
             {
                 match *suffix {
                     ast::Suffix::Array(bound) => {
+                        if self.holds_auto(ty) {
+                            return Err(Error::at(node.location, "array of auto"));
+                        }
                         parameters = None;
                         function_qualifiers = None;
                         let failure = match self.graph.types.get(ty).kind {
@@ -302,7 +334,16 @@ impl Analyzer<'_> {
                         parameters: clause,
                         qualifiers,
                     } => {
-                        ty = self.function_type(ty, clause, qualifiers, after, node.location)?;
+                        let formed = self.function_type(
+                            ty,
+                            clause,
+                            qualifiers,
+                            after,
+                            node.location,
+                            placeholder_function == Some(current) && index == 0,
+                        )?;
+                        ty = formed.0;
+                        prototype = formed.1.map(|scope| (clause.location, scope));
                         parameters = Some(clause);
                         function_qualifiers = Some(qualifiers);
                     }
@@ -324,6 +365,16 @@ impl Analyzer<'_> {
                 derivations = 0;
             }
             id = node.nested;
+        }
+        if let Some((clause, prototype)) = prototype
+            && parameters.is_some_and(|parameters| parameters.location == clause)
+            && let Some(name) = name
+        {
+            self.graph.scope_mut(prototype).name = Some(name);
+            self.graph
+                .scope_mut(environment.declaring)
+                .children
+                .push(prototype);
         }
         // A suffix view is a query result, not the original declarator's fact.
         if root_suffix_skip == 0
@@ -405,12 +456,13 @@ impl Analyzer<'_> {
     }
     fn function_type(
         &mut self,
-        ty: TypeId,
+        mut ty: TypeId,
         clause: ast::ParameterClause,
         qualifiers: crate::syntax::storage::List<ast::Qualifier>,
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
-    ) -> Result<TypeId, Error> {
+        placeholder_result: bool,
+    ) -> Result<(TypeId, Option<ScopeId>), Error> {
         if matches!(
             self.graph.types.get(ty).kind,
             TypeKind::Array { .. } | TypeKind::Function { .. }
@@ -440,6 +492,9 @@ impl Analyzer<'_> {
             }
             let lookup = prototype.unwrap_or(scope);
             let specs = self.specifiers(parameter.specifiers, lookup, false)?;
+            if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
+                return Err(Error::at(parameter.location, "parameter without a type"));
+            }
             let info = self.declarator(parameter.declarator, specs.ty, lookup)?;
             types.push(info.ty);
             if let Some(prototype) = prototype {
@@ -469,6 +524,7 @@ impl Analyzer<'_> {
         }
         let mut cv = Cv::default();
         let mut reference = None;
+        let mut trailing_prototype = None;
         for qualifier in self.tree.qualifiers.get(qualifiers) {
             match qualifier.kind {
                 ast::QualifierKind::Cv(key) => cv.0 |= Self::cv(&[key]).0,
@@ -479,14 +535,43 @@ impl Analyzer<'_> {
                         RefKind::Rvalue
                     });
                 }
-                ast::QualifierKind::Trailing(_) => {
-                    return Err(Error::at(location, "a trailing return type needs auto"));
+                ast::QualifierKind::Trailing(result) => {
+                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+                        return Err(Error::at(location, "a trailing return type needs auto"));
+                    }
+                    let prototype = self.graph.add_scope(
+                        super::graph::ScopeKind::Function,
+                        scope,
+                        None,
+                        None,
+                    )?;
+                    for (parameter, &ty) in parameters.iter().zip(&types) {
+                        self.prototype_parameter(*parameter, ty, prototype, true)?;
+                    }
+                    ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
+                    trailing_prototype = Some(prototype);
                 }
                 ast::QualifierKind::Noexcept(_) | ast::QualifierKind::Throw(_) => (),
                 ast::QualifierKind::Virt(_) => {
                     return Err(Error::Missing("virtual override checks"));
                 }
             }
+        }
+        if self.holds_auto(ty) {
+            return Err(if placeholder_result {
+                Error::Missing("deduced function return types")
+            } else {
+                Error::at(location, "auto return type without a trailing return type")
+            });
+        }
+        if matches!(
+            self.graph.types.get(ty).kind,
+            TypeKind::Array { .. } | TypeKind::Function { .. }
+        ) {
+            return Err(Error::at(
+                location,
+                "function returning a function or an array",
+            ));
         }
         let ty = self.graph.types.intern(
             TypeKind::Function {
@@ -503,7 +588,7 @@ impl Analyzer<'_> {
             // boundary type once for ABI and indirect-call consumers.
             self.graph.types.canonical_function(ty)?;
         }
-        Ok(ty)
+        Ok((ty, trailing_prototype))
     }
     fn parameter_uses_values(&self, parameter: ast::Parameter) -> bool {
         let mut declarator = parameter.declarator;
@@ -538,17 +623,29 @@ impl Analyzer<'_> {
         ty: TypeId,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        if let Some(name) = self.declarator_name(parameter.declarator)? {
-            let adjusted = self.graph.types.parameter_object(ty)?;
-            let entity = self
-                .graph
-                .add_entity(Some(adjusted), Some(name), Keyword::Int)?;
+        self.prototype_parameter(parameter, ty, scope, false)
+    }
+    fn prototype_parameter(
+        &mut self,
+        parameter: ast::Parameter,
+        ty: TypeId,
+        scope: ScopeId,
+        printed: bool,
+    ) -> Result<(), Error> {
+        let name = self.declarator_name(parameter.declarator)?;
+        if printed || name.is_some() {
+            let adjusted = if printed {
+                ty
+            } else {
+                self.graph.types.parameter_object(ty)?
+            };
+            let entity = self.graph.add_entity(Some(adjusted), name, Keyword::Int)?;
             self.graph.add_binding(
                 scope,
-                None,
+                printed.then_some(scope),
                 super::graph::Binding {
                     kind: super::graph::BindingKind::Parameter,
-                    name: Some(name),
+                    name,
                     entity,
                     ty: Some(adjusted),
                     key: Keyword::Int,

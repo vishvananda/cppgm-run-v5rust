@@ -348,8 +348,9 @@ impl Analyzer<'_> {
         init: ast::InitDeclarator,
         scope: ScopeId,
         _location: SourceOffset,
+        deduced: &mut Option<TypeId>,
     ) -> Result<(), Error> {
-        let info = self.declarator(Some(init.declarator), specs.ty, scope)?;
+        let mut info = self.placeholder_declarator(Some(init.declarator), specs, scope)?;
         let member = self.declared_member(&info, scope)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
         self.check_mutable_declarator(
@@ -438,6 +439,7 @@ impl Analyzer<'_> {
         if specs.role == DeclarationRole::Typedef {
             return self.declare_typedef_binding(init.declarator, name, info.ty, home, location);
         }
+        self.deduce_declared_object(&mut info, specs, init, home, location, deduced)?;
         let mut ty = info.ty;
         if matches!(
             self.graph.types.get(ty).kind,
@@ -591,6 +593,12 @@ impl Analyzer<'_> {
             return Err(Error::at(
                 self.tree.declarators.get(declarator).location,
                 "an exception-specification in a typedef declaration",
+            ));
+        }
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+            return Err(Error::at(
+                self.tree.declarators.get(declarator).location,
+                "typedef of auto",
             ));
         }
         let binding = self.declare_alias(name, ty, home, location)?;

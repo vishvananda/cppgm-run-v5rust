@@ -18,6 +18,10 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        if self.deduced_initializer == Some(id) {
+            self.deduced_initializer = None;
+            return self.graph.expression_facts.get(id);
+        }
         super::record(&mut self.graph.expression_scopes, id.index(), scope);
         let node = *self.tree.expressions.get(id);
         self.check_stack().map_err(|error| match error {

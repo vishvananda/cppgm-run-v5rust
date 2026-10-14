@@ -1,0 +1,52 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable value int
+    literal prvalue int 3
+  function-definition fetch function of () returning int
+    compound-statement
+      return-statement
+        id-expression lvalue int value
+  function-definition identity function of (int) returning int
+    parameter x int
+    compound-statement
+      return-statement
+        id-expression lvalue int x
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable pointer pointer to int
+          unary-expression prvalue pointer to int OP_AMP:&
+            id-expression lvalue int value
+      simple-declaration
+        variable alias lvalue-reference to pointer to int
+          id-expression lvalue pointer to int pointer
+      simple-declaration
+        variable qualified lvalue-reference to const pointer to const int
+          id-expression lvalue pointer to int pointer
+      simple-declaration
+        variable forwarded lvalue-reference to int
+          id-expression lvalue int value
+      simple-declaration
+        variable copy int
+          call-expression prvalue int
+            callee fetch function of () returning int
+      simple-declaration
+        variable casted long int
+          cast-expression prvalue long int KW_STATIC_CAST:static_cast
+            id-expression lvalue int copy
+      return-statement
+        call-expression prvalue int
+          callee identity function of (int) returning int
+          binary-expression prvalue long int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              binary-expression prvalue int OP_PLUS:+
+                binary-expression prvalue int OP_PLUS:+
+                  unary-expression lvalue int OP_STAR:*
+                    id-expression lvalue pointer to int alias
+                  unary-expression lvalue const int OP_STAR:*
+                    id-expression lvalue const pointer to const int qualified
+                id-expression lvalue int forwarded
+              id-expression lvalue int copy
+            id-expression lvalue long int casted
+end translation unit

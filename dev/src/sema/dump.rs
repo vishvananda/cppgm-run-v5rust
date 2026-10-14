@@ -349,6 +349,7 @@ impl Graph {
                 output.write_all(b"volatile ")?;
             }
             match &node.kind {
+                TypeKind::Auto => output.write_all(b"auto")?,
                 TypeKind::Scalar(scalar) => output.write_all(scalar.name().as_bytes())?,
                 TypeKind::Class(entity) => {
                     write!(output, "{} ", class_key(self.entity(*entity).key))?;

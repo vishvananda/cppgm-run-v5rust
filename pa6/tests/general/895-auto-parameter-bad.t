@@ -1,0 +1,1 @@
+int f(auto* pointer);
