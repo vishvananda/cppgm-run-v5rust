@@ -42,15 +42,19 @@ impl CaseReader<'_, '_> {
                 DefinitionKind::Entity,
                 "entity",
             )?),
-            b"member" if operands.len() == 3 => {
+            b"member" if operands.len() >= 3 => {
                 let owner = self.compact_type(line, operands[0])?;
                 let close_qualifier = self.flag(line, operands[1])?;
                 let member = self.graph.string(operands[2])?;
-                Node::ScopedMember {
-                    owner,
-                    member,
-                    close_qualifier,
-                }
+                let args = self.argument_list(&operands[3..])?;
+                return self.graph.intern(
+                    Node::ScopedMember {
+                        owner,
+                        member,
+                        close_qualifier,
+                    },
+                    &args,
+                );
             }
             b"source-name" if operands.len() == 1 => {
                 Node::UnresolvedName(self.graph.string(operands[0])?)

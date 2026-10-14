@@ -25,10 +25,13 @@ pub fn run(
                 Error::Diagnostic(message) => message,
                 _ => b"ABI storage limit exceeded".to_vec(),
             };
+            // The frozen exception handler streams e.what(), a NUL-terminated
+            // diagnostic. Keep fact bytes intact until this output boundary.
+            let message = message.split(|byte| *byte == 0).next().unwrap_or(&[]);
             let mut stderr = io::stderr().lock();
             let _ = stderr
                 .write_all(b"abimangle: ")
-                .and_then(|()| stderr.write_all(&message))
+                .and_then(|()| stderr.write_all(message))
                 .and_then(|()| stderr.write_all(b"\n"));
             std::process::ExitCode::FAILURE
         }
