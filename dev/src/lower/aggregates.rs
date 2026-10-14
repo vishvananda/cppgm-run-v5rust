@@ -38,6 +38,11 @@ struct Input<'a> {
     values: &'a [ast::ExprId],
     next: usize,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum NamedStorage {
+    Automatic,
+    Static,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn aggregate_prvalue(
         &mut self,
@@ -89,7 +94,7 @@ impl Function<'_, '_, '_, '_> {
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
-        self.initialize_aggregate(entity, ty, slot, initializer, true)
+        self.initialize_aggregate(entity, ty, slot, initializer, NamedStorage::Automatic)
     }
     pub(super) fn initialize_aggregate(
         &mut self,
@@ -97,9 +102,14 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         slot: Value,
         initializer: Option<ast::Initializer>,
-        root_address: bool,
+        storage: NamedStorage,
     ) -> Result<(), Error> {
-        self.symbols.require_trivial_storage(ty)?;
+        self.symbols.storage_destructor(ty)?;
+        let elided = if storage == NamedStorage::Automatic {
+            self.named_elided_list(initializer)?
+        } else {
+            None
+        };
         if let Some(initializer) = initializer {
             let expr = match initializer.kind {
                 ast::InitializerKind::Assign(id) => Some(id),
@@ -121,6 +131,7 @@ impl Function<'_, '_, '_, '_> {
                     TypeView::Class(_)
                 )
                 && self.graph.lower_constructor_arguments(entity).is_none()
+                && elided.is_none()
             {
                 let object = self.emit(I::Addr(slot), ty)?.value;
                 return self.materialize_class(expr, ty, object);
@@ -136,10 +147,15 @@ impl Function<'_, '_, '_, '_> {
             self.emit(I::Addr(slot), ty)?;
             return Ok(());
         };
-        let (ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)) =
-            initializer.kind
-        else {
-            return Err(Error::Missing("class constructor/copy lowering"));
+        let id = if let Some(id) = elided {
+            id
+        } else {
+            let (ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)) =
+                initializer.kind
+            else {
+                return Err(Error::Missing("class constructor/copy lowering"));
+            };
+            id
         };
         let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("class constructor/copy lowering"));
@@ -149,7 +165,7 @@ impl Function<'_, '_, '_, '_> {
                 "aggregate without class",
             )));
         };
-        if root_address && self.aggregate_stores(class)? {
+        if storage == NamedStorage::Automatic && self.aggregate_stores(class)? {
             self.emit(I::Addr(slot), ty)?;
         }
         let mut input = Input {

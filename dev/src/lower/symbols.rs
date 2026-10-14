@@ -24,9 +24,14 @@ pub(super) struct SymbolTable {
     string_literals: u32,
     reference_temporaries: u32,
     initializer: Option<SymbolId>,
+    exception_helpers: Option<super::exception_helpers::Helpers>,
+    terminate_pending: bool,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
+    pub(super) fn finalizer_symbol(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
+        self.allocate(program, "__cppgm_fini", None, true)
+    }
     pub(super) fn finish_entry_aliases(&mut self, program: &mut Program) {
         for alias in self.entry_aliases.drain(..) {
             if self
@@ -115,6 +120,7 @@ pub(super) struct Symbols<'a, 'source> {
     tls_wrappers: HashMap<EntityId, SymbolId>,
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
+    rooted_destructors: std::collections::HashSet<EntityId>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -154,6 +160,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             tls_wrappers: HashMap::new(),
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
+            rooted_destructors: std::collections::HashSet::new(),
             signatures: HashMap::new(),
         }
     }
@@ -171,6 +178,34 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.initialization = Some(symbol);
         Ok(())
+    }
+    pub(super) fn terminate_helper(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
+        if let Some(helpers) = self.table.exception_helpers {
+            return Ok(helpers.helper);
+        }
+        let helpers = super::exception_helpers::Helpers {
+            begin_catch: self.table.allocate(
+                program,
+                "__external_runtime____cxa_begin_catch",
+                None,
+                true,
+            )?,
+            terminate: self.table.allocate(program, "std_terminate", None, true)?,
+            helper: self
+                .table
+                .allocate(program, "cppgm_call_terminate", None, true)?,
+        };
+        super::exception_helpers::declare(program, helpers)?;
+        self.table.exception_helpers = Some(helpers);
+        self.table.terminate_pending = true;
+        Ok(helpers.helper)
+    }
+    pub(super) fn take_terminate_helper(&mut self) -> Option<super::exception_helpers::Helpers> {
+        if !self.table.terminate_pending {
+            return None;
+        }
+        self.table.terminate_pending = false;
+        self.table.exception_helpers
     }
     pub(super) fn aggregate_helper_symbol(
         &mut self,
@@ -231,6 +266,36 @@ impl<'a, 'source> Symbols<'a, 'source> {
         {
             return Err(Error::Missing("class storage destruction lowering"));
         }
+        Ok(())
+    }
+    pub(super) fn storage_destructor(&mut self, mut ty: TypeId) -> Result<Option<EntityId>, Error> {
+        while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
+            ty = element;
+        }
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(None);
+        };
+        if !self.class_storage_properties(class)?.destruction {
+            return Ok(None);
+        }
+        let destructor = self
+            .graph
+            .lower_destructor_entity(class)
+            .ok_or(Error::Missing("implicit recursive destructor lowering"))?;
+        if !self.graph.lower_function(destructor)?.nothrow {
+            return Err(Error::Missing("throwing storage destructor cleanup"));
+        }
+        Ok(Some(destructor))
+    }
+    pub(super) fn root_destructor(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        self.demand(entity);
+        self.rooted_destructors.insert(entity);
+        let symbol = self.function_symbol(program, entity)?;
+        program.root_function(symbol);
         Ok(())
     }
     pub(super) fn zeroed_by_value(&mut self, ty: TypeId) -> Result<bool, Error> {
@@ -1184,6 +1249,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         if self.graph.lower_no_inline(entity) {
             metadata.flags |= 32;
+        }
+        if self.rooted_destructors.contains(&entity) {
+            metadata.flags |= 4;
         }
         if self.graph.lower_function_local_class(entity) {
             metadata.flags |= 2;

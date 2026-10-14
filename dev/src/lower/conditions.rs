@@ -131,7 +131,8 @@ impl Function<'_, '_, '_, '_> {
         condition: Condition,
         to_bool: bool,
     ) -> Result<RValue, Error> {
-        match condition {
+        let began = self.begin_lifetime_expression();
+        let value = match condition {
             Condition::Expression(id) => {
                 if to_bool {
                     self.truth(id)
@@ -165,7 +166,9 @@ impl Function<'_, '_, '_, '_> {
                     )
                 }
             }
-        }
+        };
+        self.end_lifetime_expression(began)?;
+        value
     }
     pub(super) fn condition_branch(
         &mut self,
@@ -174,14 +177,15 @@ impl Function<'_, '_, '_, '_> {
         no: BlockId,
         fold: bool,
     ) -> Result<(), Error> {
+        let began = self.begin_lifetime_expression();
         if let Condition::Expression(id) = condition {
-            self.branch_condition(id, yes, no, fold)
+            self.branch_condition(id, yes, no, fold)?;
         } else {
             let value = self.condition_value(condition, true)?;
             self.effect(I::Branch(value.value, yes, no))?;
             self.terminated = true;
-            Ok(())
         }
+        self.end_lifetime_expression(began)
     }
     fn branch_condition(
         &mut self,

@@ -86,9 +86,9 @@ impl Function<'_, '_, '_, '_> {
                 object = element;
             }
             if matches!(self.graph.lower_type(object)?, TypeView::Class(_)) {
-                self.symbols.require_trivial_storage(ty)?;
+                self.symbols.storage_destructor(ty)?;
                 if !self.graph.lower_trivial_default_construction(entity)? {
-                    return Err(Error::Missing("class array default construction lowering"));
+                    return self.default_class_array(entity, ty, slot);
                 }
             }
             return Ok(());

@@ -543,6 +543,8 @@ impl Function<'_, '_, '_, '_> {
             self.terminated = true;
             return self.zero(source);
         }
+        let throws = self.lifetime_call_throws(target)?;
+        self.begin_lifetime_call(throws)?;
         let function_type = match target {
             CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
@@ -646,12 +648,9 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
             signature,
         });
-        if ty == Type::Void {
-            self.effect(call)?;
-            self.zero(source)
-        } else {
-            self.emit(call, source)
-        }
+        self.before_lifetime_call(throws)?;
+        let value = self.lifetime_result(call, source)?;
+        self.finish_lifetime_call(value, throws)
     }
     fn conditional(
         &mut self,
@@ -684,8 +683,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             condition
         };
-        self.builder
-            .effect(I::Branch(condition.value, then_block, else_block))?;
+        self.effect(I::Branch(condition.value, then_block, else_block))?;
         for (name, expression) in [(&then_name, then_expr), (&else_name, else_expr)] {
             self.builder.block(name)?;
             let value = self.operand(expression, Context::Operand)?;

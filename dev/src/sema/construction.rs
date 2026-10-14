@@ -805,6 +805,15 @@ impl Analyzer<'_> {
             entity.special_definition,
             Some(SpecialDefinition::Defaulted { first: true, .. })
         );
+        if nontrivial && self.lowering() {
+            // Destruction is an output demand at the lifetime site, not an
+            // analysis-time emission root. Its body's storage boundaries must
+            // nevertheless be ready when that owner is reached by lowering.
+            self.storage_destructions.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                self.graph.binding(destructor).entity,
+            ));
+        }
         let object = self.graph.entity(self.graph.binding(binding).entity);
         if nontrivial
             && !initialized

@@ -9,6 +9,37 @@ use crate::{
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn named_elided_list(
+        &self,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<Option<ast::ExprId>, Error> {
+        let Some(ast::Initializer {
+            kind: ast::InitializerKind::Assign(expr),
+            ..
+        }) = initializer
+        else {
+            return Ok(None);
+        };
+        let expr = self.without_parentheses(expr);
+        let ExprKind::FunctionalCast {
+            braced: Some(list), ..
+        } = self.tree.expressions.get(expr).kind
+        else {
+            return Ok(None);
+        };
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
+            return Ok(None);
+        };
+        if !self.tree.expr_lists.get(elements).is_empty()
+            && matches!(
+                self.graph.lower_prvalue_initialization(expr)?,
+                Some(ClassInitialization::Aggregate(_))
+            )
+        {
+            return Ok(Some(list));
+        }
+        Ok(None)
+    }
     pub(super) fn materialize_member_expression(
         &mut self,
         member: EntityId,
@@ -43,6 +74,9 @@ impl Function<'_, '_, '_, '_> {
         ) {
             return Ok(false);
         }
+        // A constructor member needs its own partial-construction cleanup;
+        // completed named storage owns its destruction at the declaration site.
+        self.symbols.require_trivial_storage(ty)?;
         let object = self.object_pointer(pointer)?.value;
         let offset = self
             .builder
@@ -83,7 +117,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        self.symbols.require_trivial_storage(ty)?;
+        self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {

@@ -98,17 +98,23 @@ impl Function<'_, '_, '_, '_> {
             .variable_symbol(self.builder.program(), entity)?;
         let storage = Value::Symbol(symbol);
         match self.graph.lower_type(ty)? {
-            TypeView::Class(_) => {
-                self.initialize_aggregate(entity, ty, storage, initializer, false)
-            }
+            TypeView::Class(_) => self.initialize_aggregate(
+                entity,
+                ty,
+                storage,
+                initializer,
+                super::aggregates::NamedStorage::Static,
+            ),
             TypeView::Array { mut element, .. } => {
                 while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
                     element = inner;
                 }
                 if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
-                    let initializer = initializer
-                        .ok_or(Error::Missing("global class array default construction"))?;
-                    self.global_class_array(ty, storage, initializer)
+                    if let Some(initializer) = initializer {
+                        self.global_class_array(ty, storage, initializer)
+                    } else {
+                        self.local_array(entity, ty, storage, None)
+                    }
                 } else {
                     self.local_array(entity, ty, storage, initializer)
                 }

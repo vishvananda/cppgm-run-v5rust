@@ -148,6 +148,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.initialize_scalar(facts.ty, address, initializer)?;
         }
+        self.close_lifetime_region()?;
         let one = self.builder.integer(1)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
         self.jump(ready)?;

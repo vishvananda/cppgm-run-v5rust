@@ -17,6 +17,11 @@ pub(crate) struct FunctionBuilder<'a> {
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
 }
+#[derive(Clone, Copy)]
+pub(crate) struct Position {
+    block: BlockId,
+    after: Option<super::model::InstId>,
+}
 
 /// A suspended body owns its construction state without borrowing the program.
 /// This permits declaration-ordered startup work between ordinary definitions.
@@ -216,6 +221,41 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
         self.append(kind, None)
     }
+    pub(crate) fn position(&self) -> Result<Position, Error> {
+        let block = self.block.ok_or(Error::Limit)?;
+        Ok(Position {
+            block,
+            after: self.body.block(block).instructions.last().copied(),
+        })
+    }
+    pub(crate) fn same_block(&self, position: Position) -> bool {
+        self.block == Some(position.block)
+    }
+    /// Inserts a region marker at a captured call boundary. Instruction IDs
+    /// remain stable; only that block's execution order changes.
+    pub(crate) fn insert_marker(
+        &mut self,
+        position: Position,
+        kind: super::model::RuntimeInstruction,
+    ) -> Result<(), Error> {
+        let id = self.body.append(
+            position.block,
+            Instruction::new(None, InstructionKind::Runtime(kind), 0),
+        )?;
+        let instructions = &mut self.body.block_mut(position.block).instructions;
+        instructions.pop();
+        let index = if let Some(after) = position.after {
+            instructions
+                .iter()
+                .rposition(|&instruction| instruction == after)
+                .ok_or(Error::Limit)?
+                + 1
+        } else {
+            0
+        };
+        instructions.insert(index, id);
+        Ok(())
+    }
     /// C++ lowering's incoming-edge policy for a syntactic non-void end.
     /// Branches, switches, folded branches and EH targets seed incoming edges
     /// even in dead blocks; ordinary jumps propagate only from entry or a
@@ -311,6 +351,46 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn inserted_region_preserves_value_definitions_and_target_identity() -> Result<(), Error> {
+        use crate::lowir::{
+            model::{Facts, RuntimeInstruction as R},
+            vocabulary::Binary,
+        };
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "guarded", &[], Type::I32)?;
+        builder.block("entry")?;
+        let one = builder.integer(1)?;
+        let first = builder.generated(I::Copy(Type::I32, one))?;
+        let position = builder.position()?;
+        let handler = builder.block_id("unwind")?;
+        let result = builder.generated(I::Binary(
+            Binary::Add,
+            Facts::default(),
+            Type::I32,
+            first,
+            one,
+        ))?;
+        let Value::Temp(temp) = result else {
+            return Err(Error::Limit);
+        };
+        let definition = builder.body.temp(temp).definition.ok_or(Error::Limit)?;
+        builder.insert_marker(position, R::EhTry(handler))?;
+        assert_eq!(builder.body.temp(temp).definition, Some(definition));
+        let instructions = &builder.body.block(position.block).instructions;
+        assert!(
+            matches!(builder.body.instruction(instructions[1]).kind, I::Runtime(R::EhTry(target)) if target == handler)
+        );
+        assert_eq!(instructions[2], definition);
+        builder.effect(I::Runtime(R::EhEnd))?;
+        builder.effect(I::Return(Type::I32, Some(result)))?;
+        builder.place_block(handler)?;
+        builder.effect(I::Runtime(R::Resume))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        Ok(())
+    }
 
     #[test]
     fn suspended_body_keeps_ids_and_slot_names_across_another_definition() -> Result<(), Error> {

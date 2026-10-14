@@ -48,6 +48,14 @@ impl Analyzer<'_> {
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
         use super::function_demands::Demand;
         let mut work = std::mem::take(&mut self.boundary_roots);
+        let mut destruction_edges = std::collections::HashMap::<EntityId, Vec<EntityId>>::new();
+        for (owner, destructor) in std::mem::take(&mut self.storage_destructions) {
+            if let Some(owner) = owner {
+                destruction_edges.entry(owner).or_default().push(destructor);
+            } else {
+                work.push(destructor);
+            }
+        }
         for demand in self.graph.root_demands.as_slice() {
             if let Demand::Function { binding, .. } = demand {
                 work.push(self.graph.binding(*binding).entity);
@@ -57,6 +65,9 @@ impl Analyzer<'_> {
         while let Some(entity) = work.pop() {
             if !seen.insert(entity) {
                 continue;
+            }
+            if let Some(destructors) = destruction_edges.remove(&entity) {
+                work.extend(destructors);
             }
             for demand in self.graph.entity(entity).demands.as_slice() {
                 if let Demand::Function { binding, .. } = demand {

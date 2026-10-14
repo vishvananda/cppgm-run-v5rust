@@ -43,6 +43,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub labels: HashMap<crate::lex::identifiers::NameId, crate::lowir::model::BlockId>,
     pub folded_targets: Vec<crate::lowir::model::BlockId>,
     pub conditional_slot: Option<Value>,
+    pub lifetime: super::lifetime::Lifetime,
     pub terminated: bool,
     pub result: Option<TypeId>,
     pub budget: StackBudget,
@@ -164,6 +165,31 @@ pub(super) fn lower<'a>(
     builder.boundary(boundary);
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
+    let body = body
+        .map(|id| {
+            let ast::Body::Parsed(body) = tree.bodies.get(id) else {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "lowering deferred body",
+                )));
+            };
+            Ok(body)
+        })
+        .transpose()?;
+    function.lifetime.body = body.map(|body| body.compound);
+    if facts.nothrow {
+        let raises = body
+            .map(|body| function.statement_throws(body.compound))
+            .transpose()?
+            .unwrap_or(false)
+            || if let super::construction::Entry::Constructor(id, _) = entry {
+                function.constructor_plan_throws(id)?
+            } else {
+                false
+            };
+        if raises {
+            function.open_function_guard()?;
+        }
+    }
     if object_count != 0 {
         let slot = function.builder.slot("this", Type::Ptr)?;
         let incoming = function.builder.parameter(0)?;
@@ -196,16 +222,6 @@ pub(super) fn lower<'a>(
         ))?;
         function.locals.insert(entity, slot);
     }
-    let body = body
-        .map(|id| {
-            let ast::Body::Parsed(body) = tree.bodies.get(id) else {
-                return Err(Error::Semantic(crate::sema::Error::Invariant(
-                    "lowering deferred body",
-                )));
-            };
-            Ok(body)
-        })
-        .transpose()?;
     if let super::construction::Entry::Constructor(id, variant) = entry {
         let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
             tree.statements.get(body.compound).location
@@ -233,9 +249,11 @@ pub(super) fn lower<'a>(
             } else {
                 Some(function.zero(result)?.value)
             };
-            function.builder.effect(I::Return(ty, value))?;
+            function.effect(I::Return(ty, value))?;
         }
     }
+    function.place_cleanup_chains(true)?;
+    function.place_function_guard()?;
     function.builder.finish()?;
     symbols.finish_entry(program, entry, symbol)?;
     Ok(())
@@ -271,6 +289,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             labels: HashMap::new(),
             folded_targets: Vec::new(),
             conditional_slot: None,
+            lifetime: super::lifetime::Lifetime::default(),
             terminated: false,
             result,
             budget,
@@ -327,6 +346,13 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
+        if kind.terminator() && self.lifetime.full_expression {
+            self.close_lifetime_region()?;
+        }
+        if matches!(kind, I::Return(..)) && self.lifetime.function_guard.is_some() {
+            self.builder
+                .effect(I::Runtime(crate::lowir::model::RuntimeInstruction::EhEnd))?;
+        }
         self.ensure_insertion()?;
         Ok(self.builder.effect(kind)?)
     }
@@ -371,6 +397,36 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn local_variable(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(), Error> {
+        let reachable = !self.terminated;
+        let entity = self.graph.lower_declared(declarator)?;
+        let ty = self.graph.lower_entity_type(entity)?;
+        let object = matches!(
+            self.graph.lower_type(ty)?,
+            TypeView::Class(_) | TypeView::Array { .. }
+        );
+        let began = if object {
+            false
+        } else {
+            self.begin_lifetime_expression()
+        };
+        let construction = self.lifetime.construction;
+        self.lifetime.construction |= object;
+        self.initialize_local_variable(declarator, initializer)?;
+        if object {
+            self.close_lifetime_region()?;
+        }
+        self.lifetime.construction = construction;
+        self.end_lifetime_expression(began)?;
+        if reachable && self.graph.lower_is_variable(entity) && self.graph.lower_automatic(entity) {
+            self.register_local_destruction(entity)?;
+        }
+        Ok(())
+    }
+    fn initialize_local_variable(
         &mut self,
         declarator: ast::DeclaratorId,
         initializer: Option<ast::Initializer>,

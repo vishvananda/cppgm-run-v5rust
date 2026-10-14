@@ -78,6 +78,8 @@ impl Names {
 }
 #[derive(Default)]
 pub(crate) struct Program {
+    immediate_declarations: Vec<SymbolId>,
+    immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
     functions: Vec<Function>,
     streamed_functions: HashSet<SymbolId>,
@@ -243,18 +245,35 @@ impl Program {
                 .is_some_and(|f| f.body.is_some())
     }
     pub(crate) fn function_declarations(&self) -> impl Iterator<Item = &Function> {
-        self.symbols
+        self.immediate_declarations
             .iter()
-            .enumerate()
-            .filter_map(|(index, symbol)| {
-                let SymbolDetail::Function(id) = symbol.detail else {
-                    return None;
-                };
-                let symbol_id = SymbolId(u32::try_from(index).ok()?);
-                let function = &self.functions[id.0 as usize];
-                (function.body.is_none() && !self.streamed_functions.contains(&symbol_id))
-                    .then_some(function)
+            .filter_map(|&id| {
+                let function = self.function(self.symbol(id))?;
+                (!self.function_defined(id)).then_some(function)
             })
+            .chain(
+                self.symbols
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, symbol)| {
+                        let SymbolDetail::Function(id) = symbol.detail else {
+                            return None;
+                        };
+                        let symbol_id = SymbolId(u32::try_from(index).ok()?);
+                        let function = &self.functions[id.0 as usize];
+                        (function.body.is_none()
+                            && !self.streamed_functions.contains(&symbol_id)
+                            && !self.immediate_declaration_set.contains(&symbol_id))
+                        .then_some(function)
+                    }),
+            )
+    }
+    /// Runtime declarations publish immediately; ordinary referenced declarations
+    /// are the producer's pending list, published after all definitions.
+    pub(crate) fn publish_runtime_declaration(&mut self, symbol: SymbolId) {
+        if self.immediate_declaration_set.insert(symbol) {
+            self.immediate_declarations.push(symbol);
+        }
     }
     pub(crate) fn functions(&self) -> &[Function] {
         &self.functions
@@ -290,6 +309,11 @@ impl Program {
             SymbolDetail::Function(id) => Some(&self.functions[id.0 as usize].metadata),
             SymbolDetail::Global(id) => Some(&self.globals[id.0 as usize].metadata),
             SymbolDetail::Unresolved => None,
+        }
+    }
+    pub(crate) fn root_function(&mut self, symbol: SymbolId) {
+        if let SymbolDetail::Function(id) = self.symbol(symbol).detail {
+            self.functions[id.0 as usize].metadata.flags |= 4;
         }
     }
     pub(crate) fn function(&self, symbol: &Symbol) -> Option<&Function> {

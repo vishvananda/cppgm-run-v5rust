@@ -18,6 +18,7 @@ pub(super) struct GlobalOutput<'a> {
     pub program: &'a mut Program,
     pub startup: &'a mut super::startup::Startup,
     pub definitions: &'a mut super::definition_order::Definitions,
+    pub finalizers: &'a mut Vec<super::shutdown::Finalizer>,
 }
 pub(super) fn lower_declaration<'a>(
     output: &mut GlobalOutput<'_>,
@@ -50,6 +51,36 @@ pub(super) fn lower_declaration<'a>(
                     declarator.initializer,
                     budget,
                 )?;
+            }
+            if let Some(destructor) =
+                symbols.storage_destructor(graph.lower_entity_type(entity)?)?
+            {
+                let facts = graph.lower_variable(entity)?;
+                if facts.thread_local {
+                    return Err(Error::Missing("thread-local destructor finalization"));
+                }
+                let global = symbols.variable_symbol(output.program, entity)?;
+                let callee = symbols.function_symbol(output.program, destructor)?;
+                symbols.demand(destructor);
+                let mut element = facts.ty;
+                let mut count = 1_u64;
+                let mut array = false;
+                while let TypeView::Array {
+                    element: inner,
+                    bound,
+                } = graph.lower_type(element)?
+                {
+                    array = true;
+                    count = count.wrapping_mul(bound);
+                    element = inner;
+                }
+                output.finalizers.push(super::shutdown::Finalizer {
+                    global,
+                    callee,
+                    count,
+                    array,
+                    element_size: types::layout(graph, element)?.0,
+                });
             }
             if symbols.emit_tls_wrapper(output.program, entity)? {
                 output.definitions.stream(output.program, None)?;
@@ -87,7 +118,7 @@ fn define_storage(
     location: crate::support::source::SourceOffset,
 ) -> Result<Initialization, Error> {
     let facts = graph.lower_variable(entity)?;
-    symbols.require_trivial_storage(facts.ty)?;
+    symbols.storage_destructor(facts.ty)?;
     let mut object = facts.ty;
     while let TypeView::Array { element, .. } = graph.lower_type(object)? {
         object = element;

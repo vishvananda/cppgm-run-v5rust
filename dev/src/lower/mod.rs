@@ -10,20 +10,27 @@ mod construction;
 mod conversions;
 mod data;
 mod definition_order;
+mod exception_helpers;
 mod expressions;
 mod field_updates;
 mod floating_intrinsics;
 mod function;
 mod globals;
+mod lifetime;
+mod lifetime_regions;
+mod lifetime_scan;
 mod local_storage;
 mod materialization;
 mod mutations;
+mod object_arrays;
 mod operator_calls;
 mod pointers;
 mod references;
+mod shutdown;
 mod startup;
 mod statements;
 mod symbols;
+mod throw_scan;
 mod types;
 use crate::{
     lowir::model::Program,
@@ -58,13 +65,21 @@ pub(crate) struct Output {
     pub program: Program,
     pub definitions: definition_order::Definitions,
     pub initializer: Option<crate::lowir::model::SymbolId>,
+    pub finalizer: Option<crate::lowir::model::SymbolId>,
     symbols: symbols::SymbolTable,
     startup: startup::Startup,
+    finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
     pub(crate) fn finish_initialization(&mut self) -> Result<(), Error> {
         if let Some(symbol) = self.initializer {
             self.startup.finish(&mut self.program, symbol)?;
+        }
+        if !self.finalizers.is_empty() {
+            let symbol = self.symbols.finalizer_symbol(&mut self.program)?;
+            shutdown::finish(&mut self.program, symbol, &self.finalizers)?;
+            self.finalizer = Some(symbol);
+            self.finalizers.clear();
         }
         Ok(())
     }
@@ -193,6 +208,7 @@ pub(crate) fn lower_unit(
                         program: &mut output.program,
                         startup: &mut output.startup,
                         definitions: &mut output.definitions,
+                        finalizers: &mut output.finalizers,
                     },
                     &mut symbols,
                     graph,
@@ -212,6 +228,7 @@ pub(crate) fn lower_unit(
         }
     }
     let mut next = 0;
+    exception_helpers::emit_pending(&mut output.program, &mut symbols, &mut output.definitions)?;
     aggregate_helpers::emit_pending(
         &mut output.program,
         &mut symbols,
@@ -283,6 +300,11 @@ pub(crate) fn lower_unit(
             )?;
         }
         symbols.stream_definition(&mut output.program, &mut output.definitions, entry)?;
+        exception_helpers::emit_pending(
+            &mut output.program,
+            &mut symbols,
+            &mut output.definitions,
+        )?;
         aggregate_helpers::emit_pending(
             &mut output.program,
             &mut symbols,

@@ -7,10 +7,7 @@ use super::{
     types,
 };
 use crate::{
-    lowir::{
-        model::{Call, InstructionKind as I},
-        vocabulary::Type,
-    },
+    lowir::model::{Call, InstructionKind as I},
     sema::lowering::{CallTarget, TypeView},
     syntax::ast::{self, ExprKind},
 };
@@ -21,6 +18,8 @@ impl Function<'_, '_, '_, '_> {
         let CallTarget::Direct(entity) = self.graph.lower_call(id)? else {
             return Err(Error::Missing("indirect operator call"));
         };
+        let throws = self.lifetime_call_throws(CallTarget::Direct(entity))?;
+        self.begin_lifetime_call(throws)?;
         let (operands, count, postfix) = match self.tree.expressions.get(id).kind {
             ExprKind::Binary { left, right, .. } => ([left, right], 2, false),
             ExprKind::Subscript { base, index } => ([base, index], 2, false),
@@ -74,12 +73,9 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
             signature: None,
         });
-        if ty == Type::Void {
-            self.effect(call)?;
-            self.zero(source)
-        } else {
-            self.emit(call, source)
-        }
+        self.before_lifetime_call(throws)?;
+        let value = self.lifetime_result(call, source)?;
+        self.finish_lifetime_call(value, throws)
     }
     fn operator_argument(
         &mut self,

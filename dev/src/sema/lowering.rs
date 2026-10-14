@@ -74,6 +74,7 @@ pub(crate) enum Emission {
     Always,
     Demanded,
 }
+#[derive(Clone, Copy)]
 pub(crate) enum CallTarget {
     Direct(EntityId),
     Indirect(TypeId, bool),
@@ -1132,5 +1133,10 @@ impl Graph {
                     Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
                 )
             })
+    }
+    pub(crate) fn lower_destructor_entity(&self, class: EntityId) -> Option<EntityId> {
+        self.entity(class)
+            .declared_destructor
+            .map(|binding| self.binding(binding).entity)
     }
 }

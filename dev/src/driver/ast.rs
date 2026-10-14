@@ -35,10 +35,15 @@ impl LowIrOutput {
         crate::lowir::writer::write_globals(
             &self.output.program,
             output,
-            !self.output.definitions.is_empty() || self.output.initializer.is_some(),
+            !self.output.definitions.is_empty()
+                || self.output.initializer.is_some()
+                || self.output.finalizer.is_some(),
         )?;
         self.output.definitions.write(output)?;
-        if let Some(symbol) = self.output.initializer {
+        for symbol in [self.output.initializer, self.output.finalizer]
+            .into_iter()
+            .flatten()
+        {
             let function = self
                 .output
                 .program

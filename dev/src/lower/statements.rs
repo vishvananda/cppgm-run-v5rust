@@ -10,6 +10,7 @@ use crate::{
 pub(super) struct JumpTargets {
     pub end: BlockId,
     pub continuation: Option<BlockId>,
+    pub cleanup_depth: usize,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn new_block(&mut self, prefix: &str) -> Result<BlockId, Error> {
@@ -57,9 +58,11 @@ impl Function<'_, '_, '_, '_> {
         }
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(statements) => {
+                let depth = self.lifetime.cleanups.len();
                 for &id in self.tree.stmt_lists.get(statements) {
                     self.statement(id)?;
                 }
+                self.leave_scope(depth)?;
             }
             StmtKind::Return(operand) => {
                 let result = self
@@ -68,6 +71,7 @@ impl Function<'_, '_, '_, '_> {
                         "source return in synthetic function",
                     )))?;
                 let ty = types::storage(self.graph, result)?;
+                let began = self.begin_lifetime_expression();
                 let value = if let Some(id) = operand {
                     if matches!(
                         self.graph.lower_type(result)?,
@@ -85,12 +89,11 @@ impl Function<'_, '_, '_, '_> {
                 } else {
                     None
                 };
-                self.effect(I::Return(ty, value))?;
-                self.terminated = true;
+                self.cleanup_return(ty, value, began)?;
             }
             StmtKind::Expression(expression) => {
                 if let Some(id) = expression {
-                    self.discard(id)?;
+                    self.discard_full_expression(id)?;
                 }
             }
             StmtKind::Declaration(id) => self.declaration(id)?,
@@ -127,25 +130,27 @@ impl Function<'_, '_, '_, '_> {
                 self.for_statement(declaration, init, condition, iteration, body)?;
             }
             StmtKind::Break => {
-                let target = self
-                    .jumps
-                    .last()
-                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                        "break without target",
-                    )))?
-                    .end;
-                self.jump(target)?;
-            }
-            StmtKind::Continue => {
                 let target =
                     self.jumps
-                        .iter()
-                        .rev()
-                        .find_map(|t| t.continuation)
+                        .last()
                         .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                            "continue without target",
+                            "break without target",
                         )))?;
-                self.jump(target)?;
+                let (end, depth) = (target.end, target.cleanup_depth);
+                self.destroy_cleanups(depth)?;
+                self.jump(end)?;
+            }
+            StmtKind::Continue => {
+                let target = self
+                    .jumps
+                    .iter()
+                    .rev()
+                    .find_map(|t| t.continuation.map(|target| (target, t.cleanup_depth)))
+                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                        "continue without target",
+                    )))?;
+                self.destroy_cleanups(target.1)?;
+                self.jump(target.0)?;
             }
             StmtKind::Case { body, .. } | StmtKind::Default(body) => {
                 let target = *self.switch_blocks.get(&id).ok_or(Error::Semantic(
@@ -158,6 +163,7 @@ impl Function<'_, '_, '_, '_> {
                 self.statement(body)?;
             }
             StmtKind::Goto(name) => {
+                self.goto_cleanup(name)?;
                 let target = self.goto_label(name)?;
                 self.jump(target)?;
             }
@@ -191,7 +197,7 @@ impl Function<'_, '_, '_, '_> {
         let else_block = self.new_block("if_else")?;
         self.condition_branch(condition, then_block, else_block, true)?;
         self.place(then_block)?;
-        self.statement(then_branch)?;
+        self.scoped_statement(then_branch)?;
         let mut end = None;
         if !self.terminated {
             let block = self.new_block("if_end")?;
@@ -200,7 +206,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.place(else_block)?;
         if let Some(id) = else_branch {
-            self.statement(id)?;
+            self.scoped_statement(id)?;
         }
         if !self.terminated {
             let block = if let Some(block) = end {
@@ -227,8 +233,9 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(test),
+            cleanup_depth: self.lifetime.cleanups.len(),
         });
-        self.statement(body)?;
+        self.scoped_statement(body)?;
         self.jumps.pop();
         if !self.terminated {
             self.jump(test)?;
@@ -244,8 +251,9 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(test),
+            cleanup_depth: self.lifetime.cleanups.len(),
         });
-        self.statement(body)?;
+        self.scoped_statement(body)?;
         self.jumps.pop();
         if !self.terminated {
             self.jump(test)?;
@@ -262,10 +270,11 @@ impl Function<'_, '_, '_, '_> {
         iteration: Option<ast::ExprId>,
         body: ast::StmtId,
     ) -> Result<(), Error> {
+        let depth = self.lifetime.cleanups.len();
         if let Some(id) = declaration {
             self.declaration(id)?;
         } else if let Some(id) = init {
-            self.discard(id)?;
+            self.discard_full_expression(id)?;
         }
         let test = self.new_block("for_cond")?;
         let run = self.new_block("for_body")?;
@@ -282,18 +291,20 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(step),
+            cleanup_depth: self.lifetime.cleanups.len(),
         });
-        self.statement(body)?;
+        self.scoped_statement(body)?;
         self.jumps.pop();
         if !self.terminated {
             self.jump(step)?;
         }
         self.place(step)?;
         if let Some(id) = iteration {
-            self.discard(id)?;
+            self.discard_full_expression(id)?;
         }
         self.jump(test)?;
-        self.place(end)
+        self.place(end)?;
+        self.leave_scope(depth)
     }
     fn switch_statement(&mut self, condition: Condition, body: ast::StmtId) -> Result<(), Error> {
         let selector = self.condition_value(condition, false)?;
@@ -325,8 +336,9 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: None,
+            cleanup_depth: self.lifetime.cleanups.len(),
         });
-        self.statement(body)?;
+        self.scoped_statement(body)?;
         self.jumps.pop();
         if !self.terminated {
             self.jump(end)?;
