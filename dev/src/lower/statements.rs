@@ -146,9 +146,29 @@ impl Function<'_, '_, '_, '_> {
                 self.place(target)?;
                 self.statement(body)?;
             }
+            StmtKind::Goto(name) => {
+                let target = self.goto_label(name)?;
+                self.jump(target)?;
+            }
+            StmtKind::Label { name, body } => {
+                let target = self.goto_label(name)?;
+                if !self.terminated {
+                    self.jump(target)?;
+                }
+                self.place(target)?;
+                self.statement(body)?;
+            }
             _ => return Err(Error::Missing("extended procedural statement lowering")),
         }
         Ok(())
+    }
+    fn goto_label(&mut self, name: crate::lex::identifiers::NameId) -> Result<BlockId, Error> {
+        if let Some(&block) = self.labels.get(&name) {
+            return Ok(block);
+        }
+        let block = self.new_block("goto")?;
+        self.labels.insert(name, block);
+        Ok(block)
     }
     fn if_statement(
         &mut self,

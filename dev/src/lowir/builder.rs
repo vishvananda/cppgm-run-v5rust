@@ -185,6 +185,54 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
         self.append(kind, None)
     }
+    /// C++ lowering's incoming-edge policy for a syntactic non-void end.
+    /// Branches, switches, folded branches and EH targets seed incoming edges
+    /// even in dead blocks; ordinary jumps propagate only from entry or a
+    /// targeted block. A worklist computes the same fixed point in linear time.
+    pub(crate) fn insertion_targeted(&self, folded: &[BlockId]) -> Result<bool, Error> {
+        let insertion = self.block.ok_or(Error::Limit)?;
+        let entry = *self.body.layout.first().ok_or(Error::Limit)?;
+        let mut incoming = vec![false; self.body.blocks().len()];
+        let mut jumps = vec![None; incoming.len()];
+        let mut work = Vec::new();
+        let mut mark = |block: BlockId| {
+            if !incoming[block.index()] {
+                incoming[block.index()] = true;
+                work.push(block);
+            }
+        };
+        for &block in folded {
+            mark(block);
+        }
+        for &block in &self.body.layout {
+            for &id in &self.body.block(block).instructions {
+                let kind = &self.body.instruction(id).kind;
+                match kind {
+                    InstructionKind::Jump(target) => jumps[block.index()] = Some(*target),
+                    InstructionKind::Branch(..) | InstructionKind::Switch(..) => {
+                        kind.visit_targets(&mut mark);
+                    }
+                    InstructionKind::Runtime(runtime) => {
+                        if let Some(target) = runtime.handler_target() {
+                            mark(target);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Entry propagates its jump without itself being an incoming target.
+        work.push(entry);
+        while let Some(block) = work.pop() {
+            if let Some(target) = jumps[block.index()]
+                && !incoming[target.index()]
+            {
+                incoming[target.index()] = true;
+                work.push(target);
+            }
+        }
+        Ok(incoming[insertion.index()])
+    }
     fn append(
         &mut self,
         kind: InstructionKind,
@@ -221,6 +269,34 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn incoming_policy_distinguishes_dead_jumps_and_branch_seeds() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "incoming", &[], Type::I32)?;
+        builder.block("entry")?;
+        let one = builder.integer(1)?;
+        builder.effect(I::Return(Type::I32, Some(one)))?;
+        // A disconnected jump chain is not an incoming edge, even when the
+        // placed blocks occur in reverse propagation order.
+        let first = builder.block_id("first")?;
+        let middle = builder.block_id("middle")?;
+        let end = builder.block_id("end")?;
+        builder.place_block(middle)?;
+        builder.effect(I::Jump(end))?;
+        builder.place_block(first)?;
+        builder.effect(I::Jump(middle))?;
+        builder.place_block(end)?;
+        assert!(!builder.insertion_targeted(&[])?);
+        assert!(builder.insertion_targeted(&[first])?);
+        // A branch seeds its targets even from a dead block. The resulting
+        // cycle must converge and propagate through the ordinary jump chain.
+        builder.effect(I::Branch(one, first, first))?;
+        assert!(builder.insertion_targeted(&[])?);
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        Ok(())
+    }
 
     #[test]
     fn sparse_locations_survive_reassignment_and_another_function() -> Result<(), Error> {

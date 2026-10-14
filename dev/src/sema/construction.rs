@@ -93,7 +93,11 @@ impl Analyzer<'_> {
                 .constructor
                 .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
         {
-            self.note_local_initializer();
+            self.note_local_initializer(
+                variable
+                    .home
+                    .ok_or(Error::Invariant("local without home"))?,
+            )?;
         }
         Ok(())
     }
@@ -586,7 +590,9 @@ impl Analyzer<'_> {
                 .constructor
                 .is_some_and(|id| self.graph.constructors.get(id).nontrivial(&self.graph))
         {
-            self.note_local_initializer();
+            self.note_local_initializer(
+                object.home.ok_or(Error::Invariant("local without home"))?,
+            )?;
         }
         Ok(())
     }

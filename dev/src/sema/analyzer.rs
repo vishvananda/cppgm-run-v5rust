@@ -624,6 +624,9 @@ impl<'tree> Analyzer<'tree> {
         if let Some(handlers) = parsed.handlers {
             self.handlers(handlers, scope)?;
         }
+        if self.semantic() {
+            self.check_gotos()?;
+        }
         Ok(())
     }
 }

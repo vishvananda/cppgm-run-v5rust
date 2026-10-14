@@ -187,7 +187,9 @@ impl Function<'_, '_, '_, '_> {
             id = self.without_parentheses(left);
         }
         if let Some(value) = if fold { self.literal_truth(id)? } else { None } {
-            self.jump(if value { on_true } else { on_false })?;
+            let target = if value { on_true } else { on_false };
+            self.folded_targets.push(target);
+            self.jump(target)?;
         } else {
             let value = self.truth(id)?;
             self.effect(I::Branch(value.value, on_true, on_false))?;

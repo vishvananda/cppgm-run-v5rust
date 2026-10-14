@@ -74,8 +74,13 @@ impl Analyzer<'_> {
             StmtKind::Expression(operand)
             | StmtKind::Return(operand)
             | StmtKind::Throw(operand) => operand.map_or(Ok(()), |id| self.expression(id, scope)),
-            StmtKind::Break | StmtKind::Continue | StmtKind::Goto(_) => Ok(()),
-            StmtKind::Label { body, .. } | StmtKind::Default(body) => self.statement(body, scope),
+            StmtKind::Break | StmtKind::Continue => Ok(()),
+            StmtKind::Goto(_) => self.record_transfer(id, scope),
+            StmtKind::Label { body, .. } => {
+                self.record_transfer(id, scope)?;
+                self.statement(body, scope)
+            }
+            StmtKind::Default(body) => self.statement(body, scope),
             StmtKind::Case { value, body } => {
                 if self.semantic() {
                     self.semantic_case(id, value, scope)?;

@@ -56,6 +56,8 @@ pub(super) struct Scope {
     pub inline_members: Vec<ScopeEdge>,
     pub is_inline: bool,
     pub guarded: bool,
+    pub initialized: u32,
+    pub initialized_at_entry: u32,
     pub member_access: Access,
     pub written_name: Option<crate::syntax::ast::Name>,
 }
@@ -306,6 +308,8 @@ impl Graph {
                 inline_members: Vec::new(),
                 is_inline: false,
                 guarded: false,
+                initialized: 0,
+                initialized_at_entry: 0,
                 member_access: Access::Public,
                 written_name: None,
             }],
@@ -410,6 +414,8 @@ impl Graph {
             inline_members: Vec::new(),
             is_inline: false,
             guarded: false,
+            initialized: 0,
+            initialized_at_entry: self.scope(parent).initialized,
             member_access: Access::Public,
             written_name: None,
         });

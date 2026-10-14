@@ -16,6 +16,7 @@ pub(super) struct BodyContext {
     pub result: TypeId,
     pub loops: usize,
     pub switches: Vec<SwitchContext>,
+    pub transfers: super::jumps::Transfers,
 }
 pub(super) struct SwitchContext {
     ty: TypeId,
@@ -30,6 +31,7 @@ impl BodyContext {
             result,
             loops: 0,
             switches: Vec::new(),
+            transfers: super::jumps::Transfers::default(),
         }
     }
 }
@@ -51,14 +53,22 @@ impl Analyzer<'_> {
             context.initialized = count;
         }
     }
-    pub(super) fn note_local_initializer(&mut self) {
+    pub(super) fn note_local_initializer(&mut self, scope: ScopeId) -> Result<(), Error> {
+        let initialized = self.graph.scope(scope).initialized;
+        self.graph.scope_mut(scope).initialized = initialized
+            .checked_add(1)
+            .ok_or(Error::Limit("local initialization count limit"))?;
         if let Some(context) = self
             .body_context
             .as_mut()
             .and_then(|body| body.switches.last_mut())
         {
-            context.initialized = context.initialized.wrapping_add(1);
+            context.initialized = context
+                .initialized
+                .checked_add(1)
+                .ok_or(Error::Limit("switch initialization count limit"))?;
         }
+        Ok(())
     }
     pub(super) fn semantic_return(
         &mut self,
@@ -336,8 +346,6 @@ impl Analyzer<'_> {
                 ast::StmtKind::RangeFor { .. }
                     | ast::StmtKind::Try { .. }
                     | ast::StmtKind::Throw(_)
-                    | ast::StmtKind::Goto(_)
-                    | ast::StmtKind::Label { .. }
             )
         {
             return Err(Error::Missing("extended semantic statements"));

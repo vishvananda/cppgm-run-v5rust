@@ -874,6 +874,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             StmtKind::Break => self.line("break-statement", depth)?,
             StmtKind::Continue => self.line("continue-statement", depth)?,
+            StmtKind::Label { body, .. } => self.work.push((Item::Statement(body), depth)),
             _ => (),
         }
         Ok(())

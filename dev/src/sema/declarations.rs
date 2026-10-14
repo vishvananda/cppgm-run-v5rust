@@ -551,7 +551,7 @@ impl Analyzer<'_> {
                     && !specs.is_extern
                     && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary
                 {
-                    self.note_local_initializer();
+                    self.note_local_initializer(home)?;
                 }
 
                 ty = self.initialize_variable(binding, initializer, info.lookup, location)?;

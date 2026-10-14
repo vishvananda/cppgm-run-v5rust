@@ -33,6 +33,8 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub jumps: Vec<super::statements::JumpTargets>,
     pub switch_blocks: HashMap<ast::StmtId, crate::lowir::model::BlockId>,
     pub label_memo: HashMap<ast::StmtId, bool>,
+    pub labels: HashMap<crate::lex::identifiers::NameId, crate::lowir::model::BlockId>,
+    pub folded_targets: Vec<crate::lowir::model::BlockId>,
     pub conditional_slot: Option<Value>,
     pub terminated: bool,
     pub result: TypeId,
@@ -101,6 +103,7 @@ pub(super) fn lower<'a>(
     }
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let metadata = symbols.metadata(program, entity, &name)?;
+    let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters: Vec<_> = names
         .iter()
         .map(|(name, ty)| (name.as_str(), *ty))
@@ -137,6 +140,8 @@ pub(super) fn lower<'a>(
         jumps: Vec::new(),
         switch_blocks: HashMap::new(),
         label_memo: HashMap::new(),
+        labels: HashMap::new(),
+        folded_targets: Vec::new(),
         conditional_slot: None,
         terminated: false,
         result,
@@ -174,12 +179,21 @@ pub(super) fn lower<'a>(
     function.statement(body.compound)?;
     if !function.terminated {
         let ty = types::storage(graph, result)?;
-        let value = if ty == Type::Void {
-            None
+        if ty != Type::Void
+            && !is_main
+            && function
+                .builder
+                .insertion_targeted(&function.folded_targets)?
+        {
+            function.builder.effect(I::Unreachable)?;
         } else {
-            Some(function.zero(result)?.value)
-        };
-        function.builder.effect(I::Return(ty, value))?;
+            let value = if ty == Type::Void {
+                None
+            } else {
+                Some(function.zero(result)?.value)
+            };
+            function.builder.effect(I::Return(ty, value))?;
+        }
     }
     function.builder.finish()?;
     Ok(())
