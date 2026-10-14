@@ -190,3 +190,13 @@ same-stack reruns requiring exact successful outputs, rather than matching
 physical exhaustion columns. Raw runs are retained; ordinary course checker
 requirements and the PA34 byte-equality proof remain required. The harness,
 contract, prompt/goal sidecars and protected hashes are updated together.
+
+## Parallel course gates — 2026-10-14
+
+Owner enabled eight regular course workers in both clone settings copies and
+installed the matching protected checker from Ralph b5f5c59. Comparison policy,
+frozen cases, oracle, compiler implementation and bootstrap transport are unchanged.
+A fixed PA1–PA10 snapshot measured 227s with one course worker and 74s/71s with
+eight. All 1,156 focused cases and 2,046 course invocations passed with identical
+counts and compiler-output hashes. The installed 30-test harness suite passed.
+Benchmark evidence: `/home/vishvananda/work/private/v5rust/artifacts/prior-parallel-benchmark`.
