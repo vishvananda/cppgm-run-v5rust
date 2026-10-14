@@ -43,7 +43,7 @@ impl DemandList {
             self.records.push(demand);
         }
     }
-    fn as_slice(&self) -> &[Demand] {
+    pub(super) fn as_slice(&self) -> &[Demand] {
         &self.records
     }
 }

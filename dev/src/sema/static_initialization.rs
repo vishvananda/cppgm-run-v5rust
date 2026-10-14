@@ -111,7 +111,10 @@ impl Analyzer<'_> {
             }
             return Ok(());
         }
-        if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::Array { .. } | TypeKind::Class(_)
+        ) {
             return self.record_array_image(entity, initializer, target, scope);
         }
         if !matches!(

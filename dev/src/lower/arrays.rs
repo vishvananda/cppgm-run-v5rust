@@ -20,7 +20,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn array_temporary(
         &mut self,
         id: ast::ExprId,
-        context: Context,
+        stem: &'static str,
     ) -> Result<Value, Error> {
         let ty = self.graph.lower_expression(id)?.ty;
         let root = self.without_parentheses(id);
@@ -38,15 +38,29 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => return Err(Error::Missing("non-list array temporary lowering")),
         };
-        let stem = if matches!(context, Context::Argument) {
-            "argarr"
-        } else {
-            "arraytmp"
-        };
         let slot = self.generated_slot(stem, types::storage(self.graph, ty)?)?;
         let address = self.emit(I::Addr(slot), ty)?.value;
         self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
         Ok(address)
+    }
+    pub(super) fn literal_array_unit(
+        &self,
+        literal: ast::Literal,
+        index: u64,
+        width: usize,
+    ) -> Result<u64, Error> {
+        let offset = usize::try_from(index)
+            .map_err(|_| crate::lowir::Error::Limit)?
+            .checked_mul(width)
+            .ok_or(crate::lowir::Error::Limit)?;
+        let end = offset
+            .checked_add(width)
+            .ok_or(crate::lowir::Error::Limit)?;
+        let mut value = [0u8; 8];
+        if let Some(unit) = self.symbols.literal_bytes(literal).get(offset..end) {
+            value[..unit.len()].copy_from_slice(unit);
+        }
+        Ok(u64::from_le_bytes(value))
     }
     pub(super) fn local_array(
         &mut self,
@@ -137,19 +151,9 @@ impl Function<'_, '_, '_, '_> {
                     .value
             };
             let value = if let Some((literal, width)) = units {
-                let bytes = self.symbols.literal_bytes(literal);
-                let start = usize::try_from(index)
-                    .map_err(|_| crate::lowir::Error::Limit)?
-                    .checked_mul(width)
-                    .ok_or(crate::lowir::Error::Limit)?;
-                let mut unit = [0u8; 8];
-                if let Some(bytes) =
-                    bytes.get(start..start.checked_add(width).ok_or(crate::lowir::Error::Limit)?)
-                {
-                    unit[..bytes.len()].copy_from_slice(bytes);
-                }
+                let unit = self.literal_array_unit(literal, index, width)?;
                 RValue {
-                    value: self.builder.integer(u128::from(u64::from_le_bytes(unit)))?,
+                    value: self.builder.integer(u128::from(unit))?,
                     ty: types::storage(self.graph, element)?,
                     source: element,
                     literal: false,
@@ -273,23 +277,8 @@ impl Function<'_, '_, '_, '_> {
                     .value
             };
             if let Some((literal, width)) = units {
-                let offset = usize::try_from(index)
-                    .map_err(|_| crate::lowir::Error::Limit)?
-                    .checked_mul(width)
-                    .ok_or(crate::lowir::Error::Limit)?;
-                let bytes = self.symbols.literal_bytes(literal);
-                let mut value = [0u8; 8];
-                if let Some(unit) = bytes.get(
-                    offset
-                        ..offset
-                            .checked_add(width)
-                            .ok_or(crate::lowir::Error::Limit)?,
-                ) {
-                    value[..unit.len()].copy_from_slice(unit);
-                }
-                let value = self
-                    .builder
-                    .integer(u128::from(u64::from_le_bytes(value)))?;
+                let unit = self.literal_array_unit(literal, index, width)?;
+                let value = self.builder.integer(u128::from(unit))?;
                 self.effect(I::Store(
                     types::memory(self.graph, element)?,
                     types::storage(self.graph, element)?,

@@ -24,12 +24,13 @@ impl Function<'_, '_, '_, '_> {
         let array = matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. });
         if matches!(
             self.graph.lower_type(facts.ty)?,
-            TypeView::Reference { .. } | TypeView::Unsupported
+            TypeView::Reference { .. } | TypeView::Class(_) | TypeView::Unsupported
         ) {
             return Err(Error::Missing(
                 "static reference and class storage lowering",
             ));
         }
+        self.symbols.require_trivial_storage(facts.ty)?;
         let dynamic = initializer.is_some()
             && if array {
                 self.graph.lower_array_image(entity).is_none()
@@ -51,7 +52,10 @@ impl Function<'_, '_, '_, '_> {
         )?;
         let init = if array {
             GlobalInit::Data(
-                if !dynamic && let Some(image) = self.graph.lower_array_image(entity) {
+                if initializer.is_some()
+                    && !dynamic
+                    && let Some(image) = self.graph.lower_array_image(entity)
+                {
                     data::items(
                         self.builder.program(),
                         self.symbols,
@@ -66,7 +70,7 @@ impl Function<'_, '_, '_, '_> {
                     )]
                 },
             )
-        } else if let Some(value) = facts.initializer {
+        } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
             match value {
                 StaticValue::Address(..) | StaticValue::Literal(..) => {
                     let (target, offset) = data::address(
@@ -83,7 +87,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             GlobalInit::Zero
         };
-        if !dynamic && !facts.thread_local && self.graph.lower_cv(facts.ty) == 1 {
+        if !dynamic && !facts.thread_local && self.symbols.readonly_object(facts.ty)? {
             metadata.storage = Some(Storage::ReadOnly);
         }
         let program = self.builder.program();

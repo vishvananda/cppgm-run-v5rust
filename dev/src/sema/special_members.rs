@@ -154,6 +154,21 @@ impl Analyzer<'_> {
         );
         let function = self.graph.binding(binding).entity;
         let first = self.graph.function_origin(function)? == binding;
+        if first && kind == MemberKind::Destructor {
+            self.graph.entity_mut(class).declared_destructor = Some(binding);
+        }
+        if kind == MemberKind::Constructor
+            && !initializer.is_some_and(|init| {
+                first
+                    && matches!(
+                        init.kind,
+                        InitializerKind::Default | InitializerKind::Delete
+                    )
+            })
+        {
+            self.graph.entity_mut(class).aggregation =
+                super::aggregate_initialization::Aggregation::Ineligible;
+        }
         if self.semantic() {
             self.record_function_defaults(
                 function,

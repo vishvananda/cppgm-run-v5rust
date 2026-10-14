@@ -212,6 +212,11 @@ impl Analyzer<'_> {
             internal_linkage: specs.is_static || unnamed_namespace,
             language: super::linkage::Language::from_c(self.c_language && kind != ScopeKind::Class),
             thread_storage: specs.thread_storage,
+            static_specifier: if specs.is_static {
+                super::specifiers::StaticSpecifier::Present
+            } else {
+                super::specifiers::StaticSpecifier::Absent
+            },
             automatic: kind == ScopeKind::Block
                 && !specs.is_static
                 && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,

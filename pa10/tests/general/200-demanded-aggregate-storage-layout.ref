@@ -1,0 +1,35 @@
+declare global @object [binding=strong]
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $unused : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $unused
+    %t2 = addr $unused
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 0, %t4
+    %t5 = index i8 %t3, 4
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 0, %t6
+    %t7 = call i32 @demanded()
+    %t8 = addr @object
+    %t9 = cmp ne ptr %t8, 0
+    %t10 = convert trunc i32 i64 %t9
+    %t11 = binary add nowrap i32 %t7, %t10
+    return i32 %t11
+}
+function @demanded() -> i32 [binding=weak, object=_Z8demandedv, inline_hint=yes] {
+  slot $unused : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $unused
+    %t2 = addr $unused
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 3, %t4
+    %t5 = index i8 %t3, 4
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i32 4, %t6
+    return i32 2
+}

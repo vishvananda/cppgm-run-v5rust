@@ -28,6 +28,11 @@ pub(super) enum ThreadStorage {
     Ordinary,
     ThreadLocal,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum StaticSpecifier {
+    Absent,
+    Present,
+}
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Explicitness {
     #[default]

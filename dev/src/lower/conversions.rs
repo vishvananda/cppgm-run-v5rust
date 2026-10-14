@@ -26,6 +26,7 @@ pub(super) enum Context {
     CompoundAssignment,
     Cast,
     ArrayElement,
+    MemberInitialization,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn fit(&mut self, value: RValue, target: TypeId) -> Result<RValue, Error> {
@@ -162,7 +163,10 @@ impl Function<'_, '_, '_, '_> {
                 };
             if let Some(bits) = value.bits
                 && ((to_bits <= from_bits
-                    && (context != Context::ArrayElement || to_bits == from_bits))
+                    && (context != Context::ArrayElement || to_bits == from_bits)
+                    && (context != Context::MemberInitialization
+                        || to_bits == from_bits
+                        || from_signed && to_signed))
                     || widening)
             {
                 let width = to_bits.min(from_bits);

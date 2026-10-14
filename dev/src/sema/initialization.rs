@@ -58,6 +58,12 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+            if let InitializerKind::Assign(id) | InitializerKind::Braced(id) = initializer.kind
+                && matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
+            {
+                self.class_list_initialize(id, target, scope)?;
+                return Ok(target);
+            }
             return self.class_copy_initializer(target, initializer, scope, location);
         }
         let (id, direct) = match initializer.kind {
@@ -218,7 +224,7 @@ impl Analyzer<'_> {
             return self.array_braced_list(id, target, scope);
         }
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
-            return Err(Error::Missing("class list initialization"));
+            return self.class_list_initialize(id, target, scope);
         }
         if values.len() > 1 {
             return Err(Error::at(
@@ -255,19 +261,12 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("array initialization without array"));
         };
         let values = self.tree.expr_lists.get(elements);
-        let mut leaf = element;
-        while let TypeKind::Array { element, .. } = self.graph.types.get(leaf).kind {
-            leaf = element;
-        }
-        if matches!(self.graph.types.get(leaf).kind, TypeKind::Class(_)) {
-            return Err(Error::Missing("class array initialization"));
-        }
         let mut next = 0;
         let mut count = 0u64;
         // O(explicit initializers), including a huge bound with a zero-filled tail.
         while next < values.len() && (bound == 0 || count < bound) {
             let before = next;
-            self.aggregate_array_element(elements, &mut next, element, scope)?;
+            self.aggregate_array_element(elements, &mut next, element, scope, node.location)?;
             if next == before {
                 return Err(Error::Invariant("array initialization made no progress"));
             }
@@ -281,25 +280,30 @@ impl Analyzer<'_> {
                 "too many initializers for the array",
             ));
         }
+        if count < bound {
+            self.missing_aggregate_element(element, scope, node.location)?;
+        }
         let target = self.completed_array_type(target, if bound == 0 { count } else { bound })?;
         self.publish_list(id, target, V::Lvalue)
     }
-    fn aggregate_array_element(
+    pub(super) fn aggregate_array_element(
         &mut self,
         elements: List<ast::ExprId>,
         next: &mut usize,
         target: TypeId,
         scope: ScopeId,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         self.check_stack()?;
         let Some(&id) = self.tree.expr_lists.get(elements).get(*next) else {
+            self.missing_aggregate_element(target, scope, location)?;
             return Ok(());
         };
         if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. }) {
             *next += 1;
             self.list_initialize(id, target, scope)?;
         } else if let TypeKind::Array { element, bound } = self.graph.types.get(target).kind {
-            if self.character_element(element) && self.string_literal(id) {
+            if self.string_literal(id) {
                 *next += 1;
                 self.ensure_typed(id, scope)?;
                 self.character_array(id, target, self.tree.expressions.get(id).location)?;
@@ -309,9 +313,24 @@ impl Analyzer<'_> {
                 }
                 let mut count = 0;
                 while count < bound && *next < self.tree.expr_lists.get(elements).len() {
-                    self.aggregate_array_element(elements, next, element, scope)?;
+                    self.aggregate_array_element(elements, next, element, scope, location)?;
                     count += 1;
                 }
+            }
+        } else if let TypeKind::Class(class) = self.graph.types.get(target).kind {
+            self.ensure_typed(id, scope)?;
+            if self.graph.class_of(self.graph.expression_facts.get(id)?.ty) == Some(class) {
+                *next += 1;
+                self.elide_class_copy(
+                    id,
+                    target,
+                    scope,
+                    false,
+                    false,
+                    self.tree.expressions.get(id).location,
+                )?;
+            } else {
+                self.aggregate_members(elements, next, class, scope, location)?;
             }
         } else {
             *next += 1;
@@ -333,13 +352,18 @@ impl Analyzer<'_> {
         self.convert_scalar(id, target, direct)?;
         self.check_narrowing(id, target, scope)
     }
-    fn ensure_typed(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+    pub(super) fn ensure_typed(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         if self.graph.expression_facts.get(id).is_err() {
             self.typed_expression(id, scope)?;
         }
         Ok(())
     }
-    fn publish_list(&mut self, id: ast::ExprId, ty: TypeId, category: V) -> Result<TypeId, Error> {
+    pub(super) fn publish_list(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        category: V,
+    ) -> Result<TypeId, Error> {
         let facts = self.new_expression_facts(ty, category)?;
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), facts.ty);

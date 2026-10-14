@@ -1,0 +1,43 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable full const struct Record
+    braced-init-list prvalue struct Record
+      literal prvalue int 1
+      braced-init-list prvalue struct Pair
+        literal prvalue int 2
+        literal prvalue int 3
+      literal prvalue double 4.5
+      braced-init-list lvalue array of 2 int
+        literal prvalue int 6
+  variable elided const struct Record
+    braced-init-list prvalue struct Record
+      literal prvalue int 1
+      literal prvalue int 2
+      literal prvalue int 3
+      literal prvalue double 4.5
+      literal prvalue int 6
+  variable empty const struct Record
+    braced-init-list prvalue struct Record
+  variable value int
+  variable alias const struct Alias
+    braced-init-list prvalue struct Alias
+      id-expression lvalue int value
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              member-expression lvalue const int OP_DOT:b
+                member-expression lvalue const struct Pair OP_DOT:pair
+                  id-expression lvalue const struct Record full
+              subscript-expression lvalue const int
+                member-expression lvalue array of 2 const int OP_DOT:tail
+                  id-expression lvalue const struct Record elided
+                literal prvalue int 1
+            member-expression lvalue const char OP_DOT:tag
+              id-expression lvalue const struct Record empty
+          member-expression lvalue int OP_DOT:target
+            id-expression lvalue const struct Alias alias
+end translation unit

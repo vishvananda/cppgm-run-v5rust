@@ -101,6 +101,7 @@ pub(super) struct VariableProperties {
     pub language: super::linkage::Language,
     pub automatic: bool,
     pub thread_storage: super::specifiers::ThreadStorage,
+    pub static_specifier: super::specifiers::StaticSpecifier,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum MemberKind {
@@ -131,6 +132,7 @@ pub(super) struct Entity {
     pub implicit_default: Option<ScopeId>,
     pub user_constructor: Option<BindingId>,
     pub declared_constructors: Vec<BindingId>,
+    pub declared_destructor: Option<BindingId>,
     pub declared_conversions: Vec<BindingId>,
     pub special_definition: Option<super::special_members::SpecialDefinition>,
     pub destructor_specification: super::exceptions::DestructorSpecification,
@@ -151,6 +153,7 @@ pub(super) struct Entity {
     pub member_function: Option<MemberKey>,
     pub special_name: Option<crate::syntax::ast::Name>,
     pub members: Vec<EntityId>,
+    pub aggregation: super::aggregate_initialization::Aggregation,
     pub bases: Vec<super::inheritance::BaseClass>,
     pub derivation: super::inheritance::Derivation,
     pub layout: super::layout::LayoutState,
@@ -450,6 +453,7 @@ impl Graph {
             implicit_default: None,
             user_constructor: None,
             declared_constructors: Vec::new(),
+            declared_destructor: None,
             declared_conversions: Vec::new(),
             special_definition: None,
             destructor_specification: super::exceptions::DestructorSpecification::Explicit,
@@ -470,6 +474,7 @@ impl Graph {
             member_function: None,
             special_name: None,
             members: Vec::new(),
+            aggregation: super::aggregate_initialization::Aggregation::Eligible,
             bases: Vec::new(),
             derivation: super::inheritance::Derivation::Allowed,
             layout: super::layout::LayoutState::NotStarted,

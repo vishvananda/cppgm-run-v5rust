@@ -8,6 +8,11 @@ use crate::{
     },
     types::FundamentalType as F,
 };
+#[derive(Clone, Copy)]
+pub(super) struct ClassStorage {
+    pub changeable: bool,
+    pub destruction: bool,
+}
 pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
     Ok(match graph.lower_type(ty)? {
         TypeView::Scalar(scalar) => match scalar {
@@ -51,6 +56,10 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             }
         }
         TypeView::Enum(underlying) => return storage(graph, underlying),
+        TypeView::Class(entity) => {
+            let (bytes, align) = graph.lower_class_layout(entity)?;
+            Type::Object { bytes, align }
+        }
         TypeView::Unsupported => return Err(Error::Missing("aggregate storage lowering")),
     })
 }
@@ -91,6 +100,16 @@ pub(super) fn boolean(graph: &Graph, ty: TypeId) -> Result<bool, Error> {
     Ok(matches!(
         graph.lower_type(ty)?,
         TypeView::Scalar(Scalar::Bool)
+    ))
+}
+pub(super) fn character(graph: &Graph, ty: TypeId) -> Result<bool, Error> {
+    Ok(matches!(
+        graph.lower_type(ty)?,
+        TypeView::Scalar(
+            Scalar::SignedChar
+                | Scalar::UnsignedChar
+                | Scalar::Basic(F::Char | F::Char16T | F::Char32T | F::WcharT)
+        )
     ))
 }
 pub(super) fn memory(graph: &Graph, ty: TypeId) -> Result<crate::lowir::model::Facts, Error> {

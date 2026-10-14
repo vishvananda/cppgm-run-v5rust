@@ -1,0 +1,72 @@
+global @target : i32 [binding=strong] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<40x8>
+  slot $discardarr__1 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = convert trunc u8 i32 3
+    %t3 = addr $object
+    %t4 = index i8 [projection=field] %t3, 0
+    store u8 %t2, %t4
+    %t5 = convert zext i64 u32 4
+    %t6 = addr $object
+    %t7 = index i8 [projection=field] %t6, 8
+    store typed i64 %t5, %t7
+    %t8 = addr $object
+    %t9 = index i8 [projection=field] %t8, 16
+    store typed i16 5, %t9
+    %t10 = addr $object
+    %t11 = index i8 [projection=field] %t10, 18
+    %t12 = index i8 [projection=array_element] %t11, 0
+    store i8 97, %t12
+    %t13 = addr $object
+    %t14 = index i8 [projection=field] %t13, 18
+    %t15 = index i8 [projection=array_element] %t14, 1
+    store i8 98, %t15
+    %t16 = addr $object
+    %t17 = index i8 [projection=field] %t16, 18
+    %t18 = index i8 [projection=array_element] %t17, 2
+    store i8 99, %t18
+    %t19 = addr $object
+    %t20 = index i8 [projection=field] %t19, 18
+    %t21 = index i8 [projection=array_element] %t20, 3
+    store i8 0, %t21
+    %t22 = addr @target
+    %t23 = addr $object
+    %t24 = index i8 [projection=field] %t23, 24
+    store typed ptr %t22, %t24
+    %t25 = addr $object
+    %t26 = index i8 [projection=field] %t25, 32
+    store volatile i32 6, %t26
+    %t27 = addr $object
+    %t28 = index i8 [projection=field] %t27, 32
+    %t29 = load volatile i32 %t28
+    %t30 = addr $object
+    %t31 = index i8 [projection=field] %t30, 24
+    %t32 = load typed ptr %t31
+    store typed i32 7, %t32
+    %t33 = addr $discardarr__1
+    store typed i32 1, %t33
+    %t34 = index i8 [projection=array_element] %t33, 4
+    store typed i32 2, %t34
+    %t35 = addr $object
+    %t36 = index i8 [projection=field] %t35, 0
+    %t37 = load u8 %t36
+    %t38 = addr $object
+    %t39 = index i8 [projection=field] %t38, 16
+    %t40 = load typed i16 %t39
+    %t41 = convert zext i32 u8 %t37
+    %t42 = convert sext i32 i16 %t40
+    %t43 = binary add nowrap i32 %t41, %t42
+    %t44 = addr $object
+    %t45 = index i8 [projection=field] %t44, 18
+    %t46 = index i8 [projection=array_element] %t45, 1
+    %t47 = load i8 %t46
+    %t48 = convert sext i32 i8 %t47
+    %t49 = binary add nowrap i32 %t43, %t48
+    %t50 = load typed i32 @target
+    %t51 = binary add nowrap i32 %t49, %t50
+    return i32 %t51
+}

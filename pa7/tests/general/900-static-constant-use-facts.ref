@@ -1,0 +1,35 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable calls int
+  variable object struct Constants
+    braced-init-list prvalue struct Constants
+  function-definition fetch function of () returning pointer to struct Constants
+    compound-statement
+      expression-statement
+        unary-expression lvalue int OP_INC:++
+          id-expression lvalue int calls
+      return-statement
+        unary-expression prvalue pointer to struct Constants OP_AMP:&
+          id-expression lvalue struct Constants object
+  function-definition qualified function of () returning long int
+    compound-statement
+      return-statement
+        id-expression lvalue const int Constants::value
+  function-definition selected function of () returning long int
+    compound-statement
+      return-statement
+        member-expression lvalue const int OP_ARROW:value
+          call-expression prvalue pointer to struct Constants
+            callee fetch function of () returning pointer to struct Constants
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        binary-expression prvalue long int OP_PLUS:+
+          binary-expression prvalue long int OP_PLUS:+
+            call-expression prvalue long int
+              callee qualified function of () returning long int
+            call-expression prvalue long int
+              callee selected function of () returning long int
+          id-expression lvalue int calls
+end translation unit

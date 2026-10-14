@@ -1,4 +1,5 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
+mod aggregate_initialization;
 mod analyzer;
 mod anonymous_types;
 mod builtin_calls;

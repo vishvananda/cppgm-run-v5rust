@@ -74,6 +74,7 @@ pub(super) struct ExprFacts {
     pub conversion: Option<Conversion>,
     pub commuted: bool,
     pub folded: Option<u64>,
+    pub fold_style: FoldStyle,
     // Query constants retain their value without replacing the source query's
     // sizeof-expression presentation. Constant reads do not type its operand again.
     pub query_value: Option<u64>,
@@ -91,6 +92,11 @@ pub(super) struct ExprFacts {
     pub member_address_scope: Option<super::graph::ScopeId>,
     pub elided_copy: Option<super::copy_initialization::CopySelection>,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FoldStyle {
+    Literal,
+    StaticMember,
+}
 impl ExprFacts {
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
         Self {
@@ -100,6 +106,7 @@ impl ExprFacts {
             conversion: None,
             commuted: false,
             folded: None,
+            fold_style: FoldStyle::Literal,
             query_value: None,
             reference_cast: None,
             functional_call: false,

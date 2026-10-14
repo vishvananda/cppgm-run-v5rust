@@ -14,6 +14,24 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn static_member_constant(
+        &self,
+        facts: &mut super::expression_facts::ExprFacts,
+        entity: super::graph::EntityId,
+    ) {
+        let entity = self.graph.entity(entity);
+        if entity.data_member != Some(DataMemberKind::Static)
+            || entity.ty.is_some_and(|ty| {
+                matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            })
+        {
+            return;
+        }
+        if let ConstantState::Value(value) = entity.constant {
+            facts.folded = Some(value.bits);
+            facts.fold_style = super::expression_facts::FoldStyle::StaticMember;
+        }
+    }
     pub(super) fn check_mutable_declarator(
         &self,
         specs: Specifiers,
@@ -62,6 +80,12 @@ impl Analyzer<'_> {
                 .owner
                 .ok_or(Error::Invariant("class scope without owner"))?;
             self.graph.entity_mut(owner).members.push(entity);
+            if init.initializer.is_some()
+                || self.graph.binding_access(binding) != super::graph::Access::Public
+            {
+                self.graph.entity_mut(owner).aggregation =
+                    super::aggregate_initialization::Aggregation::Ineligible;
+            }
             let mut declarator = Some(init.declarator);
             while let Some(id) = declarator {
                 let node = self.tree.declarators.get(id);

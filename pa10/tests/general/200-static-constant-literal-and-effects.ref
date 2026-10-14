@@ -1,0 +1,33 @@
+global @calls : i32 [binding=strong] = zero
+global @object [binding=strong] = {
+  zero 1
+}
+
+function @fetch() -> ptr [binding=strong, object=_Z5fetchv] {
+  block ^entry:
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    %t3 = addr @object
+    return ptr %t3
+}
+function @qualified() -> i64 [binding=strong, object=_Z9qualifiedv] {
+  block ^entry:
+    return i64 3
+}
+function @selected() -> i64 [binding=strong, object=_Z8selectedv] {
+  block ^entry:
+    %t1 = call ptr @fetch()
+    return i64 3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i64 @qualified()
+    %t2 = call i64 @selected()
+    %t3 = binary add nowrap i64 %t1, %t2
+    %t4 = load typed i32 @calls
+    %t5 = convert sext i64 i32 %t4
+    %t6 = binary add nowrap i64 %t3, %t5
+    %t7 = convert trunc i32 i64 %t6
+    return i32 %t7
+}

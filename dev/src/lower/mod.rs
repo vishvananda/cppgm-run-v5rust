@@ -1,5 +1,6 @@
 // Translated from lower/program_lowering.cpp. See NOTICE.
 //! Typed, demand-driven source lowering into the shared function-owned `LowIR` model.
+mod aggregates;
 mod arrays;
 mod conditions;
 mod conversions;
@@ -107,14 +108,21 @@ pub(crate) fn lower_unit(
                             declarator.initializer,
                             tree.declarators.get(declarator.declarator).location,
                         )?;
+                        if symbols.emit_tls_wrapper(&mut output.program, entity)? {
+                            output
+                                .program
+                                .stream_last_definition(&mut output.definitions)?;
+                        }
                     }
                 }
             }
             ast::DeclKind::Empty
             | ast::DeclKind::Alias { .. }
+            | ast::DeclKind::NamespaceAlias { .. }
             | ast::DeclKind::Enum { .. }
             | ast::DeclKind::Using { .. }
-            | ast::DeclKind::StaticAssert { .. } => {}
+            | ast::DeclKind::StaticAssert { .. }
+            | ast::DeclKind::Class(_) => {}
             _ => return Err(Error::Missing("class and template declaration lowering")),
         }
     }

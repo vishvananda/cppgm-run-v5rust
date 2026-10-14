@@ -29,6 +29,8 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub builder: FunctionBuilder<'program>,
     pub symbols: &'symbols mut Symbols<'a, 'source>,
     pub locals: HashMap<EntityId, Value>,
+    pub untyped_places: std::collections::HashSet<Value>,
+    pub named_path: Vec<super::aggregates::Step>,
     pub entity: EntityId,
     pub next_static: u32,
     pub next_block: u32,
@@ -140,6 +142,8 @@ pub(super) fn lower<'a>(
         builder,
         symbols,
         locals: HashMap::new(),
+        untyped_places: std::collections::HashSet::new(),
+        named_path: Vec::new(),
         entity,
         next_static: 0,
         next_block: 0,
@@ -264,8 +268,16 @@ impl Function<'_, '_, '_, '_> {
         Ok(format!("{prefix}_{}", self.next_block))
     }
     pub(super) fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
-        let DeclKind::Simple { declarators, .. } = self.tree.declarations.get(id).kind else {
-            return Err(Error::Missing("block declaration lowering"));
+        let declarators = match self.tree.declarations.get(id).kind {
+            DeclKind::Simple { declarators, .. } => declarators,
+            DeclKind::Empty
+            | DeclKind::Alias { .. }
+            | DeclKind::NamespaceAlias { .. }
+            | DeclKind::Using { .. }
+            | DeclKind::Enum { .. }
+            | DeclKind::StaticAssert { .. }
+            | DeclKind::Class(_) => return Ok(()),
+            _ => return Err(Error::Missing("block declaration lowering")),
         };
         for declarator in self.tree.init_declarators.get(declarators) {
             self.local_variable(declarator.declarator, declarator.initializer)?;
@@ -317,6 +329,9 @@ impl Function<'_, '_, '_, '_> {
         }
         if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
             return self.local_array(entity, ty, slot, initializer);
+        }
+        if matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
+            return self.local_aggregate(ty, slot, initializer);
         }
         self.initialize_scalar(ty, slot, initializer)
     }
@@ -412,9 +427,10 @@ pub(super) fn reference_boundary(
     let TypeView::Reference { element, .. } = graph.lower_type(ty)? else {
         return Ok((None, 0));
     };
-    let bytes = match graph.lower_type(element)? {
-        TypeView::Function { .. } | TypeView::Array { bound: 0, .. } | TypeView::Unsupported => 0,
-        _ => types::layout(graph, element)?.0,
+    let bytes = if graph.lower_complete_object(element)? {
+        types::layout(graph, element)?.0
+    } else {
+        0
     };
     Ok((Some(crate::lowir::vocabulary::Pass::ByAddress), bytes))
 }

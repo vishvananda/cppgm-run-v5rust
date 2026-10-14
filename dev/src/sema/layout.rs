@@ -14,6 +14,76 @@ fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
 impl Analyzer<'_> {
+    pub(super) fn request_storage_layout(
+        &mut self,
+        entity: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let ty = self.graph.lower_entity_type(entity)?;
+        let mut object = ty;
+        while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
+            object = element;
+        }
+        if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
+            self.storage_layouts.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                ty,
+                location,
+            ));
+        }
+        Ok(())
+    }
+    pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
+        use super::function_demands::Demand;
+        let mut work = std::mem::take(&mut self.boundary_roots);
+        for demand in self.graph.root_demands.as_slice() {
+            if let Demand::Function { binding, .. } = demand {
+                work.push(self.graph.binding(*binding).entity);
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        while let Some(entity) = work.pop() {
+            if !seen.insert(entity) {
+                continue;
+            }
+            for demand in self.graph.entity(entity).demands.as_slice() {
+                if let Demand::Function { binding, .. } = demand {
+                    work.push(self.graph.binding(*binding).entity);
+                }
+            }
+            let ty = self.graph.lower_entity_type(entity)?;
+            let count = self.graph.types.function_parameter_count(ty)?;
+            for index in 0..count {
+                let parameter = self.graph.types.function_parameter(ty, index)?;
+                if let TypeKind::Reference { element, .. } = self.graph.types.get(parameter).kind {
+                    if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
+                    {
+                        self.type_size(element, SourceOffset(0))?;
+                        continue;
+                    }
+                    let mut object = element;
+                    let mut bounded = true;
+                    while let TypeKind::Array { element, bound } = self.graph.types.get(object).kind
+                    {
+                        bounded &= bound != 0;
+                        object = element;
+                    }
+                    if bounded
+                        && let TypeKind::Class(class) = self.graph.types.get(object).kind
+                        && self.graph.entity(class).complete
+                    {
+                        self.class_layout(class, SourceOffset(0))?;
+                    }
+                }
+            }
+        }
+        for (owner, ty, location) in std::mem::take(&mut self.storage_layouts) {
+            if owner.is_none_or(|owner| seen.contains(&owner)) {
+                self.type_size(ty, location)?;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn class_layout(
         &mut self,
         root: EntityId,

@@ -72,7 +72,14 @@ impl Function<'_, '_, '_, '_> {
             && !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })
         {
-            return self.array_temporary(id, context);
+            return self.array_temporary(
+                id,
+                if matches!(context, Context::Argument) {
+                    "argarr"
+                } else {
+                    "arraytmp"
+                },
+            );
         }
         if facts.temporary.is_some()
             || (!facts.is_place
@@ -80,7 +87,7 @@ impl Function<'_, '_, '_, '_> {
         {
             if matches!(
                 self.graph.lower_type(element)?,
-                TypeView::Array { .. } | TypeView::Unsupported
+                TypeView::Array { .. } | TypeView::Class(_) | TypeView::Unsupported
             ) {
                 return Err(Error::Missing("aggregate reference temporary lowering"));
             }
@@ -146,7 +153,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn reference_holder(&mut self, place: Value, ty: TypeId) -> Result<Value, Error> {
         if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
             Ok(self
-                .emit(I::Load(Facts::memory(false, true), Type::Ptr, place), ty)?
+                .emit(I::Load(self.place_memory(place, ty)?, Type::Ptr, place), ty)?
                 .value)
         } else {
             Ok(place)

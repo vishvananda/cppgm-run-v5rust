@@ -44,7 +44,13 @@ impl Function<'_, '_, '_, '_> {
                 // A later label can enter the scope of an uninitialized object.
                 // Preserve its storage without evaluating an unreachable initializer.
                 for declarator in self.tree.init_declarators.get(declarators) {
-                    self.local_variable(declarator.declarator, declarator.initializer)?;
+                    let entity = self.graph.lower_declared(declarator.declarator)?;
+                    let initializer = if self.graph.lower_explicit_static(entity) {
+                        declarator.initializer
+                    } else {
+                        None
+                    };
+                    self.local_variable(declarator.declarator, initializer)?;
                 }
             }
             return Ok(());

@@ -288,7 +288,7 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         Ok(
             match self.tree.expressions.get(self.without_parentheses(id)).kind {
-                ExprKind::Id(_) | ExprKind::Subscript { .. } => true,
+                ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => true,
                 ExprKind::Unary { op, .. } => op.token.as_punctuator() == Some(P::Multiply),
                 ExprKind::Conditional {
                     then_expr,
@@ -367,6 +367,16 @@ impl Function<'_, '_, '_, '_> {
             return self.read_discarded(id);
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::FunctionalCast {
+                braced: Some(_), ..
+            } if matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Array { .. }
+            ) =>
+            {
+                self.array_temporary(id, "discardarr")?;
+                Ok(())
+            }
             ExprKind::Conditional {
                 condition,
                 then_expr,

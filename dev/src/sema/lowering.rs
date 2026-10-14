@@ -37,6 +37,7 @@ pub(crate) enum TypeView<'a> {
         rvalue: bool,
     },
     Enum(TypeId),
+    Class(EntityId),
     Function {
         result: TypeId,
         parameters: &'a [TypeId],
@@ -178,6 +179,11 @@ impl Graph {
         self.entity(id)
             .variable
             .is_some_and(|properties| properties.automatic)
+    }
+    pub(crate) fn lower_explicit_static(&self, id: EntityId) -> bool {
+        self.entity(id).variable.is_some_and(|variable| {
+            variable.static_specifier == super::specifiers::StaticSpecifier::Present
+        })
     }
     pub(crate) fn lower_is_variable(&self, id: EntityId) -> bool {
         self.entity(id).variable.is_some()
@@ -334,6 +340,7 @@ impl Graph {
                 parameters,
                 variadic: *variadic,
             },
+            TypeKind::Class(entity) => TypeView::Class(*entity),
             _ => TypeView::Unsupported,
         })
     }
@@ -392,8 +399,8 @@ impl Graph {
         }
     }
     pub(crate) fn lower_nominal_name(&self, ty: TypeId) -> Result<(ScopeId, NameId), Error> {
-        let TypeKind::Enum(id) = self.types.get(ty).kind else {
-            return Err(Error::Invariant("non-enum nominal ABI type"));
+        let (TypeKind::Enum(id) | TypeKind::Class(id)) = self.types.get(ty).kind else {
+            return Err(Error::Invariant("non-nominal ABI type"));
         };
         let entity = self.entity(id);
         Ok((
@@ -412,5 +419,106 @@ impl Graph {
             .copied()
             .flatten()
             .ok_or(Error::Invariant("ambiguous statement without reading"))
+    }
+    pub(crate) fn lower_anonymous_namespace(&self, id: ScopeId) -> bool {
+        let mut scope = id;
+        while let Some(parent) = self.scope(scope).parent {
+            if self.scope(scope).kind == super::graph::ScopeKind::Namespace
+                && self.scope(scope).name.is_none()
+            {
+                return true;
+            }
+            scope = parent;
+        }
+        false
+    }
+    pub(crate) fn lower_class_layout(&self, entity: EntityId) -> Result<(u64, u8), Error> {
+        let super::layout::LayoutState::Value { size, alignment } = self.entity(entity).layout
+        else {
+            return Err(Error::Invariant("class lowering without completed layout"));
+        };
+        Ok((
+            size,
+            u8::try_from(alignment.trailing_zeros())
+                .map_err(|_| Error::Limit("class alignment"))?,
+        ))
+    }
+    pub(crate) fn lower_complete_object(&self, ty: TypeId) -> Result<bool, Error> {
+        Ok(match self.lower_type(ty)? {
+            TypeView::Array { bound, .. } => bound != 0,
+            TypeView::Class(entity) => self.entity(entity).complete,
+            TypeView::Function { .. } | TypeView::Unsupported | TypeView::Scalar(Scalar::Void) => {
+                false
+            }
+            _ => true,
+        })
+    }
+    pub(crate) fn lower_member(&self, expr: ast::ExprId) -> Result<(EntityId, Option<u64>), Error> {
+        let binding = self
+            .expression_facts
+            .get(expr)?
+            .member
+            .ok_or(Error::Invariant("member without designation"))?;
+        let entity = self.binding(binding).entity;
+        let node = self.entity(entity);
+        Ok((
+            entity,
+            if node.data_member == Some(super::graph::DataMemberKind::Instance) {
+                Some(
+                    node.member_offset
+                        .ok_or(Error::Invariant("member without offset"))?,
+                )
+            } else {
+                None
+            },
+        ))
+    }
+    pub(crate) fn lower_union_member(&self, entity: EntityId) -> bool {
+        self.entity(entity)
+            .home
+            .and_then(|home| self.scope(home).owner)
+            .is_some_and(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union)
+    }
+    pub(crate) fn lower_class_members(
+        &self,
+        entity: EntityId,
+    ) -> Result<(&[EntityId], bool), Error> {
+        if !self.aggregate_class(entity) {
+            return Err(Error::Missing("nonaggregate class lowering"));
+        }
+        Ok((
+            &self.entity(entity).members,
+            self.entity(entity).key == crate::lex::vocabulary::Keyword::Union,
+        ))
+    }
+    pub(crate) fn lower_member_offset(&self, entity: EntityId) -> Result<u64, Error> {
+        self.entity(entity)
+            .member_offset
+            .ok_or(Error::Invariant("aggregate member without layout"))
+    }
+    pub(crate) fn lower_class_member_entities(&self, entity: EntityId) -> &[EntityId] {
+        &self.entity(entity).members
+    }
+    pub(crate) fn lower_class_bases(
+        &self,
+        entity: EntityId,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.entity(entity).bases.iter().map(|base| base.class)
+    }
+    pub(crate) fn lower_mutable_member(&self, entity: EntityId) -> bool {
+        self.entity(entity).mutability == super::graph::Mutability::Mutable
+    }
+    pub(crate) fn lower_static_member(&self, entity: EntityId) -> bool {
+        self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
+    }
+    pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> bool {
+        self.entity(entity)
+            .declared_destructor
+            .is_some_and(|binding| {
+                !matches!(
+                    self.entity(self.binding(binding).entity).special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+                )
+            })
     }
 }

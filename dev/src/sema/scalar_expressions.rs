@@ -326,6 +326,9 @@ impl Analyzer<'_> {
             V::Lvalue
         };
         let mut facts = self.new_expression_facts(ty, category)?;
+        if binding.kind == BindingKind::Variable {
+            self.static_member_constant(&mut facts, binding.entity);
+        }
         if binding.kind == BindingKind::Variable
             && let Some(home) = self.graph.entity(binding.entity).home
             && let Some(owner) = self.graph.scope(home).owner

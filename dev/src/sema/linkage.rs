@@ -95,6 +95,11 @@ impl Analyzer<'_> {
                 internal_linkage: internal,
                 language,
                 thread_storage: specs.thread_storage,
+                static_specifier: if specs.is_static {
+                    super::specifiers::StaticSpecifier::Present
+                } else {
+                    super::specifiers::StaticSpecifier::Absent
+                },
                 automatic: self.graph.scope(home).kind == ScopeKind::Block
                     && !specs.is_static
                     && !specs.is_extern

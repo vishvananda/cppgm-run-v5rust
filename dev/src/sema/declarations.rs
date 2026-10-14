@@ -434,7 +434,6 @@ impl Analyzer<'_> {
         let name = info
             .name
             .ok_or(Error::Invariant("init-declarator without a name"))?;
-        let home = info.home.unwrap_or(self.declaration_scope(scope));
         let location = self.declarator_location(init.declarator)?;
         if specs.role == DeclarationRole::Typedef {
             return self.declare_typedef_binding(init.declarator, name, info.ty, home, location);
@@ -578,6 +577,9 @@ impl Analyzer<'_> {
             && (definition || init.initializer.is_some())
         {
             self.variable_destruction(binding, info.lookup, location, init.initializer.is_some())?;
+        }
+        if self.lowering() && self.template_depth == 0 && definition && !member {
+            self.request_storage_layout(entity, location)?;
         }
         Ok(())
     }

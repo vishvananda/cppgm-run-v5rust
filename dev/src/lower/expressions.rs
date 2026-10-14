@@ -24,10 +24,13 @@ impl Function<'_, '_, '_, '_> {
     fn apply_conversion(
         &mut self,
         id: ast::ExprId,
-        value: RValue,
+        mut value: RValue,
         context: Context,
     ) -> Result<RValue, Error> {
         let facts = self.graph.lower_expression(id)?;
+        // A converted immediate is not necessarily a literal written at this
+        // use. C++ tests the original expression when deciding widening folds.
+        value.literal = self.written_literal(id)?;
         if facts.null_pointer
             && value.bits.is_some()
             && !matches!(
@@ -59,6 +62,28 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         context: Context,
     ) -> Result<RValue, Error> {
+        let mut value = self.expression_value(id, context)?;
+        value.literal = self.written_literal(id)?;
+        Ok(value)
+    }
+    fn written_literal(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let id = self.without_parentheses(id);
+        let facts = self.graph.lower_expression(id)?;
+        let scalar = matches!(self.graph.lower_type(facts.ty)?, TypeView::Scalar(_));
+        let integral = scalar && types::storage(self.graph, facts.ty)?.float_rank() == 0;
+        Ok(match self.tree.expressions.get(id).kind {
+            ExprKind::Literal(_) => integral,
+            ExprKind::Keyword(Keyword::True | Keyword::False) => true,
+            ExprKind::Id(name) if integral && facts.folded.is_some() => {
+                self.graph.lower_static_member(self.graph.lower_name(name)?)
+            }
+            ExprKind::Member { .. } if integral && facts.folded.is_some() => self
+                .graph
+                .lower_static_member(self.graph.lower_member(id)?.0),
+            _ => false,
+        })
+    }
+    fn expression_value(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
@@ -97,6 +122,9 @@ impl Function<'_, '_, '_, '_> {
             return self.emit(I::Const(ty, value), source);
         }
         if let Some(bits) = facts.folded {
+            if let ExprKind::Member { base, .. } = self.tree.expressions.get(id).kind {
+                self.discard(base)?;
+            }
             return Ok(RValue {
                 value: self.builder.integer(u128::from(bits))?,
                 ty,
@@ -153,7 +181,7 @@ impl Function<'_, '_, '_, '_> {
                     bits: Some(bits),
                 })
             }
-            ExprKind::Id(_) | ExprKind::Subscript { .. } => {
+            ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)
             }

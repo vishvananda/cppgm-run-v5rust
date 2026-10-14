@@ -104,6 +104,15 @@ impl Analyzer<'_> {
             }
         }
         self.check_named_member_access(binding, naming, class, scope, node.location)?;
+        if self.lowering()
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .data_member
+                == Some(DataMemberKind::Instance)
+        {
+            self.class_layout(class, location)?;
+        }
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         let member = self.graph.binding(binding);
         let entity = self.graph.entity(member.entity);
@@ -149,6 +158,7 @@ impl Analyzer<'_> {
             }
         };
         facts.member = Some(binding);
+        self.static_member_constant(&mut facts, member.entity);
         facts.member_naming = Some(naming);
         Ok(facts)
     }

@@ -1,0 +1,38 @@
+global @Values__value : i32 [binding=strong, object=_ZN6Values5valueE] = 3
+global @__local_static__dead_plain__decl0__value : i32 [storage=thread_local, binding=internal, object=_ZZ10dead_plainvE5value] = zero
+global @__local_static__dead_constant__decl0__value : i32 [storage=thread_local, binding=internal, object=_ZZ13dead_constantvE5value] = zero
+global @__local_static__dead_static__decl0__value : i32 [storage=thread_local, binding=internal, object=_ZZ11dead_staticvE5value] = zero
+global @__local_static__dead_static__decl0__value__guard : i64 [storage=thread_local, binding=internal, object=_ZGVZ11dead_staticvE5value] = zero
+
+function @next() -> i32 [binding=strong, object=_Z4nextv] {
+  block ^entry:
+    return i32 7
+}
+function @dead_plain() -> i32 [binding=strong, object=_Z10dead_plainv] {
+  block ^entry:
+    return i32 0
+}
+function @dead_constant() -> i32 [binding=strong, object=_Z13dead_constantv] {
+  block ^entry:
+    return i32 0
+}
+function @dead_static() -> i32 [binding=strong, object=_Z11dead_staticv] {
+  block ^entry:
+    return i32 0
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $result : i32
+
+  block ^entry:
+    %t1 = load typed i32 @Values__value
+    %t2 = binary add nowrap i32 %t1, 2
+    store typed i32 %t2, $result
+    %t3 = load typed i32 $result
+    %t4 = call i32 @dead_plain()
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @dead_constant()
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = call i32 @dead_static()
+    %t9 = binary add nowrap i32 %t7, %t8
+    return i32 %t9
+}

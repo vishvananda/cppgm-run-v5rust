@@ -56,6 +56,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
+    pub(super) boundary_roots: Vec<super::graph::EntityId>,
+    pub(super) storage_layouts: Vec<(Option<super::graph::EntityId>, TypeId, SourceOffset)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
     pub(super) throw_work: Vec<(ast::ExprId, u16)>,
     pub(super) deduced_initializer: Option<ast::ExprId>,
@@ -160,6 +162,8 @@ impl<'tree> Analyzer<'tree> {
             pending_throws: Vec::new(),
             evaluating_noexcept: false,
             layout_work: Vec::new(),
+            boundary_roots: Vec::new(),
+            storage_layouts: Vec::new(),
             exception_work: Vec::new(),
             throw_work: Vec::new(),
         };
@@ -191,6 +195,9 @@ impl<'tree> Analyzer<'tree> {
             return Err(Error::Invariant("uncompleted member bodies"));
         }
         self.finish_static_initializers()?;
+        if self.lowering() {
+            self.finish_lowering_boundaries()?;
+        }
         Ok(self.graph)
     }
     pub(super) fn check_stack(&self) -> Result<(), Error> {
@@ -241,6 +248,8 @@ impl<'tree> Analyzer<'tree> {
             })
         {
             self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+            self.graph.entity_mut(owner).aggregation =
+                super::aggregate_initialization::Aggregation::Ineligible;
         }
         match declaration.kind {
             ast::DeclKind::Empty => Ok(()),
@@ -537,6 +546,14 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        if self.lowering()
+            && body.template_depth == 0
+            && self.graph.entity(body.entity).definition_emission
+                == super::function_demands::DefinitionEmission::Always
+            && self.graph.entity(body.entity).inline != super::specifiers::InlinePreference::Inline
+        {
+            self.boundary_roots.push(body.entity);
+        }
         let saved = self.template_depth;
         let saved_class_depth = self.class_depth;
         self.template_depth = body.template_depth;

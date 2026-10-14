@@ -1,0 +1,42 @@
+global @value : i32 [storage=thread_local, binding=strong] = 3
+global @_GLOBAL__N_1__other : u32 [storage=thread_local, binding=internal, object=_ZN12_GLOBAL__N_15otherE] = 4
+
+function @read_first() -> i32 [binding=strong, object=_Z10read_firstv] {
+  block ^entry:
+    %t1 = call ptr @__cppgm_tls_wrapper__value()
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @__cppgm_tls_wrapper__value() -> ptr [binding=weak, object=_ZTW5value, tls_for=@value] {
+  block ^entry:
+    %t1 = addr @value
+    return ptr %t1
+}
+function @read_second() -> i32 [binding=strong, object=_Z11read_secondv] {
+  block ^entry:
+    %t1 = call ptr @__cppgm_tls_wrapper__value()
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @_GLOBAL__N_1__read_other() -> u32 [binding=internal, object=_ZN12_GLOBAL__N_110read_otherEv] {
+  block ^entry:
+    %t1 = call ptr @__cppgm_tls_wrapper___GLOBAL__N_1__other()
+    %t2 = load typed u32 %t1
+    return u32 %t2
+}
+function @__cppgm_tls_wrapper___GLOBAL__N_1__other() -> ptr [binding=internal, object=_ZTWN12_GLOBAL__N_15otherE, tls_for=@_GLOBAL__N_1__other] {
+  block ^entry:
+    %t1 = addr @_GLOBAL__N_1__other
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @read_first()
+    %t2 = call i32 @read_second()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call u32 @_GLOBAL__N_1__read_other()
+    %t5 = copy u32 %t3
+    %t6 = binary add u32 %t5, %t4
+    %t7 = copy i32 %t6
+    return i32 %t7
+}

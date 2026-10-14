@@ -38,7 +38,11 @@ fn define_storage(
     location: crate::support::source::SourceOffset,
 ) -> Result<(), Error> {
     let facts = graph.lower_variable(entity)?;
-    let array = matches!(graph.lower_type(facts.ty)?, TypeView::Array { .. });
+    symbols.require_trivial_storage(facts.ty)?;
+    let array = matches!(
+        graph.lower_type(facts.ty)?,
+        TypeView::Array { .. } | TypeView::Class(_)
+    );
     let mut ty = if array {
         None
     } else {
@@ -104,7 +108,7 @@ fn define_storage(
     if array && let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }
-    if graph.lower_cv(facts.ty) == 1 {
+    if !facts.thread_local && symbols.readonly_object(facts.ty)? {
         metadata.storage = Some(Storage::ReadOnly);
     }
     let name = program.symbol(symbol).name;
@@ -158,13 +162,10 @@ pub(super) fn finish(
         }
         let metadata = symbols.variable_metadata(program, entity, symbol)?;
         let name = program.symbol(symbol).name;
-        let ty = if matches!(
-            graph.lower_type(facts.ty)?,
-            TypeView::Array { bound: 0, .. }
-        ) {
-            None
-        } else {
+        let ty = if graph.lower_complete_object(facts.ty)? {
             Some(types::storage(graph, facts.ty)?)
+        } else {
+            None
         };
         program.add_global(
             symbol,

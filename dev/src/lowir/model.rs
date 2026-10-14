@@ -420,7 +420,7 @@ pub(crate) struct Boundary {
     pub(crate) returns: Returns,
     pub(crate) result_classes: Option<super::vocabulary::ObjectClasses>,
 }
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct Metadata {
     pub(crate) role: Option<Role>,
     pub(crate) linkage: Linkage,
@@ -455,7 +455,7 @@ pub(crate) struct DebugLocation {
 /// One-based body-local identity: absence needs no extra instruction word.
 #[derive(Clone, Copy)]
 pub(crate) struct LocationId(NonZeroU32);
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Value {
     Temp(TempId),
     Slot(SlotId),

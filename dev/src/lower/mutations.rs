@@ -16,6 +16,17 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn place_memory(
+        &self,
+        place: Value,
+        source: crate::sema::lowering::TypeId,
+    ) -> Result<Facts, Error> {
+        if self.untyped_places.contains(&place) {
+            Ok(Facts::memory(self.graph.lower_cv(source) & 2 != 0, false))
+        } else {
+            types::memory(self.graph, source)
+        }
+    }
     pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         self.check_stack()?;
         match self.tree.expressions.get(id).kind {
@@ -39,6 +50,41 @@ impl Function<'_, '_, '_, '_> {
                 .map(Value::Symbol)
             }
             ExprKind::Subscript { base, index } => self.subscript(id, base, index),
+            ExprKind::Member { base, op, .. } => {
+                let (entity, offset) = self.graph.lower_member(id)?;
+                let source = self.graph.lower_expression(id)?.ty;
+                let place = if let Some(offset) = offset {
+                    let root = if op.token.as_punctuator() == Some(P::Arrow) {
+                        self.operand(base, Context::Operand)?.value
+                    } else {
+                        self.address(base)?
+                    };
+                    let offset = self.builder.integer(u128::from(offset))?;
+                    let place = self
+                        .emit(
+                            I::Index(
+                                Type::I8,
+                                Some(crate::lowir::vocabulary::Projection::Field),
+                                root,
+                                offset,
+                            ),
+                            source,
+                        )?
+                        .value;
+                    if self.graph.lower_union_member(entity) || self.untyped_places.contains(&root)
+                    {
+                        self.untyped_places.insert(place);
+                    }
+                    place
+                } else {
+                    self.discard(base)?;
+                    Value::Symbol(
+                        self.symbols
+                            .variable_symbol(self.builder.program(), entity)?,
+                    )
+                };
+                self.reference_holder(place, self.graph.lower_entity_type(entity)?)
+            }
             ExprKind::Conditional {
                 condition,
                 then_expr,
@@ -57,10 +103,34 @@ impl Function<'_, '_, '_, '_> {
                     let symbol = self
                         .symbols
                         .variable_symbol(self.builder.program(), entity)?;
-                    self.reference_holder(
-                        Value::Symbol(symbol),
-                        self.graph.lower_entity_type(entity)?,
-                    )
+                    let place = if self.graph.lower_variable(entity)?.thread_local {
+                        if let Some(wrapper) =
+                            self.symbols
+                                .tls_wrapper(self.builder.program(), entity, symbol)?
+                        {
+                            let arguments = self.builder.arguments(&[])?;
+                            self.emit(
+                                I::Call(crate::lowir::model::Call {
+                                    result: Type::Ptr,
+                                    callee: Value::Symbol(wrapper),
+                                    arguments,
+                                    copy_elision: false,
+                                    signature: None,
+                                }),
+                                self.graph.lower_entity_type(entity)?,
+                            )?
+                            .value
+                        } else {
+                            self.emit(
+                                I::Addr(Value::Symbol(symbol)),
+                                self.graph.lower_entity_type(entity)?,
+                            )?
+                            .value
+                        }
+                    } else {
+                        Value::Symbol(symbol)
+                    };
+                    self.reference_holder(place, self.graph.lower_entity_type(entity)?)
                 }
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
@@ -117,7 +187,7 @@ impl Function<'_, '_, '_, '_> {
                     self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
                     crate::sema::lowering::TypeView::Array { .. }
                 ) {
-                    return self.array_temporary(id, Context::Operand);
+                    return self.array_temporary(id, "arraytmp");
                 }
                 let operand = braced
                     .or_else(|| self.tree.expr_lists.get(arguments).first().copied())
@@ -145,7 +215,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         self.emit(
             I::Load(
-                types::memory(self.graph, source)?,
+                self.place_memory(place, source)?,
                 types::storage(self.graph, source)?,
                 place,
             ),
@@ -197,7 +267,7 @@ impl Function<'_, '_, '_, '_> {
             )?
         };
         self.effect(I::Store(
-            types::memory(self.graph, source)?,
+            self.place_memory(place, source)?,
             old.ty,
             result.value,
             place,
@@ -270,7 +340,7 @@ impl Function<'_, '_, '_, '_> {
             (place, self.fit(value, source)?)
         };
         self.effect(I::Store(
-            types::memory(self.graph, source)?,
+            self.place_memory(place, source)?,
             ty,
             value.value,
             place,

@@ -89,6 +89,9 @@ pub(super) struct Symbols<'a, 'source> {
     pub data: super::data::Objects,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
+    tls_wrappers: HashMap<EntityId, SymbolId>,
+    variable_names: HashMap<EntityId, NodeId>,
+    class_storage: HashMap<EntityId, super::types::ClassStorage>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -119,12 +122,79 @@ impl<'a, 'source> Symbols<'a, 'source> {
             data: super::data::Objects::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
+            tls_wrappers: HashMap::new(),
+            variable_names: HashMap::new(),
+            class_storage: HashMap::new(),
             signatures: HashMap::new(),
         }
     }
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
             .map_err(|_| Error::Missing("local name spelling"))
+    }
+    pub(super) fn readonly_object(&mut self, mut ty: TypeId) -> Result<bool, Error> {
+        if self.graph.lower_cv(ty) != 1
+            || matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
+        {
+            return Ok(false);
+        }
+        while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
+            ty = element;
+        }
+        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+            let properties = self.class_storage_properties(class)?;
+            Ok(!properties.changeable && !properties.destruction)
+        } else {
+            Ok(true)
+        }
+    }
+    pub(super) fn require_trivial_storage(&mut self, mut ty: TypeId) -> Result<(), Error> {
+        while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
+            ty = element;
+        }
+        if let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && self.class_storage_properties(class)?.destruction
+        {
+            return Err(Error::Missing("class storage destruction lowering"));
+        }
+        Ok(())
+    }
+    fn class_storage_properties(
+        &mut self,
+        class: EntityId,
+    ) -> Result<super::types::ClassStorage, Error> {
+        self.check_stack()?;
+        if let Some(&properties) = self.class_storage.get(&class) {
+            return Ok(properties);
+        }
+        let graph = self.graph;
+        let mut properties = super::types::ClassStorage {
+            changeable: false,
+            destruction: graph.lower_nontrivial_destructor(class),
+        };
+        for base in graph.lower_class_bases(class) {
+            let child = self.class_storage_properties(base)?;
+            properties.changeable |= child.changeable;
+            properties.destruction |= child.destruction;
+        }
+        for &member in graph.lower_class_member_entities(class) {
+            properties.changeable |= graph.lower_mutable_member(member);
+            let mut ty = graph.lower_entity_type(member)?;
+            if matches!(graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                continue;
+            }
+            properties.changeable |= graph.lower_cv(ty) & 2 != 0;
+            while let TypeView::Array { element, .. } = graph.lower_type(ty)? {
+                ty = element;
+            }
+            if let TypeView::Class(class) = graph.lower_type(ty)? {
+                let child = self.class_storage_properties(class)?;
+                properties.changeable |= child.changeable;
+                properties.destruction |= child.destruction;
+            }
+        }
+        self.class_storage.insert(class, properties);
+        Ok(properties)
     }
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.data)
@@ -353,11 +423,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let (parent, name) = self.graph.lower_namespace(scope)?;
         let id = if let Some(parent) = parent {
             let parent = self.scope(parent)?;
-            let name = name.ok_or(Error::Missing("anonymous namespace symbol lowering"))?;
+            if parent.is_none() && name.is_some_and(|name| self.cursor.name(name) == b"std") {
+                let id = Some(self.abi.intern(Node::Std, &[])?);
+                self.scopes.insert(scope, id);
+                return Ok(id);
+            }
             let terminal = self
                 .abi
-                .string(self.cursor.name(name))
-                .map_err(Error::from)?;
+                .string(name.map_or(&b"_GLOBAL__N_1"[..], |name| self.cursor.name(name)))?;
             Some(
                 self.abi
                     .intern(
@@ -427,7 +500,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 },
                 operand: self.abi_type(element)?,
             },
-            TypeView::Enum(_) => {
+            TypeView::Enum(_) | TypeView::Class(_) => {
                 let (home, name) = self.graph.lower_nominal_name(ty)?;
                 let parent = self.scope(home)?;
                 let terminal = self.abi.string(self.cursor.name(name))?;
@@ -566,11 +639,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if !facts.c_linkage || facts.internal {
             let mut scope = facts.home;
             while let (Some(parent), name) = self.graph.lower_namespace(scope)? {
-                let name = name.ok_or(Error::Missing("anonymous namespace symbols"))?;
-                components.push(
-                    std::str::from_utf8(self.cursor.name(name))
-                        .map_err(|_| Error::Missing("non-ASCII symbol rendering"))?,
-                );
+                components.push(if let Some(name) = name {
+                    self.identifier(name)?
+                } else {
+                    "_GLOBAL__N_1"
+                });
                 scope = parent;
             }
         }
@@ -608,33 +681,24 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(*symbol);
         }
         let facts = self.graph.lower_variable(entity)?;
-        if facts.thread_local {
-            return Err(Error::Missing("thread-local global lowering"));
-        }
         let mut components = vec![self.identifier(facts.name)?];
         let mut scope = facts.home;
         while let (Some(parent), name) = self.graph.lower_namespace(scope)? {
-            components.push(self.identifier(
-                name.ok_or(Error::Missing("anonymous namespace variable lowering"))?,
-            )?);
+            components.push(if let Some(name) = name {
+                self.identifier(name)?
+            } else {
+                "_GLOBAL__N_1"
+            });
             scope = parent;
         }
         components.reverse();
         let spelling = components.join("__");
-        let parent = self.scope(facts.home)?;
-        let object = if facts.c_linkage || parent.is_none() && !facts.internal {
+        let name = self.variable_abi_name(entity)?;
+        let object = if facts.c_linkage
+            || self.graph.lower_namespace(facts.home)?.0.is_none() && !facts.internal
+        {
             program.names.intern_bytes(self.cursor.name(facts.name))?
         } else {
-            let terminal = self.abi.string(self.cursor.name(facts.name))?;
-            let name = self.abi.intern(
-                Node::Name {
-                    parent,
-                    terminal,
-                    internal: facts.internal,
-                    occurrence: 0,
-                },
-                &[],
-            )?;
             let mut bytes = Vec::new();
             abi::encoder::Encoder::encode(
                 &self.abi,
@@ -657,6 +721,122 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.objects.insert(entity, local_object);
         self.globals.push(entity);
         Ok(symbol)
+    }
+    fn variable_abi_name(&mut self, entity: EntityId) -> Result<NodeId, Error> {
+        if let Some(&name) = self.variable_names.get(&entity) {
+            return Ok(name);
+        }
+        let facts = self.graph.lower_variable(entity)?;
+        let parent = self.scope(facts.home)?;
+        let terminal = self.abi.string(self.cursor.name(facts.name))?;
+        let name = self.abi.intern(
+            Node::Name {
+                parent,
+                terminal,
+                internal: facts.internal && !self.graph.lower_anonymous_namespace(facts.home),
+                occurrence: 0,
+            },
+            &[],
+        )?;
+        self.variable_names.insert(entity, name);
+        Ok(name)
+    }
+    pub(super) fn tls_wrapper(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+        global: SymbolId,
+    ) -> Result<Option<SymbolId>, Error> {
+        if let Some(&wrapper) = self.tls_wrappers.get(&entity) {
+            return Ok(Some(wrapper));
+        }
+        if program.symbol(global).declared()
+            || self.graph.lower_variable(entity)?.definition.is_none()
+        {
+            return Ok(None);
+        }
+        let spelling = format!(
+            "__cppgm_tls_wrapper__{}",
+            program.names.get(program.symbol(global).name)
+        );
+        let name = self.variable_abi_name(entity)?;
+        let mut bytes = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::TlsWrapper(name),
+            &mut bytes,
+            self.budget,
+        )?;
+        let object = program.names.intern_bytes(&bytes)?;
+        let internal = self.graph.lower_variable(entity)?.internal;
+        let local_object =
+            (!internal || !self.table.objects.contains_key(&object)).then_some(object);
+        let wrapper = self
+            .table
+            .allocate(program, &spelling, Some(object), internal)?;
+        let object = local_object;
+        self.tls_wrappers.insert(entity, wrapper);
+        // The wrapper's ABI identity is retained on its own symbol declaration.
+        let signature = program.add_signature(crate::lowir::model::Signature {
+            parameters: Vec::new(),
+            result: crate::lowir::vocabulary::Type::Ptr,
+            boundary: crate::lowir::model::Boundary::default(),
+        })?;
+        let name = program.symbol(wrapper).name;
+        program.add(
+            wrapper,
+            crate::lowir::model::Function {
+                name,
+                signature,
+                metadata: Metadata {
+                    binding: Some(if internal {
+                        crate::lowir::vocabulary::Binding::Internal
+                    } else {
+                        crate::lowir::vocabulary::Binding::Weak
+                    }),
+                    object,
+                    tls_for: Some(global),
+                    ..Metadata::default()
+                },
+                body: None,
+                location: None,
+            },
+        )?;
+        Ok(Some(wrapper))
+    }
+    pub(super) fn emit_tls_wrapper(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<bool, Error> {
+        let Some(&wrapper) = self.tls_wrappers.get(&entity) else {
+            return Ok(false);
+        };
+        let global = self.variable_symbol(program, entity)?;
+        let name = program.names.get(program.symbol(wrapper).name).to_owned();
+        let metadata = program
+            .function(program.symbol(wrapper))
+            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "TLS wrapper without declaration",
+            )))?
+            .metadata;
+        let mut builder = crate::lowir::builder::FunctionBuilder::new(
+            program,
+            &name,
+            &[],
+            crate::lowir::vocabulary::Type::Ptr,
+        )?;
+        builder.metadata(metadata);
+        builder.block("entry")?;
+        let address = builder.generated(crate::lowir::model::InstructionKind::Addr(
+            Value::Symbol(global),
+        ))?;
+        builder.effect(crate::lowir::model::InstructionKind::Return(
+            crate::lowir::vocabulary::Type::Ptr,
+            Some(address),
+        ))?;
+        builder.finish()?;
+        Ok(true)
     }
     pub(super) fn local_storage_symbols(
         &mut self,
@@ -772,6 +952,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 crate::lowir::vocabulary::Binding::Strong
             }),
             object,
+            storage: facts
+                .thread_local
+                .then_some(crate::lowir::vocabulary::Storage::ThreadLocal),
             ..Metadata::default()
         })
     }
@@ -885,7 +1068,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Node::Name {
                     parent,
                     terminal,
-                    internal: facts.internal,
+                    internal: facts.internal && !self.graph.lower_anonymous_namespace(facts.home),
                     occurrence: 0,
                 },
                 &[],

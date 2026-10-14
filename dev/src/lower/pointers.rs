@@ -35,7 +35,10 @@ impl Function<'_, '_, '_, '_> {
         };
         let pointer = self.expression(base, Context::Operand)?;
         let offset = self.expression(index, Context::Operand)?;
-        let (ty, offset) = if matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. }) {
+        let (ty, offset) = if matches!(
+            self.graph.lower_type(facts.ty)?,
+            TypeView::Array { .. } | TypeView::Class(_)
+        ) {
             let offset = self.convert_integer(
                 offset,
                 offset.source,
@@ -56,7 +59,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             (types::storage(self.graph, facts.ty)?, offset)
         };
-        Ok(self
+        let place = self
             .emit(
                 I::Index(
                     ty,
@@ -66,7 +69,11 @@ impl Function<'_, '_, '_, '_> {
                 ),
                 facts.ty,
             )?
-            .value)
+            .value;
+        if self.untyped_places.contains(&pointer.value) {
+            self.untyped_places.insert(place);
+        }
+        Ok(place)
     }
     pub(super) fn pointer_offset(
         &mut self,

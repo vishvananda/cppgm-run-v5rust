@@ -1004,7 +1004,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
         }
         let node = self.tree.expressions.get(id);
-        if let Some(bits) = facts.folded {
+        if let Some(bits) = facts.folded
+            && facts.fold_style == super::expression_facts::FoldStyle::Literal
+        {
             self.indent(depth)?;
             self.output.write_all(b"literal prvalue ")?;
             self.ty(retyped.map_or(facts.ty, |(ty, _)| ty))?;

@@ -3,6 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    constant_addresses::Root,
     graph::EntityId,
     lowering::ScopeId,
     static_initialization::Value,
@@ -56,6 +57,63 @@ impl Analyzer<'_> {
         out: &mut Vec<Item>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
+        if let TypeKind::Class(class) = self.graph.types.get(target).kind {
+            let list = if let Some(expr) = expr {
+                let root = self.graph.expression_facts.root(expr);
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind else {
+                    return Ok(false);
+                };
+                self.tree.expr_lists.get(elements)
+            } else {
+                &[]
+            };
+            return self.static_class_list(class, list, &mut 0, scope, out);
+        }
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::Reference { .. }
+        ) {
+            let Some(mut expr) = expr else {
+                return Ok(false);
+            };
+            let root = self.graph.expression_facts.root(expr);
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind
+                && self.graph.lower_expression(expr)?.is_place
+            {
+                expr = *self
+                    .tree
+                    .expr_lists
+                    .get(elements)
+                    .first()
+                    .ok_or(Error::Invariant("empty static reference list"))?;
+            }
+            if self
+                .graph
+                .expression_facts
+                .get(expr)?
+                .conversion
+                .is_some_and(|conversion| conversion.temporary)
+            {
+                return Ok(false);
+            }
+            let address = match self.constant_place(expr, scope) {
+                Ok(address) => address,
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => return Ok(false),
+                Err(error) => return Err(error),
+            };
+            let value = match address.root {
+                Root::Variable(entity) if !self.graph.lower_automatic(entity) => {
+                    Value::Address(entity, address.offset)
+                }
+                Root::Temporary(entity) | Root::Function(entity) => {
+                    Value::Address(entity, address.offset)
+                }
+                Root::Literal(expr) => Value::Literal(expr, address.offset),
+                _ => return Ok(false),
+            };
+            out.push(Item::Scalar(target, value));
+            return Ok(true);
+        }
         if let TypeKind::Array { element, bound } = self.graph.types.get(target).kind {
             if let Some(expr) = expr {
                 let root = self.graph.expression_facts.root(expr);
@@ -132,7 +190,10 @@ impl Analyzer<'_> {
         for _ in 0..bound {
             let expr = list.get(*next).copied();
             if let Some(expr) = expr
-                && matches!(self.graph.types.get(element).kind, TypeKind::Array { .. })
+                && matches!(
+                    self.graph.types.get(element).kind,
+                    TypeKind::Array { .. } | TypeKind::Class(_)
+                )
                 && !matches!(
                     self.tree.expressions.get(expr).kind,
                     ExprKind::Braced { .. }
@@ -141,7 +202,12 @@ impl Analyzer<'_> {
                     && matches!(self.graph.types.get(element).kind,
                     TypeKind::Array { element, .. } if self.character_element(element)))
             {
-                if !self.static_array_list(element, list, next, scope, out)? {
+                let evaluated = if let TypeKind::Class(class) = self.graph.types.get(element).kind {
+                    self.static_class_list(class, list, next, scope, out)?
+                } else {
+                    self.static_array_list(element, list, next, scope, out)?
+                };
+                if !evaluated {
                     return Ok(false);
                 }
             } else {
@@ -153,6 +219,91 @@ impl Analyzer<'_> {
                 }
             }
         }
+        Ok(true)
+    }
+    fn static_class_list(
+        &mut self,
+        class: EntityId,
+        list: &[ast::ExprId],
+        next: &mut usize,
+        scope: ScopeId,
+        out: &mut Vec<Item>,
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        if !self.graph.aggregate_class(class) {
+            return Ok(false);
+        }
+        let ty = self.graph.lower_entity_type(class)?;
+        let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
+        let union = self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union;
+        let mut position = 0;
+        for index in 0..self.graph.entity(class).members.len() {
+            let member = self.graph.entity(class).members[index];
+            let ty = self.graph.lower_entity_type(member)?;
+            let offset = self
+                .graph
+                .entity(member)
+                .member_offset
+                .ok_or(Error::Invariant("static member without offset"))?;
+            append_zero(
+                out,
+                offset
+                    .checked_sub(position)
+                    .ok_or(Error::Invariant("overlapping static members"))?,
+            )?;
+            let expr = list.get(*next).copied();
+            let evaluated = if let Some(expr) = expr
+                && !matches!(
+                    self.tree.expressions.get(expr).kind,
+                    ExprKind::Braced { .. }
+                )
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Array { .. } | TypeKind::Class(_)
+                )
+                && !(self.string_literal(expr)
+                    && matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. } if self.character_element(element)))
+            {
+                if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
+                    self.static_class_list(class, list, next, scope, out)?
+                } else {
+                    self.static_array_list(ty, list, next, scope, out)?
+                }
+            } else {
+                if expr.is_some() {
+                    *next += 1;
+                }
+                if expr.is_none()
+                    && !matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::Array { .. }
+                            | TypeKind::Class(_)
+                            | TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                    )
+                {
+                    let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
+                    append_zero(out, size)?;
+                    true
+                } else {
+                    self.static_array_element(ty, expr, scope, out)?
+                }
+            };
+            if !evaluated {
+                return Ok(false);
+            }
+            let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
+            position = offset
+                .checked_add(size)
+                .ok_or(Error::Limit("static aggregate size"))?;
+            if union {
+                break;
+            }
+        }
+        append_zero(
+            out,
+            size.checked_sub(position)
+                .ok_or(Error::Invariant("aggregate size without member bytes"))?,
+        )?;
         Ok(true)
     }
     fn static_array_string(
