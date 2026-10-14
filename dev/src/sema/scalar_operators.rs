@@ -421,6 +421,20 @@ impl Analyzer<'_> {
         if self.pointer_qualification(bt, at)? {
             return Ok(Some(at));
         }
+        if let (Some(a_class), Some(b_class)) = (self.graph.class_of(pa), self.graph.class_of(pb)) {
+            let ancestor = if self.graph.is_base_of(a_class, b_class) {
+                Some(pa)
+            } else if self.graph.is_base_of(b_class, a_class) {
+                Some(pb)
+            } else {
+                None
+            };
+            if let Some(ancestor) = ancestor {
+                let ancestor = self.bare_type(ancestor)?;
+                let element = self.graph.types.qualify(ancestor, cv)?;
+                return self.graph.types.pointer(element).map(Some);
+            }
+        }
         self.combined_pointer_cv(at, bt)
     }
     fn combined_pointer_cv(

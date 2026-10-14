@@ -310,17 +310,29 @@ impl Function<'_, '_, '_, '_> {
         } else {
             Context::Operand
         };
+        // The frozen comparison owner adjusts a base pointer before evaluating
+        // the right operand; ordinary scalar conversions follow both evaluations.
+        let early_base = comparison && self.graph.lower_base_conversion_offset(left)?.is_some();
         let a = self.expression(left, context)?;
+        let a = if early_base {
+            self.apply_conversion(left, a, context)?
+        } else {
+            a
+        };
         let b = self.expression(right, context)?;
-        let a = self.apply_conversion(
-            left,
-            a,
-            if context == Context::Additive && self.is_size_query(right) {
-                Context::BesideSize
-            } else {
-                context
-            },
-        )?;
+        let a = if early_base {
+            a
+        } else {
+            self.apply_conversion(
+                left,
+                a,
+                if context == Context::Additive && self.is_size_query(right) {
+                    Context::BesideSize
+                } else {
+                    context
+                },
+            )?
+        };
         let b = self.apply_conversion(
             right,
             b,

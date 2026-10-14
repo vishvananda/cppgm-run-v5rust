@@ -54,6 +54,10 @@ impl Analyzer<'_> {
                         let ty = self.type_syntax(ty, scope)?;
                         self.type_size(ty, attribute.location)?.1
                     } else if let Some(expression) = attribute.expression {
+                        if self.semantic() {
+                            self.ensure_typed(expression, scope)?;
+                            self.check_resolved_function(expression)?;
+                        }
                         let constant = self
                             .constant_value(expression, scope, true)?
                             .ok_or(Error::Invariant("missing alignment constant"))?;
