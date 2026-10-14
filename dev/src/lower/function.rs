@@ -12,7 +12,7 @@ use crate::{
         lowering::{EntityId, TypeId, TypeView},
     },
     support::stack::StackBudget,
-    syntax::ast::{self, DeclKind, StmtKind},
+    syntax::ast::{self, DeclKind},
 };
 use std::collections::HashMap;
 #[derive(Clone, Copy)]
@@ -30,6 +30,9 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub symbols: &'symbols mut Symbols<'a, 'source>,
     pub locals: HashMap<EntityId, Value>,
     pub next_block: u32,
+    pub jumps: Vec<super::statements::JumpTargets>,
+    pub switch_blocks: HashMap<ast::StmtId, crate::lowir::model::BlockId>,
+    pub label_memo: HashMap<ast::StmtId, bool>,
     pub next_slot: u32,
     pub terminated: bool,
     pub result: TypeId,
@@ -108,6 +111,9 @@ pub(super) fn lower<'a>(
         symbols,
         locals: HashMap::new(),
         next_block: 0,
+        jumps: Vec::new(),
+        switch_blocks: HashMap::new(),
+        label_memo: HashMap::new(),
         next_slot: 0,
         terminated: false,
         result,
@@ -160,6 +166,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn emit(&mut self, kind: I, source: TypeId) -> Result<RValue, Error> {
+        self.ensure_insertion()?;
         let ty = kind.result_type();
         let value = self.builder.generated(kind)?;
         Ok(RValue {
@@ -169,6 +176,17 @@ impl Function<'_, '_, '_, '_> {
             literal: false,
             bits: None,
         })
+    }
+    pub(super) fn ensure_insertion(&mut self) -> Result<(), Error> {
+        if self.terminated {
+            let block = self.new_block("unreachable")?;
+            self.place(block)?;
+        }
+        Ok(())
+    }
+    pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
+        self.ensure_insertion()?;
+        Ok(self.builder.effect(kind)?)
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
         let ty = types::storage(self.graph, source)?;
@@ -193,90 +211,61 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::lowir::Error::Limit)?;
         Ok(format!("{prefix}_{}", self.next_block))
     }
-    fn statement(&mut self, id: ast::StmtId) -> Result<(), Error> {
-        self.check_stack()?;
-        if self.terminated {
-            return Ok(());
-        }
-        match self.tree.statements.get(id).kind {
-            StmtKind::Compound(statements) => {
-                for &id in self.tree.stmt_lists.get(statements) {
-                    self.statement(id)?;
-                }
-            }
-            StmtKind::Return(operand) => {
-                let ty = types::storage(self.graph, self.result)?;
-                let value = if let Some(id) = operand {
-                    let value = self.operand(id, super::conversions::Context::Return)?;
-                    if ty == Type::Void {
-                        None
-                    } else {
-                        Some(self.fit(value, self.result)?.value)
-                    }
-                } else {
-                    None
-                };
-                self.builder.effect(I::Return(ty, value))?;
-                self.terminated = true;
-            }
-            StmtKind::Expression(expression) => {
-                if let Some(id) = expression {
-                    self.operand(id, super::conversions::Context::Operand)?;
-                }
-            }
-            StmtKind::Declaration(id) => self.declaration(id)?,
-            StmtKind::Ambiguous { .. } => self.statement(self.graph.lower_statement(id)?)?,
-            _ => return Err(Error::Missing("procedural control statement lowering")),
-        }
-        Ok(())
-    }
-    fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
+    pub(super) fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
         let DeclKind::Simple { declarators, .. } = self.tree.declarations.get(id).kind else {
             return Err(Error::Missing("block declaration lowering"));
         };
         for declarator in self.tree.init_declarators.get(declarators) {
-            let entity = self.graph.lower_declared(declarator.declarator)?;
-            if !self.graph.lower_is_variable(entity) {
-                continue;
-            }
-            if !self.graph.lower_automatic(entity) {
-                return Err(Error::Missing("local static and extern storage lowering"));
-            }
-            let ty = self.graph.lower_entity_type(entity)?;
-            if matches!(self.graph.lower_type(ty)?, TypeView::Reference) {
-                return Err(Error::Missing("local reference lowering"));
-            }
-            let name = self.graph.lower_local_name(entity).ok_or(Error::Semantic(
-                crate::sema::Error::Invariant("local without name"),
-            ))?;
-            let spelling = self.symbols.identifier(name)?;
-            let slot = self
-                .builder
-                .slot(spelling, types::storage(self.graph, ty)?)?;
-            self.locals.insert(entity, slot);
-            if let Some(initializer) = declarator.initializer {
-                let value = match initializer.kind {
-                    ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+            self.local_variable(declarator.declarator, declarator.initializer)?;
+        }
+        Ok(())
+    }
+    pub(super) fn local_variable(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(), Error> {
+        let entity = self.graph.lower_declared(declarator)?;
+        if !self.graph.lower_is_variable(entity) {
+            return Ok(());
+        }
+        if !self.graph.lower_automatic(entity) {
+            return Err(Error::Missing("local static and extern storage lowering"));
+        }
+        let ty = self.graph.lower_entity_type(entity)?;
+        if matches!(self.graph.lower_type(ty)?, TypeView::Reference) {
+            return Err(Error::Missing("local reference lowering"));
+        }
+        let name = self.graph.lower_local_name(entity).ok_or(Error::Semantic(
+            crate::sema::Error::Invariant("local without name"),
+        ))?;
+        let spelling = self.symbols.identifier(name)?;
+        let slot = self
+            .builder
+            .slot(spelling, types::storage(self.graph, ty)?)?;
+        self.locals.insert(entity, slot);
+        if let Some(initializer) = initializer {
+            let value = match initializer.kind {
+                ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                    self.operand(id, super::conversions::Context::Initialization)?
+                }
+                ast::InitializerKind::Parenthesized(args) => {
+                    if let Some(&id) = self.tree.expr_lists.get(args).first() {
                         self.operand(id, super::conversions::Context::Initialization)?
+                    } else {
+                        self.zero(ty)?
                     }
-                    ast::InitializerKind::Parenthesized(args) => {
-                        if let Some(&id) = self.tree.expr_lists.get(args).first() {
-                            self.operand(id, super::conversions::Context::Initialization)?
-                        } else {
-                            self.zero(ty)?
-                        }
-                    }
-                    _ => return Err(Error::Missing("special initializer lowering")),
-                };
-                let value = self.convert(value, ty, super::conversions::Context::Initialization)?;
-                let value = self.fit(value, ty)?;
-                self.builder.effect(I::Store(
-                    types::memory(self.graph, ty)?,
-                    types::storage(self.graph, ty)?,
-                    value.value,
-                    slot,
-                ))?;
-            }
+                }
+                _ => return Err(Error::Missing("special initializer lowering")),
+            };
+            let value = self.convert(value, ty, super::conversions::Context::Initialization)?;
+            let value = self.fit(value, ty)?;
+            self.effect(I::Store(
+                types::memory(self.graph, ty)?,
+                types::storage(self.graph, ty)?,
+                value.value,
+                slot,
+            ))?;
         }
         Ok(())
     }

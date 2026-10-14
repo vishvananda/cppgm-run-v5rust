@@ -1,8 +1,11 @@
 // Translated from lower/program_lowering.cpp. See NOTICE.
 //! Typed, demand-driven source lowering into the shared function-owned `LowIR` model.
+mod conditions;
 mod conversions;
 mod expressions;
 mod function;
+mod mutations;
+mod statements;
 mod symbols;
 mod types;
 use crate::{

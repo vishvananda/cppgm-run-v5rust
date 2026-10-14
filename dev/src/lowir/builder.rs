@@ -135,6 +135,9 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn block(&mut self, name: &str) -> Result<(), Error> {
         let name = self.program.names.intern(name)?;
         let id = self.body.use_block(name, 0)?;
+        self.place_block(id)
+    }
+    pub(crate) fn place_block(&mut self, id: BlockId) -> Result<(), Error> {
         if self.body.block(id).placed {
             return Err(Error::Diagnostic("duplicate constructed block".into()));
         }

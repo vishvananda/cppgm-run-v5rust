@@ -195,6 +195,7 @@ impl Analyzer<'_> {
             ));
         }
         let bits = kind.convert(constant.bits);
+        super::record(&mut self.graph.case_values, id.index(), bits);
         self.body_context
             .as_mut()
             .and_then(|body| body.switches.last_mut())

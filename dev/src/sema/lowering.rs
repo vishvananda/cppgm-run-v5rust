@@ -49,6 +49,22 @@ pub(crate) struct Expression {
     pub null_pointer: bool,
 }
 impl Graph {
+    pub(crate) fn lower_arithmetic_types(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<(TypeId, TypeId), Error> {
+        self.arithmetic_types(id)
+    }
+    pub(crate) fn lower_case(&self, id: ast::StmtId) -> Result<u64, Error> {
+        self.case_values
+            .get(id.index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant("case without converted value"))
+    }
+    pub(crate) fn lower_condition_target(&self, id: ast::DeclaratorId) -> Result<TypeId, Error> {
+        Ok(self.condition_conversion(id)?.result)
+    }
     pub(crate) fn lower_automatic(&self, id: EntityId) -> bool {
         self.entity(id)
             .variable

@@ -21,6 +21,7 @@ pub(super) enum Context {
     Comparison,
     Unary,
     Assignment,
+    CompoundAssignment,
     Cast,
 }
 impl Function<'_, '_, '_, '_> {

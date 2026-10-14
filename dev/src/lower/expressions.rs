@@ -40,7 +40,11 @@ impl Function<'_, '_, '_, '_> {
             Ok(value)
         }
     }
-    fn expression(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
+    pub(super) fn expression(
+        &mut self,
+        id: ast::ExprId,
+        context: Context,
+    ) -> Result<RValue, Error> {
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
         let ty = types::storage(self.graph, source)?;
@@ -110,26 +114,7 @@ impl Function<'_, '_, '_, '_> {
                     source,
                 )
             }
-            ExprKind::Unary { op, operand } => {
-                let value = self.operand(operand, Context::Unary)?;
-                match op.token.as_punctuator() {
-                    Some(P::Add) => Ok(value),
-                    Some(P::Subtract) => {
-                        self.emit(I::Unary(Unary::Neg, value.ty, value.value), source)
-                    }
-                    Some(P::Complement) => {
-                        self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
-                    }
-                    Some(P::LogicalNot) => {
-                        let zero = self.zero(value.source)?;
-                        self.emit(
-                            I::Compare(Compare::Eq, value.ty, value.value, zero.value),
-                            source,
-                        )
-                    }
-                    _ => Err(Error::Missing("address and increment expression lowering")),
-                }
-            }
+            ExprKind::Unary { op, operand } => self.unary_expression(id, op, operand),
             ExprKind::Binary {
                 op,
                 left,
@@ -141,8 +126,11 @@ impl Function<'_, '_, '_, '_> {
                     .as_punctuator()
                     .ok_or(Error::Missing("non-punctuator binary lowering"))?;
                 if op == P::Comma {
-                    self.operand(left, Context::Operand)?;
+                    self.discard(left)?;
                     return self.operand(right, context);
+                }
+                if matches!(op, P::LogicalAnd | P::LogicalOr) {
+                    return self.logical_value(id);
                 }
                 let comparison = matches!(
                     op,
@@ -213,28 +201,23 @@ impl Function<'_, '_, '_, '_> {
                 right,
                 assignment: true,
             } => {
-                if op.token.as_punctuator() != Some(P::Assign) {
-                    return Err(Error::Missing("compound assignment lowering"));
-                }
-                let value = self.operand(right, Context::Assignment)?;
-                let ExprKind::Id(name) = self.tree.expressions.get(left).kind else {
-                    return Err(Error::Missing("computed assignment place lowering"));
-                };
-                let entity = self.graph.lower_name(name)?;
-                let place = self
-                    .locals
-                    .get(&entity)
-                    .copied()
-                    .ok_or(Error::Missing("non-local assignment lowering"))?;
-                let value = self.fit(value, source)?;
-                self.builder.effect(I::Store(
-                    types::memory(self.graph, source)?,
-                    ty,
-                    value.value,
-                    place,
-                ))?;
-                Ok(value)
+                let (place, value) = self.assignment_value(
+                    id,
+                    op.token
+                        .as_punctuator()
+                        .ok_or(Error::Missing("assignment operator"))?,
+                    left,
+                    right,
+                )?;
+                self.updated_value(place, value)
             }
+            ExprKind::Postfix { op, operand } => Ok(self
+                .increment(
+                    operand,
+                    op.token.as_punctuator() == Some(P::Decrement),
+                    false,
+                )?
+                .1),
             ExprKind::Cast { operand, .. } => {
                 let value = self.operand(operand, Context::Operand)?;
                 self.convert(value, source, Context::Cast)
@@ -255,6 +238,61 @@ impl Function<'_, '_, '_, '_> {
             _ => Err(Error::Missing(
                 "call, conditional and aggregate expression lowering",
             )),
+        }
+    }
+    fn unary_expression(
+        &mut self,
+        id: ast::ExprId,
+        op: ast::Operator,
+        operand: ast::ExprId,
+    ) -> Result<RValue, Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        match op.token.as_punctuator() {
+            Some(P::Increment | P::Decrement) => {
+                let (place, value) = self.increment(
+                    operand,
+                    op.token.as_punctuator() == Some(P::Decrement),
+                    true,
+                )?;
+                return self.updated_value(place, value);
+            }
+            Some(P::Multiply) => {
+                let place = self.scalar_place(id)?;
+                return self.read_place(place, source);
+            }
+            Some(P::BitAnd) => {
+                let place = self.scalar_place(operand)?;
+                if matches!(
+                    place,
+                    crate::lowir::model::Value::Slot(_) | crate::lowir::model::Value::Symbol(_)
+                ) {
+                    return self.emit(I::Addr(place), source);
+                }
+                return Ok(RValue {
+                    value: place,
+                    ty: Type::Ptr,
+                    source,
+                    literal: false,
+                    bits: None,
+                });
+            }
+            _ => {}
+        }
+        let value = self.operand(operand, Context::Unary)?;
+        match op.token.as_punctuator() {
+            Some(P::Add) => Ok(value),
+            Some(P::Subtract) => self.emit(I::Unary(Unary::Neg, value.ty, value.value), source),
+            Some(P::Complement) => {
+                self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
+            }
+            Some(P::LogicalNot) => {
+                let zero = self.zero(value.source)?;
+                self.emit(
+                    I::Compare(Compare::Eq, value.ty, value.value, zero.value),
+                    source,
+                )
+            }
+            _ => Err(Error::Missing("address and increment expression lowering")),
         }
     }
     fn call(
@@ -307,7 +345,7 @@ impl Function<'_, '_, '_, '_> {
             signature: None,
         });
         if ty == Type::Void {
-            self.builder.effect(call)?;
+            self.effect(call)?;
             self.zero(source)
         } else {
             self.emit(call, source)
@@ -323,6 +361,10 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(self.graph, source)?;
 
+        if ty == Type::Void {
+            self.discard(id)?;
+            return self.zero(source);
+        }
         if self.graph.lower_expression(id)?.is_place {
             return Err(Error::Missing("conditional lvalue address lowering"));
         }
@@ -355,13 +397,13 @@ impl Function<'_, '_, '_, '_> {
             self.builder.block(name)?;
             let value = self.operand(expression, Context::Operand)?;
             let value = self.fit(value, source)?;
-            self.builder.effect(I::Store(
+            self.effect(I::Store(
                 types::memory(self.graph, source)?,
                 ty,
                 value.value,
                 slot,
             ))?;
-            self.builder.effect(I::Jump(end_block))?;
+            self.effect(I::Jump(end_block))?;
         }
         self.builder.block(&end_name)?;
         self.emit(

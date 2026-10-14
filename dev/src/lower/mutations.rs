@@ -1,0 +1,212 @@
+// Translated from lower/expression_lowering.cpp's scalar updates. See NOTICE.
+//! Compute each scalar place once and preserve load, RHS conversion, update, store order.
+use super::{
+    Error,
+    conversions::Context,
+    function::{Function, RValue},
+    types,
+};
+use crate::{
+    lex::pp_lexer::Punctuator as P,
+    lowir::{
+        literals::{Constant, FloatKind},
+        model::{Facts, InstructionKind as I, Value},
+        vocabulary::{Binary, Type},
+    },
+    syntax::ast::{self, ExprKind},
+};
+impl Function<'_, '_, '_, '_> {
+    pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+        self.check_stack()?;
+        match self.tree.expressions.get(id).kind {
+            ExprKind::Paren(inner) => self.scalar_place(inner),
+            ExprKind::Id(name) => {
+                let entity = self.graph.lower_name(name)?;
+                self.locals
+                    .get(&entity)
+                    .copied()
+                    .ok_or(Error::Missing("nonlocal scalar place lowering"))
+            }
+            ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
+                Ok(self.operand(operand, Context::Operand)?.value)
+            }
+            ExprKind::Unary { op, operand }
+                if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)) =>
+            {
+                Ok(self
+                    .increment(
+                        operand,
+                        op.token.as_punctuator() == Some(P::Decrement),
+                        true,
+                    )?
+                    .0)
+            }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: true,
+            } => Ok(self
+                .assignment_value(
+                    id,
+                    op.token
+                        .as_punctuator()
+                        .ok_or(Error::Missing("assignment operator"))?,
+                    left,
+                    right,
+                )?
+                .0),
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: false,
+            } if op.token.as_punctuator() == Some(P::Comma) => {
+                self.discard(left)?;
+                self.scalar_place(right)
+            }
+            _ => Err(Error::Missing("reference and aggregate place lowering")),
+        }
+    }
+    pub(super) fn read_place(
+        &mut self,
+        place: Value,
+        source: crate::sema::lowering::TypeId,
+    ) -> Result<RValue, Error> {
+        self.emit(
+            I::Load(
+                types::memory(self.graph, source)?,
+                types::storage(self.graph, source)?,
+                place,
+            ),
+            source,
+        )
+    }
+    pub(super) fn increment(
+        &mut self,
+        operand: ast::ExprId,
+        decrement: bool,
+        prefix: bool,
+    ) -> Result<(Value, RValue), Error> {
+        let source = self.graph.lower_expression(operand)?.ty;
+        let place = self.scalar_place(operand)?;
+        let old = self.read_place(place, source)?;
+        if old.ty == Type::Ptr {
+            return Err(Error::Missing("pointer increment scaling"));
+        }
+        let result = if types::boolean(self.graph, source)? {
+            RValue {
+                value: self.builder.integer(1)?,
+                ty: old.ty,
+                source,
+                literal: false,
+                bits: Some(1),
+            }
+        } else {
+            let one = if let Some(kind) = FloatKind::from_type(old.ty) {
+                let bits = match kind {
+                    FloatKind::F32 => u128::from(1.0_f32.to_bits()),
+                    FloatKind::F64 => u128::from(1.0_f64.to_bits()),
+                    FloatKind::F80 => (0x3fff_u128 << 64) | (1_u128 << 63),
+                };
+                self.builder.constant(Constant::Float(kind, bits))?
+            } else {
+                self.builder.integer(1)?
+            };
+            let operation = if decrement { Binary::Sub } else { Binary::Add };
+            let nowrap =
+                types::signed(self.graph, source)? && matches!(old.ty, Type::I32 | Type::I64);
+            self.emit(
+                I::Binary(
+                    operation,
+                    Facts::arithmetic(nowrap, false),
+                    old.ty,
+                    old.value,
+                    one,
+                ),
+                source,
+            )?
+        };
+        self.effect(I::Store(
+            types::memory(self.graph, source)?,
+            old.ty,
+            result.value,
+            place,
+        ))?;
+        let value = if prefix { result } else { old };
+        Ok((place, value))
+    }
+    pub(super) fn assignment_value(
+        &mut self,
+        id: ast::ExprId,
+        op: P,
+        left: ast::ExprId,
+        right: ast::ExprId,
+    ) -> Result<(Value, RValue), Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        let ty = types::storage(self.graph, source)?;
+        let (place, value) = if op == P::Assign {
+            let value = self.operand(right, Context::Assignment)?;
+            let place = self.scalar_place(left)?;
+            (place, self.fit(value, source)?)
+        } else {
+            let place = self.scalar_place(left)?;
+            let old = self.read_place(place, source)?;
+            let (operation, _) = self.graph.lower_arithmetic_types(id)?;
+            let mut rhs = self.operand(right, Context::CompoundAssignment)?;
+            if ty == Type::Ptr {
+                return Err(Error::Missing("pointer compound assignment scaling"));
+            }
+            if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
+                rhs = self.convert(rhs, operation, Context::CompoundAssignment)?;
+            }
+            let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
+            let signed = types::signed(self.graph, operation)?;
+            let code = match op {
+                P::AddAssign => Binary::Add,
+                P::SubtractAssign => Binary::Sub,
+                P::MultiplyAssign => Binary::Mul,
+                P::DivideAssign if signed || lhs.ty.float_rank() != 0 => Binary::Div,
+                P::DivideAssign => Binary::UDiv,
+                P::RemainderAssign if signed => Binary::Mod,
+                P::RemainderAssign => Binary::UMod,
+                P::AndAssign => Binary::And,
+                P::OrAssign => Binary::Or,
+                P::XorAssign => Binary::Xor,
+                P::ShiftLeftAssign => Binary::Shl,
+                P::ShiftRightAssign if signed => Binary::Shr,
+                P::ShiftRightAssign => Binary::UShr,
+                _ => return Err(Error::Missing("compound assignment operator")),
+            };
+            let nowrap = signed
+                && matches!(lhs.ty, Type::I32 | Type::I64)
+                && matches!(code, Binary::Add | Binary::Sub | Binary::Mul);
+            let value = self.emit(
+                I::Binary(
+                    code,
+                    Facts::arithmetic(nowrap, false),
+                    lhs.ty,
+                    lhs.value,
+                    rhs.value,
+                ),
+                operation,
+            )?;
+            let value = self.convert(value, source, Context::CompoundAssignment)?;
+            (place, self.fit(value, source)?)
+        };
+        self.effect(I::Store(
+            types::memory(self.graph, source)?,
+            ty,
+            value.value,
+            place,
+        ))?;
+        Ok((place, RValue { source, ..value }))
+    }
+    pub(super) fn updated_value(&mut self, place: Value, value: RValue) -> Result<RValue, Error> {
+        if self.graph.lower_cv(value.source) & 2 == 0 {
+            Ok(value)
+        } else {
+            self.read_place(place, value.source)
+        }
+    }
+}
