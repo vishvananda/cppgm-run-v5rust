@@ -1,0 +1,67 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition empty function of (int) returning int
+    parameter n int
+    compound-statement
+      return-statement
+        id-expression lvalue int n
+  function-definition scalar function of (int) returning int
+    parameter n int
+    compound-statement
+      return-statement
+        id-expression lvalue int n
+  function-definition scalar function of (lvalue-reference to const long int) returning int
+    parameter n lvalue-reference to const long int
+    compound-statement
+      return-statement
+        id-expression lvalue const long int n
+  function-definition array function of (lvalue-reference to array of 2 const int) returning int
+    parameter n lvalue-reference to array of 2 const int
+    compound-statement
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          subscript-expression lvalue const int
+            id-expression lvalue array of 2 const int n
+            literal prvalue int 0
+          subscript-expression lvalue const int
+            id-expression lvalue array of 2 const int n
+            literal prvalue int 1
+  function-definition array function of (lvalue-reference to array of 2 const long int) returning int
+    parameter n lvalue-reference to array of 2 const long int
+    compound-statement
+      return-statement
+        binary-expression prvalue long int OP_PLUS:+
+          subscript-expression lvalue const long int
+            id-expression lvalue array of 2 const long int n
+            literal prvalue int 0
+          subscript-expression lvalue const long int
+            id-expression lvalue array of 2 const long int n
+            literal prvalue int 1
+  function-definition main function of () returning int
+    compound-statement
+      simple-declaration
+        variable indirect pointer to function of (lvalue-reference to array of 2 const int) returning int
+          id-expression lvalue function of (lvalue-reference to array of 2 const int) returning int array
+      return-statement
+        binary-expression prvalue int OP_PLUS:+
+          binary-expression prvalue int OP_PLUS:+
+            binary-expression prvalue int OP_PLUS:+
+              call-expression prvalue int
+                callee scalar function of (int) returning int
+                braced-init-list prvalue int
+                  literal prvalue int 3
+              call-expression prvalue int
+                callee empty function of (int) returning int
+                braced-init-list prvalue int
+            call-expression prvalue int
+              callee array function of (lvalue-reference to array of 2 const int) returning int
+              braced-init-list prvalue array of 2 const int
+                literal prvalue int 1
+                literal prvalue int 2
+          call-expression prvalue int
+            id-expression lvalue pointer to function of (lvalue-reference to array of 2 const int) returning int indirect
+            braced-init-list prvalue array of 2 const int
+              literal prvalue int 3
+              literal prvalue int 4
+end translation unit

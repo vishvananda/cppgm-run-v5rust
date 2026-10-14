@@ -102,21 +102,7 @@ fn define_storage(
         }
     };
     if array && let GlobalInit::Data(items) = &init {
-        let (bytes, align) = types::layout(graph, facts.ty)?;
-        let implied = items
-            .iter()
-            .filter_map(|item| match item {
-                crate::lowir::model::DataItem::Zero(_) => None,
-                crate::lowir::model::DataItem::Address(ty, ..)
-                | crate::lowir::model::DataItem::Constant(ty, _) => {
-                    Some(types::storage_alignment(*ty))
-                }
-            })
-            .max()
-            .unwrap_or(0);
-        if align > implied {
-            ty = Some(crate::lowir::vocabulary::Type::Object { bytes, align });
-        }
+        ty = structured_type(graph, facts.ty, items)?;
     }
     if graph.lower_cv(facts.ty) == 1 {
         metadata.storage = Some(Storage::ReadOnly);
@@ -135,6 +121,23 @@ fn define_storage(
         symbols.data.define_reference(entity);
     }
     Ok(())
+}
+pub(super) fn structured_type(
+    graph: &Graph,
+    ty: crate::sema::lowering::TypeId,
+    items: &[crate::lowir::model::DataItem],
+) -> Result<Option<crate::lowir::vocabulary::Type>, Error> {
+    let (bytes, align) = types::layout(graph, ty)?;
+    let implied = items
+        .iter()
+        .filter_map(|item| match item {
+            crate::lowir::model::DataItem::Zero(_) => None,
+            crate::lowir::model::DataItem::Address(ty, ..)
+            | crate::lowir::model::DataItem::Constant(ty, _) => Some(types::storage_alignment(*ty)),
+        })
+        .max()
+        .unwrap_or(0);
+    Ok((align > implied).then_some(crate::lowir::vocabulary::Type::Object { bytes, align }))
 }
 pub(super) fn finish(
     program: &mut Program,

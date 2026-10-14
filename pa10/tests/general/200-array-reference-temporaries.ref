@@ -1,0 +1,93 @@
+function @read(%r : ptr [pass=by_address, object_bytes=8]) -> i32 [binding=strong, object=_Z4readRA2_Ki] {
+  slot $r : ptr
+
+  block ^entry:
+    store typed ptr %r, $r
+    %t1 = load typed ptr $r
+    %t2 = index i32 [projection=array_element] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = load typed ptr $r
+    %t5 = index i32 [projection=array_element] %t4, 1
+    %t6 = load typed i32 %t5
+    %t7 = binary add nowrap i32 %t3, %t6
+    return i32 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $nested : ptr
+  slot $arraytmp__1 : obj<16x4>
+  slot $floating : ptr
+  slot $arraytmp__2 : obj<16x8>
+  slot $functional : ptr
+  slot $arraytmp__3 : obj<8x4>
+  slot $mutable_array : ptr
+  slot $arraytmp__4 : obj<8x4>
+  slot $argarr__5 : obj<8x4>
+  slot $arraytmp__6 : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $arraytmp__1
+    store typed i32 1, %t1
+    %t2 = index i8 [projection=array_element] %t1, 4
+    store typed i32 2, %t2
+    %t3 = index i8 %t1, 8
+    store typed i32 3, %t3
+    %t4 = index i8 [projection=array_element] %t3, 4
+    store typed i32 0, %t4
+    store typed ptr %t1, $nested
+    %t5 = addr $arraytmp__2
+    %t6 = convert sitofp f64 i32 1
+    store typed f64 %t6, %t5
+    %t7 = index i8 [projection=array_element] %t5, 8
+    store typed f64 2.5, %t7
+    store typed ptr %t5, $floating
+    %t8 = addr $arraytmp__3
+    store typed i32 4, %t8
+    %t9 = index i8 [projection=array_element] %t8, 4
+    store typed i32 5, %t9
+    store typed ptr %t8, $functional
+    %t10 = addr $arraytmp__4
+    store typed i32 6, %t10
+    %t11 = index i8 [projection=array_element] %t10, 4
+    store typed i32 7, %t11
+    store typed ptr %t10, $mutable_array
+    %t12 = load typed ptr $mutable_array
+    %t13 = index i32 [projection=array_element] %t12, 0
+    store typed i32 8, %t13
+    %t14 = load typed ptr $nested
+    %t15 = binary mul i64 1, 8
+    %t16 = index i8 [projection=array_element] %t14, %t15
+    %t17 = index i32 [projection=array_element] %t16, 1
+    %t18 = load typed i32 %t17
+    %t19 = load typed ptr $floating
+    %t20 = index f64 [projection=array_element] %t19, 0
+    %t21 = load typed f64 %t20
+    %t22 = convert sitofp f64 i32 %t18
+    %t23 = binary add f64 %t22, %t21
+    %t24 = load typed ptr $functional
+    %t25 = index i32 [projection=array_element] %t24, 0
+    %t26 = load typed i32 %t25
+    %t27 = convert sitofp f64 i32 %t26
+    %t28 = binary add f64 %t23, %t27
+    %t29 = load typed ptr $mutable_array
+    %t30 = index i32 [projection=array_element] %t29, 0
+    %t31 = load typed i32 %t30
+    %t32 = convert sitofp f64 i32 %t31
+    %t33 = binary add f64 %t28, %t32
+    %t34 = addr $argarr__5
+    store typed i32 9, %t34
+    %t35 = index i8 [projection=array_element] %t34, 4
+    store typed i32 10, %t35
+    %t36 = call i32 @read(%t34)
+    %t37 = convert sitofp f64 i32 %t36
+    %t38 = binary add f64 %t33, %t37
+    %t39 = addr $arraytmp__6
+    store typed i32 11, %t39
+    %t40 = index i8 [projection=array_element] %t39, 4
+    store typed i32 12, %t40
+    %t41 = index i32 [projection=array_element] %t39, 0
+    %t42 = load typed i32 %t41
+    %t43 = convert sitofp f64 i32 %t42
+    %t44 = binary add f64 %t38, %t43
+    %t45 = convert fptosi i32 f64 %t44
+    return i32 %t45
+}

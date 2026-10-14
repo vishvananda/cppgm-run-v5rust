@@ -88,6 +88,7 @@ pub(super) struct Symbols<'a, 'source> {
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
     pub data: super::data::Objects,
     temporary_owner: Option<(EntityId, u32)>,
+    local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -117,6 +118,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             objects: HashMap::new(),
             data: super::data::Objects::default(),
             temporary_owner: None,
+            local_counts: HashMap::new(),
             signatures: HashMap::new(),
         }
     }
@@ -656,6 +658,95 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.globals.push(entity);
         Ok(symbol)
     }
+    pub(super) fn local_storage_symbols(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+        function: EntityId,
+        ordinal: u32,
+        dynamic: bool,
+    ) -> Result<super::local_storage::StorageSymbols, Error> {
+        use crate::lowir::vocabulary::{Binding, Storage};
+        let facts = self.graph.lower_variable(entity)?;
+        let owner = self.function_symbol(program, function)?;
+        let owner_name = program.names.get(program.symbol(owner).name).to_owned();
+        let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
+        let name = self.identifier(facts.name)?;
+        let spelling = format!("__local_static__{owner_name}__decl{ordinal}__{name}");
+        let encoding = self.function_encoding(function)?;
+        let parent = self.abi.intern(
+            Node::FunctionScope {
+                encoding,
+                default_argument: 0,
+            },
+            &[],
+        )?;
+        let terminal = self.abi.string(self.cursor.name(facts.name))?;
+        let count = self.local_counts.entry((function, facts.name)).or_default();
+        let occurrence = *count;
+        *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
+        let name = self.abi.intern(
+            Node::Name {
+                parent: Some(parent),
+                terminal,
+                internal: false,
+                occurrence,
+            },
+            &[],
+        )?;
+        let mut bytes = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::Entity(name),
+            &mut bytes,
+            self.budget,
+        )?;
+        let object = program.names.intern_bytes(&bytes)?;
+        let local_object = (weak || !self.table.objects.contains_key(&object)).then_some(object);
+        let symbol = self
+            .table
+            .allocate(program, &spelling, Some(object), !weak)?;
+        self.callees.insert(entity, Value::Symbol(symbol));
+        let metadata = Metadata {
+            binding: Some(if weak {
+                Binding::Weak
+            } else {
+                Binding::Internal
+            }),
+            storage: facts.thread_local.then_some(Storage::ThreadLocal),
+            object: local_object,
+            ..Metadata::default()
+        };
+        let guard = if dynamic {
+            bytes.clear();
+            abi::encoder::Encoder::encode(
+                &self.abi,
+                abi::encoder::Target::GuardVariable(name),
+                &mut bytes,
+                self.budget,
+            )?;
+            let object = program.names.intern_bytes(&bytes)?;
+            let local_object =
+                (weak || !self.table.objects.contains_key(&object)).then_some(object);
+            let guard =
+                self.table
+                    .allocate(program, &format!("{spelling}__guard"), Some(object), !weak)?;
+            Some((
+                guard,
+                Metadata {
+                    object: local_object,
+                    ..metadata
+                },
+            ))
+        } else {
+            None
+        };
+        Ok(super::local_storage::StorageSymbols {
+            object: symbol,
+            guard,
+            metadata,
+        })
+    }
     pub(super) fn variable_metadata(
         &self,
         program: &Program,
@@ -772,6 +863,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )?);
             return Ok(metadata);
         }
+        let function = self.function_encoding(entity)?;
+        let mut object = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::Entity(function),
+            &mut object,
+            self.budget,
+        )
+        .map_err(Error::from)?;
+        metadata.object = Some(program.names.intern_bytes(&object)?);
+        Ok(metadata)
+    }
+    fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
+        let facts = self.graph.lower_function(entity)?;
         let parent = self.scope(facts.home)?;
         let terminal = self.function_terminal(facts.name, facts.ty)?;
         let name = self
@@ -812,16 +917,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &args,
             )
             .map_err(Error::from)?;
-        let mut object = Vec::new();
-        abi::encoder::Encoder::encode(
-            &self.abi,
-            abi::encoder::Target::Entity(function),
-            &mut object,
-            self.budget,
-        )
-        .map_err(Error::from)?;
-        metadata.object = Some(program.names.intern_bytes(&object)?);
-        Ok(metadata)
+        Ok(function)
     }
 }
 

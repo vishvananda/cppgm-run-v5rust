@@ -68,6 +68,12 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let facts = self.graph.lower_expression(id)?;
+        if matches!(self.graph.lower_type(element)?, TypeView::Array { .. })
+            && !facts.is_place
+            && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })
+        {
+            return self.array_temporary(id, context);
+        }
         if facts.temporary.is_some()
             || (!facts.is_place
                 && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Function { .. }))

@@ -26,6 +26,7 @@ pub enum Target {
         base: NodeId,
     },
     TlsWrapper(NodeId),
+    GuardVariable(NodeId),
     ReferenceTemporary {
         owner: NodeId,
         sequence: u32,
@@ -830,6 +831,10 @@ impl<'a> Encoder<'a> {
             }
             Target::TlsWrapper(id) => {
                 self.put(b"_ZTW");
+                self.name(id, Qualifiers::default())?;
+            }
+            Target::GuardVariable(id) => {
+                self.put(b"_ZGV");
                 self.name(id, Qualifiers::default())?;
             }
             Target::ConstructionVtable {

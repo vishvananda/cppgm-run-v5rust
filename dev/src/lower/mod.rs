@@ -7,6 +7,7 @@ mod data;
 mod expressions;
 mod function;
 mod globals;
+mod local_storage;
 mod mutations;
 mod pointers;
 mod references;

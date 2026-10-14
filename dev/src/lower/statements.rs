@@ -44,7 +44,7 @@ impl Function<'_, '_, '_, '_> {
                 // A later label can enter the scope of an uninitialized object.
                 // Preserve its storage without evaluating an unreachable initializer.
                 for declarator in self.tree.init_declarators.get(declarators) {
-                    self.local_variable(declarator.declarator, None)?;
+                    self.local_variable(declarator.declarator, declarator.initializer)?;
                 }
             }
             return Ok(());

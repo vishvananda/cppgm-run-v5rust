@@ -113,6 +113,12 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::FunctionalCast {
                 arguments, braced, ..
             } => {
+                if matches!(
+                    self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
+                    crate::sema::lowering::TypeView::Array { .. }
+                ) {
+                    return self.array_temporary(id, Context::Operand);
+                }
                 let operand = braced
                     .or_else(|| self.tree.expr_lists.get(arguments).first().copied())
                     .ok_or(Error::Missing("empty functional place"))?;

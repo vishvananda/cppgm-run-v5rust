@@ -29,6 +29,8 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub builder: FunctionBuilder<'program>,
     pub symbols: &'symbols mut Symbols<'a, 'source>,
     pub locals: HashMap<EntityId, Value>,
+    pub entity: EntityId,
+    pub next_static: u32,
     pub next_block: u32,
     pub jumps: Vec<super::statements::JumpTargets>,
     pub switch_blocks: HashMap<ast::StmtId, crate::lowir::model::BlockId>,
@@ -138,6 +140,8 @@ pub(super) fn lower<'a>(
         builder,
         symbols,
         locals: HashMap::new(),
+        entity,
+        next_static: 0,
         next_block: 0,
         jumps: Vec::new(),
         switch_blocks: HashMap::new(),
@@ -281,7 +285,7 @@ impl Function<'_, '_, '_, '_> {
             if self.graph.lower_namespace_storage(entity) {
                 return Ok(());
             }
-            return Err(Error::Missing("local static storage lowering"));
+            return self.local_static(entity, initializer);
         }
         let ty = self.graph.lower_entity_type(entity)?;
         let name = self.graph.lower_local_name(entity).ok_or(Error::Semantic(
@@ -314,6 +318,14 @@ impl Function<'_, '_, '_, '_> {
         if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
             return self.local_array(entity, ty, slot, initializer);
         }
+        self.initialize_scalar(ty, slot, initializer)
+    }
+    pub(super) fn initialize_scalar(
+        &mut self,
+        ty: TypeId,
+        slot: Value,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(), Error> {
         if let Some(initializer) = initializer {
             let value = match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {

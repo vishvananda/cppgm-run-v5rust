@@ -83,7 +83,7 @@ impl Analyzer<'_> {
                 None
             };
             for &argument in self.tree.expr_lists.get(arguments) {
-                self.typed_expression(argument, scope)?;
+                self.type_call_argument(argument, scope)?;
             }
             if callee == named && !qualified {
                 let component = self.tree.name_lists.get(syntax_name.components)[0];
@@ -123,7 +123,7 @@ impl Analyzer<'_> {
         } else {
             let facts = self.typed_expression(callee, scope)?;
             for &argument in self.tree.expr_lists.get(arguments) {
-                self.typed_expression(argument, scope)?;
+                self.type_call_argument(argument, scope)?;
             }
             facts
         };
@@ -152,7 +152,7 @@ impl Analyzer<'_> {
             }
             // Nested argument calls finish before this query borrows the reusable scratch.
             let mut scratch = std::mem::take(&mut self.call_scratch);
-            let chosen = self.resolve_call(id, set, arguments, &mut scratch);
+            let chosen = self.resolve_call(id, set, arguments, scope, &mut scratch);
             scratch.candidates.clear();
             scratch.sequences.clear();
             self.call_scratch = scratch;
@@ -259,6 +259,13 @@ impl Analyzer<'_> {
         for (index, &argument) in args.iter().enumerate() {
             if index < count {
                 let target = self.graph.types.function_parameter(function, index)?;
+                if matches!(
+                    self.tree.expressions.get(argument).kind,
+                    ast::ExprKind::Braced { .. }
+                ) {
+                    self.initialize_list_argument(argument, target, scope)?;
+                    continue;
+                }
                 self.class_parameter_destruction(
                     target,
                     scope,
@@ -307,6 +314,18 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         target: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
+        if matches!(
+            self.tree.expressions.get(id).kind,
+            ast::ExprKind::Braced { .. }
+        ) {
+            return Ok(self
+                .list_sequence(id, target)?
+                .map(|conversion| ArgumentSequence {
+                    conversion,
+                    application: Some(conversion),
+                    function: None,
+                }));
+        }
         let mut facts = self.graph.expression_facts.get(id)?;
         let mut function = None;
         let overloaded =
@@ -425,6 +444,7 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         set: super::function_resolution::OverloadId,
         arguments: List<ast::ExprId>,
+        scope: ScopeId,
         scratch: &mut CallScratch,
     ) -> Result<BindingId, Error> {
         scratch.candidates.clear();
@@ -457,7 +477,6 @@ impl Analyzer<'_> {
             let first = scratch.sequences.len();
             let mut viable = true;
             for (index, &arg) in args.iter().enumerate() {
-                let facts = self.graph.expression_facts.get(arg)?;
                 let sequence = if index < count {
                     let target = self.graph.types.function_parameter(ty, index)?;
                     let Some(conversion) = self.argument_sequence(arg, target)? else {
@@ -466,6 +485,14 @@ impl Analyzer<'_> {
                     };
                     Some(conversion)
                 } else {
+                    if matches!(
+                        self.tree.expressions.get(arg).kind,
+                        ast::ExprKind::Braced { .. }
+                    ) {
+                        viable = false;
+                        break;
+                    }
+                    let facts = self.graph.expression_facts.get(arg)?;
                     if facts.functions.is_some() && self.ordinary_function_operand(facts).is_none()
                         || matches!(
                             self.graph.types.get(facts.ty).kind,
@@ -506,6 +533,13 @@ impl Analyzer<'_> {
         self.check_template_call_defaults(binding, arguments)?;
         for (index, &arg) in args.iter().enumerate() {
             if let Some(sequence) = scratch.sequences[first + index] {
+                if matches!(
+                    self.tree.expressions.get(arg).kind,
+                    ast::ExprKind::Braced { .. }
+                ) {
+                    self.initialize_list_argument(arg, sequence.conversion.target, scope)?;
+                    continue;
+                }
                 let mut facts = self.graph.expression_facts.get(arg)?;
                 if let Some(binding) = sequence.function {
                     self.select_function_designation(arg, binding)?;
@@ -558,6 +592,15 @@ impl Analyzer<'_> {
         Ok(order)
     }
     fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<(), Error> {
+        if matches!(
+            self.tree.expressions.get(id).kind,
+            ast::ExprKind::Braced { .. }
+        ) {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "a braced-init-list argument matched by the ellipsis",
+            ));
+        }
         self.check_resolved_function(id)?;
         let mut facts = self.graph.expression_facts.get(id)?;
         if matches!(

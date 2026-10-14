@@ -52,7 +52,10 @@ impl Analyzer<'_> {
         let eligible_array = matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. }
             if (self.graph.entity(entity).constexpr || !matches!(self.graph.types.get(element).kind, TypeKind::Array { .. }))
                 && self.graph.lower_cv(ty) & 2 == 0);
-        if self.graph.scope(home).kind == super::graph::ScopeKind::Namespace || eligible_array {
+        if self.graph.scope(home).kind == super::graph::ScopeKind::Namespace
+            || !self.graph.lower_automatic(entity)
+            || eligible_array
+        {
             self.static_initializers.push((entity, initializer, scope));
         }
         Ok(())

@@ -17,6 +17,37 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn array_temporary(
+        &mut self,
+        id: ast::ExprId,
+        context: Context,
+    ) -> Result<Value, Error> {
+        let ty = self.graph.lower_expression(id)?.ty;
+        let root = self.without_parentheses(id);
+        let list = match self.tree.expressions.get(root).kind {
+            ExprKind::Braced { elements, .. } => elements,
+            ExprKind::FunctionalCast {
+                braced: Some(expr), ..
+            } => {
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "array temporary without list",
+                    )));
+                };
+                elements
+            }
+            _ => return Err(Error::Missing("non-list array temporary lowering")),
+        };
+        let stem = if matches!(context, Context::Argument) {
+            "argarr"
+        } else {
+            "arraytmp"
+        };
+        let slot = self.generated_slot(stem, types::storage(self.graph, ty)?)?;
+        let address = self.emit(I::Addr(slot), ty)?.value;
+        self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+        Ok(address)
+    }
     pub(super) fn local_array(
         &mut self,
         entity: EntityId,
@@ -58,7 +89,11 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(Error::Missing("array parenthesized initialization"));
         };
-        let base = self.emit(I::Addr(slot), ty)?.value;
+        let base = if matches!(slot, Value::Slot(_) | Value::Symbol(_)) {
+            self.emit(I::Addr(slot), ty)?.value
+        } else {
+            slot
+        };
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
             let mut next = 0;
             return self.structured_array_item(ty, base, &[expr], &mut next);

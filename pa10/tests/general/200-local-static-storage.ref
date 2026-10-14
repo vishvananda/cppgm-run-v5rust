@@ -1,0 +1,100 @@
+global @inits : i32 [binding=strong] = zero
+global @__local_static__select__decl0__n : obj<12x4> [binding=internal, object=_ZZ6selectbE1n] = {
+  zero 12
+}
+global @__local_static__select__decl0__n__guard : i64 [binding=internal, object=_ZGVZ6selectbE1n] = zero
+global @__local_static__select__decl1__n : i32 [storage=thread_local, binding=internal, object=_ZZ6selectbE1n_0] = zero
+global @__local_static__select__decl1__n__guard : i64 [storage=thread_local, binding=internal, object=_ZGVZ6selectbE1n_0] = zero
+global @__local_static__shared__decl0__n : i32 [binding=weak, object=_ZZ6sharedvE1n] = zero
+global @__local_static__shared__decl0__n__guard : i64 [binding=weak, object=_ZGVZ6sharedvE1n] = zero
+
+function @next() -> i32 [binding=strong, object=_Z4nextv] {
+  block ^entry:
+    %t1 = load typed i32 @inits
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @inits
+    return i32 %t2
+}
+function @select(%first : u8) -> i32 [binding=strong, object=_Z6selectb] {
+  slot $first : u8
+
+  block ^entry:
+    store u8 %first, $first
+    %t1 = load u8 $first
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t2 = load typed i64 @__local_static__select__decl0__n__guard
+    %t3 = cmp ne i64 %t2, 0
+    branch %t3, ^local_static_ready_3, ^local_static_init_4
+
+  block ^local_static_init_4:
+    %t4 = addr @__local_static__select__decl0__n
+    %t5 = call i32 @next()
+    store typed i32 %t5, %t4
+    %t6 = index i8 %t4, 4
+    %t7 = call i32 @next()
+    store typed i32 %t7, %t6
+    %t8 = index i8 %t4, 8
+    store typed i32 0, %t8
+    store typed i64 1, @__local_static__select__decl0__n__guard
+    jump ^local_static_ready_3
+
+  block ^local_static_ready_3:
+    %t9 = addr @__local_static__select__decl0__n
+    %t10 = index i32 [projection=array_element] %t9, 0
+    %t11 = load typed i32 %t10
+    %t12 = binary add nowrap i32 %t11, 1
+    store typed i32 %t12, %t10
+    return i32 %t12
+
+  block ^if_else_2:
+    %t13 = load typed i64 @__local_static__select__decl1__n__guard
+    %t14 = cmp ne i64 %t13, 0
+    branch %t14, ^local_static_ready_5, ^local_static_init_6
+
+  block ^local_static_init_6:
+    %t15 = addr @__local_static__select__decl1__n
+    %t16 = call i32 @next()
+    store typed i32 %t16, %t15
+    store typed i64 1, @__local_static__select__decl1__n__guard
+    jump ^local_static_ready_5
+
+  block ^local_static_ready_5:
+    %t17 = load typed i32 @__local_static__select__decl1__n
+    %t18 = binary add nowrap i32 %t17, 1
+    store typed i32 %t18, @__local_static__select__decl1__n
+    return i32 %t18
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @shared()
+    %t2 = call i32 @shared()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @select(1)
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @select(1)
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = call i32 @select(0)
+    %t9 = binary add nowrap i32 %t7, %t8
+    return i32 %t9
+}
+function @shared() -> i32 [binding=weak, object=_Z6sharedv, inline_hint=yes] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__shared__decl0__n__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__shared__decl0__n
+    %t4 = call i32 @next()
+    store typed i32 %t4, %t3
+    store typed i64 1, @__local_static__shared__decl0__n__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t5 = load typed i32 @__local_static__shared__decl0__n
+    %t6 = binary add nowrap i32 %t5, 1
+    store typed i32 %t6, @__local_static__shared__decl0__n
+    return i32 %t6
+}
