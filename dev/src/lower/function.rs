@@ -133,11 +133,16 @@ pub(super) fn lower<'a>(
         budget,
         stack_base: std::ptr::from_ref(&marker).addr(),
     };
-    for (index, &(entity, _, ty)) in parameter_bindings.iter().enumerate() {
+    for (index, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
         let slot = function.builder.slot(&names[index].0, names[index].1)?;
         let incoming = function.builder.parameter(index)?;
         function.builder.effect(I::Store(
-            types::memory(graph, ty)?,
+            // Prologue initialization uses an unqualified place. Subsequent
+            // source accesses retain the parameter object's volatile fact.
+            crate::lowir::model::Facts::memory(
+                false,
+                !matches!(names[index].1, Type::I8 | Type::U8),
+            ),
             names[index].1,
             incoming,
             slot,

@@ -76,7 +76,11 @@ impl Function<'_, '_, '_, '_> {
                 bits: None,
             });
         }
-        if let Some(bits) = facts.folded.or(facts.query) {
+        if let Some(bits) = facts.query {
+            let value = self.builder.integer(u128::from(bits))?;
+            return self.emit(I::Const(ty, value), source);
+        }
+        if let Some(bits) = facts.folded {
             return Ok(RValue {
                 value: self.builder.integer(u128::from(bits))?,
                 ty,
@@ -140,83 +144,7 @@ impl Function<'_, '_, '_, '_> {
                 left,
                 right,
                 assignment: false,
-            } => {
-                let op = op
-                    .token
-                    .as_punctuator()
-                    .ok_or(Error::Missing("non-punctuator binary lowering"))?;
-                if op == P::Comma {
-                    self.discard(left)?;
-                    return self.operand(right, context);
-                }
-                if matches!(op, P::LogicalAnd | P::LogicalOr) {
-                    return self.logical_value(id);
-                }
-                let comparison = matches!(
-                    op,
-                    P::Equal | P::NotEqual | P::Less | P::LessEqual | P::Greater | P::GreaterEqual
-                );
-                let context = if comparison {
-                    Context::Comparison
-                } else if matches!(op, P::Add | P::Subtract) {
-                    Context::Additive
-                } else {
-                    Context::Operand
-                };
-                let a = self.expression(left, context)?;
-                let b = self.expression(right, context)?;
-                let a = self.apply_conversion(left, a, context)?;
-                let b = self.apply_conversion(right, b, context)?;
-                if comparison {
-                    let unsigned = !types::signed(self.graph, a.source)? && a.ty.float_rank() == 0;
-                    let predicate = match (op, unsigned) {
-                        (P::Equal, _) => Compare::Eq,
-                        (P::NotEqual, _) => Compare::Ne,
-                        (P::Less, false) => Compare::Lt,
-                        (P::Less, true) => Compare::Ult,
-                        (P::LessEqual, false) => Compare::Le,
-                        (P::LessEqual, true) => Compare::Ule,
-                        (P::Greater, false) => Compare::Gt,
-                        (P::Greater, true) => Compare::Ugt,
-                        (P::GreaterEqual, false) => Compare::Ge,
-                        _ => Compare::Uge,
-                    };
-                    return self.emit(I::Compare(predicate, a.ty, a.value, b.value), source);
-                }
-                let signed = types::signed(self.graph, a.source)?;
-                let operation = match op {
-                    P::Add => Binary::Add,
-                    P::Subtract => Binary::Sub,
-                    P::Multiply => Binary::Mul,
-                    P::Divide if signed || a.ty.float_rank() != 0 => Binary::Div,
-                    P::Divide => Binary::UDiv,
-                    P::Remainder if signed => Binary::Mod,
-                    P::Remainder => Binary::UMod,
-                    P::BitAnd => Binary::And,
-                    P::BitOr => Binary::Or,
-                    P::Xor => Binary::Xor,
-                    P::ShiftLeft => Binary::Shl,
-                    P::ShiftRight if signed => Binary::Shr,
-                    P::ShiftRight => Binary::UShr,
-                    _ => return Err(Error::Missing("logical expression lowering")),
-                };
-                if a.ty == Type::Ptr {
-                    return Err(Error::Missing("pointer arithmetic lowering"));
-                }
-                let nowrap = signed
-                    && matches!(a.ty, Type::I32 | Type::I64)
-                    && matches!(operation, Binary::Add | Binary::Sub | Binary::Mul);
-                self.emit(
-                    I::Binary(
-                        operation,
-                        Facts::arithmetic(nowrap, false),
-                        a.ty,
-                        a.value,
-                        b.value,
-                    ),
-                    source,
-                )
-            }
+            } => self.binary_expression(id, op, left, right, context),
             ExprKind::Binary {
                 op,
                 left,
@@ -241,6 +169,10 @@ impl Function<'_, '_, '_, '_> {
                 )?
                 .1),
             ExprKind::Cast { operand, .. } => {
+                if ty == Type::Void {
+                    self.discard_to_void(operand)?;
+                    return self.zero(source);
+                }
                 let value = self.operand(operand, Context::Operand)?;
                 self.convert(value, source, Context::Cast)
             }
@@ -267,6 +199,125 @@ impl Function<'_, '_, '_, '_> {
                 "call, conditional and aggregate expression lowering",
             )),
         }
+    }
+    fn binary_expression(
+        &mut self,
+        id: ast::ExprId,
+        op: ast::Operator,
+        left: ast::ExprId,
+        right: ast::ExprId,
+        context: Context,
+    ) -> Result<RValue, Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        let op = op
+            .token
+            .as_punctuator()
+            .ok_or(Error::Missing("non-punctuator binary lowering"))?;
+        if op == P::Comma {
+            self.discard(left)?;
+            return self.operand(right, context);
+        }
+        if matches!(op, P::LogicalAnd | P::LogicalOr) {
+            return self.logical_value(id);
+        }
+        let comparison = matches!(
+            op,
+            P::Equal | P::NotEqual | P::Less | P::LessEqual | P::Greater | P::GreaterEqual
+        );
+        let context = if comparison {
+            Context::Comparison
+        } else if matches!(op, P::Add | P::Subtract) {
+            Context::Additive
+        } else {
+            Context::Operand
+        };
+        let a = self.expression(left, context)?;
+        let b = self.expression(right, context)?;
+        let a = self.apply_conversion(
+            left,
+            a,
+            if context == Context::Additive && self.is_size_query(right) {
+                Context::BesideSize
+            } else {
+                context
+            },
+        )?;
+        let b = self.apply_conversion(
+            right,
+            b,
+            if context == Context::Additive && self.is_size_query(left) {
+                Context::BesideSize
+            } else {
+                context
+            },
+        )?;
+        let b = if matches!(op, P::ShiftLeft | P::ShiftRight) {
+            self.convert(b, source, Context::Operand)?
+        } else {
+            b
+        };
+        if comparison {
+            let unsigned = !types::signed(self.graph, a.source)? && a.ty.float_rank() == 0;
+            let predicate = match (op, unsigned) {
+                (P::Equal, _) => Compare::Eq,
+                (P::NotEqual, _) => Compare::Ne,
+                (P::Less, false) => Compare::Lt,
+                (P::Less, true) => Compare::Ult,
+                (P::LessEqual, false) => Compare::Le,
+                (P::LessEqual, true) => Compare::Ule,
+                (P::Greater, false) => Compare::Gt,
+                (P::Greater, true) => Compare::Ugt,
+                (P::GreaterEqual, false) => Compare::Ge,
+                _ => Compare::Uge,
+            };
+            return self.emit(I::Compare(predicate, a.ty, a.value, b.value), source);
+        }
+        let signed = types::signed(self.graph, a.source)?;
+        let operation = match op {
+            P::Add => Binary::Add,
+            P::Subtract => Binary::Sub,
+            P::Multiply => Binary::Mul,
+            P::Divide if signed || a.ty.float_rank() != 0 => Binary::Div,
+            P::Divide => Binary::UDiv,
+            P::Remainder if signed => Binary::Mod,
+            P::Remainder => Binary::UMod,
+            P::BitAnd => Binary::And,
+            P::BitOr => Binary::Or,
+            P::Xor => Binary::Xor,
+            P::ShiftLeft => Binary::Shl,
+            P::ShiftRight if signed => Binary::Shr,
+            P::ShiftRight => Binary::UShr,
+            _ => return Err(Error::Missing("logical expression lowering")),
+        };
+        if a.ty == Type::Ptr {
+            return Err(Error::Missing("pointer arithmetic lowering"));
+        }
+        let nowrap = signed
+            && matches!(a.ty, Type::I32 | Type::I64)
+            && matches!(operation, Binary::Add | Binary::Sub | Binary::Mul);
+        self.emit(
+            I::Binary(
+                operation,
+                Facts::arithmetic(nowrap, false),
+                a.ty,
+                a.value,
+                b.value,
+            ),
+            source,
+        )
+    }
+    fn is_size_query(&self, mut id: ast::ExprId) -> bool {
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
+            id = inner;
+        }
+        matches!(
+            self.tree.expressions.get(id).kind,
+            ExprKind::Sizeof { .. }
+                | ExprKind::TypeTrait {
+                    keyword: Keyword::Alignof,
+                    ..
+                }
+        )
     }
     fn unary_expression(
         &mut self,

@@ -270,9 +270,12 @@ impl Function<'_, '_, '_, '_> {
             if matches!(self.tree.statements.get(id).kind, StmtKind::Default(_)) {
                 default = block;
             } else {
+                // The C++ producer's integer literal sign-extends its 64-bit
+                // pattern into LowIR's full literal, including unsigned cases.
+                let bits = i64::from_ne_bytes(self.graph.lower_case(id)?.to_ne_bytes());
                 let value = self
                     .builder
-                    .integer(u128::from(self.graph.lower_case(id)?))?;
+                    .integer(u128::from_ne_bytes(i128::from(bits).to_ne_bytes()))?;
                 cases.push((value, block));
             }
         }

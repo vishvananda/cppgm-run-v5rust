@@ -462,6 +462,11 @@ impl Analyzer<'_> {
             },
             Cv::default(),
         )?;
+        if self.lowering() {
+            // Preserve source parameter cv on bindings; publish the canonical
+            // boundary type once for ABI and indirect-call consumers.
+            self.graph.types.canonical_function(ty)?;
+        }
         Ok(ty)
     }
     fn parameter_uses_values(&self, parameter: ast::Parameter) -> bool {

@@ -287,7 +287,7 @@ impl Function<'_, '_, '_, '_> {
                 if types::storage(self.graph, self.graph.lower_expression(id)?.ty)?
                     == Type::Void =>
             {
-                self.discard(operand)
+                self.discard_to_void(operand)
             }
             ExprKind::Binary {
                 assignment: true, ..
@@ -301,16 +301,56 @@ impl Function<'_, '_, '_, '_> {
                 self.scalar_place(id)?;
                 Ok(())
             }
+            ExprKind::Unary { op, .. }
+                if op.token.as_punctuator() == Some(P::Multiply)
+                    && self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 == 0 =>
+            {
+                self.scalar_place(id)?;
+                Ok(())
+            }
             ExprKind::Id(_)
                 if self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 == 0 =>
             {
                 Ok(())
             }
-            ExprKind::Literal(_) | ExprKind::Keyword(_) => Ok(()),
+            ExprKind::Literal(_)
+            | ExprKind::Keyword(_)
+            | ExprKind::TypeTrait {
+                keyword: Keyword::Alignof,
+                ..
+            } => Ok(()),
             _ => {
                 self.expression(id, Context::Operand)?;
                 Ok(())
             }
+        }
+    }
+    pub(super) fn discard_to_void(&mut self, id: ast::ExprId) -> Result<(), Error> {
+        let id = self.without_parentheses(id);
+        let facts = self.graph.lower_expression(id)?;
+        let writes = matches!(
+            self.tree.expressions.get(id).kind,
+            ExprKind::Binary {
+                assignment: true,
+                ..
+            }
+        ) || matches!(self.tree.expressions.get(id).kind,
+                ExprKind::Unary { op, .. } if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)));
+        if facts.is_place
+            && facts.folded.is_none()
+            && self.graph.lower_cv(facts.ty) & 2 == 0
+            && !writes
+            && !matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Function { .. }
+            )
+        {
+            // The course reads nonvolatile scalar glvalues cast to void,
+            // while ordinary discarded indirections only evaluate the place.
+            self.expression(id, Context::Operand)?;
+            Ok(())
+        } else {
+            self.discard(id)
         }
     }
 }

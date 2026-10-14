@@ -19,6 +19,7 @@ pub(super) enum Context {
     Return,
     Additive,
     Comparison,
+    BesideSize,
     Unary,
     Assignment,
     CompoundAssignment,
@@ -114,9 +115,13 @@ impl Function<'_, '_, '_, '_> {
             let widening = value.literal
                 && to_bits > from_bits
                 && if from_signed && to_signed {
-                    !matches!(context, Context::Operand | Context::Assignment)
+                    !matches!(
+                        context,
+                        Context::Operand | Context::Assignment | Context::CompoundAssignment
+                    )
                 } else {
                     match context {
+                        Context::BesideSize => true,
                         Context::Additive | Context::Unary => {
                             bool_source || !from_signed && !to_signed
                         }

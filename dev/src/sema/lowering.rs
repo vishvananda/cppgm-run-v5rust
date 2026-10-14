@@ -195,7 +195,7 @@ impl Graph {
             .filter_map(|binding| binding.ty.map(|ty| (binding.entity, binding.name, ty)))
     }
     pub(crate) fn lower_type(&self, id: TypeId) -> Result<TypeView<'_>, Error> {
-        Ok(match &self.types.get(id).kind {
+        Ok(match &self.types.get(self.types.canonical_view(id)).kind {
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
             TypeKind::Reference { .. } => TypeView::Reference,
