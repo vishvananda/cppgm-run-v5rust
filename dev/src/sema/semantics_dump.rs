@@ -1132,7 +1132,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         {
             ty = target;
         }
-        if let Some(call) = facts.call {
+        if facts.call_form == super::expression_facts::CallForm::Ordinary
+            && let Some(call) = facts.call
+        {
             let function = match call {
                 CallTarget::Direct(binding) => self
                     .graph

@@ -2531,3 +2531,79 @@ fn placeholder_deduction_publishes_concrete_types_and_consumes_initializer_facts
     assert!(matches!(analyzer.graph.types.get(types[2]).kind,
         TypeKind::Reference { element, kind: RefKind::Lvalue } if element == types[3]));
 }
+
+#[test]
+fn operator_chains_retain_original_nodes_and_reference_results() {
+    use super::expression_facts::{CallForm, ConversionRank, ValueCategory};
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(
+        b"struct A{};A&operator<<(A&,int);A&operator<<(A&,long);A&f(A&a){return (a<<1)<<2;}"
+            .to_vec(),
+    )
+    .unwrap();
+    let input = Preprocessor::with_name(&source, b"operator-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_semantics(true);
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), count);
+    let DeclKind::Function { body, .. } = tree
+        .declarations
+        .get(tree.decl_lists.get(declarations)[3])
+        .kind
+    else {
+        panic!("function expected")
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body expected")
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound expected")
+    };
+    let StmtKind::Return(Some(outer)) =
+        tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+    else {
+        panic!("return expected")
+    };
+    let ExprKind::Binary { left, .. } = tree.expressions.get(outer).kind else {
+        panic!("operator expected")
+    };
+    let inner = graph.expression_facts.root(left);
+    let chosen = graph.call_binding(outer).unwrap();
+    assert_eq!(
+        graph.binding(chosen).entity,
+        graph.binding(graph.call_binding(inner).unwrap()).entity
+    );
+    for expression in [inner, outer] {
+        let facts = graph.expression_facts.get(expression).unwrap();
+        assert_eq!(facts.call_form, CallForm::Operator);
+        assert_eq!(facts.category, ValueCategory::Lvalue);
+        assert!(matches!(graph.types.get(facts.ty).kind, TypeKind::Class(_)));
+        let ExprKind::Binary { left, right, .. } = tree.expressions.get(expression).kind else {
+            panic!("binary expected")
+        };
+        let object = graph.expression_facts.get(left).unwrap();
+        assert_eq!(object.category, ValueCategory::Lvalue);
+        assert!(matches!(
+            graph.types.get(object.ty).kind,
+            TypeKind::Class(_)
+        ));
+        assert!(matches!(
+            graph.types.get(object.conversion.unwrap().target).kind,
+            TypeKind::Reference { .. }
+        ));
+        assert_eq!(
+            graph
+                .expression_facts
+                .get(right)
+                .unwrap()
+                .conversion
+                .unwrap()
+                .rank,
+            ConversionRank::Exact
+        );
+    }
+}

@@ -171,6 +171,12 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
+            if facts.call_form == super::expression_facts::CallForm::Operator
+                && let Some(CallTarget::Direct(binding)) = facts.call
+                && self.function_may_throw(self.graph.binding(binding).entity)?
+            {
+                return Ok(true);
+            }
             let next = depth + 1;
             match kind {
                 ExprKind::Throw(_) => return Ok(true),

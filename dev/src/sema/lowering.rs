@@ -811,6 +811,9 @@ impl Graph {
     pub(crate) fn lower_functional_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.functional_call)
     }
+    pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)
+    }
     pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<CallTarget, Error> {
         match self.expression_facts.get(id)?.call {
             Some(super::function_resolution::CallTarget::Direct(binding)) => {

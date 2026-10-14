@@ -3,19 +3,17 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    function_names::ValueKey,
     graph::{BindingKind, ScopeId, ScopeKind},
     lookup::LookupResult,
     types::TypeKind,
 };
-use crate::{
-    lex::identifiers::NameId,
-    syntax::{ast, storage::List},
-};
+use crate::syntax::{ast, storage::List};
 use std::collections::{HashMap, HashSet};
 impl Analyzer<'_> {
     pub(super) fn argument_dependent_lookup(
         &self,
-        name: NameId,
+        name: ValueKey,
         arguments: List<ast::ExprId>,
         found: &mut LookupResult,
     ) -> Result<(), Error> {
@@ -30,8 +28,16 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
+        self.associated_functions(name, self.tree.expr_lists.get(arguments), found)
+    }
+    pub(super) fn associated_functions(
+        &self,
+        name: ValueKey,
+        arguments: &[ast::ExprId],
+        found: &mut LookupResult,
+    ) -> Result<(), Error> {
         let mut types = Vec::new();
-        for &argument in self.tree.expr_lists.get(arguments) {
+        for &argument in arguments {
             if matches!(
                 self.tree.expressions.get(argument).kind,
                 ast::ExprKind::Braced { .. }
@@ -133,7 +139,7 @@ impl Analyzer<'_> {
             {
                 namespaces.push(parent);
             }
-            for binding in self.graph.visible_functions_at(scope, name.into()) {
+            for binding in self.graph.visible_functions_at(scope, name) {
                 if seen_functions.insert(self.graph.binding(binding).entity) {
                     found.functions.push(binding);
                     if found.binding.is_none() {
@@ -143,7 +149,7 @@ impl Analyzer<'_> {
             }
         }
         for class in classes {
-            for &binding in self.graph.friendships.functions(class, name.into()) {
+            for &binding in self.graph.friendships.functions(class, name) {
                 if self.graph.binding_visible_at_limit(binding)
                     && seen_functions.insert(self.graph.binding(binding).entity)
                 {

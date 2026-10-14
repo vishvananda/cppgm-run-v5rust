@@ -203,7 +203,9 @@ impl Function<'_, '_, '_, '_> {
         } = self.tree.expressions.get(id).kind
         {
             let op = op.token.as_punctuator();
-            if !matches!(op, Some(P::LogicalAnd | P::LogicalOr)) {
+            if !matches!(op, Some(P::LogicalAnd | P::LogicalOr))
+                || self.graph.lower_operator_call(id)?
+            {
                 break;
             }
             let conjunction = op == Some(P::LogicalAnd);
@@ -252,7 +254,9 @@ impl Function<'_, '_, '_, '_> {
         } = self.tree.expressions.get(node).kind
         {
             let op = op.token.as_punctuator();
-            if !matches!(op, Some(P::LogicalAnd | P::LogicalOr)) {
+            if !matches!(op, Some(P::LogicalAnd | P::LogicalOr))
+                || self.graph.lower_operator_call(node)?
+            {
                 break;
             }
             spine.push((node, left, right, op == Some(P::LogicalAnd)));
@@ -386,6 +390,10 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
+        if self.graph.lower_operator_call(id)? {
+            self.operator_call(id)?;
+            return Ok(());
+        }
         if self.graph.lower_lvalue(id)?
             && self.graph.lower_cv(facts.ty) & 2 != 0
             && !matches!(

@@ -86,6 +86,11 @@ pub(super) struct BaseCast {
     pub downcast: bool,
     pub project_zero: bool,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CallForm {
+    Ordinary,
+    Operator,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
@@ -102,6 +107,7 @@ pub(super) struct ExprFacts {
     pub functional_call: bool,
     pub functions: Option<super::function_resolution::OverloadId>,
     pub function: Option<super::graph::BindingId>,
+    pub call_form: CallForm,
     pub call: Option<super::function_resolution::CallTarget>,
     pub anonymous_member: Option<super::graph::BindingId>,
     // Explicit designation retains the selected entity independently of spelling.
@@ -138,6 +144,7 @@ impl ExprFacts {
             functional_call: false,
             functions: None,
             function: None,
+            call_form: CallForm::Ordinary,
             call: None,
             anonymous_member: None,
             member: None,

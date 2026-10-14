@@ -62,12 +62,12 @@ impl CallScratch {
     }
 }
 #[derive(Clone, Copy)]
-struct ArgumentSequence {
-    conversion: Conversion,
+pub(super) struct ArgumentSequence {
+    pub(super) conversion: Conversion,
     // An overload designation ranks as an exact target match, even when its
     // actual unary shape cannot bind that target. Diagnose only after selection.
-    application: Option<Conversion>,
-    function: Option<BindingId>,
+    pub(super) application: Option<Conversion>,
+    pub(super) function: Option<BindingId>,
 }
 impl Analyzer<'_> {
     pub(super) fn procedural_call(
@@ -136,9 +136,8 @@ impl Analyzer<'_> {
                 })
             {
                 let component = self.tree.name_lists.get(syntax_name.components)[0];
-                if let ast::NameKind::Identifier(key) = component.kind {
-                    self.argument_dependent_lookup(key, arguments, &mut found)?;
-                }
+                let key = Self::expression_name(component.kind)?;
+                self.argument_dependent_lookup(key, arguments, &mut found)?;
             }
             if found.binding.is_none() {
                 return Err(Error::at(
@@ -174,6 +173,55 @@ impl Analyzer<'_> {
             for &argument in self.tree.expr_lists.get(arguments) {
                 self.type_call_argument(argument, scope)?;
             }
+            facts
+        };
+        let facts = if let Some(class) = self.graph.class_of(facts.ty) {
+            let location = self.tree.expressions.get(id).location;
+            if !self.graph.entity(class).complete {
+                return Err(Error::at(
+                    location,
+                    "call of an object of incomplete class type",
+                ));
+            }
+            let home = self
+                .graph
+                .entity(class)
+                .scope
+                .ok_or(Error::Invariant("call class without scope"))?;
+            self.lookup_location = location;
+            let found = self.qualified_result(
+                home,
+                super::operator_candidates::operator_key(
+                    crate::lex::pp_lexer::Punctuator::LeftParen,
+                )?,
+                super::lookup::Filter::Ordinary,
+            )?;
+            let binding = found
+                .binding
+                .filter(|&binding| {
+                    self.graph.binding(binding).kind == super::graph::BindingKind::Function
+                })
+                .ok_or(Error::at(
+                    location,
+                    "called object is not a function or pointer to function",
+                ))?;
+            let object = super::expression_facts::ObjectArgument {
+                source: super::expression_facts::ObjectSource::Explicit {
+                    expression: callee,
+                    arrow: false,
+                },
+                ty: facts.ty,
+                category: facts.category,
+            };
+            let mut receiver = facts;
+            receiver.object = Some(object);
+            receiver.member_naming = Some(class);
+            self.graph.expression_facts.set(callee, receiver);
+            let mut designation = self.function_designation(binding, found.functions.as_slice())?;
+            designation.object = Some(object);
+            designation.member_naming = Some(class);
+            designation
+        } else {
             facts
         };
         let designation = if let Some(set) = facts.functions {
@@ -322,7 +370,7 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn object_sequence(
+    pub(super) fn object_sequence(
         &mut self,
         object: super::expression_facts::ObjectArgument,
         binding: BindingId,
@@ -453,7 +501,7 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn argument_sequence(
+    pub(super) fn argument_sequence(
         &mut self,
         id: ast::ExprId,
         target: TypeId,
@@ -832,7 +880,7 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }
-    fn call_result(&mut self, function: TypeId) -> Result<ExprFacts, Error> {
+    pub(super) fn call_result(&mut self, function: TypeId) -> Result<ExprFacts, Error> {
         let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {
             return Err(Error::Invariant("call without function type"));
         };

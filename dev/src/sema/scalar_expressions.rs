@@ -100,12 +100,12 @@ impl Analyzer<'_> {
                 let Some(op) = op.token.as_punctuator() else {
                     return Err(Error::Invariant("nonpunctuator unary"));
                 };
-                self.scalar_unary(
-                    id,
-                    op,
-                    operand,
-                    matches!(node.kind, ExprKind::Postfix { .. }),
-                )?
+                let postfix = matches!(node.kind, ExprKind::Postfix { .. });
+                if let Some(facts) = self.overloaded_operator(id, op, &[operand], postfix, scope)? {
+                    facts
+                } else {
+                    self.scalar_unary(id, op, operand, postfix)?
+                }
             }
             ExprKind::Binary {
                 assignment: false, ..
@@ -126,10 +126,36 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(right).kind,
                     ExprKind::Braced { .. }
                 ) {
-                    self.scalar_list_assignment(id, op, facts, right, scope)?
+                    if op == crate::lex::pp_lexer::Punctuator::Assign
+                        && self.graph.class_of(facts.ty).is_some()
+                    {
+                        self.type_call_argument(right, scope)?;
+                        self.overloaded_operator(id, op, &[left, right], false, scope)?
+                            .ok_or_else(|| {
+                                Error::at(
+                                    node.location,
+                                    "no viable assignment operator for the braced-init-list",
+                                )
+                            })?
+                    } else {
+                        self.scalar_list_assignment(id, op, facts, right, scope)?
+                    }
                 } else {
                     self.typed_expression(right, scope)?;
-                    self.scalar_assignment(id, op, left, right)?
+                    if let Some(facts) =
+                        self.overloaded_operator(id, op, &[left, right], false, scope)?
+                    {
+                        facts
+                    } else if op == crate::lex::pp_lexer::Punctuator::Assign
+                        && self.graph.class_of(facts.ty).is_some()
+                    {
+                        return Err(Error::at(
+                            node.location,
+                            "no viable assignment operator for the class object",
+                        ));
+                    } else {
+                        self.scalar_assignment(id, op, left, right)?
+                    }
                 }
             }
             ExprKind::Conditional {
@@ -153,24 +179,38 @@ impl Analyzer<'_> {
             ExprKind::Subscript { base, index } => {
                 self.typed_expression(base, scope)?;
                 self.check_resolved_function(base)?;
-                if matches!(
+                let braced = matches!(
                     self.tree.expressions.get(index).kind,
                     ExprKind::Braced { .. }
-                ) {
-                    let facts = self.graph.expression_facts.get(base)?;
-                    return Err(
-                        if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)) {
-                            Error::Missing("class braced subscript operator resolution")
-                        } else {
-                            Error::at(
-                                self.tree.expressions.get(index).location,
-                                "a braced-init-list subscript of no class object",
-                            )
-                        },
-                    );
+                );
+                if braced
+                    && self
+                        .graph
+                        .class_of(self.graph.expression_facts.get(base)?.ty)
+                        .is_none()
+                {
+                    return Err(Error::at(
+                        self.tree.expressions.get(index).location,
+                        "a braced-init-list subscript of no class object",
+                    ));
                 }
-                self.typed_expression(index, scope)?;
-                self.scalar_subscript(id, base, index)?
+                self.type_call_argument(index, scope)?;
+                if let Some(facts) = self.overloaded_operator(
+                    id,
+                    crate::lex::pp_lexer::Punctuator::LeftBracket,
+                    &[base, index],
+                    false,
+                    scope,
+                )? {
+                    facts
+                } else if braced {
+                    return Err(Error::at(
+                        node.location,
+                        "no viable subscript operator for the braced-init-list",
+                    ));
+                } else {
+                    self.scalar_subscript(id, base, index)?
+                }
             }
             ExprKind::TypeTrait {
                 keyword: Keyword::Noexcept,
@@ -439,7 +479,13 @@ impl Analyzer<'_> {
                 let Some(op) = op.token.as_punctuator() else {
                     return Err(Error::Invariant("nonpunctuator binary"));
                 };
-                let facts = self.scalar_binary(current, op, left, right)?;
+                let facts = if let Some(facts) =
+                    self.overloaded_operator(current, op, &[left, right], false, scope)?
+                {
+                    facts
+                } else {
+                    self.scalar_binary(current, op, left, right)?
+                };
                 self.graph.expression_facts.set(current, facts);
                 super::record(&mut self.graph.expression_types, current.index(), facts.ty);
             }

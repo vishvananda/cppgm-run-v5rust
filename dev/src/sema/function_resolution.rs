@@ -79,19 +79,14 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("empty address name"))?;
-        let ast::NameKind::Identifier(key) = last.kind else {
-            return Err(Error::at(
-                node.location,
-                "operator and special member names are not supported here",
-            ));
-        };
+        let key = Self::expression_name(last.kind)?;
         let location = node.location;
         let prefix = self
             .prefix(name, scope)?
             .ok_or(Error::Invariant("qualified address without prefix"))?;
         self.lookup_location = location;
         let mut found = self
-            .qualified_result(prefix, key.into(), Filter::Ordinary)
+            .qualified_result(prefix, key, Filter::Ordinary)
             .map_err(|error| match error {
                 Error::Diagnostic {
                     message: "ambiguous name",

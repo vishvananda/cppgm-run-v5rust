@@ -127,16 +127,14 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("empty member name"))?;
-        let NameKind::Identifier(key) = last.kind else {
-            return Err(Error::Missing("operator and special member access"));
-        };
+        let key = Self::expression_name(last.kind)?;
         if last.arguments.is_some() {
             return Err(Error::Missing("member template specialization lookup"));
         }
         let search = self.data_member_qualifier(name, class, scope)?;
         self.lookup_location = node.location;
         let found = self
-            .qualified_result(search, key.into(), Filter::Ordinary)
+            .qualified_result(search, key, Filter::Ordinary)
             .map_err(|error| match error {
                 Error::Diagnostic {
                     message: "ambiguous name",

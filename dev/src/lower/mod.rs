@@ -14,6 +14,7 @@ mod function;
 mod globals;
 mod local_storage;
 mod mutations;
+mod operator_calls;
 mod pointers;
 mod references;
 mod statements;

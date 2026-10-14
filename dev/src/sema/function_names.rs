@@ -167,6 +167,19 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("declaration without a name"))?;
         self.value_name(name)
     }
+    pub(super) fn expression_name(kind: NameKind) -> Result<ValueKey, Error> {
+        match kind {
+            NameKind::Identifier(name) => Ok(name.into()),
+            NameKind::Operator { op, array } => Ok(ValueKey::Special(SpecialName::Operator {
+                token: op.token,
+                array,
+            })),
+            NameKind::LiteralOperator(name) => Ok(ValueKey::Special(SpecialName::Literal(name))),
+            _ => Err(Error::Missing(
+                "operator and special member semantic identities",
+            )),
+        }
+    }
     pub(super) fn value_name(&self, name: ast::Name) -> Result<ValueKey, Error> {
         let node = self.tree.names.get(name);
         let last = self
@@ -351,6 +364,9 @@ impl Analyzer<'_> {
             specs,
         )?;
         self.record_callable_label(binding, info, key)?;
+        if self.semantic() {
+            self.check_operator_declaration(binding, location)?;
+        }
         if let Some(class) = befriending {
             let entity = self.graph.binding(binding).entity;
             self.graph.friendships.record(class, entity);

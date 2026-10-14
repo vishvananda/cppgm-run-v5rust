@@ -436,22 +436,26 @@ impl Analyzer<'_> {
         if last.arguments.is_some() && !self.semantic() {
             return Err(Error::Missing("template specialization lookup"));
         }
-        let NameKind::Identifier(key) = last.kind else {
+        // Types-mode lookup_name accepts identifiers only; semantics has the
+        // separate operator_function_lookup path in the frozen owner.
+        if !self.semantic() && !matches!(last.kind, NameKind::Identifier(_)) {
             return Err(Error::at(
                 node.location,
                 "operator and special member names are not supported here",
             ));
-        };
+        }
+        let key = Self::expression_name(last.kind)?;
         let prefix = self.prefix(name, scope)?;
         let mut found = if let Some(prefix) = prefix {
-            self.qualified_result(prefix, key.into(), filter)?
+            self.qualified_result(prefix, key, filter)?
         } else {
-            self.unqualified_result(scope, key.into(), filter)?
+            self.unqualified_result(scope, key, filter)?
         };
         if filter == Filter::Ordinary
             && found.binding.is_none()
             && prefix.is_none_or(|prefix| prefix == self.graph.global)
-            && let Some(builtin) = self.builtin_lookup(key)?
+            && let Some(identifier) = key.identifier()
+            && let Some(builtin) = self.builtin_lookup(identifier)?
         {
             found = builtin;
         }

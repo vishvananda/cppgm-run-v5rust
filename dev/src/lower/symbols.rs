@@ -319,7 +319,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
             })
             .collect())
     }
-    fn function_terminal(&mut self, name: FunctionName, ty: TypeId) -> Result<NodeId, Error> {
+    fn function_terminal(
+        &mut self,
+        name: FunctionName,
+        ty: TypeId,
+        member: bool,
+    ) -> Result<NodeId, Error> {
         let node = match name {
             FunctionName::Constructor(_) => Node::Terminal {
                 kind: abi::vocabulary::Terminal::ConstructorComplete,
@@ -400,7 +405,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     )));
                 };
                 Node::Terminal {
-                    kind: terminal.for_operands(parameters.len()),
+                    kind: terminal.for_operands(parameters.len() + usize::from(member)),
                     inherited: None,
                 }
             }
@@ -1387,7 +1392,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &[],
             )?
         } else {
-            self.function_terminal(facts.name, facts.ty)?
+            self.function_terminal(facts.name, facts.ty, facts.object.is_some())?
         };
         let name = self
             .abi
