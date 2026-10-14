@@ -14,12 +14,13 @@ pub(super) struct FamilyId(u32);
 pub(crate) struct Definitions {
     bytes: Vec<u8>,
     spans: Vec<Range<usize>>,
+    held: Vec<Range<usize>>,
     external: HashMap<NameId, FamilyId>,
     families: Vec<[Option<usize>; 2]>,
 }
 impl Definitions {
     pub(crate) fn is_empty(&self) -> bool {
-        self.spans.is_empty()
+        self.spans.is_empty() && self.held.is_empty()
     }
     pub(super) fn family(&mut self, object: Option<NameId>) -> Result<FamilyId, Error> {
         if let Some(object) = object
@@ -58,9 +59,17 @@ impl Definitions {
         Ok(())
     }
     pub(crate) fn write(&self, output: &mut impl Write) -> io::Result<()> {
-        for span in &self.spans {
+        for span in self.spans.iter().chain(&self.held) {
             output.write_all(&self.bytes[span.clone()])?;
         }
         Ok(())
+    }
+    pub(super) fn hold_last(&mut self) {
+        if let Some(span) = self.spans.pop() {
+            self.held.push(span);
+        }
+    }
+    pub(super) fn release_held(&mut self) {
+        self.spans.append(&mut self.held);
     }
 }

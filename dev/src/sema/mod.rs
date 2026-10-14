@@ -18,6 +18,7 @@ mod declaration_access;
 mod declarations;
 mod declarators;
 mod default_arguments;
+mod destructor_expressions;
 mod dump;
 mod empty_layout;
 mod enumerations;

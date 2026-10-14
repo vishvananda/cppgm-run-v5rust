@@ -110,6 +110,31 @@ impl Analyzer<'_> {
             self.convert_operand_scalar(base, pointer, false)?;
             ty = element;
         }
+        let node = *self.tree.names.get(name);
+        let last = *self
+            .tree
+            .name_lists
+            .get(node.components)
+            .last()
+            .ok_or(Error::Invariant("empty member name"))?;
+        if matches!(
+            last.kind,
+            NameKind::Destructor(_) | NameKind::DestructorDecltype(_)
+        ) {
+            return self.destructor_designation(
+                id,
+                super::expression_facts::ObjectArgument {
+                    source: super::expression_facts::ObjectSource::Explicit {
+                        expression: base,
+                        arrow,
+                    },
+                    ty,
+                    category: if arrow { V::Lvalue } else { object.category },
+                },
+                name,
+                scope,
+            );
+        }
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Err(Error::at(location, "member access on a non-class"));
         };
@@ -120,13 +145,6 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "member access on an incomplete class"));
         }
-        let node = *self.tree.names.get(name);
-        let last = *self
-            .tree
-            .name_lists
-            .get(node.components)
-            .last()
-            .ok_or(Error::Invariant("empty member name"))?;
         let key = Self::expression_name(last.kind)?;
         if last.arguments.is_some() {
             return Err(Error::Missing("member template specialization lookup"));
@@ -286,7 +304,7 @@ impl Analyzer<'_> {
         Ok(Some(path))
     }
 
-    fn data_member_qualifier(
+    pub(super) fn data_member_qualifier(
         &mut self,
         name: ast::Name,
         class: EntityId,

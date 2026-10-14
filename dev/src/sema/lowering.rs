@@ -81,6 +81,7 @@ pub(crate) use super::construction::ConstructorId;
 pub(crate) enum FunctionName {
     Identifier(NameId),
     Constructor(NameId),
+    Destructor(NameId),
     Operator {
         token: crate::lex::vocabulary::SimpleToken,
         array: bool,
@@ -631,6 +632,16 @@ impl Graph {
                 }
                 None if entity
                     .member_function
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor) =>
+                {
+                    FunctionName::Destructor(
+                        self.entity(object.ok_or(Error::Invariant("destructor without class"))?)
+                            .name
+                            .ok_or(Error::Missing("anonymous destructor name"))?,
+                    )
+                }
+                None if entity
+                    .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor) =>
                 {
                     FunctionName::Constructor(
@@ -847,6 +858,40 @@ impl Graph {
             }
             None => Err(Error::Invariant("call without selected target")),
         }
+    }
+    pub(crate) fn lower_destructor_evaluation_only(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(match self.expression_facts.get(id)?.destructor {
+            Some(super::expression_facts::DestructorTarget::Scalar) => true,
+            Some(super::expression_facts::DestructorTarget::Class(binding)) => matches!(
+                self.entity(self.binding(binding).entity).special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+            ),
+            None => false,
+        })
+    }
+    pub(crate) fn lower_destructor_inert(
+        &self,
+        entity: EntityId,
+        tree: &ast::Tree,
+    ) -> Result<bool, Error> {
+        if !self
+            .entity(entity)
+            .member_function
+            .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
+        {
+            return Ok(false);
+        }
+        let Some(body) = self.lower_function_body(entity) else {
+            return Ok(matches!(
+                self.entity(entity).special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { .. })
+            ));
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            return Err(Error::Invariant("destructor has unparsed body"));
+        };
+        Ok(body.handlers.is_none()
+            && matches!(tree.statements.get(body.compound).kind, ast::StmtKind::Compound(items) if tree.stmt_lists.get(items).is_empty()))
     }
     pub(crate) fn lower_nominal_name(&self, ty: TypeId) -> Result<(ScopeId, NameId), Error> {
         let (TypeKind::Enum(id) | TypeKind::Class(id)) = self.types.get(ty).kind else {

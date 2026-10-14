@@ -133,6 +133,7 @@ pub(super) struct Entity {
     pub user_constructor: Option<BindingId>,
     pub declared_constructors: Vec<BindingId>,
     pub declared_destructor: Option<BindingId>,
+    pub implicit_destructor: Option<BindingId>,
     pub declared_conversions: Vec<BindingId>,
     pub special_definition: Option<super::special_members::SpecialDefinition>,
     pub destructor_specification: super::exceptions::DestructorSpecification,
@@ -483,6 +484,7 @@ impl Graph {
             user_constructor: None,
             declared_constructors: Vec::new(),
             declared_destructor: None,
+            implicit_destructor: None,
             declared_conversions: Vec::new(),
             special_definition: None,
             destructor_specification: super::exceptions::DestructorSpecification::Explicit,
@@ -930,6 +932,54 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+    pub(super) fn add_implicit_destructor(
+        &mut self,
+        class: EntityId,
+        signature: TypeId,
+    ) -> Result<BindingId, Error> {
+        let scope = self
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("implicit destructor without class scope"))?;
+        let function = self.add_entity(Some(signature), None, Keyword::Int)?;
+        let entity = self.entity_mut(function);
+        entity.defined = true;
+        entity.special_definition = Some(super::special_members::SpecialDefinition::Defaulted {
+            first: true,
+            body: None,
+        });
+        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        entity.exceptions =
+            super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
+        entity.member_function = Some(MemberKey {
+            class,
+            kind: MemberKind::Destructor,
+            signature,
+            shape: None,
+        });
+        entity.function = Some(FunctionProperties {
+            language: super::linkage::Language::Cpp,
+            denotes: None,
+            internal_linkage: false,
+            is_static: false,
+            special: None,
+            allocation: None,
+        });
+        let binding = self.add_binding(
+            scope,
+            None,
+            Binding {
+                kind: BindingKind::Function,
+                name: None,
+                entity: function,
+                ty: Some(signature),
+                key: Keyword::Int,
+            },
+        )?;
+        self.binding_access[binding.0 as usize] = Access::Public;
+        self.entity_mut(class).implicit_destructor = Some(binding);
+        Ok(binding)
     }
     pub(super) fn binding_access(&self, id: BindingId) -> Access {
         self.binding_access[id.0 as usize]

@@ -168,6 +168,12 @@ impl Analyzer<'_> {
             binding,
         );
         let function = self.graph.binding(binding).entity;
+        if specs.inline == super::specifiers::InlinePreference::Inline
+            || specs.constexpr
+            || body.is_some() && self.class_depth != 0
+        {
+            self.graph.entity_mut(function).inline = super::specifiers::InlinePreference::Inline;
+        }
         if self.graph.scope(scope).kind == ScopeKind::Class
             && matches!(kind, MemberKind::Constructor | MemberKind::Destructor)
             && !initializer.is_some_and(|init| {
@@ -274,12 +280,16 @@ impl Analyzer<'_> {
         if let Some(body) = body {
             self.graph.entity_mut(function).special_definition =
                 Some(SpecialDefinition::Body(body));
-            self.graph.entity_mut(function).definition_emission =
-                if self.class_depth != 0 || specs.constexpr {
-                    super::function_demands::DefinitionEmission::Demanded
-                } else {
-                    super::function_demands::DefinitionEmission::Always
-                };
+            self.graph.entity_mut(function).definition_emission = if self
+                .graph
+                .entity(function)
+                .inline
+                == super::specifiers::InlinePreference::Inline
+            {
+                super::function_demands::DefinitionEmission::Demanded
+            } else {
+                super::function_demands::DefinitionEmission::Always
+            };
             let deferred = DeferredBody {
                 entity: function,
                 name: (kind == MemberKind::Constructor)

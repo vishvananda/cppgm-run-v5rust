@@ -13,6 +13,88 @@ use crate::{
 };
 
 #[test]
+fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
+    use super::expression_facts::{DestructorTarget, ObjectSource};
+    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+    let source = SourceBuffer::new(b"using I=int;struct A{~A(){}};struct B{int n;};void f(volatile I*p,const A*q,B*r){p->~I();q->~A();r->~B();}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"destructor-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let syntax_count = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_lowering();
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(syntax_count, tree.expressions.mark());
+    let function = *tree.decl_lists.get(declarations).last().unwrap();
+    let DeclKind::Function { body, .. } = tree.declarations.get(function).kind else {
+        panic!("function");
+    };
+    let Body::Parsed(body) = tree.bodies.get(body) else {
+        panic!("parsed body");
+    };
+    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+        panic!("compound");
+    };
+    for (index, &statement) in tree.stmt_lists.get(statements).iter().enumerate() {
+        let StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+            panic!("call statement");
+        };
+        let ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+            panic!("call");
+        };
+        let facts = graph.expression_facts.get(call).unwrap();
+        let designation = graph.expression_facts.get(callee).unwrap();
+        let object = designation.object.unwrap();
+        let ObjectSource::Explicit { expression, arrow } = object.source else {
+            panic!("explicit object");
+        };
+        assert!(arrow);
+        assert!(matches!(
+            tree.expressions.get(expression).kind,
+            ExprKind::Id(_)
+        ));
+        assert!(designation.conversion.is_none());
+        if index == 0 {
+            assert!(matches!(facts.destructor, Some(DestructorTarget::Scalar)));
+            assert!(facts.call.is_none());
+            assert_eq!(graph.types.get(object.ty).cv, Cv(2));
+        } else {
+            let Some(DestructorTarget::Class(binding)) = facts.destructor else {
+                panic!("class target");
+            };
+            let class = graph.class_of(object.ty).unwrap();
+            assert_eq!(
+                graph
+                    .entity(graph.binding(binding).entity)
+                    .member_function
+                    .unwrap()
+                    .class,
+                class
+            );
+            assert!(facts.call.is_some());
+            if index == 1 {
+                assert_eq!(graph.types.get(object.ty).cv, Cv::CONST);
+                assert_eq!(graph.entity(class).declared_destructor, Some(binding));
+            } else {
+                assert_eq!(graph.entity(class).implicit_destructor, Some(binding));
+                assert!(graph.entity(class).declared_destructor.is_none());
+                assert!(
+                    graph
+                        .member_function(
+                            graph
+                                .entity(graph.binding(binding).entity)
+                                .member_function
+                                .unwrap()
+                        )
+                        .is_none()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
     use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
     let source = SourceBuffer::new(b"int f(){const unsigned value=17;struct A{unsigned read(){return value;}unsigned own(unsigned value){return value;}};return 0;}".to_vec()).unwrap();

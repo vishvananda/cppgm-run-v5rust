@@ -92,6 +92,11 @@ pub(super) enum CallForm {
     Operator,
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum DestructorTarget {
+    Scalar,
+    Class(super::graph::BindingId),
+}
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum GlvalueKind {
     Ordinary,
     BitField,
@@ -116,6 +121,7 @@ pub(super) struct ExprFacts {
     pub function: Option<super::graph::BindingId>,
     pub call_form: CallForm,
     pub call: Option<super::function_resolution::CallTarget>,
+    pub destructor: Option<DestructorTarget>,
     pub anonymous_member: Option<super::graph::BindingId>,
     // Explicit designation retains the selected entity independently of spelling.
     pub member: Option<super::graph::BindingId>,
@@ -167,6 +173,7 @@ impl ExprFacts {
             function: None,
             call_form: CallForm::Ordinary,
             call: None,
+            destructor: None,
             anonymous_member: None,
             member: None,
             member_naming: None,

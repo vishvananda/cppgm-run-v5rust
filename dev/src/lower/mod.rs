@@ -112,6 +112,42 @@ pub(crate) fn lower_unit(
             ast::DeclKind::SpecialMember { declarator, .. } => {
                 let entity = graph.lower_declared(declarator)?;
                 let facts = graph.lower_function(entity)?;
+                if matches!(facts.name, sema::lowering::FunctionName::Destructor(_)) {
+                    if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
+                    {
+                        let base = construction::Entry::DestructorBase(entity);
+                        function::lower(
+                            &mut output.program,
+                            &mut symbols,
+                            graph,
+                            tree,
+                            base,
+                            graph.lower_function_body(entity),
+                            budget,
+                        )?;
+                        symbols.stream_definition(
+                            &mut output.program,
+                            &mut output.definitions,
+                            base,
+                        )?;
+                        let entry = construction::Entry::Function(entity);
+                        function::lower(
+                            &mut output.program,
+                            &mut symbols,
+                            graph,
+                            tree,
+                            entry,
+                            graph.lower_function_body(entity),
+                            budget,
+                        )?;
+                        symbols.stream_definition(
+                            &mut output.program,
+                            &mut output.definitions,
+                            entry,
+                        )?;
+                    }
+                    continue;
+                }
                 if facts.emission == crate::sema::lowering::Emission::Always {
                     let id = graph
                         .lower_construction(entity)
@@ -257,6 +293,7 @@ pub(crate) fn lower_unit(
         graph,
         &mut output.definitions,
     )?;
+    output.definitions.release_held();
     globals::finish(&mut output.program, &mut symbols, graph)?;
     if let Some(symbol) = symbols.empty_initialization {
         output.initializer = Some(symbol);

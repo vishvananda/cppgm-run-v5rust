@@ -175,6 +175,9 @@ impl Analyzer<'_> {
             }
             facts
         };
+        if let Some(target) = facts.destructor {
+            return self.destructor_call(id, arguments, target);
+        }
         let facts = if let Some(class) = self.graph.class_of(facts.ty) {
             let location = self.tree.expressions.get(id).location;
             if !self.graph.entity(class).complete {
@@ -520,7 +523,7 @@ impl Analyzer<'_> {
         }
         let mut facts = self.graph.expression_facts.get(id)?;
         if facts.object.is_some()
-            && facts.functions.is_some()
+            && (facts.functions.is_some() || facts.destructor.is_some())
             && self.ordinary_function_operand(facts).is_none()
         {
             // The frozen implicit_sequence accepts only a lone static

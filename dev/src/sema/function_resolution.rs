@@ -194,7 +194,9 @@ impl Analyzer<'_> {
     }
     pub(super) fn check_bound_function(&self, id: ast::ExprId) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.object.is_some() && (facts.functions.is_some() || facts.function.is_some()) {
+        if facts.object.is_some()
+            && (facts.functions.is_some() || facts.function.is_some() || facts.destructor.is_some())
+        {
             return Err(Error::at(
                 self.tree.expressions.get(id).location,
                 "a member function must be called",

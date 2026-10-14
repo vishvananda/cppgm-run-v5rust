@@ -515,6 +515,20 @@ impl Function<'_, '_, '_, '_> {
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
+        if self.graph.lower_destructor_evaluation_only(id)? {
+            let callee = self.without_parentheses(callee_expression);
+            let ExprKind::Member { base, op, .. } = self.tree.expressions.get(callee).kind else {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "destructor call without member",
+                )));
+            };
+            if op.token.as_punctuator() == Some(P::Arrow) {
+                self.operand(base, Context::Operand)?;
+            } else {
+                self.address(base)?;
+            }
+            return self.zero(source);
+        }
         let target = self.graph.lower_call(id)?;
         let function_type = match target {
             CallTarget::Direct(entity) => {

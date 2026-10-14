@@ -181,6 +181,13 @@ impl Analyzer<'_> {
             match kind {
                 ExprKind::Throw(_) => return Ok(true),
                 ExprKind::Call { callee, arguments } if !facts.functional_call => {
+                    if matches!(
+                        facts.destructor,
+                        Some(super::expression_facts::DestructorTarget::Scalar)
+                    ) {
+                        self.throw_work.push((callee, next));
+                        continue;
+                    }
                     match facts
                         .call
                         .ok_or(Error::Invariant("throw query call without target"))?

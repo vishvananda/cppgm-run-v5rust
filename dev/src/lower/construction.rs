@@ -24,17 +24,20 @@ pub(super) enum Variant {
 pub(super) enum Entry {
     Function(EntityId),
     Constructor(ConstructorId, Variant),
+    DestructorBase(EntityId),
 }
 impl Entry {
     pub(super) fn facts(self, graph: &Graph) -> Result<FunctionFacts, Error> {
         Ok(match self {
-            Self::Function(entity) => graph.lower_function(entity)?,
+            Self::Function(entity) | Self::DestructorBase(entity) => {
+                graph.lower_function(entity)?
+            }
             Self::Constructor(id, _) => graph.lower_constructor_function(id)?,
         })
     }
     pub(super) fn entity(self, graph: &Graph) -> Option<EntityId> {
         match self {
-            Self::Function(entity) => Some(entity),
+            Self::Function(entity) | Self::DestructorBase(entity) => Some(entity),
             Self::Constructor(id, _) => graph.lower_constructor_entity(id),
         }
     }

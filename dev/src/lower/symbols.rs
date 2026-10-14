@@ -282,7 +282,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         label: Option<ast::Name>,
     ) -> Result<String, Error> {
         let mut bytes = Vec::new();
-        if let FunctionName::Identifier(name) | FunctionName::Constructor(name) = name {
+        if let FunctionName::Destructor(name) = name {
+            bytes.push(b'~');
+            bytes.extend_from_slice(self.cursor.name(name));
+        } else if let FunctionName::Identifier(name) | FunctionName::Constructor(name) = name {
             bytes.extend_from_slice(self.cursor.name(name));
         } else if let Some(label) = label {
             crate::syntax::write_member_label(self.tree, self.cursor, label, &mut bytes).map_err(
@@ -301,7 +304,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     bytes.extend_from_slice(b"operator\"\"");
                     bytes.extend_from_slice(self.cursor.name(suffix));
                 }
-                FunctionName::Identifier(_) | FunctionName::Constructor(_) => {
+                FunctionName::Identifier(_)
+                | FunctionName::Constructor(_)
+                | FunctionName::Destructor(_) => {
                     return Err(Error::Semantic(crate::sema::Error::Invariant(
                         "ordinary function label",
                     )));
@@ -330,6 +335,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let node = match name {
             FunctionName::Constructor(_) => Node::Terminal {
                 kind: abi::vocabulary::Terminal::ConstructorComplete,
+                inherited: None,
+            },
+            FunctionName::Destructor(_) => Node::Terminal {
+                kind: abi::vocabulary::Terminal::DestructorComplete,
                 inherited: None,
             },
             FunctionName::Identifier(name) => {
@@ -784,7 +793,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 for (index, overload) in self.graph.lower_constructor_overloads(class).enumerate() {
                     self.ordinals.insert(overload, index + 1);
                 }
-            } else {
+            } else if !matches!(facts.name, FunctionName::Destructor(_)) {
                 for (index, overload) in self.graph.lower_overloads(entity)?.enumerate() {
                     self.ordinals.insert(overload, index + 1);
                 }
@@ -1254,11 +1263,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&symbol) = self.entries.get(&entry) {
             return Ok(symbol);
         }
-        let Entry::Constructor(id, variant) = entry else {
-            return Err(Error::Missing("entry kind"));
+        let (entity, variant) = match entry {
+            Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
+            Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
+            Entry::Function(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
-            && let Some(entity) = self.graph.lower_constructor_entity(id)
+            && let Some(entity) = entity
         {
             let symbol = self.function_symbol(program, entity)?;
             self.entries.insert(entry, symbol);
@@ -1275,7 +1286,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             scope = parent;
         }
         components.reverse();
-        let mut name = if let Some(entity) = self.graph.lower_constructor_entity(id) {
+        let mut name = if let Some(entity) = entity {
             self.name(entity)?.to_string()
         } else {
             components.join("__")
@@ -1310,11 +1321,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Entry::Function(entity) = entry {
             return self.metadata(program, entity, name);
         }
-        let Entry::Constructor(id, variant) = entry else {
-            return Err(Error::Missing("entry kind"));
+        let (entity, variant) = match entry {
+            Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
+            Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
+            Entry::Function(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
-            && let Some(entity) = self.graph.lower_constructor_entity(id)
+            && let Some(entity) = entity
         {
             let mut metadata = self.metadata(program, entity, name)?;
             if metadata.binding == Some(crate::lowir::vocabulary::Binding::Internal) {
@@ -1370,6 +1383,32 @@ impl<'a, 'source> Symbols<'a, 'source> {
         use super::construction::{Entry, Variant};
         if let Some(function) = entry.entity(self.graph) {
             self.name_local_classes(function)?;
+        }
+        if let Entry::Function(entity) = entry
+            && matches!(
+                self.graph.lower_function(entity)?.name,
+                FunctionName::Destructor(_)
+            )
+        {
+            if self.entries.contains_key(&Entry::DestructorBase(entity)) {
+                return Ok(());
+            }
+            let facts = self.graph.lower_function(entity)?;
+            let encoding = self.encode_function(&facts, Variant::Base)?;
+            let mut bytes = Vec::new();
+            abi::encoder::Encoder::encode(
+                &self.abi,
+                abi::encoder::Target::Entity(encoding),
+                &mut bytes,
+                self.budget,
+            )?;
+            let object = program.names.intern_bytes(&bytes)?;
+            self.table
+                .entry_aliases
+                .push(crate::lowir::model::ObjectAlias {
+                    object,
+                    target: symbol,
+                });
         }
         if let Entry::Constructor(id, Variant::Complete) = entry {
             if let Some(&base) = self.entries.get(&Entry::Constructor(id, Variant::Base))
@@ -1429,7 +1468,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             None
         };
-        output.stream(program, family)
+        output.stream(program, family)?;
+        if let super::construction::Entry::Function(entity) = entry
+            && self.graph.lower_destructor_inert(entity, self.tree)?
+        {
+            output.hold_last();
+        }
+        Ok(())
     }
     fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         let facts = self.graph.lower_function(entity)?;
@@ -1457,13 +1502,23 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )?);
         }
         let parent = self.scope(facts.home)?;
-        let terminal = if matches!(facts.name, FunctionName::Constructor(_)) {
+        let terminal = if matches!(
+            facts.name,
+            FunctionName::Constructor(_) | FunctionName::Destructor(_)
+        ) {
             self.abi.intern(
                 Node::Terminal {
-                    kind: if variant == super::construction::Variant::Base {
-                        abi::vocabulary::Terminal::ConstructorBase
-                    } else {
-                        abi::vocabulary::Terminal::ConstructorComplete
+                    kind: match (facts.name, variant) {
+                        (FunctionName::Destructor(_), super::construction::Variant::Base) => {
+                            abi::vocabulary::Terminal::DestructorBase
+                        }
+                        (FunctionName::Destructor(_), _) => {
+                            abi::vocabulary::Terminal::DestructorComplete
+                        }
+                        (_, super::construction::Variant::Base) => {
+                            abi::vocabulary::Terminal::ConstructorBase
+                        }
+                        _ => abi::vocabulary::Terminal::ConstructorComplete,
                     },
                     inherited: None,
                 },

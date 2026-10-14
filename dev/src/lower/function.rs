@@ -113,7 +113,14 @@ pub(super) fn lower<'a>(
         }));
     }
     let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let metadata = symbols.entry_metadata(program, entry, &name)?;
+    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
+    if matches!(
+        facts.name,
+        crate::sema::lowering::FunctionName::Destructor(_)
+    ) && facts.internal
+    {
+        metadata.flags |= 4;
+    }
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters: Vec<_> = names
         .iter()

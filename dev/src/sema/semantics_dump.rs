@@ -97,7 +97,14 @@ impl Graph {
                         .graph
                         .function_origin(printer.graph.binding(binding).entity)
                         .map_err(|_| io::Error::other("demanded function without origin"))?;
-                    if let Some(
+                    if let Some(key) = printer
+                        .graph
+                        .entity(printer.graph.binding(binding).entity)
+                        .member_function
+                        && printer.graph.entity(key.class).implicit_destructor == Some(binding)
+                    {
+                        printer.implicit_destructor_definition(binding, key.class, depth)?;
+                    } else if let Some(
                         super::special_members::SpecialDefinition::Body(body)
                         | super::special_members::SpecialDefinition::Defaulted {
                             body: Some(body),
@@ -458,10 +465,32 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             )?;
         } else if let Some(name) = entity.special_name {
             crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
+        } else if let Some(key) = entity.member_function
+            && key.kind == super::graph::MemberKind::Destructor
+        {
+            self.output.write_all(b"~")?;
+            self.name(self.graph.entity(key.class).name)?;
         } else {
             self.name(binding.name)?;
         }
         Ok(())
+    }
+    fn implicit_destructor_definition(
+        &mut self,
+        binding: BindingId,
+        class: super::graph::EntityId,
+        depth: usize,
+    ) -> io::Result<()> {
+        self.binding_header(binding, "function-definition", depth)?;
+        self.indent(depth + 1)?;
+        self.output.write_all(b"parameter this pointer to ")?;
+        self.ty(self
+            .graph
+            .entity(class)
+            .ty
+            .ok_or_else(|| io::Error::other("implicit destructor class without type"))?)?;
+        writeln!(self.output)?;
+        self.line("compound-statement", depth + 1)
     }
     fn binding_header(&mut self, id: BindingId, label: &str, depth: usize) -> io::Result<()> {
         let binding = self.graph.binding(id);
@@ -1012,6 +1041,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         facts: super::expression_facts::ExprFacts,
         depth: usize,
     ) -> io::Result<()> {
+        if matches!(
+            facts.destructor,
+            Some(super::expression_facts::DestructorTarget::Scalar)
+        ) {
+            write!(self.output, " {}:", op.token.name())?;
+            self.expr(base, depth + 1);
+            return Ok(());
+        }
         let binding = facts
             .member
             .ok_or_else(|| io::Error::other("member without designation"))?;
@@ -1257,38 +1294,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
             }
             ExprKind::Call { callee, arguments } => {
-                writeln!(self.output)?;
-                match facts
-                    .call
-                    .ok_or_else(|| io::Error::other("call without target"))?
-                {
-                    CallTarget::Direct(binding) => {
-                        self.binding_header(binding, "callee", depth + 1)?;
-                        let entity = self.graph.binding(binding).entity;
-                        for default in self
-                            .graph
-                            .entity(entity)
-                            .defaults
-                            .iter()
-                            .skip(self.tree.expr_lists.get(arguments).len())
-                            .rev()
-                            .flatten()
-                        {
-                            self.expr(default.expression, depth + 1);
-                        }
-                    }
-                    CallTarget::Indirect(_, _) => (),
-                }
-                for &id in self.tree.expr_lists.get(arguments).iter().rev() {
-                    self.expr(id, depth + 1);
-                }
-                if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
-                    self.expr(callee, depth + 1);
-                } else if let Some(CallTarget::Direct(binding)) = facts.call {
-                    self.work
-                        .push((Item::ObjectReceiver(callee, binding), depth + 1));
-                }
-                return Ok(());
+                return self.call_node(callee, arguments, facts, depth);
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -1319,6 +1325,53 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             _ => (),
         }
         writeln!(self.output)
+    }
+    fn call_node(
+        &mut self,
+        callee: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        facts: super::expression_facts::ExprFacts,
+        depth: usize,
+    ) -> io::Result<()> {
+        writeln!(self.output)?;
+        if matches!(
+            facts.destructor,
+            Some(super::expression_facts::DestructorTarget::Scalar)
+        ) {
+            self.expr(callee, depth + 1);
+            return Ok(());
+        }
+        match facts
+            .call
+            .ok_or_else(|| io::Error::other("call without target"))?
+        {
+            CallTarget::Direct(binding) => {
+                self.binding_header(binding, "callee", depth + 1)?;
+                let entity = self.graph.binding(binding).entity;
+                for default in self
+                    .graph
+                    .entity(entity)
+                    .defaults
+                    .iter()
+                    .skip(self.tree.expr_lists.get(arguments).len())
+                    .rev()
+                    .flatten()
+                {
+                    self.expr(default.expression, depth + 1);
+                }
+            }
+            CallTarget::Indirect(_, _) => (),
+        }
+        for &id in self.tree.expr_lists.get(arguments).iter().rev() {
+            self.expr(id, depth + 1);
+        }
+        if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
+            self.expr(callee, depth + 1);
+        } else if let Some(CallTarget::Direct(binding)) = facts.call {
+            self.work
+                .push((Item::ObjectReceiver(callee, binding), depth + 1));
+        }
+        Ok(())
     }
     fn token(&mut self, op: ast::Operator) -> io::Result<()> {
         write!(
