@@ -13,6 +13,39 @@ use super::{
 use crate::syntax::ast::{self, ExprKind};
 
 impl Analyzer<'_> {
+    fn constructor_may_throw(
+        &mut self,
+        id: super::construction::ConstructorId,
+        expression: ast::ExprId,
+        depth: u16,
+    ) -> Result<bool, Error> {
+        let plan = self.graph.constructors.get(id);
+        if let Some(binding) = plan.binding {
+            let entity = self.graph.binding(binding).entity;
+            if self.function_may_throw(entity)? {
+                return Ok(true);
+            }
+            let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expression).kind
+            else {
+                return Err(Error::Invariant("constructor throw query without list"));
+            };
+            let written = self.tree.expr_lists.get(elements).len();
+            for default in self
+                .graph
+                .entity(entity)
+                .defaults
+                .iter()
+                .skip(written)
+                .rev()
+                .flatten()
+            {
+                self.throw_work.push((default.expression, depth + 1));
+            }
+            Ok(false)
+        } else {
+            Ok(!plan.nothrow)
+        }
+    }
     pub(super) fn initializer_may_throw(
         &mut self,
         initializer: ast::Initializer,
@@ -125,7 +158,13 @@ impl Analyzer<'_> {
             if let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind
                 && facts.category == ValueCategory::Prvalue
             {
-                if !matches!(kind, ExprKind::Braced { .. }) || !self.graph.aggregate_class(class) {
+                if let Some(constructor) = facts.constructor {
+                    if self.constructor_may_throw(constructor, id, depth)? {
+                        return Ok(true);
+                    }
+                } else if !matches!(kind, ExprKind::Braced { .. })
+                    || !self.graph.aggregate_class(class)
+                {
                     return Err(Error::Missing("class temporary exception queries"));
                 }
                 if self.aggregate_destruction_may_throw(class)? {

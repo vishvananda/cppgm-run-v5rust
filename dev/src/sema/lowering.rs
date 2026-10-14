@@ -1,6 +1,7 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::builtin_calls::BuiltinFunction;
+pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
@@ -16,6 +17,7 @@ use crate::{lex::identifiers::NameId, syntax::ast};
 pub(crate) struct ConstructorView<'a> {
     pub object_pointer: TypeId,
     pub union: bool,
+    pub zero_before_value: bool,
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
     pub bases: &'a [ConstructorId],
     pub subobjects: &'a [(EntityId, ConstructorId)],
@@ -126,11 +128,23 @@ impl Graph {
         let plan = self.constructors.get(id);
         ConstructorView {
             object_pointer: plan.object_pointer,
+            zero_before_value: plan.binding.is_none_or(|binding| {
+                matches!(
+                    self.entity(self.binding(binding).entity).special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+                )
+            }),
             union: self.entity(plan.class).key == crate::lex::vocabulary::Keyword::Union,
             members: &plan.members,
             bases: &plan.bases,
             subobjects: &plan.subobjects,
         }
+    }
+    pub(crate) fn lower_constructor_arguments(
+        &self,
+        entity: EntityId,
+    ) -> Option<ConstructorArguments> {
+        self.entity(entity).constructor_arguments
     }
     pub(crate) fn lower_construction(&self, entity: EntityId) -> Option<ConstructorId> {
         self.entity(entity).constructor
@@ -720,8 +734,26 @@ impl Graph {
         }
         false
     }
+    pub(crate) fn lower_contiguous_zero(&self, ty: TypeId) -> Result<bool, Error> {
+        if self.lower_cv(ty) & 2 != 0 {
+            return Ok(false);
+        }
+        let TypeView::Class(class) = self.lower_type(ty)? else {
+            return Err(Error::Invariant("class zeroing without class"));
+        };
+        let super::layout::LayoutState::Value {
+            contains_volatile_or_union,
+            ..
+        } = self.entity(class).layout
+        else {
+            return Err(Error::Invariant("class zeroing without layout"));
+        };
+        Ok(!contains_volatile_or_union)
+    }
     pub(crate) fn lower_class_layout(&self, entity: EntityId) -> Result<(u64, u8), Error> {
-        let super::layout::LayoutState::Value { size, alignment } = self.entity(entity).layout
+        let super::layout::LayoutState::Value {
+            size, alignment, ..
+        } = self.entity(entity).layout
         else {
             return Err(Error::Invariant("class lowering without completed layout"));
         };

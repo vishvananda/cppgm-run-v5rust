@@ -8,7 +8,9 @@ use crate::{
     },
     sema::{
         Graph,
-        lowering::{ConstructorId, EntityId, FunctionFacts, TypeId, TypeView},
+        lowering::{
+            ConstructorArguments, ConstructorId, EntityId, FunctionFacts, TypeId, TypeView,
+        },
     },
     syntax::ast,
 };
@@ -38,7 +40,7 @@ impl Entry {
     }
 }
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn default_construct(
+    pub(super) fn construct_local(
         &mut self,
         entity: EntityId,
         ty: TypeId,
@@ -51,6 +53,25 @@ impl Function<'_, '_, '_, '_> {
                 "object without constructor",
             )))?;
         let object = self.emit(I::Addr(slot), ty)?.value;
+        let arguments = self.graph.lower_constructor_arguments(entity);
+        if matches!(arguments, Some(ConstructorArguments::Value)) {
+            if self.graph.lower_constructor(id).zero_before_value {
+                // Value-initialization zeroes storage before any nontrivial call.
+                self.zero_class_object(ty, object)?;
+            }
+            if self.graph.lower_constructor_trivial(id) {
+                return Ok(());
+            }
+        }
+        let single;
+        let written = match arguments {
+            Some(ConstructorArguments::Values(values)) => self.tree.expr_lists.get(values),
+            Some(ConstructorArguments::Single(id)) => {
+                single = [id];
+                &single
+            }
+            Some(ConstructorArguments::Value) | None => &[],
+        };
         let entry = Entry::Constructor(id, Variant::Complete);
         let facts = entry.facts(self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
@@ -59,16 +80,26 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let mut values = vec![object];
-        for (index, &parameter) in parameters.iter().enumerate() {
+        for index in 0..parameters.len().max(written.len()) {
+            let parameter = parameters.get(index).copied();
+            if parameter.is_none() {
+                let value = self.operand(written[index], Context::Argument)?;
+                values.push(value.value);
+                continue;
+            }
+            let parameter = parameter.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "constructor argument type",
+            )))?;
             let function =
                 entry
                     .entity(self.graph)
                     .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                         "implicit constructor parameters",
                     )))?;
-            let default = self
-                .graph
-                .lower_default(function, index)
+            let default = written
+                .get(index)
+                .copied()
+                .or_else(|| self.graph.lower_default(function, index))
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "default constructor without argument",
                 )))?;
@@ -93,6 +124,41 @@ impl Function<'_, '_, '_, '_> {
             signature: None,
             copy_elision: false,
         }))?;
+        Ok(())
+    }
+    fn zero_class_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+        let (size, alignment) = super::types::layout(self.graph, ty)?;
+        if self.graph.lower_contiguous_zero(ty)? {
+            return self.effect(I::ZeroInit(size, alignment, object));
+        }
+        let mut offset = 0;
+        while offset < size {
+            let left = size - offset;
+            let (bytes, unit) = if left >= 8 {
+                (8, Type::I64)
+            } else if left >= 4 {
+                (4, Type::I32)
+            } else if left >= 2 {
+                (2, Type::I16)
+            } else {
+                (1, Type::I8)
+            };
+            let address = if offset == 0 {
+                object
+            } else {
+                let index = self.builder.integer(u128::from(offset))?;
+                self.emit(I::Index(Type::I8, None, object, index), ty)?
+                    .value
+            };
+            let zero = self.builder.integer(0)?;
+            self.effect(I::Store(
+                Facts::memory(false, bytes != 1),
+                unit,
+                zero,
+                address,
+            ))?;
+            offset += bytes;
+        }
         Ok(())
     }
     pub(super) fn initialize_constructor(

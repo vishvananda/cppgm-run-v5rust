@@ -7,7 +7,11 @@ use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
 pub(super) enum LayoutState {
     NotStarted,
     InProgress,
-    Value { size: u64, alignment: u64 },
+    Value {
+        size: u64,
+        alignment: u64,
+        contains_volatile_or_union: bool,
+    },
     Unsupported,
 }
 fn round_up(value: u64, alignment: u64) -> u64 {
@@ -155,7 +159,10 @@ impl Analyzer<'_> {
                 self.layout_work.pop();
             }
         }
-        let LayoutState::Value { size, alignment } = self.graph.entity(root).layout else {
+        let LayoutState::Value {
+            size, alignment, ..
+        } = self.graph.entity(root).layout
+        else {
             return Err(Error::Invariant("uncompleted layout"));
         };
         Ok((size, alignment))
@@ -163,6 +170,7 @@ impl Analyzer<'_> {
     fn place_members(&mut self, entity: EntityId, location: SourceOffset) -> Result<(), Error> {
         let union = self.graph.entity(entity).key == Keyword::Union;
         let mut size = 0u64;
+        let mut contains_volatile_or_union = union;
         let mut alignment = 1;
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
@@ -172,6 +180,19 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("member without type"))?;
             let (bytes, natural) = self.type_size(ty, location)?;
+            let mut scalar = ty;
+            while let TypeKind::Array { element, .. } = self.graph.types.get(scalar).kind {
+                scalar = element;
+            }
+            contains_volatile_or_union |= self.graph.types.get(scalar).cv.0 & 2 != 0;
+            if let TypeKind::Class(child) = self.graph.types.get(scalar).kind
+                && let LayoutState::Value {
+                    contains_volatile_or_union: child,
+                    ..
+                } = self.graph.entity(child).layout
+            {
+                contains_volatile_or_union |= child;
+            }
             let offset = if union { 0 } else { round_up(size, natural) };
             self.graph.entity_mut(member).member_offset = Some(offset);
             size = if union {
@@ -188,6 +209,7 @@ impl Analyzer<'_> {
             }
         }
         self.graph.entity_mut(entity).layout = LayoutState::Value {
+            contains_volatile_or_union,
             size: round_up(size.max(1), alignment),
             alignment,
         };

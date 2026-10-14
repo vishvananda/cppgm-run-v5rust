@@ -34,7 +34,7 @@ pub(super) struct Constructor {
     pub presentation_type: TypeId,
     pub callable_type: TypeId,
     pub nothrow: bool,
-    deleted: bool,
+    pub(super) deleted: bool,
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub bases: Vec<ConstructorId>,
@@ -190,7 +190,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn default_constructor(
+    pub(super) fn default_constructor(
         &mut self,
         class: EntityId,
         location: SourceOffset,
@@ -560,7 +560,10 @@ impl Analyzer<'_> {
         Ok(id)
     }
 
-    fn declared_constructor_plan(&mut self, binding: BindingId) -> Result<ConstructorId, Error> {
+    pub(super) fn declared_constructor_plan(
+        &mut self,
+        binding: BindingId,
+    ) -> Result<ConstructorId, Error> {
         let entity = self.graph.binding(binding).entity;
         if let Some(id) = self.graph.entity(entity).constructor {
             return Ok(id);

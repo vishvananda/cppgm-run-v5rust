@@ -38,9 +38,16 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("aggregate without list"));
         };
         if !self.graph.aggregate_class(class) {
-            return Err(Error::Missing(
-                "nonaggregate class constructor list initialization",
-            ));
+            self.initialize_class_object(
+                target,
+                ast::Initializer {
+                    location: self.tree.expressions.get(id).location,
+                    kind: ast::InitializerKind::Assign(id),
+                },
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+            return Ok(target);
         }
         let location = self.tree.expressions.get(id).location;
         let mut next = 0;

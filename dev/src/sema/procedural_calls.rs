@@ -17,10 +17,49 @@ use crate::{
 };
 use std::cmp::Ordering;
 
+#[derive(Clone, Copy)]
+pub(super) enum Candidates {
+    Functions(super::function_resolution::OverloadId),
+    Constructors {
+        class: super::graph::EntityId,
+        converting: bool,
+    },
+}
+impl Candidates {
+    fn bindings(self, graph: &super::graph::Graph) -> &[BindingId] {
+        match self {
+            Self::Functions(set) => graph.overloads.get(set),
+            Self::Constructors { class, .. } => &graph.entity(class).declared_constructors,
+        }
+    }
+    fn includes(self, graph: &super::graph::Graph, binding: BindingId) -> bool {
+        !matches!(
+            self,
+            Self::Constructors {
+                converting: true,
+                ..
+            }
+        ) || graph.entity(graph.binding(binding).entity).explicitness
+            != super::specifiers::Explicitness::Explicit
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CallSelection {
+    pub binding: BindingId,
+    first: usize,
+    object_count: usize,
+}
 #[derive(Default)]
 pub(super) struct CallScratch {
     candidates: Vec<(BindingId, usize)>,
     sequences: Vec<Option<ArgumentSequence>>,
+}
+impl CallScratch {
+    pub(super) fn clear(&mut self) {
+        self.candidates.clear();
+        self.sequences.clear();
+    }
 }
 #[derive(Clone, Copy)]
 struct ArgumentSequence {
@@ -162,9 +201,23 @@ impl Analyzer<'_> {
             }
             // Nested argument calls finish before this query borrows the reusable scratch.
             let mut scratch = std::mem::take(&mut self.call_scratch);
-            let chosen = self.resolve_call(id, set, arguments, scope, facts.object, &mut scratch);
-            scratch.candidates.clear();
-            scratch.sequences.clear();
+            let chosen = self.resolve_call(
+                self.tree.expressions.get(id).location,
+                Candidates::Functions(set),
+                self.tree.expr_lists.get(arguments),
+                facts.object,
+                &mut scratch,
+            );
+            let chosen = chosen.and_then(|selected| {
+                self.apply_call_arguments(
+                    selected,
+                    self.tree.expr_lists.get(arguments),
+                    scope,
+                    &scratch,
+                )?;
+                Ok(selected.binding)
+            });
+            scratch.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
             for &argument in self.tree.expr_lists.get(arguments) {
@@ -497,21 +550,22 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn resolve_call(
+    pub(super) fn resolve_call(
         &mut self,
-        id: ast::ExprId,
-        set: super::function_resolution::OverloadId,
-        arguments: List<ast::ExprId>,
-        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+        set: Candidates,
+        args: &[ast::ExprId],
         object: Option<super::expression_facts::ObjectArgument>,
         scratch: &mut CallScratch,
-    ) -> Result<BindingId, Error> {
+    ) -> Result<CallSelection, Error> {
         scratch.candidates.clear();
         scratch.sequences.clear();
-        let args = self.tree.expr_lists.get(arguments);
-        for index in 0..self.graph.overloads.get(set).len() {
-            let primary = self.graph.overloads.get(set)[index];
-            let Some(binding) = self.deduce_function_call(primary, arguments)? else {
+        for index in 0..set.bindings(&self.graph).len() {
+            let primary = set.bindings(&self.graph)[index];
+            if !set.includes(&self.graph, primary) {
+                continue;
+            }
+            let Some(binding) = self.deduce_function_call(primary, args)? else {
                 continue;
             };
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -586,7 +640,6 @@ impl Analyzer<'_> {
                 scratch.sequences.truncate(first);
             }
         }
-        let location = self.tree.expressions.get(id).location;
         if scratch.candidates.is_empty() {
             return Err(Error::at(location, "no viable function for the call"));
         }
@@ -608,7 +661,25 @@ impl Analyzer<'_> {
             }
         }
         let (binding, first) = scratch.candidates[best];
-        self.check_template_call_defaults(binding, arguments)?;
+        Ok(CallSelection {
+            binding,
+            first,
+            object_count,
+        })
+    }
+    pub(super) fn apply_call_arguments(
+        &mut self,
+        selected: CallSelection,
+        args: &[ast::ExprId],
+        scope: ScopeId,
+        scratch: &CallScratch,
+    ) -> Result<(), Error> {
+        let CallSelection {
+            binding,
+            first,
+            object_count,
+        } = selected;
+        self.check_template_call_defaults(binding, args.len())?;
         for (index, &arg) in args.iter().enumerate() {
             if let Some(sequence) = scratch.sequences[first + object_count + index] {
                 if matches!(
@@ -632,7 +703,7 @@ impl Analyzer<'_> {
                 self.ellipsis_argument(arg)?;
             }
         }
-        Ok(binding)
+        Ok(())
     }
     fn compare_candidates(
         &mut self,

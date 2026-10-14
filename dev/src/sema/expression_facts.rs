@@ -105,6 +105,7 @@ pub(super) struct ExprFacts {
     pub base_path: Option<super::inheritance::BasePathId>,
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
+    pub constructor: Option<super::construction::ConstructorId>,
     pub elided_copy: Option<super::copy_initialization::CopySelection>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +135,7 @@ impl ExprFacts {
             object: None,
             base_path: None,
             member_address_scope: None,
+            constructor: None,
             elided_copy: None,
         }
     }

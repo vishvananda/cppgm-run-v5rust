@@ -1537,7 +1537,7 @@ fn layout_is_demanded_once_and_records_only_ordinary_data_member_offsets() {
         let name=cursor.intern_name(b"B").unwrap();
         let binding=graph.binding(graph.own(graph.global,name,Filter::Elaborated).unwrap());
         let entity=graph.entity(binding.entity);
-        assert!(matches!(entity.layout, LayoutState::Value{size:20,alignment:4}));
+        assert!(matches!(entity.layout, LayoutState::Value{size:20,alignment:4,..}));
         assert_eq!(entity.members.len(),2);
         assert_eq!(graph.entity(entity.members[0]).member_offset,Some(0));
         assert_eq!(graph.entity(entity.members[1]).member_offset,Some(16));

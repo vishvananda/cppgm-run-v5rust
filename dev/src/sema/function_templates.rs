@@ -11,7 +11,7 @@ use super::{
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
-use crate::syntax::{ast, storage::List};
+use crate::syntax::ast;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -589,7 +589,7 @@ impl Analyzer<'_> {
     pub(super) fn deduce_function_call(
         &mut self,
         binding: BindingId,
-        call_arguments: List<ast::ExprId>,
+        args: &[ast::ExprId],
     ) -> Result<Option<BindingId>, Error> {
         let Some(head) = self.function_template_head(binding)? else {
             return Ok(Some(binding));
@@ -601,7 +601,6 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("template call without type"))?;
         let count = self.graph.types.function_parameter_count(ty)?;
-        let args = self.tree.expr_lists.get(call_arguments);
         let TypeKind::Function { variadic, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("template is no function"));
         };
@@ -804,7 +803,7 @@ impl Analyzer<'_> {
     pub(super) fn check_template_call_defaults(
         &self,
         binding: BindingId,
-        arguments: List<ast::ExprId>,
+        count: usize,
     ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
         let primary = self
@@ -818,7 +817,6 @@ impl Analyzer<'_> {
         }
         if let Some(clause) = primary.function_parameters {
             let parameters = self.tree.parameters.get(clause.parameters);
-            let count = self.tree.expr_lists.get(arguments).len();
             if count < parameters.len()
                 && parameters[count..]
                     .iter()

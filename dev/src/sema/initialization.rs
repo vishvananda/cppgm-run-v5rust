@@ -35,7 +35,18 @@ impl Analyzer<'_> {
                 .home
                 .and_then(|home| self.graph.scope(home).owner);
         }
-        let completed = self.object_initializer(initializer, scope, target, location);
+        let completed = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+            self.initialize_class_object(target, initializer, scope, location)
+                .map(|selected| {
+                    if let Some((constructor, arguments)) = selected {
+                        self.graph.entity_mut(entity).constructor = Some(constructor);
+                        self.graph.entity_mut(entity).constructor_arguments = Some(arguments);
+                    }
+                    target
+                })
+        } else {
+            self.object_initializer(initializer, scope, target, location)
+        };
         self.member_initializer_class = saved;
         let completed = completed?;
         self.graph.complete_variable_type(binding, completed)?;
@@ -69,13 +80,8 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
-            if let InitializerKind::Assign(id) | InitializerKind::Braced(id) = initializer.kind
-                && matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
-            {
-                self.class_list_initialize(id, target, scope)?;
-                return Ok(target);
-            }
-            return self.class_copy_initializer(target, initializer, scope, location);
+            self.initialize_class_object(target, initializer, scope, location)?;
+            return Ok(target);
         }
         let (id, direct) = match initializer.kind {
             InitializerKind::Assign(id) | InitializerKind::Braced(id)

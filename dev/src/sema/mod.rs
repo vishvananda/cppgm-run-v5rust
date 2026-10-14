@@ -9,6 +9,7 @@ mod constant_mutations;
 mod constant_pointer_operations;
 mod constants;
 mod construction;
+mod constructor_initialization;
 mod copy_initialization;
 mod data_members;
 mod declarations;

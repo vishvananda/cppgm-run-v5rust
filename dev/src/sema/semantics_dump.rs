@@ -103,6 +103,11 @@ impl Graph {
                         .graph
                         .entity(printer.graph.binding(binding).entity)
                         .function_definition
+                        && printer
+                            .graph
+                            .entity(printer.graph.binding(binding).entity)
+                            .special_definition
+                            .is_none()
                     {
                         let DeclKind::Function { body, .. } =
                             printer.tree.declarations.get(declaration).kind
@@ -555,7 +560,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .variable
                 .is_some_and(|properties| properties.is_extern)
         {
-            self.constructor_action(id, constructor, depth + 1)?;
+            self.constructor_action(id, constructor, initializer, depth + 1)?;
             return Ok(());
         }
         if let Some(init) = initializer {
@@ -646,6 +651,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         &mut self,
         variable: BindingId,
         id: super::construction::ConstructorId,
+        initializer: Option<ast::Initializer>,
         depth: usize,
     ) -> io::Result<()> {
         let ty = self
@@ -666,6 +672,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(b"constructor-action ")?;
         self.constructor_name(id, false)?;
         writeln!(self.output)?;
+        if let Some(initializer) = initializer {
+            match initializer.kind {
+                ast::InitializerKind::Parenthesized(arguments) => {
+                    for &argument in self.tree.expr_lists.get(arguments) {
+                        self.expression(argument, depth + 1, false, None)?;
+                    }
+                }
+                ast::InitializerKind::Assign(expression)
+                | ast::InitializerKind::Braced(expression) => {
+                    self.expression(expression, depth + 1, false, None)?;
+                }
+                _ => return Err(io::Error::other("constructor initializer shape")),
+            }
+            return Ok(());
+        }
         if self.graph.constructors.get(id).binding.is_some() {
             return Ok(());
         }

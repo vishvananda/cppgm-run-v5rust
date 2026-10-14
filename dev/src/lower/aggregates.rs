@@ -46,9 +46,12 @@ impl Function<'_, '_, '_, '_> {
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
         self.symbols.require_trivial_storage(ty)?;
+        if initializer.is_some() && self.graph.lower_constructor_arguments(entity).is_some() {
+            return self.construct_local(entity, ty, slot);
+        }
         let Some(initializer) = initializer else {
             if !self.graph.lower_trivial_default_construction(entity)? {
-                return self.default_construct(entity, ty, slot);
+                return self.construct_local(entity, ty, slot);
             }
             self.emit(I::Addr(slot), ty)?;
             return Ok(());
