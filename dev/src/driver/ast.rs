@@ -16,6 +16,24 @@ pub enum EmitMode {
     Ast,
     Types,
     Semantics,
+    LowIr,
+}
+#[derive(Default)]
+pub struct LowIrOutput {
+    output: crate::lower::Output,
+}
+impl LowIrOutput {
+    /// Render the typed program accumulated across translation units.
+    ///
+    /// # Errors
+    /// Returns an output failure.
+    pub fn write(&self, output: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        output.write_all(&self.output.definitions)
+    }
+}
+pub enum Destination<'a> {
+    Text(&'a mut dyn std::io::Write),
+    LowIr(&'a mut LowIrOutput),
 }
 /// Parse and print one translation unit using the shared typed front end.
 ///
@@ -25,7 +43,7 @@ pub fn emit_unit(
     source: &SourceBuffer,
     path: &[u8],
     values: &PredefinedValues,
-    output: &mut (impl std::io::Write + ?Sized),
+    destination: Destination<'_>,
     ordinal: usize,
     stack_budget: crate::support::stack::StackBudget,
     mode: EmitMode,
@@ -66,7 +84,7 @@ pub fn emit_unit(
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
         let analysis =
             crate::sema::Analyzer::new(tree, cursor, stack_budget).and_then(|mut analyzer| {
-                analyzer.set_semantics(mode == EmitMode::Semantics);
+                analyzer.set_semantics(matches!(mode, EmitMode::Semantics | EmitMode::LowIr));
                 analyzer.analyze(declarations)
             });
         Some(analysis.map_err(|error| match error {
@@ -83,6 +101,60 @@ pub fn emit_unit(
             }
             crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
         })?)
+    };
+    let output = match destination {
+        Destination::LowIr(output) => {
+            let graph = graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
+            let (tree, cursor, declarations) = unit
+                .semantic_inputs()
+                .map_err(|_| AstToolError::Internal("missing syntax"))?;
+            crate::lower::lower_unit(
+                &mut output.output,
+                &graph,
+                tree,
+                cursor,
+                declarations,
+                stack_budget,
+            )
+            .map_err(|error| match error {
+                crate::lower::Error::Missing(group)
+                | crate::lower::Error::Semantic(crate::sema::Error::Missing(group)) => {
+                    AstToolError::Missing(group)
+                }
+                crate::lower::Error::Semantic(crate::sema::Error::Limit(message)) => {
+                    match unit.describe(&ParseError::Syntax {
+                        location: crate::support::source::SourceOffset(0),
+                        message,
+                    }) {
+                        Ok(bytes) => AstToolError::Diagnostic(bytes),
+                        Err(error) => AstToolError::Initialization(error),
+                    }
+                }
+                crate::lower::Error::Semantic(
+                    crate::sema::Error::Diagnostic { location, message }
+                    | crate::sema::Error::NonConstant { location, message },
+                ) => match unit.describe(&ParseError::Syntax { location, message }) {
+                    Ok(bytes) => AstToolError::Diagnostic(bytes),
+                    Err(error) => AstToolError::Initialization(error),
+                },
+                crate::lower::Error::Semantic(crate::sema::Error::Invariant(message)) => {
+                    AstToolError::Internal(message)
+                }
+                crate::lower::Error::Abi(error) => match error {
+                    crate::abi::Error::Diagnostic(bytes) => AstToolError::Diagnostic(bytes),
+                    crate::abi::Error::NotImplemented(group) => AstToolError::Missing(group),
+                    crate::abi::Error::StorageLimit => AstToolError::Internal("ABI storage limit"),
+                },
+                crate::lower::Error::Ir(error) => match error {
+                    crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
+                    crate::lowir::Error::Output(error) => AstToolError::Output(error),
+                    crate::lowir::Error::Limit => AstToolError::Internal("LowIR storage limit"),
+                    _ => AstToolError::Internal("typed LowIR construction failed"),
+                },
+            })?;
+            return Ok(());
+        }
+        Destination::Text(output) => output,
     };
     writeln!(output, "start translation unit {ordinal}").map_err(AstToolError::Output)?;
     if let Some(graph) = graph {

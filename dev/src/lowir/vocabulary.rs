@@ -1,6 +1,6 @@
 //! `LowIR` scalar and operation vocabulary, translated from `lowir_model.h`. See NOTICE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Type {
+pub(crate) enum Type {
     Void,
     I1,
     I8,
@@ -18,7 +18,7 @@ pub(super) enum Type {
     Object { bytes: u64, align: u8 },
 }
 impl Type {
-    pub(super) fn scalar(text: &str) -> Option<Self> {
+    pub(crate) fn scalar(text: &str) -> Option<Self> {
         Some(match text {
             "void" => Self::Void,
             "i1" => Self::I1,
@@ -37,7 +37,7 @@ impl Type {
             _ => return None,
         })
     }
-    pub(super) fn bits(self) -> u32 {
+    pub(crate) fn bits(self) -> u32 {
         match self {
             Self::I1 => 1,
             Self::I8 | Self::U8 => 8,
@@ -48,7 +48,7 @@ impl Type {
             _ => 0,
         }
     }
-    pub(super) fn float_rank(self) -> u8 {
+    pub(crate) fn float_rank(self) -> u8 {
         match self {
             Self::F32 => 1,
             Self::F64 => 2,
@@ -83,12 +83,12 @@ impl std::fmt::Display for Type {
 macro_rules! vocabulary {
     ($name:ident { $($variant:ident => $word:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(super) enum $name { $($variant),+ }
+        pub(crate) enum $name { $($variant),+ }
         impl $name {
-            pub(super) fn parse(text: &str) -> Option<Self> {
+            pub(crate) fn parse(text: &str) -> Option<Self> {
                 match text { $($word => Some(Self::$variant),)+ _ => None }
             }
-            pub(super) fn spelling(self) -> &'static str {
+            pub(crate) fn spelling(self) -> &'static str {
                 match self { $(Self::$variant => $word,)+ }
             }
         }
@@ -109,14 +109,14 @@ vocabulary!(Role {
     BadArrayNewLength => "bad_array_new_length", RttiPointer => "rtti_pointer",
 });
 impl Role {
-    pub(super) fn global(self) -> bool {
+    pub(crate) fn global(self) -> bool {
         matches!(
             self,
             Self::RttiClass | Self::RttiSi | Self::RttiVmi | Self::RttiData | Self::RttiPointer
         )
     }
 }
-pub(super) fn named_literal(text: &str) -> bool {
+pub(crate) fn named_literal(text: &str) -> bool {
     if text == "nullptr" {
         return true;
     }
@@ -137,7 +137,7 @@ vocabulary!(Fence { Thread => "atomic_thread_fence", Signal => "atomic_signal_fe
 /// GNU/Clang atomic ordering numbers, retained without strengthening C++'s rules.
 #[derive(Clone, Copy)]
 #[repr(u8)]
-pub(super) enum MemoryOrder {
+pub(crate) enum MemoryOrder {
     Relaxed,
     Consume,
     Acquire,
@@ -146,7 +146,7 @@ pub(super) enum MemoryOrder {
     SequentiallyConsistent,
 }
 impl MemoryOrder {
-    pub(super) fn from_number(number: i64) -> Option<Self> {
+    pub(crate) fn from_number(number: i64) -> Option<Self> {
         Some(match number {
             0 => Self::Relaxed,
             1 => Self::Consume,
@@ -157,17 +157,17 @@ impl MemoryOrder {
             _ => return None,
         })
     }
-    pub(super) fn number(self) -> u8 {
+    pub(crate) fn number(self) -> u8 {
         self as u8
     }
 }
 #[derive(Clone, Copy)]
-pub(super) enum ObjectClasses {
+pub(crate) enum ObjectClasses {
     Memory,
     Direct(EightbyteClass, Option<EightbyteClass>),
 }
 impl ObjectClasses {
-    pub(super) fn parse(text: &str, bytes: u64) -> Option<Self> {
+    pub(crate) fn parse(text: &str, bytes: u64) -> Option<Self> {
         if text == "memory" {
             return Some(Self::Memory);
         }
@@ -199,7 +199,7 @@ impl std::fmt::Display for ObjectClasses {
 
 /// Pre-intern the frozen reader vocabulary, including metadata keys and named
 /// literal variants. These are real unit-owned names, even in an empty input.
-pub(super) fn intern_reader_words(names: &mut super::model::Names) -> Result<(), super::Error> {
+pub(crate) fn intern_reader_words(names: &mut super::model::Names) -> Result<(), super::Error> {
     for word in [
         "declare",
         "global",

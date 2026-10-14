@@ -7,14 +7,14 @@ use super::{
 use crate::lex::{identifiers::NameId, vocabulary::Keyword};
 use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct ScopeId(u32);
+pub(crate) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum FunctionAvailability {
     Callable,
     Deleted,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct EntityId(u32);
+pub(crate) struct EntityId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BindingId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,6 +114,7 @@ pub(super) struct MemberKey {
     pub shape: Option<super::templates::ShapeId>,
 }
 pub(super) struct Entity {
+    pub inline: super::specifiers::InlinePreference,
     pub ty: Option<TypeId>,
     pub scope: Option<ScopeId>,
     pub home: Option<ScopeId>,
@@ -420,6 +421,7 @@ impl Graph {
                 .map_err(|_| Error::Limit("semantic entity limit"))?,
         );
         self.entities.push(Entity {
+            inline: super::specifiers::InlinePreference::Unspecified,
             ty,
             scope: None,
             home: None,

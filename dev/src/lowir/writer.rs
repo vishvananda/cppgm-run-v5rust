@@ -9,7 +9,7 @@ use super::{
 };
 use crate::types::floating::FloatingScanner;
 use std::io::{self, Write};
-pub(super) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
+pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     let mut floating = FloatingScanner::default();
     let mut written = false;
     for phase in 0..4 {
@@ -124,6 +124,13 @@ fn write_global(
     }
     writeln!(out)
 }
+pub(crate) fn write_definition(
+    program: &Program,
+    function: &Function,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    write_function(program, function, &mut FloatingScanner::default(), output)
+}
 fn write_function(
     program: &Program,
     f: &Function,
@@ -144,6 +151,7 @@ fn write_function(
     };
     write_location(program, f.location, out)?;
     writeln!(out, " {{")?;
+    let names = temporary_names(program, body)?;
     for slot in body.slots() {
         writeln!(
             out,
@@ -165,13 +173,14 @@ fn write_function(
             let inst = body.instruction(id);
             write!(out, "    ")?;
             if let Some(t) = inst.result {
-                write!(out, "%{} = ", program.names.get(body.temp(t).name))?;
+                write!(out, "%{} = ", names[t.index()])?;
             }
             let mut writer = InstructionWriter {
                 program,
                 body,
                 out,
                 floating,
+                temporaries: &names,
             };
             writer.instruction(&inst.kind)?;
             write_location(program, body.location(inst), out)?;
@@ -197,6 +206,36 @@ fn write_location(
         write!(out, ", {}, {})", location.line, location.column)?;
     }
     Ok(())
+}
+// Explicit local spellings are collected before numbering generated temporaries,
+// including slots declared after a temporary's first use (lowir/local_names.cpp).
+fn temporary_names(program: &Program, body: &Body) -> io::Result<Vec<String>> {
+    let taken: std::collections::HashSet<_> = body
+        .temps()
+        .iter()
+        .filter(|temp| !temp.generated)
+        .map(|temp| program.names.get(temp.name))
+        .chain(body.slots().iter().map(|slot| program.names.get(slot.name)))
+        .collect();
+    let mut ordinal = 0_u32;
+    let mut names = Vec::with_capacity(body.temps().len());
+    for temp in body.temps() {
+        if !temp.generated {
+            names.push(program.names.get(temp.name).to_owned());
+            continue;
+        }
+        loop {
+            ordinal = ordinal
+                .checked_add(1)
+                .ok_or_else(|| io::Error::other("temporary numbering limit"))?;
+            let name = format!("t{ordinal}");
+            if !taken.contains(name.as_str()) {
+                names.push(name);
+                break;
+            }
+        }
+    }
+    Ok(names)
 }
 fn parameters(program: &Program, signature: &Signature, out: &mut impl Write) -> io::Result<()> {
     write!(out, "(")?;
@@ -304,15 +343,12 @@ struct InstructionWriter<'a, W> {
     body: &'a Body,
     out: &'a mut W,
     floating: &'a mut FloatingScanner,
+    temporaries: &'a [String],
 }
 impl<W: Write> InstructionWriter<'_, W> {
     fn value(&mut self, value: Value, ty: Type) -> io::Result<()> {
         match value {
-            Value::Temp(t) => write!(
-                self.out,
-                "%{}",
-                self.program.names.get(self.body.temp(t).name)
-            ),
+            Value::Temp(t) => write!(self.out, "%{}", self.temporaries[t.index()]),
             Value::Slot(s) => write!(
                 self.out,
                 "${}",

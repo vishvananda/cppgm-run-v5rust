@@ -3,13 +3,13 @@ use super::{Error, vocabulary::Type};
 use crate::{types::FundamentalType, types::floating::FloatingScanner};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum FloatKind {
+pub(crate) enum FloatKind {
     F32,
     F64,
     F80,
 }
 impl FloatKind {
-    pub(super) fn from_type(ty: Type) -> Option<Self> {
+    pub(crate) fn from_type(ty: Type) -> Option<Self> {
         match ty {
             Type::F32 => Some(Self::F32),
             Type::F64 => Some(Self::F64),
@@ -24,7 +24,7 @@ impl FloatKind {
             Self::F80 => FundamentalType::LongDouble,
         }
     }
-    pub(super) fn ty(self) -> Type {
+    pub(crate) fn ty(self) -> Type {
         match self {
             Self::F32 => Type::F32,
             Self::F64 => Type::F64,
@@ -54,11 +54,11 @@ impl FloatKind {
     }
 }
 #[derive(Clone, Copy)]
-pub(super) enum Constant {
+pub(crate) enum Constant {
     Integer(u128),
     Float(FloatKind, u128),
 }
-pub(super) fn floating_spelling(text: &str) -> bool {
+pub(crate) fn floating_spelling(text: &str) -> bool {
     let hex = text.starts_with("0x") || text.starts_with("0X");
     text.contains('.')
         || text.bytes().any(|c| {
@@ -79,7 +79,7 @@ fn suffix(text: &str) -> FloatKind {
         FloatKind::F64
     }
 }
-pub(super) fn special(text: &str, context: Type, negative: bool) -> Constant {
+pub(crate) fn special(text: &str, context: Type, negative: bool) -> Constant {
     let written = if matches!(text, "inf" | "INFINITY" | "nan" | "NAN" | "snan" | "SNAN") {
         FloatKind::F64
     } else {
@@ -105,7 +105,7 @@ pub(super) fn special(text: &str, context: Type, negative: bool) -> Constant {
 }
 
 /// Validate the C strto* grammar before using the shared exact rational scanner.
-pub(super) fn scan(
+pub(crate) fn scan(
     scanner: &mut FloatingScanner,
     text: &str,
     context: Type,
@@ -176,7 +176,7 @@ pub(super) fn scan(
 }
 
 /// Match C++'s integer-to-x87 addition, followed by the target conversion.
-pub(super) fn integer_as_float(
+pub(crate) fn integer_as_float(
     scanner: &mut FloatingScanner,
     bits: u128,
     kind: FloatKind,
@@ -218,7 +218,7 @@ fn finite(kind: FloatKind, encoding: u128) -> Result<(u128, i64, bool), Error> {
     ))
 }
 
-pub(super) fn text(
+pub(crate) fn text(
     scanner: &mut FloatingScanner,
     kind: FloatKind,
     bits: u128,

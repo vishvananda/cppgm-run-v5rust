@@ -9,7 +9,7 @@ use super::{
     vocabulary::Type,
 };
 
-pub(super) struct FunctionBuilder<'a> {
+pub(crate) struct FunctionBuilder<'a> {
     program: &'a mut Program,
     symbol: SymbolId,
     function: Function,
@@ -18,7 +18,7 @@ pub(super) struct FunctionBuilder<'a> {
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub(super) fn new(
+    pub(crate) fn new(
         program: &'a mut Program,
         name: &str,
         parameters: &[(&str, Type)],
@@ -68,7 +68,33 @@ impl<'a> FunctionBuilder<'a> {
             block: None,
         })
     }
-    pub(super) fn signature(
+    pub(crate) fn metadata(&mut self, metadata: Metadata) {
+        self.function.metadata = metadata;
+    }
+    pub(crate) fn boundary(&mut self, boundary: Boundary) {
+        self.program.signature_mut(self.function.signature).boundary = boundary;
+    }
+    pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
+        let name = self.program.names.intern(name)?;
+        if self.body.find_slot(name).is_some() {
+            return Err(Error::Construction("duplicate lowered slot".into()));
+        }
+        self.body.add_slot(name, ty)?;
+        self.body
+            .find_slot(name)
+            .map(Value::Slot)
+            .ok_or(Error::Limit)
+    }
+    pub(crate) fn symbol(&mut self, name: &str) -> Result<Value, Error> {
+        let name = self.program.names.intern(name)?;
+        let source = self.program.add_source(std::path::Path::new(""))?;
+        self.program.reference(name, source, 0).map(Value::Symbol)
+    }
+    pub(crate) fn block_id(&mut self, name: &str) -> Result<BlockId, Error> {
+        let name = self.program.names.intern(name)?;
+        self.body.use_block(name, 0)
+    }
+    pub(crate) fn signature(
         &mut self,
         name: &str,
         ty: Type,
@@ -88,7 +114,7 @@ impl<'a> FunctionBuilder<'a> {
             boundary: Boundary::default(),
         })
     }
-    pub(super) fn parameter(&self, index: usize) -> Result<Value, Error> {
+    pub(crate) fn parameter(&self, index: usize) -> Result<Value, Error> {
         let signature = self.program.signature(self.function.signature);
         let parameter = signature.parameters.get(index).ok_or(Error::Limit)?;
         // Parameters are installed in order; the private lookup returns their typed identity.
@@ -97,16 +123,16 @@ impl<'a> FunctionBuilder<'a> {
             .map(Value::Temp)
             .ok_or(Error::Limit)
     }
-    pub(super) fn integer(&mut self, value: u128) -> Result<Value, Error> {
+    pub(crate) fn integer(&mut self, value: u128) -> Result<Value, Error> {
         self.constant(Constant::Integer(value))
     }
-    pub(super) fn constant(&mut self, value: Constant) -> Result<Value, Error> {
+    pub(crate) fn constant(&mut self, value: Constant) -> Result<Value, Error> {
         self.body.constant(value)
     }
-    pub(super) fn arguments(&mut self, values: &[Value]) -> Result<super::model::Arguments, Error> {
+    pub(crate) fn arguments(&mut self, values: &[Value]) -> Result<super::model::Arguments, Error> {
         self.body.add_arguments(values)
     }
-    pub(super) fn block(&mut self, name: &str) -> Result<(), Error> {
+    pub(crate) fn block(&mut self, name: &str) -> Result<(), Error> {
         let name = self.program.names.intern(name)?;
         let id = self.body.use_block(name, 0)?;
         if self.body.block(id).placed {
@@ -117,7 +143,12 @@ impl<'a> FunctionBuilder<'a> {
         self.block = Some(id);
         Ok(())
     }
-    pub(super) fn value(&mut self, kind: InstructionKind, name: &str) -> Result<Value, Error> {
+    pub(crate) fn generated(&mut self, kind: InstructionKind) -> Result<Value, Error> {
+        let id = self.body.generated_temp(kind.result_type())?;
+        self.append(kind, Some(id))?;
+        Ok(Value::Temp(id))
+    }
+    pub(crate) fn value(&mut self, kind: InstructionKind, name: &str) -> Result<Value, Error> {
         let name = self.program.names.intern(name)?;
         let id = self.body.use_temp(name, 0)?;
         if self.body.temp_is_parameter(id) || self.body.temp(id).definition.is_some() {
@@ -127,7 +158,7 @@ impl<'a> FunctionBuilder<'a> {
         self.append(kind, Some(id))?;
         Ok(Value::Temp(id))
     }
-    pub(super) fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
+    pub(crate) fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
         self.append(kind, None)
     }
     fn append(
@@ -141,7 +172,7 @@ impl<'a> FunctionBuilder<'a> {
         let _ = self.body.append(block, Instruction::new(result, kind, 0))?;
         Ok(())
     }
-    pub(super) fn finish(mut self) -> Result<(), Error> {
+    pub(crate) fn finish(mut self) -> Result<(), Error> {
         self.function.body = Some(self.body);
         self.program.add(self.symbol, self.function)
     }
@@ -325,6 +356,41 @@ mod tests {
         writer::write(&program, &mut output).map_err(Error::Output)?;
         let output = String::from_utf8(output).map_err(|_| Error::Limit)?;
         assert!(output.contains("const f80 1.0000000000000000001L"));
+        Ok(())
+    }
+    #[test]
+    fn generated_names_avoid_later_slots_and_streamed_bodies_are_released() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder =
+            FunctionBuilder::new(&mut program, "first", &[("t1", Type::I32)], Type::I32)?;
+        builder.block("entry")?;
+        let parameter = builder.parameter(0)?;
+        let value = builder.generated(I::Copy(Type::I32, parameter))?;
+        let _later = builder.slot("t2", Type::I32)?;
+        builder.effect(I::Return(Type::I32, Some(value)))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        let mut output = Vec::new();
+        program.stream_last_definition(&mut output)?;
+        assert!(program.functions()[0].body.is_none());
+        let mut builder = FunctionBuilder::new(&mut program, "second", &[], Type::I32)?;
+        builder.block("entry")?;
+        let literal = builder.integer(3)?;
+        let value = builder.generated(I::Copy(Type::I32, literal))?;
+        builder.effect(I::Return(Type::I32, Some(value)))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        program.stream_last_definition(&mut output)?;
+        assert!(
+            program
+                .functions()
+                .iter()
+                .all(|function| function.body.is_none())
+        );
+        let output = String::from_utf8(output).map_err(|_| Error::Limit)?;
+        assert!(output.contains("%t3 = copy i32 %t1"));
+        assert!(output.contains("%t1 = copy i32 3"));
+        program.finish_symbols()?;
         Ok(())
     }
 }

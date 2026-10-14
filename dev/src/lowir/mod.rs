@@ -3,20 +3,20 @@ use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
-mod builder;
+pub(crate) mod builder;
 mod exercises;
 mod globals;
 mod instructions;
 mod lexer;
-mod literals;
-mod model;
+pub(crate) mod literals;
+pub(crate) mod model;
 mod reader;
 mod runtime;
 mod statistics;
 pub use statistics::Statistics;
 mod validator;
-mod vocabulary;
-mod writer;
+pub(crate) mod vocabulary;
+pub(crate) mod writer;
 
 /// A `LowIR` failure retained until the command-line boundary renders it.
 #[derive(Debug)]

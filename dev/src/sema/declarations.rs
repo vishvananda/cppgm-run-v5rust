@@ -879,6 +879,11 @@ impl Analyzer<'_> {
             }
             entity
         };
+        if kind == BindingKind::Function
+            && specs.inline == super::specifiers::InlinePreference::Inline
+        {
+            self.graph.entity_mut(entity).inline = specs.inline;
+        }
         if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
             self.initialize_linkage(
                 entity,

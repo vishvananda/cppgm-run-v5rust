@@ -1,6 +1,6 @@
 // Translated from cppgm++.cpp's AST invocation and source loop. See NOTICE.
 use cppgm_rust::{
-    driver::ast::{AstToolError, EmitMode, emit_unit},
+    driver::ast::{AstToolError, Destination, EmitMode, LowIrOutput, emit_unit},
     preprocess::error::PreprocessError,
     support::source::SourceBuffer,
 };
@@ -54,19 +54,27 @@ fn path_error(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
     CliError::Diagnostic(bytes)
 }
 fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsStr>), CliError> {
-    if !args
-        .iter()
-        .any(|arg| arg == "--emit-ast" || arg == "--emit-types" || arg == "--emit-semantics")
-    {
+    if !args.iter().any(|arg| {
+        arg == "--emit-ast"
+            || arg == "--emit-types"
+            || arg == "--emit-semantics"
+            || arg == "--emit-lowir"
+    }) {
         return Err(CliError::Missing("source compiler modes beyond --emit-ast"));
     }
+    let lowir = args.iter().any(|arg| arg == "--emit-lowir");
     let mut output = None;
     let mut inputs = Vec::new();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         index += 1;
-        if arg == "--emit-ast" || arg == "--emit-types" || arg == "--emit-semantics" {
+        if arg == "--emit-ast"
+            || arg == "--emit-types"
+            || arg == "--emit-semantics"
+            || arg == "--emit-lowir"
+            || lowir && arg == "-O0"
+        {
             continue;
         }
         if arg == "-o" {
@@ -105,12 +113,15 @@ fn run() -> Result<(), CliError> {
     let ast = args.iter().any(|arg| arg == "--emit-ast");
     let types = args.iter().any(|arg| arg == "--emit-types");
     let semantics = args.iter().any(|arg| arg == "--emit-semantics");
-    if u8::from(ast) + u8::from(types) + u8::from(semantics) > 1 {
+    let lowir = args.iter().any(|arg| arg == "--emit-lowir");
+    if u8::from(lowir) + u8::from(ast) + u8::from(types) + u8::from(semantics) > 1 {
         return Err(CliError::Message(
             "multiple --emit-* options provided".to_owned(),
         ));
     }
-    let mode = if semantics {
+    let mode = if lowir {
+        EmitMode::LowIr
+    } else if semantics {
         EmitMode::Semantics
     } else if types {
         EmitMode::Types
@@ -121,10 +132,17 @@ fn run() -> Result<(), CliError> {
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
-    let file = File::create(destination).ok().map(io::BufWriter::new);
-    let failed = file.is_none();
+    let file = if lowir {
+        None
+    } else {
+        File::create(destination).ok().map(io::BufWriter::new)
+    };
+    let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
-    writeln!(output, "{} translation units", inputs.len()).map_err(|_| CliError::Output)?;
+    let mut lowir_output = LowIrOutput::default();
+    if !lowir {
+        writeln!(output, "{} translation units", inputs.len()).map_err(|_| CliError::Output)?;
+    }
     for (index, path) in inputs.iter().enumerate() {
         if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
             return Err(path_error(path, b"cannot open the source file"));
@@ -139,7 +157,11 @@ fn run() -> Result<(), CliError> {
             &source,
             path.as_bytes(),
             &values,
-            &mut output,
+            if lowir {
+                Destination::LowIr(&mut lowir_output)
+            } else {
+                Destination::Text(&mut output)
+            },
             index + 1,
             stack_budget,
             mode,
@@ -165,8 +187,20 @@ fn run() -> Result<(), CliError> {
             }
         })?;
     }
+    if lowir {
+        output.file = File::create(destination).ok().map(io::BufWriter::new);
+        output.failed = output.file.is_none();
+        lowir_output
+            .write(&mut output)
+            .map_err(|_| CliError::Output)?;
+    }
     output.flush().map_err(|_| CliError::Output)?;
     if output.failed {
+        if lowir {
+            return Err(CliError::Diagnostic(
+                [b"cannot write ".as_slice(), destination.as_bytes()].concat(),
+            ));
+        }
         return Err(CliError::Output);
     }
     Ok(())

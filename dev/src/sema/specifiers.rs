@@ -34,8 +34,15 @@ pub(super) enum Explicitness {
     Converting,
     Explicit,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum InlinePreference {
+    #[default]
+    Unspecified,
+    Inline,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
+    pub inline: InlinePreference,
     pub ty: TypeId,
     pub declared: Option<TypeId>,
     pub role: DeclarationRole,
@@ -78,6 +85,7 @@ impl Analyzer<'_> {
         let mut mutability = Mutability::Ordinary;
         let mut virtuality = Virtuality::NonVirtual;
         let mut constexpr = false;
+        let mut inline = InlinePreference::Unspecified;
         let mut explicitness = Explicitness::Converting;
         let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
@@ -101,7 +109,8 @@ impl Analyzer<'_> {
                     Keyword::Mutable => mutability = Mutability::Mutable,
                     Keyword::Virtual => virtuality = Virtuality::Virtual,
                     Keyword::ThreadLocal => thread_storage = ThreadStorage::ThreadLocal,
-                    Keyword::Inline | Keyword::Register => (),
+                    Keyword::Inline => inline = InlinePreference::Inline,
+                    Keyword::Register => (),
                     Keyword::Explicit if special => explicitness = Explicitness::Explicit,
                     Keyword::Auto | Keyword::Friend | Keyword::Explicit => {
                         return Err(Error::Missing(
@@ -156,6 +165,7 @@ impl Analyzer<'_> {
         let ty = self.graph.types.qualify(ty, cv)?;
         Ok((
             Specifiers {
+                inline,
                 ty,
                 declared,
                 role: if typedef {

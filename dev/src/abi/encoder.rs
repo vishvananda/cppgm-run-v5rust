@@ -34,7 +34,9 @@ pub enum Target {
 }
 pub struct Encoder<'a> {
     graph: &'a Graph,
-    slots: Vec<Option<u32>>,
+    // One target's dictionary is sparse in the unit's growing ABI graph.
+    // Initializing a graph-sized vector per symbol would make lowering quadratic.
+    slots: std::collections::HashMap<NodeId, u32>,
     entries: u32,
     output: &'a mut Vec<u8>,
     budget: StackBudget,
@@ -69,7 +71,7 @@ impl<'a> Encoder<'a> {
         let start = output.len();
         let mut encoder = Self {
             graph,
-            slots: vec![None; graph.len()],
+            slots: std::collections::HashMap::new(),
             entries: 0,
             output,
             budget,
@@ -109,7 +111,7 @@ impl<'a> Encoder<'a> {
         if let Some(stats) = &mut self.stats {
             stats.substitution_lookups += 1;
         }
-        let Some(index) = self.slots[id.index()] else {
+        let Some(&index) = self.slots.get(&id) else {
             return false;
         };
         if let Some(stats) = &mut self.stats {
@@ -138,8 +140,8 @@ impl<'a> Encoder<'a> {
         true
     }
     fn record(&mut self, id: NodeId) -> Result<(), Error> {
-        if self.slots[id.index()].is_none() {
-            self.slots[id.index()] = Some(self.entries);
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.slots.entry(id) {
+            entry.insert(self.entries);
             self.entries = self.entries.checked_add(1).ok_or(Error::StorageLimit)?;
             if let Some(stats) = &mut self.stats {
                 stats.substitution_entries += 1;
@@ -354,7 +356,7 @@ impl<'a> Encoder<'a> {
                 Node::Template(template) => Some(template),
                 _ => return false,
             };
-            if self.slots[id.index()].is_some() {
+            if self.slots.contains_key(&id) {
                 return true;
             }
         }
@@ -451,12 +453,12 @@ impl<'a> Encoder<'a> {
         let mut chain = Vec::new();
         while let Some(current) = id {
             match self.graph.get(current) {
-                Node::Name { parent, .. } if self.slots[current.index()].is_none() => {
+                Node::Name { parent, .. } if !self.slots.contains_key(&current) => {
                     chain.push(current);
                     // The context was emitted by local_name; it is not a prefix candidate.
                     id = parent.filter(|parent| !self.is_function_scope(*parent));
                 }
-                Node::Template(template) if self.slots[current.index()].is_none() => {
+                Node::Template(template) if !self.slots.contains_key(&current) => {
                     chain.push(current);
                     id = Some(template);
                 }

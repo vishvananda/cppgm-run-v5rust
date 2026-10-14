@@ -8,9 +8,9 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct TypeId(u32);
+pub(crate) struct TypeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum Scalar {
+pub(crate) enum Scalar {
     Basic(FundamentalType),
     Void,
     Bool,

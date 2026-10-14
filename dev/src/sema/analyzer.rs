@@ -320,6 +320,7 @@ impl<'tree> Analyzer<'tree> {
                 let ty = self.specifier_type(specifier, scope, true)?;
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
+                        inline: super::specifiers::InlinePreference::Unspecified,
                         ty,
                         declared: Some(ty),
                         role: super::specifiers::DeclarationRole::Ordinary,

@@ -31,6 +31,7 @@ mod integral;
 mod layout;
 mod linkage;
 mod lookup;
+pub(crate) mod lowering;
 mod member_expressions;
 mod name_keys;
 mod procedural_calls;
@@ -68,6 +69,7 @@ impl Error {
     }
 }
 pub(crate) use analyzer::Analyzer;
+pub(crate) use graph::Graph;
 
 fn record<T: Copy>(facts: &mut Vec<Option<T>>, index: usize, fact: T) {
     if index >= facts.len() {
