@@ -357,6 +357,9 @@ impl Graph {
     pub(crate) fn lower_constexpr(&self, id: EntityId) -> bool {
         self.entity(id).constexpr
     }
+    pub(crate) fn lower_requested_alignment(&self, id: EntityId) -> u32 {
+        self.entity(id).storage_attributes.alignment
+    }
     pub(crate) fn lower_array_image(&self, id: EntityId) -> Option<&[super::static_arrays::Item]> {
         self.array_images.get(id)
     }

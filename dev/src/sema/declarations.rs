@@ -26,6 +26,62 @@ pub(super) struct ValueScope {
     pub declarator_location: SourceOffset,
 }
 impl Analyzer<'_> {
+    pub(super) fn simple_declaration(
+        &mut self,
+        id: ast::DeclId,
+        specifiers: List<ast::Specifier>,
+        declarators: List<ast::InitDeclarator>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let declaration = *self.tree.declarations.get(id);
+        let location = declaration.location;
+        let specs = self.specifiers(specifiers, scope, declarators.is_empty())?;
+        if declarators.is_empty()
+            && let TypeKind::Class(class) = self.graph.types.get(specs.ty).kind
+        {
+            self.class_layout_attributes(class, declaration.attributes, scope, true)?;
+        }
+        let first_name = self
+            .tree
+            .init_declarators
+            .get(declarators)
+            .first()
+            .map(|init| self.simple_declarator_name(init.declarator))
+            .transpose()?
+            .flatten();
+        let naming = if specs.role == super::specifiers::DeclarationRole::Typedef
+            || !self.semantic() && self.graph.scope(scope).kind != ScopeKind::Class
+        {
+            first_name
+        } else {
+            None
+        };
+        if let Some(declared) = specs.declared {
+            self.name_unnamed_enum(declared, naming)?;
+            self.name_unnamed_class(declared, naming);
+            if !declarators.is_empty() {
+                self.name_local_class(declared)?;
+            }
+        }
+        if declarators.is_empty()
+            && let Some(storage) = self.anonymous_union(specs, scope, location, false)?
+        {
+            super::record(&mut self.graph.declaration_storage, id.index(), storage);
+        }
+        let mut deduced = None;
+        let attributes = if declarators.is_empty() {
+            super::layout_attributes::LayoutAttributes::default()
+        } else {
+            self.layout_attributes(declaration.attributes, scope, false)?
+        };
+        for init in self.tree.init_declarators.get(declarators) {
+            let attributes =
+                self.declarator_layout_attributes(attributes, init.declarator, scope)?;
+            self.declare_init(specs, *init, scope, location, &mut deduced)?;
+            self.apply_storage_attributes(init.declarator, attributes)?;
+        }
+        Ok(())
+    }
     pub(super) fn namespace_definition(
         &mut self,
         name: Option<NameId>,
@@ -1316,9 +1372,8 @@ impl Analyzer<'_> {
         } else {
             super::graph::Access::Public
         };
-        if node.packing != 0 || !node.attributes.is_empty() {
-            self.graph.entity_mut(entity).layout = super::layout::LayoutState::Unsupported;
-        }
+        self.class_layout_attributes(entity, node.attributes, parent, false)?;
+        self.graph.entity_mut(entity).class_packing = node.packing;
         self.graph.entity_mut(entity).defined = true;
         self.graph.entity_mut(entity).derivation = if node.final_specifier {
             super::inheritance::Derivation::Final
@@ -1347,6 +1402,9 @@ impl Analyzer<'_> {
         if self.semantic() && self.template_depth == 0 {
             self.classify_class_copies(entity)?;
             self.complete_scalar_destructor_exceptions(entity)?;
+        }
+        if self.template_depth == 0 && self.graph.entity(entity).storage_attributes.alignment != 0 {
+            self.class_layout(entity, node.location)?;
         }
         if self.class_depth == 0 {
             self.finish_class_exceptions()?;

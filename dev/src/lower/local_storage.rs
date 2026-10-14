@@ -53,7 +53,7 @@ impl Function<'_, '_, '_, '_> {
             ordinal,
             dynamic,
         )?;
-        let init = if array {
+        let mut init = if array {
             GlobalInit::Data(
                 if initializer.is_some()
                     && !dynamic
@@ -95,11 +95,12 @@ impl Function<'_, '_, '_, '_> {
         }
         let program = self.builder.program();
         let name = program.symbol(symbol).name;
-        let ty = if let GlobalInit::Data(items) = &init {
+        let mut ty = if let GlobalInit::Data(items) = &init {
             super::globals::structured_type(self.graph, facts.ty, items)?
         } else {
             Some(types::storage(self.graph, facts.ty)?)
         };
+        super::globals::align_storage(self.graph, entity, &mut ty, &mut init)?;
         program.add_global(
             symbol,
             Global {

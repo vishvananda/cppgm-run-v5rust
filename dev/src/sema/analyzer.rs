@@ -226,7 +226,14 @@ impl<'tree> Analyzer<'tree> {
         self.check_stack()?;
         let declaration = *self.tree.declarations.get(id);
         let location = declaration.location;
-        if self.graph.scope(scope).kind == ScopeKind::Class && !declaration.attributes.is_empty() {
+        if self.graph.scope(scope).kind == ScopeKind::Class
+            && self
+                .tree
+                .attributes
+                .get(declaration.attributes)
+                .iter()
+                .any(|attribute| attribute.kind == ast::AttributeKind::NoUniqueAddress)
+        {
             let owner = self
                 .graph
                 .scope(scope)
@@ -324,41 +331,7 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::Simple {
                 specifiers,
                 declarators,
-            } => {
-                let specs = self.specifiers(specifiers, scope, declarators.is_empty())?;
-                let first_name = self
-                    .tree
-                    .init_declarators
-                    .get(declarators)
-                    .first()
-                    .map(|init| self.simple_declarator_name(init.declarator))
-                    .transpose()?
-                    .flatten();
-                let naming = if specs.role == super::specifiers::DeclarationRole::Typedef
-                    || !self.semantic() && self.graph.scope(scope).kind != ScopeKind::Class
-                {
-                    first_name
-                } else {
-                    None
-                };
-                if let Some(declared) = specs.declared {
-                    self.name_unnamed_enum(declared, naming)?;
-                    self.name_unnamed_class(declared, naming);
-                    if !declarators.is_empty() {
-                        self.name_local_class(declared)?;
-                    }
-                }
-                if declarators.is_empty()
-                    && let Some(storage) = self.anonymous_union(specs, scope, location, false)?
-                {
-                    super::record(&mut self.graph.declaration_storage, id.index(), storage);
-                }
-                let mut deduced = None;
-                for init in self.tree.init_declarators.get(declarators) {
-                    self.declare_init(specs, *init, scope, location, &mut deduced)?;
-                }
-                Ok(())
-            }
+            } => self.simple_declaration(id, specifiers, declarators, scope),
             ast::DeclKind::Class(specifier) => {
                 let ty = self.specifier_type(specifier, scope, true)?;
                 let storage = self.anonymous_union(
@@ -452,7 +425,14 @@ impl<'tree> Analyzer<'tree> {
                 Err(Error::Missing("explicit template instantiation"))
             }
             ast::DeclKind::SpecialMember { .. } => self.special_member(id, scope),
-            ast::DeclKind::BitField { .. } => Err(Error::Missing("bit-field declarations")),
+            ast::DeclKind::BitField {
+                specifiers,
+                declarators,
+            } => {
+                self.specifiers(specifiers, scope, false)?;
+                self.reject_bit_field_alignment(declaration.attributes, declarators)?;
+                Err(Error::Missing("bit-field declarations"))
+            }
         }
     }
     fn function_definition(
@@ -510,6 +490,13 @@ impl<'tree> Analyzer<'tree> {
         );
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).function_definition = Some(declaration);
+        // The frozen definition owner evaluates only leading layout attributes
+        // here; unlike a simple declaration it does not reject alignas.
+        self.layout_attributes(
+            self.tree.declarations.get(declaration).attributes,
+            scope,
+            false,
+        )?;
         self.graph.entity_mut(entity).definition_emission =
             if self.class_depth != 0 || specs.constexpr {
                 super::function_demands::DefinitionEmission::Demanded

@@ -1302,6 +1302,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         facts: &crate::sema::lowering::FunctionFacts,
         variant: super::construction::Variant,
     ) -> Result<NodeId, Error> {
+        if let FunctionName::Identifier(identifier) = facts.name
+            && (facts.c_linkage
+                || self.cursor.name(identifier) == b"main"
+                    && self.graph.lower_presentation_scope(facts.home)?.0.is_none())
+        {
+            let terminal = self.abi.string(self.cursor.name(identifier))?;
+            return Ok(self.abi.intern(
+                Node::Name {
+                    parent: None,
+                    terminal,
+                    internal: false,
+                    occurrence: 0,
+                },
+                &[],
+            )?);
+        }
         let parent = self.scope(facts.home)?;
         let terminal = if matches!(facts.name, FunctionName::Constructor(_)) {
             self.abi.intern(

@@ -301,6 +301,37 @@ impl Analyzer<'_> {
             specs,
         )?;
         self.record_callable_label(binding, info, key)?;
+        if self.graph.scope(scope).kind == ScopeKind::Class
+            && head.is_none()
+            && !matches!(definition, Definition::Defaulted | Definition::Deleted)
+            && matches!(key, ValueKey::Special(SpecialName::Operator { token, array: false }) if token.as_punctuator() == Some(Punctuator::Assign))
+        {
+            let ty = self.graph.types.canonical_function(info.ty)?;
+            if self.graph.types.function_parameter_count(ty)? == 1
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Function {
+                        variadic: false,
+                        ..
+                    }
+                )
+            {
+                let parameter = self.graph.types.function_parameter(ty, 0)?;
+                let parameter = if let TypeKind::Reference { element, .. } =
+                    self.graph.types.get(parameter).kind
+                {
+                    element
+                } else {
+                    parameter
+                };
+                if let TypeKind::Class(class) = self.graph.types.get(parameter).kind
+                    && self.graph.scope(scope).owner == Some(class)
+                {
+                    self.graph.entity_mut(class).layout_category =
+                        super::layout::LayoutCategory::NonPod;
+                }
+            }
+        }
         let entity = self.graph.binding(binding).entity;
         if !self.graph.entity(entity).defined || definition == Definition::Body {
             self.graph.entity_mut(entity).function_parameters = info.parameters;

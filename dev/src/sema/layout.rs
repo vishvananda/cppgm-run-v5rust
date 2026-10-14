@@ -14,6 +14,11 @@ pub(super) enum LayoutState {
     },
     Unsupported,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum LayoutCategory {
+    Pod,
+    NonPod,
+}
 fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
@@ -172,6 +177,10 @@ impl Analyzer<'_> {
         let mut size = 0u64;
         let mut contains_volatile_or_union = union;
         let mut alignment = 1;
+        let attributes = self.graph.entity(entity).storage_attributes;
+        let pack = u64::from(self.graph.entity(entity).class_packing);
+        let mut non_pod = self.graph.entity(entity).layout_category == LayoutCategory::NonPod;
+        let mut packs_all = true;
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
             let ty = self
@@ -185,22 +194,44 @@ impl Analyzer<'_> {
                 scalar = element;
             }
             contains_volatile_or_union |= self.graph.types.get(scalar).cv.0 & 2 != 0;
-            if let TypeKind::Class(child) = self.graph.types.get(scalar).kind
-                && let LayoutState::Value {
+            let mut packable = true;
+            if let TypeKind::Class(child) = self.graph.types.get(scalar).kind {
+                let child = self.graph.entity(child);
+                non_pod |= child.layout_category == LayoutCategory::NonPod;
+                packable =
+                    child.layout_category == LayoutCategory::Pod || child.storage_attributes.packed;
+                if let LayoutState::Value {
                     contains_volatile_or_union: child,
                     ..
-                } = self.graph.entity(child).layout
-            {
-                contains_volatile_or_union |= child;
+                } = child.layout
+                {
+                    contains_volatile_or_union |= child;
+                }
             }
-            let offset = if union { 0 } else { round_up(size, natural) };
+            packs_all &= packable;
+            let member_attributes = self.graph.entity(member).storage_attributes;
+            let requested = u64::from(member_attributes.alignment);
+            let mut member_alignment = if member_attributes.packed || attributes.packed && packable
+            {
+                requested.max(1)
+            } else {
+                natural.max(requested)
+            };
+            if pack != 0 {
+                member_alignment = member_alignment.min(pack);
+            }
+            let offset = if union {
+                0
+            } else {
+                round_up(size, member_alignment)
+            };
             self.graph.entity_mut(member).member_offset = Some(offset);
             size = if union {
                 size.max(bytes)
             } else {
                 offset.wrapping_add(bytes)
             };
-            alignment = alignment.max(natural);
+            alignment = alignment.max(member_alignment);
             if (bytes | size) >> 60 != 0 {
                 return Err(Error::at(
                     location,
@@ -208,6 +239,23 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        let requested = u64::from(attributes.alignment);
+        if requested != 0 {
+            if requested >= alignment {
+                alignment = requested;
+            } else if attributes.standard_alignment {
+                return Err(Error::at(
+                    location,
+                    "a class alignment-specifier weaker than its natural alignment",
+                ));
+            }
+        }
+        self.graph.entity_mut(entity).layout_category = if non_pod {
+            LayoutCategory::NonPod
+        } else {
+            LayoutCategory::Pod
+        };
+        self.graph.entity_mut(entity).storage_attributes.packed &= packs_all;
         self.graph.entity_mut(entity).layout = LayoutState::Value {
             contains_volatile_or_union,
             size: round_up(size.max(1), alignment),

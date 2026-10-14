@@ -32,6 +32,7 @@ mod initialization;
 mod integral;
 mod jumps;
 mod layout;
+mod layout_attributes;
 mod linkage;
 mod list_arguments;
 mod lookup;

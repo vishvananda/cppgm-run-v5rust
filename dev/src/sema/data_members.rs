@@ -82,6 +82,16 @@ impl Analyzer<'_> {
             self.graph.entity_mut(owner).members.push(entity);
             if init.initializer.is_some()
                 || self.graph.binding_access(binding) != super::graph::Access::Public
+                || matches!(
+                    self.graph.types.get(info.ty).kind,
+                    TypeKind::Reference { .. }
+                )
+            {
+                self.graph.entity_mut(owner).layout_category =
+                    super::layout::LayoutCategory::NonPod;
+            }
+            if init.initializer.is_some()
+                || self.graph.binding_access(binding) != super::graph::Access::Public
             {
                 self.graph.entity_mut(owner).aggregation =
                     super::aggregate_initialization::Aggregation::Ineligible;
@@ -89,7 +99,13 @@ impl Analyzer<'_> {
             let mut declarator = Some(init.declarator);
             while let Some(id) = declarator {
                 let node = self.tree.declarators.get(id);
-                if !node.attributes.is_empty() {
+                if self
+                    .tree
+                    .attributes
+                    .get(node.attributes)
+                    .iter()
+                    .any(|attribute| attribute.kind == ast::AttributeKind::NoUniqueAddress)
+                {
                     self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
                 }
                 declarator = node.nested;

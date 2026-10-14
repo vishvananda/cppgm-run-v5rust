@@ -368,7 +368,7 @@ impl Function<'_, '_, '_, '_> {
         let spelling = self.symbols.identifier(name)?;
         let slot = self
             .builder
-            .slot(spelling, types::storage(self.graph, ty)?)?;
+            .slot(spelling, types::local_storage(self.graph, entity, ty)?)?;
         self.locals.insert(entity, slot);
         if self.terminated {
             // unreachable_declaration retains the holder's identity but strips

@@ -75,6 +75,25 @@ pub(super) fn layout(graph: &Graph, ty: TypeId) -> Result<(u64, u8), Error> {
         _ => return Err(Error::Missing("aggregate target layout")),
     })
 }
+pub(super) fn local_storage(
+    graph: &Graph,
+    entity: crate::sema::lowering::EntityId,
+    ty: TypeId,
+) -> Result<Type, Error> {
+    let storage = storage(graph, ty)?;
+    let requested = u64::from(graph.lower_requested_alignment(entity));
+    if requested != 0 && !matches!(graph.lower_type(ty)?, TypeView::Reference { .. }) {
+        let (size, natural) = layout(graph, ty)?;
+        if requested > 1u64 << natural {
+            return Ok(Type::Object {
+                bytes: size.wrapping_add(requested - 1) / requested * requested,
+                align: u8::try_from(requested.trailing_zeros())
+                    .map_err(|_| crate::lowir::Error::Limit)?,
+            });
+        }
+    }
+    Ok(storage)
+}
 pub(super) fn storage_alignment(ty: Type) -> u8 {
     match ty {
         Type::Object { align, .. } => align,

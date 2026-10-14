@@ -168,6 +168,17 @@ impl Analyzer<'_> {
             binding,
         );
         let function = self.graph.binding(binding).entity;
+        if self.graph.scope(scope).kind == ScopeKind::Class
+            && matches!(kind, MemberKind::Constructor | MemberKind::Destructor)
+            && !initializer.is_some_and(|init| {
+                matches!(
+                    init.kind,
+                    InitializerKind::Default | InitializerKind::Delete
+                )
+            })
+        {
+            self.graph.entity_mut(class).layout_category = super::layout::LayoutCategory::NonPod;
+        }
         let first = self.graph.function_origin(function)? == binding;
         if first && kind == MemberKind::Destructor {
             self.graph.entity_mut(class).declared_destructor = Some(binding);

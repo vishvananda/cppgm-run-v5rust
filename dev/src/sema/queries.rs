@@ -238,7 +238,7 @@ impl Analyzer<'_> {
             ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
         })
     }
-    fn query_complete(&self, mut ty: TypeId) -> bool {
+    pub(super) fn query_complete(&self, mut ty: TypeId) -> bool {
         while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
             if bound == 0 {
                 return false;

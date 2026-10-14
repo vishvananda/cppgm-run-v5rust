@@ -69,7 +69,7 @@ fn define_storage(
         }));
     }
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
-    let init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
+    let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() {
             GlobalInit::Address(
                 data::reference_temporary(program, symbols, graph, tree, entity, false)?,
@@ -118,6 +118,7 @@ fn define_storage(
     if array && let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }
+    align_storage(graph, entity, &mut ty, &mut init)?;
     if !facts.thread_local && symbols.readonly_object(facts.ty)? {
         metadata.storage = Some(Storage::ReadOnly);
     }
@@ -137,6 +138,60 @@ fn define_storage(
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         symbols.data.define_reference(entity);
     }
+    Ok(())
+}
+pub(super) fn align_storage(
+    graph: &Graph,
+    entity: EntityId,
+    storage: &mut Option<crate::lowir::vocabulary::Type>,
+    init: &mut GlobalInit,
+) -> Result<(), Error> {
+    use crate::lowir::{model::DataItem, vocabulary::Type};
+    let ty = graph.lower_entity_type(entity)?;
+    let requested = u64::from(graph.lower_requested_alignment(entity));
+    if requested == 0 {
+        return Ok(());
+    }
+    let (size, natural) = types::layout(graph, ty)?;
+    if requested <= 1u64 << natural {
+        return Ok(());
+    }
+    if !matches!(init, GlobalInit::Data(_)) {
+        let scalar = storage.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+            "untyped scalar global",
+        )))?;
+        let item = match std::mem::replace(init, GlobalInit::Zero) {
+            GlobalInit::Zero => {
+                DataItem::Zero(i64::try_from(size).map_err(|_| crate::lowir::Error::Limit)?)
+            }
+            GlobalInit::Constant(value) => DataItem::Constant(scalar, value),
+            GlobalInit::Address(symbol, offset) => DataItem::Address(scalar, symbol, offset),
+            _ => {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "aligned global without initializer",
+                )));
+            }
+        };
+        *init = GlobalInit::Data(vec![item]);
+    }
+    let GlobalInit::Data(items) = init else {
+        return Err(Error::Semantic(crate::sema::Error::Invariant(
+            "aligned global without data",
+        )));
+    };
+    let implied = items
+        .iter()
+        .filter_map(|item| match item {
+            DataItem::Constant(ty, _) => Some(types::storage_alignment(*ty)),
+            DataItem::Address(..) => Some(3),
+            DataItem::Zero(_) => None,
+        })
+        .max()
+        .unwrap_or(0);
+    *storage = (requested > 1u64 << implied).then_some(Type::Object {
+        bytes: size.wrapping_add(requested - 1) / requested * requested,
+        align: u8::try_from(requested.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?,
+    });
     Ok(())
 }
 pub(super) fn structured_type(
