@@ -233,6 +233,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         Ok(())
     }
+    pub(super) fn zeroed_by_value(&mut self, ty: TypeId) -> Result<bool, Error> {
+        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+            return Ok(self.class_storage_properties(class)?.value_zero);
+        }
+        Ok(false)
+    }
     fn class_storage_properties(
         &mut self,
         class: EntityId,
@@ -245,11 +251,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut properties = super::types::ClassStorage {
             changeable: false,
             destruction: graph.lower_nontrivial_destructor(class),
+            value_zero: graph.lower_aggregate_class(class),
         };
         for base in graph.lower_class_bases(class) {
             let child = self.class_storage_properties(base)?;
             properties.changeable |= child.changeable;
             properties.destruction |= child.destruction;
+            properties.value_zero &= child.value_zero;
         }
         for &member in graph.lower_class_member_entities(class) {
             properties.changeable |= graph.lower_mutable_member(member);
@@ -265,6 +273,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let child = self.class_storage_properties(class)?;
                 properties.changeable |= child.changeable;
                 properties.destruction |= child.destruction;
+                properties.value_zero &= child.value_zero;
             }
         }
         self.class_storage.insert(class, properties);

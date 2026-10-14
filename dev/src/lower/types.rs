@@ -12,6 +12,7 @@ use crate::{
 pub(super) struct ClassStorage {
     pub changeable: bool,
     pub destruction: bool,
+    pub value_zero: bool,
 }
 pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
     Ok(match graph.lower_type(ty)? {

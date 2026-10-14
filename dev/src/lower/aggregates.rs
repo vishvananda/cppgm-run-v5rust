@@ -39,6 +39,20 @@ struct Input<'a> {
     next: usize,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn aggregate_prvalue(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        values: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        if self.prvalue_helper(ty, object, values)? {
+            return Ok(());
+        }
+        if values.is_empty() && self.symbols.zeroed_by_value(ty)? {
+            return self.zero_class_object(ty, object, None);
+        }
+        self.aggregate_array(ty, object, values)
+    }
     pub(super) fn constructor_aggregate_base(
         &mut self,
         ty: TypeId,
@@ -86,6 +100,32 @@ impl Function<'_, '_, '_, '_> {
         root_address: bool,
     ) -> Result<(), Error> {
         self.symbols.require_trivial_storage(ty)?;
+        if let Some(initializer) = initializer {
+            let expr = match initializer.kind {
+                ast::InitializerKind::Assign(id) => Some(id),
+                ast::InitializerKind::Parenthesized(values)
+                    if self.tree.expr_lists.get(values).len() == 1 =>
+                {
+                    self.tree.expr_lists.get(values).first().copied()
+                }
+                _ => None,
+            };
+            if let Some(expr) = expr
+                && !matches!(
+                    self.tree.expressions.get(expr).kind,
+                    ExprKind::Braced { .. }
+                )
+                && matches!(
+                    self.graph
+                        .lower_type(self.graph.lower_expression(expr)?.ty)?,
+                    TypeView::Class(_)
+                )
+                && self.graph.lower_constructor_arguments(entity).is_none()
+            {
+                let object = self.emit(I::Addr(slot), ty)?.value;
+                return self.materialize_class(expr, ty, object);
+            }
+        }
         if initializer.is_some() && self.graph.lower_constructor_arguments(entity).is_some() {
             return self.construct_local(entity, ty, slot);
         }
@@ -134,6 +174,9 @@ impl Function<'_, '_, '_, '_> {
         union: bool,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
+        if self.materialize_member_expression(member, pointer, initializer, union)? {
+            return Ok(());
+        }
         let ty = self.graph.lower_entity_type(member)?;
         let values = match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {

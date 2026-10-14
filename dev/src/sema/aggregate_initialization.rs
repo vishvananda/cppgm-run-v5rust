@@ -59,7 +59,13 @@ impl Analyzer<'_> {
             ));
         }
         let bare = self.bare_type(target)?;
-        self.publish_list(id, bare, ValueCategory::Prvalue)
+        self.publish_list(id, bare, ValueCategory::Prvalue)?;
+        let mut facts = self.graph.expression_facts.get(id)?;
+        facts.class_initialization = Some(super::expression_facts::ClassInitialization::Aggregate(
+            elements,
+        ));
+        self.graph.expression_facts.set(id, facts);
+        Ok(bare)
     }
     pub(super) fn aggregate_members(
         &mut self,

@@ -159,15 +159,7 @@ impl Analyzer<'_> {
             if !static_kind {
                 return Err(Error::Missing("class explicit conversions"));
             }
-            self.elide_class_copy(
-                operand,
-                target,
-                scope,
-                true,
-                false,
-                self.tree.expressions.get(id).location,
-            )?;
-            return self.new_expression_facts(target, V::Prvalue);
+            return self.explicit_class_prvalue(id, target, operand, scope);
         }
         let goal = self.bare_type(target)?;
         if matches!(
@@ -448,13 +440,24 @@ impl Analyzer<'_> {
         braced: Option<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+            return self.class_prvalue(
+                id,
+                target,
+                ast::Initializer {
+                    location: self.tree.expressions.get(id).location,
+                    kind: braced.map_or(
+                        ast::InitializerKind::Parenthesized(arguments),
+                        ast::InitializerKind::Braced,
+                    ),
+                },
+                scope,
+            );
+        }
         if let Some(braced) = braced {
             if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
                 let ty = self.array_braced_list(braced, target, scope)?;
                 return self.new_expression_facts(ty, V::Prvalue);
-            }
-            if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class list initialization"));
             }
             let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind
             else {

@@ -25,11 +25,23 @@ impl Analyzer<'_> {
             if self.function_may_throw(entity)? {
                 return Ok(true);
             }
-            let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expression).kind
+            let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) = self
+                .graph
+                .expression_facts
+                .get(expression)?
+                .class_initialization
             else {
-                return Err(Error::Invariant("constructor throw query without list"));
+                return Err(Error::Invariant(
+                    "constructor throw query without arguments",
+                ));
             };
-            let written = self.tree.expr_lists.get(elements).len();
+            let written = match arguments {
+                super::constructor_initialization::ConstructorArguments::Values(values) => {
+                    self.tree.expr_lists.get(values).len()
+                }
+                super::constructor_initialization::ConstructorArguments::Single(_) => 1,
+                super::constructor_initialization::ConstructorArguments::Value => 0,
+            };
             for default in self
                 .graph
                 .entity(entity)
@@ -162,9 +174,7 @@ impl Analyzer<'_> {
                     if self.constructor_may_throw(constructor, id, depth)? {
                         return Ok(true);
                     }
-                } else if !matches!(kind, ExprKind::Braced { .. })
-                    || !self.graph.aggregate_class(class)
-                {
+                } else if facts.class_initialization.is_none() {
                     return Err(Error::Missing("class temporary exception queries"));
                 }
                 if self.aggregate_destruction_may_throw(class)? {
@@ -180,6 +190,16 @@ impl Analyzer<'_> {
             let next = depth + 1;
             match kind {
                 ExprKind::Throw(_) => return Ok(true),
+                ExprKind::Call { arguments, .. } if facts.functional_call => {
+                    self.throw_work.extend(
+                        self.tree
+                            .expr_lists
+                            .get(arguments)
+                            .iter()
+                            .rev()
+                            .map(|&id| (id, next)),
+                    );
+                }
                 ExprKind::Call { callee, arguments } if !facts.functional_call => {
                     if matches!(
                         facts.destructor,

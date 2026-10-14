@@ -96,6 +96,20 @@ impl Function<'_, '_, '_, '_> {
                 },
             );
         }
+        if !facts.is_place && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_)) {
+            let address = self.class_temporary(
+                id,
+                if matches!(context, Context::Argument) {
+                    "arg"
+                } else {
+                    "tmpobj"
+                },
+            )?;
+            if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+                return self.base_projection(address, facts.ty, offset);
+            }
+            return Ok(address);
+        }
         if facts.temporary.is_some()
             || (!facts.is_place
                 && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Function { .. }))

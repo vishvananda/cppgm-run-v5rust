@@ -35,6 +35,19 @@ impl AssociationScratch {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn missing_callee_message(&self, name: ast::Name) -> &'static str {
+        let node = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        if (node.global || components.len() > 1)
+            && components
+                .last()
+                .is_some_and(|component| matches!(component.kind, ast::NameKind::Identifier(_)))
+        {
+            "undeclared name"
+        } else {
+            "undeclared function name"
+        }
+    }
     pub(super) fn argument_dependent_lookup(
         &mut self,
         name: ValueKey,

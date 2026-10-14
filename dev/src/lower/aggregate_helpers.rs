@@ -44,6 +44,47 @@ impl Helpers {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn prvalue_helper(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        list: &[ast::ExprId],
+    ) -> Result<bool, Error> {
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(false);
+        };
+        let (members, union) = self.graph.lower_class_members(class)?;
+        if union || list.is_empty() {
+            return Ok(false);
+        }
+        for &member in members {
+            let ty = self.graph.lower_entity_type(member)?;
+            if self.graph.lower_local_name(member).is_none()
+                || self.graph.lower_bit_field(member)?.is_some()
+                || matches!(
+                    self.graph.lower_type(ty)?,
+                    TypeView::Array { .. } | TypeView::Class(_)
+                )
+            {
+                return Ok(false);
+            }
+        }
+        let count = list.len().min(members.len());
+        if count == 0 {
+            return Ok(false);
+        }
+        self.aggregate_helper_call(
+            Key {
+                class,
+                count,
+                cv: self.graph.lower_cv(ty),
+            },
+            object,
+            list,
+            &mut 0,
+        )?;
+        Ok(true)
+    }
     /// Return the helper form only when every element supplies all scalar members
     /// or an empty list, and at least one element supplies every member.
     pub(super) fn array_helper_eligible(
@@ -253,28 +294,41 @@ impl Function<'_, '_, '_, '_> {
             {
                 next += 1;
                 self.aggregate_helper_call(
-                    class,
+                    Key {
+                        class,
+                        count: self.graph.lower_class_member_entities(class).len(),
+                        cv: 0,
+                    },
                     object,
                     self.tree.expr_lists.get(elements),
                     &mut 0,
                 )?;
             } else {
-                self.aggregate_helper_call(class, object, list, &mut next)?;
+                self.aggregate_helper_call(
+                    Key {
+                        class,
+                        count: self.graph.lower_class_member_entities(class).len(),
+                        cv: 0,
+                    },
+                    object,
+                    list,
+                    &mut next,
+                )?;
             }
         }
         Ok(())
     }
     fn aggregate_helper_call(
         &mut self,
-        class: EntityId,
+        key: Key,
         object: Value,
         list: &[ast::ExprId],
         next: &mut usize,
     ) -> Result<(), Error> {
-        let (members, _) = self.graph.lower_class_members(class)?;
+        let (members, _) = self.graph.lower_class_members(key.class)?;
         let mut values = Vec::with_capacity(members.len() + 1);
         values.push(object);
-        for &member in members {
+        for &member in members.iter().take(key.count) {
             let ty = self.graph.lower_entity_type(member)?;
             if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
                 values.push(self.aggregate_array_argument(ty, list, next)?);
@@ -316,9 +370,9 @@ impl Function<'_, '_, '_, '_> {
         }
         let symbol = self.symbols.aggregate_helper_symbol(
             self.builder.program(),
-            class,
-            members.len(),
-            0,
+            key.class,
+            key.count,
+            key.cv,
         )?;
         let arguments = self.builder.arguments(&values)?;
         self.effect(I::Call(Call {

@@ -102,6 +102,12 @@ pub(crate) enum GlvalueKind {
     BitField,
 }
 #[derive(Clone, Copy, Debug)]
+pub(crate) enum ClassInitialization {
+    Constructed(super::constructor_initialization::ConstructorArguments),
+    Aggregate(crate::syntax::storage::List<ast::ExprId>),
+    Elided(ast::ExprId),
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
@@ -136,6 +142,7 @@ pub(super) struct ExprFacts {
     // Qualified address formation is distinct from parenthesized designations.
     pub member_address_scope: Option<super::graph::ScopeId>,
     pub constructor: Option<super::construction::ConstructorId>,
+    pub class_initialization: Option<ClassInitialization>,
     pub elided_copy: Option<super::copy_initialization::CopySelection>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,6 +193,7 @@ impl ExprFacts {
             member_naming_path: None,
             member_address_scope: None,
             constructor: None,
+            class_initialization: None,
             elided_copy: None,
         }
     }

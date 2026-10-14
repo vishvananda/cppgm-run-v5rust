@@ -372,6 +372,9 @@ impl Analyzer<'_> {
         }
         self.ensure_typed(id, scope)?;
         self.convert_scalar(id, target, direct)?;
+        if self.parenthesized_elements.contains(&id) {
+            return Ok(());
+        }
         self.check_narrowing(id, target, scope)
     }
     pub(super) fn ensure_typed(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {

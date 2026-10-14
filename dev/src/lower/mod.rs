@@ -16,6 +16,7 @@ mod floating_intrinsics;
 mod function;
 mod globals;
 mod local_storage;
+mod materialization;
 mod mutations;
 mod operator_calls;
 mod pointers;

@@ -16,11 +16,18 @@ use crate::{
     syntax::{ast, storage::List},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ConstructorArguments {
     Values(List<ast::ExprId>),
     Single(ast::ExprId),
     Value,
+}
+#[derive(Clone, Copy)]
+pub(super) struct ClassInput {
+    pub arguments: ConstructorArguments,
+    pub list: Option<ast::ExprId>,
+    pub converting: bool,
+    pub copy_list: bool,
 }
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
@@ -88,6 +95,35 @@ impl Analyzer<'_> {
             ast::InitializerKind::Assign(id) => (ConstructorArguments::Single(id), true, false),
             _ => return Err(Error::Invariant("class initializer shape")),
         };
+        self.initialize_class_arguments(
+            target,
+            ClassInput {
+                arguments,
+                list,
+                converting,
+                copy_list,
+            },
+            scope,
+            location,
+        )
+    }
+    pub(super) fn initialize_class_arguments(
+        &mut self,
+        target: TypeId,
+        input: ClassInput,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
+        let TypeKind::Class(class) = self.graph.types.get(target).kind else {
+            return Err(Error::Invariant("class arguments without class"));
+        };
+        let ClassInput {
+            arguments,
+            list,
+            converting,
+            copy_list,
+        } = input;
+        let tree = self.tree;
         let single;
         let args = match arguments {
             ConstructorArguments::Values(values) => tree.expr_lists.get(values),
@@ -111,6 +147,15 @@ impl Analyzer<'_> {
                 self.type_call_argument(argument, scope)?;
             }
         }
+        if list.is_none()
+            && let [id] = args
+            && self.graph.aggregate_class(class)
+            && matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
+        {
+            self.class_list_initialize(*id, target, scope)?;
+            self.elide_class_copy(*id, target, scope, !converting, false, location)?;
+            return Ok(None);
+        }
         // Preserve the existing checked copy-elision path for same-class sources.
         if list.is_none()
             && let [id] = args
@@ -118,7 +163,7 @@ impl Analyzer<'_> {
         {
             let facts = self.graph.expression_facts.get(*id)?;
             if self.graph.class_of(facts.ty) == Some(class) {
-                self.class_copy_initializer(target, initializer, scope, location)?;
+                self.elide_class_copy(*id, target, scope, !converting, false, location)?;
                 return Ok(None);
             }
         }
@@ -286,6 +331,16 @@ impl Analyzer<'_> {
         self.publish_list(id, target, ValueCategory::Prvalue)?;
         let mut facts = self.graph.expression_facts.get(id)?;
         facts.constructor = Some(constructor);
+        let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("constructor list arguments"));
+        };
+        facts.class_initialization = Some(
+            super::expression_facts::ClassInitialization::Constructed(if elements.is_empty() {
+                ConstructorArguments::Value
+            } else {
+                ConstructorArguments::Values(elements)
+            }),
+        );
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }

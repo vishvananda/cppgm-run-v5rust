@@ -398,6 +398,15 @@ impl Function<'_, '_, '_, '_> {
             self.operator_call(id)?;
             return Ok(());
         }
+        if !facts.is_place
+            && matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Class(_)
+            )
+        {
+            self.class_temporary(id, "discard")?;
+            return Ok(());
+        }
         if self.graph.lower_lvalue(id)?
             && self.graph.lower_cv(facts.ty) & 2 != 0
             && !matches!(

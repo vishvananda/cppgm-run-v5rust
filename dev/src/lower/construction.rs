@@ -147,7 +147,7 @@ impl Function<'_, '_, '_, '_> {
         }))?;
         Ok(())
     }
-    fn zero_class_object(
+    pub(super) fn zero_class_object(
         &mut self,
         ty: TypeId,
         object: Value,

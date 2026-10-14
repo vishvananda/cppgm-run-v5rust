@@ -2,6 +2,7 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
+pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
@@ -530,6 +531,12 @@ impl Graph {
         id: ast::ExprId,
     ) -> Result<Option<ConstructorId>, Error> {
         Ok(self.expression_facts.get(id)?.constructor)
+    }
+    pub(crate) fn lower_prvalue_initialization(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<ClassInitialization>, Error> {
+        Ok(self.expression_facts.get(id)?.class_initialization)
     }
     pub(crate) fn lower_aggregate_class(&self, class: EntityId) -> bool {
         self.aggregate_class(class)

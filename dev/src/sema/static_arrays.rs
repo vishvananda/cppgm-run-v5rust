@@ -78,6 +78,11 @@ impl Analyzer<'_> {
     ) -> Result<bool, Error> {
         self.check_stack()?;
         if let TypeKind::Class(class) = self.graph.types.get(target).kind {
+            if let Some(expr) = expr
+                && let Some(complete) = self.static_zero_prvalue(target, expr, out)?
+            {
+                return Ok(complete);
+            }
             let list = if let Some(expr) = expr {
                 let root = self.graph.expression_facts.root(expr);
                 let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind else {
@@ -496,7 +501,7 @@ impl Analyzer<'_> {
         Ok(true)
     }
 }
-fn append_zero(out: &mut Vec<Item>, bytes: u64) -> Result<(), Error> {
+pub(super) fn append_zero(out: &mut Vec<Item>, bytes: u64) -> Result<(), Error> {
     if let Some(Item::Zero(prior)) = out.last_mut() {
         *prior = prior
             .checked_add(bytes)

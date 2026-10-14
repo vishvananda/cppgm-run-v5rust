@@ -434,37 +434,4 @@ impl Analyzer<'_> {
         }
         Ok(chosen.selection)
     }
-
-    pub(super) fn class_copy_initializer(
-        &mut self,
-        target: TypeId,
-        initializer: ast::Initializer,
-        scope: ScopeId,
-        location: SourceOffset,
-    ) -> Result<TypeId, Error> {
-        let (id, direct) = match initializer.kind {
-            ast::InitializerKind::Assign(id)
-                if !matches!(
-                    self.tree.expressions.get(id).kind,
-                    ast::ExprKind::Braced { .. }
-                ) =>
-            {
-                (id, false)
-            }
-            ast::InitializerKind::Parenthesized(arguments)
-                if self.tree.expr_lists.get(arguments).len() == 1 =>
-            {
-                (self.tree.expr_lists.get(arguments)[0], true)
-            }
-            _ => {
-                return Err(Error::Missing(
-                    "class list and general constructor initialization",
-                ));
-            }
-        };
-        self.ensure_typed(id, scope)?;
-        self.check_resolved_function(id)?;
-        self.elide_class_copy(id, target, scope, direct, false, location)?;
-        Ok(target)
-    }
 }

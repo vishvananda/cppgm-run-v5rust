@@ -92,11 +92,7 @@ impl Analyzer<'_> {
             if found.binding.is_none() && (qualified || callee != named) {
                 return Err(Error::at(
                     self.tree.expressions.get(named).location,
-                    if qualified {
-                        "undeclared name"
-                    } else {
-                        "undeclared function name"
-                    },
+                    self.missing_callee_message(name),
                 ));
             }
             if let Some(binding) = found.binding {

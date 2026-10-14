@@ -28,6 +28,18 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+        let facts = self.graph.lower_expression(id)?;
+        if !facts.is_place
+            && matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Class(_)
+            )
+        {
+            return self.class_temporary(id, "tmpobj");
+        }
+        self.designated_place(id)
+    }
+    fn designated_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         self.check_stack()?;
         if self.graph.lower_operator_call(id)? {
             return Ok(self.operator_call(id)?.value);
