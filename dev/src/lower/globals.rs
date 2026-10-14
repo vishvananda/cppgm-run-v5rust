@@ -23,6 +23,20 @@ pub(super) fn define(
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
 ) -> Result<(), Error> {
+    let saved = symbols.replace_temporary_owner(Some((entity, 0)));
+    let result = define_storage(program, symbols, graph, tree, entity, initializer, location);
+    symbols.replace_temporary_owner(saved);
+    result
+}
+fn define_storage(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    tree: &ast::Tree,
+    entity: EntityId,
+    initializer: Option<ast::Initializer>,
+    location: crate::support::source::SourceOffset,
+) -> Result<(), Error> {
     let facts = graph.lower_variable(entity)?;
     let array = matches!(graph.lower_type(facts.ty)?, TypeView::Array { .. });
     let mut ty = if array {
@@ -44,7 +58,7 @@ pub(super) fn define(
     let init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() {
             GlobalInit::Address(
-                data::reference_temporary(program, symbols, graph, entity)?,
+                data::reference_temporary(program, symbols, graph, tree, entity, false)?,
                 0,
             )
         } else {
@@ -93,8 +107,8 @@ pub(super) fn define(
             .iter()
             .filter_map(|item| match item {
                 crate::lowir::model::DataItem::Zero(_) => None,
-                crate::lowir::model::DataItem::Address(..) => Some(3),
-                crate::lowir::model::DataItem::Constant(ty, _) => {
+                crate::lowir::model::DataItem::Address(ty, ..)
+                | crate::lowir::model::DataItem::Constant(ty, _) => {
                     Some(types::storage_alignment(*ty))
                 }
             })
@@ -117,6 +131,9 @@ pub(super) fn define(
             init,
         },
     )?;
+    if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
+        symbols.data.define_reference(entity);
+    }
     Ok(())
 }
 pub(super) fn finish(

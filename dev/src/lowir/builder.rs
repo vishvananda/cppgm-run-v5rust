@@ -245,13 +245,24 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {
+        let positional: std::collections::HashSet<_> = self
+            .slot_names
+            .iter()
+            .filter_map(|label| {
+                if let super::construction_names::SlotName::Parameter(index) = label {
+                    Some(*index)
+                } else {
+                    None
+                }
+            })
+            .collect();
         let parameters: Vec<_> = self
             .program
             .signature(self.function.signature)
             .parameters
             .iter()
             .enumerate()
-            .filter(|(index, _)| !self.slot_names.iter().any(|label| matches!(label, super::construction_names::SlotName::Parameter(position) if position == index)))
+            .filter(|(index, _)| !positional.contains(index))
             .map(|(_, p)| p.name)
             .collect();
         let names = super::construction_names::slots(

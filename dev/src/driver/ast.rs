@@ -179,3 +179,42 @@ pub fn emit_unit(
     }
     writeln!(output, "end translation unit").map_err(AstToolError::Output)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::support::stack::StackBudget;
+
+    #[test]
+    fn integral_address_images_retain_their_storage_type_after_frontend_release() {
+        // The frozen frontend emits this i64 address even though its text
+        // reader accepts only ptr address items. Preserve that producer fact.
+        let source = SourceBuffer::new(
+            b"int x; unsigned long a[2]={(unsigned long)&x,0}; int main(){return 0;}".to_vec(),
+        )
+        .unwrap();
+        let mut output = LowIrOutput::default();
+        emit_unit(
+            &source,
+            b"address-images",
+            &PredefinedValues::default(),
+            Destination::LowIr(&mut output),
+            1,
+            StackBudget::default(),
+            EmitMode::LowIr,
+        )
+        .unwrap();
+        drop(source);
+        let mut text = Vec::new();
+        output.write(&mut text).unwrap();
+        assert!(
+            text.windows(b"i64 addr @x".len())
+                .any(|s| s == b"i64 addr @x")
+        );
+        assert!(
+            !text
+                .windows(b"ptr addr @x".len())
+                .any(|s| s == b"ptr addr @x")
+        );
+    }
+}

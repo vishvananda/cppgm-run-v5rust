@@ -20,6 +20,15 @@ pub(super) struct Objects {
     strings: HashMap<(crate::lowir::vocabulary::Type, Vec<u64>), SymbolId>,
     images: HashMap<Vec<DataItem>, SymbolId>,
     reference_temporaries: HashMap<crate::sema::lowering::EntityId, SymbolId>,
+    defined_references: std::collections::HashSet<crate::sema::lowering::EntityId>,
+}
+impl Objects {
+    pub(super) fn reference_defined(&self, entity: crate::sema::lowering::EntityId) -> bool {
+        self.defined_references.contains(&entity)
+    }
+    pub(super) fn define_reference(&mut self, entity: crate::sema::lowering::EntityId) {
+        self.defined_references.insert(entity);
+    }
 }
 fn integer(bits: u64) -> Constant {
     Constant::Integer(u128::from_le_bytes(
@@ -51,12 +60,13 @@ pub(super) fn address(
     tree: &ast::Tree,
     value: StaticValue,
 ) -> Result<(SymbolId, i64), Error> {
+    symbols.check_stack()?;
     match value {
         StaticValue::Address(entity, offset) => {
             let symbol = if graph.lower_is_variable(entity)
                 && graph.lower_variable(entity)?.reference_temporary.is_some()
             {
-                reference_temporary(program, symbols, graph, entity)?
+                reference_temporary(program, symbols, graph, tree, entity, true)?
             } else if graph.lower_is_variable(entity) {
                 symbols.variable_symbol(program, entity)?
             } else {
@@ -101,7 +111,7 @@ pub(super) fn items(
             StaticItem::Scalar(ty, value) => match value {
                 StaticValue::Address(..) | StaticValue::Literal(..) => {
                     let (symbol, offset) = address(program, symbols, graph, tree, value)?;
-                    DataItem::Address(symbol, offset)
+                    DataItem::Address(types::storage(graph, ty)?, symbol, offset)
                 }
                 _ => DataItem::Constant(types::storage(graph, ty)?, constant(value)?),
             },
@@ -181,22 +191,62 @@ pub(super) fn reference_temporary(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
+    tree: &ast::Tree,
     entity: crate::sema::lowering::EntityId,
+    evaluated: bool,
 ) -> Result<SymbolId, Error> {
     if let Some(&symbol) = symbols.data.reference_temporaries.get(&entity) {
         return Ok(symbol);
     }
     let facts = graph.lower_variable(entity)?;
-    let ty = facts
-        .reference_temporary
-        .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-            "reference temporary type missing",
-        )))?;
+    let temporary =
+        facts
+            .reference_temporary
+            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "reference temporary type missing",
+            )))?;
     let value = facts
         .initializer
         .ok_or(Error::Missing("dynamic global reference temporary"))?;
-    let (symbol, object) = symbols.reference_temporary_symbol(program, entity)?;
+    // A forward reference's pointer value can require the constant-evaluation
+    // fallback even when this is its own definition. Consume its typed root;
+    // no initializer parsing or semantic search belongs here.
+    let evaluated = evaluated
+        || matches!(value, StaticValue::Address(root, _)
+        if graph.lower_is_variable(root) && graph.lower_variable(root)?.reference_temporary.is_some()
+            && !symbols.data.reference_defined(root));
+    let ty = if evaluated {
+        temporary.value
+    } else {
+        temporary.binding
+    };
+    // Resolve nested backing objects before allocating/naming their owner.
+    let target = match value {
+        StaticValue::Address(..) | StaticValue::Literal(..) => {
+            Some(address(program, symbols, graph, tree, value)?)
+        }
+        _ => None,
+    };
+    let (symbol, object) = symbols.reference_temporary_symbol(program, entity, evaluated)?;
     let init = match value {
+        StaticValue::Integer(0)
+            if !evaluated
+                && matches!(
+                    graph.lower_type(ty)?,
+                    crate::sema::lowering::TypeView::Pointer(_)
+                        | crate::sema::lowering::TypeView::Scalar(
+                            crate::sema::lowering::Scalar::Nullptr
+                        )
+                ) =>
+        {
+            GlobalInit::Zero
+        }
+        StaticValue::Address(..) | StaticValue::Literal(..) if evaluated => {
+            let (target, offset) = target.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "temporary address missing",
+            )))?;
+            GlobalInit::Address(target, offset)
+        }
         StaticValue::Address(..) | StaticValue::Literal(..) => GlobalInit::Zero,
         _ => GlobalInit::Constant(constant(value)?),
     };

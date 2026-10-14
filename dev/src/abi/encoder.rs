@@ -26,7 +26,10 @@ pub enum Target {
         base: NodeId,
     },
     TlsWrapper(NodeId),
-    ReferenceTemporary(NodeId),
+    ReferenceTemporary {
+        owner: NodeId,
+        sequence: u32,
+    },
     Thunk {
         function: NodeId,
         this: CallOffset,
@@ -805,9 +808,24 @@ impl<'a> Encoder<'a> {
                 });
                 self.encode_type(id)?;
             }
-            Target::ReferenceTemporary(id) => {
+            Target::ReferenceTemporary { owner, sequence } => {
                 self.put(b"_ZGR");
-                self.name(id, Qualifiers::default())?;
+                self.name(owner, Qualifiers::default())?;
+                if sequence != 0 {
+                    let mut value = sequence - 1;
+                    let mut digits = [0u8; 7];
+                    let mut next = digits.len();
+                    loop {
+                        next -= 1;
+                        let digit = usize::try_from(value % 36).map_err(|_| Error::StorageLimit)?;
+                        digits[next] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[digit];
+                        value /= 36;
+                        if value == 0 {
+                            break;
+                        }
+                    }
+                    self.put(&digits[next..]);
+                }
                 self.put(b"_");
             }
             Target::TlsWrapper(id) => {

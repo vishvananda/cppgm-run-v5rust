@@ -93,7 +93,7 @@ impl Parser<'_> {
                 let ty = self.parse_type()?;
                 if ty == Type::Ptr && self.accept_word("addr")? {
                     let (target, addend) = self.address_initializer("address target")?;
-                    DataItem::Address(target, addend)
+                    DataItem::Address(ty, target, addend)
                 } else {
                     DataItem::Constant(ty, self.constant(ty)?)
                 }

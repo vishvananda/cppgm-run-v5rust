@@ -82,6 +82,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             root
         };
+        let literal = self.without_parentheses(literal);
         let units = if let ExprKind::Literal(literal) = self.tree.expressions.get(literal).kind
             && let PostTokenKind::String { ty, .. } = literal.kind
         {

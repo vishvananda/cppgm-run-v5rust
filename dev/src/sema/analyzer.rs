@@ -169,9 +169,7 @@ impl<'tree> Analyzer<'tree> {
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
         }
-        for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
-            self.record_static_initializer(entity, initializer, scope)?;
-        }
+        self.finish_static_initializers()?;
         Ok(self.graph)
     }
     pub(super) fn check_stack(&self) -> Result<(), Error> {

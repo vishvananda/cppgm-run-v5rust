@@ -1,6 +1,11 @@
 // Translated from lower/expression_lowering.cpp::bind_converted and glvalue. See NOTICE.
 //! References store addresses; scalar binding temporaries belong to one function.
-use super::{Error, conversions::Context, function::Function, types};
+use super::{
+    Error,
+    conversions::Context,
+    function::{Function, RValue},
+    types,
+};
 use crate::{
     lowir::{
         model::{Facts, InstructionKind as I, Value},
@@ -78,7 +83,16 @@ impl Function<'_, '_, '_, '_> {
             let chosen = self.conditional_slot;
             let target = facts.temporary.unwrap_or(element);
             let value = if facts.temporary.is_some() {
-                self.convert(value, target, context)?
+                // bind_converted uses convert_implicit: this is not a literal
+                // written in the outer binding's conversion context.
+                self.convert(
+                    RValue {
+                        literal: false,
+                        ..value
+                    },
+                    target,
+                    context,
+                )?
             } else {
                 value
             };

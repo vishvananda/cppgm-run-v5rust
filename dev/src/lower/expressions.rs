@@ -200,7 +200,8 @@ impl Function<'_, '_, '_, '_> {
             } => self.conditional(id, condition, then_expr, else_expr),
             ExprKind::Braced { elements, .. } => {
                 if let Some(&id) = self.tree.expr_lists.get(elements).first() {
-                    self.operand(id, context)
+                    let value = self.operand(id, Context::Initialization)?;
+                    self.fit(value, source)
                 } else {
                     self.zero(source)
                 }

@@ -283,3 +283,28 @@ fn local_scope_identity_and_closure_signature_survive_store_growth() {
     .unwrap();
     assert_eq!(output, b"Z1fiEd0_UlizE0___10_");
 }
+
+#[test]
+fn reference_temporary_sequences_cover_base36_boundaries() {
+    let mut graph = Graph::default();
+    let terminal = graph.string(b"r").unwrap();
+    let owner = graph.name(None, terminal, &[]).unwrap();
+    for (sequence, suffix) in [
+        (0, ""),
+        (1, "0"),
+        (36, "Z"),
+        (37, "10"),
+        (1297, "100"),
+        (u32::MAX, "1Z141Z2"),
+    ] {
+        let mut bytes = Vec::new();
+        Encoder::encode(
+            &graph,
+            Target::ReferenceTemporary { owner, sequence },
+            &mut bytes,
+            StackBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(bytes, format!("_ZGR1r{suffix}_").as_bytes());
+    }
+}

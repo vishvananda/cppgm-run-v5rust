@@ -290,6 +290,11 @@ impl Function<'_, '_, '_, '_> {
             .builder
             .slot(spelling, types::storage(self.graph, ty)?)?;
         self.locals.insert(entity, slot);
+        if self.terminated {
+            // unreachable_declaration retains the holder's identity but strips
+            // automatic initialization, including a reference's binding.
+            return Ok(());
+        }
         if let TypeView::Reference { .. } = self.graph.lower_type(ty)? {
             let initializer = initializer.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "reference without initializer",

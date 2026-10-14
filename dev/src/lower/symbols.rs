@@ -22,6 +22,7 @@ pub(super) struct SymbolTable {
     suffixes: HashMap<NameId, u32>,
     source: Option<SourceId>,
     string_literals: u32,
+    reference_temporaries: u32,
 }
 impl SymbolTable {
     fn allocate(
@@ -85,6 +86,7 @@ pub(super) struct Symbols<'a, 'source> {
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
     pub data: super::data::Objects,
+    temporary_owner: Option<(EntityId, u32)>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -111,6 +113,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             globals: Vec::new(),
             objects: HashMap::new(),
             data: super::data::Objects::default(),
+            temporary_owner: None,
             signatures: HashMap::new(),
         }
     }
@@ -125,9 +128,29 @@ impl<'a, 'source> Symbols<'a, 'source> {
         &mut self,
         program: &mut Program,
         entity: EntityId,
+        constant: bool,
     ) -> Result<(SymbolId, Option<NameId>), Error> {
-        let facts = self.graph.lower_variable(entity)?;
-        let spelling = format!("__ref_tmp__{}", self.identifier(facts.name)?);
+        let spelling = if constant {
+            self.table.reference_temporaries = self
+                .table
+                .reference_temporaries
+                .checked_add(1)
+                .ok_or(crate::lowir::Error::Limit)?;
+            format!("__ref_tmp__{}", self.table.reference_temporaries)
+        } else {
+            format!(
+                "__ref_tmp__{}",
+                self.identifier(self.graph.lower_variable(entity)?.name)?
+            )
+        };
+        let Some((owner, sequence)) = self.temporary_owner else {
+            return Ok((self.table.allocate(program, &spelling, None, true)?, None));
+        };
+        self.temporary_owner = Some((
+            owner,
+            sequence.checked_add(1).ok_or(crate::lowir::Error::Limit)?,
+        ));
+        let facts = self.graph.lower_variable(owner)?;
         let parent = self.scope(facts.home)?;
         let terminal = self.abi.string(self.cursor.name(facts.name))?;
         let owner = self.abi.intern(
@@ -142,7 +165,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
             &self.abi,
-            abi::encoder::Target::ReferenceTemporary(owner),
+            abi::encoder::Target::ReferenceTemporary { owner, sequence },
             &mut bytes,
             self.budget,
         )?;
@@ -152,6 +175,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .table
             .allocate(program, &spelling, Some(object), true)?;
         Ok((symbol, local_object))
+    }
+    pub(super) fn replace_temporary_owner(
+        &mut self,
+        owner: Option<(EntityId, u32)>,
+    ) -> Option<(EntityId, u32)> {
+        std::mem::replace(&mut self.temporary_owner, owner)
     }
     pub(super) fn data_symbol(
         &mut self,
@@ -170,7 +199,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.table.allocate(program, &name, None, true)
     }
-    fn check_stack(&self) -> Result<(), Error> {
+    pub(super) fn check_stack(&self) -> Result<(), Error> {
         let marker = 0u8;
         if self
             .budget

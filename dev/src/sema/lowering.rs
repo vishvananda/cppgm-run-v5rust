@@ -20,7 +20,7 @@ pub(crate) struct VariableFacts {
     pub c_linkage: bool,
     pub thread_local: bool,
     pub initializer: Option<StaticValue>,
-    pub reference_temporary: Option<TypeId>,
+    pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub definition: Option<ast::DeclaratorId>,
 }
 

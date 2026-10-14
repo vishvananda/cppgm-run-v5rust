@@ -19,7 +19,24 @@ pub(crate) enum Value {
     Address(EntityId, i64),
     Literal(ast::ExprId, i64),
 }
+#[derive(Clone, Copy)]
+pub(crate) struct ReferenceTemporary {
+    pub binding: TypeId,
+    pub value: TypeId,
+}
 impl Analyzer<'_> {
+    pub(super) fn finish_static_initializers(&mut self) -> Result<(), Error> {
+        // A new unit-end initialization query may finish a reference whose
+        // earlier declaration-time binding was unavailable. Preserve request
+        // order: a preceding dynamic initializer cannot see a later retry.
+        for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
+            if self.graph.constant_addresses.value(entity).is_none() {
+                self.record_address_initializer(entity, initializer, scope)?;
+            }
+            self.record_static_initializer(entity, initializer, scope)?;
+        }
+        Ok(())
+    }
     pub(super) fn request_static_initializer(
         &mut self,
         entity: EntityId,
@@ -59,8 +76,12 @@ impl Analyzer<'_> {
             if facts.conversion.is_some_and(|c| c.temporary) {
                 let object = facts.conversion.map_or(element, |c| c.result);
                 let value = self.static_scalar(expr, object, scope)?;
+                let value_type = self.bare_type(object)?;
                 let entity = self.graph.entity_mut(entity);
-                entity.reference_temporary = Some(object);
+                entity.reference_temporary = Some(ReferenceTemporary {
+                    binding: object,
+                    value: value_type,
+                });
                 entity.static_initializer = value;
             } else {
                 let value = match self.constant_place(expr, scope) {
@@ -392,7 +413,7 @@ mod tests {
     };
     #[test]
     fn images_are_demanded_after_unit_analysis_without_changing_syntax() {
-        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3); int *pointers[4]={&target,nullptr,0}; float values[3]={1.5f}; const int &reference=y; const int &temporary=7; const int &same=temporary;".to_vec()).unwrap();
+        let source = SourceBuffer::new(b"extern const int y; int x=y; const int y=7; double d=-0.0; int target; int *p=&target; int callee(int); int dynamic=callee(3); int *pointers[4]={&target,nullptr,0}; float values[3]={1.5f}; const int &reference=y; const int &temporary=7; const int &same=temporary; extern const int &later; const int *const &indirect=&later; const int &later=9;".to_vec()).unwrap();
         let input = Preprocessor::with_name(&source, b"static-images").unwrap();
         let mut unit = SyntaxUnit::new(input);
         unit.parse().unwrap();
@@ -442,8 +463,16 @@ mod tests {
                     temporary.static_initializer,
                     Some(Value::Integer(7))
                 ));
-                let object = temporary.reference_temporary.unwrap();
+                let object = temporary.reference_temporary.unwrap().binding;
                 assert_eq!(graph.lower_cv(object), 1);
+                assert_eq!(
+                    graph.lower_cv(temporary.reference_temporary.unwrap().value),
+                    0
+                );
+                assert!(
+                    matches!(graph.entity(entity(b"indirect")).static_initializer,
+                    Some(Value::Address(root, 0)) if root == entity(b"later"))
+                );
                 assert!(
                     matches!(same.static_initializer, Some(Value::Address(root, 0)) if root == temporary_id)
                 );

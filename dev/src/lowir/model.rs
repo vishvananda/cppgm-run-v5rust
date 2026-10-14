@@ -377,7 +377,7 @@ pub(crate) enum GlobalInit {
 pub(crate) enum DataItem {
     Zero(i64),
     Constant(Type, Constant),
-    Address(SymbolId, i64),
+    Address(Type, SymbolId, i64),
 }
 pub(crate) struct ObjectAlias {
     pub(crate) object: NameId,

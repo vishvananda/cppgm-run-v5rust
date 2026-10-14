@@ -165,7 +165,7 @@ pub(super) struct Entity {
     pub initialized_members: usize,
     pub variable: Option<VariableProperties>,
     pub variable_definition: Option<crate::syntax::ast::DeclaratorId>,
-    pub reference_temporary: Option<super::types::TypeId>,
+    pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub static_initializer: Option<super::static_initialization::Value>,
     pub template_parameter: Option<super::templates::ParameterInfo>,
     pub template_head: Option<super::templates::HeadId>,

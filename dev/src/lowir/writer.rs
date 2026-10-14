@@ -144,8 +144,8 @@ fn write_global(
                         write!(out, "{ty} ")?;
                         write_constant(out, floating, *constant, *ty, false)?;
                     }
-                    DataItem::Address(target, addend) => {
-                        write!(out, "ptr ")?;
+                    DataItem::Address(ty, target, addend) => {
+                        write!(out, "{ty} ")?;
                         write_address(program, *target, *addend, out)?;
                     }
                 }

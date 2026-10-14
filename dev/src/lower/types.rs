@@ -20,11 +20,11 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::UnsignedInt | F::Char32T) => Type::U32,
             Scalar::Basic(
                 F::LongInt | F::UnsignedLongInt | F::LongLongInt | F::UnsignedLongLongInt,
-            ) => Type::I64,
+            )
+            | Scalar::Nullptr => Type::I64,
             Scalar::Basic(F::Float) => Type::F32,
             Scalar::Basic(F::Double) => Type::F64,
             Scalar::Basic(F::LongDouble) => Type::F80,
-            Scalar::Nullptr => Type::Ptr,
         },
         TypeView::Pointer(_) | TypeView::Reference { .. } | TypeView::Function { .. } => Type::Ptr,
         TypeView::Array { element, bound } => {
