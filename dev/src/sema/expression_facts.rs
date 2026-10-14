@@ -92,7 +92,7 @@ pub(super) enum CallForm {
     Operator,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) enum GlvalueKind {
+pub(crate) enum GlvalueKind {
     Ordinary,
     BitField,
 }

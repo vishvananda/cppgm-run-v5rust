@@ -13,6 +13,48 @@ use crate::{
 };
 
 #[test]
+fn field_operations_keep_canonical_types_and_enum_value_signedness() {
+    let source = SourceBuffer::new(b"enum Positive{P=1};enum Negative{N=-1};struct S{bool b:1;unsigned long narrow:3;unsigned long full:64;Positive p:3;Negative n:3;};int f(){return sizeof(S);}".to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"field-operation-ownership").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let original_expressions = tree.expressions.mark();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_lowering();
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), original_expressions);
+    let name = cursor.intern_name(b"S").unwrap();
+    let class = graph
+        .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+        .entity;
+    let fields: Vec<_> = graph
+        .entity(class)
+        .members
+        .iter()
+        .map(|&member| graph.lower_bit_field(member).unwrap().unwrap())
+        .collect();
+    assert!(matches!(
+        graph.types.get(fields[0].operation).kind,
+        TypeKind::Scalar(Scalar::Bool)
+    ));
+    assert!(matches!(
+        graph.types.get(fields[1].operation).kind,
+        TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))
+    ));
+    assert!(matches!(
+        graph.types.get(fields[2].operation).kind,
+        TypeKind::Scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))
+    ));
+    assert!(matches!(
+        graph.types.get(fields[3].operation).kind,
+        TypeKind::Enum(_)
+    ));
+    assert!(!fields[3].signed);
+    assert!(fields[4].signed);
+}
+
+#[test]
 fn bit_field_layout_is_demanded_once_and_publishes_bounded_units() {
     let source = SourceBuffer::new(b"struct Idle{unsigned a:3;};struct Mixed{long a:3;bool b:1;};struct Narrow{int lead;unsigned a:3;char tail;};struct NonPod{NonPod();long a:3;};\n#pragma pack(push,1)\nstruct Split{unsigned a:4;unsigned long b:64;};\n#pragma pack(pop)\nint f(){return sizeof(Mixed)+sizeof(Narrow)+sizeof(NonPod)+sizeof(Split);}".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"bit-field-layout-ownership").unwrap();

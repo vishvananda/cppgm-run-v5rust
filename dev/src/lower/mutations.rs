@@ -32,6 +32,11 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_operator_call(id)? {
             return Ok(self.operator_call(id)?.value);
         }
+        if self.graph.lower_expression(id)?.is_bit_field() {
+            return Err(
+                self.field_diagnostic(id, "a bit-field glvalue outside the supported forms")
+            );
+        }
         match self.tree.expressions.get(id).kind {
             ExprKind::Paren(inner) => self.scalar_place(inner),
             ExprKind::Literal(literal) => {

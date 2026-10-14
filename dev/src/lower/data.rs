@@ -105,6 +105,15 @@ pub(super) fn items(
     let mut out = Vec::with_capacity(image.len());
     for &item in image {
         out.push(match item {
+            StaticItem::BitUnit(bytes, bits) => DataItem::Constant(
+                match bytes {
+                    1 => crate::lowir::vocabulary::Type::U8,
+                    2 => crate::lowir::vocabulary::Type::U16,
+                    4 => crate::lowir::vocabulary::Type::U32,
+                    _ => crate::lowir::vocabulary::Type::I64,
+                },
+                integer(bits),
+            ),
             StaticItem::Zero(bytes) => {
                 DataItem::Zero(i64::try_from(bytes).map_err(|_| crate::lowir::Error::Limit)?)
             }

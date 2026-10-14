@@ -19,6 +19,7 @@ use crate::{
 pub(super) struct EnumInfo {
     pub scoped: bool,
     pub fixed: bool,
+    pub negative: bool,
     pub underlying: Option<TypeId>,
     pub owner: ScopeId,
     pub anonymous_ordinal: Option<u32>,
@@ -161,6 +162,7 @@ impl Analyzer<'_> {
                 None,
                 EnumInfo {
                     scoped: false,
+                    negative: false,
                     fixed: underlying.is_some(),
                     underlying,
                     owner: scope,
@@ -275,6 +277,7 @@ impl Analyzer<'_> {
                 Some(identifier),
                 EnumInfo {
                     scoped,
+                    negative: false,
                     fixed: scoped || underlying.is_some(),
                     underlying: expected,
                     owner: home,
@@ -506,7 +509,15 @@ impl Analyzer<'_> {
             }
             self.graph.types.scalar(Scalar::Basic(selected))?
         };
+        let negative = values.iter().any(|&id| {
+            let ConstantState::Value(value) = self.graph.entity(id).constant else {
+                return false;
+            };
+            self.integral_kind(value.ty)
+                .is_some_and(|kind| kind.signed && super::integral::signed(value.bits) < 0)
+        });
         self.graph.entity_mut(entity).enumeration = Some(EnumInfo {
+            negative,
             underlying: Some(underlying),
             ..info
         });

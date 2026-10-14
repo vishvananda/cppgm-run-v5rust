@@ -115,18 +115,35 @@ pub(crate) struct FunctionFacts {
     pub qualifiers: crate::abi::graph::Qualifiers,
 }
 #[derive(Clone, Copy)]
+pub(crate) struct BitField {
+    pub operation: TypeId,
+    pub signed: bool,
+    pub width: u64,
+    pub bit: u64,
+    pub offset: u64,
+    pub bytes: u8,
+    pub split: u8,
+    pub shared: bool,
+}
+#[derive(Clone, Copy)]
 pub(crate) struct Expression {
     pub ty: TypeId,
     pub target: Option<TypeId>,
     pub folded: Option<u64>,
     pub query: Option<u64>,
     pub is_place: bool,
+    pub glvalue: GlvalueKind,
     pub null_pointer: bool,
     pub commuted: bool,
     pub temporary: Option<TypeId>,
     pub reference_cast: Option<TypeId>,
 }
-pub(crate) use super::expression_facts::ObjectSource;
+impl Expression {
+    pub(crate) fn is_bit_field(self) -> bool {
+        matches!(self.glvalue, GlvalueKind::BitField)
+    }
+}
+pub(crate) use super::expression_facts::{GlvalueKind, ObjectSource};
 impl Graph {
     pub(crate) fn lower_base_initialization_span(
         &self,
@@ -160,6 +177,16 @@ impl Graph {
             empty,
             if occupied { non_virtual_size } else { size },
         ))
+    }
+    pub(crate) fn lower_nonvirtual_bytes(&self, class: EntityId) -> Result<u64, Error> {
+        if let super::layout::LayoutState::Value {
+            non_virtual_size, ..
+        } = self.entity(class).layout
+        {
+            Ok(non_virtual_size)
+        } else {
+            Err(Error::Invariant("subobject span without completed layout"))
+        }
     }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
         !self.constructors.get(id).nontrivial()
@@ -786,6 +813,7 @@ impl Graph {
         let facts = self.expression_facts.get(id)?;
         Ok(Expression {
             ty: facts.ty,
+            glvalue: facts.glvalue,
             target: facts.conversion.map(|c| c.result),
             folded: facts.folded,
             query: facts.query_value,
@@ -944,6 +972,51 @@ impl Graph {
         self.entity(entity)
             .member_offset
             .ok_or(Error::Invariant("aggregate member without layout"))
+    }
+    pub(crate) fn lower_bit_field(&self, entity: EntityId) -> Result<Option<BitField>, Error> {
+        let Some(id) = self.entity(entity).bit_field else {
+            return Ok(None);
+        };
+        let storage = self.bit_fields.storage(id)?;
+        Ok(Some(BitField {
+            operation: self.bit_fields.operation(id),
+            signed: self.bit_fields.signed(id),
+            width: self.bit_fields.width(id),
+            bit: storage.bit,
+            offset: storage.offset,
+            bytes: storage.bytes,
+            split: storage.split,
+            shared: storage.shared,
+        }))
+    }
+    pub(crate) fn lower_anonymous_field_offset(&self, entity: EntityId) -> Result<u64, Error> {
+        let mut owner = self
+            .entity(entity)
+            .home
+            .and_then(|home| self.scope(home).owner);
+        let mut offset = 0u64;
+        while let Some(class) = owner {
+            let Some(storage) = self.entity(class).anonymous_storage else {
+                break;
+            };
+            let object = self.binding(storage).entity;
+            let Some(home) = self.entity(object).home else {
+                break;
+            };
+            if self.scope(home).kind != super::graph::ScopeKind::Class {
+                break;
+            }
+            offset = offset.wrapping_add(self.lower_member_offset(object)?);
+            owner = self.scope(home).owner;
+        }
+        Ok(offset)
+    }
+    pub(crate) fn lower_designated_bit_field(&self, expr: ast::ExprId) -> Result<EntityId, Error> {
+        let facts = self.expression_facts.get(expr)?;
+        let binding = facts
+            .member
+            .ok_or(Error::Invariant("bit-field without designation"))?;
+        Ok(self.binding(binding).entity)
     }
     pub(crate) fn lower_unnamed_bit_field(&self, entity: EntityId) -> bool {
         self.unnamed_bit_field(entity)

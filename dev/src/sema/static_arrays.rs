@@ -20,6 +20,7 @@ use std::collections::HashMap;
 pub(crate) enum Item {
     Scalar(TypeId, Value),
     Zero(u64),
+    BitUnit(u8, u64),
 }
 #[derive(Default)]
 pub(super) struct Images {
@@ -237,9 +238,61 @@ impl Analyzer<'_> {
         let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
         let union = self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union;
         let mut position = 0;
+        let mut bits = [0u8; 8];
+        let mut bit_bytes = 0;
+        let mut unit_at = 0;
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
             let ty = self.graph.lower_entity_type(member)?;
+            if let Some(field) = self.graph.entity(member).bit_field {
+                if self.graph.unnamed_bit_field(member) {
+                    continue;
+                }
+                let mut expr = list.get(*next).copied();
+                if let Some(id) = expr {
+                    *next += 1;
+                    if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+                        expr = self.tree.expr_lists.get(elements).first().copied();
+                    }
+                }
+                let value = if let Some(expr) = expr {
+                    let Some(Value::Integer(bits)) = self.static_scalar(expr, ty, scope)? else {
+                        return Ok(false);
+                    };
+                    bits
+                } else {
+                    0
+                };
+                let storage = self.graph.bit_fields.storage(field)?;
+                if storage.shared || storage.split != 0 || storage.bytes > 8 {
+                    return Ok(false);
+                }
+                if bit_bytes == 0 || storage.offset != unit_at {
+                    flush_bits(&mut bits, &mut bit_bytes, &mut position, out)?;
+                    if storage.offset < position {
+                        return Ok(false);
+                    }
+                    append_zero(out, storage.offset - position)?;
+                    position = storage.offset;
+                    unit_at = storage.offset;
+                    bit_bytes = storage.bytes;
+                }
+                for k in 0..self.graph.bit_fields.width(field).min(64) {
+                    let at = usize::try_from((storage.bit.wrapping_add(k)) / 8 - unit_at)
+                        .map_err(|_| Error::Limit("bit unit offset"))?;
+                    if at >= usize::from(bit_bytes) {
+                        return Ok(false);
+                    }
+                    if value >> k & 1 != 0 {
+                        bits[at] |= 1 << ((storage.bit.wrapping_add(k)) % 8);
+                    }
+                }
+                if union {
+                    break;
+                }
+                continue;
+            }
+            flush_bits(&mut bits, &mut bit_bytes, &mut position, out)?;
             let offset = self
                 .graph
                 .entity(member)
@@ -299,6 +352,7 @@ impl Analyzer<'_> {
                 break;
             }
         }
+        flush_bits(&mut bits, &mut bit_bytes, &mut position, out)?;
         append_zero(
             out,
             size.checked_sub(position)
@@ -354,6 +408,23 @@ fn append_zero(out: &mut Vec<Item>, bytes: u64) -> Result<(), Error> {
             .ok_or(Error::Limit("array zero bytes"))?;
     } else if bytes != 0 {
         out.push(Item::Zero(bytes));
+    }
+    Ok(())
+}
+
+fn flush_bits(
+    bits: &mut [u8; 8],
+    bytes: &mut u8,
+    position: &mut u64,
+    out: &mut Vec<Item>,
+) -> Result<(), Error> {
+    if *bytes != 0 {
+        out.push(Item::BitUnit(*bytes, u64::from_le_bytes(*bits)));
+        *position = position
+            .checked_add(u64::from(*bytes))
+            .ok_or(Error::Limit("bit unit image"))?;
+        bits.fill(0);
+        *bytes = 0;
     }
     Ok(())
 }

@@ -23,6 +23,8 @@ pub(super) struct Storage {
 }
 struct Field {
     width: u64,
+    operation: super::types::TypeId,
+    signed: bool,
     storage: Option<Storage>,
 }
 #[derive(Default)]
@@ -30,15 +32,28 @@ pub(super) struct BitFields {
     fields: Vec<Field>,
 }
 impl BitFields {
-    pub(super) fn add(&mut self, width: u64) -> Result<BitFieldId, Error> {
+    pub(super) fn add(
+        &mut self,
+        width: u64,
+        operation: super::types::TypeId,
+        signed: bool,
+    ) -> Result<BitFieldId, Error> {
         let id = BitFieldId(
             u32::try_from(self.fields.len()).map_err(|_| Error::Limit("too many bit-fields"))?,
         );
         self.fields.push(Field {
             width,
+            operation,
+            signed,
             storage: None,
         });
         Ok(id)
+    }
+    pub(super) fn operation(&self, id: BitFieldId) -> super::types::TypeId {
+        self.fields[id.0 as usize].operation
+    }
+    pub(super) fn signed(&self, id: BitFieldId) -> bool {
+        self.fields[id.0 as usize].signed
     }
     pub(super) fn width(&self, id: BitFieldId) -> u64 {
         self.fields[id.0 as usize].width
@@ -209,7 +224,40 @@ impl Analyzer<'_> {
         Ok(())
     }
     fn record_bit_field(&mut self, entity: EntityId, width: u64) -> Result<(), Error> {
-        let id = self.graph.bit_fields.add(width)?;
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("bit-field without type"))?;
+        let kind = self
+            .graph
+            .integral_kind(ty)
+            .ok_or(Error::Invariant("bit-field without integral kind"))?;
+        let mut signed = kind.signed && kind.bits > 1;
+        if let TypeKind::Enum(owner) = self.graph.types.get(ty).kind {
+            let info = self
+                .graph
+                .entity(owner)
+                .enumeration
+                .ok_or(Error::Invariant("bit-field enum without facts"))?;
+            if !info.fixed {
+                signed = info.negative;
+            }
+        }
+        let mut operation = self.bare_type(ty)?;
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(_)) && kind.bits > 1 {
+            let width = width.min(u64::from(kind.bits));
+            if width < 32 || width == 32 && signed {
+                operation = self.graph.types.scalar(super::types::Scalar::Basic(
+                    crate::types::FundamentalType::Int,
+                ))?;
+            } else if width == 32 {
+                operation = self.graph.types.scalar(super::types::Scalar::Basic(
+                    crate::types::FundamentalType::UnsignedInt,
+                ))?;
+            }
+        }
+        let id = self.graph.bit_fields.add(width, operation, signed)?;
         self.graph.entity_mut(entity).bit_field = Some(id);
         Ok(())
     }

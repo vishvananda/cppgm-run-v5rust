@@ -103,6 +103,11 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Option<bool>, Error> {
         let mut full = true;
         for &member in members {
+            // C++ helper_members/helper_shape leave bit-fields in place;
+            // a helper's ordinary scalar stores cannot address a bit unit.
+            if self.graph.lower_bit_field(member)?.is_some() {
+                return Ok(None);
+            }
             let ty = self.graph.lower_entity_type(member)?;
             let present = values.is_some_and(|values| *next < values.len());
             if let TypeView::Array { element, .. } = self.graph.lower_type(ty)?

@@ -344,6 +344,10 @@ impl Function<'_, '_, '_, '_> {
     fn read_discarded(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        if self.graph.lower_expression(id)?.is_bit_field() {
+            self.bit_field_value(id)?;
+            return Ok(());
+        }
         match self.tree.expressions.get(id).kind {
             ExprKind::Conditional {
                 condition,
@@ -403,6 +407,26 @@ impl Function<'_, '_, '_, '_> {
             && self.read_when_discarded(id)?
         {
             return self.read_discarded(id);
+        }
+        if facts.is_bit_field()
+            && matches!(
+                self.tree.expressions.get(id).kind,
+                ExprKind::Binary {
+                    assignment: true,
+                    ..
+                } | ExprKind::Unary { .. }
+            )
+        {
+            self.bit_field_value(id)?;
+            return Ok(());
+        }
+        if facts.is_bit_field()
+            && matches!(self.tree.expressions.get(id).kind, ExprKind::Member { .. })
+        {
+            if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+                self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+            }
+            return Ok(());
         }
         match self.tree.expressions.get(id).kind {
             ExprKind::FunctionalCast {

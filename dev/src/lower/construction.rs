@@ -190,6 +190,13 @@ impl Function<'_, '_, '_, '_> {
         {
             return Err(Error::Missing("recursive constructor subobject lowering"));
         }
+        self.bit_initialization = super::bit_fields::Initialization::default();
+        if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
+            self.bit_initialization.limit = self
+                .graph
+                .lower_nonvirtual_bytes(plan.class)?
+                .wrapping_mul(8);
+        }
         for (index, base) in plan.bases.iter().enumerate() {
             let (offset, empty, span) = self.graph.lower_base_initialization_span(
                 plan.class,
@@ -212,6 +219,11 @@ impl Function<'_, '_, '_, '_> {
             if base.initializer.is_none() && trivial || empty && value && trivial {
                 continue;
             }
+            self.bit_initialization.high = self.bit_initialization.high.max(
+                offset
+                    .wrapping_add(self.graph.lower_nonvirtual_bytes(base.class)?)
+                    .wrapping_mul(8),
+            );
             let ty = self.graph.lower_entity_type(base.class)?;
             let object = self.object_pointer(plan.object_pointer)?.value;
             let object = self.base_projection(object, ty, offset)?;
@@ -250,6 +262,13 @@ impl Function<'_, '_, '_, '_> {
                     plan.union,
                     location,
                 )?;
+                self.bit_initialization.unit = 0;
+                self.bit_initialization.high = self.bit_initialization.high.max(
+                    self.graph
+                        .lower_member_offset(member)?
+                        .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                        .wrapping_mul(8),
+                );
                 continue;
             }
             let single = match initializer.kind {
@@ -275,6 +294,41 @@ impl Function<'_, '_, '_, '_> {
                     )));
                 }
             };
+            if self.graph.lower_bit_field(member)?.is_some() {
+                let field = self.field(member)?;
+                let value = if let Some(single) = single {
+                    let value = self.operand(single, Context::MemberInitialization)?;
+                    self.fit(value, ty)?
+                } else {
+                    self.zero(ty)?
+                };
+                let object = self.object_pointer(plan.object_pointer)?.value;
+                let offset = self.builder.integer(u128::from(field.offset))?;
+                let address = self
+                    .emit(
+                        I::Index(Type::I8, Some(Projection::Field), object, offset),
+                        ty,
+                    )?
+                    .value;
+                self.initialize_field_value(
+                    field,
+                    super::bit_fields::Unit {
+                        address,
+                        volatile: self.graph.lower_cv(ty) & 2 != 0,
+                    },
+                    value,
+                )?;
+                let layout = self
+                    .graph
+                    .lower_bit_field(member)?
+                    .ok_or(Error::Missing("constructor field layout"))?;
+                self.bit_initialization.high = self
+                    .bit_initialization
+                    .high
+                    .max(layout.bit.wrapping_add(layout.width));
+                continue;
+            }
+            self.bit_initialization.unit = 0;
             let value = if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
                 self.bind_reference(
                     single.ok_or(Error::Semantic(crate::sema::Error::Invariant(
@@ -310,6 +364,12 @@ impl Function<'_, '_, '_, '_> {
                 value,
                 address,
             ))?;
+            self.bit_initialization.high = self.bit_initialization.high.max(
+                self.graph
+                    .lower_member_offset(member)?
+                    .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                    .wrapping_mul(8),
+            );
         }
         Ok(())
     }

@@ -236,6 +236,79 @@ impl Function<'_, '_, '_, '_> {
         input: &mut Input<'_>,
         path: &mut Path,
     ) -> Result<(), Error> {
+        let saved = self.bit_initialization;
+        self.bit_initialization = super::bit_fields::Initialization::default();
+        let result = self.named_members_inner(class, input, path);
+        self.bit_initialization = saved;
+        result
+    }
+    fn named_field(
+        &mut self,
+        member: EntityId,
+        input: &mut Input<'_>,
+        path: &mut Path,
+        value_first: bool,
+    ) -> Result<(), Error> {
+        let field = self.field(member)?;
+        let mut expr = input.values.get(input.next).copied();
+        if let Some(id) = expr {
+            input.next += 1;
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+                expr = self.tree.expr_lists.get(elements).first().copied();
+            }
+        }
+        let before = if value_first {
+            None
+        } else {
+            Some(self.field_path_address(field, path)?)
+        };
+        let value = if let Some(id) = expr {
+            let value = self.operand(id, Context::MemberInitialization)?;
+            self.fit(value, field.source)?
+        } else {
+            self.zero(field.source)?
+        };
+        let address = if let Some(address) = before {
+            address
+        } else {
+            self.field_path_address(field, path)?
+        };
+        self.initialize_field_value(
+            field,
+            super::bit_fields::Unit {
+                address,
+                volatile: path.volatile || self.graph.lower_cv(field.source) & 2 != 0,
+            },
+            value,
+        )?;
+        let layout = self
+            .graph
+            .lower_bit_field(member)?
+            .ok_or(Error::Missing("field layout"))?;
+        self.bit_initialization.high = layout.bit.wrapping_add(layout.width);
+        Ok(())
+    }
+    fn field_path_address(
+        &mut self,
+        field: super::bit_fields::Field,
+        path: &mut Path,
+    ) -> Result<Value, Error> {
+        path.steps.push(Step {
+            ty: Type::I8,
+            projection: Projection::Field,
+            offset: field.offset,
+            untyped: true,
+        });
+        let result = self.named_address(path, field.source);
+        path.steps.pop();
+        result
+    }
+    fn named_members_inner(
+        &mut self,
+        class: EntityId,
+        input: &mut Input<'_>,
+        path: &mut Path,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         if matches!(path.root, Root::Address(_)) {
             return self.structured_members(class, input, path);
@@ -245,6 +318,14 @@ impl Function<'_, '_, '_, '_> {
             if self.graph.lower_unnamed_bit_field(member) {
                 continue;
             }
+            if self.graph.lower_bit_field(member)?.is_some() {
+                self.named_field(member, input, path, !matches!(path.root, Root::This(_)))?;
+                if union {
+                    break;
+                }
+                continue;
+            }
+            self.bit_initialization.unit = 0;
             let ty = self.graph.lower_entity_type(member)?;
             path.steps.push(Step {
                 ty: Type::I8,
@@ -257,6 +338,12 @@ impl Function<'_, '_, '_, '_> {
             self.named_item(ty, input, path, Item::NamedMember)?;
             path.volatile = saved_volatile;
             path.steps.pop();
+            self.bit_initialization.unit = 0;
+            self.bit_initialization.high = self
+                .graph
+                .lower_member_offset(member)?
+                .wrapping_add(types::layout(self.graph, ty)?.0)
+                .wrapping_mul(8);
             if union {
                 break;
             }
@@ -487,6 +574,19 @@ impl Function<'_, '_, '_, '_> {
             if self.graph.lower_unnamed_bit_field(member) {
                 continue;
             }
+            if self.graph.lower_bit_field(member)?.is_some() {
+                let mut field_path = Path {
+                    root: Root::Address(root),
+                    steps: Vec::new(),
+                    volatile: path.volatile,
+                };
+                self.named_field(member, input, &mut field_path, false)?;
+                if union {
+                    break;
+                }
+                continue;
+            }
+            self.bit_initialization.unit = 0;
             let ty = self.graph.lower_entity_type(member)?;
             let offset = self
                 .builder
@@ -506,6 +606,12 @@ impl Function<'_, '_, '_, '_> {
                 volatile: path.volatile || self.graph.lower_cv(ty) & 2 != 0,
             };
             self.named_item(ty, input, &mut child, Item::StructuredMember)?;
+            self.bit_initialization.unit = 0;
+            self.bit_initialization.high = self
+                .graph
+                .lower_member_offset(member)?
+                .wrapping_add(types::layout(self.graph, ty)?.0)
+                .wrapping_mul(8);
             if union {
                 break;
             }

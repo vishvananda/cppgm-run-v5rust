@@ -23,6 +23,7 @@ pub(super) enum Context {
     BesideSize,
     Unary,
     Assignment,
+    BitFieldAssignment,
     CompoundAssignment,
     Cast,
     ArrayElement,
@@ -163,7 +164,8 @@ impl Function<'_, '_, '_, '_> {
                 };
             if let Some(bits) = value.bits
                 && ((to_bits <= from_bits
-                    && (context != Context::ArrayElement || to_bits == from_bits)
+                    && (!matches!(context, Context::ArrayElement | Context::BitFieldAssignment)
+                        || to_bits == from_bits)
                     && (context != Context::MemberInitialization
                         || to_bits == from_bits
                         || from_signed && to_signed))

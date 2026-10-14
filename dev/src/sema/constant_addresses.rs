@@ -29,6 +29,7 @@ pub(super) struct Address {
     pub root: Root,
     pub offset: i64,
     pub past_end: bool,
+    pub bit_field: Option<EntityId>,
     // The designated object's type for a place; the pointer's element for a value.
     pub designated: TypeId,
 }
@@ -38,6 +39,7 @@ impl Address {
             root,
             offset: 0,
             past_end: false,
+            bit_field: None,
             designated,
         }
     }
@@ -644,11 +646,15 @@ impl Analyzer<'_> {
                     .and_then(|home| self.graph.scope(home).owner)
                     .ok_or(Error::Invariant("member place without class owner"))?;
                 self.class_layout(owner, location)?;
-                let offset = self
-                    .graph
-                    .entity(entity)
-                    .member_offset
-                    .ok_or(Error::Invariant("member place without layout offset"))?;
+                let offset = if let Some(field) = self.graph.entity(entity).bit_field {
+                    place.bit_field = Some(entity);
+                    self.graph.bit_fields.storage(field)?.bit / 8
+                } else {
+                    self.graph
+                        .entity(entity)
+                        .member_offset
+                        .ok_or(Error::Invariant("member place without layout offset"))?
+                };
                 place.offset = place.offset.wrapping_add(super::integral::signed(offset));
                 place.designated = facts.ty;
                 Ok(place)
@@ -840,7 +846,8 @@ impl Analyzer<'_> {
                         "a variable is not usable in a constant expression",
                     ));
                 }
-                if place.offset != 0
+                if place.bit_field.is_some()
+                    || place.offset != 0
                     || self
                         .integral_kind(
                             self.graph
@@ -1031,6 +1038,7 @@ impl Analyzer<'_> {
                 })?;
                 let facts = self.graph.expression_facts.get(expr)?;
                 if facts.category != ValueCategory::Prvalue
+                    && !facts.conversion.is_some_and(|c| c.temporary)
                     || matches!(
                         self.graph.types.get(facts.ty).kind,
                         TypeKind::Function { .. }

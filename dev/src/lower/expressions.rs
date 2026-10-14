@@ -110,6 +110,16 @@ impl Function<'_, '_, '_, '_> {
                 Ok(value)
             };
         }
+        if facts.is_bit_field()
+            && facts.is_place
+            && !matches!(
+                self.tree.expressions.get(self.without_parentheses(id)).kind,
+                ExprKind::Conditional { .. }
+            )
+            || matches!(self.tree.expressions.get(id).kind, ExprKind::Postfix { operand, .. } if self.graph.lower_expression(operand)?.is_bit_field())
+        {
+            return self.bit_field_value(id);
+        }
         if matches!(
             self.graph.lower_type(source)?,
             crate::sema::lowering::TypeView::Function { .. }
