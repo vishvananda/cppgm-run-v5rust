@@ -313,6 +313,12 @@ impl Analyzer<'_> {
         let mut facts = facts;
         facts.base_path =
             self.conversion_base_path(facts, selected.binding, scope, location, true)?;
+        // A base value's selected constructor binds the original derived
+        // expression. Its prvalue is a distinct complete temporary, whose
+        // destruction and layout must be available before lowering that bind.
+        if !own_class {
+            self.check_binding_temporary(facts, selected.binding, scope, location)?;
+        }
         let written_move = direct
             && matches!(selected.origin, CopyOrigin::Declared(binding)
             if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
@@ -645,6 +651,122 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn base_value_arguments_keep_source_identity_and_selected_reference_binding() {
+        use crate::{
+            sema::{
+                expression_facts::ValueCategory,
+                types::{RefKind, TypeKind},
+            },
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(
+            br"
+            struct B{int n;B();B(const B&);B(B&&);~B();};
+            struct D:B{int m;D();};
+            void take(B);
+            void f(D&d){take(((d)));take(D());}
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"base-value-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        let mut class = |name: &[u8]| {
+            let name = cursor.intern_name(name).unwrap();
+            graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity
+        };
+        let base = class(b"B");
+        let derived = class(b"D");
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        for (&statement, (category, reference)) in tree.stmt_lists.get(statements).iter().zip([
+            (ValueCategory::Lvalue, RefKind::Lvalue),
+            (ValueCategory::Prvalue, RefKind::Rvalue),
+        ]) {
+            let ast::StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+                panic!("call statement");
+            };
+            let ast::ExprKind::Call { arguments, .. } = tree.expressions.get(call).kind else {
+                panic!("call");
+            };
+            let argument = tree.expr_lists.get(arguments)[0];
+            let facts = graph.expression_facts.get(argument).unwrap();
+            assert_eq!(graph.class_of(facts.ty), Some(derived));
+            assert_eq!(facts.category, category);
+            assert_eq!(
+                graph.expression_type(graph.expression_facts.root(argument)),
+                Some(facts.ty)
+            );
+            assert_eq!(
+                facts.conversion.unwrap().result,
+                graph.entity(base).ty.unwrap()
+            );
+            let binding = facts.class_copy.unwrap().binding;
+            assert!(
+                matches!(graph.types.get(binding.target).kind, TypeKind::Reference { element, kind } if graph.class_of(element) == Some(base) && kind == reference)
+            );
+            assert!(facts.base_path.is_some());
+            let Some(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            }) = graph.lower_class_copy(argument).unwrap()
+            else {
+                panic!("base copy action");
+            };
+            assert_eq!(graph.constructors.get(constructor).class, base);
+        }
+        assert!(graph.entity(derived).implicit_destructor.is_some());
+    }
+
+    #[test]
+    fn losing_base_value_overload_does_not_demand_its_copy_callable() {
+        let source = SourceBuffer::new(
+            b"struct B{B(const B&);};struct D:B{};void take(B);void take(D&);void f(D&d){take(d);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"base-value-ranking").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let name = cursor.intern_name(b"B").unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        let binding = graph.entity(class).declared_constructors[0];
+        assert!(
+            graph
+                .entity(graph.binding(binding).entity)
+                .constructor
+                .is_none()
+        );
+        assert!(!graph.root_demands.as_slice().iter().any(|demand| matches!(demand, super::super::function_demands::Demand::Function { binding: selected, .. } if *selected == binding)));
+    }
+
     #[test]
     fn nonelided_copy_actions_share_source_identity_without_replacing_operand_facts() {
         use crate::{sema::expression_facts::ValueCategory, syntax::ast};

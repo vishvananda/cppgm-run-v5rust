@@ -226,7 +226,19 @@ impl Function<'_, '_, '_, '_> {
         }
         let Some(root) = root else { return Ok(false) };
         let summary = if matches!(usage, ExpressionUse::ClassResult) {
-            let mut summary = self.operand_temporaries(root)?;
+            // Only a prvalue of the result's own class is built in the
+            // return destination. Slicing a derived prvalue first creates
+            // its complete temporary, even when the base copy is trivial.
+            let source = self.graph.lower_expression(root)?.ty;
+            let separate = matches!(
+                (self.graph.lower_type(source)?, self.result.map(|result| self.graph.lower_type(result)).transpose()?),
+                (TypeView::Class(source), Some(TypeView::Class(result))) if source != result
+            );
+            let mut summary = if separate {
+                self.expression_temporaries(root)?
+            } else {
+                self.operand_temporaries(root)?
+            };
             // record_copy is an initialization conversion even when its
             // source is a named glvalue. It makes the hidden return segment;
             // note_constructor_temporaries separately queries its arguments.

@@ -15,6 +15,12 @@ use crate::{
     syntax::ast,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum EmptyValueZeroing {
+    Emit,
+    Omit,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Variant {
     Complete,
@@ -332,6 +338,12 @@ impl Function<'_, '_, '_, '_> {
         span: Option<u64>,
         volatile: bool,
     ) -> Result<(), Error> {
+        if self.empty_value_zeroing == EmptyValueZeroing::Omit
+            && matches!(self.graph.lower_type(ty)?, TypeView::Class(class)
+                if self.graph.lower_class_empty(class)?)
+        {
+            return Ok(());
+        }
         let (size, alignment) = super::types::layout(self.graph, ty)?;
         let size = span.unwrap_or(size);
         if !volatile && self.graph.lower_contiguous_zero(ty)? {

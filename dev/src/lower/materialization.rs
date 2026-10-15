@@ -251,7 +251,11 @@ impl Function<'_, '_, '_, '_> {
             self.tree.expressions.get(source).kind,
             ExprKind::FunctionalCast { .. }
         ) || self.graph.lower_functional_call(source)?;
-        if self.graph.lower_class_empty(class)? && functional {
+        if self.graph.lower_class_empty(class)?
+            && functional
+            && matches!(self.graph.lower_type(self.graph.lower_expression(source)?.ty)?,
+                TypeView::Class(source_class) if source_class == class)
+        {
             self.materialize_empty_argument(source, ty, object)?;
         } else {
             let owner = self.reference_lifetimes.aggregate.take();

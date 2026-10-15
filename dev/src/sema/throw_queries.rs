@@ -169,6 +169,33 @@ impl Analyzer<'_> {
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;
             }
+            // A selected value transfer belongs to the original operand,
+            // including an unevaluated implicit copy. Query its callable
+            // properties and trailing defaults without demanding its body.
+            match self.graph.expression_facts.copy_action(id) {
+                Some(super::copy_initialization::CopyAction::Constructor {
+                    constructor, ..
+                }) => {
+                    if self.constructor_may_throw(
+                        constructor,
+                        super::constructor_initialization::ConstructorArguments::Single(id),
+                        depth,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+                Some(super::copy_initialization::CopyAction::Storage { .. }) => {
+                    if let Some(super::copy_initialization::CopySelection {
+                        origin: super::copy_initialization::CopyOrigin::Declared(binding),
+                        ..
+                    }) = facts.class_copy
+                        && self.function_may_throw(self.graph.binding(binding).entity)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                None => (),
+            }
             if let Some((constructor, _)) = self.graph.expression_facts.class_conversion(id) {
                 let plan = self.graph.constructors.get(constructor);
                 let throws = if let Some(binding) = plan.binding {
@@ -421,6 +448,41 @@ mod tests {
         };
         assert_ne!(graph.binding(first).entity, graph.binding(second).entity);
         assert!(matches!(calls[2], CallTarget::Indirect(_, Some(_))));
+    }
+
+    #[test]
+    fn unevaluated_copy_query_keeps_selection_without_emission_or_syntax_growth() {
+        let source = SourceBuffer::new(b"struct D{D();D(const D&);};struct E{D d;};extern E e;bool f(){return noexcept(E(e));}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"copy-throw-query").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), count);
+        assert!(super::super::function_demands::trailing(&graph).is_empty());
+        let query = return_expression(tree, declarations);
+        assert_eq!(graph.expression_facts.get(query).unwrap().folded, Some(0));
+        let ExprKind::TypeTrait {
+            operand: Some(cast),
+            ..
+        } = tree.expressions.get(query).kind
+        else {
+            panic!("query");
+        };
+        let ExprKind::FunctionalCast { arguments, .. } = tree.expressions.get(cast).kind else {
+            panic!("class cast");
+        };
+        let source = tree.expr_lists.get(arguments)[0];
+        let facts = graph.expression_facts.get(source).unwrap();
+        assert_eq!(facts.category, ValueCategory::Lvalue);
+        assert!(facts.class_copy.is_some());
+        assert!(matches!(
+            graph.expression_facts.copy_action(source),
+            Some(super::super::copy_initialization::CopyAction::Constructor { .. })
+        ));
     }
 
     #[test]

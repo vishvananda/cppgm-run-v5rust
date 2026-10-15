@@ -69,6 +69,38 @@ impl Analyzer<'_> {
         let target = self.graph.types.canonical_function(target)?;
         let source = self.decayed_type(facts.ty)?;
         let goal = self.bare_type(target)?;
+        // 13.3.3.1p6: a class value has an identity or derived-to-base
+        // standard sequence. Ranking this sequence does not select or demand
+        // a copy constructor; the chosen initialization does that separately.
+        if self.graph.class_of(source).is_some() || self.graph.class_of(goal).is_some() {
+            let second = if source == goal {
+                C::None
+            } else if self
+                .graph
+                .class_of(source)
+                .zip(self.graph.class_of(goal))
+                .is_some_and(|(derived, base)| self.graph.is_base_of(base, derived))
+            {
+                C::DerivedToBase
+            } else {
+                return Ok(None);
+            };
+            return Ok(Some(Conversion {
+                target,
+                result: goal,
+                first: L::None,
+                second,
+                rank: if second == C::None {
+                    R::Exact
+                } else {
+                    R::Conversion
+                },
+                qualification: false,
+                initialization: true,
+                temporary: false,
+                reference_source: ReferenceSource::Other,
+            }));
+        }
         let first = match self.graph.types.get(facts.ty).kind {
             TypeKind::Array { .. } => L::ArrayToPointer,
             TypeKind::Function { .. } => L::FunctionToPointer,

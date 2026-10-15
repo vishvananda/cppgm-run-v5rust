@@ -41,6 +41,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     // While a converting constructor consumes its source, its first standard
     // conversion is active; the outer construction use must not recur.
     pub converting_source: Option<ast::ExprId>,
+    pub empty_value_zeroing: super::construction::EmptyValueZeroing,
     pub reference_lifetimes: super::reference_lifetimes::Extensions,
     pub next_static: u32,
     pub next_block: u32,
@@ -344,6 +345,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             persistent_references: false,
             static_initializer: false,
             converting_source: None,
+            empty_value_zeroing: super::construction::EmptyValueZeroing::Emit,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
             next_block: 0,

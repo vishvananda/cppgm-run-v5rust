@@ -175,21 +175,27 @@ impl Function<'_, '_, '_, '_> {
         }
         let empty = matches!(self.graph.lower_type(result)?, TypeView::Class(class)
             if self.graph.lower_class_empty(class)? && self.graph.lower_class_bases(class).next().is_none());
-        if empty
+        let empty_value = empty
             && matches!(self.tree.expressions.get(source).kind,
                 ast::ExprKind::FunctionalCast { arguments, braced: None, .. }
-                if self.tree.expr_lists.get(arguments).is_empty())
-        {
-            self.materialize_empty_argument(source, result, object)?;
-        } else {
-            self.initialize_class_result(
-                id,
-                result,
-                object,
-                self.graph.lower_class_copy(id)?,
-                None,
-            )?;
-        }
+                if self.tree.expr_lists.get(arguments).is_empty());
+        let saved = std::mem::replace(
+            &mut self.empty_value_zeroing,
+            if empty_value {
+                super::construction::EmptyValueZeroing::Omit
+            } else {
+                super::construction::EmptyValueZeroing::Emit
+            },
+        );
+        let initialized = self.initialize_class_result(
+            id,
+            result,
+            object,
+            self.graph.lower_class_copy(id)?,
+            None,
+        );
+        self.empty_value_zeroing = saved;
+        initialized?;
         self.cleanup_return(boundary.ty, value, began)
     }
     fn initialize_class_result(
