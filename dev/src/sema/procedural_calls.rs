@@ -58,11 +58,13 @@ pub(super) struct CallSelection {
 pub(super) struct CallScratch {
     candidates: Vec<(BindingId, usize)>,
     sequences: Vec<Option<ArgumentSequence>>,
+    pub(super) surrogates: super::callable_objects::SurrogateScratch,
 }
 impl CallScratch {
     pub(super) fn clear(&mut self) {
         self.candidates.clear();
         self.sequences.clear();
+        self.surrogates.clear();
     }
 }
 #[derive(Clone, Copy)]
@@ -180,7 +182,7 @@ impl Analyzer<'_> {
             } else {
                 self.named_expression(named, &found, scope)?
             };
-            self.publish_named_callee(callee, named, facts)?;
+            self.publish_named_callee(callee, named, facts, scope)?;
             facts
         } else {
             let facts = self.typed_expression(callee, scope)?;
@@ -192,55 +194,9 @@ impl Analyzer<'_> {
         if let Some(target) = facts.destructor {
             return self.destructor_call(id, arguments, target);
         }
-        let facts = if let Some(class) = self.graph.class_of(facts.ty) {
-            let location = self.tree.expressions.get(id).location;
-            if !self.graph.entity(class).complete {
-                return Err(Error::at(
-                    location,
-                    "call of an object of incomplete class type",
-                ));
-            }
-            let home = self
-                .graph
-                .entity(class)
-                .scope
-                .ok_or(Error::Invariant("call class without scope"))?;
-            self.lookup_location = location;
-            let found = self.qualified_result(
-                home,
-                super::operator_candidates::operator_key(
-                    crate::lex::pp_lexer::Punctuator::LeftParen,
-                )?,
-                super::lookup::Filter::Ordinary,
-            )?;
-            let binding = found
-                .binding
-                .filter(|&binding| {
-                    self.graph.binding(binding).kind == super::graph::BindingKind::Function
-                })
-                .ok_or(Error::at(
-                    location,
-                    "called object is not a function or pointer to function",
-                ))?;
-            let object = super::expression_facts::ObjectArgument {
-                source: super::expression_facts::ObjectSource::Explicit {
-                    expression: callee,
-                    arrow: false,
-                },
-                ty: facts.ty,
-                category: facts.category,
-            };
-            let mut receiver = facts;
-            receiver.object = Some(object);
-            receiver.member_naming = Some(class);
-            self.graph.expression_facts.set(callee, receiver);
-            let mut designation = self.function_designation(binding, found.functions.as_slice())?;
-            designation.object = Some(object);
-            designation.member_naming = Some(class);
-            designation
-        } else {
-            facts
-        };
+        if self.graph.class_of(facts.ty).is_some() {
+            return self.callable_object_call(id, facts, scope);
+        }
         let designation = if let Some(set) = facts.functions {
             Some(set)
         } else if let Some(binding) = facts.function {
@@ -273,39 +229,52 @@ impl Analyzer<'_> {
                 facts.object,
                 &mut scratch,
             );
-            let chosen = chosen.and_then(|selected| {
-                self.apply_call_arguments(
-                    selected,
-                    self.tree.expr_lists.get(arguments),
-                    scope,
-                    &scratch,
-                )?;
-                Ok(selected.binding)
+            let result = chosen.and_then(|selected| {
+                self.finish_selected_call(id, facts, scope, selected, &scratch)
             });
             scratch.clear();
             self.call_scratch = scratch;
-            let binding = chosen?;
-            self.record_argument_base_paths(self.tree.expr_lists.get(arguments), scope)?;
-            self.check_class_arguments(binding, arguments, scope)?;
-            let location = self.tree.expressions.get(id).location;
-            self.record_call_receiver(callee, binding, facts, scope, location)?;
-            self.select_function_designation(callee, binding)?;
-            self.demand_function(binding, true);
-            let ty = self.graph.types.canonical_function(
-                self.graph
-                    .binding(binding)
-                    .ty
-                    .ok_or(Error::Invariant("function without type"))?,
-            )?;
-            let mut facts = self.call_result(ty)?;
-            facts.call = Some(CallTarget::Direct(
-                self.graph
-                    .function_origin(self.graph.binding(binding).entity)?,
-            ));
-            self.graph.record_call_binding(id, binding);
-            return Ok(facts);
+            return result;
         }
         self.indirect_call(id, callee, arguments, facts.ty, scope)
+    }
+    pub(super) fn finish_selected_call(
+        &mut self,
+        id: ast::ExprId,
+        facts: ExprFacts,
+        scope: ScopeId,
+        selected: CallSelection,
+        scratch: &CallScratch,
+    ) -> Result<ExprFacts, Error> {
+        let ast::ExprKind::Call { callee, arguments } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("selected call without call syntax"));
+        };
+        self.apply_call_arguments(
+            selected,
+            self.tree.expr_lists.get(arguments),
+            scope,
+            scratch,
+        )?;
+        let binding = selected.binding;
+        self.record_argument_base_paths(self.tree.expr_lists.get(arguments), scope)?;
+        self.check_class_arguments(binding, arguments, scope)?;
+        let location = self.tree.expressions.get(id).location;
+        self.record_call_receiver(callee, binding, facts, scope, location)?;
+        self.select_function_designation(callee, binding)?;
+        self.demand_function(binding, true);
+        let ty = self.graph.types.canonical_function(
+            self.graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("function without type"))?,
+        )?;
+        let mut facts = self.call_result(ty)?;
+        facts.call = Some(CallTarget::Direct(
+            self.graph
+                .function_origin(self.graph.binding(binding).entity)?,
+        ));
+        self.graph.record_call_binding(id, binding);
+        Ok(facts)
     }
     // Member access is checked through its naming declaration; the implicit
     // object conversion retains the physical route without rechecking that access.
@@ -416,7 +385,7 @@ impl Analyzer<'_> {
         }
         Ok(conversion)
     }
-    fn indirect_call(
+    pub(super) fn indirect_call(
         &mut self,
         id: ast::ExprId,
         callee: ast::ExprId,
@@ -486,6 +455,13 @@ impl Analyzer<'_> {
                 self.ellipsis_argument(argument)?;
             }
         }
+        if self.lowering() && self.unevaluated == 0 {
+            self.storage_layouts.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                super::layout::StorageDemand::CallBoundary(function),
+                self.tree.expressions.get(id).location,
+            ));
+        }
         let mut facts = self.call_result(function)?;
         facts.call = Some(CallTarget::Indirect(
             function,
@@ -498,11 +474,14 @@ impl Analyzer<'_> {
         callee: ast::ExprId,
         named: ast::ExprId,
         facts: ExprFacts,
+        scope: ScopeId,
     ) -> Result<(), Error> {
+        super::record(&mut self.graph.expression_scopes, named.index(), scope);
         self.graph.expression_facts.set(named, facts);
         super::record(&mut self.graph.expression_types, named.index(), facts.ty);
         let mut outer = callee;
         while outer != named {
+            super::record(&mut self.graph.expression_scopes, outer.index(), scope);
             self.graph.expression_facts.share(outer, named);
             let ast::ExprKind::Paren(inner) = self.tree.expressions.get(outer).kind else {
                 return Err(Error::Invariant("named callee without parentheses"));

@@ -25,6 +25,7 @@ pub(super) enum LayoutCategory {
 pub(super) enum StorageDemand {
     Object(super::types::TypeId),
     AnonymousUnion(EntityId),
+    CallBoundary(super::types::TypeId),
 }
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
@@ -200,6 +201,7 @@ impl Analyzer<'_> {
                 }
             }
         }
+        let mut signatures = std::collections::HashSet::new();
         for (owner, demand, location) in std::mem::take(&mut self.storage_layouts) {
             if owner.is_none_or(|owner| seen.contains(&owner)) {
                 match demand {
@@ -217,6 +219,44 @@ impl Analyzer<'_> {
                             self.record_union_default_image(entity, scope)?;
                         }
                     }
+                    StorageDemand::CallBoundary(ty) => {
+                        if signatures.insert(ty) {
+                            self.prepare_indirect_boundary(ty, location)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    fn prepare_indirect_boundary(
+        &mut self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("indirect boundary without function type"));
+        };
+        let count = self.graph.types.function_parameter_count(ty)?;
+        for index in 0..=count {
+            let object = if index == count {
+                result
+            } else {
+                self.graph.types.function_parameter(ty, index)?
+            };
+            if let TypeKind::Class(class) = self.graph.types.get(object).kind
+                && self.graph.entity(class).complete
+            {
+                self.class_layout(class, location)?;
+                self.prepare_class_parameter(class)?;
+            } else if let TypeKind::Reference { element, .. } = self.graph.types.get(object).kind {
+                if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
+                {
+                    self.type_size(element, location)?;
+                } else if let TypeKind::Class(class) = self.graph.types.get(element).kind
+                    && self.graph.entity(class).complete
+                {
+                    self.class_layout(class, location)?;
                 }
             }
         }

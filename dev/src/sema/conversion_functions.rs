@@ -266,6 +266,18 @@ impl Analyzer<'_> {
         let Some(binding) = self.unique_conversion_function(class, target)? else {
             return Ok(source);
         };
+        self.convert_class_operand(id, binding, scope)
+    }
+
+    // The frozen unique-operand and surrogate paths select declarations without
+    // an implicit-object viability or deletion check, then apply access/demand.
+    pub(super) fn convert_class_operand(
+        &mut self,
+        id: ast::ExprId,
+        binding: BindingId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let source = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
         // unique_conversion counts declarations, not viable object sequences.
         // convert_class_operand also omits the ordinary deletion check.
@@ -276,8 +288,9 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("conversion signature"))?;
         let produced = self.call_result(signature)?;
+        let target = self.decayed_type(produced.ty)?;
         let after = self
-            .standard_conversion(produced, produced.ty, false)?
+            .standard_conversion(produced, target, false)?
             .ok_or(Error::Invariant("converted operand identity"))?;
         self.graph.expression_facts.set_function_conversion(
             id,
@@ -316,7 +329,7 @@ impl Analyzer<'_> {
                     }
                     *visits += 1;
                 }
-                for &binding in &self.graph.entity(current).declared_conversions {
+                for &binding in self.graph.entity(current).declared_conversions.iter().rev() {
                     let entity = self.graph.entity(self.graph.binding(binding).entity);
                     let ty = entity
                         .ty
@@ -338,7 +351,7 @@ impl Analyzer<'_> {
                 }
                 // Own declarations hide all corresponding base declarations, even
                 // when they were themselves hidden by a more derived declaration.
-                for &binding in &self.graph.entity(current).declared_conversions {
+                for &binding in self.graph.entity(current).declared_conversions.iter().rev() {
                     let entity = self.graph.entity(self.graph.binding(binding).entity);
                     let ty = entity
                         .ty

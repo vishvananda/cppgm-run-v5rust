@@ -577,7 +577,13 @@ impl Function<'_, '_, '_, '_> {
         );
         let expression = self.lifetime.full_expression;
         let temporary_floor = self.lifetime.cleanups.len();
-        let temporaries = self.initializer_temporaries(initializer)?;
+        // The selected local constructor owns the destination transfer. Its
+        // initializer query counts only the source's evaluation temporaries.
+        let temporaries = if object {
+            self.local_initializer_temporaries(initializer, ty)?
+        } else {
+            self.initializer_temporaries(initializer)?
+        };
         let began =
             if !expression && self.constructor_expression(entity, initializer, temporaries)? {
                 self.lifetime.full_expression = true;

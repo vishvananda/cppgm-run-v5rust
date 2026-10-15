@@ -413,7 +413,12 @@ impl Function<'_, '_, '_, '_> {
         });
         self.before_lifetime_call(throws)?;
         let value = self.finish_result_call(instruction, call.result, destination, throws)?;
-        if call.place {
+        if call.place
+            && !matches!(
+                self.graph.lower_type(call.result)?,
+                crate::sema::lowering::TypeView::Function { .. }
+            )
+        {
             let ty = super::types::storage(self.graph, call.result)?;
             // A builtin conversion result is a normal glvalue. Ordinary scalar
             // initialization uses converted_value's unqualified Place instead.

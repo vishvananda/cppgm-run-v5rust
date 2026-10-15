@@ -11,6 +11,7 @@ mod bit_layout;
 mod builtin_calls;
 mod builtin_operators;
 mod call_lookup;
+mod callable_objects;
 mod class_casts;
 mod class_conditionals;
 mod constant_addresses;

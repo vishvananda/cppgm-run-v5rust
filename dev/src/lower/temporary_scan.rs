@@ -231,35 +231,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         }
         let Some(root) = root else { return Ok(false) };
-        let summary = if matches!(usage, ExpressionUse::ClassResult) {
-            // Only a prvalue of the result's own class is built in the
-            // return destination. Slicing a derived prvalue first creates
-            // its complete temporary, even when the base copy is trivial.
-            let source = self.graph.lower_expression(root)?.ty;
-            let separate = matches!(
-                (self.graph.lower_type(source)?, self.result.map(|result| self.graph.lower_type(result)).transpose()?),
-                (TypeView::Class(source), Some(TypeView::Class(result))) if source != result
-            );
-            let mut summary = if separate {
-                self.expression_temporaries(root)?
-            } else {
-                self.operand_temporaries(root)?
-            };
-            // record_copy is an initialization conversion even when its
-            // source is a named glvalue. It makes the hidden return segment;
-            // note_constructor_temporaries separately queries its arguments.
-            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
-                self.graph.lower_class_copy(root)?
-            {
-                summary.made |= self.temporary_type_destroyed(
-                    self.graph
-                        .lower_entity_type(self.graph.lower_constructor(constructor).class)?,
-                )?;
-            }
-            summary
-        } else {
-            self.expression_temporaries(root)?
-        };
+        // The return destination excludes the root from materialization, not
+        // from the full-expression's segment query. A class call's scalar
+        // operands (including an indirect callee) still use that segment.
+        let summary = self.expression_temporaries(root)?;
         if !summary.made && self.lifetime.cleanups.is_empty() {
             return Ok(false);
         }
@@ -363,16 +338,15 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
-            if (root_transfer || id != root)
-                && let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
-                    self.graph.lower_class_copy(id)?
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                self.graph.lower_class_copy(id)?
             {
                 let function = self.graph.lower_constructor_function(constructor)?;
                 // A recorded transfer is an initialization conversion in
                 // C++ creates_temporaries. An operand-only query excludes
                 // its destination, including a return's caller-owned result.
                 let class = self.graph.lower_constructor(constructor).class;
-                if include_root || id != root {
+                if root_transfer && include_root || id != root {
                     summary.made |=
                         self.temporary_type_destroyed(self.graph.lower_entity_type(class)?)?;
                 }
@@ -611,16 +585,51 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         initializer: Option<ast::Initializer>,
     ) -> Result<bool, Error> {
+        self.scan_initializer_temporaries(initializer, true)
+    }
+    pub(super) fn local_initializer_temporaries(
+        &mut self,
+        initializer: Option<ast::Initializer>,
+        destination: TypeId,
+    ) -> Result<bool, Error> {
+        let root = match initializer.map(|value| value.kind) {
+            Some(ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)) => Some(id),
+            Some(ast::InitializerKind::Parenthesized(args)) => {
+                let args = self.tree.expr_lists.get(args);
+                if args.len() == 1 { Some(args[0]) } else { None }
+            }
+            _ => None,
+        };
+        let copy_class = match root
+            .map(|id| self.graph.lower_class_copy(id))
+            .transpose()?
+            .flatten()
+        {
+            Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) => {
+                Some(self.graph.lower_constructor(constructor).class)
+            }
+            _ => None,
+        };
+        let destination = self.graph.lower_type(destination)?;
+        let destination_transfer = matches!((copy_class, destination),
+            (Some(class), TypeView::Class(target)) if class == target);
+        self.scan_initializer_temporaries(initializer, !destination_transfer)
+    }
+    fn scan_initializer_temporaries(
+        &mut self,
+        initializer: Option<ast::Initializer>,
+        transfer: bool,
+    ) -> Result<bool, Error> {
         let Some(initializer) = initializer else {
             return Ok(false);
         };
         match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
-                Ok(self.expression_temporaries(id)?.made)
+                self.initializer_expression_temporaries(id, transfer)
             }
             ast::InitializerKind::Parenthesized(arguments) => {
                 for &argument in self.tree.expr_lists.get(arguments) {
-                    if self.expression_temporaries(argument)?.made {
+                    if self.initializer_expression_temporaries(argument, transfer)? {
                         return Ok(true);
                     }
                 }
@@ -628,6 +637,18 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => Ok(false),
         }
+    }
+    fn initializer_expression_temporaries(
+        &mut self,
+        id: ast::ExprId,
+        transfer: bool,
+    ) -> Result<bool, Error> {
+        let summary = if transfer {
+            self.expression_temporaries(id)?
+        } else {
+            self.scan_temporaries(id, true, false, None)?
+        };
+        Ok(summary.made)
     }
 }
 
