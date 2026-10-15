@@ -268,6 +268,9 @@ impl Analyzer<'_> {
         let prefix = self
             .prefix(target, scope)?
             .ok_or(Error::Invariant("qualified using without prefix"))?;
+        if self.note_inherited_constructors(scope, prefix, target_key, target)? {
+            return Ok(());
+        }
         let found = self.qualified_result(prefix, target_key, Filter::Ordinary)?;
         let target_id = found
             .binding
@@ -1491,6 +1494,9 @@ impl Analyzer<'_> {
         self.declarations(node.members, class)?;
         self.class_depth -= 1;
         self.graph.entity_mut(entity).complete = true;
+        if self.semantic() && self.template_depth == 0 {
+            self.declare_inherited_constructors(entity)?;
+        }
         self.finish_class_initializers(entity, node.location)?;
         if self.semantic() && self.template_depth == 0 {
             self.classify_class_copies(entity)?;

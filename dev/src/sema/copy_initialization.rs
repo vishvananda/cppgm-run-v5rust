@@ -375,9 +375,25 @@ impl Analyzer<'_> {
         location: SourceOffset,
         candidates: &mut Vec<Candidate>,
     ) -> Result<CopySelection, Error> {
-        let copies = self.implicit_copy_candidates(class)?;
+        // A standard reference binding from an unrelated source cannot select
+        // an implicit copy or move member (13.3.3.1p4). Reject that sequence
+        // before demanding the destination's subobject copy properties.
+        let implicit_binding = self
+            .graph
+            .class_of(facts.ty)
+            .is_some_and(|source| source == class || self.graph.is_base_of(class, source));
+        let copies = if implicit_binding {
+            self.implicit_copy_candidates(class)?
+        } else {
+            ImplicitCopies {
+                copy: None,
+                moving: None,
+                copy_deleted: false,
+                passing: None,
+            }
+        };
         candidates.clear();
-        let mut offered = copies.copy.is_some() || copies.moving.is_some();
+        let mut offered = !implicit_binding || copies.copy.is_some() || copies.moving.is_some();
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);

@@ -240,7 +240,7 @@ impl Analyzer<'_> {
                     "copy-list-initialization selects an explicit constructor",
                 ));
             }
-            let constructor = self.declared_constructor_plan(selected.binding)?;
+            let constructor = self.selected_constructor_plan(selected.binding, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
             self.demand_constructor_use(constructor);
@@ -332,6 +332,7 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
+            self.check_inherited_constructor_access(binding, location)?;
             self.check_special_member_access(
                 binding,
                 self.base_object

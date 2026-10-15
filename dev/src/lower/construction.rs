@@ -137,10 +137,18 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
+        self.emit_constructor_call(entry, facts.nothrow, &values)
+    }
+    fn emit_constructor_call(
+        &mut self,
+        entry: Entry,
+        nothrow: bool,
+        values: &[Value],
+    ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
         // nonthrowing call once prior subobjects need destruction.
         self.before_lifetime_call(
-            !facts.nothrow
+            !nothrow
                 || self.lifetime.full_expression
                     && self.aggregate_has_members()
                     && self.aggregation.call_scope
@@ -148,7 +156,7 @@ impl Function<'_, '_, '_, '_> {
         )?;
         let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
         self.symbols.demand_entry(entry);
-        let arguments = self.builder.arguments(&values)?;
+        let arguments = self.builder.arguments(values)?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: Type::Void,
             callee: Value::Symbol(symbol),
@@ -157,6 +165,61 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
         }))?;
         Ok(())
+    }
+    fn forward_constructor(&mut self, id: ConstructorId, object: Value) -> Result<(), Error> {
+        let entry = Entry::Constructor(id, Variant::Base);
+        let facts = entry.facts(self.graph)?;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+            return Err(Error::Semantic(crate::sema::Error::Invariant(
+                "forwarding without signature",
+            )));
+        };
+        let function = self
+            .entity
+            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "forwarding outside constructor",
+            )))?;
+        let own = self.graph.lower_function(function)?;
+        let mut values = vec![object];
+        for (entity, _, ty) in self.graph.lower_parameters(own.scope) {
+            let slot = self.locals.get(&entity).copied().ok_or(Error::Semantic(
+                crate::sema::Error::Invariant("forwarded parameter without slot"),
+            ))?;
+            values.push(
+                if matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
+                    slot
+                } else {
+                    self.read_place(slot, ty)?.value
+                },
+            );
+        }
+        let function =
+            entry
+                .entity(self.graph)
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "forwarded constructor without entity",
+                )))?;
+        for (index, &parameter) in parameters.iter().enumerate().skip(values.len() - 1) {
+            let expression = self
+                .graph
+                .lower_default(function, index)
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "forwarded default missing",
+                )))?;
+            let value = if matches!(
+                self.graph.lower_type(parameter)?,
+                TypeView::Reference { .. }
+            ) {
+                self.bind_reference(expression, parameter, Context::Argument)?
+            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                self.class_argument(expression, parameter)?
+            } else {
+                let value = self.operand(expression, Context::Argument)?;
+                self.fit(value, parameter)?.value
+            };
+            values.push(value);
+        }
+        self.emit_constructor_call(entry, facts.nothrow, &values)
     }
     pub(super) fn zero_class_object(
         &mut self,
@@ -296,7 +359,9 @@ impl Function<'_, '_, '_, '_> {
                     }
                     false
                 });
-            if base.initializer.is_none() && trivial || empty && value && trivial {
+            if !base.forwards
+                && (base.initializer.is_none() && trivial || empty && value && trivial)
+            {
                 self.subobject_constructed(
                     self.graph.lower_entity_type(base.class)?,
                     offset,
@@ -313,6 +378,11 @@ impl Function<'_, '_, '_, '_> {
             let object = self.object_pointer(plan.object_pointer)?.value;
             let object = self.base_projection(object, ty, offset)?;
             if let Some(constructor) = base.constructor {
+                if base.forwards {
+                    self.forward_constructor(constructor, object)?;
+                    self.subobject_constructed(ty, offset, false)?;
+                    continue;
+                }
                 if value {
                     if !empty && self.graph.lower_constructor(constructor).zero_before_value {
                         self.zero_class_object(ty, object, Some(span))?;

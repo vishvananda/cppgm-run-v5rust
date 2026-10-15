@@ -228,6 +228,7 @@ pub(crate) struct Graph {
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
     pub(super) expression_scopes: Vec<Option<ScopeId>>,
     pub(super) constructors: super::construction::Constructors,
+    pub(super) inherited_constructors: super::inherited_constructors::InheritedConstructors,
     pub(super) root_demands: super::function_demands::DemandList,
     pub(super) declaration_storage: Vec<Option<BindingId>>,
     pub(super) overloads: super::function_resolution::FunctionSets,
@@ -381,6 +382,7 @@ impl Graph {
             expression_facts: super::expression_facts::ExpressionFacts::default(),
             expression_scopes: Vec::new(),
             constructors: super::construction::Constructors::default(),
+            inherited_constructors: super::inherited_constructors::InheritedConstructors::default(),
             root_demands: super::function_demands::DemandList::default(),
             declaration_storage: Vec::new(),
             overloads: super::function_resolution::FunctionSets::default(),
@@ -1005,6 +1007,9 @@ impl Graph {
     }
     pub(super) fn binding_access(&self, id: BindingId) -> Access {
         self.binding_access[id.0 as usize]
+    }
+    pub(super) fn inherit_binding_access(&mut self, binding: BindingId, origin: BindingId) {
+        self.binding_access[binding.0 as usize] = self.binding_access(origin);
     }
     pub(super) fn binding_scope(&self, id: BindingId) -> ScopeId {
         self.binding_scopes[id.0 as usize]

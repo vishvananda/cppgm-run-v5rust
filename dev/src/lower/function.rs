@@ -322,7 +322,11 @@ impl Function<'_, '_, '_, '_> {
         incoming: Value,
         slot: Value,
     ) -> Result<(), Error> {
-        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+        if let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && !self
+                .entity
+                .is_some_and(|entity| self.graph.lower_positional_parameters(entity))
+        {
             if !self.graph.lower_direct_class_parameter(class)? {
                 return Err(Error::Missing("indirect class parameter ownership"));
             }
@@ -336,7 +340,10 @@ impl Function<'_, '_, '_, '_> {
             // Prologue writes an unqualified frame place. Source accesses
             // retain the parameter object's volatile fact.
             self.builder.effect(I::Store(
-                crate::lowir::model::Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                crate::lowir::model::Facts::memory(
+                    false,
+                    !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+                ),
                 storage,
                 incoming,
                 slot,

@@ -17,6 +17,7 @@ pub(crate) struct BaseInitialization {
     pub constructor: Option<ConstructorId>,
     pub arguments: Option<ConstructorArguments>,
     pub initializer: Option<ast::Initializer>,
+    pub forwards: bool,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -286,7 +287,10 @@ impl Analyzer<'_> {
         Ok(id)
     }
 
-    fn default_member_dependency(&self, member: EntityId) -> Result<Option<EntityId>, Error> {
+    pub(super) fn default_member_dependency(
+        &self,
+        member: EntityId,
+    ) -> Result<Option<EntityId>, Error> {
         let member = self.graph.entity(member);
         if member.member_initializer.is_some() {
             return Ok(None);
@@ -320,7 +324,7 @@ impl Analyzer<'_> {
         }
         if self.graph.entity(class).user_constructor.is_some() {
             let binding = self.default_constructor_binding(class, location)?;
-            let id = self.declared_constructor_plan(binding)?;
+            let id = self.selected_constructor_plan(binding, location)?;
             self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
             return Ok(id);
         }
@@ -384,7 +388,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn scalar_constructor_facts(
+    pub(super) fn scalar_constructor_facts(
         &mut self,
         class: EntityId,
         binding: Option<BindingId>,
@@ -393,15 +397,26 @@ impl Analyzer<'_> {
         let mut deleted = false;
         let mut bases_const_default = true;
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
-        for edge in &self.graph.entity(class).bases {
+        let inherited = binding.and_then(|binding| {
+            self.graph
+                .inherited_constructors
+                .source(self.graph.binding(binding).entity)
+        });
+        for index in 0..self.graph.entity(class).bases.len() {
+            let edge = self.graph.entity(class).bases[index];
             if matches!(
                 self.graph.entity(edge.class).layout,
                 super::layout::LayoutState::Unsupported
             ) {
                 return Err(Error::Missing("extended base subobject constructor plans"));
             }
-            let ConstructorState::Ready(base) = self.graph.entity(edge.class).default_construction
-            else {
+            let base = if let Some(source) = inherited {
+                self.declared_constructor_plan(source)?
+            } else if let ConstructorState::Ready(base) =
+                self.graph.entity(edge.class).default_construction
+            {
+                base
+            } else {
                 return Err(Error::Missing("defaulted base subobject constructor plans"));
             };
             bases.push(BaseInitialization {
@@ -409,6 +424,7 @@ impl Analyzer<'_> {
                 constructor: Some(base),
                 arguments: None,
                 initializer: None,
+                forwards: inherited.is_some(),
             });
             let base = self.graph.constructors.get(base);
             // implicit_default_facts plans its bases with location zero;
@@ -424,9 +440,10 @@ impl Analyzer<'_> {
             .scope
             .ok_or(Error::Invariant("constructor class without scope"))?;
         for base in &bases {
-            if let Some(binding) = base
-                .constructor
-                .and_then(|id| self.graph.constructors.get(id).binding)
+            if !base.forwards
+                && let Some(binding) = base
+                    .constructor
+                    .and_then(|id| self.graph.constructors.get(id).binding)
             {
                 self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
             }
@@ -530,40 +547,12 @@ impl Analyzer<'_> {
                 } else {
                     initialized + const_members == members
                 });
-        let ty = self
-            .graph
-            .entity(class)
-            .ty
-            .ok_or(Error::Invariant("constructor class without type"))?;
-        let object_pointer = self
-            .graph
-            .types
-            .intern(TypeKind::Pointer(ty), Cv::default())?;
-        let void = self.graph.types.scalar(Scalar::Void)?;
-        let presentation_type = self.graph.types.intern(
-            TypeKind::Function {
-                result: void,
-                parameters: vec![object_pointer],
-                variadic: false,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
+        let (object_pointer, presentation_type, callable_type) =
+            self.constructor_types(class, binding)?;
         if let Some(binding) = binding {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
         }
-        let callable_type = self.graph.types.intern(
-            TypeKind::Function {
-                result: void,
-                parameters: Vec::new(),
-                variadic: false,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
         let mut nothrow = true;
         for id in bases
             .iter()
@@ -583,6 +572,26 @@ impl Analyzer<'_> {
                 nothrow &= !self.function_may_throw(self.graph.binding(binding).entity)?;
             } else {
                 nothrow &= child.nothrow;
+            }
+        }
+        if let (Some(source), Some(binding)) = (inherited, binding) {
+            let function = self.graph.binding(source).entity;
+            let count = self.graph.types.function_parameter_count(
+                self.graph
+                    .binding(binding)
+                    .ty
+                    .ok_or(Error::Invariant("inheriting constructor without type"))?,
+            )?;
+            let total = self.graph.types.function_parameter_count(
+                self.graph
+                    .binding(source)
+                    .ty
+                    .ok_or(Error::Invariant("forwarded constructor without type"))?,
+            )?;
+            for index in count..total {
+                if let Some(default) = self.graph.function_default(function, index) {
+                    nothrow &= !self.expression_may_throw(default)?;
+                }
             }
         }
         for &(_, source) in &plans {
@@ -615,6 +624,61 @@ impl Analyzer<'_> {
         self.publish_constructor(record)
     }
 
+    fn constructor_types(
+        &mut self,
+        class: EntityId,
+        binding: Option<BindingId>,
+    ) -> Result<(TypeId, TypeId, TypeId), Error> {
+        let ty = self
+            .graph
+            .entity(class)
+            .ty
+            .ok_or(Error::Invariant("constructor class without type"))?;
+        let object_pointer = self
+            .graph
+            .types
+            .intern(TypeKind::Pointer(ty), Cv::default())?;
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        let callable_type = if let Some(binding) = binding {
+            self.graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("constructor without signature"))?
+        } else {
+            self.graph.types.intern(
+                TypeKind::Function {
+                    result: void,
+                    parameters: Vec::new(),
+                    variadic: false,
+                    cv: Cv::default(),
+                    reference: None,
+                },
+                Cv::default(),
+            )?
+        };
+        let TypeKind::Function {
+            result,
+            ref parameters,
+            variadic,
+            ..
+        } = self.graph.types.get(callable_type).kind
+        else {
+            return Err(Error::Invariant("constructor without function type"));
+        };
+        let mut parameters = parameters.clone();
+        parameters.insert(0, object_pointer);
+        let presentation_type = self.graph.types.intern(
+            TypeKind::Function {
+                result,
+                parameters,
+                variadic,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        Ok((object_pointer, presentation_type, callable_type))
+    }
     fn publish_constructor(&mut self, mut record: Constructor) -> Result<ConstructorId, Error> {
         // Child default facts are ready bottom-up. Memoize transitive triviality
         // so use sites never walk the hierarchy again.
@@ -658,6 +722,9 @@ impl Analyzer<'_> {
             .member_function
             .ok_or(Error::Invariant("constructor without owner"))?
             .class;
+        if self.graph.inherited_constructors.source(entity).is_some() {
+            return self.inherited_constructor_plan(binding);
+        }
         if matches!(
             self.graph.entity(entity).special_definition,
             Some(SpecialDefinition::Defaulted { .. })
@@ -674,38 +741,8 @@ impl Analyzer<'_> {
             return self.scalar_constructor_facts(class, Some(binding));
         }
         // A user-provided declaration alone has no subobject plan to demand.
-        let ty = self
-            .graph
-            .entity(class)
-            .ty
-            .ok_or(Error::Invariant("constructor owner without type"))?;
-        let object_pointer = self.graph.types.pointer(ty)?;
-        let signature = self
-            .graph
-            .entity(entity)
-            .ty
-            .ok_or(Error::Invariant("constructor without signature"))?;
-        let TypeKind::Function {
-            result,
-            ref parameters,
-            variadic,
-            ..
-        } = self.graph.types.get(signature).kind
-        else {
-            return Err(Error::Invariant("constructor signature is not a function"));
-        };
-        let mut parameters = parameters.clone();
-        parameters.insert(0, object_pointer);
-        let presentation_type = self.graph.types.intern(
-            TypeKind::Function {
-                result,
-                parameters,
-                variadic,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
+        let (object_pointer, presentation_type, signature) =
+            self.constructor_types(class, Some(binding))?;
         self.publish_constructor(Constructor {
             class,
             binding: Some(binding),
@@ -926,6 +963,7 @@ impl Analyzer<'_> {
                 constructor: selected.map(|(id, _)| id),
                 arguments: selected.and_then(|(_, arguments)| initializer.map(|_| arguments)),
                 initializer,
+                forwards: false,
             });
         }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());

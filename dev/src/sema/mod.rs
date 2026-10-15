@@ -37,6 +37,7 @@ mod function_resolution;
 mod function_templates;
 mod graph;
 mod inheritance;
+mod inherited_constructors;
 mod initialization;
 mod integral;
 mod jumps;
