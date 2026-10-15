@@ -171,6 +171,7 @@ pub(super) struct Lifetime {
     pub region_depth: usize,
     pub regions_opened: usize,
     pub storage_split: Option<crate::lowir::builder::Position>,
+    pub temporary_split: Option<crate::lowir::builder::Position>,
     pub call_marks: Vec<CallMark>,
     pub declared_object: Option<Value>,
     pub guard_start: Option<crate::lowir::builder::Position>,
@@ -262,6 +263,7 @@ impl Function<'_, '_, '_, '_> {
         for position in [
             &mut self.lifetime.expression_start,
             &mut self.lifetime.storage_split,
+            &mut self.lifetime.temporary_split,
             &mut self.lifetime.guard_start,
             &mut self.lifetime.tracking.start,
         ] {
@@ -624,6 +626,19 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
+        // Ordinary destruction is the next event after a trivial temporary
+        // split. Explicit guards and handler/tracked bodies own their regions
+        // already; their calls must not open a new expression region.
+        if !unwinding
+            && region.is_none()
+            && !self.lifetime.tracking.active
+            && self
+                .lifetime
+                .temporary_split
+                .is_some_and(|position| self.builder.same_block(position))
+        {
+            self.before_lifetime_call(false)?;
+        }
         let result = match cleanup.place {
             CleanupPlace::Storage(storage) => {
                 self.destroy_storage_guarded(cleanup.ty, storage, !unwinding)

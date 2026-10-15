@@ -71,7 +71,9 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<crate::lowir::model::Value, Error> {
         let facts = self.graph.lower_expression(id)?;
         let saved = self.empty_value_zeroing;
-        if self.initialization_context == super::class_results::InitializationContext::Return {
+        if self.initialization_context == super::class_results::InitializationContext::Return
+            && !self.graph.lower_builtin_operand(id)
+        {
             self.empty_value_zeroing = super::construction::EmptyValueZeroing::Omit;
         }
         let place = self.original_scalar_place(self.without_parentheses(id));
@@ -92,6 +94,12 @@ impl Function<'_, '_, '_, '_> {
         {
             self.close_lifetime_region()?;
             self.before_lifetime_call(false)?;
+            // temporary_done leaves a split in this block when no object is
+            // alive yet. A later result temporary reopens at its next event,
+            // even when that event is a nonthrowing destructor.
+            if !self.lifetime.region {
+                self.lifetime.temporary_split = Some(self.builder.position()?);
+            }
         }
         self.storage_address(place, facts.ty)
     }

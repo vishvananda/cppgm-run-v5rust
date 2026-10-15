@@ -288,7 +288,11 @@ impl Function<'_, '_, '_, '_> {
         }
         if !throws
             && self.lifetime.full_expression
-            && self.lifetime.temporary_segment.is_nothrow()
+            && (self.lifetime.temporary_segment.is_nothrow()
+                || self
+                    .lifetime
+                    .temporary_split
+                    .is_some_and(|position| self.builder.same_block(position)))
             && !self.lifetime.region
             && !self.lifetime.cleanups.is_empty()
         {
@@ -489,6 +493,7 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Empty;
             self.lifetime.expression_start = None;
             self.lifetime.storage_split = None;
+            self.lifetime.temporary_split = None;
         }
         Ok(())
     }

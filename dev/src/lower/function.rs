@@ -311,6 +311,9 @@ pub(super) fn lower<'a>(
         }
     }
     function.finish_constructor_cleanups()?;
+    // An empty trailing region can leave its already allocated handlers
+    // pending. finish_body publishes those blocks even without a later call.
+    function.place_cleanup_chains(false)?;
     function.place_lexical_cleanups()?;
     function.place_cleanup_chains(true)?;
     function.place_destructor_terminates()?;
