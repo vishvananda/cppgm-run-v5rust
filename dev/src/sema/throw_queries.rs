@@ -181,7 +181,8 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
-            if facts.call_form == super::expression_facts::CallForm::Operator
+            if (facts.call_form == super::expression_facts::CallForm::Operator
+                || facts.literal_call.is_some())
                 && let Some(CallTarget::Direct(binding)) = facts.call
                 && self.function_may_throw(self.graph.binding(binding).entity)?
             {

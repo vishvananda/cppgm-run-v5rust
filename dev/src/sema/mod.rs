@@ -43,6 +43,7 @@ mod layout;
 mod layout_attributes;
 mod linkage;
 mod list_arguments;
+mod literal_calls;
 mod local_classes;
 mod local_names;
 mod lookup;

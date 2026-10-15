@@ -193,11 +193,7 @@ pub(crate) struct Literal {
     pub spelling: Text,
     pub token_form: bool,
     pub data: Text,
-    #[expect(
-        dead_code,
-        reason = "Literal suffix identity is consumed by the later semantic literal owner"
-    )]
-    pub suffix: Text,
+    pub suffix_name: Option<NameId>,
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Specifier {

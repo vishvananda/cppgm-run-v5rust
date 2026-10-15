@@ -19,6 +19,7 @@ mod globals;
 mod lifetime;
 mod lifetime_regions;
 mod lifetime_scan;
+mod literal_calls;
 mod local_storage;
 mod materialization;
 mod mutations;

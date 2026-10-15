@@ -9,7 +9,7 @@ use super::{
     types::{Cv, Scalar, TypeId, TypeKind},
 };
 use crate::{
-    lex::{PostTokenKind, vocabulary::Keyword},
+    lex::vocabulary::Keyword,
     syntax::ast::{self, ExprKind},
 };
 impl Analyzer<'_> {
@@ -40,38 +40,7 @@ impl Analyzer<'_> {
                 let found = self.lookup_result(name, scope, Filter::Ordinary)?;
                 self.named_expression(id, &found, scope)?
             }
-            ExprKind::Literal(literal) => {
-                let (ty, category) = match literal.kind {
-                    PostTokenKind::Literal { ty, .. }
-                    | PostTokenKind::Character {
-                        ty,
-                        suffix_begin: None,
-                        ..
-                    } => (self.graph.types.scalar(Scalar::Basic(ty))?, V::Prvalue),
-                    PostTokenKind::String { ty, elements, .. } => {
-                        let element = self.graph.types.scalar(Scalar::Basic(ty))?;
-                        let element = self.graph.types.qualify(element, Cv::CONST)?;
-                        (
-                            self.graph.types.intern(
-                                TypeKind::Array {
-                                    element,
-                                    bound: u64::from(elements),
-                                },
-                                Cv::default(),
-                            )?,
-                            V::Lvalue,
-                        )
-                    }
-                    _ => return Err(Error::Missing("user-defined semantic literals")),
-                };
-                let mut facts = self.new_expression_facts(ty, category)?;
-                if let PostTokenKind::Literal { ty, data, .. } = literal.kind {
-                    facts.null_literal = super::integral::IntegralKind::of(Scalar::Basic(ty))
-                        .is_some()
-                        && data.as_slice().iter().all(|&b| b == 0);
-                }
-                facts
-            }
+            ExprKind::Literal(literal) => self.literal_expression(id, literal, scope)?,
             ExprKind::Keyword(keyword @ (Keyword::True | Keyword::False | Keyword::Nullptr)) => {
                 let scalar = if keyword == Keyword::Nullptr {
                     Scalar::Nullptr

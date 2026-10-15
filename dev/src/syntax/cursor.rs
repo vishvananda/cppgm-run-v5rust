@@ -173,9 +173,35 @@ impl<'a> Cursor<'a> {
                 token_form: false,
                 spelling: self.spellings.add(post.source)?,
                 data: self.spellings.add(post.data)?,
-                suffix: self.spellings.add(post.suffix)?,
+                suffix_name: None,
             }),
         };
+        if let TokenKind::Literal(mut literal) = token.kind {
+            let suffix = match literal.kind {
+                PostTokenKind::String {
+                    suffix: Some((begin, end)),
+                    ..
+                } => Some((begin, end)),
+                PostTokenKind::Character {
+                    suffix_begin: Some(begin),
+                    ..
+                }
+                | PostTokenKind::UserDefinedNumber {
+                    suffix_begin: begin,
+                    ..
+                } => Some((begin, self.spellings.get(literal.spelling).len())),
+                _ => None,
+            };
+            if let Some((begin, end)) = suffix {
+                literal.suffix_name = Some(
+                    self.post
+                        .input_mut()
+                        .intern_name(&self.spellings.get(literal.spelling)[begin..end])
+                        .map_err(ParseError::Preprocess)?,
+                );
+                token.kind = TokenKind::Literal(literal);
+            }
+        }
         let alignment = self.post.input().pack_alignment();
         if alignment != self.last_pack {
             let ordinal = self
@@ -211,7 +237,7 @@ impl<'a> Cursor<'a> {
                     spelling: self.spellings.add(b"0L")?,
                     token_form: false,
                     data: self.spellings.add(data.as_slice())?,
-                    suffix: self.spellings.add(b"")?,
+                    suffix_name: None,
                 };
                 self.null_literal = Some(literal);
                 literal

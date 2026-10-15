@@ -48,7 +48,7 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
-            if self.graph.lower_operator_call(id)?
+            if (self.graph.lower_operator_call(id)? || self.graph.lower_literal_call(id)?.is_some())
                 && self.lifetime_call_throws(self.graph.lower_call(id)?)?
             {
                 return Ok(true);

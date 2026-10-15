@@ -409,7 +409,7 @@ impl Analyzer<'_> {
         matches!(
             self.tree.expressions.get(id).kind,
             ExprKind::Literal(ast::Literal {
-                kind: PostTokenKind::String { .. },
+                kind: PostTokenKind::String { suffix: None, .. },
                 ..
             })
         )

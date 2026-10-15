@@ -4,6 +4,7 @@ pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
+pub(crate) use super::literal_calls::TextCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 use super::{
@@ -896,6 +897,9 @@ impl Graph {
     }
     pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)
+    }
+    pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<TextCall>, Error> {
+        Ok(self.expression_facts.get(id)?.literal_call)
     }
     pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<CallTarget, Error> {
         match self.expression_facts.get(id)?.call {

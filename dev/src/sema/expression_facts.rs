@@ -128,6 +128,7 @@ pub(super) struct ExprFacts {
     pub function: Option<super::graph::BindingId>,
     pub call_form: CallForm,
     pub call: Option<super::function_resolution::CallTarget>,
+    pub literal_call: Option<super::literal_calls::TextCall>,
     pub destructor: Option<DestructorTarget>,
     pub anonymous_member: Option<super::graph::BindingId>,
     // Explicit designation retains the selected entity independently of spelling.
@@ -182,6 +183,7 @@ impl ExprFacts {
             function: None,
             call_form: CallForm::Ordinary,
             call: None,
+            literal_call: None,
             destructor: None,
             anonymous_member: None,
             member: None,

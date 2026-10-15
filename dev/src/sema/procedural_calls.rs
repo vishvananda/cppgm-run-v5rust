@@ -728,13 +728,21 @@ impl Analyzer<'_> {
                 scratch.sequences.truncate(first);
             }
         }
+        self.select_call(location, args.len(), usize::from(object.is_some()), scratch)
+    }
+    pub(super) fn select_call(
+        &mut self,
+        location: crate::support::source::SourceOffset,
+        count: usize,
+        object_count: usize,
+        scratch: &CallScratch,
+    ) -> Result<CallSelection, Error> {
         if scratch.candidates.is_empty() {
             return Err(Error::at(location, "no viable function for the call"));
         }
-        let object_count = usize::from(object.is_some());
         let mut best = 0;
         for index in 1..scratch.candidates.len() {
-            if self.compare_candidates(scratch, index, best, args.len(), object_count)?
+            if self.compare_candidates(scratch, index, best, count, object_count)?
                 == Ordering::Greater
             {
                 best = index;
@@ -742,7 +750,7 @@ impl Analyzer<'_> {
         }
         for index in 0..scratch.candidates.len() {
             if index != best
-                && self.compare_candidates(scratch, best, index, args.len(), object_count)?
+                && self.compare_candidates(scratch, best, index, count, object_count)?
                     != Ordering::Greater
             {
                 return Err(Error::at(location, "ambiguous call to overloaded function"));
@@ -754,6 +762,80 @@ impl Analyzer<'_> {
             first,
             object_count,
         })
+    }
+    // Literal operands are already typed values, not synthetic syntax. They
+    // use the same standard sequences and candidate ordering as ordinary calls.
+    pub(super) fn resolve_value_call(
+        &mut self,
+        location: crate::support::source::SourceOffset,
+        bindings: &[BindingId],
+        args: &[ExprFacts],
+    ) -> Result<BindingId, Error> {
+        let mut scratch = std::mem::take(&mut self.call_scratch);
+        let result = self.resolve_value_candidates(location, bindings, args, &mut scratch);
+        scratch.clear();
+        self.call_scratch = scratch;
+        result
+    }
+    fn resolve_value_candidates(
+        &mut self,
+        location: crate::support::source::SourceOffset,
+        bindings: &[BindingId],
+        args: &[ExprFacts],
+        scratch: &mut CallScratch,
+    ) -> Result<BindingId, Error> {
+        for &binding in bindings {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_some() {
+                continue;
+            }
+            let ty = entity
+                .ty
+                .ok_or(Error::Invariant("literal operator without type"))?;
+            let ty = self.graph.types.canonical_function(ty)?;
+            let TypeKind::Function {
+                parameters,
+                variadic,
+                ..
+            } = &self.graph.types.get(ty).kind
+            else {
+                return Err(Error::Invariant("literal operator without function type"));
+            };
+            let count = parameters.len();
+            if args.len() > count && !variadic
+                || (args.len()..count).any(|index| {
+                    !self.function_has_default(self.graph.binding(binding).entity, index)
+                })
+            {
+                continue;
+            }
+            let first = scratch.sequences.len();
+            let mut viable = true;
+            for (index, &facts) in args.iter().enumerate() {
+                let sequence = if index < count {
+                    let target = self.graph.types.function_parameter(ty, index)?;
+                    let Some(conversion) = self.scalar_sequence(facts, target, false)? else {
+                        viable = false;
+                        break;
+                    };
+                    Some(ArgumentSequence {
+                        conversion,
+                        application: Some(conversion),
+                        function: None,
+                    })
+                } else {
+                    None
+                };
+                scratch.sequences.push(sequence);
+            }
+            if viable {
+                scratch.candidates.push((binding, first));
+            } else {
+                scratch.sequences.truncate(first);
+            }
+        }
+        self.select_call(location, args.len(), 0, scratch)
+            .map(|chosen| chosen.binding)
     }
     pub(super) fn apply_call_arguments(
         &mut self,

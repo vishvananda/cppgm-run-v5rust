@@ -41,6 +41,9 @@ impl Function<'_, '_, '_, '_> {
     }
     fn designated_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         self.check_stack()?;
+        if self.graph.lower_literal_call(id)?.is_some() {
+            return Ok(self.text_literal_call(id)?.value);
+        }
         if self.graph.lower_operator_call(id)? {
             return Ok(self.operator_call(id)?.value);
         }

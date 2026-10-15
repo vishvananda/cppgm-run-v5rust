@@ -127,6 +127,15 @@ impl Analyzer<'_> {
         }
         let expr = *self.tree.expressions.get(id);
         let location = expr.location;
+        if self.semantic()
+            && self
+                .graph
+                .expression_facts
+                .get(id)
+                .is_ok_and(|facts| facts.literal_call.is_some())
+        {
+            return self.constant_call(id, scope, skipping);
+        }
         let value = match expr.kind {
             ExprKind::Literal(literal) => {
                 let (PostTokenKind::Literal { ty, data, .. }

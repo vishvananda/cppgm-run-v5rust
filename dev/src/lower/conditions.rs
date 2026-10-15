@@ -92,6 +92,19 @@ impl Function<'_, '_, '_, '_> {
     fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
+        if let Some(shape) = self.graph.lower_literal_call(id)? {
+            // The frozen literal_truth reads the call-form value retained on
+            // the literal: character=3, string=0, even for user literal calls.
+            return Ok((types::storage(self.graph, facts.ty)?.float_rank() == 0
+                && !matches!(
+                    self.graph.lower_type(facts.ty)?,
+                    crate::sema::lowering::TypeView::Array { .. }
+                ))
+            .then_some(matches!(
+                shape,
+                crate::sema::lowering::TextCall::Character { .. }
+            )));
+        }
         match self.tree.expressions.get(id).kind {
             ExprKind::Keyword(Keyword::True) => Ok(Some(true)),
             ExprKind::Keyword(Keyword::False) => Ok(Some(false)),
@@ -398,6 +411,10 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
+        if self.graph.lower_literal_call(id)?.is_some() {
+            self.text_literal_call(id)?;
+            return Ok(());
+        }
         if self.graph.lower_operator_call(id)? {
             self.operator_call(id)?;
             return Ok(());
