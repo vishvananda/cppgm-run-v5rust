@@ -118,6 +118,7 @@ impl RegionStart {
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
     pending: Vec<ChainBlock>,
+    omitted: Vec<ChainBlock>,
     late: Vec<ChainBlock>,
     resume: Option<BlockId>,
     conditional_resume: Option<BlockId>,
@@ -136,6 +137,7 @@ pub(super) struct Lifetime {
     pub region: bool,
     pub region_start: RegionStart,
     pub region_depth: usize,
+    pub regions_opened: usize,
     pub storage_split: Option<crate::lowir::builder::Position>,
     pub call_marks: Vec<CallMark>,
     pub declared_object: Option<Value>,
@@ -205,7 +207,11 @@ impl Function<'_, '_, '_, '_> {
         !self.lifetime.pending.is_empty()
     }
     pub(super) fn defer_cleanup_chains(&mut self) {
-        self.lifetime.late.append(&mut self.lifetime.pending);
+        self.lifetime.omitted.append(&mut self.lifetime.pending);
+    }
+    pub(super) fn resume_omitted_cleanup_chains(&mut self) {
+        self.lifetime.omitted.append(&mut self.lifetime.pending);
+        std::mem::swap(&mut self.lifetime.pending, &mut self.lifetime.omitted);
     }
     pub(super) fn automatic_destructor(
         &mut self,
@@ -378,13 +384,16 @@ impl Function<'_, '_, '_, '_> {
         if first <= self.lifetime.tracking.floor {
             self.finish_tracking()?;
         }
+        let constructed = self.lifetime.tracking.active
+            && self.lifetime.tracking.construction.active()
+            && first <= self.lifetime.tracking.floor;
         let mut throwing = false;
         let mut guarded = false;
         let guarded_region = self.lifetime.region;
         for index in first..self.lifetime.cleanups.len() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
-                throwing |= self.destructor_throws(cleanup.ty)?;
+                throwing |= constructed || self.destructor_throws(cleanup.ty)?;
                 guarded |= cleanup.guard.is_some();
             }
         }
@@ -400,8 +409,9 @@ impl Function<'_, '_, '_, '_> {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
                 let destroys_completed = self.destructor_throws(cleanup.ty)?;
-                let below = if throwing && destroys_completed && (index != 0 || completed.is_some())
-                {
+                let below = if constructed {
+                    Some(self.cleanup_prefix(true, index)?)
+                } else if throwing && destroys_completed && (index != 0 || completed.is_some()) {
                     let tail = self.cleanup_prefix(true, index)?;
                     if let Some(completed) = completed {
                         let block = self.new_block("cleanup_action")?;
@@ -760,7 +770,11 @@ impl Function<'_, '_, '_, '_> {
         unwinding: bool,
         count: usize,
     ) -> Result<BlockId, Error> {
-        let late = unwinding && (count > 8 || self.lifetime.tracking.active);
+        let late = unwinding
+            && (count > 8
+                || self.lifetime.tracking.active
+                    && (!self.lifetime.tracking.construction.active()
+                        || self.lifetime.tracking.finishing));
         let terminal = if !unwinding {
             self.lifetime.return_terminal
         } else if late {
@@ -824,6 +838,7 @@ impl Function<'_, '_, '_, '_> {
         .ok_or(Error::Semantic(crate::sema::Error::Invariant(
             "cleanup chain tail",
         )))?;
+        let pending = self.lifetime.pending.len();
         for index in first..count {
             let block = self.new_block(if !unwinding {
                 "return_cleanup_action"
@@ -863,6 +878,9 @@ impl Function<'_, '_, '_, '_> {
                 self.lifetime.cleanups[index].shared_return = Some(block);
             }
             tail = block;
+        }
+        if unwinding && !late && self.lifetime.tracking.construction.active() {
+            self.lifetime.pending[pending..].reverse();
         }
         Ok(tail)
     }
@@ -948,6 +966,9 @@ impl Function<'_, '_, '_, '_> {
         self.place_cleanup_chains(false)
     }
     pub(super) fn place_cleanup_chains(&mut self, late: bool) -> Result<(), Error> {
+        if late {
+            self.lifetime.late.append(&mut self.lifetime.omitted);
+        }
         let mut blocks = if late {
             std::mem::take(&mut self.lifetime.late)
         } else {
@@ -1026,7 +1047,10 @@ impl Function<'_, '_, '_, '_> {
         let full = std::mem::replace(&mut self.lifetime.full_expression, false);
         let pending = std::mem::take(&mut self.lifetime.pending);
         let mark = self.lifetime.late.len();
-        let head = self.unwind_entry()?;
+        self.lifetime.tracking.finishing = true;
+        let head = self.unwind_entry();
+        self.lifetime.tracking.finishing = false;
+        let head = head?;
         let blocks = self.lifetime.late.split_off(mark);
         self.place_chain_blocks(&blocks)?;
         self.lifetime.pending = pending;

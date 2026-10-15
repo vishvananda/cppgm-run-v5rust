@@ -325,7 +325,10 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Conditional { .. }
         );
         let opens =
-            destructor.is_some()
+            (destructor.is_some()
+                || !branched
+                    && self.lifetime.region_start.is_pending()
+                    && self.lifetime.guarded_operands == 0)
                 && !persistent
                 && self.lifetime.full_expression
                 && !self.lifetime.temporary_segment.is_nothrow()
@@ -344,6 +347,8 @@ impl Function<'_, '_, '_, '_> {
                         || self.lifetime.cleanups.is_empty()
                         || self.aggregate_has_members()
                         || self.lifetime.tracking.active
+                        || self.aggregation.call_scope
+                            == super::aggregate_cleanup::CallScope::OmittedValue
                 });
         let deferred_region = opens
             && !branched
@@ -354,11 +359,17 @@ impl Function<'_, '_, '_, '_> {
                 .call_marks
                 .iter()
                 .any(|mark| !mark.declared && self.builder.same_block(mark.position));
-        if opens && !deferred_region && !self.storage_region_pending() {
+        if opens
+            && !deferred_region
+            && (!self.storage_region_pending()
+                || self.aggregation.call_scope == super::aggregate_cleanup::CallScope::OmittedValue)
+        {
             let position =
                 if !self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {
                     Some(self.builder.position()?)
-                } else if branched && !self.lifetime.tracking.active {
+                } else if (branched || self.lifetime.temporary_segment.allows_eager_arguments())
+                    && !self.lifetime.tracking.active
+                {
                     self.lifetime.expression_start
                 } else {
                     None

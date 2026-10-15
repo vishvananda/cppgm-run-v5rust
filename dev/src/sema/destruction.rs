@@ -191,6 +191,9 @@ impl Analyzer<'_> {
             && facts.functions.is_none()
         {
             self.class_parameter_destruction(facts.ty, scope, location)?;
+            if self.lowering() && self.unevaluated == 0 {
+                self.request_object_layout(facts.ty, location);
+            }
         }
         Ok(())
     }
@@ -207,6 +210,9 @@ impl Analyzer<'_> {
         ) {
             if conversion.temporary {
                 self.class_parameter_destruction(conversion.result, scope, location)?;
+                if self.lowering() && self.unevaluated == 0 {
+                    self.request_object_layout(conversion.result, location);
+                }
             } else {
                 self.check_temporary_destruction(facts, scope, location)?;
             }

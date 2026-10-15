@@ -27,6 +27,7 @@ pub(super) struct Scope {
     region: bool,
     region_start: super::lifetime::RegionStart,
     start: Option<Position>,
+    storage_split: Option<Position>,
     tracking: bool,
 }
 impl Function<'_, '_, '_, '_> {
@@ -61,6 +62,7 @@ impl Function<'_, '_, '_, '_> {
             region: self.lifetime.region,
             region_start: self.lifetime.region_start,
             start: self.lifetime.expression_start,
+            storage_split: self.lifetime.storage_split.take(),
             tracking: self.lifetime.tracking.active,
         };
         self.lifetime.full_expression = false;
@@ -118,6 +120,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region = scope.region;
         self.lifetime.region_start = scope.region_start;
         self.lifetime.expression_start = scope.start;
+        self.lifetime.storage_split = scope.storage_split;
         self.lifetime.tracking.active = scope.tracking;
         Ok(())
     }

@@ -525,6 +525,39 @@ mod tests {
     };
 
     #[test]
+    fn allocated_reference_member_materializes_only_its_reached_temporary() {
+        let source = SourceBuffer::new(
+            b"struct T{~T();};struct A{const T&t;};struct Unused{};A*f(){return new A{T()};}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"allocated-reference").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        for name in [b"T".as_slice(), b"A"] {
+            let name = cursor.intern_name(name).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Elaborated).unwrap())
+                .entity;
+            assert!(graph.lower_class_layout(class).is_ok(), "{name:?}");
+        }
+        let name = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(graph.own(graph.global, name, Filter::Elaborated).unwrap())
+            .entity;
+        assert!(matches!(
+            graph.entity(unused).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+    }
+
+    #[test]
     fn deletion_retains_selected_functions_and_original_pointer_ownership() {
         let source = SourceBuffer::new(
             b"struct A{~A();static void operator delete(void*,unsigned long) noexcept;};\

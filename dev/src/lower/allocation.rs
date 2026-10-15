@@ -23,7 +23,6 @@ impl Function<'_, '_, '_, '_> {
         };
         let use_ = self.graph.lower_deletion(id)?;
         let source = self.graph.lower_expression(id)?.ty;
-        self.begin_storage_expression(true)?;
         let object = self.operand(operand, Context::Operand)?;
         let class =
             !use_.incomplete && matches!(self.graph.lower_type(use_.target)?, TypeView::Class(_));
@@ -107,6 +106,9 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
         });
         self.lifetime_result(call, result)?;
+        if !self.lifetime.full_expression && !self.lifetime.construction {
+            self.close_lifetime_region()?;
+        }
         Ok(())
     }
 
@@ -150,7 +152,10 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        let throws = self.lifetime_call_throws(CallTarget::Direct(use_.function))?;
+        let throws = self.lifetime_call_throws(CallTarget::Direct(use_.function))?
+            || self.lifetime.full_expression
+                && self.lifetime.temporary_segment.allows_eager_arguments()
+                && function.builtin.is_none();
         self.symbols.demand(use_.function);
         let callee = self.symbols.callee(use_.function, &mut self.builder)?;
         let arguments = self.builder.arguments(&values)?;
@@ -177,6 +182,9 @@ impl Function<'_, '_, '_, '_> {
                 .constructor
                 .is_some_and(|(id, _)| !self.graph.lower_constructor_trivial(id));
         let end = if function.nothrow && !use_.reserved && work {
+            if self.lifetime.tracking.active && self.lifetime.region {
+                self.close_lifetime_region()?;
+            }
             let initialize = self.new_block("new_init")?;
             let end = self.new_block("new_end")?;
             let zero = self.builder.integer(0)?;
@@ -203,6 +211,10 @@ impl Function<'_, '_, '_, '_> {
         }
         let first = self.lifetime.cleanups.len();
         if let Some(deallocator) = deallocator {
+            if self.lifetime.tracking.active {
+                self.lifetime.tracking.construction =
+                    super::tracked_lifetimes::ConstructionTracking::Storage;
+            }
             let placement = if written.is_empty() {
                 None
             } else {

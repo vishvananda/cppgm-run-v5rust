@@ -260,7 +260,9 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_class_copy(root)?,
                 Some(crate::sema::lowering::CopyAction::Constructor { .. })
             );
-        let throwing = hidden_copy || self.expression_throws(root)?;
+        let hidden =
+            summary.made && matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult);
+        let throwing = hidden_copy || self.expression_throws_in_context(root, hidden)?;
         if (summary.made || !self.lifetime.cleanups.is_empty())
             && (throwing || summary.call_result.present() || summary.caller_destroyed)
         {

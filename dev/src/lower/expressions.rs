@@ -708,6 +708,10 @@ impl Function<'_, '_, '_, '_> {
         let then_block = self.builder.block_id(&then_name)?;
         let else_block = self.builder.block_id(&else_name)?;
         let end_block = self.builder.block_id(&end_name)?;
+        let guard_start = self.lifetime.guard_start;
+        if guard_start.is_none() {
+            self.lifetime.guard_start = Some(self.builder.position()?);
+        }
         let condition = self.expression(condition, Context::Operand)?;
         let condition = if condition.ty.float_rank() != 0 {
             let zero = self.zero(condition.source)?;
@@ -720,8 +724,24 @@ impl Function<'_, '_, '_, '_> {
         };
         self.effect(I::Branch(condition.value, then_block, else_block))?;
         let local = self.branch_local(id);
-        for (name, expression) in [(&then_name, then_expr), (&else_name, else_expr)] {
+        let opened = self.lifetime.regions_opened;
+        for (index, (name, expression)) in [(&then_name, then_expr), (&else_name, else_expr)]
+            .into_iter()
+            .enumerate()
+        {
             self.builder.block(name)?;
+            if index != 0
+                && self.lifetime.full_expression
+                && !self.lifetime.region
+                && self.lifetime.regions_opened != opened
+                && !self.lifetime.tracking.active
+                && (!self.lifetime.temporary_segment.allows_eager_arguments()
+                    || self.expression_throws(expression)?
+                    || self.expression_temporaries(expression)?.made)
+            {
+                let position = self.builder.position()?;
+                self.open_temporary_region_at(Some(position))?;
+            }
             let first = self.lifetime.cleanups.len();
             self.lifetime.guarded_operands += u32::from(!local);
             let value = self.operand(expression, Context::Operand)?;
@@ -739,6 +759,9 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Jump(end_block))?;
         }
         self.builder.block(&end_name)?;
+        if guard_start.is_none() {
+            self.lifetime.guard_start = None;
+        }
         self.conditional_slot = Some(slot);
         self.emit(
             I::Load(types::memory(self.graph, source)?, ty, slot),

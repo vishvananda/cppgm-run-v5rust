@@ -30,8 +30,15 @@ impl Function<'_, '_, '_, '_> {
         Ok(false)
     }
     pub(super) fn expression_throws(&mut self, root: ast::ExprId) -> Result<bool, Error> {
+        self.expression_throws_in_context(root, false)
+    }
+    pub(super) fn expression_throws_in_context(
+        &mut self,
+        root: ast::ExprId,
+        hidden: bool,
+    ) -> Result<bool, Error> {
         let mut work = std::mem::take(&mut self.lifetime.throw_work);
-        let result = self.scan_expression_throws(root, &mut work);
+        let result = self.scan_expression_throws(root, &mut work, hidden);
         work.clear();
         self.lifetime.throw_work = work;
         result
@@ -40,6 +47,7 @@ impl Function<'_, '_, '_, '_> {
         &self,
         root: ast::ExprId,
         work: &mut Vec<ast::ExprId>,
+        hidden: bool,
     ) -> Result<bool, Error> {
         work.push(root);
         while let Some(id) = work.pop() {
@@ -47,7 +55,7 @@ impl Function<'_, '_, '_, '_> {
             let facts = self.graph.lower_expression(id)?;
             let mut step = 0;
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {
-                if self.lifetime_call_throws(CallTarget::Direct(call.function))? {
+                if self.call_throws_in_context(CallTarget::Direct(call.function), hidden)? {
                     return Ok(true);
                 }
                 step += 1;
@@ -57,28 +65,31 @@ impl Function<'_, '_, '_, '_> {
             }
             if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
                 self.graph.lower_class_copy(id)?
-                && !Entry::Constructor(constructor, Variant::Complete)
-                    .facts(self.graph)?
-                    .nothrow
+                && (hidden
+                    || !Entry::Constructor(constructor, Variant::Complete)
+                        .facts(self.graph)?
+                        .nothrow)
             {
                 return Ok(true);
             }
             if let Some((constructor, _)) = self.graph.lower_class_conversion(id)
-                && !Entry::Constructor(constructor, Variant::Complete)
-                    .facts(self.graph)?
-                    .nothrow
+                && (hidden
+                    || !Entry::Constructor(constructor, Variant::Complete)
+                        .facts(self.graph)?
+                        .nothrow)
             {
                 return Ok(true);
             }
             if (self.graph.lower_operator_call(id)? || self.graph.lower_literal_call(id)?.is_some())
-                && self.lifetime_call_throws(self.graph.lower_call(id)?)?
+                && self.call_throws_in_context(self.graph.lower_call(id)?, hidden)?
             {
                 return Ok(true);
             }
             if let Some(constructor) = self.graph.lower_list_constructor(id)?
-                && !Entry::Constructor(constructor, Variant::Complete)
-                    .facts(self.graph)?
-                    .nothrow
+                && (hidden
+                    || !Entry::Constructor(constructor, Variant::Complete)
+                        .facts(self.graph)?
+                        .nothrow)
             {
                 return Ok(true);
             }
@@ -88,7 +99,7 @@ impl Function<'_, '_, '_, '_> {
                         && !self.graph.lower_destructor_evaluation_only(id)?
                     {
                         let target = self.graph.lower_call(id)?;
-                        if self.lifetime_call_throws(target)? {
+                        if self.call_throws_in_context(target, hidden)? {
                             return Ok(true);
                         }
                         self.call_defaults(
@@ -109,11 +120,12 @@ impl Function<'_, '_, '_, '_> {
                     ..
                 } => {
                     let use_ = self.graph.lower_allocation(id)?;
-                    if self.lifetime_call_throws(CallTarget::Direct(use_.function))? {
+                    if self.call_throws_in_context(CallTarget::Direct(use_.function), hidden)? {
                         return Ok(true);
                     }
                     if let Some((constructor, arguments)) = use_.constructor
-                        && self.allocated_constructor_work(constructor, arguments, work)?
+                        && (hidden
+                            || self.allocated_constructor_work(constructor, arguments, work)?)
                     {
                         return Ok(true);
                     }
@@ -170,9 +182,10 @@ impl Function<'_, '_, '_, '_> {
                 }
                 ExprKind::Braced { elements, .. } => {
                     if let Some(constructor) = self.graph.lower_list_constructor(id)?
-                        && !Entry::Constructor(constructor, Variant::Complete)
-                            .facts(self.graph)?
-                            .nothrow
+                        && (hidden
+                            || !Entry::Constructor(constructor, Variant::Complete)
+                                .facts(self.graph)?
+                                .nothrow)
                     {
                         return Ok(true);
                     }

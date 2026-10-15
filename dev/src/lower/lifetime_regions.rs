@@ -14,6 +14,11 @@ use crate::{
     sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn has_tracked_region(&self) -> bool {
+        self.lifetime.tracking.active
+            && !self.lifetime.tracking.construction.active()
+            && self.aggregation.floor.is_none()
+    }
     pub(super) fn storage_region_pending(&self) -> bool {
         self.lifetime.full_expression
             && !self.lifetime.region
@@ -23,7 +28,7 @@ impl Function<'_, '_, '_, '_> {
                 .is_some_and(|position| self.builder.same_block(position))
     }
     pub(super) fn storage_region_event(&mut self) -> Result<(), Error> {
-        if self.storage_region_pending() {
+        if self.storage_region_pending() && !self.lifetime.tracking.active {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
@@ -35,6 +40,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = first;
+        self.lifetime.regions_opened += 1;
         Ok(())
     }
     pub(super) fn temporary_alive(
@@ -52,7 +58,7 @@ impl Function<'_, '_, '_, '_> {
             return self.element_temporary_alive(ty, object);
         }
         let split = self.lifetime.region;
-        if self.lifetime.tracking.active {
+        if self.has_tracked_region() {
             self.register_temporary(ty, object);
             self.track_temporary()?;
             self.close_lifetime_region()?;
@@ -198,6 +204,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.storage_region_event()?;
+        if throws && self.storage_region_pending() && self.lifetime.tracking.construction.active() {
+            let position = self.builder.position()?;
+            return self.open_temporary_region_at(Some(position));
+        }
         if throws
             && self.lifetime.full_expression
             && self.lifetime.temporary_segment.is_eager()
@@ -207,7 +217,7 @@ impl Function<'_, '_, '_, '_> {
         {
             return self.open_temporary_region_at(self.lifetime.expression_start);
         }
-        if self.lifetime.tracking.active && !self.lifetime.region {
+        if self.has_tracked_region() && !self.lifetime.region {
             return self.open_temporary_region();
         }
         if !throws
@@ -253,6 +263,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
+        self.lifetime.regions_opened += 1;
         Ok(())
     }
     pub(super) fn open_temporary_region(&mut self) -> Result<(), Error> {
@@ -265,7 +276,7 @@ impl Function<'_, '_, '_, '_> {
         if self.element_temporaries.depth != 0 {
             return Ok(());
         }
-        if self.lifetime.tracking.active {
+        if self.has_tracked_region() {
             let position = self
                 .lifetime
                 .call_marks
@@ -293,6 +304,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
+        self.lifetime.regions_opened += 1;
         Ok(())
     }
     pub(super) fn finish_lifetime_call(
@@ -308,6 +320,7 @@ impl Function<'_, '_, '_, '_> {
             self.close_lifetime_region()?;
         }
         if !transient
+            && (throws || !self.has_tracked_region())
             && (self.lifetime.region
                 || self.lifetime.full_expression && self.lifetime.temporary_segment.is_present())
             && !matches!(value.ty, Type::Void | Type::Object { .. })
@@ -401,12 +414,25 @@ impl Function<'_, '_, '_, '_> {
         &self,
         target: crate::sema::lowering::CallTarget,
     ) -> Result<bool, Error> {
+        self.call_throws_in_context(target, false)
+    }
+    pub(super) fn call_throws_in_context(
+        &self,
+        target: crate::sema::lowering::CallTarget,
+        hidden: bool,
+    ) -> Result<bool, Error> {
         Ok(match target {
             crate::sema::lowering::CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
-                facts.builtin.is_none() && !facts.nothrow
+                facts.builtin.is_none()
+                    && (!facts.nothrow
+                        || hidden
+                            && !matches!(
+                                facts.name,
+                                crate::sema::lowering::FunctionName::Destructor(_)
+                            ))
             }
-            crate::sema::lowering::CallTarget::Indirect(_, nothrow) => !nothrow,
+            crate::sema::lowering::CallTarget::Indirect(_, nothrow) => hidden || !nothrow,
         })
     }
     pub(super) fn lifetime_result(&mut self, call: I, source: TypeId) -> Result<RValue, Error> {

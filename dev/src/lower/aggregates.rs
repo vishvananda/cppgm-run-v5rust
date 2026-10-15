@@ -773,6 +773,13 @@ impl Function<'_, '_, '_, '_> {
             }
             None
         };
+        if self.lifetime.cleanups[first..]
+            .iter()
+            .any(|cleanup| matches!(cleanup.place, super::lifetime::CleanupPlace::Temporary(_)))
+        {
+            self.resume_omitted_cleanup_chains();
+            self.aggregation.call_scope = saved_scope;
+        }
         if destroyed {
             let object = if let Some(object) = object {
                 object

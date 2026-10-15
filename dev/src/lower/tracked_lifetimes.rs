@@ -13,8 +13,21 @@ use crate::{
 };
 
 #[derive(Default)]
+pub(super) enum ConstructionTracking {
+    #[default]
+    Expression,
+    Storage,
+}
+impl ConstructionTracking {
+    pub(super) fn active(&self) -> bool {
+        matches!(self, Self::Storage)
+    }
+}
+#[derive(Default)]
 pub(super) struct Tracking {
     pub active: bool,
+    pub construction: ConstructionTracking,
+    pub finishing: bool,
     pub made: bool,
     pub start: Option<Position>,
     pub head: Option<BlockId>,
@@ -42,6 +55,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.lifetime.tracking.active = true;
+        self.lifetime.tracking.construction = ConstructionTracking::Expression;
         self.lifetime.tracking.made = false;
         self.lifetime.tracking.start = self.lifetime.expression_start;
         self.lifetime.tracking.head = None;
@@ -177,6 +191,27 @@ impl Function<'_, '_, '_, '_> {
                         .copied()
                         .map(child),
                 ),
+                ExprKind::New { initializer, .. } => {
+                    let use_ = self.graph.lower_allocation(id)?;
+                    let function = self.graph.lower_function(use_.function)?;
+                    if function.nothrow && !use_.reserved {
+                        let made = match initializer.map(|value| value.kind) {
+                            Some(
+                                ast::InitializerKind::Assign(root)
+                                | ast::InitializerKind::Braced(root),
+                            ) if matches!((self.graph.lower_type(use_.target)?,
+                                    self.graph.lower_type(self.graph.lower_expression(root)?.ty)?),
+                                    (TypeView::Class(a), TypeView::Class(b)) if a == b) =>
+                            {
+                                self.operand_temporaries(root)?.made
+                            }
+                            _ => self.initializer_temporaries(initializer)?,
+                        };
+                        if made {
+                            return Ok(true);
+                        }
+                    }
+                }
                 _ => (),
             }
         }
@@ -243,6 +278,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
+        self.lifetime.regions_opened += 1;
         Ok(())
     }
     pub(super) fn finish_tracking(&mut self) -> Result<(), Error> {

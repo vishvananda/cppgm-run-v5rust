@@ -415,7 +415,9 @@ impl Analyzer<'_> {
         self.graph.entity_mut(storage).variable = Some(super::graph::VariableProperties {
             is_extern: false,
             internal_linkage: kind == ScopeKind::Namespace,
-            language: super::linkage::Language::from_c(self.c_language && kind != ScopeKind::Class),
+            // The frozen anonymous_union owner creates this hidden object
+            // without inheriting a surrounding linkage specification.
+            language: super::linkage::Language::Cpp,
             // analyzer_classes.cpp publishes no thread-storage flag on this hidden object.
             thread_storage: super::specifiers::ThreadStorage::Ordinary,
             static_specifier: if specs.is_static {
