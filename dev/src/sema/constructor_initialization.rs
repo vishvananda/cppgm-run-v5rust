@@ -291,7 +291,13 @@ impl Analyzer<'_> {
                 )?;
             }
             let mut facts = self.graph.expression_facts.get(argument)?;
-            if let Some(conversion) = facts.conversion {
+            if let Some(conversion) = facts.conversion
+                && self
+                    .graph
+                    .expression_facts
+                    .user_conversion(argument)
+                    .is_none()
+            {
                 facts.base_path = self.conversion_base_path(
                     facts,
                     conversion,

@@ -73,6 +73,9 @@ impl Function<'_, '_, '_, '_> {
                 context,
                 Context::Initialization | Context::MemberInitialization
             );
+        if self.class_conversion(id).is_some() {
+            return self.converting_reference_temporary(id, element, context, persistent);
+        }
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. })
             && !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })

@@ -654,7 +654,7 @@ impl Function<'_, '_, '_, '_> {
             input.next += 1;
             let object = self.named_address(path, ty)?;
             if let Some((constructor, arguments)) = self.graph.lower_class_conversion(id) {
-                self.construct_at(constructor, ty, object, Some(arguments))?;
+                self.call_converting_constructor(id, constructor, object, arguments)?;
             } else {
                 self.materialize_class(id, ty, object)?;
             }

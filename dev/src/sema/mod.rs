@@ -74,6 +74,7 @@ mod template_exceptions;
 mod templates;
 mod throw_queries;
 mod types;
+mod user_conversions;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]
 pub(crate) enum Error {

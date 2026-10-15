@@ -42,6 +42,7 @@ pub(super) enum ConversionRank {
     Exact,
     Promotion,
     Conversion,
+    UserDefined,
     Ellipsis,
 }
 #[derive(Clone, Copy, Debug)]
@@ -200,6 +201,12 @@ impl ExprFacts {
         }
     }
 }
+#[derive(Clone, Copy)]
+struct ClassConversion {
+    constructor: super::construction::ConstructorId,
+    arguments: super::constructor_initialization::ConstructorArguments,
+    outer: Option<Conversion>,
+}
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     records: Vec<Option<ExprFacts>>,
@@ -213,13 +220,7 @@ pub(super) struct ExpressionFacts {
         std::collections::HashMap<ast::ExprId, [Option<super::inheritance::BasePathId>; 2]>,
     // Converting class-subobject initializations are sparse use facts. Keep
     // them separate from the source's original type and argument conversion.
-    class_conversions: std::collections::HashMap<
-        ast::ExprId,
-        (
-            super::construction::ConstructorId,
-            super::constructor_initialization::ConstructorArguments,
-        ),
-    >,
+    class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
 }
 impl ExpressionFacts {
     pub(super) fn copy_action(
@@ -263,7 +264,9 @@ impl ExpressionFacts {
         super::construction::ConstructorId,
         super::constructor_initialization::ConstructorArguments,
     )> {
-        self.class_conversions.get(&self.root(id)).copied()
+        self.class_conversions
+            .get(&self.root(id))
+            .map(|record| (record.constructor, record.arguments))
     }
     pub(super) fn set_class_conversion(
         &mut self,
@@ -273,7 +276,34 @@ impl ExpressionFacts {
             super::constructor_initialization::ConstructorArguments,
         ),
     ) {
-        self.class_conversions.insert(self.root(id), selected);
+        self.class_conversions.insert(
+            self.root(id),
+            ClassConversion {
+                constructor: selected.0,
+                arguments: selected.1,
+                outer: None,
+            },
+        );
+    }
+    pub(super) fn user_conversion(&self, id: ast::ExprId) -> Option<Conversion> {
+        self.class_conversions
+            .get(&self.root(id))
+            .and_then(|record| record.outer)
+    }
+    pub(super) fn set_user_conversion(
+        &mut self,
+        id: ast::ExprId,
+        constructor: super::construction::ConstructorId,
+        outer: Conversion,
+    ) {
+        self.class_conversions.insert(
+            self.root(id),
+            ClassConversion {
+                constructor,
+                arguments: super::constructor_initialization::ConstructorArguments::Single(id),
+                outer: Some(outer),
+            },
+        );
     }
     pub(super) fn root(&self, id: ast::ExprId) -> ast::ExprId {
         self.aliases

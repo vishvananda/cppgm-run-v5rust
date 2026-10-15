@@ -381,6 +381,9 @@ impl Analyzer<'_> {
                 _ => Ordering::Equal,
             });
         }
+        if (a.rank == R::UserDefined) != (b.rank == R::UserDefined) {
+            return Ok(b.rank.cmp(&a.rank));
+        }
         let ai = a.second == C::None && !a.qualification;
         let bi = b.second == C::None && !b.qualification;
         if ai != bi {

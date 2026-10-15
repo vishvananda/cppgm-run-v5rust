@@ -98,6 +98,65 @@ impl Function<'_, '_, '_, '_> {
         self.materialize_class(expr, ty, address)?;
         Ok(true)
     }
+    pub(super) fn class_conversion(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<(
+        crate::sema::lowering::ConstructorId,
+        crate::sema::lowering::ConstructorArguments,
+    )> {
+        let root = self.without_parentheses(id);
+        if self.converting_source == Some(root) {
+            None
+        } else {
+            self.graph.lower_class_conversion(root)
+        }
+    }
+    pub(super) fn call_converting_constructor(
+        &mut self,
+        source: ast::ExprId,
+        constructor: crate::sema::lowering::ConstructorId,
+        object: Value,
+        arguments: crate::sema::lowering::ConstructorArguments,
+    ) -> Result<(), Error> {
+        let saved = self
+            .converting_source
+            .replace(self.without_parentheses(source));
+        let result = self.call_constructor(
+            constructor,
+            super::construction::Variant::Complete,
+            object,
+            Some(arguments),
+        );
+        self.converting_source = saved;
+        result
+    }
+    pub(super) fn converting_reference_temporary(
+        &mut self,
+        source: ast::ExprId,
+        ty: TypeId,
+        context: super::conversions::Context,
+        persistent: bool,
+    ) -> Result<Value, Error> {
+        let (constructor, arguments) =
+            self.class_conversion(source)
+                .ok_or(crate::sema::Error::Invariant(
+                    "converted reference without constructor",
+                ))?;
+        self.symbols.require_trivial_storage(ty)?;
+        let slot = self.temporary_storage(
+            ty,
+            persistent,
+            if matches!(context, super::conversions::Context::Argument) {
+                "arg"
+            } else {
+                "tmpobj"
+            },
+        )?;
+        let object = self.emit(I::Addr(slot), ty)?.value;
+        self.call_converting_constructor(source, constructor, object, arguments)?;
+        Ok(object)
+    }
     pub(super) fn class_argument(&mut self, id: ast::ExprId, ty: TypeId) -> Result<Value, Error> {
         let TypeView::Class(class) = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("class argument without class").into());
@@ -210,6 +269,9 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
+        if let Some((constructor, arguments)) = self.class_conversion(id) {
+            return self.call_converting_constructor(id, constructor, object, arguments);
+        }
         match self.graph.lower_class_copy(id)? {
             Some(CopyAction::Storage {
                 reference,

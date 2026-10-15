@@ -246,6 +246,7 @@ impl Analyzer<'_> {
                             conversion,
                             application: Some(conversion),
                             function: None,
+                            user_constructor: None,
                         })
                 } else {
                     let target = self
@@ -331,6 +332,14 @@ impl Analyzer<'_> {
             if let Some(function) = sequence.function {
                 self.select_function_designation(operand, function)?;
             }
+            if self.apply_constructor_sequence(
+                operand,
+                sequence,
+                scope,
+                super::user_conversions::ConversionSite::Operator,
+            )? {
+                continue;
+            }
             let mut facts = self.graph.expression_facts.get(operand)?;
             let conversion = sequence.application.ok_or(Error::at(
                 self.tree.expressions.get(operand).location,
@@ -393,9 +402,9 @@ impl Analyzer<'_> {
         let mut better = false;
         let mut worse = false;
         for index in 0..count {
-            let order = self.compare_sequences(
-                scratch.sequences[af + index].conversion,
-                scratch.sequences[bf + index].conversion,
+            let order = self.compare_argument_sequences(
+                scratch.sequences[af + index],
+                scratch.sequences[bf + index],
             )?;
             better |= order == Ordering::Greater;
             worse |= order == Ordering::Less;

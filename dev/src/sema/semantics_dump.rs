@@ -1116,11 +1116,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         retyped: Option<(TypeId, V)>,
     ) -> io::Result<()> {
         let id = self.graph.expression_facts.root(id);
-        let facts = self
+        let mut facts = self
             .graph
             .expression_facts
             .get(id)
             .map_err(|_| io::Error::other("expression without facts"))?;
+        if let Some(outer) = self.graph.expression_facts.user_conversion(id) {
+            facts.conversion = Some(outer);
+        }
         let (mut ty, mut category) = retyped.unwrap_or((facts.ty, facts.category));
         if !bare
             && let Some(conversion) = facts.conversion

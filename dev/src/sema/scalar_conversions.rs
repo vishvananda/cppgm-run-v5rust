@@ -336,6 +336,18 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let conversion = self.scalar_sequence(facts, target, direct)?;
         let Some(conversion) = conversion else {
+            if let Some(sequence) = self.converting_constructor_sequence(facts, target)? {
+                let scope = self.graph.expression_scopes
+                    [self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant("user conversion without expression scope"))?;
+                self.apply_constructor_sequence(
+                    id,
+                    sequence,
+                    scope,
+                    super::user_conversions::ConversionSite::Call,
+                )?;
+                return Ok(());
+            }
             return Err(Error::at(
                 self.tree.expressions.get(id).location,
                 "invalid implicit conversion",

@@ -297,6 +297,14 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Ok(());
         };
+        if self
+            .graph
+            .expression_facts
+            .class_conversion(id)
+            .is_some_and(|(id, _)| self.graph.constructors.get(id).class == class)
+        {
+            return Ok(());
+        }
         if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(
                 location,

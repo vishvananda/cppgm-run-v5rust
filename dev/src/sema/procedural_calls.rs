@@ -71,6 +71,7 @@ pub(super) struct ArgumentSequence {
     // actual unary shape cannot bind that target. Diagnose only after selection.
     pub(super) application: Option<Conversion>,
     pub(super) function: Option<BindingId>,
+    pub(super) user_constructor: Option<BindingId>,
 }
 impl Analyzer<'_> {
     pub(super) fn procedural_call(
@@ -272,7 +273,13 @@ impl Analyzer<'_> {
             let binding = chosen?;
             for &argument in self.tree.expr_lists.get(arguments) {
                 let mut facts = self.graph.expression_facts.get(argument)?;
-                if let Some(conversion) = facts.conversion {
+                if let Some(conversion) = facts.conversion
+                    && self
+                        .graph
+                        .expression_facts
+                        .user_conversion(argument)
+                        .is_none()
+                {
                     facts.base_path = self.conversion_base_path(
                         facts,
                         conversion,
@@ -517,6 +524,7 @@ impl Analyzer<'_> {
                     conversion,
                     application: Some(conversion),
                     function: None,
+                    user_constructor: None,
                 }));
         }
         let mut facts = self.graph.expression_facts.get(id)?;
@@ -595,12 +603,21 @@ impl Analyzer<'_> {
                 },
                 application,
                 function,
+                user_constructor: None,
             }));
+        }
+        if application.is_none() && !overloaded {
+            let mut sequence = self.converting_constructor_sequence(facts, target)?;
+            if let Some(sequence) = &mut sequence {
+                sequence.function = function;
+            }
+            return Ok(sequence);
         }
         Ok(application.map(|conversion| ArgumentSequence {
             conversion,
             application: Some(conversion),
             function,
+            user_constructor: None,
         }))
     }
     fn check_class_arguments(
@@ -686,6 +703,7 @@ impl Analyzer<'_> {
                         conversion,
                         application: Some(conversion),
                         function: None,
+                        user_constructor: None,
                     })
                 } else {
                     None
@@ -840,6 +858,7 @@ impl Analyzer<'_> {
                         conversion,
                         application: Some(conversion),
                         function: None,
+                        user_constructor: None,
                     })
                 } else {
                     None
@@ -875,6 +894,14 @@ impl Analyzer<'_> {
                     ast::ExprKind::Braced { .. }
                 ) {
                     self.initialize_list_argument(arg, sequence.conversion.target, scope)?;
+                    continue;
+                }
+                if self.apply_constructor_sequence(
+                    arg,
+                    sequence,
+                    scope,
+                    super::user_conversions::ConversionSite::Call,
+                )? {
                     continue;
                 }
                 let mut facts = self.graph.expression_facts.get(arg)?;
@@ -914,7 +941,7 @@ impl Analyzer<'_> {
                 continue;
             }
             let order = match (scratch.sequences[af + index], scratch.sequences[bf + index]) {
-                (Some(a), Some(b)) => self.compare_sequences(a.conversion, b.conversion)?,
+                (Some(a), Some(b)) => self.compare_argument_sequences(a, b)?,
                 (Some(_), None) => Ordering::Greater,
                 (None, Some(_)) => Ordering::Less,
                 (None, None) => Ordering::Equal,
