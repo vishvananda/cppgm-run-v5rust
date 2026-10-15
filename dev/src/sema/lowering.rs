@@ -442,6 +442,7 @@ impl Graph {
             .declared_conversions
             .iter()
             .map(|&binding| self.binding(binding).entity)
+            .filter(move |&entity| self.entity(entity).home == self.entity(class).scope)
     }
     pub(crate) fn lower_constructor_overloads(
         &self,
@@ -925,7 +926,10 @@ impl Graph {
                 Some(super::function_names::SpecialName::Literal(name)) => {
                     FunctionName::Literal(name)
                 }
-                Some(super::function_names::SpecialName::Destructor) => {
+                Some(
+                    super::function_names::SpecialName::Destructor
+                    | super::function_names::SpecialName::Conversion,
+                ) => {
                     return Err(Error::Missing("member function names"));
                 }
                 None if entity

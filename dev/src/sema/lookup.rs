@@ -363,6 +363,28 @@ impl Analyzer<'_> {
         scope: ScopeId,
         count: usize,
     ) -> Result<Option<ScopeId>, Error> {
+        self.prefix_components_in(name, scope, count, false)
+    }
+    pub(super) fn expression_prefix(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+    ) -> Result<Option<ScopeId>, Error> {
+        let count = self
+            .tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .len()
+            .saturating_sub(1);
+        self.prefix_components_in(name, scope, count, true)
+    }
+    fn prefix_components_in(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+        count: usize,
+        access: bool,
+    ) -> Result<Option<ScopeId>, Error> {
         let name = self.tree.names.get(name);
         self.lookup_location = name.location;
         let components = self.tree.name_lists.get(name.components);
@@ -416,6 +438,9 @@ impl Analyzer<'_> {
                     "undeclared name in a nested-name-specifier",
                 )
             })?;
+            if access && self.semantic() && self.template_depth == 0 && prefix.is_none() {
+                self.check_declaration_direct_access(binding_id, scope, component.location)?;
+            }
             if let Some(search) = prefix
                 && let Some(naming) = self.graph.scope(search).owner
                 && self.graph.scope(search).kind == ScopeKind::Class
@@ -532,6 +557,12 @@ impl Analyzer<'_> {
                 node.location,
                 "operator and special member names are not supported here",
             ));
+        }
+        if self.semantic()
+            && last.arguments.is_none()
+            && let NameKind::Conversion(target) = last.kind
+        {
+            return self.conversion_name_lookup(name, target, scope);
         }
         let key = Self::expression_name(last.kind)?;
         let prefix = self.prefix(name, scope)?;

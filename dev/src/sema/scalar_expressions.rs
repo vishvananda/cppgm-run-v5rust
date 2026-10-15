@@ -281,7 +281,13 @@ impl Analyzer<'_> {
             {
                 facts.object = self.implicit_member_object(binding)?;
                 if let Some(object) = facts.object {
-                    facts.member_naming = self.graph.class_of(object.ty);
+                    facts.member_naming = found
+                        .qualifier
+                        .filter(|&home| {
+                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                        })
+                        .and_then(|home| self.graph.scope(home).owner)
+                        .or_else(|| self.graph.class_of(object.ty));
                     facts.category = V::Prvalue;
                 }
             }

@@ -80,24 +80,27 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("empty address name"))?;
-        let key = Self::expression_name(last.kind)?;
         let location = node.location;
         let prefix = self
             .prefix(name, scope)?
             .ok_or(Error::Invariant("qualified address without prefix"))?;
-        self.prepare_assignment_lookup(prefix, key, false)?;
         self.lookup_location = location;
-        let mut found = self
-            .qualified_result(prefix, key, Filter::Ordinary)
-            .map_err(|error| match error {
-                Error::Diagnostic {
-                    message: "ambiguous name",
-                    ..
-                } if self.graph.scope(prefix).kind == ScopeKind::Class => {
-                    Error::at(location, "ambiguous member")
-                }
-                other => other,
-            })?;
+        let mut found = if let ast::NameKind::Conversion(target) = last.kind {
+            self.conversion_name_lookup(name, target, scope)?
+        } else {
+            let key = Self::expression_name(last.kind)?;
+            self.prepare_assignment_lookup(prefix, key, false)?;
+            self.qualified_result(prefix, key, Filter::Ordinary)
+                .map_err(|error| match error {
+                    Error::Diagnostic {
+                        message: "ambiguous name",
+                        ..
+                    } if self.graph.scope(prefix).kind == ScopeKind::Class => {
+                        Error::at(location, "ambiguous member")
+                    }
+                    other => other,
+                })?
+        };
         if last.arguments.is_some() {
             self.explicit_function_specializations(*last, &mut found, scope, false)?;
         }

@@ -23,6 +23,8 @@ pub(super) enum SpecialName {
     Operator { token: SimpleToken, array: bool },
     Literal(NameId),
     Destructor,
+    // Shared lookup category; each declaration's identity remains MemberKey.
+    Conversion,
 }
 impl SpecialName {
     pub(super) fn allocation(self) -> bool {

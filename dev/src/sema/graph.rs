@@ -1126,6 +1126,73 @@ impl Graph {
     pub(super) fn inherit_binding_access(&mut self, binding: BindingId, origin: BindingId) {
         self.binding_access[binding.0 as usize] = self.binding_access(origin);
     }
+    pub(super) fn import_conversion(
+        &mut self,
+        scope: ScopeId,
+        target: BindingId,
+    ) -> Result<(), Error> {
+        let class = (self.scope(scope).kind == ScopeKind::Class)
+            .then_some(self.scope(scope).owner)
+            .flatten();
+        let binding = self.add_binding(scope, Some(scope), self.binding(target))?;
+        // A using-declaration has the access of its declaration, while its
+        // entity, function origin and receiver remain those of the base member.
+        self.binding_access[binding.0 as usize] = self.scope(scope).member_access;
+        self.record_special_value(
+            scope,
+            super::function_names::SpecialName::Conversion,
+            binding,
+        )?;
+        if let Some(&label) = self.special_labels.get(&target) {
+            self.special_labels.insert(binding, label);
+        }
+        let Some(class) = class else {
+            return Ok(());
+        };
+        let entity = self.binding(target).entity;
+        let earlier = self
+            .entity(class)
+            .declared_conversions
+            .iter()
+            .position(|&id| self.binding(id).entity == entity);
+        let conversions = &mut self.entity_mut(class).declared_conversions;
+        if let Some(index) = earlier {
+            conversions[index] = binding;
+        } else {
+            conversions.push(binding);
+        }
+        Ok(())
+    }
+    pub(super) fn hide_imported_conversions(&mut self, key: MemberKey) -> Result<(), Error> {
+        let scope = self
+            .entity(key.class)
+            .scope
+            .ok_or(Error::Invariant("conversion class without scope"))?;
+        let mut index = 0;
+        while let Some(&binding) = self.entity(key.class).declared_conversions.get(index) {
+            let entity = self.binding(binding).entity;
+            let old = self.entity(entity);
+            if old.home != Some(scope)
+                && old
+                    .member_function
+                    .is_some_and(|old| old.signature == key.signature && old.shape == key.shape)
+            {
+                self.remove_class_function(
+                    scope,
+                    super::function_names::ValueKey::Special(
+                        super::function_names::SpecialName::Conversion,
+                    ),
+                    entity,
+                )?;
+                self.entity_mut(key.class)
+                    .declared_conversions
+                    .remove(index);
+            } else {
+                index += 1;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn binding_scope(&self, id: BindingId) -> ScopeId {
         self.binding_scopes[id.0 as usize]
     }

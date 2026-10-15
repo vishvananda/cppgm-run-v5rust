@@ -278,6 +278,11 @@ impl Analyzer<'_> {
                 "a using-declaration cannot name a template-id",
             ));
         }
+        if let Some(last) = self.tree.name_lists.get(name.components).last()
+            && let ast::NameKind::Conversion(ty) = last.kind
+        {
+            return self.using_conversion(target, ty, scope, location);
+        }
         let target_key = self.value_name(target)?;
         self.lookup_location = name.location;
         let prefix = self

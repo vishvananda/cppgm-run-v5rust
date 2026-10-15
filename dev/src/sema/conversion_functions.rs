@@ -44,6 +44,176 @@ pub(super) struct FunctionConversion {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn using_conversion(
+        &mut self,
+        name: ast::Name,
+        target: ast::TypeId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let prefix = self
+            .expression_prefix(name, scope)?
+            .ok_or(Error::Invariant("conversion using without prefix"))?;
+        self.lookup_location = location;
+        // Unlike conversion-function-id expressions, a using-declaration
+        // first looks up the shared name and only then filters its result.
+        let key = super::function_names::ValueKey::Special(
+            super::function_names::SpecialName::Conversion,
+        );
+        let found = self.qualified_result(prefix, key, super::lookup::Filter::Ordinary)?;
+        let target = self.type_syntax(target, scope)?;
+        let mut selected = super::lookup::FunctionCandidates::default();
+        for &binding in found.functions.as_slice() {
+            let ty = self
+                .graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("conversion using without type"))?;
+            if matches!(self.graph.types.get(ty).kind, TypeKind::Function { result, .. } if result == target)
+            {
+                selected.push(binding);
+            }
+        }
+        if selected.as_slice().is_empty() {
+            return Err(Error::at(
+                location,
+                "undeclared name in a using-declaration",
+            ));
+        }
+        let naming = self
+            .graph
+            .scope(prefix)
+            .owner
+            .ok_or(Error::Invariant("conversion using without class"))?;
+        for &binding in selected.as_slice() {
+            self.validate_member_access(binding, naming, None, scope, location)?;
+        }
+        for &binding in selected.as_slice().iter().rev() {
+            let ty = self
+                .graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("conversion using without type"))?;
+            let signature = self.graph.types.canonical_function(ty)?;
+            let mut hidden = false;
+            let mut next = 0;
+            while let Some(earlier) = self.graph.next_function(scope, key, &mut next) {
+                let entity = self.graph.entity(self.graph.binding(earlier).entity);
+                if entity.template_head.is_none()
+                    && entity
+                        .member_function
+                        .is_some_and(|key| key.signature == signature)
+                {
+                    if self.graph.scope(scope).kind == super::graph::ScopeKind::Class
+                        && entity.home == Some(scope)
+                    {
+                        hidden = true;
+                    } else if self.graph.binding(earlier).entity
+                        != self.graph.binding(binding).entity
+                    {
+                        return Err(Error::at(
+                            location,
+                            "using-declaration conflicts with a function of the same signature",
+                        ));
+                    }
+                }
+            }
+            if !hidden {
+                self.graph.import_conversion(scope, binding)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn named_conversion_lookup(
+        &mut self,
+        class: EntityId,
+        target: TypeId,
+        location: SourceOffset,
+    ) -> Result<super::lookup::LookupResult, Error> {
+        // 12.3.2, 10.2: a conversion-function-id uses canonical result
+        // identity, independent of the tokens (including aliases) naming it.
+        // Hiding precedes filtering and ordinary object overload resolution.
+        let count = self.visible_conversion_functions(class)?.len();
+        let mut found = super::lookup::LookupResult::default();
+        let mut declared = None;
+        let mut templates = false;
+        for index in 0..count {
+            let binding = self.conversion_sets[&class][index];
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_some() {
+                templates = true;
+                continue;
+            }
+            let ty = entity
+                .ty
+                .ok_or(Error::Invariant("conversion without type"))?;
+            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+                return Err(Error::Invariant("conversion without signature"));
+            };
+            if result != target {
+                continue;
+            }
+            let home = self.graph.binding_scope(binding);
+            if declared.is_some_and(|previous| previous != home) {
+                return Err(Error::at(
+                    location,
+                    "ambiguous lookup of a conversion-function-id",
+                ));
+            }
+            declared = Some(home);
+            found.binding.get_or_insert(binding);
+            found.functions.push(binding);
+        }
+        if found.binding.is_none() {
+            if templates {
+                return Err(Error::Missing(
+                    "named conversion function template deduction",
+                ));
+            }
+            return Err(Error::at(
+                location,
+                "no conversion function to the named type",
+            ));
+        }
+        Ok(found)
+    }
+
+    pub(super) fn conversion_name_lookup(
+        &mut self,
+        name: ast::Name,
+        target: ast::TypeId,
+        scope: ScopeId,
+    ) -> Result<super::lookup::LookupResult, Error> {
+        let location = self.tree.names.get(name).location;
+        let prefix = self.expression_prefix(name, scope)?;
+        let mut home = prefix.or(Some(scope));
+        if prefix.is_none() {
+            while let Some(current) = home {
+                if self.graph.scope(current).kind == super::graph::ScopeKind::Class {
+                    break;
+                }
+                home = self.graph.scope(current).parent;
+            }
+        }
+        let class = home
+            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            .and_then(|home| self.graph.scope(home).owner)
+            .ok_or_else(|| {
+                Error::at(
+                    location,
+                    "a conversion-function-id that names no class member",
+                )
+            })?;
+        let target = self.type_syntax(target, scope)?;
+        let mut found = self.named_conversion_lookup(class, target, location)?;
+        found.qualifier = prefix;
+        if let Some(binding) = found.binding {
+            super::record(&mut self.graph.resolved_names, name.index(), binding);
+        }
+        Ok(found)
+    }
+
     pub(super) fn unique_conversion_function(
         &mut self,
         class: EntityId,
@@ -385,7 +555,12 @@ impl Analyzer<'_> {
         if allowed
             && let Some(sequence) = self.conversion_function_sequence(source, target, true)?
         {
-            self.apply_function_sequence(operand, sequence, scope)?;
+            self.apply_function_sequence_at(
+                operand,
+                sequence,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
             return self.new_expression_facts(target, ValueCategory::Prvalue);
         }
         Err(Error::at(
@@ -439,6 +614,115 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn named_calls_and_addresses_share_typed_identity_without_demanding_losing_imports() {
+        let source = SourceBuffer::new(
+            br"typedef int Alias;
+            struct Base { protected: operator int() const &; operator int() &&; operator long(); };
+            struct Derived:Base { using Base::operator Alias; explicit operator int() const &; };
+            int(Derived::*address())()const& { return &Derived::operator Alias; }
+            int call(const Derived& d) { return ((d)).operator Alias(); }"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"named-conversions").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let nodes = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(expressions, tree.expressions.mark());
+        assert_eq!(nodes, tree.declarations.mark());
+        let mut class = |name: &[u8]| {
+            let name = cursor.intern_name(name).unwrap();
+            graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Prefix)
+                        .unwrap(),
+                )
+                .entity
+        };
+        let base = class(b"Base");
+        let derived = class(b"Derived");
+        let scope = graph.entity(derived).scope.unwrap();
+        let conversions = &graph.entity(derived).declared_conversions;
+        assert_eq!(conversions.len(), 2);
+        let imported = conversions
+            .iter()
+            .copied()
+            .find(|&binding| graph.entity(graph.binding(binding).entity).home != Some(scope))
+            .unwrap();
+        let own = conversions
+            .iter()
+            .copied()
+            .find(|&binding| graph.entity(graph.binding(binding).entity).home == Some(scope))
+            .unwrap();
+        assert_eq!(
+            graph
+                .lower_conversion_overloads(derived)
+                .collect::<Vec<_>>(),
+            vec![graph.binding(own).entity]
+        );
+        assert!(graph.binding_access(imported) == super::super::graph::Access::Public);
+        let origin = graph
+            .function_origin(graph.binding(imported).entity)
+            .unwrap();
+        assert!(graph.binding_access(origin) == super::super::graph::Access::Protected);
+        let key = super::super::function_names::ValueKey::Special(
+            super::super::function_names::SpecialName::Conversion,
+        );
+        assert_eq!(graph.visible_functions_at(scope, key).count(), 2);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return");
+        };
+        assert_eq!(
+            graph.binding(graph.call_binding(call).unwrap()).entity,
+            graph.binding(own).entity
+        );
+        let ast::ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+            panic!("call");
+        };
+        let facts = graph.expression_facts.get(callee).unwrap();
+        assert_eq!(facts.member_naming, Some(derived));
+        let object = facts.object.unwrap();
+        assert_eq!(graph.class_of(object.ty), Some(derived));
+        assert_eq!(object.category, ValueCategory::Lvalue);
+        let demanded = |binding| {
+            graph.root_demands.as_slice().iter().any(|d| {
+                matches!(d, super::super::function_demands::Demand::Function { binding: found, .. }
+                if graph.binding(*found).entity == graph.binding(binding).entity)
+            })
+        };
+        assert!(demanded(own));
+        assert!(!demanded(imported));
+        assert!(
+            graph
+                .entity(base)
+                .declared_conversions
+                .iter()
+                .all(|&binding| !demanded(binding))
+        );
+    }
 
     #[test]
     fn unique_operands_keep_original_facts_and_only_demand_the_discovered_functions() {

@@ -153,22 +153,31 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "member access on an incomplete class"));
         }
-        let key = Self::expression_name(last.kind)?;
         if last.arguments.is_some() {
             return Err(Error::Missing("member template specialization lookup"));
         }
         let search = self.data_member_qualifier(name, class, scope)?;
-        self.prepare_assignment_lookup(search, key, false)?;
         self.lookup_location = node.location;
-        let found = self
-            .qualified_result(search, key, Filter::Ordinary)
-            .map_err(|error| match error {
-                Error::Diagnostic {
-                    message: "ambiguous name",
-                    ..
-                } => Error::at(node.location, "ambiguous member name"),
-                other => other,
-            })?;
+        let found = if let NameKind::Conversion(target) = last.kind {
+            let target = self.type_syntax(target, scope)?;
+            let naming = self
+                .graph
+                .scope(search)
+                .owner
+                .ok_or(Error::Invariant("conversion search without class"))?;
+            self.named_conversion_lookup(naming, target, node.location)?
+        } else {
+            let key = Self::expression_name(last.kind)?;
+            self.prepare_assignment_lookup(search, key, false)?;
+            self.qualified_result(search, key, Filter::Ordinary)
+                .map_err(|error| match error {
+                    Error::Diagnostic {
+                        message: "ambiguous name",
+                        ..
+                    } => Error::at(node.location, "ambiguous member name"),
+                    other => other,
+                })?
+        };
         let binding = found
             .binding
             .ok_or_else(|| Error::at(node.location, "no member of that name"))?;
@@ -178,8 +187,13 @@ impl Analyzer<'_> {
             .owner
             .ok_or(Error::Invariant("member search without class"))?;
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        if entity.data_member == Some(DataMemberKind::Instance)
-            || self.member_function_owner(binding).is_some()
+        let shared = !matches!(last.kind, NameKind::Conversion(_))
+            || found.functions.iter().all(|&other| {
+                self.graph.entity(self.graph.binding(other).entity).home == entity.home
+            });
+        if shared
+            && (entity.data_member == Some(DataMemberKind::Instance)
+                || self.member_function_owner(binding).is_some())
         {
             let home = entity
                 .home

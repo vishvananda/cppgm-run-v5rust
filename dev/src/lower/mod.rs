@@ -182,6 +182,27 @@ pub(crate) fn lower_unit(
             ast::DeclKind::SpecialMember { declarator, .. } => {
                 let entity = graph.lower_declared(declarator)?;
                 let facts = graph.lower_function(entity)?;
+                if matches!(facts.name, sema::lowering::FunctionName::Conversion(_)) {
+                    if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
+                    {
+                        let entry = construction::Entry::Function(entity);
+                        function::lower(
+                            &mut output.program,
+                            &mut symbols,
+                            graph,
+                            tree,
+                            entry,
+                            graph.lower_function_body(entity),
+                            budget,
+                        )?;
+                        symbols.stream_definition(
+                            &mut output.program,
+                            &mut output.definitions,
+                            entry,
+                        )?;
+                    }
+                    continue;
+                }
                 if matches!(facts.name, sema::lowering::FunctionName::Destructor(_)) {
                     if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
                     {
