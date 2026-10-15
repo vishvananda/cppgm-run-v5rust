@@ -439,6 +439,12 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         self.destruction.class = Some(plan.class);
+        self.bit_initialization_order = if self.graph.lower_implicit_assignment_demanded(plan.class)
+        {
+            super::bit_fields::InitializationOrder::AssignmentDemanded
+        } else {
+            super::bit_fields::InitializationOrder::Ordinary
+        };
         if let Some(delegation) = plan.delegation {
             let first = self.lifetime.cleanups.len();
             let began =

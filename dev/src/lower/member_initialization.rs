@@ -184,32 +184,13 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 self.zero(ty)?
             };
-            let object = self.object_pointer(pointer)?.value;
-            let origin = self.member_initialization_origin(member, pointer)?;
-            let object = if origin == 0 {
-                object
-            } else {
-                let origin = self.builder.integer(u128::from(origin))?;
-                self.emit(
-                    I::Index(Type::I8, Some(Projection::Field), object, origin),
-                    ty,
-                )?
-                .value
-            };
-            let offset = self.builder.integer(u128::from(field.offset))?;
-            let address = self
-                .emit(
-                    I::Index(Type::I8, Some(Projection::Field), object, offset),
-                    ty,
-                )?
-                .value;
-            self.initialize_field_value(
+            self.initialize_field_at(
                 field,
-                super::bit_fields::Unit {
-                    address,
-                    volatile: self.graph.lower_cv(ty) & 2 != 0,
-                },
                 value,
+                self.graph.lower_cv(ty) & 2 != 0,
+                self.bit_initialization_order
+                    == super::bit_fields::InitializationOrder::AssignmentDemanded,
+                |function| function.member_field_address(member, pointer, field.offset),
             )?;
             let layout = self
                 .graph
@@ -264,5 +245,32 @@ impl Function<'_, '_, '_, '_> {
                 .wrapping_mul(8),
         );
         Ok(())
+    }
+    fn member_field_address(
+        &mut self,
+        member: EntityId,
+        pointer: TypeId,
+        offset: u64,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        let ty = self.graph.lower_entity_type(member)?;
+        let object = self.object_pointer(pointer)?.value;
+        let origin = self.member_initialization_origin(member, pointer)?;
+        let object = if origin == 0 {
+            object
+        } else {
+            let origin = self.builder.integer(u128::from(origin))?;
+            self.emit(
+                I::Index(Type::I8, Some(Projection::Field), object, origin),
+                ty,
+            )?
+            .value
+        };
+        let offset = self.builder.integer(u128::from(offset))?;
+        Ok(self
+            .emit(
+                I::Index(Type::I8, Some(Projection::Field), object, offset),
+                ty,
+            )?
+            .value)
     }
 }

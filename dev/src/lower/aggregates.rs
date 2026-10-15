@@ -474,18 +474,20 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.zero(field.source)?
         };
-        let address = if let Some(address) = before {
-            address
-        } else {
-            self.field_path_address(field, path)?
-        };
-        self.initialize_field_value(
+        self.initialize_field_at(
             field,
-            super::bit_fields::Unit {
-                address,
-                volatile: path.volatile || self.graph.lower_cv(field.source) & 2 != 0,
-            },
             value,
+            path.volatile || self.graph.lower_cv(field.source) & 2 != 0,
+            self.bit_initialization_order
+                == super::bit_fields::InitializationOrder::AssignmentDemanded
+                && value_first,
+            |function| {
+                if let Some(address) = before {
+                    Ok(address)
+                } else {
+                    function.field_path_address(field, path)
+                }
+            },
         )?;
         let layout = self
             .graph

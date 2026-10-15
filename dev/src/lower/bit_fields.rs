@@ -41,6 +41,12 @@ pub(super) struct Unit {
     pub address: Value,
     pub volatile: bool,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum InitializationOrder {
+    #[default]
+    Ordinary,
+    AssignmentDemanded,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Initialization {
     pub unit: u64,
@@ -615,6 +621,61 @@ impl Function<'_, '_, '_, '_> {
         }
         self.bit_initialization.unit = field.offset + 1;
         Ok(())
+    }
+    /// Constructor order depends on semantic assignment demand, not emission.
+    /// Keep address evaluation deferred: a merge recomputes the store path,
+    /// whereas a whole-unit store computes it only after masking the value.
+    pub(super) fn initialize_field_at(
+        &mut self,
+        field: Field,
+        value: RValue,
+        volatile: bool,
+        alternate: bool,
+        mut address: impl FnMut(&mut Self) -> Result<Value, Error>,
+    ) -> Result<(), Error> {
+        if !alternate {
+            let unit = Unit {
+                address: address(self)?,
+                volatile,
+            };
+            return self.initialize_field_value(field, unit, value);
+        }
+        let whole = self.whole_field_unit(field);
+        let unit = if whole {
+            None
+        } else {
+            Some(Unit {
+                address: address(self)?,
+                volatile,
+            })
+        };
+        let (ty, value) = if field.unit.bits() == field.declared.bits() {
+            (field.declared, value)
+        } else {
+            (field.unit, self.convert_field_unit(field, value)?)
+        };
+        self.bit_initialization.unit = field.offset + 1;
+        let cleared = if let Some(unit) = unit {
+            let old = self.load_unit(field, ty, unit)?;
+            let mask = self.field_mask(field, ty, true)?;
+            Some(self.field_binary(field, Binary::And, ty, old, mask)?)
+        } else {
+            None
+        };
+        let mask = self.field_mask(field, ty, false)?;
+        let mut positioned = self.field_binary(field, Binary::And, ty, mask, value)?;
+        if field.shift != 0 {
+            let shift = self.field_integer(field, ty, u128::from(field.shift))?;
+            positioned = self.field_binary(field, Binary::Shl, ty, positioned, shift)?;
+        }
+        if let Some(cleared) = cleared {
+            positioned = self.field_binary(field, Binary::Or, ty, cleared, positioned)?;
+        }
+        let target = Unit {
+            address: address(self)?,
+            volatile,
+        };
+        self.store_unit(field, ty, positioned, target)
     }
     pub(super) fn whole_field_unit(&self, field: Field) -> bool {
         !field.shared
