@@ -61,6 +61,7 @@ impl Function<'_, '_, '_, '_> {
         let slot = self.temporary_storage(ty, persistent, stem)?;
         if persistent {
             self.static_array_temporary(ty, slot, self.tree.expr_lists.get(list))?;
+            self.persistent_alive(ty, slot)?;
             return Ok(self.emit(I::Addr(slot), ty)?.value);
         }
         let owner = self.extended_temporary_owner(id);

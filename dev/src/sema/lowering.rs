@@ -572,6 +572,9 @@ impl Graph {
     pub(crate) fn lower_initializer_constructors(&self, entity: EntityId) -> &[ConstructorId] {
         self.initializer_constructors.get(entity)
     }
+    pub(crate) fn lower_absent_initializer_constructor(&self) -> Option<ConstructorId> {
+        self.initializer_constructors.absent_initializer()
+    }
     pub(crate) fn lower_array_image_prefix(
         &self,
         id: EntityId,

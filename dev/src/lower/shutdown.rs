@@ -14,6 +14,42 @@ pub(super) struct Finalizer {
     pub element_size: u64,
     pub array: bool,
     pub guard: Option<SymbolId>,
+    pub constructed: Option<SymbolId>,
+}
+pub(super) fn for_type(
+    program: &mut Program,
+    symbols: &mut super::symbols::Symbols<'_, '_>,
+    graph: &crate::sema::Graph,
+    global: SymbolId,
+    ty: crate::sema::lowering::TypeId,
+    guard: Option<SymbolId>,
+) -> Result<Option<Finalizer>, Error> {
+    let Some(destructor) = symbols.class_destructor(ty)? else {
+        return Ok(None);
+    };
+    symbols.demand(destructor);
+    let callee = symbols.function_symbol(program, destructor)?;
+    let mut element = ty;
+    let mut count = 1_u64;
+    let mut array = false;
+    while let crate::sema::lowering::TypeView::Array {
+        element: inner,
+        bound,
+    } = graph.lower_type(element)?
+    {
+        array = true;
+        count = count.wrapping_mul(bound);
+        element = inner;
+    }
+    Ok(Some(Finalizer {
+        global,
+        callee,
+        count,
+        array,
+        element_size: super::types::layout(graph, element)?.0,
+        guard,
+        constructed: None,
+    }))
 }
 pub(super) fn finish(
     program: &mut Program,
@@ -30,7 +66,15 @@ pub(super) fn finish(
     builder.block("entry")?;
     let mut next_block = 0_u32;
     for finalizer in finalizers.iter().rev() {
-        let skip = if let Some(guard) = finalizer.guard {
+        let skip = if let Some(flag) = finalizer.constructed {
+            let destroy = block(&mut builder, "ref_destroy", &mut next_block)?;
+            let skip = block(&mut builder, "ref_destroy_done", &mut next_block)?;
+            let ready =
+                builder.generated(I::Load(Facts::default(), Type::I8, Value::Symbol(flag)))?;
+            builder.effect(I::Branch(ready, destroy, skip))?;
+            builder.place_block(destroy)?;
+            Some(skip)
+        } else if let Some(guard) = finalizer.guard {
             let destroy = block(&mut builder, "local_static_destroy", &mut next_block)?;
             let skip = block(&mut builder, "local_static_fini_next", &mut next_block)?;
             let address = builder.generated(I::Addr(Value::Symbol(guard)))?;
@@ -47,9 +91,27 @@ pub(super) fn finish(
         if finalizer.count > 8 {
             array_loop(&mut builder, finalizer, &mut next_block)?;
         } else {
+            let base = if finalizer.constructed.is_some() && finalizer.array {
+                Some(builder.generated(I::Addr(Value::Symbol(finalizer.global)))?)
+            } else {
+                None
+            };
             for index in (0..finalizer.count).rev() {
-                let mut object = builder.generated(I::Addr(Value::Symbol(finalizer.global)))?;
-                if finalizer.array {
+                let mut object = if let Some(base) = base {
+                    base
+                } else {
+                    builder.generated(I::Addr(Value::Symbol(finalizer.global)))?
+                };
+                if base.is_some() {
+                    let offset =
+                        builder.integer(u128::from(index.wrapping_mul(finalizer.element_size)))?;
+                    object = builder.generated(I::Index(
+                        Type::I8,
+                        Some(Projection::ArrayElement),
+                        object,
+                        offset,
+                    ))?;
+                } else if finalizer.array {
                     let index = builder.integer(u128::from(index))?;
                     let offset = if finalizer.element_size == 1 {
                         index

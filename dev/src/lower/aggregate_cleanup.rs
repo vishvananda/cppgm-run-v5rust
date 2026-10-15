@@ -36,7 +36,7 @@ impl Function<'_, '_, '_, '_> {
         values: &[ast::ExprId],
     ) -> Result<Scope, Error> {
         let mut throws = false;
-        if !self.persistent_references {
+        if !self.static_initializer && !self.persistent_references {
             for &id in values {
                 throws |= self.expression_throws(id)?;
             }

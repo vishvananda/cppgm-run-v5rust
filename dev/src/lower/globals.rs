@@ -67,33 +67,20 @@ pub(super) fn lower_declaration<'a>(
                     budget,
                 )?;
             }
-            if let Some(destructor) =
-                symbols.storage_destructor(graph.lower_entity_type(entity)?)?
+            symbols.publish_finalizers(output.finalizers);
             {
                 let facts = graph.lower_variable(entity)?;
                 let global = symbols.variable_symbol(output.program, entity)?;
-                let callee = symbols.function_symbol(output.program, destructor)?;
-                symbols.demand(destructor);
-                let mut element = facts.ty;
-                let mut count = 1_u64;
-                let mut array = false;
-                while let TypeView::Array {
-                    element: inner,
-                    bound,
-                } = graph.lower_type(element)?
-                {
-                    array = true;
-                    count = count.wrapping_mul(bound);
-                    element = inner;
-                }
-                output.finalizers.push(super::shutdown::Finalizer {
+                if let Some(finalizer) = super::shutdown::for_type(
+                    output.program,
+                    symbols,
+                    graph,
                     global,
-                    callee,
-                    count,
-                    array,
-                    element_size: types::layout(graph, element)?.0,
-                    guard: thread_initialization.map(|(guard, _)| guard),
-                });
+                    facts.ty,
+                    thread_initialization.map(|(guard, _)| guard),
+                )? {
+                    output.finalizers.push(finalizer);
+                }
             }
             if symbols.emit_tls_wrapper(
                 output.program,
@@ -249,6 +236,14 @@ fn define_storage(
         symbols.data.define_reference(entity);
     }
     if !dynamic {
+        if initializer.is_none()
+            && let Some(constructor) = graph.lower_absent_initializer_constructor()
+        {
+            symbols.demand_entry(super::construction::Entry::Constructor(
+                constructor,
+                super::construction::Variant::Complete,
+            ));
+        }
         for &constructor in graph.lower_initializer_constructors(entity).iter().rev() {
             symbols.demand_entry(super::construction::Entry::Constructor(
                 constructor,

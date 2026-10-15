@@ -39,9 +39,13 @@ pub(super) struct ClassInput {
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
     values: std::collections::HashMap<EntityId, Vec<ConstructorId>>,
+    first: Option<ConstructorId>,
 }
 impl InitializerConstructors {
     pub(super) fn note(&mut self, entity: EntityId, constructor: ConstructorId) {
+        if self.first.is_none() {
+            self.first = Some(constructor);
+        }
         let constructors = self.values.entry(entity).or_default();
         if constructors.last() != Some(&constructor) {
             constructors.push(constructor);
@@ -49,6 +53,12 @@ impl InitializerConstructors {
     }
     pub(super) fn get(&self, entity: EntityId) -> &[ConstructorId] {
         self.values.get(&entity).map_or(&[], Vec::as_slice)
+    }
+    pub(super) fn absent_initializer(&self) -> Option<ConstructorId> {
+        // The frozen PointerMap's null-key lookup observes the first chain
+        // record once a chain exists. Retain its deterministic demand fact
+        // explicitly, without using null keys or rebuilding semantic lookup.
+        self.first
     }
 }
 impl Analyzer<'_> {
@@ -378,6 +388,7 @@ impl Analyzer<'_> {
         if self.body_context.is_none()
             && self.graph.constructors.get(id).nontrivial()
             && let Some(entity) = self.initializing
+            && self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Instance)
         {
             self.graph.initializer_constructors.note(entity, id);
         }

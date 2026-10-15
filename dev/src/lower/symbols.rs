@@ -126,6 +126,7 @@ pub(super) struct Symbols<'a, 'source> {
     inert_destructors: HashMap<EntityId, bool>,
     // A source declaration is shared by every ABI entry running its body.
     local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
+    persistent_finalizers: Vec<super::shutdown::Finalizer>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -169,8 +170,45 @@ impl<'a, 'source> Symbols<'a, 'source> {
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
             local_statics: HashMap::new(),
+            persistent_finalizers: Vec::new(),
             signatures: HashMap::new(),
         }
+    }
+    pub(super) fn publish_finalizers(&mut self, output: &mut Vec<super::shutdown::Finalizer>) {
+        output.append(&mut self.persistent_finalizers);
+    }
+    pub(super) fn persistent_finalizer(
+        &mut self,
+        program: &mut Program,
+        global: SymbolId,
+        ty: TypeId,
+    ) -> Result<Option<SymbolId>, Error> {
+        let graph = self.graph;
+        let Some(mut finalizer) =
+            super::shutdown::for_type(program, self, graph, global, ty, None)?
+        else {
+            return Ok(None);
+        };
+        let name = format!(
+            "{}_constructed",
+            program.names.get(program.symbol(global).name)
+        );
+        let flag = self.table.allocate(program, &name, None, true)?;
+        program.add_global(
+            flag,
+            crate::lowir::model::Global {
+                name: program.symbol(flag).name,
+                ty: Some(crate::lowir::vocabulary::Type::I8),
+                metadata: Metadata {
+                    binding: Some(crate::lowir::vocabulary::Binding::Internal),
+                    ..Metadata::default()
+                },
+                init: crate::lowir::model::GlobalInit::Zero,
+            },
+        )?;
+        finalizer.constructed = Some(flag);
+        self.persistent_finalizers.push(finalizer);
+        Ok(Some(flag))
     }
     pub(super) fn parameter_classes(
         &mut self,

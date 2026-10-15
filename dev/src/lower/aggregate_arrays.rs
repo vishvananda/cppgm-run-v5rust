@@ -31,7 +31,8 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         values: &[ast::ExprId],
     ) -> Result<bool, Error> {
-        if self.persistent_references || self.aggregation.count.is_some() {
+        if self.static_initializer || self.persistent_references || self.aggregation.count.is_some()
+        {
             return Ok(false);
         }
         let mut element = ty;

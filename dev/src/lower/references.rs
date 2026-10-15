@@ -219,7 +219,6 @@ impl Function<'_, '_, '_, '_> {
         }
         // A temporary's global has its own identity and sequence under the
         // initializing variable. It is never shared by value with another one.
-        self.symbols.require_trivial_storage(ty)?;
         let (symbol, object) = self
             .symbols
             .dynamic_temporary_symbol(self.builder.program(), ty)?;

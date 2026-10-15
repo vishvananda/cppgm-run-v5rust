@@ -130,7 +130,11 @@ impl Function<'_, '_, '_, '_> {
                     "global reference without initializer",
                 )))?;
                 let expr = self.initializer_expression(written)?;
-                let address = self.bind_static_reference(expr, ty)?;
+                let address = if self.persistent_references {
+                    self.bind_static_reference(expr, ty)?
+                } else {
+                    self.bind_reference(expr, ty, super::conversions::Context::Initialization)?
+                };
                 self.effect(I::Store(
                     types::memory(self.graph, ty)?,
                     Type::Ptr,

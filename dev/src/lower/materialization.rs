@@ -116,9 +116,8 @@ impl Function<'_, '_, '_, '_> {
         ) {
             return Ok(false);
         }
-        // A constructor member needs its own partial-construction cleanup;
-        // completed named storage owns its destruction at the declaration site.
-        self.symbols.require_trivial_storage(ty)?;
+        // The constructor owner registers this completed member with its
+        // subobject cleanup after materialization succeeds.
         let object = self.object_pointer(pointer)?.value;
         let offset = self
             .builder
@@ -186,10 +185,7 @@ impl Function<'_, '_, '_, '_> {
                     "converted reference without constructor",
                 ))?;
         let destroyed = self.symbols.storage_destructor(ty)?.is_some();
-        if destroyed && persistent {
-            return Err(Error::Missing("persistent class temporary finalization"));
-        }
-        if destroyed && self.lifetime.full_expression && !self.lifetime.region {
+        if destroyed && !persistent && self.lifetime.full_expression && !self.lifetime.region {
             let start = matches!(context, super::conversions::Context::Initialization)
                 .then_some(self.lifetime.expression_start)
                 .flatten();
@@ -206,7 +202,9 @@ impl Function<'_, '_, '_, '_> {
         )?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.call_converting_constructor(source, constructor, object, arguments)?;
-        if destroyed {
+        if persistent {
+            self.persistent_alive(ty, slot)?;
+        } else if destroyed {
             self.temporary_alive(ty, object)?;
         }
         Ok(object)
@@ -297,13 +295,11 @@ impl Function<'_, '_, '_, '_> {
         let owner = self.extended_temporary_owner(id);
         let destructor = self.symbols.storage_destructor(ty)?;
         if destructor.is_some()
+            && !persistent
             && self.lifetime.guarded_operands != 0
             && !self.lifetime.tracking.active
         {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
-        }
-        if destructor.is_some() && persistent {
-            return Err(Error::Missing("persistent class temporary finalization"));
         }
         let call_result = self.graph.lower_operator_call(root)?
             || self.graph.lower_literal_call(root)?.is_some()
@@ -313,6 +309,7 @@ impl Function<'_, '_, '_, '_> {
             && !self.lifetime.cleanups.is_empty()
             && call_result;
         if destructor.is_some()
+            && !persistent
             && self.lifetime.full_expression
             && !self.lifetime.region
             && !deferred
@@ -320,16 +317,23 @@ impl Function<'_, '_, '_, '_> {
         {
             self.open_temporary_region()?;
         }
-        if destructor.is_some() && self.lifetime.full_expression && self.aggregate_has_members() {
+        if destructor.is_some()
+            && !persistent
+            && self.lifetime.full_expression
+            && self.aggregate_has_members()
+        {
             self.before_lifetime_call(true)?;
         }
         let slot = self.temporary_storage(ty, persistent, use_.stem())?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.materialize_class(id, ty, object)?;
-        if destructor.is_some() && owner.is_none() && !self.terminated {
+        if persistent && !self.terminated {
+            self.persistent_alive(ty, slot)?;
+        } else if destructor.is_some() && owner.is_none() && !self.terminated {
             self.temporary_alive(ty, object)?;
         }
         if destructor.is_some()
+            && !persistent
             && let Some(owner) = owner
         {
             if self.lifetime.tracking.active {

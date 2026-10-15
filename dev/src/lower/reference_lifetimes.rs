@@ -17,6 +17,24 @@ pub(super) struct Extensions {
 }
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn persistent_alive(&mut self, ty: TypeId, storage: Value) -> Result<(), Error> {
+        let Value::Symbol(global) = storage else {
+            return Ok(());
+        };
+        if let Some(flag) = self
+            .symbols
+            .persistent_finalizer(self.builder.program(), global, ty)?
+        {
+            let one = self.builder.integer(1)?;
+            self.effect(crate::lowir::model::InstructionKind::Store(
+                crate::lowir::model::Facts::default(),
+                crate::lowir::vocabulary::Type::I8,
+                one,
+                Value::Symbol(flag),
+            ))?;
+        }
+        Ok(())
+    }
     pub(super) fn extended_temporary_owner(&self, id: ast::ExprId) -> Option<EntityId> {
         self.reference_lifetimes
             .path

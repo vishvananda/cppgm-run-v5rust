@@ -102,6 +102,19 @@ impl Output {
         self.symbols.finish_entry_aliases(&mut self.program);
     }
 }
+fn finish_unit(
+    program: &mut Program,
+    definitions: &mut definition_order::Definitions,
+    finalizers: &mut Vec<shutdown::Finalizer>,
+    symbols: &mut symbols::Symbols<'_, '_>,
+    graph: &Graph,
+) -> Result<Option<crate::lowir::model::SymbolId>, Error> {
+    aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
+    definitions.release_held();
+    globals::finish(program, symbols, graph)?;
+    symbols.publish_finalizers(finalizers);
+    Ok(symbols.initialization)
+}
 pub(crate) fn lower_unit(
     output: &mut Output,
     graph: &Graph,
@@ -329,17 +342,14 @@ pub(crate) fn lower_unit(
             &mut output.definitions,
         )?;
     }
-    aggregate_helpers::emit_pending(
+    output.initializer = finish_unit(
         &mut output.program,
+        &mut output.definitions,
+        &mut output.finalizers,
         &mut symbols,
         graph,
-        &mut output.definitions,
-    )?;
-    output.definitions.release_held();
-    globals::finish(&mut output.program, &mut symbols, graph)?;
-    if let Some(symbol) = symbols.initialization {
-        output.initializer = Some(symbol);
-    }
+    )?
+    .or(output.initializer);
     Ok(())
 }
 
