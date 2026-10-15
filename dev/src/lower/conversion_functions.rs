@@ -12,6 +12,54 @@ use crate::{
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn bind_function_conversion(
+        &mut self,
+        id: ast::ExprId,
+        call: MemberCall,
+        element: crate::sema::lowering::TypeId,
+        persistent: bool,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        if call.place {
+            let address = self
+                .call_conversion(
+                    id,
+                    MemberCall {
+                        place: false,
+                        ..call
+                    },
+                )?
+                .value;
+            return if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+                self.base_projection(address, element, offset)
+            } else {
+                Ok(address)
+            };
+        }
+        if matches!(
+            self.graph.lower_type(call.result)?,
+            crate::sema::lowering::TypeView::Class(_)
+        ) {
+            return Err(Error::Missing("conversion-function reference temporary"));
+        }
+        let value = self.call_conversion(id, call)?;
+        let value = self.convert(value, element, super::conversions::Context::Initialization)?;
+        let value = self.fit(value, element)?;
+        let storage = super::types::storage(self.graph, element)?;
+        let slot = self.temporary_storage(element, persistent, "tmpref")?;
+        self.effect(I::Store(
+            crate::lowir::model::Facts::memory(
+                false,
+                !matches!(
+                    storage,
+                    crate::lowir::vocabulary::Type::I8 | crate::lowir::vocabulary::Type::U8
+                ),
+            ),
+            storage,
+            value.value,
+            slot,
+        ))?;
+        Ok(self.emit(I::Addr(slot), element)?.value)
+    }
     pub(super) fn condition_conversion_call(
         &mut self,
         place: crate::lowir::model::Value,

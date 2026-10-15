@@ -399,14 +399,28 @@ impl Analyzer<'_> {
         sequence: ArgumentSequence,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        self.apply_function_sequence_at(id, sequence, scope, self.tree.expressions.get(id).location)
+    }
+    pub(super) fn apply_function_sequence_at(
+        &mut self,
+        id: ast::ExprId,
+        sequence: ArgumentSequence,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         let source = self.graph.expression_facts.get(id)?;
         let selected = self.select_conversion_function(
             source,
             sequence,
             scope,
-            self.tree.expressions.get(id).location,
+            location,
             ConversionUse::Scalar,
         )?;
+        if self.graph.class_of(sequence.conversion.target).is_some() {
+            return Err(Error::Missing(
+                "conversion-function class result initialization",
+            ));
+        }
         self.graph
             .expression_facts
             .set_function_conversion(id, selected);

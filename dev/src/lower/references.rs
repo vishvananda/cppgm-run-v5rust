@@ -83,6 +83,9 @@ impl Function<'_, '_, '_, '_> {
         if self.class_conversion(id).is_some() {
             return self.converting_reference_temporary(id, element, context, persistent);
         }
+        if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
+            return self.bind_function_conversion(id, call, element, persistent);
+        }
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. })
             && !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })

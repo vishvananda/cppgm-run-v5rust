@@ -66,6 +66,11 @@ impl CallScratch {
     }
 }
 #[derive(Clone, Copy)]
+enum ArgumentConversions {
+    Standard,
+    UserDefined,
+}
+#[derive(Clone, Copy)]
 pub(super) struct ArgumentSequence {
     pub(super) conversion: Conversion,
     // An overload designation ranks as an exact target match, even when its
@@ -511,6 +516,14 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         target: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
+        self.argument_sequence_with_conversions(id, target, ArgumentConversions::UserDefined)
+    }
+    fn argument_sequence_with_conversions(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        conversions: ArgumentConversions,
+    ) -> Result<Option<ArgumentSequence>, Error> {
         if matches!(
             self.tree.expressions.get(id).kind,
             ast::ExprKind::Braced { .. }
@@ -596,7 +609,10 @@ impl Analyzer<'_> {
                 user_conversion: None,
             }));
         }
-        if application.is_none() && !overloaded {
+        if application.is_none()
+            && !overloaded
+            && matches!(conversions, ArgumentConversions::UserDefined)
+        {
             let mut sequence = self.user_conversion_sequence(facts, target, false)?;
             if let Some(sequence) = &mut sequence {
                 sequence.function = function;
@@ -793,7 +809,20 @@ impl Analyzer<'_> {
                 let index = index + offset;
                 let sequence = if index < count {
                     let target = self.graph.types.function_parameter(ty, index)?;
-                    let Some(conversion) = self.argument_sequence(arg, target)? else {
+                    let conversions = if matches!(
+                        set,
+                        Candidates::Constructors {
+                            converting: true,
+                            ..
+                        } | Candidates::ConvertingMember(_)
+                    ) {
+                        ArgumentConversions::Standard
+                    } else {
+                        ArgumentConversions::UserDefined
+                    };
+                    let Some(conversion) =
+                        self.argument_sequence_with_conversions(arg, target, conversions)?
+                    else {
                         viable = false;
                         break;
                     };
@@ -865,6 +894,31 @@ impl Analyzer<'_> {
                 None
             });
         }
+        Ok(CallSelection {
+            binding,
+            first: 0,
+            object_count: 0,
+        })
+    }
+    pub(super) fn prepare_converting_constructor(
+        sequence: ArgumentSequence,
+        scratch: &mut CallScratch,
+    ) -> Result<CallSelection, Error> {
+        let Some(UserConversion::Constructor(binding)) = sequence.user_conversion else {
+            return Err(Error::Invariant(
+                "constructor selection without constructor",
+            ));
+        };
+        let first = sequence
+            .application
+            .ok_or(Error::Invariant("constructor first sequence"))?;
+        scratch.clear();
+        scratch.sequences.push(Some(ArgumentSequence {
+            conversion: first,
+            application: Some(first),
+            function: None,
+            user_conversion: None,
+        }));
         Ok(CallSelection {
             binding,
             first: 0,

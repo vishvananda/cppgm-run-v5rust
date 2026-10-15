@@ -332,6 +332,25 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        let conversion = if converting
+            && let [id] = args
+            && let Some(source) = self
+                .graph
+                .class_of(self.graph.expression_facts.get(*id)?.ty)
+            && !self.visible_conversion_functions(source)?.is_empty()
+        {
+            let sequence = self.class_initializer_conversion(*id, target, context, location)?;
+            match sequence.user_conversion {
+                Some(super::procedural_calls::UserConversion::Constructor(_)) => Some(sequence),
+                Some(super::procedural_calls::UserConversion::Function(_)) => {
+                    self.apply_function_sequence_at(*id, sequence, scope, location)?;
+                    return Ok(None);
+                }
+                _ => return Err(Error::Invariant("class user conversion selection")),
+            }
+        } else {
+            None
+        };
         let offered = self
             .graph
             .entity(class)
@@ -378,7 +397,9 @@ impl Analyzer<'_> {
             ));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
-        let chosen = if let Some(binding) = selected {
+        let chosen = if let Some(sequence) = conversion {
+            Self::prepare_converting_constructor(sequence, &mut scratch)
+        } else if let Some(binding) = selected {
             self.prepare_selected_call(binding, args, &mut scratch)
         } else {
             self.resolve_call(
@@ -411,6 +432,24 @@ impl Analyzer<'_> {
         scratch.clear();
         self.call_scratch = scratch;
         let (constructor, function) = chosen?;
+        self.check_constructor_parameters(function, args, scope, list.is_some())?;
+        if converting {
+            self.check_converting_final_copy(class, scope, location)?;
+        }
+        if let Some(id) = list {
+            self.publish_constructor_list(id, target, constructor)?;
+        }
+        Ok(Some((constructor, arguments)))
+    }
+
+    fn check_constructor_parameters(
+        &mut self,
+        function: EntityId,
+        args: &[ast::ExprId],
+        scope: ScopeId,
+        list: bool,
+    ) -> Result<(), Error> {
+        let tree = self.tree;
         let ty = self
             .graph
             .entity(function)
@@ -453,7 +492,7 @@ impl Analyzer<'_> {
                 )?;
                 self.graph.expression_facts.set(argument, facts);
             }
-            if list.is_some()
+            if list
                 && !matches!(
                     self.graph.types.get(parameter).kind,
                     TypeKind::Reference { .. }
@@ -462,13 +501,7 @@ impl Analyzer<'_> {
                 self.check_narrowing(argument, parameter, scope)?;
             }
         }
-        if converting {
-            self.check_converting_final_copy(class, scope, location)?;
-        }
-        if let Some(id) = list {
-            self.publish_constructor_list(id, target, constructor)?;
-        }
-        Ok(Some((constructor, arguments)))
+        Ok(())
     }
 
     pub(super) fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {

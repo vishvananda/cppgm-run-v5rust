@@ -33,30 +33,46 @@ pub(super) struct UserScratch {
     candidates: Vec<UserCandidate>,
 }
 impl Analyzer<'_> {
+    pub(super) fn class_initializer_conversion(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        context: super::constructor_initialization::ClassContext,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<ArgumentSequence, Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        self.user_conversion_sequence(facts, target, false)?
+            .ok_or_else(|| {
+                Error::at(
+                    location,
+                    if context == super::constructor_initialization::ClassContext::AggregateMember {
+                        "no conversion to the member's class"
+                    } else {
+                        "no unambiguous user-defined conversion initializes the class object"
+                    },
+                )
+            })
+    }
     pub(super) fn user_conversion_sequence(
         &mut self,
         source: ExprFacts,
         target: TypeId,
         direct: bool,
     ) -> Result<Option<ArgumentSequence>, Error> {
-        if let Some(sequence) = self.conversion_function_sequence(source, target, direct)? {
-            return Ok(Some(sequence));
-        }
-        self.user_conversion_query(source, target, direct, false)
+        self.user_conversion_query(source, target, direct)
     }
     pub(super) fn conditional_user_sequence(
         &mut self,
         source: ExprFacts,
         target: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
-        self.user_conversion_query(source, target, false, true)
+        self.user_conversion_query(source, target, false)
     }
     fn user_conversion_query(
         &mut self,
         source: ExprFacts,
         target: TypeId,
         direct: bool,
-        functions: bool,
     ) -> Result<Option<ArgumentSequence>, Error> {
         if matches!(
             self.graph.types.get(source.ty).kind,
@@ -82,7 +98,7 @@ impl Analyzer<'_> {
         let selected = (|| {
             // 8.5.3p5: a directly binding lvalue result has priority over
             // constructing a temporary. A failed or ambiguous probe falls through.
-            if functions && reference == Some(RefKind::Lvalue) {
+            if reference == Some(RefKind::Lvalue) {
                 self.conversion_function_candidates(
                     source,
                     target,
@@ -106,15 +122,13 @@ impl Analyzer<'_> {
                     &mut scratch.candidates,
                 )?;
             }
-            if functions {
-                self.conversion_function_candidates(
-                    source,
-                    target,
-                    direct,
-                    false,
-                    &mut scratch.candidates,
-                )?;
-            }
+            self.conversion_function_candidates(
+                source,
+                target,
+                direct,
+                false,
+                &mut scratch.candidates,
+            )?;
             self.best_user_candidate(&scratch.candidates)
         })();
         scratch.candidates.clear();
@@ -347,6 +361,88 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn ordinary_queries_reuse_scratch_without_demand_and_prioritize_direct_references() {
+        use super::super::{expression_facts::ValueCategory, types::Cv};
+        let source = SourceBuffer::new(
+            b"struct Target;struct Source{operator const Target&()const;operator int();};\
+              struct Target{Target(Source&);};struct Unused{Unused(int);};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"ordinary-query-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let nodes = tree.declarations.mark();
+        let source_name = cursor.intern_name(b"Source").unwrap();
+        let target_name = cursor.intern_name(b"Target").unwrap();
+        let unused_name = cursor.intern_name(b"Unused").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = |name| {
+            analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity
+        };
+        let source_class = class(source_name);
+        let target_class = class(target_name);
+        let unused = class(unused_name);
+        let source_type = analyzer.graph.entity(source_class).ty.unwrap();
+        let target = analyzer.graph.entity(target_class).ty.unwrap();
+        let constant = analyzer.graph.types.qualify(target, Cv::CONST).unwrap();
+        let reference = analyzer
+            .graph
+            .types
+            .reference(constant, RefKind::Lvalue)
+            .unwrap();
+        let facts = ExprFacts::new(source_type, ValueCategory::Lvalue);
+        let constructor = analyzer.graph.entity(target_class).declared_constructors[0];
+        let function = analyzer.graph.entity(source_class).declared_conversions[0];
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        for _ in 0..3 {
+            let value = analyzer
+                .user_conversion_sequence(facts, target, false)
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(value.user_conversion, Some(UserConversion::Constructor(binding)) if binding == constructor)
+            );
+            let bound = analyzer
+                .user_conversion_sequence(facts, reference, false)
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(bound.user_conversion, Some(UserConversion::Function(binding)) if binding == function)
+            );
+            assert!(!bound.conversion.temporary);
+            assert!(analyzer.user_conversion_scratch.candidates.is_empty());
+        }
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+        assert!(
+            analyzer
+                .graph
+                .entity(analyzer.graph.binding(constructor).entity)
+                .constructor
+                .is_none()
+        );
+        for class in [source_class, target_class, unused] {
+            assert!(analyzer.graph.entity(class).implicit_copies.is_none());
+            assert!(matches!(
+                analyzer.graph.entity(class).layout,
+                super::super::layout::LayoutState::NotStarted
+            ));
+        }
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), nodes);
+    }
 
     #[test]
     fn constructor_ranking_keeps_source_aliases_and_demands_only_selected_use() {
