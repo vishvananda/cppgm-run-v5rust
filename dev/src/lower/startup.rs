@@ -64,8 +64,11 @@ impl Startup {
         function.next_block = self.next_block;
         function.terminated = self.terminated;
         function.persistent_references = true;
+        function.static_initializer = true;
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
-        let result = function.initialize_global(entity, initializer);
+        let result = function
+            .initialize_global(entity, initializer)
+            .and_then(|()| function.destroy_temporaries(0));
         function.symbols.replace_temporary_owner(saved);
         result?;
         self.next_block = function.next_block;

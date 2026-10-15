@@ -720,7 +720,9 @@ impl Function<'_, '_, '_, '_> {
         self.effect(I::Branch(condition.value, then_block, else_block))?;
         for (name, expression) in [(&then_name, then_expr), (&else_name, else_expr)] {
             self.builder.block(name)?;
+            self.lifetime.guarded_operands += 1;
             let value = self.operand(expression, Context::Operand)?;
+            self.lifetime.guarded_operands -= 1;
             let value = self.fit(value, source)?;
             self.effect(I::Store(
                 types::memory(self.graph, source)?,

@@ -36,6 +36,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
     pub persistent_references: bool,
+    pub static_initializer: bool,
     // While a converting constructor consumes its source, its first standard
     // conversion is active; the outer construction use must not recur.
     pub converting_source: Option<ast::ExprId>,
@@ -113,7 +114,7 @@ pub(super) fn lower<'a>(
                 }
                 name
             },
-            types::storage(graph, ty)?,
+            parameter_type(graph, ty)?,
         ));
     }
     let symbol = symbols.entry_symbol(program, entry)?;
@@ -238,17 +239,7 @@ pub(super) fn lower<'a>(
     if object_count != 0 {
         function.initialize_this(result_count)?;
     }
-    for (ordinal, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
-        let index = ordinal + object_count + result_count;
-        let slot = if parameter_bindings[ordinal].1.is_some() {
-            function.builder.slot(&names[index].0, names[index].1)?
-        } else {
-            function.builder.parameter_slot(index, names[index].1)?
-        };
-        let incoming = function.builder.parameter(index)?;
-        function.initialize_parameter(parameter_bindings[ordinal].2, incoming, slot)?;
-        function.locals.insert(entity, slot);
-    }
+    function.initialize_parameters(&parameter_bindings, &names, object_count + result_count)?;
     if let super::construction::Entry::Constructor(id, variant) = entry {
         let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
             tree.statements.get(body.compound).location
@@ -317,6 +308,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             entity,
             this_slot: None,
             persistent_references: false,
+            static_initializer: false,
             converting_source: None,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
@@ -341,6 +333,31 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
     }
 }
 impl Function<'_, '_, '_, '_> {
+    fn initialize_parameters(
+        &mut self,
+        bindings: &[(EntityId, Option<crate::lex::identifiers::NameId>, TypeId)],
+        names: &[(String, Type)],
+        first: usize,
+    ) -> Result<(), Error> {
+        for (ordinal, &(entity, name, parameter)) in bindings.iter().enumerate() {
+            let index = ordinal + first;
+            let storage = types::storage(self.graph, parameter)?;
+            let slot = if name.is_some() {
+                self.builder.slot(&names[index].0, storage)?
+            } else {
+                self.builder.parameter_slot(index, storage)?
+            };
+            let incoming = self.builder.parameter(index)?;
+            if matches!(self.graph.lower_type(parameter)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
+            {
+                self.locals.insert(entity, incoming);
+            } else {
+                self.initialize_parameter(parameter, incoming, slot)?;
+                self.locals.insert(entity, slot);
+            }
+        }
+        Ok(())
+    }
     fn initialize_this(&mut self, index: usize) -> Result<(), Error> {
         let slot = self.builder.slot("this", Type::Ptr)?;
         let incoming = self.builder.parameter(index)?;
@@ -502,11 +519,31 @@ impl Function<'_, '_, '_, '_> {
             TypeView::Class(_) | TypeView::Array { .. }
         );
         let expression = self.lifetime.full_expression;
-        let began = if object {
-            false
-        } else {
-            self.begin_lifetime_expression()
-        };
+        let temporary_floor = self.lifetime.cleanups.len();
+        let temporaries = self.initializer_temporaries(initializer)?;
+        let began =
+            if !expression && self.constructor_expression(entity, initializer, temporaries)? {
+                self.lifetime.full_expression = true;
+                self.ensure_insertion()?;
+                self.lifetime.expression_start = Some(self.builder.position()?);
+                true
+            } else if object && !temporaries {
+                false
+            } else if let Some(ast::Initializer {
+                kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),
+                ..
+            }) = initializer
+            {
+                self.begin_full_expression(Some(id))?
+            } else if temporaries
+                && self.initializer_throws(initializer)?
+                && !self.lifetime.full_expression
+            {
+                self.lifetime.full_expression = true;
+                true
+            } else {
+                self.begin_lifetime_expression()
+            };
         let construction = self.lifetime.construction;
         self.lifetime.construction |= object;
         let saved_owner = self.reference_lifetimes.aggregate;
@@ -516,6 +553,7 @@ impl Function<'_, '_, '_, '_> {
         let result = self.initialize_local_variable(declarator, initializer);
         self.reference_lifetimes.aggregate = saved_owner;
         result?;
+        self.destroy_temporaries(temporary_floor)?;
         if object || !expression {
             self.close_lifetime_region()?;
         }
@@ -662,7 +700,7 @@ pub(super) fn signature(
                 "arg{}",
                 index + usize::from(result_boundary.indirect)
             ))?,
-            ty: types::storage(graph, ty)?,
+            ty: parameter_type(graph, ty)?,
             pass,
             no_alias: false,
             object_bytes,
@@ -697,6 +735,13 @@ pub(super) fn reference_boundary(
     graph: &Graph,
     ty: TypeId,
 ) -> Result<(Option<crate::lowir::vocabulary::Pass>, u64), Error> {
+    if matches!(graph.lower_type(ty)?, TypeView::Class(class) if !graph.lower_direct_class_parameter(class)?)
+    {
+        return Ok((
+            Some(crate::lowir::vocabulary::Pass::ByAddress),
+            types::layout(graph, ty)?.0,
+        ));
+    }
     let TypeView::Reference { element, .. } = graph.lower_type(ty)? else {
         return Ok((None, 0));
     };
@@ -706,6 +751,15 @@ pub(super) fn reference_boundary(
         0
     };
     Ok((Some(crate::lowir::vocabulary::Pass::ByAddress), bytes))
+}
+
+fn parameter_type(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
+    if matches!(graph.lower_type(ty)?, TypeView::Class(class) if !graph.lower_direct_class_parameter(class)?)
+    {
+        Ok(Type::Ptr)
+    } else {
+        types::storage(graph, ty)
+    }
 }
 
 fn parameter_no_alias(

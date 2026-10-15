@@ -173,6 +173,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         &mut self,
         ty: TypeId,
     ) -> Result<Option<crate::lowir::vocabulary::ObjectClasses>, Error> {
+        if matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
+        {
+            return Ok(None);
+        }
         self.class_parameters.parameter(self.graph, ty, self.budget)
     }
     pub(super) fn class_result_memory(&mut self, class: EntityId) -> Result<bool, Error> {

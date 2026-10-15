@@ -25,6 +25,7 @@ pub(super) enum CleanupPlace {
     Storage(Value),
     Subobject(Value),
     Extended(Value),
+    Temporary(Value),
     Counted { root: Value, counter: Value },
 }
 impl Cleanup {
@@ -71,6 +72,7 @@ pub(super) struct Lifetime {
     pub labels: HashMap<crate::lex::identifiers::NameId, Option<LiveId>>,
     pub depths: HashMap<EntityId, usize>,
     pub full_expression: bool,
+    pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,
     pub region_depth: usize,
@@ -78,6 +80,9 @@ pub(super) struct Lifetime {
     pub function_guard: Option<BlockId>,
     pub exception_slot: Option<Value>,
     pub throw_work: Vec<ast::ExprId>,
+    pub temporary_work: Vec<ast::ExprId>,
+    pub temporary_queries: HashMap<ast::ExprId, super::temporary_scan::TemporarySummary>,
+    pub guarded_operands: u32,
 }
 impl Lifetime {
     pub(super) fn add_live(
@@ -172,6 +177,74 @@ impl Function<'_, '_, '_, '_> {
             .depths
             .insert(owner, self.lifetime.cleanups.len());
     }
+    pub(super) fn register_temporary(&mut self, ty: TypeId, object: Value) {
+        self.lifetime.cleanups.push(Cleanup {
+            place: CleanupPlace::Temporary(object),
+            ty,
+            variable: None,
+            unwind: None,
+            conditional: None,
+            shared_return: None,
+        });
+    }
+    pub(super) fn extend_last_temporary(&mut self, owner: EntityId) -> Result<(), Error> {
+        let cleanup = self
+            .lifetime
+            .cleanups
+            .last_mut()
+            .ok_or(crate::sema::Error::Invariant(
+                "reference conversion without temporary",
+            ))?;
+        let CleanupPlace::Temporary(object) = cleanup.place else {
+            return Err(crate::sema::Error::Invariant(
+                "reference conversion extends non-temporary",
+            )
+            .into());
+        };
+        cleanup.place = CleanupPlace::Extended(object);
+        cleanup.variable = Some(owner);
+        self.lifetime
+            .depths
+            .insert(owner, self.lifetime.cleanups.len());
+        Ok(())
+    }
+    pub(super) fn destroy_temporaries(&mut self, first: usize) -> Result<(), Error> {
+        self.destroy_temporaries_from(first, true)
+    }
+    pub(super) fn destroy_temporaries_from(
+        &mut self,
+        first: usize,
+        pop: bool,
+    ) -> Result<(), Error> {
+        for index in (first..self.lifetime.cleanups.len()).rev() {
+            let cleanup = self.lifetime.cleanups[index];
+            if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
+                self.destroy_cleanup(cleanup)?;
+            }
+        }
+        if !pop {
+            return Ok(());
+        }
+        let mut kept = first;
+        for index in first..self.lifetime.cleanups.len() {
+            let mut cleanup = self.lifetime.cleanups[index];
+            if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
+                continue;
+            }
+            if kept != index {
+                cleanup.unwind = None;
+                cleanup.conditional = None;
+                cleanup.shared_return = None;
+            }
+            self.lifetime.cleanups[kept] = cleanup;
+            if let Some(variable) = cleanup.variable {
+                self.lifetime.depths.insert(variable, kept + 1);
+            }
+            kept += 1;
+        }
+        self.lifetime.cleanups.truncate(kept);
+        Ok(())
+    }
     pub(super) fn release_aggregate_members(&mut self, first: usize) {
         let mut kept = first;
         let mut removed = false;
@@ -218,12 +291,12 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
+    pub(super) fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
         match cleanup.place {
             CleanupPlace::Storage(storage) => self.destroy_storage(cleanup.ty, storage),
-            CleanupPlace::Subobject(object) | CleanupPlace::Extended(object) => {
-                self.destroy_completed_object(cleanup.ty, object)
-            }
+            CleanupPlace::Subobject(object)
+            | CleanupPlace::Extended(object)
+            | CleanupPlace::Temporary(object) => self.destroy_completed_object(cleanup.ty, object),
             CleanupPlace::Counted { .. } => {
                 Err(crate::sema::Error::Invariant("counted cleanup outside unwind chain").into())
             }
@@ -497,6 +570,7 @@ impl Function<'_, '_, '_, '_> {
         value: Option<Value>,
         expression: bool,
     ) -> Result<(), Error> {
+        self.destroy_temporaries(0)?;
         if self.destruction.cleanup.is_some() {
             self.end_lifetime_expression(expression)?;
             self.destroy_cleanups(0)?;

@@ -98,12 +98,12 @@ impl Function<'_, '_, '_, '_> {
             );
         }
         if !facts.is_place && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_)) {
-            let address = self.bound_class_temporary(
+            let address = self.class_temporary(
                 id,
                 if matches!(context, Context::Argument) {
-                    "arg"
+                    super::materialization::TemporaryUse::Argument
                 } else {
-                    "tmpobj"
+                    super::materialization::TemporaryUse::Reference
                 },
                 persistent,
             )?;

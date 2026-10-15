@@ -83,7 +83,9 @@ impl Function<'_, '_, '_, '_> {
                         )?;
                     }
                     work.extend(self.tree.expr_lists.get(arguments));
-                    work.push(callee);
+                    if self.graph.lower_floating_intrinsic(id)?.is_none() {
+                        work.push(callee);
+                    }
                 }
                 ExprKind::Throw(_) => return Ok(true),
                 ExprKind::New {

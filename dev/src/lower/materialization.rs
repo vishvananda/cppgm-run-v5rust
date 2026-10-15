@@ -8,6 +8,22 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 
+#[derive(Clone, Copy)]
+pub(super) enum TemporaryUse {
+    Argument,
+    Reference,
+    Designator,
+    Discard,
+}
+impl TemporaryUse {
+    fn stem(self) -> &'static str {
+        match self {
+            Self::Argument => "arg",
+            Self::Reference | Self::Designator => "tmpobj",
+            Self::Discard => "discard",
+        }
+    }
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn named_elided_list(
         &self,
@@ -143,7 +159,16 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(crate::sema::Error::Invariant(
                     "converted reference without constructor",
                 ))?;
-        self.symbols.require_trivial_storage(ty)?;
+        let destroyed = self.symbols.storage_destructor(ty)?.is_some();
+        if destroyed && persistent {
+            return Err(Error::Missing("persistent class temporary finalization"));
+        }
+        if destroyed && self.lifetime.full_expression && !self.lifetime.region {
+            let start = matches!(context, super::conversions::Context::Initialization)
+                .then_some(self.lifetime.expression_start)
+                .flatten();
+            self.open_temporary_region_at(start)?;
+        }
         let slot = self.temporary_storage(
             ty,
             persistent,
@@ -155,17 +180,24 @@ impl Function<'_, '_, '_, '_> {
         )?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.call_converting_constructor(source, constructor, object, arguments)?;
+        if destroyed {
+            self.temporary_alive(ty, object)?;
+        }
         Ok(object)
     }
     pub(super) fn class_argument(&mut self, id: ast::ExprId, ty: TypeId) -> Result<Value, Error> {
         let TypeView::Class(class) = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("class argument without class").into());
         };
-        if !self.graph.lower_direct_class_parameter(class)? {
-            return Err(Error::Missing("indirect class parameter ownership"));
+        let direct = self.graph.lower_direct_class_parameter(class)?;
+        let destroyed = self.symbols.storage_destructor(ty)?.is_some();
+        if destroyed && self.lifetime.full_expression && !self.lifetime.region {
+            self.open_temporary_region()?;
         }
-        self.symbols.require_trivial_storage(ty)?;
-        let slot = self.generated_slot("argobj", types::storage(self.graph, ty)?)?;
+        let slot = self.generated_slot(
+            if direct { "argobj" } else { "arg" },
+            types::storage(self.graph, ty)?,
+        )?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         let source = self.without_parentheses(id);
         let functional = matches!(
@@ -175,9 +207,17 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_class_empty(class)? && functional {
             self.materialize_empty_argument(source, ty, object)?;
         } else {
-            self.materialize_class(id, ty, object)?;
+            let owner = self.reference_lifetimes.aggregate.take();
+            let persistent = std::mem::replace(&mut self.persistent_references, false);
+            let result = self.materialize_class(id, ty, object);
+            self.reference_lifetimes.aggregate = owner;
+            self.persistent_references = persistent;
+            result?;
         }
-        Ok(slot)
+        if destroyed {
+            self.temporary_alive(ty, object)?;
+        }
+        Ok(if direct { slot } else { object })
     }
     pub(super) fn materialize_empty_argument(
         &mut self,
@@ -213,14 +253,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn class_temporary(
         &mut self,
         id: ast::ExprId,
-        stem: &'static str,
-    ) -> Result<Value, Error> {
-        self.bound_class_temporary(id, stem, false)
-    }
-    pub(super) fn bound_class_temporary(
-        &mut self,
-        id: ast::ExprId,
-        stem: &'static str,
+        use_: TemporaryUse,
         persistent: bool,
     ) -> Result<Value, Error> {
         let root = self.without_parentheses(id);
@@ -231,24 +264,42 @@ impl Function<'_, '_, '_, '_> {
             && !self.graph.lower_operator_call(root)?
         {
             self.discard(left)?;
-            return self.comma_class_temporary(root, right, stem, persistent);
+            return self.comma_class_temporary(root, right, use_, persistent);
         }
         let persistent = persistent || self.persistent_temporary_path(id);
         let ty = self.graph.lower_expression(id)?.ty;
         let owner = self.extended_temporary_owner(id);
         let destructor = self.symbols.storage_destructor(ty)?;
+        if destructor.is_some() && self.lifetime.guarded_operands != 0 {
+            return Err(Error::Missing("guarded full-expression temporary cleanup"));
+        }
         if destructor.is_some() && persistent {
             return Err(Error::Missing("persistent class temporary finalization"));
         }
-        if destructor.is_some() && owner.is_none() {
-            return Err(Error::Missing("full-expression class temporary cleanup"));
+        let call_result = self.graph.lower_operator_call(root)?
+            || self.graph.lower_literal_call(root)?.is_some()
+            || matches!(self.tree.expressions.get(root).kind, ExprKind::Call { .. })
+                && !self.graph.lower_functional_call(root)?;
+        let deferred = matches!(use_, TemporaryUse::Discard)
+            && !self.lifetime.cleanups.is_empty()
+            && call_result;
+        if destructor.is_some()
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && !deferred
+            && (owner.is_none() || self.operand_temporaries(id)?.made)
+        {
+            self.open_temporary_region()?;
         }
         if destructor.is_some() && self.lifetime.full_expression && self.aggregate_has_members() {
             self.before_lifetime_call(true)?;
         }
-        let slot = self.temporary_storage(ty, persistent, stem)?;
+        let slot = self.temporary_storage(ty, persistent, use_.stem())?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.materialize_class(id, ty, object)?;
+        if destructor.is_some() && owner.is_none() && !self.terminated {
+            self.temporary_alive(ty, object)?;
+        }
         if destructor.is_some()
             && let Some(owner) = owner
         {

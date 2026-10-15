@@ -70,7 +70,9 @@ impl Function<'_, '_, '_, '_> {
             .zip(offsets)
         {
             self.place(block)?;
+            self.lifetime.guarded_operands += 1;
             let place = self.scalar_place(expr)?;
+            self.lifetime.guarded_operands -= 1;
             let mut address = if matches!(
                 place,
                 crate::lowir::model::Value::Slot(_) | crate::lowir::model::Value::Symbol(_)
@@ -156,7 +158,12 @@ impl Function<'_, '_, '_, '_> {
         condition: Condition,
         to_bool: bool,
     ) -> Result<RValue, Error> {
-        let began = self.begin_lifetime_expression();
+        let first = self.lifetime.cleanups.len();
+        let began = if let Condition::Expression(id) = condition {
+            self.begin_full_expression(Some(id))?
+        } else {
+            self.begin_lifetime_expression()
+        };
         let value = match condition {
             Condition::Expression(id) => {
                 if to_bool {
@@ -192,6 +199,7 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
         };
+        self.destroy_temporaries(first)?;
         self.end_lifetime_expression(began)?;
         value
     }
@@ -202,8 +210,26 @@ impl Function<'_, '_, '_, '_> {
         no: BlockId,
         fold: bool,
     ) -> Result<(), Error> {
-        let began = self.begin_lifetime_expression();
+        let first = self.lifetime.cleanups.len();
+        let began = if let Condition::Expression(id) = condition {
+            self.begin_full_expression(Some(id))?
+        } else {
+            self.begin_lifetime_expression()
+        };
         if let Condition::Expression(id) = condition {
+            if self.expression_temporaries(id)?.made {
+                let value = self.truth(id)?;
+                let true_cleanup = self.new_block("cond_true_cleanup")?;
+                let false_cleanup = self.new_block("cond_false_cleanup")?;
+                self.effect(I::Branch(value.value, true_cleanup, false_cleanup))?;
+                self.end_lifetime_expression(began)?;
+                self.place(true_cleanup)?;
+                self.destroy_temporaries_from(first, false)?;
+                self.jump(yes)?;
+                self.place(false_cleanup)?;
+                self.destroy_temporaries(first)?;
+                return self.jump(no);
+            }
             self.branch_condition(id, yes, no, fold)?;
         } else {
             let value = self.condition_value(condition, true)?;
@@ -328,7 +354,9 @@ impl Function<'_, '_, '_, '_> {
             };
             self.effect(I::Branch(value.value, yes, no))?;
             self.place(rhs)?;
+            self.lifetime.guarded_operands += 1;
             let value = self.normalized_truth(right)?;
+            self.lifetime.guarded_operands -= 1;
             self.effect(I::Store(
                 Facts::memory(false, true),
                 Type::I64,
@@ -390,7 +418,9 @@ impl Function<'_, '_, '_, '_> {
                 self.effect(I::Branch(value.value, yes, no))?;
                 for (block, operand) in [(yes, then_expr), (no, else_expr)] {
                     self.place(block)?;
+                    self.lifetime.guarded_operands += 1;
                     self.read_discarded(operand)?;
+                    self.lifetime.guarded_operands -= 1;
                     self.jump(end)?;
                 }
                 self.place(end)
@@ -423,21 +453,21 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
-        if self.graph.lower_literal_call(id)?.is_some() {
-            self.text_literal_call(id)?;
-            return Ok(());
-        }
-        if self.graph.lower_operator_call(id)? {
-            self.operator_call(id)?;
-            return Ok(());
-        }
         if !facts.is_place
             && matches!(
                 self.graph.lower_type(facts.ty)?,
                 crate::sema::lowering::TypeView::Class(_)
             )
         {
-            self.class_temporary(id, "discard")?;
+            self.class_temporary(id, super::materialization::TemporaryUse::Discard, false)?;
+            return Ok(());
+        }
+        if self.graph.lower_literal_call(id)?.is_some() {
+            self.text_literal_call(id)?;
+            return Ok(());
+        }
+        if self.graph.lower_operator_call(id)? {
+            self.operator_call(id)?;
             return Ok(());
         }
         if self.graph.lower_lvalue(id)?
@@ -505,7 +535,9 @@ impl Function<'_, '_, '_, '_> {
                 self.terminated = true;
                 for (block, operand) in [(yes, then_expr), (no, else_expr)] {
                     self.place(block)?;
+                    self.lifetime.guarded_operands += 1;
                     self.discard(operand)?;
+                    self.lifetime.guarded_operands -= 1;
                     if !self.terminated {
                         self.jump(end)?;
                     }

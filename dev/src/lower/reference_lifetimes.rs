@@ -36,7 +36,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         root: ast::ExprId,
         right: ast::ExprId,
-        stem: &'static str,
+        use_: super::materialization::TemporaryUse,
         persistent: bool,
     ) -> Result<Value, Error> {
         let mark = self.reference_lifetimes.path.len();
@@ -45,7 +45,7 @@ impl Function<'_, '_, '_, '_> {
                 .path
                 .push(self.without_parentheses(right));
         }
-        let result = self.bound_class_temporary(right, stem, persistent);
+        let result = self.class_temporary(right, use_, persistent);
         self.reference_lifetimes.path.truncate(mark);
         result
     }
@@ -59,6 +59,15 @@ impl Function<'_, '_, '_, '_> {
         let result = self.bind_reference(id, ty, Context::Initialization);
         self.reference_lifetimes.path.truncate(mark);
         result
+    }
+    fn conversion_temporary_destroyed(&mut self, id: ast::ExprId) -> Result<bool, Error> {
+        let Some((constructor, _)) = self.class_conversion(id) else {
+            return Ok(false);
+        };
+        let ty = self
+            .graph
+            .lower_entity_type(self.graph.lower_constructor(constructor).class)?;
+        Ok(self.symbols.class_destructor(ty)?.is_some())
     }
     pub(super) fn bind_aggregate_reference(
         &mut self,
@@ -85,6 +94,9 @@ impl Function<'_, '_, '_, '_> {
         let expression = self.lifetime.full_expression;
         self.lifetime.full_expression |= self.expression_throws(id)?;
         let result = self.bind_reference(id, ty, Context::Initialization);
+        if result.is_ok() && self.conversion_temporary_destroyed(id)? {
+            self.extend_last_temporary(owner)?;
+        }
         self.reference_lifetimes.owner = saved;
         self.reference_lifetimes.path.truncate(mark);
         // The declaration closes the region after it stores the bound address.
@@ -168,6 +180,9 @@ impl Function<'_, '_, '_, '_> {
             if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
                 work.extend(self.tree.expr_lists.get(elements));
             } else if self.graph.lower_reference_binding(expr)? {
+                if self.conversion_temporary_destroyed(expr)? {
+                    return Ok(true);
+                }
                 let mark = self.reference_lifetimes.path.len();
                 self.reference_extension_path(expr)?;
                 let mut destroyed = false;

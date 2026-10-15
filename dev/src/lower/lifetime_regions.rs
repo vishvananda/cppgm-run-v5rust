@@ -14,6 +14,22 @@ use crate::{
     sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn temporary_alive(
+        &mut self,
+        ty: TypeId,
+        object: crate::lowir::model::Value,
+    ) -> Result<(), Error> {
+        if self.lifetime.guarded_operands != 0 {
+            return Err(Error::Missing("guarded full-expression temporary cleanup"));
+        }
+        let split = self.lifetime.region;
+        self.close_lifetime_region()?;
+        self.register_temporary(ty, object);
+        if split {
+            self.open_temporary_region()?;
+        }
+        Ok(())
+    }
     pub(super) fn open_function_guard(&mut self) -> Result<(), Error> {
         let landing = self.new_block("function_exception_landing")?;
         self.lifetime.function_guard = Some(landing);
@@ -112,7 +128,11 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
-        if !throws || self.lifetime.region || self.lifetime.cleanups.is_empty() {
+        if self.static_initializer
+            || !throws
+            || self.lifetime.region
+            || self.lifetime.cleanups.is_empty()
+        {
             return Ok(());
         }
         let entry = self.unwind_entry()?;
@@ -135,8 +155,27 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn open_temporary_region(&mut self) -> Result<(), Error> {
+        self.open_temporary_region_at(None)
+    }
+    pub(super) fn open_temporary_region_at(
+        &mut self,
+        start: Option<crate::lowir::builder::Position>,
+    ) -> Result<(), Error> {
         let entry = self.unwind_entry()?;
-        self.effect(I::Runtime(R::EhTry(entry)))?;
+        if let Some(position) = start
+            .filter(|&position| self.builder.same_block(position))
+            .or_else(|| {
+                self.lifetime
+                    .call_marks
+                    .iter()
+                    .copied()
+                    .find(|&position| self.builder.same_block(position))
+            })
+        {
+            self.builder.insert_marker(position, R::EhTry(entry))?;
+        } else {
+            self.effect(I::Runtime(R::EhTry(entry)))?;
+        }
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())
@@ -200,14 +239,17 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         id: crate::syntax::ast::ExprId,
     ) -> Result<(), Error> {
-        let began = self.begin_lifetime_expression();
+        let first = self.lifetime.cleanups.len();
+        let began = self.begin_full_expression(Some(id))?;
         self.discard(id)?;
+        self.destroy_temporaries(first)?;
         self.end_lifetime_expression(began)
     }
     pub(super) fn end_lifetime_expression(&mut self, began: bool) -> Result<(), Error> {
         if began {
             self.close_lifetime_region()?;
             self.lifetime.full_expression = false;
+            self.lifetime.expression_start = None;
         }
         Ok(())
     }

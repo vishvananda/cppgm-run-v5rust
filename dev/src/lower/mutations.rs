@@ -35,7 +35,11 @@ impl Function<'_, '_, '_, '_> {
                 crate::sema::lowering::TypeView::Class(_)
             )
         {
-            return self.class_temporary(id, "tmpobj");
+            return self.class_temporary(
+                id,
+                super::materialization::TemporaryUse::Designator,
+                false,
+            );
         }
         self.designated_place(id)
     }

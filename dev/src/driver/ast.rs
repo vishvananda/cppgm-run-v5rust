@@ -415,6 +415,8 @@ mod tests {
         for (source, per_owner) in [
             (b"int n;struct A{A(int){}~A(){++n;}};struct R{const A&r;};void f(){R a={A(1)};R b={A(2)};}".as_slice(), 1),
             (b"int n;struct A{A(int){}~A(){++n;}};struct R{A a;const A&r;};void f(){R a={A(1),A(1)};R b={A(2),A(2)};}".as_slice(), 2),
+            (b"int n;struct A{int v;A(int i):v(i){}~A(){++n;}};int g(A a){return a.v;}void f(){const A&a=A(g(A(1)));const A&b=A(g(A(2)));}".as_slice(), 1),
+            (b"int n;struct A{int v;A(int i):v(i){}~A(){++n;}};int g(const A&a){return a.v;}struct R{const A&r;int v;};void f(){R a={A(1),g(A(3))};R b={A(2),g(A(4))};}".as_slice(), 1),
         ] {
             let source = SourceBuffer::new(source.to_vec()).unwrap();
         let mut unit = SyntaxUnit::new(

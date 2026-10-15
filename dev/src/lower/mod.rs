@@ -39,6 +39,7 @@ mod shutdown;
 mod startup;
 mod statements;
 mod symbols;
+mod temporary_scan;
 mod thread_local;
 mod throw_scan;
 mod types;

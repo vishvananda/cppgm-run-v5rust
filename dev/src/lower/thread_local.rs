@@ -36,6 +36,7 @@ pub(super) fn initialize<'a>(
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, None, None, budget);
     function.persistent_references = true;
+    function.static_initializer = true;
     let run = function.new_block("local_static_ctor_run")?;
     let done = function.new_block("local_static_ctor_done")?;
     let address = function.builder.generated(I::Addr(Value::Symbol(guard)))?;
@@ -50,7 +51,9 @@ pub(super) fn initialize<'a>(
     function.effect(I::Branch(ready, done, run))?;
     function.place(run)?;
     let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
-    let result = function.initialize_global(entity, initializer);
+    let result = function
+        .initialize_global(entity, initializer)
+        .and_then(|()| function.destroy_temporaries(0));
     function.symbols.replace_temporary_owner(saved);
     result?;
     let one = function.builder.integer(1)?;
