@@ -5,7 +5,6 @@ mod aggregate_cleanup;
 mod aggregate_helpers;
 mod aggregates;
 mod allocation;
-mod allocation_runtime;
 mod anonymous_names;
 mod array_allocation;
 mod array_construction;
@@ -52,6 +51,7 @@ mod operator_calls;
 mod pointers;
 mod reference_lifetimes;
 mod references;
+mod runtime_roles;
 mod shutdown;
 mod startup;
 mod statements;
@@ -126,7 +126,7 @@ fn finish_unit(
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held();
     globals::finish(program, symbols, graph)?;
-    symbols.resolve_allocation_roles(program, definitions)?;
+    symbols.resolve_runtime_roles(program, definitions)?;
     symbols.publish_finalizers(finalizers);
     Ok(symbols.initialization)
 }

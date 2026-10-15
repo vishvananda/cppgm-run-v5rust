@@ -894,11 +894,15 @@ fn builtin_boundary(
     boundary: &mut Boundary,
     builtin: Option<crate::sema::lowering::BuiltinFunction>,
 ) {
-    if matches!(
-        builtin,
-        Some(crate::sema::lowering::BuiltinFunction::Strlen)
-    ) {
-        boundary.effects = Some(crate::lowir::vocabulary::Effects::ReadOnly);
+    match builtin {
+        Some(crate::sema::lowering::BuiltinFunction::Abort) => {
+            boundary.unwind = Unwind::No;
+            boundary.returns = crate::lowir::model::Returns::NoReturn;
+        }
+        Some(crate::sema::lowering::BuiltinFunction::Strlen) => {
+            boundary.effects = Some(crate::lowir::vocabulary::Effects::ReadOnly);
+        }
+        _ => {}
     }
 }
 

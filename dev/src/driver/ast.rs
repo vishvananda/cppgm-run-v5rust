@@ -292,6 +292,75 @@ mod tests {
     }
 
     #[test]
+    fn abort_role_coalesces_across_units_and_releases_forwarding_bodies() {
+        use crate::lowir::{
+            model::{Returns, Unwind},
+            vocabulary::{Binding, Role},
+        };
+        let plain =
+            "void plain(){__builtin_abort();}inline void unused(){__builtin_memmove(0,0,0);}";
+        let guarded = "void may_throw();void guarded()noexcept{may_throw();}";
+        for sources in [vec![plain], vec![plain, guarded], vec![guarded, plain]] {
+            let forwarded = sources.len() == 2;
+            let mut output = LowIrOutput::default();
+            for (index, text) in sources.into_iter().enumerate() {
+                let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
+                emit_unit(
+                    &source,
+                    b"abort-boundaries",
+                    &PredefinedValues::default(),
+                    Destination::LowIr(&mut output),
+                    index + 1,
+                    StackBudget::default(),
+                    EmitMode::LowIr,
+                )
+                .unwrap();
+            }
+            let program = &output.output.program;
+            let abort = program
+                .functions_in_symbol_order()
+                .find(|function| program.names.get(function.name) == "__builtin_abort")
+                .unwrap();
+            let signature = program.signature(abort.signature);
+            assert!(matches!(signature.boundary.unwind, Unwind::No));
+            assert!(matches!(signature.boundary.returns, Returns::NoReturn));
+            assert!(signature.parameters.is_empty());
+            assert_eq!(
+                abort.metadata.binding,
+                Some(if forwarded {
+                    Binding::Internal
+                } else {
+                    Binding::Strong
+                })
+            );
+            assert_eq!(abort.metadata.role, (!forwarded).then_some(Role::Terminate));
+            assert_eq!(
+                abort.metadata.object.map(|name| program.names.get(name)),
+                (!forwarded).then_some("abort")
+            );
+            assert_eq!(
+                program
+                    .functions_in_symbol_order()
+                    .filter(|function| function.metadata.role == Some(Role::Terminate))
+                    .count(),
+                1
+            );
+            assert!(
+                program
+                    .functions()
+                    .iter()
+                    .all(|function| function.body.is_none())
+            );
+            assert!(
+                !program
+                    .functions()
+                    .iter()
+                    .any(|function| program.names.get(function.name).contains("memmove"))
+            );
+        }
+    }
+
+    #[test]
     fn memory_builtin_boundaries_survive_frontends_without_leaking_into_indirect_types() {
         let mut output = LowIrOutput::default();
         for (index, source) in [

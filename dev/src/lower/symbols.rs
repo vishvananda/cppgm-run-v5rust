@@ -28,7 +28,7 @@ pub(super) struct SymbolTable {
     exception_helpers: Option<super::exception_helpers::Helpers>,
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
-    pub(super) allocations: Vec<super::allocation_runtime::AllocationSymbol>,
+    runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
@@ -251,12 +251,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.initialization = Some(symbol);
         Ok(())
     }
-    pub(super) fn resolve_allocation_roles(
+    pub(super) fn resolve_runtime_roles(
         &mut self,
         program: &mut Program,
         definitions: &mut super::definition_order::Definitions,
     ) -> Result<(), Error> {
-        super::allocation_runtime::resolve(program, definitions, &self.table.allocations)
+        super::runtime_roles::resolve(program, definitions, &self.table.runtime_roles)
     }
     pub(super) fn bad_array_length(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
         if let Some(symbol) = self.table.bad_array_length {
@@ -289,6 +289,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 .allocate(program, "cppgm_call_terminate", None, true)?,
         };
         super::exception_helpers::declare(program, helpers)?;
+        self.table
+            .runtime_roles
+            .push(super::runtime_roles::RoleSymbol {
+                symbol: helpers.terminate,
+                role: crate::lowir::vocabulary::Role::Terminate,
+                origin: super::runtime_roles::Origin::Runtime,
+            });
         self.table.exception_helpers = Some(helpers);
         self.table.terminate_pending = true;
         Ok(helpers.helper)
@@ -1077,13 +1084,26 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, object, facts.internal)?;
         self.objects.insert(entity, local_object);
         self.callees.insert(entity, Value::Symbol(symbol));
-        if let Some(allocation) = facts.allocation {
+        if let Some(
+            role @ (crate::lowir::vocabulary::Role::AllocateMemory
+            | crate::lowir::vocabulary::Role::FreeMemory
+            | crate::lowir::vocabulary::Role::Terminate),
+        ) = metadata.role
+        {
             self.table
-                .allocations
-                .push(super::allocation_runtime::AllocationSymbol {
+                .runtime_roles
+                .push(super::runtime_roles::RoleSymbol {
                     symbol,
-                    role: allocation.role,
-                    array: allocation.array,
+                    role,
+                    origin: if facts.allocation.is_some_and(|allocation| allocation.array)
+                        || matches!(
+                            facts.builtin,
+                            Some(crate::sema::lowering::BuiltinFunction::Abort)
+                        ) {
+                        super::runtime_roles::Origin::Secondary
+                    } else {
+                        super::runtime_roles::Origin::Primary
+                    },
                 });
         }
         Ok(symbol)
@@ -1637,7 +1657,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     };
                     metadata.object = Some(program.names.intern(object)?);
                 }
-                B::Memcmp | B::Memset | B::Abort | B::Unreachable | B::Floating(_) => {
+                B::Abort => {
+                    metadata.role = Some(Role::Terminate);
+                    metadata.object = Some(program.names.intern("abort")?);
+                }
+                B::Memcmp | B::Memset | B::Unreachable | B::Floating(_) => {
                     metadata.linkage = Linkage::C;
                 }
             }

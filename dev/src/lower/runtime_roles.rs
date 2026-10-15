@@ -1,72 +1,73 @@
 // Translated from lower/program_lowering.cpp::resolve_singleton_roles and
 // lower/function_lowering.cpp::lower_forwarder. See NOTICE.
-//! Demanded allocation symbols share one runtime role; secondary declarations
-//! become function-owned forwarding bodies, preserving scalar replacements.
+//! Demanded runtime symbols share singleton roles. Secondary declarations become
+//! function-owned forwarders; typed symbol records retain no semantic owners.
 use super::{Error, definition_order::Definitions};
-use crate::{
-    lowir::{
-        builder::FunctionBuilder,
-        model::{Call, InstructionKind as I, Metadata, Program, SymbolId, Value},
-        vocabulary::{Binding, Type},
-    },
-    sema::lowering::AllocationRole,
+use crate::lowir::{
+    builder::FunctionBuilder,
+    model::{Call, InstructionKind as I, Metadata, Program, SymbolId, Value},
+    vocabulary::{Binding, Role, Type},
 };
-pub(super) struct AllocationSymbol {
+pub(super) struct RoleSymbol {
     pub symbol: SymbolId,
-    pub role: AllocationRole,
-    pub array: bool,
+    pub role: Role,
+    pub origin: Origin,
+}
+
+// Runtime declarations are already published, unlike ordinary pending callees.
+// They participate in ownership ranking but cannot become forwarding bodies.
+pub(super) enum Origin {
+    Primary,
+    Secondary,
+    Runtime,
 }
 
 pub(super) fn resolve(
     program: &mut Program,
     definitions: &mut Definitions,
-    allocations: &[AllocationSymbol],
+    symbols: &[RoleSymbol],
 ) -> Result<(), Error> {
-    for role in [AllocationRole::Allocate, AllocationRole::Free] {
-        let expected = match role {
-            AllocationRole::Allocate => crate::lowir::vocabulary::Role::AllocateMemory,
-            AllocationRole::Free => crate::lowir::vocabulary::Role::FreeMemory,
-        };
+    for role in [Role::AllocateMemory, Role::FreeMemory, Role::Terminate] {
         let mut owner = None;
         let mut rank = 0;
-        for allocation in allocations
-            .iter()
-            .filter(|allocation| allocation.role == role)
-        {
-            let Some(function) = program.function(program.symbol(allocation.symbol)) else {
+        for symbol in symbols.iter().filter(|symbol| symbol.role == role) {
+            let Some(function) = program.function(program.symbol(symbol.symbol)) else {
                 continue;
             };
-            if function.metadata.role != Some(expected) {
+            if function.metadata.role != Some(role) {
                 continue;
             }
-            let candidate = 2 * u8::from(program.function_defined(allocation.symbol))
-                + u8::from(!allocation.array);
+            let candidate = 2 * u8::from(program.function_defined(symbol.symbol))
+                + u8::from(!matches!(symbol.origin, Origin::Secondary));
             if owner.is_none() || candidate > rank {
-                owner = Some(allocation.symbol);
+                owner = Some(symbol.symbol);
                 rank = candidate;
             }
         }
         let Some(owner) = owner else {
             continue;
         };
-        for allocation in allocations
-            .iter()
-            .filter(|allocation| allocation.role == role)
-        {
-            if allocation.symbol == owner || program.function_defined(allocation.symbol) {
+        for symbol in symbols.iter().filter(|symbol| symbol.role == role) {
+            if symbol.symbol == owner
+                || matches!(symbol.origin, Origin::Runtime)
+                || program.function_defined(symbol.symbol)
+            {
                 continue;
             }
-            let Some(function) = program.function(program.symbol(allocation.symbol)) else {
+            let Some(function) = program.function(program.symbol(symbol.symbol)) else {
                 continue;
             };
-            if function.metadata.role != Some(expected) {
+            if function.metadata.role != Some(role) {
                 continue;
             }
             let signature = program.signature(function.signature);
             let result = signature.result;
             let boundary = crate::lowir::model::Boundary {
+                arity: signature.boundary.arity,
+                effects: signature.boundary.effects,
                 unwind: signature.boundary.unwind,
-                ..crate::lowir::model::Boundary::default()
+                returns: signature.boundary.returns,
+                result_classes: signature.boundary.result_classes,
             };
             let params: Vec<_> = signature
                 .parameters
@@ -79,10 +80,13 @@ pub(super) fn resolve(
                 .map(|(name, ty)| (name.as_str(), *ty))
                 .collect();
             let name = program.names.get(function.name).to_owned();
+            let metadata = function.metadata;
             let mut builder = FunctionBuilder::new(program, &name, &names, result)?;
             builder.metadata(Metadata {
+                role: None,
+                object: None,
                 binding: Some(Binding::Internal),
-                ..Metadata::default()
+                ..metadata
             });
             builder.boundary(boundary);
             builder.block("entry")?;
