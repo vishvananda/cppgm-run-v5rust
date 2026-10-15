@@ -252,6 +252,7 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::FunctionalCast { .. }
         ) || self.graph.lower_functional_call(source)?;
         if self.graph.lower_class_empty(class)?
+            && self.graph.lower_class_copy(source)?.is_none()
             && functional
             && matches!(self.graph.lower_type(self.graph.lower_expression(source)?.ty)?,
                 TypeView::Class(source_class) if source_class == class)
@@ -447,6 +448,13 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
+        if let Some(action @ CopyAction::Constructor { constructor, .. }) =
+            self.graph.lower_class_copy(id)?
+            && matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if class == self.graph.lower_constructor(constructor).class)
+            && self.materialize_copy(id, ty, object, Some(action))?
+        {
+            return Ok(());
+        }
         if let Some((constructor, arguments)) = self.class_conversion(id) {
             return self.call_converting_constructor(id, constructor, object, arguments);
         }
@@ -516,6 +524,11 @@ impl Function<'_, '_, '_, '_> {
                     .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                         "class prvalue without selected constructor",
                     )))?;
+                if self.graph.lower_function_conversion(id)?.is_none()
+                    && self.delegate_copy_storage(constructor, object, arguments)?
+                {
+                    return Ok(());
+                }
                 self.construct_at_qualified(constructor, ty, object, Some(arguments), volatile)
             }
             Some(ClassInitialization::Aggregate(arguments)) => {

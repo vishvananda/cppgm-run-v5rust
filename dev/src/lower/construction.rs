@@ -54,6 +54,7 @@ impl Function<'_, '_, '_, '_> {
         entity: EntityId,
         ty: TypeId,
         slot: Value,
+        initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
         let id = self
             .graph
@@ -78,6 +79,22 @@ impl Function<'_, '_, '_, '_> {
             if !self.lifetime.tracking.active {
                 self.lifetime.expression_start = saved;
             }
+        }
+        let function = self.graph.lower_constructor_entity(id);
+        let moving = function
+            .map(|function| self.graph.lower_copy_form(function))
+            .transpose()?
+            .flatten()
+            .is_some_and(|copy| copy.moving);
+        let written_move = initializer.is_some_and(|initializer| {
+            matches!(initializer.kind, ast::InitializerKind::Parenthesized(_))
+        }) && function
+            .is_some_and(|function| !self.graph.lower_implicit_copy(function) && moving);
+        if let Some(arguments) = arguments
+            && !written_move
+            && self.delegate_copy_storage(id, object, arguments)?
+        {
+            return Ok(());
         }
         let saved = self.lifetime.declared_object.replace(object);
         let result = self.construct_at(id, ty, object, arguments);

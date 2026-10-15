@@ -134,7 +134,12 @@ impl Function<'_, '_, '_, '_> {
         persistent: bool,
     ) -> Result<crate::lowir::model::Value, Error> {
         let destroyed = !persistent && self.symbols.class_destructor(call.result)?.is_some();
-        let opens = destroyed && self.lifetime.full_expression && !self.lifetime.region;
+        let opens = destroyed
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && (self.lifetime.region_start.is_pending()
+                || self.lifetime.cleanups.is_empty()
+                || self.aggregation.floor.is_some());
         let deferred = opens
             && !self.lifetime.cleanups.is_empty()
             && !self.lifetime.tracking.active
@@ -148,7 +153,6 @@ impl Function<'_, '_, '_, '_> {
         }
         let slot = self.temporary_storage(call.result, persistent, "arg")?;
         let address = self.emit(I::Addr(slot), call.result)?.value;
-        self.storage_region_event()?;
         if deferred && !self.lifetime.region {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
@@ -168,8 +172,21 @@ impl Function<'_, '_, '_, '_> {
         destination: Option<crate::lowir::model::Value>,
     ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
-        self.begin_lifetime_call(throws)?;
+        // pending_mark_region only uses marks in the segment's first block.
+        // After a split, the conversion's region begins at its call, after
+        // evaluating the receiver, rather than enclosing that evaluation.
+        let split = !self.lifetime.region_start.is_pending()
+            && self
+                .lifetime
+                .expression_start
+                .is_some_and(|start| !self.builder.same_block(start));
+        if !split {
+            self.begin_lifetime_call(throws)?;
+        }
         let receiver = self.conversion_receiver(id)?;
+        if split {
+            self.begin_lifetime_call(throws)?;
+        }
         self.emit_conversion_call(receiver, call, throws, false, destination)
     }
     pub(super) fn elide_conversion_copy(

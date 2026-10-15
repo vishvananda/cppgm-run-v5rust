@@ -165,7 +165,13 @@ impl Function<'_, '_, '_, '_> {
             throwing_destructor |= summary.call_result.destructor_throws();
         }
         for &argument in self.tree.expr_lists.get(arguments) {
-            let summary = if base {
+            let summary = if constructor.is_some_and(|constructor| {
+                self.graph.lower_elides_conversion(argument, constructor)
+            }) {
+                // The selected copy takes the conversion function's result
+                // in place; only the receiver's operands make temporaries.
+                self.operand_temporaries(argument)?
+            } else if base {
                 // The base's selected transfer initializes the destination;
                 // it is not a conversion made while evaluating its argument.
                 self.scan_temporaries(argument, true, false, None)?

@@ -6,6 +6,7 @@ use super::{
     analyzer::Analyzer,
     expression_facts::{Conversion, ValueCategory as V},
     graph::{BindingId, EntityId, FunctionAvailability, ScopeId},
+    procedural_calls::ArgumentSequence,
     special_members::SpecialDefinition,
     types::{RefKind, TypeId, TypeKind},
 };
@@ -38,6 +39,13 @@ pub(super) enum CopyUse {
     Object { direct: bool },
     Value { in_place: bool },
     Return { implicit_move: bool },
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConstructorContext {
+    Copy,
+    Direct,
+    CopyList,
+    Standard { explicit: bool },
 }
 #[derive(Clone, Copy)]
 pub(super) enum ClassPassing {
@@ -132,6 +140,7 @@ impl super::graph::Graph {
 #[derive(Clone, Copy)]
 struct Candidate {
     selection: CopySelection,
+    argument: Option<ArgumentSequence>,
     deleted: bool,
 }
 
@@ -295,7 +304,7 @@ impl Analyzer<'_> {
                         .kind,
                     ast::ExprKind::Conditional { .. }
                 ));
-        let selected = if matches!(
+        let candidate = if matches!(
             usage,
             CopyUse::Return {
                 implicit_move: true
@@ -305,6 +314,7 @@ impl Analyzer<'_> {
         } else {
             self.select_copy_sequence(class, facts, Some(scope), direct, location)?
         };
+        let selected = candidate.selection;
         let special = match selected.origin {
             CopyOrigin::Implicit { .. } => true,
             CopyOrigin::Declared(binding) => self
@@ -313,7 +323,18 @@ impl Analyzer<'_> {
                 .copy_kind
                 .is_some(),
         };
-        let mut facts = facts;
+        if let Some(sequence) = candidate.argument {
+            self.apply_argument_sequence(id, sequence, scope)?;
+            if let CopyOrigin::Declared(binding) = selected.origin {
+                self.check_constructor_parameters(
+                    self.graph.binding(binding).entity,
+                    &[id],
+                    scope,
+                    false,
+                )?;
+            }
+        }
+        let mut facts = self.graph.expression_facts.get(id)?;
         facts.base_path =
             self.conversion_base_path(facts, selected.binding, scope, location, true)?;
         // A base value's selected constructor binds the original derived
@@ -326,6 +347,8 @@ impl Analyzer<'_> {
             && matches!(selected.origin, CopyOrigin::Declared(binding)
             if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
         let action = if special
+            && candidate.argument.is_none()
+            && !selected.binding.temporary
             && (elided
                 || own_class
                     && facts.category == V::Prvalue
@@ -403,7 +426,12 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.select_copy_initialization(class, facts, scope, location)
+        let resolution = self.resolve_class_constructor(
+            class,
+            facts,
+            ConstructorContext::Standard { explicit: true },
+        )?;
+        self.check_copy_selection(resolution, Some(scope), location)
             .map(|_| ())
             .map_err(|error| match error {
                 Error::Diagnostic {
@@ -427,6 +455,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<CopySelection, Error> {
         self.select_copy_sequence(class, facts, Some(scope), true, location)
+            .map(|candidate| candidate.selection)
     }
     pub(super) fn select_result_constructor(
         &mut self,
@@ -435,7 +464,11 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<CopySelection, Error> {
-        let resolution = self.resolve_class_copy(class, facts, true)?;
+        let resolution = self.resolve_class_constructor(
+            class,
+            facts,
+            ConstructorContext::Standard { explicit: true },
+        )?;
         if let CopyResolution::Selected(candidate) = resolution
             && !matches!(
                 self.graph
@@ -451,6 +484,7 @@ impl Analyzer<'_> {
             ));
         }
         self.check_copy_selection(resolution, Some(scope), location)
+            .map(|candidate| candidate.selection)
             .map_err(|error| match error {
                 Error::Diagnostic {
                     message:
@@ -473,7 +507,13 @@ impl Analyzer<'_> {
     ) -> Result<CopySelection, Error> {
         // Preserve the selected identity even when access deletes the enclosing
         // defaulted member. Its owner checks base/member protected access next.
-        self.select_copy_sequence(class, facts, None, direct, SourceOffset(0))
+        let resolution = self.resolve_class_constructor(
+            class,
+            facts,
+            ConstructorContext::Standard { explicit: direct },
+        )?;
+        self.check_copy_selection(resolution, None, SourceOffset(0))
+            .map(|candidate| candidate.selection)
     }
     fn select_copy_sequence(
         &mut self,
@@ -482,7 +522,7 @@ impl Analyzer<'_> {
         access_scope: Option<ScopeId>,
         direct: bool,
         location: SourceOffset,
-    ) -> Result<CopySelection, Error> {
+    ) -> Result<Candidate, Error> {
         let resolution = self.resolve_class_copy(class, facts, direct)?;
         self.check_copy_selection(resolution, access_scope, location)
     }
@@ -493,7 +533,7 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<CopySelection, Error> {
+    ) -> Result<Candidate, Error> {
         // 12.8p32: probe without changing the named operand's source category.
         // Deletion/access are checked only after choosing which pass to keep.
         let mut view = facts;
@@ -521,38 +561,56 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
         direct: bool,
     ) -> Result<CopyResolution, Error> {
+        self.resolve_class_constructor(
+            class,
+            facts,
+            if direct {
+                ConstructorContext::Direct
+            } else {
+                ConstructorContext::Copy
+            },
+        )
+    }
+    fn resolve_class_constructor(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        context: ConstructorContext,
+    ) -> Result<CopyResolution, Error> {
         let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected = self.rank_class_copy(class, facts, direct, &mut scratch.candidates);
+        let selected = self.rank_class_copy(class, facts, context, &mut scratch.candidates);
         scratch.candidates.clear();
         self.copy_scratch = scratch;
         selected
+    }
+    pub(super) fn single_constructor_not_viable(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+    ) -> Result<bool, Error> {
+        Ok(matches!(
+            self.resolve_class_copy(class, facts, true)?,
+            CopyResolution::NoViable { .. }
+        ))
     }
     fn rank_class_copy(
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
-        direct: bool,
+        context: ConstructorContext,
         candidates: &mut Vec<Candidate>,
     ) -> Result<CopyResolution, Error> {
-        // A standard reference binding from an unrelated source cannot select
-        // an implicit copy or move member (13.3.3.1p4). Reject that sequence
-        // before demanding the destination's subobject copy properties.
-        let implicit_binding = self
-            .graph
-            .class_of(facts.ty)
-            .is_some_and(|source| source == class || self.graph.is_base_of(class, source));
-        let copies = if implicit_binding {
-            Some(self.implicit_copy_candidates(class)?)
-        } else {
-            None
-        };
+        let copies = self.implicit_copy_candidates(class)?;
         candidates.clear();
-        let mut offered =
-            !implicit_binding || copies.is_some_and(|c| c.copy.is_some() || c.moving.is_some());
+        let mut offered = copies.copy.is_some() || copies.moving.is_some();
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if !direct && entity.explicitness == super::specifiers::Explicitness::Explicit {
+            if matches!(
+                context,
+                ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
+            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
+            {
                 continue;
             }
             offered = true;
@@ -560,7 +618,11 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("constructor without type"))?;
             let count = self.graph.types.function_parameter_count(ty)?;
-            if count == 0
+            let variadic = matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Function { variadic: true, .. }
+            );
+            if count == 0 && !variadic
                 || (1..count).any(|i| {
                     self.graph
                         .function_default(self.graph.binding(binding).entity, i)
@@ -578,9 +640,26 @@ impl Analyzer<'_> {
             );
             let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
             let copy_properties = entity.copy_properties;
-            let parameter = self.graph.types.function_parameter(ty, 0)?;
-            let Some(conversion) = self.scalar_sequence(facts, parameter, false)? else {
-                continue;
+            let sequence = if count == 0 {
+                let target = self.decayed_type(facts.ty)?;
+                let Some(mut conversion) = self.scalar_sequence(facts, target, false)? else {
+                    continue;
+                };
+                conversion.rank = super::expression_facts::ConversionRank::Ellipsis;
+                ArgumentSequence {
+                    conversion,
+                    application: Some(conversion),
+                    function: None,
+                    user_conversion: None,
+                }
+            } else {
+                let parameter = self.graph.types.function_parameter(ty, 0)?;
+                let Some(sequence) =
+                    self.copy_argument_sequence(facts, parameter, class, context)?
+                else {
+                    continue;
+                };
+                sequence
             };
             let kind = self.declared_copy_kind(binding, class)?;
             let deleted = explicitly_deleted
@@ -591,38 +670,38 @@ impl Analyzer<'_> {
             candidates.push(Candidate {
                 selection: CopySelection {
                     origin: CopyOrigin::Declared(binding),
-                    binding: conversion,
+                    binding: sequence.conversion,
                 },
+                argument: sequence.user_conversion.map(|_| sequence),
                 deleted,
             });
         }
         for (kind, parameter, deleted) in [
             copies
-                .and_then(|c| c.copy)
+                .copy
                 .map(|(parameter, deleted)| (RefKind::Lvalue, parameter, deleted)),
             copies
-                .and_then(|c| c.moving)
+                .moving
                 .map(|parameter| (RefKind::Rvalue, parameter, false)),
         ]
         .into_iter()
         .flatten()
         {
-            if let Some(conversion) = self.scalar_sequence(facts, parameter, false)? {
+            if let Some(sequence) = self.copy_argument_sequence(facts, parameter, class, context)? {
                 candidates.push(Candidate {
                     selection: CopySelection {
                         origin: CopyOrigin::Implicit { class, kind },
-                        binding: conversion,
+                        binding: sequence.conversion,
                     },
+                    argument: sequence.user_conversion.map(|_| sequence),
                     deleted,
                 });
             }
         }
         let mut best = 0;
         for index in 1..candidates.len() {
-            if self.compare_sequences(
-                candidates[index].selection.binding,
-                candidates[best].selection.binding,
-            )? == Ordering::Greater
+            if self.compare_copy_candidates(candidates[index], candidates[best])?
+                == Ordering::Greater
             {
                 best = index;
             }
@@ -632,8 +711,7 @@ impl Analyzer<'_> {
         };
         for (index, candidate) in candidates.iter().enumerate() {
             if index != best
-                && self.compare_sequences(chosen.selection.binding, candidate.selection.binding)?
-                    != Ordering::Greater
+                && self.compare_copy_candidates(chosen, *candidate)? != Ordering::Greater
             {
                 return Ok(CopyResolution::Ambiguous);
             }
@@ -641,12 +719,104 @@ impl Analyzer<'_> {
         Ok(CopyResolution::Selected(chosen))
     }
 
+    fn copy_argument_sequence(
+        &mut self,
+        source: super::expression_facts::ExprFacts,
+        parameter: TypeId,
+        class: EntityId,
+        context: ConstructorContext,
+    ) -> Result<Option<ArgumentSequence>, Error> {
+        if let Some(conversion) = self.scalar_sequence(source, parameter, false)? {
+            return Ok(Some(ArgumentSequence {
+                conversion,
+                application: Some(conversion),
+                function: None,
+                user_conversion: None,
+            }));
+        }
+        if matches!(context, ConstructorContext::Standard { .. }) {
+            return Ok(None);
+        }
+        let direct = context == ConstructorContext::Direct
+            && matches!(self.graph.types.get(parameter).kind,
+            TypeKind::Reference { element, .. } if self.graph.class_of(element) == Some(class));
+        self.user_conversion_sequence(source, parameter, direct)
+    }
+    fn compare_copy_candidates(&mut self, a: Candidate, b: Candidate) -> Result<Ordering, Error> {
+        let sequence = |candidate: Candidate| {
+            candidate.argument.unwrap_or(ArgumentSequence {
+                conversion: candidate.selection.binding,
+                application: Some(candidate.selection.binding),
+                function: None,
+                user_conversion: None,
+            })
+        };
+        self.compare_argument_sequences(sequence(a), sequence(b))
+    }
+    pub(super) fn initialize_single_constructor(
+        &mut self,
+        class: EntityId,
+        argument: ast::ExprId,
+        input: super::constructor_initialization::ClassInput,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<super::construction::ConstructorId, Error> {
+        let facts = self.graph.expression_facts.get(argument)?;
+        let context = if input.copy_list {
+            ConstructorContext::CopyList
+        } else {
+            ConstructorContext::Direct
+        };
+        let resolution = self.resolve_class_constructor(class, facts, context)?;
+        if let CopyResolution::Selected(candidate) = resolution
+            && let CopyOrigin::Declared(binding) = candidate.selection.origin
+        {
+            self.check_inherited_constructor_access(binding, location)?;
+            if input.copy_list
+                && self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .explicitness
+                    == super::specifiers::Explicitness::Explicit
+            {
+                return Err(Error::at(
+                    location,
+                    "copy-list-initialization selects an explicit constructor",
+                ));
+            }
+        }
+        let candidate = self.check_copy_selection(resolution, Some(scope), location)?;
+        let selected = candidate.selection;
+        let constructor = match selected.origin {
+            CopyOrigin::Declared(binding) => self.selected_constructor_plan(binding, location)?,
+            CopyOrigin::Implicit { .. } => self.copy_constructor_plan(class, selected, location)?,
+        };
+        self.validate_constructor_use(constructor, scope, location)?;
+        let sequence = candidate.argument.unwrap_or(ArgumentSequence {
+            conversion: selected.binding,
+            application: Some(selected.binding),
+            function: None,
+            user_conversion: None,
+        });
+        if selected.binding.rank == super::expression_facts::ConversionRank::Ellipsis {
+            self.ellipsis_argument(argument)?;
+        } else {
+            self.apply_argument_sequence(argument, sequence, scope)?;
+        }
+        let function = self
+            .graph
+            .lower_constructor_entity(constructor)
+            .ok_or(Error::Invariant("single constructor without entity"))?;
+        self.check_constructor_parameters(function, &[argument], scope, input.list.is_some())?;
+        self.demand_constructor_use(constructor);
+        Ok(constructor)
+    }
     fn check_copy_selection(
         &mut self,
         resolution: CopyResolution,
         access_scope: Option<ScopeId>,
         location: SourceOffset,
-    ) -> Result<CopySelection, Error> {
+    ) -> Result<Candidate, Error> {
         let chosen = match resolution {
             CopyResolution::Selected(chosen) => chosen,
             CopyResolution::NoViable { offered } => {
@@ -666,19 +836,12 @@ impl Analyzer<'_> {
         if chosen.deleted {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        if !matches!(
-            self.graph.types.get(chosen.selection.binding.target).kind,
-            TypeKind::Reference { .. }
-        ) || chosen.selection.binding.temporary
-        {
-            return Err(Error::Missing("nonelided constructor argument conversion"));
-        }
         if let CopyOrigin::Declared(binding) = chosen.selection.origin
             && let Some(scope) = access_scope
         {
             self.check_direct_member_access(binding, scope, location)?;
         }
-        Ok(chosen.selection)
+        Ok(chosen)
     }
 }
 
@@ -691,6 +854,85 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn direct_constructor_queries_keep_sequences_in_scratch_until_application() {
+        use super::{ConstructorContext, CopyResolution};
+        use crate::sema::{
+            expression_facts::{ExprFacts, ValueCategory},
+            procedural_calls::UserConversion,
+        };
+        let source = SourceBuffer::new(
+            b"struct A{int n;A();A(const A&);};struct S{explicit operator A() const;};struct Unused{A a;};".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"direct-constructor-query").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let nodes = tree.declarations.mark();
+        let target_name = cursor.intern_name(b"A").unwrap();
+        let source_name = cursor.intern_name(b"S").unwrap();
+        let unused_name = cursor.intern_name(b"Unused").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = |name| {
+            analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity
+        };
+        let target = class(target_name);
+        let source = class(source_name);
+        let unused = class(unused_name);
+        let facts = ExprFacts::new(
+            analyzer.graph.entity(source).ty.unwrap(),
+            ValueCategory::Lvalue,
+        );
+        let converter = analyzer.graph.entity(source).declared_conversions[0];
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        for _ in 0..3 {
+            let CopyResolution::Selected(candidate) = analyzer
+                .resolve_class_constructor(target, facts, ConstructorContext::Direct)
+                .unwrap()
+            else {
+                panic!("direct constructor selection");
+            };
+            assert_eq!(
+                candidate.argument.unwrap().user_conversion,
+                Some(UserConversion::Function(converter))
+            );
+            for context in [
+                ConstructorContext::CopyList,
+                ConstructorContext::Standard { explicit: true },
+            ] {
+                assert!(matches!(
+                    analyzer
+                        .resolve_class_constructor(target, facts, context)
+                        .unwrap(),
+                    CopyResolution::NoViable { .. }
+                ));
+            }
+            assert!(analyzer.copy_scratch.candidates.is_empty());
+        }
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
+        for &binding in &analyzer.graph.entity(target).declared_constructors {
+            assert!(
+                analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(binding).entity)
+                    .constructor
+                    .is_none()
+            );
+        }
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), nodes);
+        assert!(std::mem::size_of::<ExprFacts>() <= 256);
+    }
     #[test]
     fn base_value_arguments_keep_source_identity_and_selected_reference_binding() {
         use crate::{

@@ -97,14 +97,6 @@ impl Analyzer<'_> {
                     || hierarchy.is_some_and(|(from, to)| {
                         self.graph.is_base_of(from, to) || self.graph.is_base_of(to, from)
                     });
-                if !related
-                    && (matches!(self.graph.types.get(element).kind, TypeKind::Class(_))
-                        || matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)))
-                {
-                    return Err(Error::Missing(
-                        "class hierarchy and user reference conversions",
-                    ));
-                }
                 allowed = glvalue && related && (keeps_const || constness);
                 if allowed
                     && let Some(facts) = self.reference_hierarchy_cast(
@@ -118,13 +110,21 @@ impl Analyzer<'_> {
                     return Ok(facts);
                 }
                 if !allowed {
-                    match self.convert_scalar(operand, target, true) {
-                        Ok(()) => allowed = true,
-                        Err(Error::Diagnostic {
-                            message: "invalid implicit conversion",
-                            ..
-                        }) => (),
-                        Err(error) => return Err(error),
+                    if self.scalar_sequence(source, target, true)?.is_some() {
+                        self.convert_scalar(operand, target, true)?;
+                        allowed = true;
+                    } else if let Some(sequence) =
+                        self.user_conversion_sequence(source, target, true)?
+                    {
+                        self.apply_user_sequence(
+                            operand,
+                            sequence,
+                            scope,
+                            super::user_conversions::ConversionSite::Cast(
+                                self.tree.expressions.get(id).location,
+                            ),
+                        )?;
+                        allowed = true;
                     }
                 }
             }

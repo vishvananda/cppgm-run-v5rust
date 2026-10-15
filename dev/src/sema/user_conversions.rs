@@ -21,6 +21,7 @@ pub(super) enum ConversionSite {
     Call,
     Operator,
     Conditional,
+    Cast(crate::support::source::SourceOffset),
 }
 #[derive(Clone, Copy)]
 pub(super) struct UserCandidate {
@@ -292,7 +293,11 @@ impl Analyzer<'_> {
             return Ok(false);
         };
         if matches!(constructor, UserConversion::Function(_)) {
-            self.apply_function_sequence(id, sequence, scope)?;
+            if let ConversionSite::Cast(location) = site {
+                self.apply_function_sequence_at(id, sequence, scope, location)?;
+            } else {
+                self.apply_function_sequence(id, sequence, scope)?;
+            }
             return Ok(true);
         }
         let UserConversion::Constructor(binding) = constructor else {
@@ -300,7 +305,11 @@ impl Analyzer<'_> {
                 "implicit constructor outside list argument",
             ));
         };
-        let location = self.tree.expressions.get(id).location;
+        let location = if let ConversionSite::Cast(location) = site {
+            location
+        } else {
+            self.tree.expressions.get(id).location
+        };
         // Calls check the parameter/binding destruction before applying the
         // user conversion; overloaded operators do so after the callable checks.
         if site == ConversionSite::Call {

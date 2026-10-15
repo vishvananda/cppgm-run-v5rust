@@ -70,7 +70,7 @@ enum ArgumentConversions {
     Standard,
     UserDefined,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ArgumentSequence {
     pub(super) conversion: Conversion,
     // An overload designation ranks as an exact target match, even when its
@@ -81,7 +81,7 @@ pub(super) struct ArgumentSequence {
     pub(super) function: Option<BindingId>,
     pub(super) user_conversion: Option<UserConversion>,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum UserConversion {
     Constructor(BindingId),
     ImplicitConstructor(super::graph::EntityId),
@@ -1059,37 +1059,46 @@ impl Analyzer<'_> {
                     self.initialize_ranked_list_argument(arg, sequence, scope)?;
                     continue;
                 }
-                if self.apply_user_sequence(
-                    arg,
-                    sequence,
-                    scope,
-                    super::user_conversions::ConversionSite::Call,
-                )? {
-                    continue;
-                }
-                let mut facts = self.graph.expression_facts.get(arg)?;
-                if let Some(binding) = sequence.function {
-                    self.select_function_designation(arg, binding)?;
-                    facts = self.graph.expression_facts.get(arg)?;
-                }
-                facts.conversion = Some(sequence.application.ok_or(Error::at(
-                    self.tree.expressions.get(arg).location,
-                    "invalid implicit conversion",
-                ))?);
-                self.check_binding_temporary(
-                    facts,
-                    facts
-                        .conversion
-                        .ok_or(Error::Invariant("call argument without conversion"))?,
-                    scope,
-                    self.tree.expressions.get(arg).location,
-                )?;
-                self.odr_use_constants(arg, facts.conversion)?;
-                self.graph.expression_facts.set(arg, facts);
+                self.apply_argument_sequence(arg, sequence, scope)?;
             } else {
                 self.ellipsis_argument(arg)?;
             }
         }
+        Ok(())
+    }
+    pub(super) fn apply_argument_sequence(
+        &mut self,
+        arg: ast::ExprId,
+        sequence: ArgumentSequence,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        if self.apply_user_sequence(
+            arg,
+            sequence,
+            scope,
+            super::user_conversions::ConversionSite::Call,
+        )? {
+            return Ok(());
+        }
+        let mut facts = self.graph.expression_facts.get(arg)?;
+        if let Some(binding) = sequence.function {
+            self.select_function_designation(arg, binding)?;
+            facts = self.graph.expression_facts.get(arg)?;
+        }
+        facts.conversion = Some(sequence.application.ok_or(Error::at(
+            self.tree.expressions.get(arg).location,
+            "invalid implicit conversion",
+        ))?);
+        self.check_binding_temporary(
+            facts,
+            facts
+                .conversion
+                .ok_or(Error::Invariant("call argument without conversion"))?,
+            scope,
+            self.tree.expressions.get(arg).location,
+        )?;
+        self.odr_use_constants(arg, facts.conversion)?;
+        self.graph.expression_facts.set(arg, facts);
         Ok(())
     }
     pub(super) fn apply_prefixed_arguments(
@@ -1144,7 +1153,7 @@ impl Analyzer<'_> {
         }
         Ok(order)
     }
-    fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<(), Error> {
+    pub(super) fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<(), Error> {
         if matches!(
             self.tree.expressions.get(id).kind,
             ast::ExprKind::Braced { .. }

@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(array_step.conversion.result, array);
         assert_eq!(array_step.conversion.target, reference);
         assert!(array_step.conversion.temporary);
-        assert!(array_step.user_conversion == declared.user_conversion);
+        assert_eq!(array_step.user_conversion, declared.user_conversion);
         assert_eq!(tree.expressions.mark(), expression_count);
         let after = analyzer.graph.expression_facts.get(lists[0]).unwrap();
         assert_eq!(after.ty, original.ty);

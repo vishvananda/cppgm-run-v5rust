@@ -332,6 +332,27 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        if !converting
+            && selected.is_none()
+            && let [argument] = args
+            && !matches!(
+                tree.expressions.get(*argument).kind,
+                ast::ExprKind::Braced { .. }
+            )
+            && self
+                .graph
+                .expression_facts
+                .get(*argument)?
+                .functions
+                .is_none()
+        {
+            let constructor =
+                self.initialize_single_constructor(class, *argument, input, scope, location)?;
+            if let Some(list) = list {
+                self.publish_constructor_list(list, target, constructor)?;
+            }
+            return Ok(Some((constructor, arguments)));
+        }
         let conversion = if converting
             && let [id] = args
             && let Some(source) = self
@@ -442,7 +463,7 @@ impl Analyzer<'_> {
         Ok(Some((constructor, arguments)))
     }
 
-    fn check_constructor_parameters(
+    pub(super) fn check_constructor_parameters(
         &mut self,
         function: EntityId,
         args: &[ast::ExprId],

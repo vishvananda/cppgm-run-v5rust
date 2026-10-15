@@ -327,6 +327,9 @@ impl Function<'_, '_, '_, '_> {
         let Some(source) = single else {
             return Ok(false);
         };
+        if self.graph.lower_function_conversion(source)?.is_some() {
+            return Ok(false);
+        }
         let empty = self.graph.lower_class_empty(plan.class)?;
         let ty = self.graph.lower_entity_type(plan.class)?;
         if empty && self.symbols.class_destructor(ty)?.is_some() {
@@ -336,7 +339,11 @@ impl Function<'_, '_, '_, '_> {
             return Ok(true);
         }
         let facts = self.graph.lower_expression(source)?;
-        if facts.is_place {
+        if !facts.is_place
+            && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(class) if class == plan.class)
+        {
+            self.materialize_prvalue(source, ty, object, false)?;
+        } else {
             let signature = self.graph.lower_constructor_function(id)?.ty;
             let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
                 return Err(crate::sema::Error::Invariant("delegated copy signature").into());
@@ -347,8 +354,6 @@ impl Function<'_, '_, '_, '_> {
                 let (size, alignment) = types::layout(self.graph, ty)?;
                 self.effect(I::CopyObject(size, alignment, source, object))?;
             }
-        } else {
-            self.materialize_class(source, ty, object)?;
         }
         Ok(true)
     }

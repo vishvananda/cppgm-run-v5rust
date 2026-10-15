@@ -241,7 +241,26 @@ impl Function<'_, '_, '_, '_> {
             self.jump(end)?;
             self.place(end)?;
         }
-        if opened && !self.lifetime.region && self.lifetime.cleanups.len() > first {
+        let elided_result = if let Some((constructor, arguments)) = use_.constructor {
+            let single = match arguments {
+                crate::sema::lowering::ConstructorArguments::Single(id) => Some(id),
+                crate::sema::lowering::ConstructorArguments::Values(values) => {
+                    if let [id] = self.tree.expr_lists.get(values) {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                }
+                crate::sema::lowering::ConstructorArguments::Value => None,
+            };
+            single.is_some_and(|id| self.graph.lower_elides_conversion(id, constructor))
+        } else {
+            false
+        };
+        if opened
+            && !self.lifetime.region
+            && (self.lifetime.cleanups.len() > first || elided_result)
+        {
             self.open_storage_completion_region(first)?;
         }
         Ok(object)

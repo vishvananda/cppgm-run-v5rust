@@ -78,17 +78,29 @@ impl Function<'_, '_, '_, '_> {
         self.reference_lifetimes.path.truncate(mark);
         result
     }
-    fn conversion_temporary_destroyed(&mut self, id: ast::ExprId) -> Result<bool, Error> {
-        if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
-            return Ok(!call.place && self.symbols.class_destructor(call.result)?.is_some());
+    fn conversion_temporary_destroyed(&mut self, mut id: ast::ExprId) -> Result<bool, Error> {
+        loop {
+            id = self.without_parentheses(id);
+            if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
+                return Ok(!call.place && self.symbols.class_destructor(call.result)?.is_some());
+            }
+            if let Some((constructor, _)) = self.class_conversion(id) {
+                let ty = self
+                    .graph
+                    .lower_entity_type(self.graph.lower_constructor(constructor).class)?;
+                return Ok(self.symbols.class_destructor(ty)?.is_some());
+            }
+            if self.graph.lower_expression(id)?.reference_cast.is_some()
+                && let ExprKind::Cast { operand, .. } = self.tree.expressions.get(id).kind
+                && (self.graph.lower_expression(operand)?.temporary.is_some()
+                    || self.class_conversion(operand).is_some()
+                    || self.graph.lower_function_conversion(operand)?.is_some())
+            {
+                id = operand;
+            } else {
+                return Ok(false);
+            }
         }
-        let Some((constructor, _)) = self.class_conversion(id) else {
-            return Ok(false);
-        };
-        let ty = self
-            .graph
-            .lower_entity_type(self.graph.lower_constructor(constructor).class)?;
-        Ok(self.symbols.class_destructor(ty)?.is_some())
     }
     pub(super) fn bind_aggregate_reference(
         &mut self,

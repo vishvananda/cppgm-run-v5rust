@@ -112,12 +112,10 @@ impl Analyzer<'_> {
         if class == source || self.graph.is_base_of(class, source) {
             return Ok(false);
         }
-        if self.graph.entity(source).declared_conversions.is_empty() {
+        if self.visible_conversion_functions(source)?.is_empty() {
             return Ok(true);
         }
-        Err(Error::Missing(
-            "parenthesized aggregate user conversion ranking",
-        ))
+        self.single_constructor_not_viable(class, facts)
     }
     pub(super) fn explicit_class_prvalue(
         &mut self,

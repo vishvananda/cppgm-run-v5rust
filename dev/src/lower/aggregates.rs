@@ -210,11 +210,11 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         if initializer.is_some() && self.graph.lower_constructor_arguments(entity).is_some() {
-            return self.construct_local(entity, ty, slot);
+            return self.construct_local(entity, ty, slot, initializer);
         }
         let Some(initializer) = initializer else {
             if !self.graph.lower_trivial_default_construction(entity)? {
-                return self.construct_local(entity, ty, slot);
+                return self.construct_local(entity, ty, slot, initializer);
             }
             self.storage_address(slot, ty)?;
             return Ok(());
