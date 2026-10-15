@@ -11,7 +11,7 @@ use crate::{
         model::{Facts, InstructionKind as I, RuntimeInstruction as R},
         vocabulary::Type,
     },
-    sema::lowering::{EntityId, TypeId},
+    sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn has_tracked_region(&self) -> bool {
@@ -81,13 +81,23 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn place_function_guard(
         &mut self,
-        destructor: Option<EntityId>,
+        entry: super::construction::Entry,
     ) -> Result<(), Error> {
-        // lower_definition returns directly after finish_body for an inert
-        // destructor. It retains the entry marker but never places its guard.
-        if let Some(entity) = destructor
-            && self.symbols.destructor_inert(entity)?
-        {
+        // lower_definition returns after finish_body for a synthesized copy
+        // or an inert destructor, before placing the function's guard. Keep
+        // that ordering, including an entry marker with no landing block.
+        let synthesized_copy = matches!(entry, super::construction::Entry::Constructor(id, _)
+            if self.graph.lower_constructor(id).copy.is_some());
+        let inert_destructor = if let Some(entity) = entry.entity(self.graph)
+            && matches!(
+                entry.facts(self.graph)?.name,
+                crate::sema::lowering::FunctionName::Destructor(_)
+            ) {
+            self.symbols.destructor_inert(entity)?
+        } else {
+            false
+        };
+        if synthesized_copy || inert_destructor {
             return Ok(());
         }
         let Some(landing) = self.lifetime.function_guard.take() else {
@@ -234,7 +244,7 @@ impl Function<'_, '_, '_, '_> {
                 if self.expression_temporaries(argument)?.made {
                     self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
                     if throws {
-                        self.open_temporary_region()?;
+                        self.open_temporary_region_at(self.lifetime.expression_start)?;
                     }
                     break;
                 }

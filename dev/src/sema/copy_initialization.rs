@@ -447,16 +447,6 @@ impl Analyzer<'_> {
                 other => other,
             })
     }
-    pub(super) fn select_copy_initialization(
-        &mut self,
-        class: EntityId,
-        facts: super::expression_facts::ExprFacts,
-        scope: ScopeId,
-        location: SourceOffset,
-    ) -> Result<CopySelection, Error> {
-        self.select_copy_sequence(class, facts, Some(scope), true, location)
-            .map(|candidate| candidate.selection)
-    }
     pub(super) fn select_result_constructor(
         &mut self,
         class: EntityId,

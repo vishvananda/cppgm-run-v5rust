@@ -30,6 +30,37 @@ pub(crate) struct SubobjectCopy {
     pub constructor: Option<ConstructorId>,
 }
 impl Analyzer<'_> {
+    pub(super) fn build_implicit_copy_plan(
+        &mut self,
+        class: EntityId,
+        kind: RefKind,
+    ) -> Result<ConstructorId, Error> {
+        self.build_copy_plans(class, CopyOrigin::Implicit { class, kind }, SourceOffset(0))
+    }
+    pub(super) fn implicit_copy_bindings(
+        &mut self,
+        class: EntityId,
+    ) -> Result<[Option<BindingId>; 2], Error> {
+        self.prepare_copy_properties(class)?;
+        let copies = self
+            .graph
+            .entity(class)
+            .implicit_copies
+            .ok_or(Error::Invariant("copy declarations without properties"))?;
+        let mut bindings = [None; 2];
+        for (index, (kind, properties)) in [
+            (RefKind::Lvalue, copies.copy_properties),
+            (RefKind::Rvalue, copies.move_properties),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if let Some(properties) = properties {
+                bindings[index] = Some(self.implicit_copy_binding(class, kind, properties)?);
+            }
+        }
+        Ok(bindings)
+    }
     pub(super) fn declared_copy_plan(
         &mut self,
         class: EntityId,
@@ -225,6 +256,9 @@ impl Analyzer<'_> {
         kind: RefKind,
         properties: CopyPropertiesId,
     ) -> Result<BindingId, Error> {
+        if let Some(binding) = self.graph.copy_properties.get(properties).callable {
+            return Ok(binding);
+        }
         let copies = self
             .graph
             .entity(class)
@@ -258,6 +292,11 @@ impl Analyzer<'_> {
         entity.copy_origin = Origin::Implicit;
         entity.copy_kind = Some(kind);
         entity.copy_properties = Some(properties);
+        if self.graph.copy_properties.get(properties).deleted {
+            self.graph.entity_mut(function).availability =
+                super::graph::FunctionAvailability::Deleted;
+        }
+        let entity = self.graph.entity_mut(function);
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
         entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
@@ -281,8 +320,11 @@ impl Analyzer<'_> {
             special: None,
             allocation: None,
         });
-        self.graph
-            .add_implicit_copy_binding(home, function, signature)
+        let binding = self
+            .graph
+            .add_implicit_copy_binding(home, function, signature)?;
+        self.graph.copy_properties.get_mut(properties).callable = Some(binding);
+        Ok(binding)
     }
     fn prepare_copy_parameters(&mut self, binding: BindingId) -> Result<(), Error> {
         let function = self.graph.binding(binding).entity;
@@ -341,6 +383,52 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn ranking_copy_declarations_reuses_identity_without_building_bodies() {
+        let source = SourceBuffer::new(b"struct Leaf{Leaf(const Leaf&);};struct Box{Leaf member;};struct Unused{Leaf member;};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"copy-declarations").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"Box".as_slice(), b"Unused"].map(|name| cursor.intern_name(name).unwrap());
+        let syntax_mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let [class, unused] = names.map(|name| {
+            analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(global, name, super::super::lookup::Filter::Elaborated)
+                        .unwrap(),
+                )
+                .entity
+        });
+        let first = analyzer.implicit_copy_bindings(class).unwrap();
+        let second = analyzer.implicit_copy_bindings(class).unwrap();
+        assert_eq!(first, second);
+        for binding in first.into_iter().flatten() {
+            let function = analyzer
+                .graph
+                .entity(analyzer.graph.binding(binding).entity);
+            assert!(function.constructor.is_none() && function.scope.is_none());
+            let properties = analyzer
+                .graph
+                .copy_properties
+                .get(function.copy_properties.unwrap());
+            assert!(matches!(properties.plan, ConstructorState::NotStarted));
+        }
+        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.storage_layouts.is_empty());
+        assert_eq!(syntax_mark, tree.expressions.mark());
+    }
 
     #[test]
     fn repeated_copy_uses_share_plans_without_syntax_or_unused_body_demand() {

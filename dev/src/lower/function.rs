@@ -317,7 +317,7 @@ pub(super) fn lower<'a>(
     function.place_lexical_cleanups()?;
     function.place_cleanup_chains(true)?;
     function.place_destructor_terminates()?;
-    function.place_function_guard(destructor)?;
+    function.place_function_guard(entry)?;
     function.builder.finish()?;
     symbols.finish_entry(program, entry, symbol)?;
     Ok(())

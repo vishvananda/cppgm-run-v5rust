@@ -247,8 +247,9 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_class_copy(root)?,
                 Some(crate::sema::lowering::CopyAction::Constructor { .. })
             );
-        let hidden =
-            summary.made && matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult);
+        let hidden = summary.made
+            && (matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult)
+                || self.branch_temporaries(root)?);
         let throwing = hidden_copy || self.expression_throws_in_context(root, hidden)?;
         if (summary.made || !self.lifetime.cleanups.is_empty())
             && (throwing || summary.call_result.present() || summary.caller_destroyed)
@@ -256,10 +257,7 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.full_expression = true;
             self.lifetime.region_start = super::lifetime::RegionStart::Pending;
             self.lifetime.temporary_segment = if throwing {
-                super::lifetime::TemporarySegment::new(
-                    summary.made,
-                    matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult),
-                )
+                super::lifetime::TemporarySegment::new(summary.made, hidden)
             } else {
                 super::lifetime::TemporarySegment::Nothrow {
                     floor: self.lifetime.cleanups.len(),

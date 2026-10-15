@@ -40,6 +40,7 @@ pub(super) struct CopyProperties {
     pub trivial: bool,
     pub nothrow: bool,
     pub plan: super::construction::ConstructorState,
+    pub callable: Option<BindingId>,
     pub subobjects: Vec<(Option<EntityId>, EntityId, Option<CopySelection>)>,
 }
 #[derive(Default)]
@@ -280,6 +281,7 @@ impl Analyzer<'_> {
                     trivial: false,
                     nothrow: false,
                     plan: super::construction::ConstructorState::NotStarted,
+                    callable: None,
                     subobjects: Vec::new(),
                 }
             } else {
@@ -395,6 +397,7 @@ impl Analyzer<'_> {
             trivial: true,
             nothrow: true,
             plan: super::construction::ConstructorState::NotStarted,
+            callable: None,
             subobjects: Vec::new(),
         };
         let scope = self

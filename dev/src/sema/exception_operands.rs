@@ -29,6 +29,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
+        if self.semantic() {
+            if let Some(ty) = self.graph.expression_type(root) {
+                return Ok(ty);
+            }
+            // A specification records normal expression/conversion facts but
+            // never demands output or storage for the functions it mentions.
+            let saved = self.unevaluated;
+            self.unevaluated = 1;
+            let result = self.typed_expression(root, scope).map(|facts| facts.ty);
+            self.unevaluated = saved;
+            return result;
+        }
         let base = self.exception_work.len();
         self.exception_work.push((root, OperandStep::Visit));
         let result = (|| {

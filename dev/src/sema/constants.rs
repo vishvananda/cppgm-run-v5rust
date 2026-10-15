@@ -278,7 +278,7 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.constant_query(ty, operand, scope, true, location)?,
-            ExprKind::Call { .. } if self.evaluating_noexcept => {
+            ExprKind::Call { .. } if self.evaluating_noexcept && !self.semantic() => {
                 let ty = self.query_call_type(id, scope)?;
                 if skipping {
                     Constant { bits: 0, ty }
@@ -351,6 +351,19 @@ impl Analyzer<'_> {
         scope: ScopeId,
         skipping: bool,
     ) -> Result<Option<Constant>, Error> {
+        if self.semantic()
+            && !skipping
+            && let Some(step) = self.graph.expression_facts.function_conversion(id)
+        {
+            let function = self.graph.binding(step.binding).entity;
+            if !self.graph.entity(function).constexpr {
+                return Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "a call of a function that is not constexpr",
+                ));
+            }
+            return Err(Error::Missing("constexpr function interpretation"));
+        }
         if self.semantic()
             && !skipping
             && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
@@ -835,7 +848,7 @@ impl Analyzer<'_> {
         }
         self.check_integral(left, location)?;
         self.check_integral(right, location)?;
-        let (ty, right_ty) = if self.evaluating_noexcept {
+        let (ty, right_ty) = if self.evaluating_noexcept && !self.semantic() {
             self.graph.arithmetic_types(id)?
         } else if matches!(op, P::ShiftLeft | P::ShiftRight) {
             (self.promoted_type(left.ty)?, self.promoted_type(right.ty)?)

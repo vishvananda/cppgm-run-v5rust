@@ -859,11 +859,10 @@ impl Function<'_, '_, '_, '_> {
         unwinding: bool,
         count: usize,
     ) -> Result<BlockId, Error> {
-        let late = unwinding
-            && (count > 8
-                || self.lifetime.tracking.active
-                    && (!self.lifetime.tracking.construction.active()
-                        || self.lifetime.tracking.finishing));
+        // finish_tracking explicitly builds its conditional dispatch chain.
+        // Ordinary destruction below that segment uses unwind_entry's own
+        // chain, even while the full-expression still owns tracked flags.
+        let late = unwinding && (count > 8 || self.lifetime.tracking.finishing);
         let terminal = if !unwinding {
             self.lifetime.return_terminal
         } else if late {

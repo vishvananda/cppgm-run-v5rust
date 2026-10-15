@@ -762,6 +762,14 @@ impl Analyzer<'_> {
         if self.graph.inherited_constructors.source(entity).is_some() {
             return self.inherited_constructor_plan(binding);
         }
+        if self.graph.entity(entity).copy_origin == super::copy_construction::Origin::Implicit {
+            let kind = self
+                .graph
+                .entity(entity)
+                .copy_kind
+                .ok_or(Error::Invariant("implicit constructor without copy kind"))?;
+            return self.build_implicit_copy_plan(class, kind);
+        }
         if matches!(
             self.graph.entity(entity).special_definition,
             Some(SpecialDefinition::Defaulted { .. })

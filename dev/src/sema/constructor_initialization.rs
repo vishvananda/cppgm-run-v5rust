@@ -276,24 +276,6 @@ impl Analyzer<'_> {
                 self.type_call_argument(argument, scope)?;
             }
         }
-        if context != ClassContext::Delegation
-            && (list.is_none() || context == ClassContext::Base)
-            && let [id] = args
-            && self.graph.aggregate_class(class)
-            && matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
-        {
-            self.class_list_initialize(*id, target, scope)?;
-            self.record_class_copy(
-                *id,
-                target,
-                scope,
-                super::copy_initialization::CopyUse::Object {
-                    direct: !converting,
-                },
-                location,
-            )?;
-            return Ok(None);
-        }
         // Preserve the existing checked copy-elision path for same-class sources.
         if context != ClassContext::Delegation
             && (list.is_none() || context == ClassContext::Base)
@@ -385,29 +367,10 @@ impl Analyzer<'_> {
                         .explicitness
                         != Explicitness::Explicit
             });
-        if !offered {
-            if !converting
-                && let [argument] = args
-                && (!copy_list
-                    || !matches!(
-                        tree.expressions.get(*argument).kind,
-                        ast::ExprKind::Braced { .. }
-                    ))
-            {
-                // The frozen candidate set includes implicit copy/move members
-                // for this single-argument form, even when none is viable.
-                if matches!(
-                    tree.expressions.get(*argument).kind,
-                    ast::ExprKind::Braced { .. }
-                ) {
-                    return Err(Error::Missing(
-                        "implicit copy constructor list argument ranking",
-                    ));
-                }
-                let facts = self.graph.expression_facts.get(*argument)?;
-                self.select_copy_initialization(class, facts, scope, location)?;
-                return Err(Error::Missing("class list copy initialization"));
-            }
+        let copies = !converting
+            && matches!(args, [id]
+            if !copy_list || !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. }));
+        if !offered && !copies {
             return Err(Error::at(
                 location,
                 if context == ClassContext::AggregateMember {
@@ -428,7 +391,11 @@ impl Analyzer<'_> {
                 if context == ClassContext::AggregateMember {
                     Candidates::ConvertingMember(class)
                 } else {
-                    Candidates::Constructors { class, converting }
+                    Candidates::Constructors {
+                        class,
+                        converting,
+                        copies,
+                    }
                 },
                 args,
                 None,

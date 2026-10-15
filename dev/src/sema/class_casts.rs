@@ -103,7 +103,22 @@ impl Analyzer<'_> {
             self.tree.expressions.get(first).kind,
             ast::ExprKind::Braced { .. }
         ) {
-            return Ok(false);
+            let mut scratch = std::mem::take(&mut self.call_scratch);
+            let result = self
+                .rank_call(
+                    super::procedural_calls::Candidates::Constructors {
+                        class,
+                        converting: false,
+                        copies: true,
+                    },
+                    args,
+                    None,
+                    &mut scratch,
+                )
+                .map(|()| !scratch.has_candidates());
+            scratch.clear();
+            self.call_scratch = scratch;
+            return result;
         }
         let facts = self.graph.expression_facts.get(first)?;
         let Some(source) = self.graph.class_of(facts.ty) else {

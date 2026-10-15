@@ -33,7 +33,11 @@ impl Function<'_, '_, '_, '_> {
         let class_result =
             !step.place && matches!(self.graph.lower_type(source)?, TypeView::Class(_));
         let destroyed = class_result && self.symbols.storage_destructor(source)?.is_some();
-        if destroyed && self.lifetime.guarded_operands != 0 {
+        if destroyed
+            && self.lifetime.guarded_operands != 0
+            && !self.lifetime.tracking.active
+            && self.lifetime.guard_start.is_none()
+        {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
         if destroyed && self.lifetime.full_expression && !self.lifetime.region {

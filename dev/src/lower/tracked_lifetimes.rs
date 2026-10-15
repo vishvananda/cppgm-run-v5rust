@@ -38,6 +38,75 @@ pub(super) struct Tracking {
     query_work: Vec<(ast::ExprId, bool, u32)>,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn branch_temporaries(&mut self, root: ast::ExprId) -> Result<bool, Error> {
+        let mut work = std::mem::take(&mut self.lifetime.tracking.query_work);
+        work.push((root, false, 0));
+        let result = self.scan_branch_temporaries(&mut work);
+        work.clear();
+        self.lifetime.tracking.query_work = work;
+        result
+    }
+    fn scan_branch_temporaries(
+        &mut self,
+        work: &mut Vec<(ast::ExprId, bool, u32)>,
+    ) -> Result<bool, Error> {
+        while let Some((id, _, depth)) = work.pop() {
+            if depth > 64 {
+                continue;
+            }
+            let id = self.without_parentheses(id);
+            let child = |id| (id, false, depth + 1);
+            match self.tree.expressions.get(id).kind {
+                ExprKind::Conditional {
+                    condition,
+                    then_expr,
+                    else_expr,
+                } => {
+                    let facts = self.graph.lower_expression(id)?;
+                    let object = (!facts.is_place
+                        && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_)))
+                    .then_some(facts.ty);
+                    for operand in [then_expr, else_expr] {
+                        let made = if let Some(object) = object {
+                            self.conditional_operand_temporaries(operand, object)?.made
+                        } else {
+                            self.expression_temporaries(operand)?.made
+                        };
+                        if made {
+                            return Ok(true);
+                        }
+                    }
+                    work.push(child(condition));
+                }
+                ExprKind::Binary {
+                    op, left, right, ..
+                } => {
+                    if matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr))
+                        && self.expression_temporaries(right)?.made
+                    {
+                        return Ok(true);
+                    }
+                    work.extend([child(right), child(left)]);
+                }
+                ExprKind::Unary { operand, .. } | ExprKind::Cast { operand, .. } => {
+                    work.push(child(operand));
+                }
+                ExprKind::Call { arguments, .. } => {
+                    work.extend(
+                        self.tree
+                            .expr_lists
+                            .get(arguments)
+                            .iter()
+                            .rev()
+                            .copied()
+                            .map(child),
+                    );
+                }
+                _ => (),
+            }
+        }
+        Ok(false)
+    }
     pub(super) fn begin_tracking(
         &mut self,
         root: ast::ExprId,

@@ -24,6 +24,7 @@ pub(super) enum Candidates {
     Constructors {
         class: super::graph::EntityId,
         converting: bool,
+        copies: bool,
     },
 }
 
@@ -61,6 +62,9 @@ pub(super) struct CallScratch {
     pub(super) surrogates: super::callable_objects::SurrogateScratch,
 }
 impl CallScratch {
+    pub(super) fn has_candidates(&self) -> bool {
+        !self.candidates.is_empty()
+    }
     pub(super) fn clear(&mut self) {
         self.candidates.clear();
         self.sequences.clear();
@@ -715,8 +719,25 @@ impl Analyzer<'_> {
         scratch.sequences.clear();
         let offset = usize::from(prefix.is_some());
         let written = args.len() + offset;
-        for index in 0..set.bindings(&self.graph).len() {
-            let primary = set.bindings(&self.graph)[index];
+        let copies = if let Candidates::Constructors {
+            class,
+            copies: true,
+            ..
+        } = set
+        {
+            self.implicit_copy_bindings(class)?
+        } else {
+            [None; 2]
+        };
+        let declared = set.bindings(&self.graph).len();
+        for index in 0..declared + copies.len() {
+            let primary = if index < declared {
+                set.bindings(&self.graph)[index]
+            } else if let Some(binding) = copies[index - declared] {
+                binding
+            } else {
+                continue;
+            };
             if !set.includes(&self.graph, primary) {
                 continue;
             }

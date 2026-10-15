@@ -316,6 +316,27 @@ impl Analyzer<'_> {
         }
         let saved_limit = self.graph.lookup_limit;
         self.graph.lookup_limit = Some(pending.limit);
+        // A specification has its declaration's implicit object, independent
+        // of any body whose analysis happened to demand the specification.
+        let saved_body = self.body_context.take();
+        let saved_default = self.default_argument_scope.take();
+        let saved_member = self.member_initializer_class.take();
+        if self.semantic() {
+            let ty = self
+                .graph
+                .entity(pending.entity)
+                .ty
+                .ok_or(Error::Invariant(
+                    "exception specification without function type",
+                ))?;
+            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+                return Err(Error::Invariant("exception specification on nonfunction"));
+            };
+            self.body_context = Some(super::procedural_statements::BodyContext::new(
+                result,
+                pending.entity,
+            ));
+        }
         let result = if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
             self.graph
                 .entity(pending.entity)
@@ -334,6 +355,9 @@ impl Analyzer<'_> {
         } else {
             self.exception_set(pending.qualifier, pending.scope)
         };
+        self.body_context = saved_body;
+        self.default_argument_scope = saved_default;
+        self.member_initializer_class = saved_member;
         self.graph.lookup_limit = saved_limit;
         let result = result?;
         if pending.first {
@@ -450,7 +474,15 @@ impl Analyzer<'_> {
                     self.evaluating_noexcept = true;
                     let result = (|| {
                         let ty = self.exception_operand_type(operand, scope)?;
-                        self.exception_bool(ty, self.tree.expressions.get(operand).location)?;
+                        if self.semantic() {
+                            let saved = self.unevaluated;
+                            self.unevaluated = 1;
+                            let result = self.convert_bool(operand);
+                            self.unevaluated = saved;
+                            result?;
+                        } else {
+                            self.exception_bool(ty, self.tree.expressions.get(operand).location)?;
+                        }
                         self.constant_value(operand, scope, true)
                     })();
                     self.evaluating_noexcept = saved;

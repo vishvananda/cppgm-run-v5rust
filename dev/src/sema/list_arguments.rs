@@ -267,6 +267,8 @@ impl Analyzer<'_> {
                 Candidates::Constructors {
                     class,
                     converting: false,
+                    copies: matches!(self.tree.expr_lists.get(elements), [id]
+                        if !matches!(self.tree.expressions.get(*id).kind, ExprKind::Braced { .. })),
                 },
                 self.tree.expr_lists.get(elements),
                 None,
