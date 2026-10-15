@@ -228,6 +228,10 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
         // nonthrowing call once prior subobjects need destruction.
+        let transient = !nothrow
+            && !self.lifetime.full_expression
+            && !self.lifetime.construction
+            && !self.lifetime.region;
         self.before_lifetime_call(
             !nothrow
                 || self.lifetime.full_expression
@@ -247,6 +251,9 @@ impl Function<'_, '_, '_, '_> {
             signature: None,
             copy_elision,
         }))?;
+        if transient {
+            self.close_lifetime_region()?;
+        }
         Ok(())
     }
     pub(super) fn forward_constructor(

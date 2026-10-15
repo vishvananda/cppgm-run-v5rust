@@ -333,6 +333,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let mut throwing = false;
         let mut guarded = false;
+        let guarded_region = self.lifetime.region;
         for index in first..self.lifetime.cleanups.len() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
@@ -377,7 +378,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.full_expression = full_expression;
         if self.lifetime.pending.len() > pending
-            || guarded && !throwing && !self.lifetime.tracking.active
+            || guarded_region && guarded && !throwing && !self.lifetime.tracking.active
         {
             let next = self.new_block("call_unwind_end")?;
             self.jump(next)?;

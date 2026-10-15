@@ -59,7 +59,16 @@ impl Function<'_, '_, '_, '_> {
         }
         let mut made = false;
         for &argument in written {
-            made |= self.expression_temporaries(argument)?.made;
+            let outer_copy = matches!(self.graph.lower_class_copy(argument)?,
+                Some(crate::sema::lowering::CopyAction::Constructor { constructor: selected, .. })
+                    if selected == constructor);
+            made |= if outer_copy {
+                // This selected transfer constructs our destination; only
+                // evaluating its source can make argument temporaries.
+                self.scan_temporaries(argument, true, false)?.made
+            } else {
+                self.expression_temporaries(argument)?.made
+            };
             if made {
                 break;
             }
@@ -223,7 +232,19 @@ impl Function<'_, '_, '_, '_> {
         }
         let Some(root) = root else { return Ok(false) };
         let summary = if matches!(usage, ExpressionUse::ClassResult) {
-            self.operand_temporaries(root)?
+            let mut summary = self.operand_temporaries(root)?;
+            // record_copy is an initialization conversion even when its
+            // source is a named glvalue. It makes the hidden return segment;
+            // note_constructor_temporaries separately queries its arguments.
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                self.graph.lower_class_copy(root)?
+            {
+                summary.made |= self.temporary_type_destroyed(
+                    self.graph
+                        .lower_entity_type(self.graph.lower_constructor(constructor).class)?,
+                )?;
+            }
+            summary
         } else {
             self.expression_temporaries(root)?
         };
@@ -321,14 +342,14 @@ impl Function<'_, '_, '_, '_> {
                     self.graph.lower_class_copy(id)?
             {
                 let function = self.graph.lower_constructor_function(constructor)?;
-                // A recorded nonelided class transfer is an initialization
-                // conversion in C++ creates_temporaries, even for a named
-                // return operand. Its result is counted before scanning the
-                // source operands; result storage itself is not registered
-                // as a caller-owned temporary.
+                // A recorded transfer is an initialization conversion in
+                // C++ creates_temporaries. An operand-only query excludes
+                // its destination, including a return's caller-owned result.
                 let class = self.graph.lower_constructor(constructor).class;
-                summary.made |=
-                    self.temporary_type_destroyed(self.graph.lower_entity_type(class)?)?;
+                if include_root || id != root {
+                    summary.made |=
+                        self.temporary_type_destroyed(self.graph.lower_entity_type(class)?)?;
+                }
                 let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)?
                 else {
                     return Err(crate::sema::Error::Invariant("copy temporary signature").into());

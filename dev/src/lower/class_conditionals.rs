@@ -33,6 +33,11 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.guarded_operands -= 1;
             result?;
             if !self.terminated {
+                // A segment ends at this branch edge. Tracked regions own
+                // their cross-branch continuation separately.
+                if !self.lifetime.tracking.active {
+                    self.close_lifetime_region()?;
+                }
                 self.jump(end)?;
             }
         }

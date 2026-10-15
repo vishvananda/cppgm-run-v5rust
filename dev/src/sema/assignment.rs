@@ -636,6 +636,14 @@ impl Analyzer<'_> {
             properties.deleted |= summary.deleted;
             properties.nothrow &= summary.nothrow;
             if let super::copy_initialization::CopyOrigin::Declared(binding) = selected.origin {
+                let signature = self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .ty
+                    .ok_or(Error::Invariant("assignment parameter copy signature"))?;
+                // analyzer_copy.cpp::NothrowCopy assumes that evaluating
+                // any omitted constructor defaults can throw.
+                properties.nothrow &= self.graph.types.function_parameter_count(signature)? == 1;
                 properties.deleted |= self
                     .check_special_member_access(binding, acted, scope, SourceOffset(0))
                     .is_err();

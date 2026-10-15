@@ -97,10 +97,19 @@ impl Function<'_, '_, '_, '_> {
         } else {
             false
         };
+        let comma = if let Some(source) = source {
+            matches!(self.tree.expressions.get(source).kind,
+                ExprKind::Binary { op, .. }
+                if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma))
+                && !self.graph.lower_operator_call(source)?
+        } else {
+            false
+        };
         if region && self.lifetime.temporary_segment.is_eager() && !self.lifetime.tracking.active {
-            if prvalue && copy.is_none() {
+            if prvalue && copy.is_none() && !comma {
                 // The prvalue constructs the base itself. Its own call's
-                // operands decide whether an eager region is needed.
+                // operands decide whether an eager region is needed. A
+                // comma's left effects already belong to the initializer.
                 self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Hidden;
             } else {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
