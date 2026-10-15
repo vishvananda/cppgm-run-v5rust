@@ -45,6 +45,94 @@ pub(crate) enum UnnamedNumbering {
     Private(Option<EntityId>),
 }
 impl Graph {
+    pub(super) fn injected_member_storage(
+        &self,
+        member: EntityId,
+    ) -> Result<Option<super::graph::BindingId>, Error> {
+        let Some(home) = self.entity(member).home else {
+            return Ok(None);
+        };
+        if self.scope(home).kind != ScopeKind::Class {
+            return Ok(None);
+        }
+        let holder = self.member_holder(member, None)?;
+        Ok(self
+            .entity(holder)
+            .anonymous_storage
+            .filter(|&storage| self.scope(self.binding_scope(storage)).kind != ScopeKind::Class))
+    }
+    pub(crate) fn lower_declaration_storage(&self, id: ast::DeclId) -> Option<EntityId> {
+        self.declaration_storage
+            .get(id.index())
+            .copied()
+            .flatten()
+            .map(|binding| self.binding(binding).entity)
+    }
+
+    pub(crate) fn lower_injected_member(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<(EntityId, u64)>, Error> {
+        let facts = self.expression_facts.get(id)?;
+        let Some(storage) = facts.anonymous_member else {
+            return Ok(None);
+        };
+        let member = self
+            .binding(
+                facts
+                    .member
+                    .ok_or(Error::Invariant("injected member without designation"))?,
+            )
+            .entity;
+        let offset = self
+            .lower_member_offset(member)?
+            .wrapping_add(self.lower_anonymous_member_offset(member, None)?);
+        Ok(Some((self.binding(storage).entity, offset)))
+    }
+
+    pub(crate) fn lower_injected_storage(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<EntityId>, Error> {
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .anonymous_member
+            .map(|binding| self.binding(binding).entity))
+    }
+
+    pub(crate) fn lower_union_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let Some(member) = self.expression_facts.get(id)?.member else {
+            return Ok(false);
+        };
+        Ok(self
+            .entity(self.binding(member).entity)
+            .home
+            .and_then(|scope| self.scope(scope).owner)
+            .is_some_and(|owner| self.entity(owner).key == Keyword::Union))
+    }
+
+    pub(crate) fn lower_first_named_member(&self, ty: TypeId) -> Option<NameId> {
+        let class = self.class_of(ty)?;
+        let mut work = vec![self.entity(class).members.iter()];
+        while let Some(members) = work.last_mut() {
+            let Some(&member) = members.next() else {
+                work.pop();
+                continue;
+            };
+            let member = self.entity(member);
+            if let Some(name) = member.name {
+                return Some(name);
+            }
+            if let Some(class) = member.ty.and_then(|ty| self.class_of(ty))
+                && self.entity(class).anonymous_class.is_some()
+            {
+                work.push(self.entity(class).members.iter());
+            }
+        }
+        None
+    }
+
     pub(crate) fn lower_anonymous_scope(
         &self,
         scope: ScopeId,
@@ -326,17 +414,16 @@ impl Analyzer<'_> {
         self.graph.entity_mut(storage).defined = true;
         self.graph.entity_mut(storage).variable = Some(super::graph::VariableProperties {
             is_extern: false,
-            internal_linkage: specs.is_static || unnamed_namespace,
+            internal_linkage: kind == ScopeKind::Namespace,
             language: super::linkage::Language::from_c(self.c_language && kind != ScopeKind::Class),
-            thread_storage: specs.thread_storage,
+            // analyzer_classes.cpp publishes no thread-storage flag on this hidden object.
+            thread_storage: super::specifiers::ThreadStorage::Ordinary,
             static_specifier: if specs.is_static {
                 super::specifiers::StaticSpecifier::Present
             } else {
                 super::specifiers::StaticSpecifier::Absent
             },
-            automatic: kind == ScopeKind::Block
-                && !specs.is_static
-                && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
+            automatic: kind == ScopeKind::Block && !specs.is_static,
         });
         let binding = self.graph.add_binding(
             scope,
@@ -351,6 +438,103 @@ impl Analyzer<'_> {
         )?;
         self.graph.entity_mut(entity).anonymous_storage = Some(binding);
         self.default_initialize(binding, location)?;
+        if self.lowering() {
+            self.request_union_storage(storage, location);
+        }
         Ok(Some(binding))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn injected_members_retain_one_storage_owner_without_reparsing_or_unused_layouts() {
+        let source = SourceBuffer::new(b"static union { struct { char c; union{long value;int second;}; }; int other; }; long*const p=&value; int f(){value=7;return value;} inline int unused(){static union{long hidden=3;};return hidden;}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"union-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let syntax_declarations = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), syntax_declarations);
+        let storage = graph
+            .lower_declaration_storage(tree.decl_lists.get(declarations)[0])
+            .unwrap();
+        let facts = graph.lower_variable(storage).unwrap();
+        assert!(facts.name.is_none());
+        assert_eq!(
+            cursor.name(graph.lower_first_named_member(facts.ty).unwrap()),
+            b"c"
+        );
+        let mut uses = Vec::new();
+        let mut hidden = None;
+        let pointer = cursor.intern_name(b"p").unwrap();
+        let pointer = graph
+            .binding(
+                graph
+                    .own(
+                        graph.global,
+                        pointer,
+                        super::super::lookup::Filter::Ordinary,
+                    )
+                    .unwrap(),
+            )
+            .entity;
+        assert!(matches!(graph.lower_variable(pointer).unwrap().initializer,
+            Some(super::super::static_initialization::Value::Address(object, 8)) if object == storage));
+        for &decl in &tree.decl_lists.get(declarations)[2..] {
+            let ast::DeclKind::Function { body, .. } = tree.declarations.get(decl).kind else {
+                panic!("function")
+            };
+            let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+                panic!("parsed body")
+            };
+            let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind
+            else {
+                panic!("compound")
+            };
+            for &stmt in tree.stmt_lists.get(statements) {
+                match tree.statements.get(stmt).kind {
+                    ast::StmtKind::Expression(Some(expr)) => {
+                        let ast::ExprKind::Binary { left, .. } = tree.expressions.get(expr).kind
+                        else {
+                            panic!("assignment")
+                        };
+                        uses.push(left);
+                    }
+                    ast::StmtKind::Return(Some(expr)) if uses.len() == 1 => uses.push(expr),
+                    ast::StmtKind::Return(Some(expr)) => hidden = Some(expr),
+                    _ => {}
+                }
+            }
+        }
+        for id in uses {
+            assert_eq!(graph.lower_injected_member(id).unwrap(), Some((storage, 8)));
+            assert!(graph.lower_union_assignment(id).unwrap());
+        }
+        let object = graph
+            .lower_injected_storage(hidden.unwrap())
+            .unwrap()
+            .unwrap();
+        assert_ne!(object, storage);
+        assert!(graph.lower_array_image(object).is_none());
+        let class = graph
+            .class_of(graph.lower_entity_type(object).unwrap())
+            .unwrap();
+        assert!(matches!(
+            graph.entity(class).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
     }
 }

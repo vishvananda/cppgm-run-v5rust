@@ -136,6 +136,18 @@ pub(crate) fn lower_unit(
     let mut emitted = std::collections::HashSet::new();
     let mut emitted_entries = std::collections::HashSet::new();
     while let Some(id) = declarations.next(tree, graph, &mut symbols)? {
+        globals::lower_anonymous_declaration(
+            &mut globals::GlobalOutput {
+                program: &mut output.program,
+                startup: &mut output.startup,
+                definitions: &mut output.definitions,
+                finalizers: &mut output.finalizers,
+            },
+            &mut symbols,
+            (graph, tree),
+            id,
+            budget,
+        )?;
         match tree.declarations.get(id).kind {
             ast::DeclKind::Function {
                 declarator, body, ..
@@ -274,17 +286,42 @@ pub(crate) fn lower_unit(
             construction::Variant::Complete,
         ));
     }
-    let mut next = 0;
-    exception_helpers::emit_pending(&mut output.program, &mut symbols, &mut output.definitions)?;
-    aggregate_helpers::emit_pending(
+    emit_pending(
+        (&mut output.program, &mut output.definitions),
+        &mut symbols,
+        (graph, tree),
+        (emitted, emitted_entries),
+        budget,
+    )?;
+    output.initializer = finish_unit(
         &mut output.program,
+        &mut output.definitions,
+        &mut output.finalizers,
         &mut symbols,
         graph,
-        &mut output.definitions,
-    )?;
+    )?
+    .or(output.initializer);
+    Ok(())
+}
+
+// The unit's demand worklist owns emission identity; each emitted body is
+// streamed and released before the next one is lowered.
+fn emit_pending<'a>(
+    (program, definitions): (&mut Program, &mut definition_order::Definitions),
+    symbols: &mut symbols::Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+    (mut emitted, mut entries): (
+        std::collections::HashSet<sema::lowering::EntityId>,
+        std::collections::HashSet<construction::Entry>,
+    ),
+    budget: StackBudget,
+) -> Result<(), Error> {
+    let mut next = 0;
+    exception_helpers::emit_pending(program, symbols, definitions)?;
+    aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     while let Some(&entry) = symbols.pending.get(next) {
         next += 1;
-        if !emitted_entries.insert(entry) {
+        if !entries.insert(entry) {
             continue;
         }
         let body = if let construction::Entry::Function(entity)
@@ -295,12 +332,12 @@ pub(crate) fn lower_unit(
             }
             let facts = graph.lower_function(entity)?;
             if facts.definition.is_none() && !graph.lower_has_synthesized_body(entity) {
-                function::declare(&mut output.program, &mut symbols, graph, entry)?;
+                function::declare(program, symbols, graph, entry)?;
                 continue;
             }
             if facts.emission == crate::sema::lowering::Emission::Demanded {
-                let symbol = symbols.entry_symbol(&mut output.program, entry)?;
-                if output.program.function_defined(symbol) {
+                let symbol = symbols.entry_symbol(program, entry)?;
+                if program.function_defined(symbol) {
                     continue;
                 }
             }
@@ -312,13 +349,13 @@ pub(crate) fn lower_unit(
             if let Some(entity) = graph.lower_constructor_entity(id)
                 && !graph.lower_function_defined(entity)
             {
-                function::declare(&mut output.program, &mut symbols, graph, entry)?;
+                function::declare(program, symbols, graph, entry)?;
                 continue;
             }
             let facts = entry.facts(graph)?;
-            let symbol = symbols.entry_symbol(&mut output.program, entry)?;
+            let symbol = symbols.entry_symbol(program, entry)?;
             if facts.emission == crate::sema::lowering::Emission::Demanded
-                && output.program.function_defined(symbol)
+                && program.function_defined(symbol)
             {
                 continue;
             }
@@ -326,36 +363,11 @@ pub(crate) fn lower_unit(
                 .lower_constructor_entity(id)
                 .and_then(|entity| graph.lower_function_body(entity))
         };
-        function::lower(
-            &mut output.program,
-            &mut symbols,
-            graph,
-            tree,
-            entry,
-            body,
-            budget,
-        )?;
-        symbols.stream_definition(&mut output.program, &mut output.definitions, entry)?;
-        exception_helpers::emit_pending(
-            &mut output.program,
-            &mut symbols,
-            &mut output.definitions,
-        )?;
-        aggregate_helpers::emit_pending(
-            &mut output.program,
-            &mut symbols,
-            graph,
-            &mut output.definitions,
-        )?;
+        function::lower(program, symbols, graph, tree, entry, body, budget)?;
+        symbols.stream_definition(program, definitions, entry)?;
+        exception_helpers::emit_pending(program, symbols, definitions)?;
+        aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     }
-    output.initializer = finish_unit(
-        &mut output.program,
-        &mut output.definitions,
-        &mut output.finalizers,
-        &mut symbols,
-        graph,
-    )?
-    .or(output.initializer);
     Ok(())
 }
 

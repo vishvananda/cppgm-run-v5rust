@@ -68,7 +68,11 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
     pub(super) bit_layout: super::bit_layout::BitLayout,
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
-    pub(super) storage_layouts: Vec<(Option<super::graph::EntityId>, TypeId, SourceOffset)>,
+    pub(super) storage_layouts: Vec<(
+        Option<super::graph::EntityId>,
+        super::layout::StorageDemand,
+        SourceOffset,
+    )>,
     pub(super) constructor_boundaries: Vec<(
         Option<super::graph::EntityId>,
         super::construction::ConstructorId,

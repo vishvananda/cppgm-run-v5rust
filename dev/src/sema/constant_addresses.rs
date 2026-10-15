@@ -477,21 +477,17 @@ impl Analyzer<'_> {
                             let storage = facts
                                 .anonymous_member
                                 .ok_or(Error::Missing("constant implicit object designation"))?;
-                            let owner =
-                                entity
-                                    .home
-                                    .and_then(|home| self.graph.scope(home).owner)
-                                    .ok_or(Error::Invariant("anonymous member without owner"))?;
-                            self.class_layout(owner, location)?;
-                            let offset = self
+                            let object = self.graph.binding(storage).entity;
+                            let owner = self
                                 .graph
-                                .entity(binding.entity)
-                                .member_offset
-                                .ok_or(Error::Invariant("anonymous member without offset"))?;
-                            let mut place = Address::new(
-                                Root::Variable(self.graph.binding(storage).entity),
-                                facts.ty,
-                            );
+                                .class_of(self.graph.lower_entity_type(object)?)
+                                .ok_or(Error::Invariant("anonymous storage without class"))?;
+                            self.class_layout(owner, location)?;
+                            let (_, offset) = self
+                                .graph
+                                .lower_injected_member(id)?
+                                .ok_or(Error::Invariant("anonymous member without storage"))?;
+                            let mut place = Address::new(Root::Variable(object), facts.ty);
                             place.offset = super::integral::signed(offset);
                             return Ok(place);
                         }

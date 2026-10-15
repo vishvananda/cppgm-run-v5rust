@@ -530,6 +530,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(format!("{prefix}_{}", self.next_block))
     }
     pub(super) fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
+        if let Some(entity) = self.graph.lower_declaration_storage(id) {
+            self.local_entity(entity, None)?;
+        }
         let declarators = match self.tree.declarations.get(id).kind {
             DeclKind::Simple { declarators, .. } => declarators,
             DeclKind::Empty
@@ -551,8 +554,15 @@ impl Function<'_, '_, '_, '_> {
         declarator: ast::DeclaratorId,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
-        let reachable = !self.terminated;
         let entity = self.graph.lower_declared(declarator)?;
+        self.local_entity(entity, initializer)
+    }
+    fn local_entity(
+        &mut self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(), Error> {
+        let reachable = !self.terminated;
         let ty = self.graph.lower_entity_type(entity)?;
         let object = matches!(
             self.graph.lower_type(ty)?,
@@ -619,7 +629,7 @@ impl Function<'_, '_, '_, '_> {
         if object && self.graph.lower_automatic(entity) {
             self.reference_lifetimes.aggregate = Some(entity);
         }
-        let result = self.initialize_local_variable(declarator, initializer);
+        let result = self.initialize_local_variable(entity, initializer);
         self.reference_lifetimes.aggregate = saved_owner;
         result?;
         // A conditional's private result remains alive through the outer copy,
@@ -655,10 +665,9 @@ impl Function<'_, '_, '_, '_> {
     }
     fn initialize_local_variable(
         &mut self,
-        declarator: ast::DeclaratorId,
+        entity: EntityId,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
-        let entity = self.graph.lower_declared(declarator)?;
         if !self.graph.lower_is_variable(entity) {
             return Ok(());
         }
@@ -669,18 +678,16 @@ impl Function<'_, '_, '_, '_> {
             return self.local_static(entity, initializer);
         }
         let ty = self.graph.lower_entity_type(entity)?;
-        let name = self.graph.lower_local_name(entity).ok_or(Error::Semantic(
-            crate::sema::Error::Invariant("local without name"),
-        ))?;
-        let spelling = self.symbols.identifier(name)?;
+        let storage = types::local_storage(self.graph, entity, ty)?;
         let slot = if self.returned_local == Some(entity) {
             self.result_destination
                 .ok_or(crate::sema::Error::Invariant(
                     "returned local without destination",
                 ))?
+        } else if let Some(name) = self.graph.lower_local_name(entity) {
+            self.builder.slot(self.symbols.identifier(name)?, storage)?
         } else {
-            self.builder
-                .slot(spelling, types::local_storage(self.graph, entity, ty)?)?
+            self.generated_slot("__anonymous_union_storage", storage)?
         };
         self.locals.insert(entity, slot);
         if self.terminated {

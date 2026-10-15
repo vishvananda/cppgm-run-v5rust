@@ -20,6 +20,26 @@ pub(super) struct GlobalOutput<'a> {
     pub definitions: &'a mut super::definition_order::Definitions,
     pub finalizers: &'a mut Vec<super::shutdown::Finalizer>,
 }
+pub(super) fn lower_anonymous_declaration<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+    id: ast::DeclId,
+    budget: crate::support::stack::StackBudget,
+) -> Result<(), Error> {
+    if let Some(entity) = graph.lower_declaration_storage(id) {
+        define_variable(
+            output,
+            symbols,
+            (graph, tree),
+            entity,
+            None,
+            tree.declarations.get(id).location,
+            budget,
+        )?;
+    }
+    Ok(())
+}
 pub(super) fn lower_declaration<'a>(
     output: &mut GlobalOutput<'_>,
     symbols: &mut Symbols<'a, '_>,
@@ -36,60 +56,78 @@ pub(super) fn lower_declaration<'a>(
             let initializer = declarator
                 .initializer
                 .or(graph.lower_variable(entity)?.in_class_initializer);
-            let initialization = define(
-                output.program,
+            define_variable(
+                output,
                 symbols,
-                graph,
-                tree,
+                (graph, tree),
                 entity,
                 initializer,
                 tree.declarators.get(declarator.declarator).location,
+                budget,
             )?;
-            let mut thread_initialization = None;
-            if initialization == Initialization::Dynamic
-                && graph.lower_variable(entity)?.thread_local
-            {
-                thread_initialization = Some(super::thread_local::initialize(
-                    output,
-                    symbols,
-                    (graph, tree),
-                    entity,
-                    initializer,
-                    budget,
-                )?);
-            } else if initialization == Initialization::Dynamic {
-                output.startup.initialize(
-                    output.program,
-                    symbols,
-                    (graph, tree),
-                    entity,
-                    initializer,
-                    budget,
-                )?;
-            }
-            symbols.publish_finalizers(output.finalizers);
-            {
-                let facts = graph.lower_variable(entity)?;
-                let global = symbols.variable_symbol(output.program, entity)?;
-                if let Some(finalizer) = super::shutdown::for_type(
-                    output.program,
-                    symbols,
-                    graph,
-                    global,
-                    facts.ty,
-                    thread_initialization.map(|(guard, _)| guard),
-                )? {
-                    output.finalizers.push(finalizer);
-                }
-            }
-            if symbols.emit_tls_wrapper(
-                output.program,
-                entity,
-                thread_initialization.map(|(_, init)| init),
-            )? {
-                output.definitions.stream(output.program, None)?;
-            }
         }
+    }
+    Ok(())
+}
+pub(super) fn define_variable<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+    entity: EntityId,
+    initializer: Option<ast::Initializer>,
+    location: crate::support::source::SourceOffset,
+    budget: crate::support::stack::StackBudget,
+) -> Result<(), Error> {
+    let initialization = define(
+        output.program,
+        symbols,
+        graph,
+        tree,
+        entity,
+        initializer,
+        location,
+    )?;
+    let mut thread_initialization = None;
+    if initialization == Initialization::Dynamic && graph.lower_variable(entity)?.thread_local {
+        thread_initialization = Some(super::thread_local::initialize(
+            output,
+            symbols,
+            (graph, tree),
+            entity,
+            initializer,
+            budget,
+        )?);
+    } else if initialization == Initialization::Dynamic {
+        output.startup.initialize(
+            output.program,
+            symbols,
+            (graph, tree),
+            entity,
+            initializer,
+            budget,
+        )?;
+    }
+    symbols.publish_finalizers(output.finalizers);
+    {
+        let facts = graph.lower_variable(entity)?;
+        let global = symbols.variable_symbol(output.program, entity)?;
+        if let Some(finalizer) = super::shutdown::for_type(
+            output.program,
+            symbols,
+            graph,
+            global,
+            facts.ty,
+            thread_initialization.map(|(guard, _)| guard),
+        )? {
+            output.finalizers.push(finalizer);
+        }
+    }
+    if symbols.emit_tls_wrapper(
+        output.program,
+        entity,
+        thread_initialization.map(|(_, init)| init),
+    )? {
+        output.definitions.stream(output.program, None)?;
     }
     Ok(())
 }
@@ -166,7 +204,7 @@ fn define_storage(
         }
     } else if array {
         GlobalInit::Data(
-            if initializer.is_some()
+            if (initializer.is_some() || facts.name.is_none())
                 && let Some(image) = graph.lower_array_image(entity)
             {
                 dynamic = false;
@@ -227,6 +265,7 @@ fn define_storage(
         },
     )?;
     if initializer.is_none()
+        && !constructed
         && !facts.thread_local
         && graph.lower_empty_initialization_step(entity)?
     {
@@ -236,6 +275,15 @@ fn define_storage(
         symbols.data.define_reference(entity);
     }
     if !dynamic {
+        if constructed
+            && facts.name.is_none()
+            && let Some(constructor) = graph.lower_construction(entity)
+        {
+            symbols.demand_entry(super::construction::Entry::Constructor(
+                constructor,
+                super::construction::Variant::Complete,
+            ));
+        }
         if initializer.is_none()
             && let Some(constructor) = graph.lower_absent_initializer_constructor()
         {

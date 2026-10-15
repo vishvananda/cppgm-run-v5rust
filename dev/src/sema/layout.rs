@@ -22,10 +22,21 @@ pub(super) enum LayoutCategory {
     Pod,
     NonPod,
 }
+pub(super) enum StorageDemand {
+    Object(super::types::TypeId),
+    AnonymousUnion(EntityId),
+}
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
 impl Analyzer<'_> {
+    pub(super) fn request_union_storage(&mut self, entity: EntityId, location: SourceOffset) {
+        self.storage_layouts.push((
+            self.body_context.as_ref().map(|body| body.entity),
+            StorageDemand::AnonymousUnion(entity),
+            location,
+        ));
+    }
     pub(super) fn request_storage_layout(
         &mut self,
         entity: EntityId,
@@ -47,7 +58,7 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
             self.storage_layouts.push((
                 self.body_context.as_ref().map(|body| body.entity),
-                ty,
+                StorageDemand::Object(ty),
                 location,
             ));
         }
@@ -189,9 +200,24 @@ impl Analyzer<'_> {
                 }
             }
         }
-        for (owner, ty, location) in std::mem::take(&mut self.storage_layouts) {
+        for (owner, demand, location) in std::mem::take(&mut self.storage_layouts) {
             if owner.is_none_or(|owner| seen.contains(&owner)) {
-                self.type_size(ty, location)?;
+                match demand {
+                    StorageDemand::Object(ty) => {
+                        self.type_size(ty, location)?;
+                    }
+                    StorageDemand::AnonymousUnion(entity) => {
+                        self.type_size(self.graph.lower_entity_type(entity)?, location)?;
+                        if !self.graph.lower_automatic(entity) {
+                            let scope = self
+                                .graph
+                                .entity(entity)
+                                .home
+                                .ok_or(Error::Invariant("union object without scope"))?;
+                            self.record_union_default_image(entity, scope)?;
+                        }
+                    }
+                }
             }
         }
         Ok(())

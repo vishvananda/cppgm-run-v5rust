@@ -657,7 +657,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             format!(
                 "__ref_tmp__{}",
-                self.identifier(self.graph.lower_variable(entity)?.name)?
+                self.identifier(self.graph.lower_variable(entity)?.named()?)?
             )
         };
         self.named_reference_temporary(program, &spelling)
@@ -713,7 +713,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         ));
         let facts = self.graph.lower_variable(owner)?;
         let parent = self.scope(facts.home)?;
-        let terminal = self.abi.string(self.cursor.name(facts.name))?;
+        let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
         let owner = self.abi.intern(
             Node::Name {
                 parent,
@@ -1132,7 +1132,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(*symbol);
         }
         let facts = self.graph.lower_variable(entity)?;
-        let mut components = vec![self.identifier(facts.name)?.to_owned()];
+        let mut components = vec![if let Some(name) = facts.name {
+            self.identifier(name)?.to_owned()
+        } else {
+            "__anonymous_union_object".to_owned()
+        }];
         let mut scope = facts.home;
         while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
             components.push(self.presentation_scope_label(scope, name)?);
@@ -1140,12 +1144,31 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         components.reverse();
         let spelling = components.join("__");
-        let name = self.variable_abi_name(entity)?;
-        let object = if facts.c_linkage
-            || self.graph.lower_presentation_scope(facts.home).0.is_none() && !facts.internal
+        // Named variables publish their ABI identity even when their external
+        // spelling is emitted directly, preserving the original demand order.
+        let named_identity = facts
+            .name
+            .map(|_| self.variable_abi_name(entity))
+            .transpose()?;
+        let object = if facts.name.is_none()
+            && self.graph.lower_first_named_member(facts.ty).is_none()
         {
-            program.names.intern_bytes(self.cursor.name(facts.name))?
+            None
+        } else if facts.name.is_some()
+            && (facts.c_linkage
+                || self.graph.lower_presentation_scope(facts.home).0.is_none() && !facts.internal)
+        {
+            Some(
+                program
+                    .names
+                    .intern_bytes(self.cursor.name(facts.named()?))?,
+            )
         } else {
+            let name = if let Some(name) = named_identity {
+                name
+            } else {
+                self.variable_abi_name(entity)?
+            };
             let mut bytes = Vec::new();
             abi::encoder::Encoder::encode(
                 &self.abi,
@@ -1153,19 +1176,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &mut bytes,
                 self.budget,
             )?;
-            program.names.intern_bytes(&bytes)?
+            Some(program.names.intern_bytes(&bytes)?)
         };
         let local_object = if facts.locality == crate::sema::lowering::Locality::Unit
-            && (facts.c_linkage || self.table.objects.contains_key(&object))
+            && (facts.c_linkage
+                || object.is_some_and(|object| self.table.objects.contains_key(&object)))
         {
             None
         } else {
-            Some(object)
+            object
         };
         let symbol = self.table.allocate(
             program,
             &spelling,
-            Some(object),
+            object,
             facts.locality == crate::sema::lowering::Locality::Unit,
         )?;
         self.callees.insert(entity, Value::Symbol(symbol));
@@ -1179,12 +1203,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let facts = self.graph.lower_variable(entity)?;
         let parent = self.scope(facts.home)?;
-        let terminal = self.abi.string(self.cursor.name(facts.name))?;
+        let identifier = facts
+            .name
+            .or_else(|| self.graph.lower_first_named_member(facts.ty))
+            .ok_or(crate::sema::Error::Invariant(
+                "anonymous object without named member",
+            ))?;
+        let terminal = self.abi.string(self.cursor.name(identifier))?;
         let name = self.abi.intern(
             Node::Name {
                 parent,
                 terminal,
-                internal: facts.internal && !self.graph.lower_anonymous_namespace(facts.home),
+                internal: facts.name.is_some()
+                    && facts.internal
+                    && !self.graph.lower_anonymous_namespace(facts.home),
                 occurrence: 0,
             },
             &[],
@@ -1346,6 +1378,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         builder.finish()?;
         Ok(true)
     }
+    pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {
+        self.local_statics
+            .get(&entity)
+            .map(|symbols| Value::Symbol(symbols.object))
+    }
     pub(super) fn local_storage_symbols(
         &mut self,
         program: &mut Program,
@@ -1362,7 +1399,36 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let owner = self.function_symbol(program, function)?;
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
-        let name = self.identifier(facts.name)?;
+        if facts.name.is_none() {
+            let spelling = format!("__local_static__{owner_name}__decl{ordinal}__object");
+            let object = self.table.allocate(program, &spelling, None, !weak)?;
+            let metadata = Metadata {
+                binding: Some(if weak {
+                    Binding::Weak
+                } else {
+                    Binding::Internal
+                }),
+                ..Metadata::default()
+            };
+            let guard = if dynamic {
+                Some((
+                    self.table
+                        .allocate(program, &format!("{spelling}__guard"), None, !weak)?,
+                    metadata,
+                ))
+            } else {
+                None
+            };
+            let symbols = super::local_storage::StorageSymbols {
+                object,
+                metadata,
+                guard,
+            };
+            self.callees.insert(entity, Value::Symbol(object));
+            self.local_statics.insert(entity, symbols);
+            return Ok(symbols);
+        }
+        let name = self.identifier(facts.named()?)?;
         let spelling = format!("__local_static__{owner_name}__decl{ordinal}__{name}");
         let encoding = self.function_encoding(function)?;
         let parent = self.abi.intern(
@@ -1372,8 +1438,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             &[],
         )?;
-        let terminal = self.abi.string(self.cursor.name(facts.name))?;
-        let count = self.local_counts.entry((function, facts.name)).or_default();
+        let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
+        let count = self
+            .local_counts
+            .entry((function, facts.named()?))
+            .or_default();
         let occurrence = *count;
         *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
         let name = self.abi.intern(

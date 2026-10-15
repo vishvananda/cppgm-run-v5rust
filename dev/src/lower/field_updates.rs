@@ -146,6 +146,11 @@ impl Function<'_, '_, '_, '_> {
                 );
             }
         }
+        // An injected name has no implicit-this bit-field access in the frozen
+        // owner. Its ordinary variable-place path requires a byte offset.
+        if self.graph.lower_injected_storage(id)?.is_some() {
+            return Err(self.field_diagnostic(id, "a member without a byte offset"));
+        }
         let entity = self.graph.lower_designated_bit_field(id)?;
         let field = self.field(entity)?;
         let source = self.graph.lower_expression(id)?.ty;

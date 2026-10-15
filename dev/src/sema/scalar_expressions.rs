@@ -333,15 +333,14 @@ impl Analyzer<'_> {
             self.static_member_constant(&mut facts, binding.entity);
         }
         if binding.kind == BindingKind::Variable
-            && let Some(home) = self.graph.entity(binding.entity).home
-            && let Some(owner) = self.graph.scope(home).owner
-            && let Some(storage) = self.graph.entity(owner).anonymous_storage
-            && !matches!(
-                self.graph.scope(self.graph.binding_scope(storage)).kind,
-                super::graph::ScopeKind::Class
-            )
+            && let Some(storage) = self.graph.injected_member_storage(binding.entity)?
         {
             facts.anonymous_member = Some(storage);
+            facts.member = Some(
+                found
+                    .binding
+                    .ok_or(Error::Invariant("injected member without binding"))?,
+            );
         }
         if facts.anonymous_member.is_none()
             && self.graph.entity(binding.entity).data_member

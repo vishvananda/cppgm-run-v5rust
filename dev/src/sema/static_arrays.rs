@@ -45,6 +45,50 @@ impl Images {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn record_union_default_image(
+        &mut self,
+        entity: EntityId,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let Some(constructor) = self.graph.lower_construction(entity) else {
+            return Ok(());
+        };
+        let plan = self.graph.lower_constructor(constructor);
+        let Some((member, initializer)) = plan.members.iter().find_map(|&(member, initializer)| {
+            initializer.map(|initializer| (member, initializer))
+        }) else {
+            return Ok(());
+        };
+        let ty = self.graph.lower_entity_type(member)?;
+        let mut image = Vec::new();
+        let expr = match initializer.kind {
+            ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => Some(expr),
+            ast::InitializerKind::Parenthesized(arguments) => {
+                let [expr] = self.tree.expr_lists.get(arguments) else {
+                    return Ok(());
+                };
+                Some(*expr)
+            }
+            _ => return Err(Error::Invariant("default member initializer shape")),
+        };
+        if !self.static_array_element(ty, expr, scope, &mut image)? {
+            return Ok(());
+        }
+        let (size, _) =
+            self.type_size(self.graph.lower_entity_type(entity)?, initializer.location)?;
+        let (member_size, _) = self.type_size(ty, initializer.location)?;
+        append_zero(
+            &mut image,
+            size.checked_sub(member_size)
+                .ok_or(Error::Invariant("union member larger than storage"))?,
+        )?;
+        self.graph
+            .array_images
+            .values
+            .insert(entity, Image::Constant(image));
+        Ok(())
+    }
+
     pub(super) fn record_array_image(
         &mut self,
         entity: EntityId,

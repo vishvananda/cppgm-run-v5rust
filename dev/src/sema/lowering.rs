@@ -40,7 +40,7 @@ pub(crate) struct AllocationView {
     pub reserved: bool,
 }
 pub(crate) struct VariableFacts {
-    pub name: NameId,
+    pub name: Option<NameId>,
     pub home: ScopeId,
     pub ty: TypeId,
     pub internal: bool,
@@ -51,6 +51,12 @@ pub(crate) struct VariableFacts {
     pub in_class_initializer: Option<ast::Initializer>,
     pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub definition: Option<ast::DeclaratorId>,
+}
+impl VariableFacts {
+    pub(crate) fn named(&self) -> Result<NameId, Error> {
+        self.name
+            .ok_or(Error::Invariant("named variable without name"))
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -668,9 +674,7 @@ impl Graph {
             .variable
             .ok_or(Error::Invariant("lowering non-variable"))?;
         Ok(VariableFacts {
-            name: entity
-                .name
-                .ok_or(Error::Missing("anonymous variable lowering"))?,
+            name: entity.name,
             home: self.lower_linkage_scope(
                 entity
                     .home

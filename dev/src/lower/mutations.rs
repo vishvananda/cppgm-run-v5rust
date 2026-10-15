@@ -123,6 +123,9 @@ impl Function<'_, '_, '_, '_> {
                 else_expr,
             } => self.conditional_place(id, condition, then_expr, else_expr),
             ExprKind::Id(name) => {
+                if let Some(place) = self.injected_member_place(id)? {
+                    return Ok(place);
+                }
                 if let Some(function) = self.graph.lower_designated_function(id)? {
                     self.symbols.demand(function);
                     return self
@@ -249,6 +252,47 @@ impl Function<'_, '_, '_, '_> {
             _ => Err(Error::Missing("reference and aggregate place lowering")),
         }
     }
+    fn injected_member_place(&mut self, id: ast::ExprId) -> Result<Option<Value>, Error> {
+        let Some((object, offset)) = self.graph.lower_injected_member(id)? else {
+            return Ok(None);
+        };
+        let source = self.graph.lower_expression(id)?.ty;
+        let place = if let Some(&local) = self.locals.get(&object) {
+            local
+        } else if self.graph.lower_program_storage(object) {
+            self.global_place(object)?
+        } else if self.graph.lower_explicit_static(object) {
+            self.symbols.existing_local_storage(object).ok_or_else(|| {
+                self.field_diagnostic(
+                    id,
+                    "a static local variable of a function not lowered first",
+                )
+            })?
+        } else {
+            return Err(
+                self.field_diagnostic(id, "a variable outside the procedural lowering slice")
+            );
+        };
+        let root = if matches!(place, Value::Slot(_) | Value::Symbol(_)) {
+            self.emit(I::Addr(place), source)?.value
+        } else {
+            place
+        };
+        let offset = self.builder.integer(u128::from(offset))?;
+        let place = self
+            .emit(
+                I::Index(
+                    Type::I8,
+                    Some(crate::lowir::vocabulary::Projection::Field),
+                    root,
+                    offset,
+                ),
+                source,
+            )?
+            .value;
+        self.untyped_places.insert(place);
+        self.reference_holder(place, source).map(Some)
+    }
     pub(super) fn read_place(
         &mut self,
         place: Value,
@@ -335,7 +379,27 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         let (place, value) = if op == P::Assign {
-            let value = self.operand(right, Context::Assignment)?;
+            let context = if !matches!(
+                self.tree.expressions.get(right).kind,
+                ExprKind::Braced { .. }
+            ) && self
+                .graph
+                .lower_union_assignment(self.without_parentheses(left))?
+            {
+                Context::Initialization
+            } else {
+                Context::Assignment
+            };
+            let value =
+                if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
+                    if let Some(&element) = self.tree.expr_lists.get(elements).first() {
+                        self.operand(element, Context::Assignment)?
+                    } else {
+                        self.zero(source)?
+                    }
+                } else {
+                    self.operand(right, context)?
+                };
             let value = self.fit(value, source)?;
             let place = self.scalar_place(left)?;
             (place, value)
