@@ -933,10 +933,11 @@ pub(super) fn declare(
     builtin_boundary(&mut boundary.boundary, facts.builtin);
     let mut metadata = symbols.entry_metadata(program, entry, &name)?;
     // A declared ABI entry carries its function metadata, not the object-root
-    // flag used to retain an emitted base definition (symbol_lowering.cpp).
+    // flag used to retain an emitted base or internal complete definition
+    // (symbol_lowering.cpp::entry_symbol, program_lowering.cpp::emit_definition).
     if matches!(
         entry,
-        super::construction::Entry::Constructor(_, super::construction::Variant::Base)
+        super::construction::Entry::Constructor(_, _)
             | super::construction::Entry::DestructorBase(_)
     ) {
         metadata.flags &= !4;

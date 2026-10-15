@@ -124,7 +124,11 @@ impl Function<'_, '_, '_, '_> {
     }
     fn reference_extension_path(&mut self, mut id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
-        if self.graph.lower_expression(id)?.temporary.is_some() {
+        // A user conversion binds its own result, never the receiver's
+        // original prvalue (expression_lowering.cpp::extension_path).
+        if self.graph.lower_expression(id)?.temporary.is_some()
+            || self.graph.lower_function_conversion(id)?.is_some()
+        {
             return Ok(());
         }
         loop {
