@@ -699,7 +699,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if kind == MemberKind::Destructor {
-            return self.require_scalar_destruction(class);
+            return self.prepare_destruction(class);
         }
         if kind != MemberKind::Constructor {
             return Err(Error::Invariant("defaulted conversion function"));
@@ -735,45 +735,6 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn require_scalar_destruction(&mut self, class: EntityId) -> Result<(), Error> {
-        let mut work = vec![class];
-        let mut seen = std::collections::HashSet::new();
-        while let Some(current) = work.pop() {
-            if !seen.insert(current) {
-                continue;
-            }
-            if current != class && self.scalar_destructor_binding(current)?.is_some() {
-                return Err(Error::Missing("base subobject destructor plans"));
-            }
-            work.extend(
-                self.graph
-                    .entity(current)
-                    .bases
-                    .iter()
-                    .map(|edge| edge.class),
-            );
-            self.require_scalar_members_destruction(current)?;
-        }
-        Ok(())
-    }
-
-    fn require_scalar_members_destruction(&self, class: EntityId) -> Result<(), Error> {
-        for &member in &self.graph.entity(class).members {
-            let mut ty = self
-                .graph
-                .entity(member)
-                .ty
-                .ok_or(Error::Invariant("member without type"))?;
-            while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
-                ty = element;
-            }
-            if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class subobject destruction plans"));
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn variable_destruction(
         &mut self,
         binding: BindingId,
@@ -793,21 +754,18 @@ impl Analyzer<'_> {
             return Ok(());
         };
         if !self.graph.entity(class).bases.is_empty() {
-            self.require_scalar_destruction(class)?;
+            self.prepare_destruction(class)?;
         }
-        let Some(destructor) = self.scalar_destructor_binding(class)? else {
+        let Some(destructor) = self.destructor_callable(class)? else {
             return Ok(());
         };
-        self.require_scalar_destruction(class)?;
+        self.prepare_destruction(class)?;
         let entity = self.graph.entity(self.graph.binding(destructor).entity);
         if entity.availability == super::graph::FunctionAvailability::Deleted {
             return Err(Error::at(location, "use of a deleted function"));
         }
         self.check_direct_member_access(destructor, scope, location)?;
-        let nontrivial = !matches!(
-            entity.special_definition,
-            Some(SpecialDefinition::Defaulted { first: true, .. })
-        );
+        let nontrivial = !self.graph.destructor_trivial(class)?;
         if nontrivial && self.lowering() {
             // Destruction is an output demand at the lifetime site, not an
             // analysis-time emission root. Its body's storage boundaries must
@@ -844,12 +802,12 @@ impl Analyzer<'_> {
             return Ok(());
         };
         if !self.graph.entity(class).bases.is_empty() {
-            self.require_scalar_destruction(class)?;
+            self.prepare_destruction(class)?;
         }
-        let Some(binding) = self.scalar_destructor_binding(class)? else {
+        let Some(binding) = self.destructor_callable(class)? else {
             return Ok(());
         };
-        self.require_scalar_destruction(class)?;
+        self.prepare_destruction(class)?;
         if self
             .graph
             .entity(self.graph.binding(binding).entity)
@@ -859,47 +817,6 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         self.check_direct_member_access(binding, scope, location)
-    }
-
-    pub(super) fn scalar_destructor_binding(
-        &mut self,
-        class: EntityId,
-    ) -> Result<Option<BindingId>, Error> {
-        let void = self.graph.types.scalar(Scalar::Void)?;
-        let signature = self.graph.types.intern(
-            TypeKind::Function {
-                result: void,
-                parameters: Vec::new(),
-                variadic: false,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
-        Ok(self.graph.member_function(super::graph::MemberKey {
-            class,
-            kind: MemberKind::Destructor,
-            signature,
-            shape: None,
-        }))
-    }
-
-    pub(super) fn complete_scalar_destructor_exceptions(
-        &mut self,
-        class: EntityId,
-    ) -> Result<(), Error> {
-        let Some(binding) = self.scalar_destructor_binding(class)? else {
-            return Ok(());
-        };
-        let entity = self.graph.binding(binding).entity;
-        if self.graph.entity(entity).destructor_specification
-            == super::exceptions::DestructorSpecification::Implicit
-        {
-            self.require_scalar_destruction(class)?;
-            self.graph.entity_mut(entity).exceptions =
-                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
-        }
-        Ok(())
     }
 
     pub(super) fn written_constructor_plan(

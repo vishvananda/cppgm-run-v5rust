@@ -151,13 +151,13 @@ impl Analyzer<'_> {
         &mut self,
         class: super::graph::EntityId,
     ) -> Result<super::graph::BindingId, Error> {
+        self.prepare_destruction(class)?;
         if let Some(binding) = self
-            .scalar_destructor_binding(class)?
+            .destructor_callable(class)?
             .or(self.graph.entity(class).implicit_destructor)
         {
             return Ok(binding);
         }
-        self.require_scalar_destruction(class)?;
         let void = self.graph.types.scalar(Scalar::Void)?;
         let signature = self.graph.types.intern(
             TypeKind::Function {

@@ -121,6 +121,7 @@ pub(super) struct Symbols<'a, 'source> {
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
     rooted_destructors: std::collections::HashSet<EntityId>,
+    inert_destructors: HashMap<EntityId, bool>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -161,6 +162,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
             rooted_destructors: std::collections::HashSet::new(),
+            inert_destructors: HashMap::new(),
             signatures: HashMap::new(),
         }
     }
@@ -268,7 +270,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         Ok(())
     }
-    pub(super) fn storage_destructor(&mut self, mut ty: TypeId) -> Result<Option<EntityId>, Error> {
+    pub(super) fn storage_destructor(&mut self, ty: TypeId) -> Result<Option<EntityId>, Error> {
+        let destructor = self.class_destructor(ty)?;
+        if let Some(destructor) = destructor
+            && !self.graph.lower_function(destructor)?.nothrow
+        {
+            return Err(Error::Missing("throwing storage destructor cleanup"));
+        }
+        Ok(destructor)
+    }
+    pub(super) fn class_destructor(&mut self, mut ty: TypeId) -> Result<Option<EntityId>, Error> {
         while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
             ty = element;
         }
@@ -282,9 +293,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .graph
             .lower_destructor_entity(class)
             .ok_or(Error::Missing("implicit recursive destructor lowering"))?;
-        if !self.graph.lower_function(destructor)?.nothrow {
-            return Err(Error::Missing("throwing storage destructor cleanup"));
-        }
         Ok(Some(destructor))
     }
     pub(super) fn root_destructor(
@@ -315,7 +323,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let graph = self.graph;
         let mut properties = super::types::ClassStorage {
             changeable: false,
-            destruction: graph.lower_nontrivial_destructor(class),
+            destruction: graph.lower_nontrivial_destructor(class)?,
             value_zero: graph.lower_aggregate_class(class),
         };
         for base in graph.lower_class_bases(class) {
@@ -1610,7 +1618,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         output.stream(program, family)?;
         if let super::construction::Entry::Function(entity) = entry
-            && self.graph.lower_destructor_inert(entity, self.tree)?
+            && self.destructor_inert(entity)?
         {
             output.hold_last();
         }
@@ -1708,6 +1716,37 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )
             .map_err(Error::from)?;
         Ok(function)
+    }
+}
+
+impl Symbols<'_, '_> {
+    pub(super) fn destructor_inert(&mut self, entity: EntityId) -> Result<bool, Error> {
+        self.check_stack()?;
+        if let Some(&inert) = self.inert_destructors.get(&entity) {
+            return Ok(inert);
+        }
+        let graph = self.graph;
+        let mut inert = graph.lower_destructor_body_inert(entity, self.tree)?;
+        if inert && let Some(class) = graph.lower_function(entity)?.object {
+            for base in graph.lower_class_bases(class) {
+                if let Some(child) = graph.lower_destructor_entity(base) {
+                    inert &= self.destructor_inert(child)?;
+                }
+            }
+            for &member in graph.lower_class_member_entities(class) {
+                let mut ty = graph.lower_entity_type(member)?;
+                while let TypeView::Array { element, .. } = graph.lower_type(ty)? {
+                    ty = element;
+                }
+                if let TypeView::Class(child) = graph.lower_type(ty)?
+                    && let Some(child) = graph.lower_destructor_entity(child)
+                {
+                    inert &= self.destructor_inert(child)?;
+                }
+            }
+        }
+        self.inert_destructors.insert(entity, inert);
+        Ok(inert)
     }
 }
 

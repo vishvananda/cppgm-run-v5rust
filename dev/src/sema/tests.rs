@@ -3006,3 +3006,37 @@ fn operator_chains_retain_original_nodes_and_reference_results() {
         );
     }
 }
+
+#[test]
+fn recursive_destructor_properties_preserve_reference_and_demand_boundaries() {
+    let source = SourceBuffer::new(b"struct A { ~A() noexcept(false) {} }; struct B { A a; }; struct C { A &a; }; struct D { ~D()=delete; }; struct E { D d; };".to_vec()).unwrap();
+    let mut unit =
+        SyntaxUnit::new(Preprocessor::with_name(&source, b"destructor-properties").unwrap());
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let count = tree.expressions.mark();
+    let names: Vec<_> = [b"A", b"B", b"C", b"D", b"E"]
+        .into_iter()
+        .map(|name| cursor.intern_name(name).unwrap())
+        .collect();
+    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+    analyzer.set_lowering();
+    let graph = analyzer.analyze(declarations).unwrap();
+    assert_eq!(tree.expressions.mark(), count);
+    for (index, name) in names.into_iter().enumerate() {
+        let binding = graph
+            .declared_name(graph.global, name, Filter::Ordinary)
+            .unwrap();
+        let class = graph.binding(binding).ty.unwrap();
+        let TypeKind::Class(class) = graph.types.get(class).kind else {
+            panic!("class type")
+        };
+        let facts = graph.entity(class).destruction.unwrap();
+        assert_eq!(facts.trivial, matches!(index, 2..=4));
+        assert_eq!(facts.nothrow, index >= 2);
+        assert_eq!(facts.deleted, index >= 3);
+        // Merely completing a class does not demand an implicit definition.
+        assert!(graph.entity(class).implicit_destructor.is_none());
+    }
+    assert!(graph.root_demands.as_slice().is_empty());
+}

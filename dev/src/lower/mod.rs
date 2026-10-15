@@ -10,6 +10,7 @@ mod construction;
 mod conversions;
 mod data;
 mod definition_order;
+mod destruction;
 mod exception_helpers;
 mod expressions;
 mod field_updates;
@@ -143,6 +144,7 @@ pub(crate) fn lower_unit(
                     if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
                     {
                         let base = construction::Entry::DestructorBase(entity);
+                        emitted_entries.insert(base);
                         function::lower(
                             &mut output.program,
                             &mut symbols,
@@ -242,35 +244,30 @@ pub(crate) fn lower_unit(
         if !emitted_entries.insert(entry) {
             continue;
         }
-        if let construction::Entry::Function(entity) = entry {
-            if !emitted.insert(entity) {
+        let body = if let construction::Entry::Function(entity)
+        | construction::Entry::DestructorBase(entity) = entry
+        {
+            if matches!(entry, construction::Entry::Function(_)) && !emitted.insert(entity) {
                 continue;
             }
             let facts = graph.lower_function(entity)?;
-            let Some(declaration) = facts.definition else {
+            let declaration = facts.definition;
+            if declaration.is_none() && !graph.lower_implicit_destructor(entity) {
                 function::declare(&mut output.program, &mut symbols, graph, entry)?;
                 continue;
-            };
+            }
             if facts.emission == crate::sema::lowering::Emission::Demanded {
                 let symbol = symbols.entry_symbol(&mut output.program, entry)?;
                 if output.program.function_defined(symbol) {
                     continue;
                 }
             }
-            let body = match tree.declarations.get(declaration).kind {
-                ast::DeclKind::Function { body, .. } => Some(body),
-                ast::DeclKind::SpecialMember { .. } => graph.lower_function_body(entity),
+            match declaration.map(|id| &tree.declarations.get(id).kind) {
+                Some(ast::DeclKind::Function { body, .. }) => Some(*body),
+                Some(ast::DeclKind::SpecialMember { .. }) => graph.lower_function_body(entity),
+                None => None,
                 _ => return Err(Error::Missing("special function definition lowering")),
-            };
-            function::lower(
-                &mut output.program,
-                &mut symbols,
-                graph,
-                tree,
-                entry,
-                body,
-                budget,
-            )?;
+            }
         } else {
             let construction::Entry::Constructor(id, _) = entry else {
                 return Err(Error::Missing("entry kind"));
@@ -288,19 +285,19 @@ pub(crate) fn lower_unit(
             {
                 continue;
             }
-            let body = graph
+            graph
                 .lower_constructor_entity(id)
-                .and_then(|entity| graph.lower_function_body(entity));
-            function::lower(
-                &mut output.program,
-                &mut symbols,
-                graph,
-                tree,
-                entry,
-                body,
-                budget,
-            )?;
-        }
+                .and_then(|entity| graph.lower_function_body(entity))
+        };
+        function::lower(
+            &mut output.program,
+            &mut symbols,
+            graph,
+            tree,
+            entry,
+            body,
+            budget,
+        )?;
         symbols.stream_definition(&mut output.program, &mut output.definitions, entry)?;
         exception_helpers::emit_pending(
             &mut output.program,

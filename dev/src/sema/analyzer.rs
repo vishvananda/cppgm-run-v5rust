@@ -664,7 +664,12 @@ impl<'tree> Analyzer<'tree> {
             && let Some(key) = self.graph.entity(body.entity).member_function
             && key.kind == super::graph::MemberKind::Destructor
         {
-            self.require_scalar_destruction(key.class)?;
+            self.check_subobject_destruction(
+                key.class,
+                scope,
+                self.tree.statements.get(parsed.compound).location,
+            )?;
+            self.prepare_destruction(key.class)?;
         }
         if self.semantic()
             && self.template_depth == 0

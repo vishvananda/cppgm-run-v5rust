@@ -18,6 +18,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(self.builder.block_id(&name)?)
     }
     pub(super) fn place(&mut self, block: BlockId) -> Result<(), Error> {
+        if self.terminated {
+            self.place_destructor_terminates()?;
+        }
         self.builder.place_block(block)?;
         self.terminated = false;
         Ok(())

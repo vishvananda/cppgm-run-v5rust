@@ -1494,7 +1494,7 @@ impl Analyzer<'_> {
         self.finish_class_initializers(entity, node.location)?;
         if self.semantic() && self.template_depth == 0 {
             self.classify_class_copies(entity)?;
-            self.complete_scalar_destructor_exceptions(entity)?;
+            self.complete_destructor(entity)?;
         }
         if self.template_depth == 0 && self.graph.entity(entity).storage_attributes.alignment != 0 {
             self.class_layout(entity, node.location)?;

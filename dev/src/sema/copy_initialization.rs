@@ -181,7 +181,7 @@ impl Analyzer<'_> {
                 copy_assignment |= !moving;
             }
         }
-        let destructor = self.scalar_destructor_binding(class)?.is_some();
+        let destructor = self.destructor_callable(class)?.is_some();
         let ty = self
             .graph
             .entity(class)

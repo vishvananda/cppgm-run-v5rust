@@ -89,7 +89,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(None);
         };
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
-            && self.graph.lower_destructor_inert(destructor, self.tree)?
+            && self.symbols.destructor_inert(destructor)?
         {
             return Ok(None);
         }
@@ -145,7 +145,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn call_destructor(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
-        let Some(destructor) = self.symbols.storage_destructor(ty)? else {
+        let Some(destructor) = self.symbols.class_destructor(ty)? else {
             return Ok(());
         };
         self.symbols.demand(destructor);
@@ -159,7 +159,7 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
         }))
     }
-    fn destroy_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+    pub(super) fn destroy_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         self.check_stack()?;
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
             let size = types::layout(self.graph, element)?.0;
@@ -227,7 +227,7 @@ impl Function<'_, '_, '_, '_> {
             )?
             .value)
     }
-    fn destroy_array_loop(
+    pub(super) fn destroy_array_loop(
         &mut self,
         element: TypeId,
         base: Value,
@@ -385,6 +385,19 @@ impl Function<'_, '_, '_, '_> {
         value: Option<Value>,
         expression: bool,
     ) -> Result<(), Error> {
+        if self.destruction.cleanup.is_some() {
+            self.end_lifetime_expression(expression)?;
+            self.destroy_cleanups(0)?;
+            self.effect(I::Runtime(R::EhEnd))?;
+            let target = if let Some(target) = self.destruction.epilogue {
+                target
+            } else {
+                let target = self.new_block("destructor_return_epilogue")?;
+                self.destruction.epilogue = Some(target);
+                target
+            };
+            return self.jump(target);
+        }
         self.scan_lifetimes()?;
         let shared = self.lifetime.cleanups.last().is_some_and(|cleanup| {
             self.lifetime

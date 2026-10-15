@@ -918,14 +918,17 @@ impl Graph {
     pub(crate) fn lower_destructor_evaluation_only(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(match self.expression_facts.get(id)?.destructor {
             Some(super::expression_facts::DestructorTarget::Scalar) => true,
-            Some(super::expression_facts::DestructorTarget::Class(binding)) => matches!(
-                self.entity(self.binding(binding).entity).special_definition,
-                Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
-            ),
+            Some(super::expression_facts::DestructorTarget::Class(binding)) => {
+                let key = self
+                    .entity(self.binding(binding).entity)
+                    .member_function
+                    .ok_or(Error::Invariant("destructor without member key"))?;
+                self.destructor_trivial(key.class)?
+            }
             None => false,
         })
     }
-    pub(crate) fn lower_destructor_inert(
+    pub(crate) fn lower_destructor_body_inert(
         &self,
         entity: EntityId,
         tree: &ast::Tree,
@@ -1129,19 +1132,38 @@ impl Graph {
     pub(crate) fn lower_static_member(&self, entity: EntityId) -> bool {
         self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
     }
-    pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> bool {
-        self.entity(entity)
-            .declared_destructor
-            .is_some_and(|binding| {
-                !matches!(
-                    self.entity(self.binding(binding).entity).special_definition,
-                    Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
-                )
-            })
+    pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> Result<bool, Error> {
+        Ok(!self.destructor_trivial(entity)?)
     }
     pub(crate) fn lower_destructor_entity(&self, class: EntityId) -> Option<EntityId> {
-        self.entity(class)
-            .declared_destructor
+        self.destructor_binding(class)
             .map(|binding| self.binding(binding).entity)
+    }
+    pub(crate) fn lower_implicit_destructor(&self, entity: EntityId) -> bool {
+        self.entity(entity).member_function.is_some_and(|key| {
+            key.kind == super::graph::MemberKind::Destructor
+                && self
+                    .entity(key.class)
+                    .implicit_destructor
+                    .is_some_and(|binding| self.binding(binding).entity == entity)
+        })
+    }
+}
+
+impl Graph {
+    pub(crate) fn lower_destructor_bases(
+        &self,
+        class: EntityId,
+    ) -> impl DoubleEndedIterator<Item = Result<(EntityId, u64), Error>> + '_ {
+        self.entity(class).bases.iter().map(|base| {
+            Ok((
+                base.class,
+                base.offset
+                    .ok_or(Error::Invariant("destructor base without layout"))?,
+            ))
+        })
+    }
+    pub(crate) fn lower_union_class(&self, class: EntityId) -> bool {
+        self.entity(class).key == crate::lex::vocabulary::Keyword::Union
     }
 }

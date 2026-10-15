@@ -135,6 +135,8 @@ pub(super) struct Entity {
     pub declared_constructors: Vec<BindingId>,
     pub declared_destructor: Option<BindingId>,
     pub implicit_destructor: Option<BindingId>,
+    pub destruction: Option<super::destruction::Destruction>,
+    pub destruction_preparation: super::destruction::Preparation,
     pub declared_conversions: Vec<BindingId>,
     pub special_definition: Option<super::special_members::SpecialDefinition>,
     pub destructor_specification: super::exceptions::DestructorSpecification,
@@ -501,6 +503,8 @@ impl Graph {
             declared_constructors: Vec::new(),
             declared_destructor: None,
             implicit_destructor: None,
+            destruction: None,
+            destruction_preparation: super::destruction::Preparation::Pending,
             declared_conversions: Vec::new(),
             special_definition: None,
             destructor_specification: super::exceptions::DestructorSpecification::Explicit,
@@ -961,6 +965,7 @@ impl Graph {
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
         let entity = self.entity_mut(function);
         entity.defined = true;
+        entity.inline = super::specifiers::InlinePreference::Inline;
         entity.special_definition = Some(super::special_members::SpecialDefinition::Defaulted {
             first: true,
             body: None,

@@ -44,6 +44,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub folded_targets: Vec<crate::lowir::model::BlockId>,
     pub conditional_slot: Option<Value>,
     pub lifetime: super::lifetime::Lifetime,
+    pub destruction: super::destruction::Destruction,
     pub terminated: bool,
     pub result: Option<TypeId>,
     pub budget: StackBudget,
@@ -183,6 +184,15 @@ pub(super) fn lower<'a>(
             .unwrap_or(false)
             || if let super::construction::Entry::Constructor(id, _) = entry {
                 function.constructor_plan_throws(id)?
+            } else if matches!(
+                facts.name,
+                crate::sema::lowering::FunctionName::Destructor(_)
+            ) {
+                facts
+                    .object
+                    .map(|class| graph.lower_destructor_subobjects_throw(class))
+                    .transpose()?
+                    .unwrap_or(false)
             } else {
                 false
             };
@@ -228,12 +238,22 @@ pub(super) fn lower<'a>(
         });
         function.initialize_constructor(id, variant, location)?;
     }
+    let destructor = entity.filter(|_| {
+        matches!(
+            facts.name,
+            crate::sema::lowering::FunctionName::Destructor(_)
+        )
+    });
+    if let Some(entity) = destructor {
+        function.begin_destructor(entity)?;
+    }
     if let Some(body) = body {
         if body.handlers.is_some() {
             return Err(Error::Missing("exception lowering"));
         }
         function.statement(body.compound)?;
     }
+    function.finish_destructor()?;
     if !function.terminated {
         let ty = types::storage(graph, result)?;
         if ty != Type::Void
@@ -253,6 +273,7 @@ pub(super) fn lower<'a>(
         }
     }
     function.place_cleanup_chains(true)?;
+    function.place_destructor_terminates()?;
     function.place_function_guard()?;
     function.builder.finish()?;
     symbols.finish_entry(program, entry, symbol)?;
@@ -290,6 +311,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             folded_targets: Vec::new(),
             conditional_slot: None,
             lifetime: super::lifetime::Lifetime::default(),
+            destruction: super::destruction::Destruction::default(),
             terminated: false,
             result,
             budget,
@@ -642,6 +664,7 @@ pub(super) fn declare(
     if matches!(
         entry,
         super::construction::Entry::Constructor(_, super::construction::Variant::Base)
+            | super::construction::Entry::DestructorBase(_)
     ) {
         metadata.flags &= !4;
     }
