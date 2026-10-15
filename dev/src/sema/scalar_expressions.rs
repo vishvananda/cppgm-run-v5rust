@@ -222,6 +222,7 @@ impl Analyzer<'_> {
                 ));
             }
             ExprKind::New { .. } => self.allocation_expression(id, scope)?,
+            ExprKind::Delete { .. } => self.deletion_expression(id, scope)?,
             _ => return Err(Error::Missing("extended semantic expressions")),
         };
         // A constexpr initializer's printed cv type is applied by its declaration view,

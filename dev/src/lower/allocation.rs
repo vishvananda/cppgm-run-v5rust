@@ -3,19 +3,113 @@
 //! Allocation results own explicit storage, never an automatic object's cleanup.
 use super::{
     Error,
+    conversions::Context,
     function::{Function, RValue},
     types,
 };
 use crate::{
     lowir::{
-        model::{Call, InstructionKind as I, Value},
+        model::{Arguments, Call, InstructionKind as I, Value},
         vocabulary::{Compare, Convert, Type},
     },
-    sema::lowering::{AllocationView, CallTarget, ConstructorArguments, TypeView},
+    sema::lowering::{AllocationView, CallTarget, ConstructorArguments, EntityId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn deletion(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
+        let ExprKind::Delete { operand, .. } = self.tree.expressions.get(id).kind else {
+            return Err(crate::sema::Error::Invariant("deletion without syntax").into());
+        };
+        let use_ = self.graph.lower_deletion(id)?;
+        let source = self.graph.lower_expression(id)?.ty;
+        self.begin_storage_expression(true)?;
+        let object = self.operand(operand, Context::Operand)?;
+        let class =
+            !use_.incomplete && matches!(self.graph.lower_type(use_.target)?, TypeView::Class(_));
+        let end = if class {
+            let nonnull = self.new_block("delete_nonnull")?;
+            let end = self.new_block("delete_end")?;
+            let zero = self.builder.integer(0)?;
+            let test = self.emit(
+                I::Compare(Compare::Ne, Type::Ptr, object.value, zero),
+                source,
+            )?;
+            self.effect(I::Branch(test.value, nonnull, end))?;
+            self.place(nonnull)?;
+            Some(end)
+        } else {
+            None
+        };
+        let bytes = if use_.incomplete {
+            0
+        } else {
+            types::layout(self.graph, use_.target)?.0
+        };
+        if class && let Some(destructor) = self.symbols.class_destructor(use_.target)? {
+            let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;
+            let first = self.lifetime.cleanups.len();
+            if throws {
+                self.register_storage_cleanup(use_.target, object.value, use_.function, None)?;
+            }
+            self.begin_lifetime_call(throws)?;
+            self.before_lifetime_call(throws)?;
+            self.call_destructor(use_.target, object.value)?;
+            let none = self.zero(source)?;
+            self.finish_lifetime_call(none, throws)?;
+            if throws {
+                self.close_lifetime_region()?;
+                self.release_aggregate_members(first);
+            }
+        }
+        let size = self.builder.integer(u128::from(bytes))?;
+        self.deallocate_storage(use_.function, object.value, size, None, true)?;
+        if let Some(end) = end {
+            self.jump(end)?;
+            self.place(end)?;
+        }
+        self.zero(source)
+    }
+
+    pub(super) fn deallocate_storage(
+        &mut self,
+        function: EntityId,
+        storage: Value,
+        size: Value,
+        placement: Option<Arguments>,
+        may_throw: bool,
+    ) -> Result<(), Error> {
+        let facts = self.graph.lower_function(function)?;
+        let TypeView::Function {
+            parameters, result, ..
+        } = self.graph.lower_type(facts.ty)?
+        else {
+            return Err(crate::sema::Error::Invariant("deallocation signature").into());
+        };
+        let throws = may_throw && self.lifetime_call_throws(CallTarget::Direct(function))?;
+        let arguments = if let Some(arguments) = placement {
+            arguments
+        } else if parameters.len() == 2 {
+            self.builder.arguments(&[storage, size])?
+        } else {
+            self.builder.arguments(&[storage])?
+        };
+        self.symbols.demand(function);
+        let callee = self.symbols.callee(function, &mut self.builder)?;
+        // The frozen delete expression emits this call directly: unlike its
+        // destructor it does not begin/end a lifetime call around deallocation.
+        self.before_lifetime_call(throws)?;
+        let call = I::Call(Call {
+            result: Type::Void,
+            callee,
+            arguments,
+            signature: None,
+            copy_elision: false,
+        });
+        self.lifetime_result(call, result)?;
+        Ok(())
+    }
+
     pub(super) fn allocation(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let ExprKind::New {
             placement,
@@ -27,6 +121,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let use_ = self.graph.lower_allocation(id)?;
         let source = self.graph.lower_expression(id)?.ty;
+        self.begin_storage_expression(placement.is_some_and(|values| !values.is_empty()))?;
         let bytes = types::layout(self.graph, use_.target)?.0;
         let size = self.builder.integer(u128::from(bytes))?;
         let size = if bytes <= 0x7fff_ffff {
@@ -71,9 +166,12 @@ impl Function<'_, '_, '_, '_> {
             source,
         )?;
         let object = self.finish_lifetime_call(object, throws)?;
-        if use_.deallocator.is_some() && !use_.reserved && self.allocation_initializer_throws(id)? {
-            return Err(Error::Missing("allocation failure deallocation cleanup"));
-        }
+        let deallocator = use_.deallocator.filter(|_| !use_.reserved);
+        let deallocator = if self.allocation_initializer_throws(id)? {
+            deallocator
+        } else {
+            None
+        };
         let work = initializer.is_some()
             || use_
                 .constructor
@@ -92,15 +190,56 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
+        let opened = deallocator.is_some()
+            && self.lifetime.full_expression
+            && self.lifetime.region_start.is_pending()
+            && self.lifetime.temporary_segment.is_present()
+            && !self.lifetime.region
+            && !self.lifetime.tracking.active
+            && end.is_none();
+        if opened {
+            self.open_temporary_region_at(self.lifetime.expression_start)?;
+            self.close_lifetime_region()?;
+        }
+        let first = self.lifetime.cleanups.len();
+        if let Some(deallocator) = deallocator {
+            let placement = if written.is_empty() {
+                None
+            } else {
+                values[0] = object.value;
+                Some(self.builder.arguments(&values)?)
+            };
+            self.register_storage_cleanup(use_.target, object.value, deallocator, placement)?;
+        }
         let saved = self.reference_lifetimes.aggregate.take();
         let initialized = self.initialize_allocation(&use_, object.value, initializer);
         self.reference_lifetimes.aggregate = saved;
         initialized?;
+        if deallocator.is_some() {
+            self.close_lifetime_region()?;
+            self.release_aggregate_members(first);
+        }
         if let Some(end) = end {
             self.jump(end)?;
             self.place(end)?;
         }
+        if opened && !self.lifetime.region && self.lifetime.cleanups.len() > first {
+            self.open_storage_completion_region(first)?;
+        }
         Ok(object)
+    }
+
+    fn begin_storage_expression(&mut self, allow_empty_chain: bool) -> Result<(), Error> {
+        if self.lifetime.full_expression
+            && self.lifetime.temporary_segment.is_present()
+            && self.lifetime.region_start.is_pending()
+            && !self.lifetime.region
+            && !self.lifetime.tracking.active
+            && (allow_empty_chain || !self.lifetime.cleanups.is_empty())
+        {
+            self.open_temporary_region_at(self.lifetime.expression_start)?;
+        }
+        Ok(())
     }
 
     fn initialize_allocation(
@@ -164,7 +303,15 @@ impl Function<'_, '_, '_, '_> {
         let ExprKind::New { initializer, .. } = self.tree.expressions.get(id).kind else {
             return Err(crate::sema::Error::Invariant("allocation throw query").into());
         };
-        self.initializer_throws(initializer)
+        if self.initializer_throws(initializer)? {
+            return Ok(true);
+        }
+        if use_.constructor.is_none()
+            && let TypeView::Class(class) = self.graph.lower_type(use_.target)?
+        {
+            return self.omitted_aggregate_throws(class, 0);
+        }
+        Ok(false)
     }
 
     pub(super) fn allocated_constructor_work(

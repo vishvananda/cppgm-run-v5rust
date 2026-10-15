@@ -223,10 +223,20 @@ pub(super) struct ExpressionFacts {
     // them separate from the source's original type and argument conversion.
     class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
     allocations: std::collections::HashMap<ast::ExprId, super::allocation::Allocation>,
+    deletions: std::collections::HashMap<ast::ExprId, super::allocation::Deletion>,
     // The member access owns a bounded selected-call chain over its original base.
     arrow_calls: std::collections::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
 }
 impl ExpressionFacts {
+    pub(super) fn deletion(&self, id: ast::ExprId) -> Result<super::allocation::Deletion, Error> {
+        self.deletions
+            .get(&self.root(id))
+            .copied()
+            .ok_or(Error::Invariant("deletion without selected use"))
+    }
+    pub(super) fn set_deletion(&mut self, id: ast::ExprId, deletion: super::allocation::Deletion) {
+        self.deletions.insert(self.root(id), deletion);
+    }
     pub(super) fn arrow_calls(&self, base: ast::ExprId) -> &[super::arrow_calls::ArrowStep] {
         self.arrow_calls
             .get(&self.root(base))

@@ -3,7 +3,7 @@
 use super::{Error, function::Function, types};
 use crate::{
     lowir::{
-        model::{BlockId, Facts, InstructionKind as I, RuntimeInstruction as R, Value},
+        model::{Arguments, BlockId, Facts, InstructionKind as I, RuntimeInstruction as R, Value},
         vocabulary::Type,
     },
     sema::lowering::{EntityId, TypeId, TypeView},
@@ -30,13 +30,23 @@ pub(super) enum CleanupPlace {
     Subobject(Value),
     Extended(Value),
     Temporary(Value),
-    Counted { root: Value, counter: Value },
+    Counted {
+        root: Value,
+        counter: Value,
+    },
+    Deallocation {
+        storage: Value,
+        function: EntityId,
+        placement: Option<Arguments>,
+    },
 }
 impl Cleanup {
     pub(super) fn member(self) -> bool {
         matches!(
             self.place,
-            CleanupPlace::Subobject(_) | CleanupPlace::Counted { .. }
+            CleanupPlace::Subobject(_)
+                | CleanupPlace::Counted { .. }
+                | CleanupPlace::Deallocation { .. }
         )
     }
 }
@@ -126,6 +136,7 @@ pub(super) struct Lifetime {
     pub region: bool,
     pub region_start: RegionStart,
     pub region_depth: usize,
+    pub storage_split: Option<crate::lowir::builder::Position>,
     pub call_marks: Vec<CallMark>,
     pub declared_object: Option<Value>,
     pub guard_start: Option<crate::lowir::builder::Position>,
@@ -157,8 +168,44 @@ impl Lifetime {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn register_storage_cleanup(
+        &mut self,
+        ty: TypeId,
+        storage: Value,
+        function: EntityId,
+        placement: Option<Arguments>,
+    ) -> Result<(), Error> {
+        self.lifetime.cleanups.push(Cleanup {
+            place: CleanupPlace::Deallocation {
+                storage,
+                function,
+                placement,
+            },
+            ty,
+            variable: None,
+            unwind: None,
+            conditional: None,
+            shared_return: None,
+            lexical: None,
+            guard: None,
+            branched: false,
+            made_at: None,
+        });
+        let split = self.lifetime.region;
+        self.close_lifetime_region()?;
+        if split {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        } else {
+            self.lifetime.storage_split = Some(self.builder.position()?);
+        }
+        Ok(())
+    }
     pub(super) fn lifetime_has_pending_chains(&self) -> bool {
         !self.lifetime.pending.is_empty()
+    }
+    pub(super) fn defer_cleanup_chains(&mut self) {
+        self.lifetime.late.append(&mut self.lifetime.pending);
     }
     pub(super) fn automatic_destructor(
         &mut self,
@@ -461,7 +508,9 @@ impl Function<'_, '_, '_, '_> {
         below: Option<BlockId>,
         unwinding: bool,
     ) -> Result<(), Error> {
-        let terminate = unwinding && self.destructor_throws(cleanup.ty)?;
+        let terminate = unwinding
+            && !matches!(cleanup.place, CleanupPlace::Deallocation { .. })
+            && self.destructor_throws(cleanup.ty)?;
         let region = if terminate {
             Some(self.cleanup_unwind_guard()?)
         } else {
@@ -503,6 +552,16 @@ impl Function<'_, '_, '_, '_> {
             }
             CleanupPlace::Counted { root, counter } => {
                 self.destroy_counted_elements(cleanup.ty, root, counter)
+            }
+            CleanupPlace::Deallocation {
+                storage,
+                function,
+                placement,
+            } => {
+                let size = self
+                    .builder
+                    .integer(u128::from(types::layout(self.graph, cleanup.ty)?.0))?;
+                self.deallocate_storage(function, storage, size, placement, false)
             }
         };
         result?;

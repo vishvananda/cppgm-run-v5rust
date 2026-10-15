@@ -419,6 +419,7 @@ impl Function<'_, '_, '_, '_> {
                 ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. }
+                | ExprKind::Delete { operand, .. }
                 | ExprKind::Member { base: operand, .. } => work.push(operand),
                 ExprKind::FunctionalCast {
                     arguments, braced, ..

@@ -130,8 +130,16 @@ impl Function<'_, '_, '_, '_> {
                         }
                     }
                 }
-                ExprKind::Delete { .. } => {
-                    return Err(Error::Missing("allocation exception lowering"));
+                ExprKind::Delete { operand, .. } => {
+                    let use_ = self.graph.lower_deletion(id)?;
+                    if let TypeView::Class(class) = self.graph.lower_type(use_.target)?
+                        && let Some(destructor) = self.graph.lower_destructor_entity(class)
+                        && self.graph.lower_nontrivial_destructor(class)?
+                        && self.lifetime_call_throws(CallTarget::Direct(destructor))?
+                    {
+                        return Ok(true);
+                    }
+                    work.push(operand);
                 }
                 ExprKind::Binary { left, right, .. } => {
                     work.push(right);

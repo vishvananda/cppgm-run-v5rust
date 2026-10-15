@@ -185,7 +185,12 @@ impl Function<'_, '_, '_, '_> {
                     "converted reference without constructor",
                 ))?;
         let destroyed = self.symbols.storage_destructor(ty)?.is_some();
-        if destroyed && !persistent && self.lifetime.full_expression && !self.lifetime.region {
+        if destroyed
+            && !persistent
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && !self.storage_region_pending()
+        {
             let start = matches!(context, super::conversions::Context::Initialization)
                 .then_some(self.lifetime.expression_start)
                 .flatten();
@@ -201,6 +206,7 @@ impl Function<'_, '_, '_, '_> {
             },
         )?;
         let object = self.emit(I::Addr(slot), ty)?.value;
+        self.storage_region_event()?;
         self.call_converting_constructor(source, constructor, object, arguments)?;
         if persistent {
             self.persistent_alive(ty, slot)?;
@@ -215,7 +221,11 @@ impl Function<'_, '_, '_, '_> {
         };
         let direct = self.graph.lower_direct_class_parameter(class)?;
         let destroyed = self.symbols.storage_destructor(ty)?.is_some();
-        if destroyed && self.lifetime.full_expression && !self.lifetime.region {
+        if destroyed
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && !self.storage_region_pending()
+        {
             self.open_temporary_region()?;
         }
         let slot = self.generated_slot(
@@ -223,6 +233,7 @@ impl Function<'_, '_, '_, '_> {
             types::storage(self.graph, ty)?,
         )?;
         let object = self.emit(I::Addr(slot), ty)?.value;
+        self.storage_region_event()?;
         let source = self.without_parentheses(id);
         let functional = matches!(
             self.tree.expressions.get(source).kind,
@@ -343,7 +354,7 @@ impl Function<'_, '_, '_, '_> {
                 .call_marks
                 .iter()
                 .any(|mark| !mark.declared && self.builder.same_block(mark.position));
-        if opens && !deferred_region {
+        if opens && !deferred_region && !self.storage_region_pending() {
             let position =
                 if !self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {
                     Some(self.builder.position()?)
@@ -363,6 +374,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let slot = self.temporary_storage(ty, persistent, use_.stem())?;
         let object = self.emit(I::Addr(slot), ty)?.value;
+        self.storage_region_event()?;
         if deferred_region {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;

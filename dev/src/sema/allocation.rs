@@ -28,6 +28,13 @@ pub(super) struct Allocation {
     pub reserved: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct Deletion {
+    pub function: BindingId,
+    pub target: TypeId,
+    pub incomplete: bool,
+}
+
 fn key(keyword: Keyword) -> ValueKey {
     ValueKey::Special(SpecialName::Operator {
         token: SimpleToken::keyword(keyword),
@@ -36,6 +43,203 @@ fn key(keyword: Keyword) -> ValueKey {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn allocation_may_throw(
+        &mut self,
+        id: ast::ExprId,
+        next: u16,
+    ) -> Result<bool, Error> {
+        let ast::ExprKind::New {
+            placement,
+            initializer,
+            ..
+        } = self.tree.expressions.get(id).kind
+        else {
+            return Err(Error::Invariant("allocation throw query without syntax"));
+        };
+        let use_ = self.graph.expression_facts.allocation(id)?;
+        if self.function_may_throw(self.graph.binding(use_.function).entity)? {
+            return Ok(true);
+        }
+        if let Some((constructor, _)) = use_.constructor {
+            let plan = self.graph.constructors.get(constructor);
+            let throws = if let Some(binding) = plan.binding {
+                self.function_may_throw(self.graph.binding(binding).entity)?
+            } else {
+                !plan.nothrow
+            };
+            if throws {
+                return Ok(true);
+            }
+        }
+        self.throw_work.extend(
+            self.tree
+                .expr_lists
+                .get(placement.unwrap_or_default())
+                .iter()
+                .rev()
+                .map(|&id| (id, next)),
+        );
+        if let Some(initializer) = initializer {
+            match initializer.kind {
+                ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                    self.throw_work.push((id, next));
+                }
+                ast::InitializerKind::Parenthesized(args) => self.throw_work.extend(
+                    self.tree
+                        .expr_lists
+                        .get(args)
+                        .iter()
+                        .rev()
+                        .map(|&id| (id, next)),
+                ),
+                _ => (),
+            }
+        }
+        Ok(false)
+    }
+
+    pub(super) fn deletion_may_throw(&mut self, id: ast::ExprId) -> Result<bool, Error> {
+        let use_ = self.graph.expression_facts.deletion(id)?;
+        if self.function_may_throw(self.graph.binding(use_.function).entity)? {
+            return Ok(true);
+        }
+        if let Some(class) = self.graph.class_of(use_.target)
+            && let Some(binding) = self.graph.destructor_binding(class)
+        {
+            return self.function_may_throw(self.graph.binding(binding).entity);
+        }
+        Ok(false)
+    }
+
+    pub(super) fn deletion_expression(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let node = self.tree.expressions.get(id);
+        let ast::ExprKind::Delete {
+            global,
+            array,
+            operand,
+        } = node.kind
+        else {
+            return Err(Error::Invariant("deletion without delete syntax"));
+        };
+        let location = node.location;
+        if array {
+            return Err(Error::Missing("array deletion expressions"));
+        }
+        let facts = self.typed_expression(operand, scope)?;
+        self.check_resolved_function(operand)?;
+        if self.graph.class_of(facts.ty).is_some() {
+            return Err(Error::Missing("delete operand conversion function"));
+        }
+        let pointer = self.decayed_type(facts.ty)?;
+        let target = match self.graph.types.get(pointer).kind {
+            TypeKind::Pointer(target)
+                if !matches!(
+                    self.graph.types.get(target).kind,
+                    TypeKind::Function { .. } | TypeKind::Scalar(Scalar::Void)
+                ) =>
+            {
+                target
+            }
+            _ => {
+                return Err(Error::at(
+                    location,
+                    "a delete-expression's operand is not a pointer to an object",
+                ));
+            }
+        };
+        self.convert_operand_scalar(operand, pointer, false)?;
+        let class = self.graph.class_of(target);
+        let incomplete = class.is_some_and(|class| !self.graph.entity(class).complete);
+        let class = class.filter(|_| !incomplete);
+        if let Some(class) = class {
+            self.class_parameter_destruction(target, scope, location)?;
+            if !self.graph.destructor_trivial(class)?
+                && let Some(binding) = self.destructor_callable(class)?
+            {
+                self.demand_function(binding, true);
+            }
+        }
+        self.lookup_location = location;
+        let (found, naming) = self.allocation_lookup(global, class, Keyword::Delete)?;
+        if !found
+            .binding
+            .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
+        {
+            return Err(Error::at(
+                location,
+                "no deallocation function for the delete-expression",
+            ));
+        }
+        let function = self
+            .usual_deallocation(found.functions.as_slice())?
+            .ok_or(Error::at(
+                location,
+                "no usual deallocation function for the delete-expression",
+            ))?;
+        if self
+            .graph
+            .entity(self.graph.binding(function).entity)
+            .availability
+            == FunctionAvailability::Deleted
+        {
+            return Err(Error::at(location, "use of a deleted function"));
+        }
+        if let Some(naming) = naming {
+            self.check_named_member_access(function, naming, naming, scope, location)?;
+        }
+        self.demand_function(function, true);
+        if !incomplete && self.unevaluated == 0 {
+            self.request_object_layout(target, location);
+        }
+        self.graph.expression_facts.set_deletion(
+            id,
+            Deletion {
+                function,
+                target,
+                incomplete,
+            },
+        );
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        self.new_expression_facts(void, ValueCategory::Prvalue)
+    }
+
+    fn usual_deallocation(&mut self, functions: &[BindingId]) -> Result<Option<BindingId>, Error> {
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        let pointer = self.graph.types.pointer(void)?;
+        let size = self
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))?;
+        // 3.7.4.2p2, 12.5p4: prefer the one-parameter function, then a
+        // class member whose second parameter is std::size_t. Variadicness
+        // is deliberately not a filter in the frozen usual-deallocation owner.
+        for pass in 0..2 {
+            for &binding in functions {
+                let function = self.graph.entity(self.graph.binding(binding).entity);
+                let ty = function
+                    .ty
+                    .ok_or(Error::Invariant("deallocation without type"))?;
+                let TypeKind::Function { parameters, .. } = &self.graph.types.get(ty).kind else {
+                    return Err(Error::Invariant("deallocation function type"));
+                };
+                if parameters.len() == pass + 1
+                    && parameters[0] == pointer
+                    && (pass == 0
+                        || function.home.is_some_and(|home| {
+                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                        }) && parameters[1] == size)
+                {
+                    return Ok(Some(binding));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) fn allocation_expression(
         &mut self,
         id: ast::ExprId,
@@ -151,6 +355,15 @@ impl Analyzer<'_> {
         } else {
             None
         };
+        if constructor.is_none()
+            && self.unevaluated == 0
+            && let Some(class) = class
+        {
+            // The aggregate initializer consumes destruction properties for
+            // completed subobjects. Preparing their callable identities does
+            // not require access to the allocated complete object's destructor.
+            self.prepare_destruction(class)?;
+        }
         let reserved = self.reserved_placement(function)?;
         if self.unevaluated == 0 {
             self.request_object_layout(target, location);
@@ -216,61 +429,11 @@ impl Analyzer<'_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<Option<BindingId>, Error> {
         let (found, naming) = self.allocation_lookup(global, class, Keyword::Delete)?;
-        let wanted = self
-            .graph
-            .binding(allocation)
-            .ty
-            .ok_or(Error::Invariant("allocation signature"))?;
-        let void = self.graph.types.scalar(Scalar::Void)?;
-        let pointer = self.graph.types.pointer(void)?;
-        let size = self
-            .graph
-            .types
-            .scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))?;
-        let mut selected = None;
-        for pass in 0..if placement { 1 } else { 2 } {
-            for &candidate in found.functions.as_slice() {
-                let ty = self
-                    .graph
-                    .binding(candidate)
-                    .ty
-                    .ok_or(Error::Invariant("deallocation signature"))?;
-                let TypeKind::Function {
-                    parameters,
-                    variadic,
-                    ..
-                } = &self.graph.types.get(ty).kind
-                else {
-                    return Err(Error::Invariant("deallocation function type"));
-                };
-                let same = !variadic
-                    && parameters.first() == Some(&pointer)
-                    && if placement {
-                        let TypeKind::Function {
-                            parameters: wanted,
-                            variadic,
-                            ..
-                        } = &self.graph.types.get(wanted).kind
-                        else {
-                            return Err(Error::Invariant("allocation function type"));
-                        };
-                        !variadic
-                            && parameters.len() > 1
-                            && parameters.len() == wanted.len()
-                            && parameters[1..] == wanted[1..]
-                    } else {
-                        parameters.len() == pass + 1
-                            && (pass == 0 || naming.is_some() && parameters[1] == size)
-                    };
-                if same {
-                    selected = Some(candidate);
-                    break;
-                }
-            }
-            if selected.is_some() {
-                break;
-            }
-        }
+        let selected = if placement {
+            self.placement_deallocation(found.functions.as_slice(), allocation)?
+        } else {
+            self.usual_deallocation(found.functions.as_slice())?
+        };
         if let Some(binding) = selected
             && class.is_some()
         {
@@ -280,6 +443,61 @@ impl Analyzer<'_> {
             self.demand_function(binding, true);
         }
         Ok(selected)
+    }
+
+    fn placement_deallocation(
+        &mut self,
+        functions: &[BindingId],
+        allocation: BindingId,
+    ) -> Result<Option<BindingId>, Error> {
+        let wanted = self
+            .graph
+            .binding(allocation)
+            .ty
+            .ok_or(Error::Invariant("allocation signature"))?;
+        let TypeKind::Function {
+            parameters: wanted,
+            variadic: wanted_variadic,
+            ..
+        } = &self.graph.types.get(wanted).kind
+        else {
+            return Err(Error::Invariant("allocation function type"));
+        };
+        if *wanted_variadic {
+            return Ok(None);
+        }
+        for &candidate in functions {
+            let ty = self
+                .graph
+                .binding(candidate)
+                .ty
+                .ok_or(Error::Invariant("deallocation signature"))?;
+            let TypeKind::Function {
+                parameters,
+                variadic,
+                ..
+            } = &self.graph.types.get(ty).kind
+            else {
+                return Err(Error::Invariant("deallocation function type"));
+            };
+            if *variadic
+                || parameters.len() <= 1
+                || parameters.len() != wanted.len()
+                || parameters[1..] != wanted[1..]
+            {
+                continue;
+            }
+            if let TypeKind::Pointer(element) = self.graph.types.get(parameters[0]).kind
+                && matches!(
+                    self.graph.types.get(element).kind,
+                    TypeKind::Scalar(Scalar::Void)
+                )
+                && self.graph.types.get(element).cv.0 == 0
+            {
+                return Ok(Some(candidate));
+            }
+        }
+        Ok(None)
     }
 
     fn reserved_placement(&self, binding: BindingId) -> Result<bool, Error> {
@@ -305,6 +523,80 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn deletion_retains_selected_functions_and_original_pointer_ownership() {
+        let source = SourceBuffer::new(
+            b"struct A{~A();static void operator delete(void*,unsigned long) noexcept;};\
+              struct I;struct Unused{~Unused();};\
+              void f(const A*p,I*q){delete ((p));::delete p;delete q;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"deletion-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let expressions = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declaration_count);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[3])
+            .kind
+        else {
+            panic!("function syntax");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed function");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("function compound");
+        };
+        let mut selected = Vec::new();
+        for (index, &statement) in tree.stmt_lists.get(statements).iter().enumerate() {
+            let ast::StmtKind::Expression(Some(id)) = tree.statements.get(statement).kind else {
+                panic!("delete statement");
+            };
+            let use_ = graph.expression_facts.deletion(id).unwrap();
+            assert_eq!(use_.incomplete, index == 2);
+            let view = graph.lower_deletion(id).unwrap();
+            assert_eq!(view.function, graph.binding(use_.function).entity);
+            let count = graph
+                .types
+                .function_parameter_count(graph.binding(use_.function).ty.unwrap())
+                .unwrap();
+            assert_eq!(count, if index == 0 { 2 } else { 1 });
+            let ast::ExprKind::Delete { operand, .. } = tree.expressions.get(id).kind else {
+                panic!("delete operand");
+            };
+            let facts = graph.expression_facts.get(operand).unwrap();
+            assert_eq!(facts.category, ValueCategory::Lvalue);
+            assert!(!facts.conversion.unwrap().initialization);
+            assert!(
+                matches!(graph.types.get(facts.ty).kind, TypeKind::Pointer(target) if target == use_.target)
+            );
+            if index == 0 {
+                assert_ne!(operand, graph.expression_facts.root(operand));
+            }
+            selected.push(view.function);
+        }
+        assert_ne!(selected[0], selected[1]);
+        assert_eq!(selected[1], selected[2]);
+        let unused = graph
+            .binding(graph.own(graph.global, unused, Filter::Elaborated).unwrap())
+            .entity;
+        assert!(graph.entity(unused).implicit_destructor.is_none());
+        assert!(
+            graph.entity(unused).destruction_preparation
+                == super::super::destruction::Preparation::Pending
+        );
+    }
 
     #[test]
     fn allocation_uses_original_operands_and_demands_its_storage_layout() {

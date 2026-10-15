@@ -14,6 +14,29 @@ use crate::{
     sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn storage_region_pending(&self) -> bool {
+        self.lifetime.full_expression
+            && !self.lifetime.region
+            && self
+                .lifetime
+                .storage_split
+                .is_some_and(|position| self.builder.same_block(position))
+    }
+    pub(super) fn storage_region_event(&mut self) -> Result<(), Error> {
+        if self.storage_region_pending() {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        Ok(())
+    }
+    pub(super) fn open_storage_completion_region(&mut self, first: usize) -> Result<(), Error> {
+        let entry = self.cleanup_prefix(true, first)?;
+        self.effect(I::Runtime(R::EhTry(entry)))?;
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
+        self.lifetime.region = true;
+        self.lifetime.region_depth = first;
+        Ok(())
+    }
     pub(super) fn temporary_alive(
         &mut self,
         ty: TypeId,
@@ -174,6 +197,7 @@ impl Function<'_, '_, '_, '_> {
         if self.element_temporaries.depth != 0 {
             return Ok(());
         }
+        self.storage_region_event()?;
         if throws
             && self.lifetime.full_expression
             && self.lifetime.temporary_segment.is_eager()
@@ -313,6 +337,25 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.region = false;
         self.effect(I::Runtime(R::EhEnd))?;
+        // An allocated aggregate's omitted class member has its own value
+        // initialization segment. Its handlers wait for the function's final
+        // placement instead of adding a continuation between member stores.
+        if self.aggregation.call_scope == super::aggregate_cleanup::CallScope::OmittedValue
+            && self
+                .aggregation
+                .floor
+                .and_then(|floor| floor.checked_sub(1))
+                .and_then(|index| self.lifetime.cleanups.get(index))
+                .is_some_and(|cleanup| {
+                    matches!(
+                        cleanup.place,
+                        super::lifetime::CleanupPlace::Deallocation { .. }
+                    )
+                })
+        {
+            self.defer_cleanup_chains();
+            return Ok(());
+        }
         if self.lifetime_has_pending_chains() {
             let next = self.new_block("call_unwind_end")?;
             self.jump(next)?;
@@ -350,6 +393,7 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.full_expression = false;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Empty;
             self.lifetime.expression_start = None;
+            self.lifetime.storage_split = None;
         }
         Ok(())
     }

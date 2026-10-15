@@ -39,6 +39,11 @@ pub(crate) struct AllocationView {
     pub deallocator: Option<EntityId>,
     pub reserved: bool,
 }
+pub(crate) struct DeletionView {
+    pub function: EntityId,
+    pub target: TypeId,
+    pub incomplete: bool,
+}
 pub(crate) struct VariableFacts {
     pub name: Option<NameId>,
     pub home: ScopeId,
@@ -215,6 +220,14 @@ impl Graph {
             constructor: use_.constructor,
             deallocator: use_.deallocator.map(|binding| self.binding(binding).entity),
             reserved: use_.reserved,
+        })
+    }
+    pub(crate) fn lower_deletion(&self, id: ast::ExprId) -> Result<DeletionView, Error> {
+        let use_ = self.expression_facts.deletion(id)?;
+        Ok(DeletionView {
+            function: self.binding(use_.function).entity,
+            target: use_.target,
+            incomplete: use_.incomplete,
         })
     }
     pub(crate) fn lower_base_initialization_span(
