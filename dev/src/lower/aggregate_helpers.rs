@@ -92,8 +92,11 @@ impl Function<'_, '_, '_, '_> {
         class: EntityId,
         bound: u64,
         list: &[ast::ExprId],
-        owner: EntityId,
+        owner: Option<EntityId>,
     ) -> Result<bool, Error> {
+        if !self.graph.lower_aggregate_class(class) {
+            return Ok(false);
+        }
         let (members, union) = self.graph.lower_class_members(class)?;
         if union || members.is_empty() {
             return Ok(false);
@@ -110,7 +113,9 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(false);
             }
         }
-        if self.initializer_mentions(list, owner)? {
+        if let Some(owner) = owner
+            && self.initializer_mentions(list, owner)?
+        {
             return Ok(false);
         }
         let mut next = 0;
@@ -127,6 +132,14 @@ impl Function<'_, '_, '_, '_> {
                 };
                 any_full |= full;
             } else {
+                if let Some(item) = item
+                    && matches!(
+                        self.graph.lower_type(self.graph.lower_expression(item)?.ty)?,
+                        TypeView::Class(source) if source == class
+                    )
+                {
+                    return Ok(false);
+                }
                 let Some(full) = self.helper_members(members, item.map(|_| list), &mut next)?
                 else {
                     return Ok(false);

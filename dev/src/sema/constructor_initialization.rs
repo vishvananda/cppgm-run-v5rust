@@ -6,7 +6,7 @@ use super::{
     analyzer::Analyzer,
     construction::ConstructorId,
     expression_facts::{ExprFacts, ValueCategory},
-    graph::{EntityId, ScopeId},
+    graph::{BindingId, EntityId, ScopeId},
     procedural_calls::Candidates,
     specifiers::Explicitness,
     types::{TypeId, TypeKind},
@@ -34,6 +34,7 @@ pub(super) struct ClassInput {
     pub converting: bool,
     pub copy_list: bool,
     pub context: ClassContext,
+    pub selected: Option<BindingId>,
 }
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
@@ -109,6 +110,7 @@ impl Analyzer<'_> {
                 converting,
                 copy_list,
                 context: ClassContext::Object,
+                selected: None,
             },
             scope,
             location,
@@ -130,6 +132,7 @@ impl Analyzer<'_> {
             converting,
             copy_list,
             context,
+            selected,
         } = input;
         let tree = self.tree;
         let single;
@@ -237,17 +240,21 @@ impl Analyzer<'_> {
             ));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
-        let chosen = self.resolve_call(
-            location,
-            if context == ClassContext::AggregateMember {
-                Candidates::ConvertingMember(class)
-            } else {
-                Candidates::Constructors { class, converting }
-            },
-            args,
-            None,
-            &mut scratch,
-        );
+        let chosen = if let Some(binding) = selected {
+            self.prepare_selected_call(binding, args, &mut scratch)
+        } else {
+            self.resolve_call(
+                location,
+                if context == ClassContext::AggregateMember {
+                    Candidates::ConvertingMember(class)
+                } else {
+                    Candidates::Constructors { class, converting }
+                },
+                args,
+                None,
+                &mut scratch,
+            )
+        };
         let chosen = chosen.and_then(|selected| {
             let function = self.graph.binding(selected.binding).entity;
             if copy_list && self.graph.entity(function).explicitness == Explicitness::Explicit {
@@ -325,7 +332,7 @@ impl Analyzer<'_> {
         Ok(Some((constructor, arguments)))
     }
 
-    fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {
+    pub(super) fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {
         if self.graph.entity(class).user_constructor.is_none() {
             return Ok(true);
         }

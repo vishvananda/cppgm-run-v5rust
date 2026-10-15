@@ -131,11 +131,25 @@ impl Analyzer<'_> {
             Ok(target)
         }
     }
+    pub(super) fn initialize_ranked_list_argument(
+        &mut self,
+        id: ast::ExprId,
+        sequence: super::procedural_calls::ArgumentSequence,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        self.initialize_list_argument(
+            id,
+            sequence.conversion.target,
+            scope,
+            sequence.user_constructor,
+        )
+    }
     pub(super) fn initialize_list_argument(
         &mut self,
         id: ast::ExprId,
         parameter: TypeId,
         scope: ScopeId,
+        selected: Option<super::procedural_calls::ConversionConstructor>,
     ) -> Result<(), Error> {
         // A parameter default's list denotes the temporary object, rather
         // than binding a reference directly to its single source element.
@@ -153,6 +167,28 @@ impl Analyzer<'_> {
         };
         if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
             self.array_braced_list(id, target, scope)?;
+        } else if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
+            && let Some(super::procedural_calls::ConversionConstructor::Declared(binding)) =
+                selected
+        {
+            let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+                return Err(Error::Invariant("ranked class list without list"));
+            };
+            self.initialize_class_arguments(
+                target,
+                super::constructor_initialization::ClassInput {
+                    arguments: super::constructor_initialization::ConstructorArguments::Values(
+                        elements,
+                    ),
+                    list: Some(id),
+                    converting: false,
+                    copy_list: true,
+                    context: super::constructor_initialization::ClassContext::Object,
+                    selected: Some(binding),
+                },
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
         } else {
             let object = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
                 target
@@ -162,6 +198,12 @@ impl Analyzer<'_> {
             self.list_initialize(id, object, scope)?;
         }
         let mut facts = self.graph.expression_facts.get(id)?;
+        if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
+            // The list's reference temporary retains its target class cv,
+            // unlike a standalone aggregate or functional-cast prvalue.
+            facts.ty = target;
+            super::record(&mut self.graph.expression_types, id.index(), target);
+        }
         facts.category = V::Prvalue;
         self.graph.expression_facts.set(id, facts);
         Ok(())
@@ -357,6 +399,7 @@ impl Analyzer<'_> {
                 let selected = self.initialize_class_arguments(
                     target,
                     super::constructor_initialization::ClassInput {
+                        selected: None,
                         arguments: super::constructor_initialization::ConstructorArguments::Single(
                             id,
                         ),

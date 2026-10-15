@@ -343,7 +343,7 @@ impl Analyzer<'_> {
         result
     }
 
-    fn default_constructor_binding(
+    pub(super) fn default_constructor_binding(
         &self,
         class: EntityId,
         location: SourceOffset,

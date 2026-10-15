@@ -74,14 +74,25 @@ impl Function<'_, '_, '_, '_> {
             self.open_temporary_region()?;
         }
         let address = self.emit(I::Addr(slot), ty)?.value;
-        let mut element = ty;
-        while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
-            element = inner;
-        }
-        if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
-            self.aggregate_array(ty, address, self.tree.expr_lists.get(list))?;
+        let helper = if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
+            && let TypeView::Class(class) = self.graph.lower_type(element)?
+            && self.array_helper_eligible(class, bound, self.tree.expr_lists.get(list), None)?
+        {
+            self.aggregate_array_helpers(class, bound, address, self.tree.expr_lists.get(list))?;
+            true
         } else {
-            self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+            false
+        };
+        if !helper {
+            let mut element = ty;
+            while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
+                element = inner;
+            }
+            if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
+                self.aggregate_array(ty, address, self.tree.expr_lists.get(list))?;
+            } else {
+                self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+            }
         }
         if destructor.is_some()
             && let Some(owner) = owner
@@ -175,7 +186,7 @@ impl Function<'_, '_, '_, '_> {
                 return Err(Error::Missing("class array non-list initialization"));
             };
             let list = self.tree.expr_lists.get(elements);
-            if self.array_helper_eligible(class, bound, list, entity)? {
+            if self.array_helper_eligible(class, bound, list, Some(entity))? {
                 return self.aggregate_array_helpers(class, bound, base, list);
             }
             return self.aggregate_array(ty, base, list);

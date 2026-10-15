@@ -71,7 +71,12 @@ pub(super) struct ArgumentSequence {
     // actual unary shape cannot bind that target. Diagnose only after selection.
     pub(super) application: Option<Conversion>,
     pub(super) function: Option<BindingId>,
-    pub(super) user_constructor: Option<BindingId>,
+    pub(super) user_constructor: Option<ConversionConstructor>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConversionConstructor {
+    Declared(BindingId),
+    Implicit(super::graph::EntityId),
 }
 impl Analyzer<'_> {
     pub(super) fn procedural_call(
@@ -464,7 +469,7 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(argument).kind,
                     ast::ExprKind::Braced { .. }
                 ) {
-                    self.initialize_list_argument(argument, target, scope)?;
+                    self.initialize_list_argument(argument, target, scope, None)?;
                     continue;
                 }
                 self.class_parameter_destruction(
@@ -518,14 +523,7 @@ impl Analyzer<'_> {
             self.tree.expressions.get(id).kind,
             ast::ExprKind::Braced { .. }
         ) {
-            return Ok(self
-                .list_sequence(id, target)?
-                .map(|conversion| ArgumentSequence {
-                    conversion,
-                    application: Some(conversion),
-                    function: None,
-                    user_constructor: None,
-                }));
+            return self.list_sequence(id, target);
         }
         let mut facts = self.graph.expression_facts.get(id)?;
         if facts.object.is_some()
@@ -664,6 +662,21 @@ impl Analyzer<'_> {
         object: Option<super::expression_facts::ObjectArgument>,
         scratch: &mut CallScratch,
     ) -> Result<CallSelection, Error> {
+        self.rank_call(set, args, object, scratch)?;
+        if matches!(set, Candidates::ConvertingMember(_)) {
+            return self
+                .unique_call(args.len(), usize::from(object.is_some()), scratch)?
+                .ok_or_else(|| Error::at(location, "no conversion to the member's class"));
+        }
+        self.select_call(location, args.len(), usize::from(object.is_some()), scratch)
+    }
+    pub(super) fn rank_call(
+        &mut self,
+        set: Candidates,
+        args: &[ast::ExprId],
+        object: Option<super::expression_facts::ObjectArgument>,
+        scratch: &mut CallScratch,
+    ) -> Result<(), Error> {
         scratch.candidates.clear();
         scratch.sequences.clear();
         for index in 0..set.bindings(&self.graph).len() {
@@ -747,12 +760,7 @@ impl Analyzer<'_> {
                 scratch.sequences.truncate(first);
             }
         }
-        if matches!(set, Candidates::ConvertingMember(_)) {
-            return self
-                .unique_call(args.len(), usize::from(object.is_some()), scratch)?
-                .ok_or_else(|| Error::at(location, "no conversion to the member's class"));
-        }
-        self.select_call(location, args.len(), usize::from(object.is_some()), scratch)
+        Ok(())
     }
     pub(super) fn select_call(
         &mut self,
@@ -767,7 +775,37 @@ impl Analyzer<'_> {
         self.unique_call(count, object_count, scratch)?
             .ok_or_else(|| Error::at(location, "ambiguous call to overloaded function"))
     }
-    fn unique_call(
+    pub(super) fn prepare_selected_call(
+        &mut self,
+        binding: BindingId,
+        args: &[ast::ExprId],
+        scratch: &mut CallScratch,
+    ) -> Result<CallSelection, Error> {
+        scratch.clear();
+        let ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("selected callable without type"))?;
+        let count = self.graph.types.function_parameter_count(ty)?;
+        for (index, &arg) in args.iter().enumerate() {
+            scratch.sequences.push(if index < count {
+                let target = self.graph.types.function_parameter(ty, index)?;
+                Some(
+                    self.argument_sequence(arg, target)?
+                        .ok_or(Error::Invariant("selected callable lost argument sequence"))?,
+                )
+            } else {
+                None
+            });
+        }
+        Ok(CallSelection {
+            binding,
+            first: 0,
+            object_count: 0,
+        })
+    }
+    pub(super) fn unique_call(
         &mut self,
         count: usize,
         object_count: usize,
@@ -893,7 +931,12 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(arg).kind,
                     ast::ExprKind::Braced { .. }
                 ) {
-                    self.initialize_list_argument(arg, sequence.conversion.target, scope)?;
+                    self.class_parameter_destruction(
+                        sequence.conversion.target,
+                        scope,
+                        self.tree.expressions.get(arg).location,
+                    )?;
+                    self.initialize_ranked_list_argument(arg, sequence, scope)?;
                     continue;
                 }
                 if self.apply_constructor_sequence(

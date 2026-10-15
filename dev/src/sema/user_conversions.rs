@@ -9,7 +9,7 @@ use super::{
         ValueConversion,
     },
     graph::{BindingId, ScopeId},
-    procedural_calls::ArgumentSequence,
+    procedural_calls::{ArgumentSequence, ConversionConstructor},
     specifiers::Explicitness,
     types::{RefKind, TypeId, TypeKind},
 };
@@ -82,7 +82,7 @@ impl Analyzer<'_> {
             },
             application: Some(first),
             function: None,
-            user_constructor: Some(binding),
+            user_constructor: Some(ConversionConstructor::Declared(binding)),
         }))
     }
     fn select_converting_constructor(
@@ -169,8 +169,13 @@ impl Analyzer<'_> {
         scope: ScopeId,
         site: ConversionSite,
     ) -> Result<bool, Error> {
-        let Some(binding) = sequence.user_constructor else {
+        let Some(constructor) = sequence.user_constructor else {
             return Ok(false);
+        };
+        let ConversionConstructor::Declared(binding) = constructor else {
+            return Err(Error::Invariant(
+                "implicit constructor outside list argument",
+            ));
         };
         let location = self.tree.expressions.get(id).location;
         // Calls check the parameter/binding destruction before applying the

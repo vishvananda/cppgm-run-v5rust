@@ -129,7 +129,7 @@ impl Analyzer<'_> {
                         self.tree.expressions.get(expression).kind,
                         ast::ExprKind::Braced { .. }
                     ) {
-                        self.initialize_list_argument(expression, target, scope)
+                        self.initialize_list_argument(expression, target, scope, None)
                     } else {
                         self.typed_expression(expression, scope)?;
                         self.convert_scalar(expression, target, false)?;

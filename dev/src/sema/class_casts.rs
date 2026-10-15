@@ -136,6 +136,7 @@ impl Analyzer<'_> {
         let selected = self.initialize_class_arguments(
             target,
             ClassInput {
+                selected: None,
                 arguments: ConstructorArguments::Single(operand),
                 list: None,
                 converting: false,

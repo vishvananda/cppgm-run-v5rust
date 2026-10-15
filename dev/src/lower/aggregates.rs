@@ -780,6 +780,22 @@ impl Function<'_, '_, '_, '_> {
         match self.graph.lower_type(ty)? {
             TypeView::Class(class) => self.named_members(class, input, path),
             TypeView::Array { element, bound } => {
+                if types::character(self.graph, element)?
+                    && let Some(&id) = input.values.get(input.next)
+                    && let ExprKind::Literal(literal) =
+                        self.tree.expressions.get(self.without_parentheses(id)).kind
+                    && let crate::lex::PostTokenKind::String { ty: literal_ty, .. } = literal.kind
+                {
+                    input.next += 1;
+                    return self.named_string(
+                        element,
+                        bound,
+                        literal,
+                        literal_ty.size(),
+                        path,
+                        field,
+                    );
+                }
                 if matches!(path.root, Root::Address(_))
                     || self.member_class_array(element, path)?
                 {

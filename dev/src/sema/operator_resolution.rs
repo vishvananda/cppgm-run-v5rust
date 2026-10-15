@@ -326,7 +326,7 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(operand).kind,
                 ast::ExprKind::Braced { .. }
             ) {
-                self.initialize_list_argument(operand, sequence.conversion.target, scope)?;
+                self.initialize_ranked_list_argument(operand, sequence, scope)?;
                 continue;
             }
             if let Some(function) = sequence.function {
