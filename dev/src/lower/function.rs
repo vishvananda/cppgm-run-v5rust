@@ -639,7 +639,7 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region()?;
             }
         }
-        self.destroy_temporaries(temporary_floor)?;
+        self.destroy_local_temporaries(temporary_floor, entity)?;
         if object || !expression {
             self.close_lifetime_region()?;
         }

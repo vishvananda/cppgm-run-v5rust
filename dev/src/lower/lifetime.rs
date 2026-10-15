@@ -126,7 +126,9 @@ pub(super) struct Lifetime {
     pub region: bool,
     pub region_start: RegionStart,
     pub region_depth: usize,
-    pub call_marks: Vec<crate::lowir::builder::Position>,
+    pub call_marks: Vec<CallMark>,
+    pub declared_object: Option<Value>,
+    pub guard_start: Option<crate::lowir::builder::Position>,
     pub function_guard: Option<BlockId>,
     pub exception_slot: Option<Value>,
     pub throw_work: Vec<ast::ExprId>,
@@ -134,6 +136,11 @@ pub(super) struct Lifetime {
     pub temporary_queries: HashMap<ast::ExprId, super::temporary_scan::TemporarySummary>,
     pub guarded_operands: u32,
     pub tracking: super::tracked_lifetimes::Tracking,
+}
+#[derive(Clone, Copy)]
+pub(super) struct CallMark {
+    pub position: crate::lowir::builder::Position,
+    pub declared: bool,
 }
 impl Lifetime {
     pub(super) fn add_live(
@@ -283,14 +290,99 @@ impl Function<'_, '_, '_, '_> {
         first: usize,
         pop: bool,
     ) -> Result<(), Error> {
+        self.destroy_temporaries_with_completion(first, pop, None)
+    }
+    pub(super) fn destroy_local_temporaries(
+        &mut self,
+        first: usize,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        let completed =
+            if self.graph.lower_automatic(entity) && self.automatic_destructor(entity)?.is_some() {
+                let storage = *self
+                    .locals
+                    .get(&entity)
+                    .ok_or(crate::sema::Error::Invariant(
+                        "completed object without storage",
+                    ))?;
+                Some(Cleanup {
+                    place: CleanupPlace::Storage(storage),
+                    ty: self.graph.lower_entity_type(entity)?,
+                    variable: Some(entity),
+                    unwind: None,
+                    conditional: None,
+                    shared_return: None,
+                    lexical: None,
+                    guard: None,
+                    branched: false,
+                    made_at: None,
+                })
+            } else {
+                None
+            };
+        self.destroy_temporaries_with_completion(first, true, completed)
+    }
+    fn destroy_temporaries_with_completion(
+        &mut self,
+        first: usize,
+        pop: bool,
+        completed: Option<Cleanup>,
+    ) -> Result<(), Error> {
         if first <= self.lifetime.tracking.floor {
             self.finish_tracking()?;
         }
+        let mut throwing = false;
+        let mut guarded = false;
+        for index in first..self.lifetime.cleanups.len() {
+            let cleanup = self.lifetime.cleanups[index];
+            if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
+                throwing |= self.destructor_throws(cleanup.ty)?;
+                guarded |= cleanup.guard.is_some();
+            }
+        }
+        if throwing {
+            self.close_lifetime_region()?;
+        }
+        let full_expression = self.lifetime.full_expression;
+        if throwing {
+            self.lifetime.full_expression = false;
+        }
+        let pending = self.lifetime.pending.len();
         for index in (first..self.lifetime.cleanups.len()).rev() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
-                self.destroy_cleanup(cleanup)?;
+                let destroys_completed = self.destructor_throws(cleanup.ty)?;
+                let below = if throwing && destroys_completed && (index != 0 || completed.is_some())
+                {
+                    let tail = self.cleanup_prefix(true, index)?;
+                    if let Some(completed) = completed {
+                        let block = self.new_block("cleanup_action")?;
+                        self.lifetime.pending.push(ChainBlock {
+                            block,
+                            action: Some(completed),
+                            tail: Some(tail),
+                            unwinding: true,
+                            constructor_tail: self.constructor_unwind_target(),
+                            below: None,
+                        });
+                        Some(block)
+                    } else {
+                        Some(tail)
+                    }
+                } else {
+                    None
+                };
+                self.destroy_cleanup_in(cleanup, below, false)?;
             }
+        }
+        self.lifetime.full_expression = full_expression;
+        if self.lifetime.pending.len() > pending
+            || guarded && !throwing && !self.lifetime.tracking.active
+        {
+            let next = self.new_block("call_unwind_end")?;
+            self.jump(next)?;
+            self.place_cleanup_chains(false)?;
+            self.place(next)?;
         }
         if !pop {
             return Ok(());
@@ -362,9 +454,6 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    pub(super) fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
-        self.destroy_cleanup_in(cleanup, None, false)
-    }
     pub(super) fn destroy_cleanup_in(
         &mut self,
         cleanup: Cleanup,
@@ -386,8 +475,13 @@ impl Function<'_, '_, '_, '_> {
             let value = self
                 .emit(I::Load(Facts::default(), Type::U8, flag), cleanup.ty)?
                 .value;
-            // A tracked segment covers both the test and destruction.
-            self.builder.effect(I::Branch(value, destroy, done))?;
+            // A tracked segment covers both the test and destruction. An
+            // ordinary guarded cleanup ends its segment before branching.
+            if self.lifetime.tracking.active {
+                self.builder.effect(I::Branch(value, destroy, done))?;
+            } else {
+                self.effect(I::Branch(value, destroy, done))?;
+            }
             self.terminated = true;
             self.place(destroy)?;
             let zero = self.builder.integer(0)?;

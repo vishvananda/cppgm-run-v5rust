@@ -298,6 +298,7 @@ impl Function<'_, '_, '_, '_> {
             && !persistent
             && self.lifetime.guarded_operands != 0
             && !self.lifetime.tracking.active
+            && self.lifetime.guard_start.is_none()
         {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
@@ -312,21 +313,27 @@ impl Function<'_, '_, '_, '_> {
             self.tree.expressions.get(root).kind,
             ExprKind::Conditional { .. }
         );
-        let opens = destructor.is_some()
-            && !persistent
-            && self.lifetime.full_expression
-            && !self.lifetime.temporary_segment.is_nothrow()
-            && !self.lifetime.region
-            && !deferred
-            && (owner.is_none() || self.operand_temporaries(id)?.made)
-            && (if branched {
-                self.lifetime.region_start.is_pending() && self.lifetime.guarded_operands == 0
-            } else {
-                self.lifetime.region_start.is_pending()
-                    || self.lifetime.cleanups.is_empty()
-                    || self.aggregate_has_members()
-                    || self.lifetime.tracking.active
-            });
+        let opens =
+            destructor.is_some()
+                && !persistent
+                && self.lifetime.full_expression
+                && !self.lifetime.temporary_segment.is_nothrow()
+                && !self.lifetime.region
+                && !deferred
+                && (owner.is_none() || self.operand_temporaries(id)?.made)
+                && (if branched {
+                    self.lifetime.region_start.is_pending()
+                        && self.lifetime.guarded_operands == 0
+                        && (!self.lifetime.tracking.active
+                            || self.lifetime.call_marks.iter().any(|mark| {
+                                !mark.declared && self.builder.same_block(mark.position)
+                            }))
+                } else {
+                    self.lifetime.region_start.is_pending()
+                        || self.lifetime.cleanups.is_empty()
+                        || self.aggregate_has_members()
+                        || self.lifetime.tracking.active
+                });
         let deferred_region = opens
             && !branched
             && !self.lifetime.cleanups.is_empty()
@@ -335,7 +342,7 @@ impl Function<'_, '_, '_, '_> {
                 .lifetime
                 .call_marks
                 .iter()
-                .any(|&p| self.builder.same_block(p));
+                .any(|mark| !mark.declared && self.builder.same_block(mark.position));
         if opens && !deferred_region {
             let position =
                 if !self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {

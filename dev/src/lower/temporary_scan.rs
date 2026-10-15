@@ -241,6 +241,21 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                self.graph.lower_class_copy(id)?
+            {
+                let function = self.graph.lower_constructor_function(constructor)?;
+                let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)?
+                else {
+                    return Err(crate::sema::Error::Invariant("copy temporary signature").into());
+                };
+                for &parameter in parameters {
+                    let caller = matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
+                        && self.temporary_type_destroyed(parameter)?;
+                    summary.made |= caller;
+                    summary.caller_destroyed |= caller;
+                }
+            }
             let kind = self.tree.expressions.get(id).kind;
             let call =
                 matches!(kind, ExprKind::Call { .. }) && !self.graph.lower_functional_call(id)?;

@@ -73,7 +73,10 @@ impl Function<'_, '_, '_, '_> {
                 self.lifetime.expression_start = saved;
             }
         }
-        self.construct_at(id, ty, object, arguments)
+        let saved = self.lifetime.declared_object.replace(object);
+        let result = self.construct_at(id, ty, object, arguments);
+        self.lifetime.declared_object = saved;
+        result
     }
     pub(super) fn construct_at(
         &mut self,
@@ -146,7 +149,17 @@ impl Function<'_, '_, '_, '_> {
         };
         let entry = Entry::Constructor(id, variant);
         let facts = entry.facts(self.graph)?;
+        let declared = self.lifetime.declared_object == Some(object);
+        if declared {
+            self.lifetime.declared_object = None;
+        }
         self.begin_lifetime_call(!facts.nothrow)?;
+        if !facts.nothrow
+            && self.lifetime.full_expression
+            && let Some(mark) = self.lifetime.call_marks.last_mut()
+        {
+            mark.declared = declared;
+        }
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "constructor signature missing",

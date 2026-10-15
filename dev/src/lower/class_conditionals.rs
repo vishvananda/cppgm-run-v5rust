@@ -20,6 +20,10 @@ impl Function<'_, '_, '_, '_> {
         let then_block = self.new_block("condobj_then")?;
         let else_block = self.new_block("condobj_else")?;
         let end = self.new_block("condobj_end")?;
+        let guard_start = self.lifetime.guard_start;
+        if guard_start.is_none() {
+            self.lifetime.guard_start = Some(self.builder.position()?);
+        }
         let condition = self.truth(condition)?;
         self.effect(I::Branch(condition.value, then_block, else_block))?;
         for (block, operand) in [then_block, else_block].into_iter().zip(operands) {
@@ -31,6 +35,9 @@ impl Function<'_, '_, '_, '_> {
             if !self.terminated {
                 self.jump(end)?;
             }
+        }
+        if guard_start.is_none() {
+            self.lifetime.guard_start = None;
         }
         self.place(end)
     }

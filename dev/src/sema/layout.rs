@@ -150,6 +150,12 @@ impl Analyzer<'_> {
                 {
                     self.class_layout(class, SourceOffset(0))?;
                     self.prepare_class_parameter(class)?;
+                    // The caller owns a by-value parameter, including one made
+                    // by a selected copy constructor's default argument.
+                    self.prepare_destruction(class)?;
+                    if let Some(binding) = self.graph.destructor_binding(class) {
+                        work.push(self.graph.binding(binding).entity);
+                    }
                 }
                 if let TypeKind::Reference { element, .. } = self.graph.types.get(parameter).kind {
                     if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
@@ -170,6 +176,15 @@ impl Analyzer<'_> {
                     {
                         self.class_layout(class, SourceOffset(0))?;
                     }
+                }
+            }
+            // Destruction preparation can publish containment edges while this
+            // demand closure is running. Activate only edges of reached owners.
+            for (owner, destructor) in std::mem::take(&mut self.storage_destructions) {
+                if let Some(owner) = owner.filter(|owner| !seen.contains(owner)) {
+                    destruction_edges.entry(owner).or_default().push(destructor);
+                } else {
+                    work.push(destructor);
                 }
             }
         }

@@ -19,7 +19,10 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: crate::lowir::model::Value,
     ) -> Result<(), Error> {
-        if self.lifetime.guarded_operands != 0 && !self.lifetime.tracking.active {
+        if self.lifetime.guarded_operands != 0
+            && !self.lifetime.tracking.active
+            && self.lifetime.guard_start.is_none()
+        {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
         if self.element_temporaries.depth != 0 {
@@ -32,8 +35,9 @@ impl Function<'_, '_, '_, '_> {
             self.close_lifetime_region()?;
             return self.tracked_region(None);
         }
-        self.close_lifetime_region()?;
         self.register_temporary(ty, object);
+        self.track_temporary()?;
+        self.close_lifetime_region()?;
         if split {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
@@ -133,7 +137,10 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn begin_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
         if throws && self.lifetime.full_expression {
             self.ensure_insertion()?;
-            self.lifetime.call_marks.push(self.builder.position()?);
+            self.lifetime.call_marks.push(super::lifetime::CallMark {
+                position: self.builder.position()?,
+                declared: false,
+            });
         }
         Ok(())
     }
@@ -205,7 +212,7 @@ impl Function<'_, '_, '_, '_> {
             .lifetime
             .call_marks
             .iter()
-            .copied()
+            .map(|mark| mark.position)
             .filter(|&position| self.builder.same_block(position))
             .reduce(|first, last| {
                 if self.lifetime.region_start.is_pending() {
@@ -239,7 +246,8 @@ impl Function<'_, '_, '_, '_> {
                 .lifetime
                 .call_marks
                 .iter()
-                .copied()
+                .filter(|mark| !mark.declared)
+                .map(|mark| mark.position)
                 .find(|&p| self.builder.same_block(p));
             return self.tracked_region(position);
         }
@@ -250,7 +258,7 @@ impl Function<'_, '_, '_, '_> {
                 self.lifetime
                     .call_marks
                     .iter()
-                    .copied()
+                    .map(|mark| mark.position)
                     .find(|&position| self.builder.same_block(position))
             })
         {

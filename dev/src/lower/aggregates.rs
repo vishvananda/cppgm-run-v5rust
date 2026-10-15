@@ -201,7 +201,10 @@ impl Function<'_, '_, '_, '_> {
                     self.open_temporary_region_at(self.lifetime.expression_start)?;
                 }
                 let object = self.storage_address(slot, ty)?;
-                return self.materialize_class(expr, ty, object);
+                let saved = self.lifetime.declared_object.replace(object);
+                let result = self.materialize_class(expr, ty, object);
+                self.lifetime.declared_object = saved;
+                return result;
             }
         }
         if initializer.is_some() && self.graph.lower_constructor_arguments(entity).is_some() {

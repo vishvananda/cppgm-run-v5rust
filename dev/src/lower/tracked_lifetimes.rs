@@ -183,11 +183,25 @@ impl Function<'_, '_, '_, '_> {
         Ok(false)
     }
     pub(super) fn track_temporary(&mut self) -> Result<(), Error> {
-        if !self.lifetime.tracking.active {
+        if !self.lifetime.tracking.active && self.lifetime.guarded_operands == 0 {
             return Ok(());
         }
         let flag = self.generated_slot("lifetime", Type::U8)?;
-        self.lifetime.tracking.resets.push(flag);
+        if self.lifetime.tracking.active {
+            self.lifetime.tracking.resets.push(flag);
+        } else {
+            let start = self
+                .lifetime
+                .guard_start
+                .ok_or(crate::sema::Error::Invariant(
+                    "guarded temporary without branch boundary",
+                ))?;
+            let zero = self.builder.integer(0)?;
+            self.lifetime.guard_start = Some(
+                self.builder
+                    .insert_effect(start, I::Store(Facts::default(), Type::U8, zero, flag))?,
+            );
+        }
         let one = self.builder.integer(1)?;
         self.effect(I::Store(Facts::default(), Type::U8, one, flag))?;
         let cleanup = self
@@ -197,7 +211,9 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant("flag without temporary"))?;
         cleanup.guard = Some(flag);
         cleanup.branched = self.lifetime.guarded_operands != 0;
-        if let super::lifetime::CleanupPlace::Temporary(object) = cleanup.place {
+        if self.lifetime.tracking.active
+            && let super::lifetime::CleanupPlace::Temporary(object) = cleanup.place
+        {
             cleanup.made_at = Some(object);
             cleanup.place =
                 super::lifetime::CleanupPlace::Temporary(self.builder.addressed_storage(object));
