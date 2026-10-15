@@ -639,11 +639,8 @@ impl Analyzer<'_> {
                         "a member access through a null pointer",
                     ));
                 }
-                let owner = self
-                    .graph
-                    .entity(entity)
-                    .home
-                    .and_then(|home| self.graph.scope(home).owner)
+                let owner = facts
+                    .member_naming
                     .ok_or(Error::Invariant("member place without class owner"))?;
                 self.class_layout(owner, location)?;
                 let offset = if let Some(field) = self.graph.entity(entity).bit_field {
@@ -655,6 +652,13 @@ impl Analyzer<'_> {
                         .member_offset
                         .ok_or(Error::Invariant("member place without layout offset"))?
                 };
+                let offset = self
+                    .graph
+                    .lower_member_base_offsets(id)?
+                    .into_iter()
+                    .flatten()
+                    .fold(offset, u64::wrapping_add)
+                    .wrapping_add(self.graph.lower_anonymous_field_offset(id)?);
                 place.offset = place.offset.wrapping_add(super::integral::signed(offset));
                 place.designated = facts.ty;
                 Ok(place)

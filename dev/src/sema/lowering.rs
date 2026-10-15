@@ -1182,17 +1182,24 @@ impl Graph {
         Ok((
             entity,
             if node.data_member == Some(super::graph::DataMemberKind::Instance) {
-                Some(self.lower_member_offset(entity)?)
+                Some(
+                    self.lower_member_offset(entity)?
+                        .wrapping_add(self.lower_anonymous_field_offset(expr)?),
+                )
             } else {
                 None
             },
         ))
     }
-    pub(crate) fn lower_union_member(&self, entity: EntityId) -> bool {
-        self.entity(entity)
-            .home
-            .and_then(|home| self.scope(home).owner)
-            .is_some_and(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union)
+    pub(crate) fn lower_union_member(&self, expr: ast::ExprId) -> Result<bool, Error> {
+        let facts = self.expression_facts.get(expr)?;
+        let binding = facts
+            .member
+            .ok_or(Error::Invariant("member without designation"))?;
+        let holder = self.member_holder(self.binding(binding).entity, facts.member_naming)?;
+        Ok(std::iter::once(holder)
+            .chain(facts.member_naming)
+            .any(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union))
     }
     pub(crate) fn lower_class_members(
         &self,
@@ -1231,25 +1238,29 @@ impl Graph {
             shared: storage.shared,
         }))
     }
-    pub(crate) fn lower_anonymous_field_offset(&self, entity: EntityId) -> Result<u64, Error> {
+    pub(crate) fn lower_anonymous_field_offset(&self, expr: ast::ExprId) -> Result<u64, Error> {
+        let facts = self.expression_facts.get(expr)?;
+        let binding = facts
+            .member
+            .ok_or(Error::Invariant("member without designation"))?;
+        let entity = self.binding(binding).entity;
         let mut owner = self
             .entity(entity)
             .home
             .and_then(|home| self.scope(home).owner);
         let mut offset = 0u64;
         while let Some(class) = owner {
-            let Some(storage) = self.entity(class).anonymous_storage else {
-                break;
-            };
-            let object = self.binding(storage).entity;
-            let Some(home) = self.entity(object).home else {
-                break;
-            };
-            if self.scope(home).kind != super::graph::ScopeKind::Class {
+            if Some(class) == facts.member_naming {
                 break;
             }
+            let Some(object) = self.anonymous_member_storage(class) else {
+                break;
+            };
             offset = offset.wrapping_add(self.lower_member_offset(object)?);
-            owner = self.scope(home).owner;
+            owner = self
+                .entity(object)
+                .home
+                .and_then(|home| self.scope(home).owner);
         }
         Ok(offset)
     }

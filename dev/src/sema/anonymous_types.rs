@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, ScopeId, ScopeKind},
+    graph::{Binding, BindingKind, EntityId, Graph, ScopeId, ScopeKind},
     specifiers::Specifiers,
     types::{TypeId, TypeKind},
 };
@@ -29,6 +29,40 @@ impl AnonymousClass {
             Self::Pending(_) => None,
             Self::Labeled(tokens) => Some(tokens),
         }
+    }
+}
+
+impl Graph {
+    // Anonymous injection changes the lookup declaration, but the entity keeps
+    // its original class. Follow its owned storage to the object being named;
+    // only then can the caller select a base route or a union memory fact.
+    pub(super) fn anonymous_member_storage(&self, class: EntityId) -> Option<EntityId> {
+        let object = self.binding(self.entity(class).anonymous_storage?).entity;
+        let home = self.entity(object).home?;
+        (self.scope(home).kind == ScopeKind::Class).then_some(object)
+    }
+
+    pub(super) fn member_holder(
+        &self,
+        member: EntityId,
+        within: Option<EntityId>,
+    ) -> Result<EntityId, Error> {
+        let mut holder = self
+            .entity(member)
+            .home
+            .and_then(|home| self.scope(home).owner)
+            .ok_or(Error::Invariant("member without holder"))?;
+        while Some(holder) != within {
+            let Some(object) = self.anonymous_member_storage(holder) else {
+                break;
+            };
+            holder = self
+                .entity(object)
+                .home
+                .and_then(|home| self.scope(home).owner)
+                .ok_or(Error::Invariant("anonymous member without holder"))?;
+        }
+        Ok(holder)
     }
 }
 
@@ -186,6 +220,10 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("class without owner"))?;
             let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
             self.graph.entity_mut(owner).members.push(storage);
+            if self.graph.scope(scope).member_access != super::graph::Access::Public {
+                self.graph.entity_mut(owner).layout_category =
+                    super::layout::LayoutCategory::NonPod;
+            }
             let binding = self.graph.add_binding(
                 scope,
                 None,

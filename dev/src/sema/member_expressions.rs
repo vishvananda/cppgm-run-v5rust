@@ -64,17 +64,21 @@ impl Analyzer<'_> {
         let Some(ty) = self.current_object_type()? else {
             return Ok(None);
         };
-        let Some(home) = self
+        let Some(class) = self.graph.class_of(ty) else {
+            return Ok(None);
+        };
+        let member = self.graph.binding(binding).entity;
+        let Some(mut home) = self
             .graph
-            .entity(self.graph.binding(binding).entity)
+            .entity(member)
             .home
             .and_then(|home| self.graph.scope(home).owner)
         else {
             return Ok(None);
         };
-        let Some(class) = self.graph.class_of(ty) else {
-            return Ok(None);
-        };
+        if self.graph.entity(member).data_member == Some(DataMemberKind::Instance) {
+            home = self.graph.member_holder(member, Some(class))?;
+        }
         Ok(
             (home == class || self.graph.is_base_of(home, class)).then_some(
                 super::expression_facts::ObjectArgument {
@@ -286,18 +290,12 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<Option<super::inheritance::BasePathId>, Error> {
-        let member = self.graph.entity(self.graph.binding(binding).entity);
+        let entity = self.graph.binding(binding).entity;
+        let member = self.graph.entity(entity);
         if member.data_member != Some(DataMemberKind::Instance) {
             return Ok(None);
         }
-        let holder = member
-            .home
-            .and_then(|home| self.graph.scope(home).owner)
-            .ok_or(Error::Invariant("member without holder"))?;
-        // Anonymous injection owns a separate subobject route, not a base edge.
-        if self.graph.entity(holder).anonymous_storage.is_some() {
-            return Ok(None);
-        }
+        let holder = self.graph.member_holder(entity, Some(class))?;
         if class == holder {
             return Ok(None);
         }

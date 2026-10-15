@@ -107,8 +107,7 @@ impl Function<'_, '_, '_, '_> {
                             source,
                         )?
                         .value;
-                    if self.graph.lower_union_member(entity) || self.untyped_places.contains(&root)
-                    {
+                    if self.graph.lower_union_member(id)? || self.untyped_places.contains(&root) {
                         self.untyped_places.insert(place);
                     }
                     place
@@ -157,7 +156,7 @@ impl Function<'_, '_, '_, '_> {
                             source,
                         )?
                         .value;
-                    if self.graph.lower_union_member(entity) {
+                    if self.graph.lower_union_member(id)? {
                         self.untyped_places.insert(place);
                     }
                     return self.reference_holder(place, self.graph.lower_entity_type(entity)?);

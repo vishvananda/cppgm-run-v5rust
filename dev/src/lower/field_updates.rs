@@ -162,7 +162,7 @@ impl Function<'_, '_, '_, '_> {
         let offset = self.builder.integer(u128::from(
             field
                 .offset
-                .wrapping_add(self.graph.lower_anonymous_field_offset(entity)?),
+                .wrapping_add(self.graph.lower_anonymous_field_offset(id)?),
         ))?;
         let address = self
             .emit(
