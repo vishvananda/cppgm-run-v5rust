@@ -178,6 +178,20 @@ impl Function<'_, '_, '_, '_> {
                 .get(&entity)
                 .ok_or(crate::sema::Error::Invariant("condition without storage"))?;
             let value = self.condition_conversion_call(place, source, call)?;
+            if call.place && !to_bool {
+                // condition_variable converts the declared reference result
+                // itself, without a load. Its convert_integer sees a reference
+                // as unsigned and the ptr boundary as zero integer bits.
+                return self.emit(
+                    I::Convert(
+                        crate::lowir::vocabulary::Convert::ZeroExtend,
+                        types::storage(self.graph, target)?,
+                        value.ty,
+                        value.value,
+                    ),
+                    target,
+                );
+            }
             return self.convert(value, target, Context::Operand);
         }
         let ty = types::storage(self.graph, source)?;

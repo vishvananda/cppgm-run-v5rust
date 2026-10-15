@@ -18,10 +18,12 @@ impl Analyzer<'_> {
         count: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Option<u64>, Error> {
-        let facts = self.typed_expression(count, scope)?;
-        if self.graph.class_of(facts.ty).is_some() {
-            return Err(Error::Missing("array bound conversion function"));
-        }
+        self.typed_expression(count, scope)?;
+        let facts = self.convert_unique_class_operand(
+            count,
+            super::conversion_functions::ConversionTarget::Integral,
+            scope,
+        )?;
         let ty = self.decayed_type(facts.ty)?;
         if !self.is_integral_operand(ty) {
             return Err(Error::at(

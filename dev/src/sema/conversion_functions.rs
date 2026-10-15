@@ -28,6 +28,13 @@ pub(super) enum ConversionUse {
 }
 
 #[derive(Clone, Copy)]
+pub(super) enum ConversionTarget {
+    Integral,
+    IntegralOrEnumeration,
+    ObjectPointer,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct FunctionConversion {
     pub binding: BindingId,
     pub result: TypeId,
@@ -39,6 +46,79 @@ pub(super) struct FunctionConversion {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn unique_conversion_function(
+        &mut self,
+        class: EntityId,
+        target: ConversionTarget,
+    ) -> Result<Option<BindingId>, Error> {
+        let count = self.visible_conversion_functions(class)?.len();
+        let mut found = None;
+        for index in 0..count {
+            let binding = self.conversion_sets[&class][index];
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
+                continue;
+            }
+            let signature = entity.ty.ok_or(Error::Invariant("conversion signature"))?;
+            let result = self.call_result(signature)?.ty;
+            let accepts = match target {
+                ConversionTarget::Integral => self.is_integral_operand(result),
+                ConversionTarget::IntegralOrEnumeration => self.integral_kind(result).is_some(),
+                ConversionTarget::ObjectPointer => matches!(self.graph.types.get(result).kind,
+                    TypeKind::Pointer(element) if !matches!(self.graph.types.get(element).kind,
+                        TypeKind::Function { .. } | TypeKind::Scalar(super::types::Scalar::Void))),
+            };
+            if accepts {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some(binding);
+            }
+        }
+        Ok(found)
+    }
+
+    pub(super) fn convert_unique_class_operand(
+        &mut self,
+        id: ast::ExprId,
+        target: ConversionTarget,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let source = self.graph.expression_facts.get(id)?;
+        let Some(class) = self.graph.class_of(source.ty) else {
+            return Ok(source);
+        };
+        let Some(binding) = self.unique_conversion_function(class, target)? else {
+            return Ok(source);
+        };
+        let location = self.tree.expressions.get(id).location;
+        // unique_conversion counts declarations, not viable object sequences.
+        // convert_class_operand also omits the ordinary deletion check.
+        let path = self.conversion_function_receiver(source, binding, scope, location)?;
+        let signature = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("conversion signature"))?;
+        let produced = self.call_result(signature)?;
+        let after = self
+            .standard_conversion(produced, produced.ty, false)?
+            .ok_or(Error::Invariant("converted operand identity"))?;
+        self.graph.expression_facts.set_function_conversion(
+            id,
+            FunctionConversion {
+                binding,
+                result: produced.ty,
+                category: produced.category,
+                path,
+                after,
+                after_path: None,
+                usage: ConversionUse::Builtin,
+            },
+        );
+        Ok(produced)
+    }
+
     pub(super) fn visible_conversion_functions(
         &mut self,
         class: EntityId,
@@ -214,10 +294,6 @@ impl Analyzer<'_> {
         let Some(UserConversion::Function(binding)) = sequence.user_conversion else {
             return Err(Error::Invariant("conversion function without selection"));
         };
-        let class = self
-            .graph
-            .class_of(source.ty)
-            .ok_or(Error::Invariant("conversion function without class"))?;
         let entity = self.graph.binding(binding).entity;
         // convert_class_operand does not check deletion in the frozen builtin path.
         if usage != ConversionUse::Builtin
@@ -225,28 +301,7 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        let owner = self
-            .member_function_owner(binding)
-            .and_then(|ty| self.graph.class_of(ty))
-            .ok_or(Error::Invariant("conversion function without owner"))?;
-        if self.graph.base_count(class, owner) > 1 {
-            return Err(Error::at(
-                location,
-                "a conversion function of an ambiguous base class subobject",
-            ));
-        }
-        self.check_named_member_access(binding, class, class, scope, location)?;
-        let receiver = ObjectArgument {
-            source: ObjectSource::Implicit,
-            ty: source.ty,
-            category: source.category,
-        };
-        let first = self
-            .object_sequence(receiver, binding, false)?
-            .ok_or(Error::Invariant("selected conversion object"))?;
-        let path = self.conversion_base_path(source, first, scope, location, true)?;
-        self.check_specialization_body(binding)?;
-        self.demand_function(binding, true);
+        let path = self.conversion_function_receiver(source, binding, scope, location)?;
         let ty = self
             .graph
             .entity(entity)
@@ -273,6 +328,38 @@ impl Analyzer<'_> {
             after_path,
             after,
         })
+    }
+
+    fn conversion_function_receiver(
+        &mut self,
+        source: ExprFacts,
+        binding: BindingId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Option<BasePathId>, Error> {
+        let class = self
+            .graph
+            .class_of(source.ty)
+            .ok_or(Error::Invariant("conversion function without class"))?;
+        let owner = self
+            .member_function_owner(binding)
+            .and_then(|ty| self.graph.class_of(ty))
+            .ok_or(Error::Invariant("conversion function without owner"))?;
+        if self.graph.base_count(class, owner) > 1 {
+            return Err(Error::at(
+                location,
+                "a conversion function of an ambiguous base class subobject",
+            ));
+        }
+        self.check_named_member_access(binding, class, class, scope, location)?;
+        let path = if class == owner {
+            None
+        } else {
+            Some(self.checked_base_path(class, owner, scope, location, true, false)?)
+        };
+        self.check_specialization_body(binding)?;
+        self.demand_function(binding, true);
+        Ok(path)
     }
 
     pub(super) fn cast_conversion_function(
@@ -327,6 +414,120 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn unique_operands_keep_original_facts_and_only_demand_the_discovered_functions() {
+        let source = SourceBuffer::new(
+            b"struct S{operator volatile short&()&&;operator double();};struct X:S{};\
+              struct P{operator int* const&();explicit operator long*();};struct Unused{};\
+              void f(const X&x,P&p){switch(((x))){default:break;}new int[x];delete ((p));}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"unique-operands").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let nodes = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), nodes);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let items = tree.stmt_lists.get(items);
+        let ast::StmtKind::ConditionalLoop {
+            keyword: crate::lex::vocabulary::Keyword::Switch,
+            condition: ast::Condition::Expression(switch),
+            ..
+        } = tree.statements.get(items[0]).kind
+        else {
+            panic!("switch");
+        };
+        let ast::StmtKind::Expression(Some(new)) = tree.statements.get(items[1]).kind else {
+            panic!("new");
+        };
+        let count = graph
+            .expression_facts
+            .allocation(new)
+            .unwrap()
+            .array
+            .unwrap()
+            .count;
+        let ast::StmtKind::Expression(Some(delete)) = tree.statements.get(items[2]).kind else {
+            panic!("delete");
+        };
+        let ast::ExprKind::Delete {
+            operand: pointer, ..
+        } = tree.expressions.get(delete).kind
+        else {
+            panic!("operand");
+        };
+        let mut selected = Vec::new();
+        for id in [switch, count, pointer] {
+            let facts = graph.expression_facts.get(id).unwrap();
+            let step = graph.expression_facts.function_conversion(id).unwrap();
+            assert!(graph.class_of(facts.ty).is_some());
+            assert_eq!(facts.category, ValueCategory::Lvalue);
+            assert_eq!(step.category, ValueCategory::Lvalue);
+            assert!(step.usage == ConversionUse::Builtin);
+            assert!(!facts.conversion.unwrap().initialization);
+            assert_eq!(step.after.result, facts.conversion.unwrap().result);
+            assert_eq!(step.path.is_some(), id != pointer);
+            assert_eq!(
+                graph
+                    .expression_facts
+                    .function_conversion(graph.expression_facts.root(id))
+                    .unwrap()
+                    .binding,
+                step.binding
+            );
+            selected.push(step.binding);
+        }
+        assert_eq!(selected[0], selected[1]);
+        assert_ne!(switch, graph.expression_facts.root(switch));
+        for name in [b"S".as_slice(), b"P"] {
+            let name = cursor.intern_name(name).unwrap();
+            let class = graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Prefix)
+                        .unwrap(),
+                )
+                .entity;
+            for &binding in &graph.entity(class).declared_conversions {
+                let demanded = graph.root_demands.as_slice().iter().any(|demand|
+                    matches!(demand, super::super::function_demands::Demand::Function { binding: found, .. }
+                        if *found == binding));
+                assert_eq!(demanded, selected.contains(&binding));
+            }
+        }
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let class = graph
+            .binding(
+                graph
+                    .own(graph.global, unused, super::super::lookup::Filter::Prefix)
+                    .unwrap(),
+            )
+            .entity;
+        assert!(matches!(
+            graph.entity(class).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+    }
 
     #[test]
     fn unevaluated_result_projection_keeps_layout_and_emission_undemanded() {

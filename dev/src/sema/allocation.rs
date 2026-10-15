@@ -143,10 +143,18 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("deletion without delete syntax"));
         };
         let location = node.location;
-        let facts = self.typed_expression(operand, scope)?;
+        self.typed_expression(operand, scope)?;
         self.check_resolved_function(operand)?;
+        let facts = self.convert_unique_class_operand(
+            operand,
+            super::conversion_functions::ConversionTarget::ObjectPointer,
+            scope,
+        )?;
         if self.graph.class_of(facts.ty).is_some() {
-            return Err(Error::Missing("delete operand conversion function"));
+            return Err(Error::at(
+                location,
+                "a delete-expression's operand is not a pointer",
+            ));
         }
         let pointer = self.decayed_type(facts.ty)?;
         let target = match self.graph.types.get(pointer).kind {

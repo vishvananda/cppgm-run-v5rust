@@ -361,24 +361,8 @@ impl Analyzer<'_> {
             }
         };
         if switch {
-            if self.integral_kind(facts.ty).is_none() {
-                return Err(Error::at(
-                    location,
-                    "switch condition is not of integral or enumeration type",
-                ));
-            }
-            let source = self.bare_type(facts.ty)?;
-            let ty = self.promoted_type(source)?;
-            if let Some(expr) = expr {
-                self.convert_operand_scalar(expr, ty, false)?;
-            } else if let Condition::Declaration { declarator, .. } = condition {
-                let conversion = self
-                    .standard_conversion(facts, ty, false)?
-                    .ok_or(Error::Invariant("integral condition without promotion"))?;
-                self.graph
-                    .record_condition_conversion(declarator, conversion);
-            }
-            Ok(Some(ty))
+            self.switch_condition_conversion(condition, facts, location)
+                .map(Some)
         } else {
             let ty = self.graph.types.scalar(Scalar::Bool)?;
             if let Some(expr) = expr {
@@ -412,6 +396,79 @@ impl Analyzer<'_> {
             }
             Ok(None)
         }
+    }
+
+    fn switch_condition_conversion(
+        &mut self,
+        condition: Condition,
+        facts: ExprFacts,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<TypeId, Error> {
+        use super::conversion_functions::{ConversionTarget, ConversionUse};
+        let diagnostic = "switch condition is not of integral or enumeration type";
+        let (source, scope) = match condition {
+            Condition::Expression(id) => {
+                let scope = self.graph.expression_scopes
+                    [self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant("condition without expression scope"))?;
+                let produced = self.convert_unique_class_operand(
+                    id,
+                    ConversionTarget::IntegralOrEnumeration,
+                    scope,
+                )?;
+                (produced.ty, scope)
+            }
+            Condition::Declaration { declarator, .. } => {
+                let binding = self.graph.declared_bindings[declarator.index()]
+                    .ok_or(Error::Invariant("condition without binding"))?;
+                let mut source = facts.ty;
+                if let Some(class) = self.graph.class_of(source)
+                    && let Some(converter) = self.unique_conversion_function(
+                        class,
+                        ConversionTarget::IntegralOrEnumeration,
+                    )?
+                {
+                    let signature = self
+                        .graph
+                        .binding(converter)
+                        .ty
+                        .ok_or(Error::Invariant("conversion signature"))?;
+                    source = self.call_result(signature)?.ty;
+                }
+                (source, self.graph.binding_scope(binding))
+            }
+        };
+        if self.integral_kind(source).is_none() {
+            return Err(Error::at(location, diagnostic));
+        }
+        let source = self.bare_type(source)?;
+        let target = self.promoted_type(source)?;
+        match condition {
+            Condition::Expression(id) => self.convert_operand_scalar(id, target, false)?,
+            Condition::Declaration { declarator, .. } => {
+                let conversion =
+                    if let Some(conversion) = self.standard_conversion(facts, target, false)? {
+                        conversion
+                    } else if let Some(sequence) =
+                        self.conversion_function_sequence(facts, target, false)?
+                    {
+                        let selected = self.select_conversion_function(
+                            facts,
+                            sequence,
+                            scope,
+                            location,
+                            ConversionUse::Contextual,
+                        )?;
+                        self.graph.record_condition_function(declarator, selected);
+                        sequence.conversion
+                    } else {
+                        return Err(Error::at(location, diagnostic));
+                    };
+                self.graph
+                    .record_condition_conversion(declarator, conversion);
+            }
+        }
+        Ok(target)
     }
     pub(super) fn reject_extended_statement(&self, id: ast::StmtId) -> Result<(), Error> {
         if self.semantic()
