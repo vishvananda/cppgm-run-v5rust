@@ -4,7 +4,6 @@ use super::{
     Error,
     conversions::Context,
     function::{Function, RValue},
-    types,
 };
 use crate::{
     lowir::model::{Call, InstructionKind as I},
@@ -13,6 +12,13 @@ use crate::{
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn operator_call(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
+        self.operator_call_into(id, None)
+    }
+    pub(super) fn operator_call_into(
+        &mut self,
+        id: ast::ExprId,
+        destination: Option<crate::lowir::model::Value>,
+    ) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
         let source = self.graph.lower_expression(id)?.ty;
         let CallTarget::Direct(entity) = self.graph.lower_call(id)? else {
@@ -35,7 +41,8 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(Error::Missing("operator signature"));
         };
-        let ty = types::storage(self.graph, result)?;
+        let boundary = self.symbols.result_boundary(result)?;
+        let ty = boundary.ty;
         let member = function.object.is_some();
         let first = if member {
             let object = operands[0];
@@ -54,18 +61,26 @@ impl Function<'_, '_, '_, '_> {
         };
         // Unary and binary operators, including a postfix dummy int, carry
         // at most two lowered values. Nested calls cannot disturb this view.
-        let mut values = [first; 2];
+        let mut values = [first; 3];
+        let base = usize::from(boundary.indirect);
+        if boundary.indirect {
+            values[0] = destination.ok_or(crate::sema::Error::Invariant(
+                "operator result without destination",
+            ))?;
+            values[1] = first;
+        }
         if operands.len() == 2 {
-            values[1] = self.operator_argument(operands[1], parameters[usize::from(!member)])?;
+            values[base + 1] =
+                self.operator_argument(operands[1], parameters[usize::from(!member)])?;
         }
         if postfix {
-            values[1] = self.builder.integer(0)?;
+            values[base + 1] = self.builder.integer(0)?;
         }
         self.symbols.demand(entity);
         let callee = self.symbols.callee(entity, &mut self.builder)?;
         let arguments = self
             .builder
-            .arguments(&values[..count + usize::from(postfix)])?;
+            .arguments(&values[..base + count + usize::from(postfix)])?;
         let call = I::Call(Call {
             result: ty,
             callee,
@@ -74,8 +89,7 @@ impl Function<'_, '_, '_, '_> {
             signature: None,
         });
         self.before_lifetime_call(throws)?;
-        let value = self.lifetime_result(call, source)?;
-        self.finish_lifetime_call(value, throws)
+        self.finish_result_call(call, source, destination, throws)
     }
     pub(super) fn operator_argument(
         &mut self,

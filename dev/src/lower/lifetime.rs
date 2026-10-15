@@ -118,8 +118,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         };
         if self.automatic_destructor(entity)?.is_none() {
-            self.symbols
-                .root_destructor(self.builder.program(), destructor)?;
+            if self.returned_local != Some(entity) {
+                self.symbols
+                    .root_destructor(self.builder.program(), destructor)?;
+            }
             return Ok(());
         }
         let storage =
@@ -295,7 +297,7 @@ impl Function<'_, '_, '_, '_> {
             }
             Ok(())
         } else {
-            let object = self.emit(I::Addr(storage), ty)?.value;
+            let object = self.storage_address(storage, ty)?;
             self.call_destructor(ty, object)
         }
     }
@@ -509,20 +511,31 @@ impl Function<'_, '_, '_, '_> {
             return self.jump(target);
         }
         self.scan_lifetimes()?;
-        let shared = self.lifetime.cleanups.last().is_some_and(|cleanup| {
-            cleanup
-                .variable
-                .and_then(|variable| self.lifetime.returns.get(&variable))
-                .is_some_and(|&count| count > 1)
-        });
+        let shared = self.result_destination.is_none()
+            && self.lifetime.cleanups.last().is_some_and(|cleanup| {
+                cleanup
+                    .variable
+                    .and_then(|variable| self.lifetime.returns.get(&variable))
+                    .is_some_and(|&count| count > 1)
+            });
         if !shared {
             self.end_lifetime_expression(expression)?;
-            self.destroy_cleanups(0)?;
+            for index in (0..self.lifetime.cleanups.len()).rev() {
+                let cleanup = self.lifetime.cleanups[index];
+                // The elided result transfers to the caller only on return.
+                // Its unwind and other scope-exit actions remain intact.
+                if cleanup.variable.is_none()
+                    || cleanup.variable != self.returned_local
+                    || !matches!(cleanup.place, CleanupPlace::Storage(_))
+                {
+                    self.destroy_cleanup(cleanup)?;
+                }
+            }
             self.effect(I::Return(ty, value))?;
             self.terminated = true;
             return Ok(());
         }
-        if let Some(value) = value {
+        if let Some(value) = value.filter(|value| Some(*value) != self.result_storage) {
             let slot = if let Some(slot) = self.lifetime.return_slot {
                 slot
             } else {
@@ -536,6 +549,9 @@ impl Function<'_, '_, '_, '_> {
                 value,
                 slot,
             ))?;
+        } else if value.is_some() {
+            // A class return already preserved its bytes in the shared retobj.
+            self.lifetime.return_slot = value;
         }
         self.end_lifetime_expression(expression)?;
         let entry = self.cleanup_entry(false)?;

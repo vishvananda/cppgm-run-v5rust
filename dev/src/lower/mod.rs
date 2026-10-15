@@ -9,6 +9,7 @@ mod arrays;
 mod base_projections;
 mod bit_fields;
 mod class_parameters;
+mod class_results;
 mod conditions;
 mod construction;
 mod constructor_cleanup;

@@ -125,6 +125,13 @@ impl Analyzer<'_> {
                 self.class_layout(class, SourceOffset(0))?;
             }
             let ty = self.graph.lower_entity_type(entity)?;
+            if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
+                && let TypeKind::Class(class) = self.graph.types.get(result).kind
+                && self.graph.entity(class).complete
+            {
+                self.class_layout(class, SourceOffset(0))?;
+                self.prepare_class_parameter(class)?;
+            }
             let count = self.graph.types.function_parameter_count(ty)?;
             for index in 0..count {
                 let parameter = self.graph.types.function_parameter(ty, index)?;
@@ -463,5 +470,48 @@ impl Analyzer<'_> {
             alignment,
         };
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LayoutState;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{Analyzer, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn result_boundaries_prepare_only_demanded_complete_class_facts() {
+        let source = SourceBuffer::new(b"struct S{int n;};using Alias=S;S f(){return S{1};}Alias g(){return Alias{2};}struct Unused{int n;};struct Incomplete;Incomplete named();int h(){auto p=&named;return p==0;}".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"result-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        let mut entity = |spelling| {
+            let name = cursor.intern_name(spelling).unwrap();
+            graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity
+        };
+        let result = entity(b"S");
+        assert!(graph.lower_direct_class_parameter(result).unwrap());
+        assert!(matches!(
+            graph.entity(result).layout,
+            LayoutState::Value { size: 4, .. }
+        ));
+        for class in [entity(b"Unused"), entity(b"Incomplete")] {
+            assert!(matches!(
+                graph.entity(class).layout,
+                LayoutState::NotStarted
+            ));
+            assert!(graph.entity(class).implicit_copies.is_none());
+        }
     }
 }

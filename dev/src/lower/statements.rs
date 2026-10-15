@@ -75,6 +75,17 @@ impl Function<'_, '_, '_, '_> {
                         "source return in synthetic function",
                     )))?;
                 let ty = types::storage(self.graph, result)?;
+                if matches!(
+                    self.graph.lower_type(result)?,
+                    crate::sema::lowering::TypeView::Class(_)
+                ) {
+                    return self.class_return(
+                        operand.ok_or(crate::sema::Error::Invariant(
+                            "class return without operand",
+                        ))?,
+                        result,
+                    );
+                }
                 let began = self.begin_lifetime_expression();
                 let value = if let Some(id) = operand {
                     if matches!(

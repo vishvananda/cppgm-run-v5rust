@@ -659,6 +659,41 @@ impl Graph {
             .variable
             .is_some_and(|properties| properties.automatic)
     }
+    pub(crate) fn lower_result_local(
+        &self,
+        id: EntityId,
+        function: EntityId,
+        result: TypeId,
+    ) -> bool {
+        use super::graph::ScopeKind;
+        let entity = self.entity(id);
+        let Some(properties) = entity.variable else {
+            return false;
+        };
+        let Some(ty) = entity.ty else {
+            return false;
+        };
+        let Some(mut home) = entity.home else {
+            return false;
+        };
+        if !properties.automatic
+            || self.scope(home).kind != ScopeKind::Block
+            || self.types.get(ty).cv.0 & 2 != 0
+            || !matches!((&self.types.get(ty).kind, &self.types.get(result).kind),
+                (TypeKind::Class(from), TypeKind::Class(to)) if from == to)
+        {
+            return false;
+        }
+        loop {
+            if Some(home) == self.entity(function).scope {
+                return true;
+            }
+            let Some(parent) = self.scope(home).parent else {
+                return false;
+            };
+            home = parent;
+        }
+    }
     pub(crate) fn lower_explicit_static(&self, id: EntityId) -> bool {
         self.entity(id).variable.is_some_and(|variable| {
             variable.static_specifier == super::specifiers::StaticSpecifier::Present

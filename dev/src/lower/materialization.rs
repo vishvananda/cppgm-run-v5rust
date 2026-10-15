@@ -179,7 +179,7 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(slot)
     }
-    fn materialize_empty_argument(
+    pub(super) fn materialize_empty_argument(
         &mut self,
         source: ast::ExprId,
         ty: TypeId,
@@ -319,7 +319,27 @@ impl Function<'_, '_, '_, '_> {
             Some(ClassInitialization::FromExpression(source)) => {
                 self.materialize_class(source, ty, object)
             }
-            None => Err(Error::Missing("class call and conditional materialization")),
+            None => match self.tree.expressions.get(id).kind {
+                _ if self.graph.lower_operator_call(id)? => {
+                    self.operator_call_into(id, Some(object))?;
+                    Ok(())
+                }
+                ExprKind::Literal(_) if self.graph.lower_literal_call(id)?.is_some() => {
+                    self.text_literal_call_into(id, Some(object))?;
+                    Ok(())
+                }
+                ExprKind::Call { callee, arguments } => {
+                    self.call_into(id, callee, arguments, Some(object))?;
+                    Ok(())
+                }
+                ExprKind::Binary {
+                    op, left, right, ..
+                } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
+                    self.discard(left)?;
+                    self.materialize_class(right, ty, object)
+                }
+                _ => Err(Error::Missing("class conditional materialization")),
+            },
         }
     }
 }

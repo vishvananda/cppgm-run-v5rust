@@ -17,6 +17,13 @@ use crate::{
 
 impl Function<'_, '_, '_, '_> {
     pub(super) fn text_literal_call(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
+        self.text_literal_call_into(id, None)
+    }
+    pub(super) fn text_literal_call_into(
+        &mut self,
+        id: ast::ExprId,
+        destination: Option<Value>,
+    ) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
         let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("literal call syntax"));
@@ -81,16 +88,28 @@ impl Function<'_, '_, '_, '_> {
         };
         self.symbols.demand(entity);
         let callee = self.symbols.callee(entity, &mut self.builder)?;
-        let arguments = self.builder.arguments(&values[..count])?;
+        let boundary = self.symbols.result_boundary(result)?;
+        let mut arguments = [values[0], values[1], values[1]];
+        if boundary.indirect {
+            arguments = [
+                destination.ok_or(crate::sema::Error::Invariant(
+                    "literal result without destination",
+                ))?,
+                values[0],
+                values[1],
+            ];
+        }
+        let arguments = self
+            .builder
+            .arguments(&arguments[..count + usize::from(boundary.indirect)])?;
         let call = I::Call(Call {
-            result: types::storage(self.graph, result)?,
+            result: boundary.ty,
             callee,
             arguments,
             copy_elision: false,
             signature: None,
         });
         self.before_lifetime_call(throws)?;
-        let value = self.lifetime_result(call, source)?;
-        self.finish_lifetime_call(value, throws)
+        self.finish_result_call(call, source, destination, throws)
     }
 }

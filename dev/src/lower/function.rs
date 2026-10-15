@@ -53,6 +53,9 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub construction: super::constructor_cleanup::Construction,
     pub terminated: bool,
     pub result: Option<TypeId>,
+    pub result_destination: Option<Value>,
+    pub result_storage: Option<Value>,
+    pub returned_local: Option<EntityId>,
     pub budget: StackBudget,
     pub stack_base: usize,
 }
@@ -90,7 +93,12 @@ pub(super) fn lower<'a>(
         }
     }
     let object_count = usize::from(facts.object.is_some());
-    let mut names = Vec::with_capacity(parameters.len() + object_count);
+    let result_boundary = symbols.result_boundary(result)?;
+    let result_count = usize::from(result_boundary.indirect);
+    let mut names = Vec::with_capacity(parameters.len() + object_count + result_count);
+    if result_boundary.indirect {
+        names.push(("ret".to_owned(), Type::Ptr));
+    }
     if object_count != 0 {
         names.push(("this".to_owned(), Type::Ptr));
     }
@@ -135,13 +143,20 @@ pub(super) fn lower<'a>(
         .iter()
         .map(|(name, ty)| (name.as_str(), *ty))
         .collect();
-    let mut builder =
-        FunctionBuilder::new(program, &name, &parameters, types::storage(graph, result)?)?;
+    let mut builder = FunctionBuilder::new(program, &name, &parameters, result_boundary.ty)?;
     builder.metadata(metadata);
     let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
-    if let Some(class) = facts.object {
+    if result_boundary.indirect {
         builder.parameter_boundary(
             0,
+            Some(crate::lowir::vocabulary::Pass::IndirectResult),
+            types::layout(graph, result)?.0,
+            false,
+        )?;
+    }
+    if let Some(class) = facts.object {
+        builder.parameter_boundary(
+            result_count,
             None,
             types::layout(graph, graph.lower_entity_type(class)?)?.0,
             distinct,
@@ -149,15 +164,19 @@ pub(super) fn lower<'a>(
     }
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
         let (pass, bytes) = reference_boundary(graph, ty)?;
-        builder.parameter_classes(index + object_count, symbols.parameter_classes(ty)?)?;
+        builder.parameter_classes(
+            index + object_count + result_count,
+            symbols.parameter_classes(ty)?,
+        )?;
         builder.parameter_boundary(
-            index + object_count,
+            index + object_count + result_count,
             pass,
             bytes,
             distinct && index == 0 || parameter_no_alias(facts.builtin, index),
         )?;
     }
     let mut boundary = Boundary {
+        result_classes: result_boundary.classes,
         arity: if variadic {
             Arity::Variadic
         } else {
@@ -174,6 +193,9 @@ pub(super) fn lower<'a>(
     builder.boundary(boundary);
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
+    if result_boundary.indirect {
+        function.result_destination = Some(function.builder.parameter(0)?);
+    }
     let body = body
         .map(|id| {
             let ast::Body::Parsed(body) = tree.bodies.get(id) else {
@@ -185,6 +207,11 @@ pub(super) fn lower<'a>(
         })
         .transpose()?;
     function.lifetime.body = body.map(|body| body.compound);
+    if result_boundary.indirect
+        && let Some(body) = body
+    {
+        function.find_returned_local(body.compound, result)?;
+    }
     if facts.nothrow {
         let raises = body
             .map(|body| function.statement_throws(body.compound))
@@ -209,18 +236,10 @@ pub(super) fn lower<'a>(
         }
     }
     if object_count != 0 {
-        let slot = function.builder.slot("this", Type::Ptr)?;
-        let incoming = function.builder.parameter(0)?;
-        function.builder.effect(I::Store(
-            crate::lowir::model::Facts::memory(false, true),
-            Type::Ptr,
-            incoming,
-            slot,
-        ))?;
-        function.this_slot = Some(slot);
+        function.initialize_this(result_count)?;
     }
     for (ordinal, &(entity, _, _)) in parameter_bindings.iter().enumerate() {
-        let index = ordinal + object_count;
+        let index = ordinal + object_count + result_count;
         let slot = if parameter_bindings[ordinal].1.is_some() {
             function.builder.slot(&names[index].0, names[index].1)?
         } else {
@@ -253,7 +272,7 @@ pub(super) fn lower<'a>(
     }
     function.finish_destructor()?;
     if !function.terminated {
-        let ty = types::storage(graph, result)?;
+        let ty = result_boundary.ty;
         if ty != Type::Void
             && !is_main
             && function
@@ -262,11 +281,7 @@ pub(super) fn lower<'a>(
         {
             function.builder.effect(I::Unreachable)?;
         } else {
-            let value = if ty == Type::Void {
-                None
-            } else {
-                Some(function.zero(result)?.value)
-            };
+            let value = function.zero_return(result)?;
             function.effect(I::Return(ty, value))?;
         }
     }
@@ -317,12 +332,27 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             construction: super::constructor_cleanup::Construction::default(),
             terminated: false,
             result,
+            result_destination: None,
+            result_storage: None,
+            returned_local: None,
             budget,
             stack_base: std::ptr::from_ref(&marker).addr(),
         }
     }
 }
 impl Function<'_, '_, '_, '_> {
+    fn initialize_this(&mut self, index: usize) -> Result<(), Error> {
+        let slot = self.builder.slot("this", Type::Ptr)?;
+        let incoming = self.builder.parameter(index)?;
+        self.builder.effect(I::Store(
+            crate::lowir::model::Facts::memory(false, true),
+            Type::Ptr,
+            incoming,
+            slot,
+        ))?;
+        self.this_slot = Some(slot);
+        Ok(())
+    }
     fn initialize_parameter(
         &mut self,
         ty: TypeId,
@@ -517,9 +547,15 @@ impl Function<'_, '_, '_, '_> {
             crate::sema::Error::Invariant("local without name"),
         ))?;
         let spelling = self.symbols.identifier(name)?;
-        let slot = self
-            .builder
-            .slot(spelling, types::local_storage(self.graph, entity, ty)?)?;
+        let slot = if self.returned_local == Some(entity) {
+            self.result_destination
+                .ok_or(crate::sema::Error::Invariant(
+                    "returned local without destination",
+                ))?
+        } else {
+            self.builder
+                .slot(spelling, types::local_storage(self.graph, entity, ty)?)?
+        };
         self.locals.insert(entity, slot);
         if self.terminated {
             // unreachable_declaration retains the holder's identity but strips
@@ -608,10 +644,24 @@ pub(super) fn signature(
         )));
     };
     let mut values = Vec::with_capacity(parameters.len());
+    let result_boundary = symbols.result_boundary(result)?;
+    if result_boundary.indirect {
+        values.push(Parameter {
+            name: program.names.intern("arg0")?,
+            ty: Type::Ptr,
+            pass: Some(crate::lowir::vocabulary::Pass::IndirectResult),
+            no_alias: false,
+            object_bytes: types::layout(graph, result)?.0,
+            classes: None,
+        });
+    }
     for (index, &ty) in parameters.iter().enumerate() {
         let (pass, object_bytes) = reference_boundary(graph, ty)?;
         values.push(Parameter {
-            name: program.names.intern(&format!("arg{index}"))?,
+            name: program.names.intern(&format!(
+                "arg{}",
+                index + usize::from(result_boundary.indirect)
+            ))?,
             ty: types::storage(graph, ty)?,
             pass,
             no_alias: false,
@@ -621,8 +671,9 @@ pub(super) fn signature(
     }
     Ok(program.add_signature(Signature {
         parameters: values,
-        result: types::storage(graph, result)?,
+        result: result_boundary.ty,
         boundary: Boundary {
+            result_classes: result_boundary.classes,
             unwind: if nothrow { Unwind::No } else { Unwind::Default },
             arity: if variadic {
                 Arity::Variadic
@@ -693,14 +744,21 @@ pub(super) fn declare(
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let signature = signature(program, symbols, graph, facts.ty, facts.nothrow)?;
     if let Some(class) = facts.object {
-        let name = program.names.intern("arg0")?;
-        for index in 0..program.signature_mut(signature).parameters.len() {
+        let first = usize::from(
+            program
+                .signature(signature)
+                .parameters
+                .first()
+                .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
+        );
+        let name = program.names.intern(&format!("arg{first}"))?;
+        for index in first..program.signature_mut(signature).parameters.len() {
             let name = program.names.intern(&format!("arg{}", index + 1))?;
             program.signature_mut(signature).parameters[index].name = name;
         }
         let object_bytes = types::layout(graph, graph.lower_entity_type(class)?)?.0;
         program.signature_mut(signature).parameters.insert(
-            0,
+            first,
             crate::lowir::model::Parameter {
                 name,
                 ty: Type::Ptr,

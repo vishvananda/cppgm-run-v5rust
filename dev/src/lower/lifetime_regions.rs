@@ -47,12 +47,8 @@ impl Function<'_, '_, '_, '_> {
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value;
         self.terminate_exception(exception)?;
-        let ty = types::storage(self.graph, source)?;
-        let value = if ty == Type::Void {
-            None
-        } else {
-            Some(self.zero(source)?.value)
-        };
+        let ty = self.symbols.result_boundary(source)?.ty;
+        let value = self.zero_return(source)?;
         self.effect(I::Return(ty, value))?;
         self.terminated = true;
         Ok(())
@@ -100,12 +96,8 @@ impl Function<'_, '_, '_, '_> {
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value;
         self.terminate_exception(exception)?;
-        let ty = types::storage(self.graph, source)?;
-        let value = if ty == Type::Void {
-            None
-        } else {
-            Some(self.zero(source)?.value)
-        };
+        let ty = self.symbols.result_boundary(source)?.ty;
+        let value = self.zero_return(source)?;
         let guard = self.lifetime.function_guard.take();
         self.effect(I::Return(ty, value))?;
         self.lifetime.function_guard = guard;
@@ -161,7 +153,10 @@ impl Function<'_, '_, '_, '_> {
         if transient {
             self.close_lifetime_region()?;
         }
-        if !transient && self.lifetime.region && value.ty != Type::Void {
+        if !transient
+            && self.lifetime.region
+            && !matches!(value.ty, Type::Void | Type::Object { .. })
+        {
             let slot = self.generated_slot("call", value.ty)?;
             self.effect(I::Store(
                 Facts::memory(false, !matches!(value.ty, Type::I8 | Type::U8)),

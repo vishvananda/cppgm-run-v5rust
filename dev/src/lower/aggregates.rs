@@ -53,6 +53,14 @@ impl Function<'_, '_, '_, '_> {
         if self.prvalue_helper(ty, object, values)? {
             return Ok(());
         }
+        if values.is_empty()
+            && let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && self.graph.lower_class_empty(class)?
+        {
+            // An empty braced prvalue has no member action. Named storage
+            // and parenthesized value-initialization keep their own zeroing.
+            return Ok(());
+        }
         if values.is_empty() && self.symbols.zeroed_by_value(ty)? {
             return self.zero_class_object(ty, object, None);
         }
@@ -173,7 +181,7 @@ impl Function<'_, '_, '_, '_> {
                         slot,
                     ));
                 }
-                let object = self.emit(I::Addr(slot), ty)?.value;
+                let object = self.storage_address(slot, ty)?;
                 return self.materialize_class(expr, ty, object);
             }
         }
@@ -184,7 +192,7 @@ impl Function<'_, '_, '_, '_> {
             if !self.graph.lower_trivial_default_construction(entity)? {
                 return self.construct_local(entity, ty, slot);
             }
-            self.emit(I::Addr(slot), ty)?;
+            self.storage_address(slot, ty)?;
             return Ok(());
         };
         let id = if let Some(id) = elided {
@@ -209,7 +217,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if storage == NamedStorage::Automatic {
-            self.emit(I::Addr(slot), ty)?;
+            self.storage_address(slot, ty)?;
         }
         let mut input = Input {
             values: self.tree.expr_lists.get(elements),
@@ -606,7 +614,13 @@ impl Function<'_, '_, '_, '_> {
             self.bind_aggregate_reference(id, ty)?
         } else if let Some(id) = expr {
             let context = if matches!(item, Item::ArrayElement) {
-                Context::Initialization
+                // structured_item preserves the array element conversion;
+                // aggregate_item initializes a named root's element directly.
+                if matches!(path.root, Root::Address(_)) {
+                    Context::ArrayElement
+                } else {
+                    Context::Initialization
+                }
             } else {
                 Context::MemberInitialization
             };
@@ -963,7 +977,7 @@ impl Function<'_, '_, '_, '_> {
     }
     fn named_address(&mut self, path: &Path, source: TypeId) -> Result<Value, Error> {
         let mut address = match path.root {
-            Root::Slot(slot) => self.emit(I::Addr(slot), source)?.value,
+            Root::Slot(slot) => self.storage_address(slot, source)?,
             Root::Address(address) => address,
             Root::This(pointer) => self.object_pointer(pointer)?.value,
         };

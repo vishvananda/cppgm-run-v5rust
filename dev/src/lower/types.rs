@@ -58,6 +58,13 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
         }
         TypeView::Enum(underlying) => return storage(graph, underlying),
         TypeView::Class(entity) => {
+            if !graph.lower_complete_object(ty)? {
+                return Err(crate::sema::Error::at(
+                    crate::support::source::SourceOffset(0),
+                    "a type outside the procedural lowering slice",
+                )
+                .into());
+            }
             let (bytes, align) = graph.lower_class_layout(entity)?;
             Type::Object { bytes, align }
         }

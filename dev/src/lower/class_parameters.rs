@@ -19,6 +19,18 @@ pub(super) struct Classes {
     classes: HashMap<EntityId, u16>,
 }
 impl Classes {
+    pub(super) fn result_memory(
+        &mut self,
+        graph: &Graph,
+        class: EntityId,
+        budget: StackBudget,
+    ) -> Result<bool, Error> {
+        let marker = 0u8;
+        Ok(
+            self.class_quarters(graph, class, budget, std::ptr::from_ref(&marker).addr())? & MEMORY
+                != 0,
+        )
+    }
     pub(super) fn parameter(
         &mut self,
         graph: &Graph,

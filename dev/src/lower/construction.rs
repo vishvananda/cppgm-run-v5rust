@@ -55,7 +55,7 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "object without constructor",
             )))?;
-        let object = self.emit(I::Addr(slot), ty)?.value;
+        let object = self.storage_address(slot, ty)?;
         let arguments = self.graph.lower_constructor_arguments(entity);
         self.construct_at(id, ty, object, arguments)
     }

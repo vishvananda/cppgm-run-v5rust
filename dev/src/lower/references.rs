@@ -15,6 +15,13 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn storage_address(&mut self, storage: Value, ty: TypeId) -> Result<Value, Error> {
+        if matches!(storage, Value::Slot(_) | Value::Symbol(_)) {
+            Ok(self.emit(I::Addr(storage), ty)?.value)
+        } else {
+            Ok(storage)
+        }
+    }
     pub(super) fn initializer_expression(
         &self,
         initializer: ast::Initializer,

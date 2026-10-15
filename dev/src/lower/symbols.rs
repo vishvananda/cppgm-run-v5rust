@@ -175,6 +175,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<Option<crate::lowir::vocabulary::ObjectClasses>, Error> {
         self.class_parameters.parameter(self.graph, ty, self.budget)
     }
+    pub(super) fn class_result_memory(&mut self, class: EntityId) -> Result<bool, Error> {
+        self.class_parameters
+            .result_memory(self.graph, class, self.budget)
+    }
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
             .map_err(|_| Error::Missing("local name spelling"))
@@ -295,6 +299,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let TypeView::Class(class) = self.graph.lower_type(ty)? else {
             return Ok(None);
         };
+        if !self.graph.lower_complete_object(ty)? {
+            return Ok(None);
+        }
         if !self.class_storage_properties(class)?.destruction {
             return Ok(None);
         }
@@ -1798,6 +1805,37 @@ impl Symbols<'_, '_> {
         }
         self.inert_destructors.insert(entity, inert);
         Ok(inert)
+    }
+}
+
+impl Symbols<'_, '_> {
+    pub(super) fn result_boundary(
+        &mut self,
+        ty: TypeId,
+    ) -> Result<super::class_results::ResultBoundary, Error> {
+        let mut boundary = super::class_results::ResultBoundary {
+            ty: crate::lowir::vocabulary::Type::Void,
+            indirect: false,
+            classes: None,
+        };
+        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+            // Merely naming a function returning an incomplete class does not
+            // demand that class's layout or its special members.
+            if !self.graph.lower_complete_object(ty)? {
+                return Ok(boundary);
+            }
+            boundary.indirect = !self.graph.lower_direct_class_parameter(class)?
+                || super::types::layout(self.graph, ty)?.0 > 16
+                || self.class_result_memory(class)?;
+            if boundary.indirect {
+                return Ok(boundary);
+            }
+            boundary.classes = self.parameter_classes(ty)?.filter(|classes| {
+                !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
+            });
+        }
+        boundary.ty = super::types::storage(self.graph, ty)?;
+        Ok(boundary)
     }
 }
 

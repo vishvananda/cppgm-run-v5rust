@@ -531,6 +531,15 @@ impl Function<'_, '_, '_, '_> {
         callee_expression: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
+        self.call_into(id, callee_expression, arguments, None)
+    }
+    pub(super) fn call_into(
+        &mut self,
+        id: ast::ExprId,
+        callee_expression: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        destination: Option<crate::lowir::model::Value>,
+    ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
         if let Some(kind) = self.graph.lower_floating_intrinsic(id)? {
             return self.floating_intrinsic(id, arguments, kind);
@@ -579,9 +588,15 @@ impl Function<'_, '_, '_, '_> {
                 "call signature missing",
             )));
         };
-        let ty = types::storage(self.graph, result)?;
+        let boundary = self.symbols.result_boundary(result)?;
+        let ty = boundary.ty;
         let supplied = self.tree.expr_lists.get(arguments);
         let mut values = Vec::with_capacity(parameters.len() + 1);
+        if boundary.indirect {
+            values.push(destination.ok_or(crate::sema::Error::Invariant(
+                "class call without destination",
+            ))?);
+        }
         if let CallTarget::Direct(entity) = target {
             let object = self.graph.lower_object_source(callee_expression)?;
             if self.graph.lower_function(entity)?.object.is_some() {
@@ -668,9 +683,9 @@ impl Function<'_, '_, '_, '_> {
             signature,
         });
         self.before_lifetime_call(throws)?;
-        let value = self.lifetime_result(call, source)?;
-        self.finish_lifetime_call(value, throws)
+        self.finish_result_call(call, source, destination, throws)
     }
+
     fn conditional(
         &mut self,
         id: ast::ExprId,

@@ -71,7 +71,7 @@ impl Function<'_, '_, '_, '_> {
             if self.aggregation.landing
                 && let Some((storage, ty)) = completion
             {
-                self.emit(crate::lowir::model::InstructionKind::Addr(storage), ty)?;
+                self.storage_address(storage, ty)?;
             }
             self.close_lifetime_region()?;
             self.release_aggregate_members(scope.first);
