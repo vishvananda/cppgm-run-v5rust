@@ -17,6 +17,7 @@ mod constants;
 mod construction;
 mod constructor_initialization;
 mod copy_initialization;
+mod copy_properties;
 mod data_members;
 mod declaration_access;
 mod declarations;

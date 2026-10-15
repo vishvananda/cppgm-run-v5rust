@@ -800,10 +800,16 @@ impl Analyzer<'_> {
         )? != 0
         {
             let binding = self.graph.function_origin(function)?;
-            let kind = self
-                .declared_copy_kind(binding, class)?
+            self.declared_copy_kind(binding, class)?
                 .ok_or(Error::Invariant("defaulted non-copy constructor"))?;
-            if self.scalar_copy_deleted(class, kind)? {
+            self.prepare_copy_properties(class)?;
+            self.prepare_declared_copy(binding, class)?;
+            let properties = self
+                .graph
+                .entity(function)
+                .copy_properties
+                .ok_or(Error::Invariant("defaulted copy properties"))?;
+            if self.graph.copy_properties.get(properties).deleted {
                 return Err(Error::at(
                     location,
                     "an explicitly defaulted function is defined as deleted",

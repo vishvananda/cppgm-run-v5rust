@@ -660,6 +660,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             return Ok(());
         }
         if let Some(init) = initializer {
+            if self.copy_constructor_action(id, init, depth + 1)? {
+                return Ok(());
+            }
             if self.string_initializer(
                 binding
                     .ty
@@ -733,6 +736,50 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(b" ")?;
         self.variable_name(id)?;
         writeln!(self.output)
+    }
+    fn copy_constructor_action(
+        &mut self,
+        variable: BindingId,
+        initializer: ast::Initializer,
+        depth: usize,
+    ) -> io::Result<bool> {
+        let Some(ty) = self.graph.binding(variable).ty else {
+            return Ok(false);
+        };
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(false);
+        };
+        let expression = match initializer.kind {
+            ast::InitializerKind::Assign(id) => id,
+            ast::InitializerKind::Parenthesized(arguments)
+                if self.tree.expr_lists.get(arguments).len() == 1 =>
+            {
+                self.tree.expr_lists.get(arguments)[0]
+            }
+            _ => return Ok(false),
+        };
+        if self
+            .graph
+            .expression_facts
+            .copy_action(expression)
+            .is_none()
+        {
+            return Ok(false);
+        }
+        self.indent(depth)?;
+        self.output.write_all(b"constructor-action ")?;
+        self.graph
+            .write_constructor_name(class, self.cursor, self.output, false)?;
+        writeln!(self.output)?;
+        self.work.push((
+            Item::Expression {
+                id: expression,
+                bare: false,
+                retyped: None,
+            },
+            depth + 1,
+        ));
+        Ok(true)
     }
     fn constructor_name(
         &mut self,

@@ -5,16 +5,11 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{Conversion, ValueCategory as V},
-    function_names::{SpecialName, ValueKey},
     graph::{BindingId, EntityId, FunctionAvailability, ScopeId},
     special_members::SpecialDefinition,
-    types::{Cv, RefKind, TypeId, TypeKind},
+    types::{RefKind, TypeId, TypeKind},
 };
-use crate::{
-    lex::{pp_lexer::Punctuator as P, vocabulary::SimpleToken},
-    support::source::SourceOffset,
-    syntax::ast,
-};
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,16 +33,17 @@ pub(super) enum CopyUse {
     Value { in_place: bool },
 }
 #[derive(Clone, Copy)]
-enum ClassPassing {
+pub(super) enum ClassPassing {
     Direct,
     Indirect,
 }
 #[derive(Clone, Copy)]
 pub(super) struct ImplicitCopies {
-    copy: Option<(TypeId, bool)>,
-    moving: Option<TypeId>,
-    copy_deleted: bool,
-    passing: Option<ClassPassing>,
+    pub(super) copy: Option<(TypeId, bool)>,
+    pub(super) moving: Option<TypeId>,
+    pub(super) copy_properties: Option<super::copy_properties::CopyPropertiesId>,
+    pub(super) move_properties: Option<super::copy_properties::CopyPropertiesId>,
+    pub(super) passing: Option<ClassPassing>,
 }
 impl super::graph::Graph {
     pub(crate) fn lower_copy_constructor(&self, function: EntityId) -> bool {
@@ -72,24 +68,32 @@ impl super::graph::Graph {
         let mut usable =
             copies.copy.is_some_and(|(_, deleted)| !deleted) || copies.moving.is_some();
         let mut trivial = self.destructor_trivial(class)?;
+        for id in [copies.copy_properties, copies.move_properties]
+            .into_iter()
+            .flatten()
+        {
+            let facts = self.copy_properties.get(id);
+            if !facts.deleted {
+                trivial &= facts.trivial;
+            }
+        }
         for &binding in &entity.declared_constructors {
             let constructor = self.entity(self.binding(binding).entity);
             if constructor.copy_kind.is_none()
                 || constructor.availability == FunctionAvailability::Deleted
-                || constructor.copy_kind == Some(RefKind::Lvalue)
-                    && copies.copy_deleted
-                    && matches!(
-                        constructor.special_definition,
-                        Some(SpecialDefinition::Defaulted { .. })
-                    )
             {
                 continue;
             }
+            if let Some(id) = constructor.copy_properties {
+                let facts = self.copy_properties.get(id);
+                if facts.deleted {
+                    continue;
+                }
+                trivial &= facts.trivial;
+            } else {
+                trivial = false;
+            }
             usable = true;
-            trivial &= matches!(
-                constructor.special_definition,
-                Some(SpecialDefinition::Defaulted { first: true, .. })
-            );
         }
         Ok(trivial && usable)
     }
@@ -126,7 +130,13 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
         let function = self.graph.entity(self.graph.binding(binding).entity);
-        if function.template_head.is_some() {
+        if function.template_head.is_some()
+            || self
+                .graph
+                .inherited_constructors
+                .source(self.graph.binding(binding).entity)
+                .is_some()
+        {
             return Ok(None);
         }
         let ty = function
@@ -152,6 +162,21 @@ impl Analyzer<'_> {
             let function = self.graph.binding(binding).entity;
             self.graph.entity_mut(function).copy_kind = kind;
         }
+        // A written defaulted member publishes its own facts at class completion;
+        // the class's implicit constructors still wait for a use to demand them.
+        for index in 0..self.graph.entity(class).declared_constructors.len() {
+            let binding = self.graph.entity(class).declared_constructors[index];
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.copy_kind.is_some()
+                && matches!(
+                    entity.special_definition,
+                    Some(SpecialDefinition::Defaulted { .. })
+                )
+            {
+                self.prepare_copy_children(class)?;
+                self.prepare_declared_copy(binding, class)?;
+            }
+        }
         Ok(())
     }
 
@@ -167,123 +192,12 @@ impl Analyzer<'_> {
         Ok(entity.copy_kind)
     }
 
-    pub(super) fn scalar_copy_deleted(
-        &self,
-        class: EntityId,
-        kind: RefKind,
-    ) -> Result<bool, Error> {
-        if !self.graph.entity(class).bases.is_empty() {
-            return Err(Error::Missing("base subobject copy and move plans"));
-        }
-        let mut deleted = false;
-        for &member in &self.graph.entity(class).members {
-            let mut ty = self
-                .graph
-                .entity(member)
-                .ty
-                .ok_or(Error::Invariant("copy member without type"))?;
-            if matches!(
-                self.graph.types.get(ty).kind,
-                TypeKind::Reference {
-                    kind: RefKind::Rvalue,
-                    ..
-                }
-            ) {
-                deleted |= kind == RefKind::Lvalue;
-            }
-            while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
-                ty = element;
-            }
-            if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class subobject copy and move plans"));
-            }
-        }
-        Ok(deleted)
-    }
-
     fn implicit_copy_candidates(&mut self, class: EntityId) -> Result<ImplicitCopies, Error> {
-        if let Some(copies) = self.graph.entity(class).implicit_copies {
-            return Ok(copies);
-        }
-        // Immutable scalar subobjects are checked once at this class demand.
-        let copy_deleted = self.scalar_copy_deleted(class, RefKind::Lvalue)?;
-        let mut has_copy = false;
-        let mut has_move = false;
-        for &binding in &self.graph.entity(class).declared_constructors {
-            match self.declared_copy_kind(binding, class)? {
-                Some(RefKind::Lvalue) => has_copy = true,
-                Some(RefKind::Rvalue) => has_move = true,
-                None => (),
-            }
-        }
-        let home = self
-            .graph
+        self.prepare_copy_properties(class)?;
+        self.graph
             .entity(class)
-            .scope
-            .ok_or(Error::Invariant("copy class without scope"))?;
-        let assignment = ValueKey::Special(SpecialName::Operator {
-            token: SimpleToken::punctuator(P::Assign)
-                .ok_or(Error::Invariant("assignment token"))?,
-            array: false,
-        });
-        let mut copy_assignment = false;
-        let mut move_assignment = false;
-        for binding in self.graph.functions_at(home, assignment) {
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() || entity.function.is_some_and(|p| p.is_static) {
-                continue;
-            }
-            let ty = entity
-                .ty
-                .ok_or(Error::Invariant("assignment without type"))?;
-            if self.graph.types.function_parameter_count(ty)? != 1
-                || matches!(
-                    self.graph.types.get(ty).kind,
-                    TypeKind::Function { variadic: true, .. }
-                )
-            {
-                continue;
-            }
-            let parameter = self.graph.types.function_parameter(ty, 0)?;
-            let (element, moving) = match self.graph.types.get(parameter).kind {
-                TypeKind::Reference { element, kind } => (element, kind == RefKind::Rvalue),
-                _ => (parameter, false),
-            };
-            if matches!(self.graph.types.get(element).kind, TypeKind::Class(owner) if owner == class)
-            {
-                move_assignment |= moving;
-                copy_assignment |= !moving;
-            }
-        }
-        let destructor = self.destructor_callable(class)?.is_some();
-        let ty = self
-            .graph
-            .entity(class)
-            .ty
-            .ok_or(Error::Invariant("copy class without type"))?;
-        let copy = if has_copy {
-            None
-        } else {
-            let deleted = has_move || move_assignment || copy_deleted;
-            let element = self.graph.types.qualify(ty, Cv::CONST)?;
-            Some((
-                self.graph.types.reference(element, RefKind::Lvalue)?,
-                deleted,
-            ))
-        };
-        let moving = if has_copy || has_move || copy_assignment || move_assignment || destructor {
-            None
-        } else {
-            Some(self.graph.types.reference(ty, RefKind::Rvalue)?)
-        };
-        let copies = ImplicitCopies {
-            copy,
-            moving,
-            copy_deleted,
-            passing: None,
-        };
-        self.graph.entity_mut(class).implicit_copies = Some(copies);
-        Ok(copies)
+            .implicit_copies
+            .ok_or(Error::Invariant("copy properties not published"))
     }
 
     pub(super) fn record_class_copy(
@@ -340,19 +254,8 @@ impl Analyzer<'_> {
                 "conditional class temporary copy construction",
             ));
         }
-        let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected = self.select_class_copy(
-            class,
-            facts,
-            scope,
-            direct,
-            location,
-            &mut scratch.candidates,
-        );
-        scratch.candidates.clear();
-        self.copy_scratch = scratch;
+        let selected = self.select_copy_sequence(class, facts, Some(scope), direct, location)?;
         let mut facts = facts;
-        let selected = selected?;
         let action = if elided {
             None
         } else {
@@ -386,6 +289,17 @@ impl Analyzer<'_> {
             {
                 return Err(Error::Missing("direct defaulted move constructor body"));
             }
+        }
+        if !self.selected_copy_properties(class, selected)?.trivial {
+            return Err(Error::Missing(
+                "recursive nontrivial copy constructor bodies",
+            ));
+        }
+        // Selecting a written defaulted constructor is an odr-use even when
+        // lowering performs its trivial transfer as bytes. The semantic dump
+        // retains its declaration; emission still follows actual LowIR calls.
+        if let CopyOrigin::Declared(binding) = selected.origin {
+            self.demand_function(binding, true);
         }
         // Empty classes with nontrivial destructors call even a trivial copy.
         // Their implicit callable entry is a separate special-member body owner.
@@ -433,9 +347,34 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<CopySelection, Error> {
+        self.select_copy_sequence(class, facts, Some(scope), true, location)
+    }
+    pub(super) fn select_subobject_copy(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+    ) -> Result<CopySelection, Error> {
+        // Preserve the selected identity even when access deletes the enclosing
+        // defaulted member. Its owner checks base/member protected access next.
+        self.select_copy_sequence(class, facts, None, true, SourceOffset(0))
+    }
+    fn select_copy_sequence(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        access_scope: Option<ScopeId>,
+        direct: bool,
+        location: SourceOffset,
+    ) -> Result<CopySelection, Error> {
         let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected =
-            self.select_class_copy(class, facts, scope, true, location, &mut scratch.candidates);
+        let selected = self.select_class_copy(
+            class,
+            facts,
+            access_scope,
+            direct,
+            location,
+            &mut scratch.candidates,
+        );
         scratch.candidates.clear();
         self.copy_scratch = scratch;
         selected
@@ -444,7 +383,7 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
-        scope: ScopeId,
+        access_scope: Option<ScopeId>,
         direct: bool,
         location: SourceOffset,
         candidates: &mut Vec<Candidate>,
@@ -457,17 +396,13 @@ impl Analyzer<'_> {
             .class_of(facts.ty)
             .is_some_and(|source| source == class || self.graph.is_base_of(class, source));
         let copies = if implicit_binding {
-            self.implicit_copy_candidates(class)?
+            Some(self.implicit_copy_candidates(class)?)
         } else {
-            ImplicitCopies {
-                copy: None,
-                moving: None,
-                copy_deleted: false,
-                passing: None,
-            }
+            None
         };
         candidates.clear();
-        let mut offered = !implicit_binding || copies.copy.is_some() || copies.moving.is_some();
+        let mut offered =
+            !implicit_binding || copies.is_some_and(|c| c.copy.is_some() || c.moving.is_some());
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -496,13 +431,14 @@ impl Analyzer<'_> {
                 Some(SpecialDefinition::Defaulted { .. })
             );
             let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
+            let copy_properties = entity.copy_properties;
             let parameter = self.graph.types.function_parameter(ty, 0)?;
             let Some(conversion) = self.scalar_sequence(facts, parameter, false)? else {
                 continue;
             };
             let kind = self.declared_copy_kind(binding, class)?;
             let deleted = explicitly_deleted
-                || defaulted && kind == Some(RefKind::Lvalue) && copies.copy_deleted;
+                || copy_properties.is_some_and(|id| self.graph.copy_properties.get(id).deleted);
             if defaulted && deleted && kind == Some(RefKind::Rvalue) {
                 continue;
             }
@@ -517,10 +453,10 @@ impl Analyzer<'_> {
         }
         for (kind, parameter, deleted) in [
             copies
-                .copy
+                .and_then(|c| c.copy)
                 .map(|(parameter, deleted)| (RefKind::Lvalue, parameter, deleted)),
             copies
-                .moving
+                .and_then(|c| c.moving)
                 .map(|parameter| (RefKind::Rvalue, parameter, false)),
         ]
         .into_iter()
@@ -577,7 +513,9 @@ impl Analyzer<'_> {
         {
             return Err(Error::Missing("nonelided constructor argument conversion"));
         }
-        if let CopyOrigin::Declared(binding) = chosen.selection.origin {
+        if let CopyOrigin::Declared(binding) = chosen.selection.origin
+            && let Some(scope) = access_scope
+        {
             self.check_direct_member_access(binding, scope, location)?;
         }
         Ok(chosen.selection)
