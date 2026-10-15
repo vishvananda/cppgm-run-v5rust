@@ -27,7 +27,7 @@ pub(super) fn converted_builtin(op: P, count: usize) -> bool {
 }
 
 impl Analyzer<'_> {
-    fn builtin_operand_options(
+    pub(super) fn builtin_operand_options(
         &mut self,
         facts: ExprFacts,
         options: &mut Vec<TypeId>,

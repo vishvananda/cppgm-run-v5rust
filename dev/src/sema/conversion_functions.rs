@@ -13,12 +13,10 @@ use super::{
     procedural_calls::{ArgumentSequence, UserConversion},
     specifiers::Explicitness,
     types::{TypeId, TypeKind},
+    user_conversions::UserCandidate,
 };
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ConversionUse {
@@ -206,9 +204,6 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<Option<ArgumentSequence>, Error> {
-        let Some(class) = self.graph.class_of(source.ty) else {
-            return Ok(None);
-        };
         // Class value results have additional constructor competition rules.
         let object = match self.graph.types.get(target).kind {
             TypeKind::Reference { element, .. } => element,
@@ -217,13 +212,46 @@ impl Analyzer<'_> {
         if self.graph.class_of(object).is_some() {
             return Ok(None);
         }
+        let mut candidates = Vec::new();
+        self.conversion_function_candidates(source, target, direct, false, &mut candidates)?;
+        let Some(best) = self.best_user_candidate(&candidates)? else {
+            return Ok(None);
+        };
+        let after = best
+            .after
+            .ok_or(Error::Invariant("function candidate second sequence"))?;
+        let mut outer = after;
+        outer.rank = ConversionRank::UserDefined;
+        Ok(Some(ArgumentSequence {
+            conversion: outer,
+            application: Some(after),
+            function: None,
+            user_conversion: Some(UserConversion::Function(best.binding)),
+        }))
+    }
+
+    pub(super) fn conversion_function_candidates(
+        &mut self,
+        source: ExprFacts,
+        target: TypeId,
+        direct: bool,
+        direct_lvalue: bool,
+        candidates: &mut Vec<UserCandidate>,
+    ) -> Result<(), Error> {
+        let Some(class) = self.graph.class_of(source.ty) else {
+            return Ok(());
+        };
+        let object = match self.graph.types.get(target).kind {
+            TypeKind::Reference { element, .. } => element,
+            _ => target,
+        };
+        let destination = self.graph.class_of(object);
         let receiver = ObjectArgument {
             source: ObjectSource::Implicit,
             ty: source.ty,
             category: source.category,
         };
         let count = self.visible_conversion_functions(class)?.len();
-        let mut candidates = Vec::new();
         for index in 0..count {
             let binding = self.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -234,53 +262,36 @@ impl Analyzer<'_> {
             let ty = entity
                 .ty
                 .ok_or(Error::Invariant("conversion without signature"))?;
+            let produced = self.call_result(ty)?;
+            if direct_lvalue && produced.category != ValueCategory::Lvalue {
+                continue;
+            }
+            if let Some(destination) = destination
+                && object == target
+                && self.graph.class_of(produced.ty).is_none_or(|made| {
+                    made != destination && !self.graph.is_base_of(destination, made)
+                })
+            {
+                continue;
+            }
             let Some(first) = self.object_sequence(receiver, binding, true)? else {
                 continue;
             };
-            let produced = self.call_result(ty)?;
             let Some(after) = self.scalar_sequence(produced, target, false)? else {
                 continue;
             };
-            if explicit && after.second != ValueConversion::None {
+            if direct_lvalue && after.temporary
+                || explicit && destination.is_none() && after.second != ValueConversion::None
+            {
                 continue;
             }
-            candidates.push((binding, first, after));
+            candidates.push(UserCandidate {
+                binding,
+                first,
+                after: Some(after),
+            });
         }
-        let Some(mut best) = candidates.first().copied() else {
-            return Ok(None);
-        };
-        for &candidate in candidates.iter().skip(1) {
-            if self.conversion_function_order(candidate, best)? == Ordering::Greater {
-                best = candidate;
-            }
-        }
-        for &candidate in &candidates {
-            if candidate.0 != best.0
-                && self.conversion_function_order(best, candidate)? != Ordering::Greater
-            {
-                return Ok(None);
-            }
-        }
-        let mut outer = best.2;
-        outer.rank = ConversionRank::UserDefined;
-        Ok(Some(ArgumentSequence {
-            conversion: outer,
-            application: Some(best.2),
-            function: None,
-            user_conversion: Some(UserConversion::Function(best.0)),
-        }))
-    }
-
-    fn conversion_function_order(
-        &mut self,
-        a: (BindingId, Conversion, Conversion),
-        b: (BindingId, Conversion, Conversion),
-    ) -> Result<Ordering, Error> {
-        let first = self.compare_sequences(a.1, b.1)?;
-        if first != Ordering::Equal {
-            return Ok(first);
-        }
-        self.compare_sequences(a.2, b.2)
+        Ok(())
     }
 
     pub(super) fn select_conversion_function(

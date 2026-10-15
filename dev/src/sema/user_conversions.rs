@@ -20,10 +20,17 @@ use std::cmp::Ordering;
 pub(super) enum ConversionSite {
     Call,
     Operator,
+    Conditional,
+}
+#[derive(Clone, Copy)]
+pub(super) struct UserCandidate {
+    pub binding: BindingId,
+    pub first: Conversion,
+    pub after: Option<Conversion>,
 }
 #[derive(Default)]
 pub(super) struct UserScratch {
-    candidates: Vec<(BindingId, Conversion)>,
+    candidates: Vec<UserCandidate>,
 }
 impl Analyzer<'_> {
     pub(super) fn user_conversion_sequence(
@@ -35,78 +42,126 @@ impl Analyzer<'_> {
         if let Some(sequence) = self.conversion_function_sequence(source, target, direct)? {
             return Ok(Some(sequence));
         }
-        self.converting_constructor_sequence(source, target)
+        self.user_conversion_query(source, target, direct, false)
     }
-
-    pub(super) fn converting_constructor_sequence(
+    pub(super) fn conditional_user_sequence(
         &mut self,
         source: ExprFacts,
         target: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
+        self.user_conversion_query(source, target, false, true)
+    }
+    fn user_conversion_query(
+        &mut self,
+        source: ExprFacts,
+        target: TypeId,
+        direct: bool,
+        functions: bool,
+    ) -> Result<Option<ArgumentSequence>, Error> {
         if matches!(
             self.graph.types.get(source.ty).kind,
             TypeKind::Scalar(super::types::Scalar::Void)
-        ) {
+        ) || source.functions.is_some()
+        {
             return Ok(None);
         }
-        let object = match self.graph.types.get(target).kind {
-            TypeKind::Reference { element, kind } => {
-                if kind == RefKind::Lvalue && self.type_cv(element).0 & 1 == 0 {
-                    return Ok(None);
-                }
-                element
-            }
-            _ => target,
+        let (object, reference) = match self.graph.types.get(target).kind {
+            TypeKind::Reference { element, kind } => (element, Some(kind)),
+            _ => (target, None),
         };
-        let Some(class) = self.graph.class_of(object) else {
-            return Ok(None);
-        };
-        if !self.graph.entity(class).complete
-            || self
-                .graph
-                .class_of(source.ty)
-                .is_some_and(|from| from == class || self.graph.is_base_of(class, from))
+        let class = self.graph.class_of(object);
+        if self
+            .graph
+            .class_of(source.ty)
+            .zip(class)
+            .is_some_and(|(from, to)| from == to || self.graph.is_base_of(to, from))
         {
             return Ok(None);
         }
         let mut scratch = std::mem::take(&mut self.user_conversion_scratch);
-        let selected = self.select_converting_constructor(source, class, &mut scratch.candidates);
+        let selected = (|| {
+            // 8.5.3p5: a directly binding lvalue result has priority over
+            // constructing a temporary. A failed or ambiguous probe falls through.
+            if functions && reference == Some(RefKind::Lvalue) {
+                self.conversion_function_candidates(
+                    source,
+                    target,
+                    direct,
+                    true,
+                    &mut scratch.candidates,
+                )?;
+                if let Some(best) = self.best_user_candidate(&scratch.candidates)? {
+                    return Ok(Some(best));
+                }
+                scratch.candidates.clear();
+            }
+            if let Some(class) = class
+                && self.graph.entity(class).complete
+                && !(reference == Some(RefKind::Lvalue) && self.type_cv(object).0 & 1 == 0)
+            {
+                self.converting_constructor_candidates(
+                    source,
+                    class,
+                    direct,
+                    &mut scratch.candidates,
+                )?;
+            }
+            if functions {
+                self.conversion_function_candidates(
+                    source,
+                    target,
+                    direct,
+                    false,
+                    &mut scratch.candidates,
+                )?;
+            }
+            self.best_user_candidate(&scratch.candidates)
+        })();
         scratch.candidates.clear();
         self.user_conversion_scratch = scratch;
-        let Some((binding, first)) = selected? else {
+        let Some(best) = selected? else {
             return Ok(None);
         };
-        Ok(Some(ArgumentSequence {
-            conversion: Conversion {
-                target,
-                result: if target == object {
-                    self.bare_type(object)?
-                } else {
-                    object
-                },
-                first: LvalueTransform::None,
-                second: ValueConversion::None,
-                rank: R::UserDefined,
-                qualification: false,
-                initialization: true,
-                temporary: target != object,
-                reference_source: ReferenceSource::Other,
+        let conversion = Conversion {
+            target,
+            result: if reference.is_some() {
+                object
+            } else {
+                self.bare_type(object)?
             },
-            application: Some(first),
+            first: LvalueTransform::None,
+            second: ValueConversion::None,
+            rank: R::UserDefined,
+            qualification: false,
+            initialization: true,
+            temporary: reference.is_some() && best.after.is_none_or(|after| after.temporary),
+            reference_source: ReferenceSource::Other,
+        };
+        Ok(Some(ArgumentSequence {
+            conversion,
+            application: Some(best.after.unwrap_or(best.first)),
             function: None,
-            user_conversion: Some(UserConversion::Constructor(binding)),
+            user_conversion: Some(if best.after.is_some() {
+                UserConversion::Function(best.binding)
+            } else {
+                UserConversion::Constructor(best.binding)
+            }),
         }))
     }
-    fn select_converting_constructor(
+
+    fn converting_constructor_candidates(
         &mut self,
         source: ExprFacts,
         class: super::graph::EntityId,
-        candidates: &mut Vec<(BindingId, Conversion)>,
-    ) -> Result<Option<(BindingId, Conversion)>, Error> {
+        direct: bool,
+        candidates: &mut Vec<UserCandidate>,
+    ) -> Result<(), Error> {
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
+            if entity.explicitness == Explicitness::Explicit && !direct
+                || entity.template_head.is_some()
+            {
                 continue;
             }
             let ty = entity
@@ -127,7 +182,11 @@ impl Analyzer<'_> {
                         .scalar_sequence(source, target, false)?
                         .ok_or(Error::Missing("converting constructor class ellipsis"))?;
                     first.rank = R::Ellipsis;
-                    candidates.push((binding, first));
+                    candidates.push(UserCandidate {
+                        binding,
+                        first,
+                        after: None,
+                    });
                 }
                 continue;
             }
@@ -141,25 +200,48 @@ impl Analyzer<'_> {
             // 13.3.3.1p4: this first step must be standard, so no recursive
             // constructor queries and no second user-defined conversion.
             if let Some(first) = self.scalar_sequence(source, parameter, false)? {
-                candidates.push((binding, first));
+                candidates.push(UserCandidate {
+                    binding,
+                    first,
+                    after: None,
+                });
             }
         }
+        Ok(())
+    }
+    pub(super) fn best_user_candidate(
+        &mut self,
+        candidates: &[UserCandidate],
+    ) -> Result<Option<UserCandidate>, Error> {
         let Some(mut best) = candidates.first().copied() else {
             return Ok(None);
         };
         for &candidate in candidates.iter().skip(1) {
-            if self.compare_sequences(candidate.1, best.1)? == Ordering::Greater {
+            if self.user_candidate_order(candidate, best)? == Ordering::Greater {
                 best = candidate;
             }
         }
-        for &candidate in candidates.iter() {
-            if candidate.0 != best.0
-                && self.compare_sequences(best.1, candidate.1)? != Ordering::Greater
+        for &candidate in candidates {
+            if candidate.binding != best.binding
+                && self.user_candidate_order(best, candidate)? != Ordering::Greater
             {
                 return Ok(None);
             }
         }
         Ok(Some(best))
+    }
+    fn user_candidate_order(
+        &mut self,
+        a: UserCandidate,
+        b: UserCandidate,
+    ) -> Result<Ordering, Error> {
+        let order = self.compare_sequences(a.first, b.first)?;
+        if order == Ordering::Equal
+            && let Some((a, b)) = a.after.zip(b.after)
+        {
+            return self.compare_sequences(a, b);
+        }
+        Ok(order)
     }
     pub(super) fn compare_argument_sequences(
         &mut self,

@@ -129,8 +129,11 @@ impl Function<'_, '_, '_, '_> {
                     }
                     if facts.is_place || class || !at_root {
                         let made = if class {
-                            self.operand_temporaries(then_expr)?.made
-                                || self.operand_temporaries(else_expr)?.made
+                            self.conditional_operand_temporaries(then_expr, facts.ty)?
+                                .made
+                                || self
+                                    .conditional_operand_temporaries(else_expr, facts.ty)?
+                                    .made
                         } else {
                             self.expression_temporaries(then_expr)?.made
                                 || self.expression_temporaries(else_expr)?.made

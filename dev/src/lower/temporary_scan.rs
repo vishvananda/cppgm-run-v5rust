@@ -65,7 +65,7 @@ impl Function<'_, '_, '_, '_> {
             made |= if outer_copy {
                 // This selected transfer constructs our destination; only
                 // evaluating its source can make argument temporaries.
-                self.scan_temporaries(argument, true, false)?.made
+                self.scan_temporaries(argument, true, false, None)?.made
             } else {
                 self.expression_temporaries(argument)?.made
             };
@@ -168,7 +168,7 @@ impl Function<'_, '_, '_, '_> {
             let summary = if base {
                 // The base's selected transfer initializes the destination;
                 // it is not a conversion made while evaluating its argument.
-                self.scan_temporaries(argument, true, false)?
+                self.scan_temporaries(argument, true, false, None)?
             } else {
                 self.expression_temporaries(argument)?
             };
@@ -299,7 +299,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(&summary) = self.lifetime.temporary_queries.get(&root) {
             return Ok(summary);
         }
-        let summary = self.scan_temporaries(root, true, true)?;
+        let summary = self.scan_temporaries(root, true, true, None)?;
         self.lifetime.temporary_queries.insert(root, summary);
         Ok(summary)
     }
@@ -307,16 +307,25 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         root: ast::ExprId,
     ) -> Result<TemporarySummary, Error> {
-        self.scan_temporaries(root, false, true)
+        self.scan_temporaries(root, false, true, None)
+    }
+    pub(super) fn conditional_operand_temporaries(
+        &mut self,
+        root: ast::ExprId,
+        object: TypeId,
+    ) -> Result<TemporarySummary, Error> {
+        self.scan_temporaries(root, false, true, Some(object))
     }
     fn scan_temporaries(
         &mut self,
         root: ast::ExprId,
         include_root: bool,
         root_transfer: bool,
+        object: Option<TypeId>,
     ) -> Result<TemporarySummary, Error> {
         let mut work = std::mem::take(&mut self.lifetime.temporary_work);
-        let result = self.scan_temporary_operands(root, include_root, root_transfer, &mut work);
+        let result =
+            self.scan_temporary_operands(root, include_root, root_transfer, object, &mut work);
         work.clear();
         self.lifetime.temporary_work = work;
         result
@@ -326,6 +335,7 @@ impl Function<'_, '_, '_, '_> {
         root: ast::ExprId,
         include_root: bool,
         root_transfer: bool,
+        object: Option<TypeId>,
         work: &mut Vec<ast::ExprId>,
     ) -> Result<TemporarySummary, Error> {
         let root = self.without_parentheses(root);
@@ -368,7 +378,18 @@ impl Function<'_, '_, '_, '_> {
             let call =
                 matches!(kind, ExprKind::Call { .. }) && !self.graph.lower_functional_call(id)?;
             let operator = self.graph.lower_operator_call(id)?;
-            if (include_root || id != root)
+            // A converted conditional branch constructs the common object,
+            // while its original prvalue receiver may be a different temporary.
+            // The C++ query excludes only the class of that destination.
+            let distinct_source = if id == root
+                && let Some(object) = object
+            {
+                !matches!((self.graph.lower_type(object)?,self.graph.lower_type(facts.ty)?),
+                    (TypeView::Class(a),TypeView::Class(b)) if a == b)
+            } else {
+                false
+            };
+            if (include_root || id != root || distinct_source)
                 && !facts.is_place
                 && self.temporary_type_destroyed(facts.ty)?
             {
