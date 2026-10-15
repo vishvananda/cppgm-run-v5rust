@@ -215,6 +215,18 @@ impl Graph {
             })
             .transpose()
     }
+    pub(crate) fn lower_builtin_operand_type(&self, id: ast::ExprId) -> Result<TypeId, Error> {
+        Ok(self
+            .expression_facts
+            .function_conversion(id)
+            .filter(|step| step.builtin_operand)
+            .map_or(self.expression_facts.get(id)?.ty, |step| step.result))
+    }
+    pub(crate) fn lower_builtin_operand(&self, id: ast::ExprId) -> bool {
+        self.expression_facts
+            .function_conversion(id)
+            .is_some_and(|step| step.builtin_operand)
+    }
     pub(crate) fn lower_function_conversion(
         &self,
         id: ast::ExprId,
@@ -494,6 +506,14 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<u64>, Error> {
+        if let Some(step) = self.expression_facts.function_conversion(id)
+            && step.builtin_operand
+        {
+            return step
+                .after_path
+                .map(|path| self.lower_path_offset(path))
+                .transpose();
+        }
         let facts = self.expression_facts.get(id)?;
         if !facts
             .conversion

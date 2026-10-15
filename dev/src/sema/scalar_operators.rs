@@ -62,7 +62,7 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         postfix: bool,
     ) -> Result<ExprFacts, Error> {
-        let facts = self.graph.expression_facts.get(operand)?;
+        let facts = self.builtin_operand_facts(operand)?;
         if facts.object.is_some()
             && facts
                 .functions
@@ -92,7 +92,7 @@ impl Analyzer<'_> {
             return Ok(result);
         }
         self.check_resolved_function(operand)?;
-        let facts = self.graph.expression_facts.get(operand)?;
+        let facts = self.builtin_operand_facts(operand)?;
         if op == P::BitAnd {
             self.odr_use_constants(operand, None)?;
             if facts.is_bit_field() {
@@ -206,8 +206,8 @@ impl Analyzer<'_> {
             return self.new_expression_facts(ty, V::Prvalue);
         }
         self.check_resolved_function(right)?;
-        let lf = self.graph.expression_facts.get(left)?;
-        let rf = self.graph.expression_facts.get(right)?;
+        let lf = self.builtin_operand_facts(left)?;
+        let rf = self.builtin_operand_facts(right)?;
         if op == P::Comma {
             self.check_temporary_destruction(lf, scope, self.tree.expressions.get(left).location)?;
             let mut result = self.new_expression_facts(rf.ty, rf.category)?;
@@ -530,7 +530,7 @@ impl Analyzer<'_> {
         right: ast::ExprId,
     ) -> Result<ExprFacts, Error> {
         self.check_resolved_function(left)?;
-        let lf = self.graph.expression_facts.get(left)?;
+        let lf = self.builtin_operand_facts(left)?;
         if !self.modifiable(lf) {
             return Err(self.operator_error(
                 id,
@@ -543,7 +543,7 @@ impl Analyzer<'_> {
             self.convert_scalar(right, target, false)?;
         } else {
             self.check_resolved_function(right)?;
-            let rf = self.graph.expression_facts.get(right)?;
+            let rf = self.builtin_operand_facts(right)?;
             let rt = self.decayed_type(rf.ty)?;
             if matches!(op, P::AddAssign | P::SubtractAssign)
                 && self.object_pointer(target).is_some()
@@ -691,8 +691,8 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         self.check_resolved_function(base)?;
         self.check_resolved_function(index)?;
-        let a = self.graph.expression_facts.get(base)?;
-        let b = self.graph.expression_facts.get(index)?;
+        let a = self.builtin_operand_facts(base)?;
+        let b = self.builtin_operand_facts(index)?;
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;
         let (pointer, integer, it, commuted) = if self.object_pointer(at).is_some() {

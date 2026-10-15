@@ -28,6 +28,22 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+        if self.graph.lower_builtin_operand(id)
+            && let Some((call, _)) = self.graph.lower_function_conversion(id)?
+        {
+            return Ok(self
+                .call_conversion(
+                    id,
+                    crate::sema::lowering::MemberCall {
+                        place: false,
+                        ..call
+                    },
+                )?
+                .value);
+        }
+        self.original_scalar_place(id)
+    }
+    pub(super) fn original_scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         let facts = self.graph.lower_expression(id)?;
         if !facts.is_place
             && matches!(
@@ -313,7 +329,7 @@ impl Function<'_, '_, '_, '_> {
         decrement: bool,
         prefix: bool,
     ) -> Result<(Value, RValue), Error> {
-        let source = self.graph.lower_expression(operand)?.ty;
+        let source = self.graph.lower_builtin_operand_type(operand)?;
         let place = self.scalar_place(operand)?;
         let old = self.read_place(place, source)?;
         let result = if old.ty == Type::Ptr {

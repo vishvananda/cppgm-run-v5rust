@@ -27,6 +27,8 @@ pub(super) struct FunctionConversion {
     pub category: ValueCategory,
     pub path: Option<BasePathId>,
     pub after: Conversion,
+    pub after_path: Option<BasePathId>,
+    pub builtin_operand: bool,
 }
 
 impl Analyzer<'_> {
@@ -102,15 +104,30 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<Option<ArgumentSequence>, Error> {
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::Reference { .. }
+        ) {
+            return Ok(None);
+        }
+        self.scalar_conversion_function_sequence(source, target, direct)
+    }
+
+    pub(super) fn scalar_conversion_function_sequence(
+        &mut self,
+        source: ExprFacts,
+        target: TypeId,
+        direct: bool,
+    ) -> Result<Option<ArgumentSequence>, Error> {
         let Some(class) = self.graph.class_of(source.ty) else {
             return Ok(None);
         };
-        // Class value results and reference initialization have additional copy
-        // and temporary rules; they remain a separate dependency boundary.
-        if matches!(
-            self.graph.types.get(target).kind,
-            TypeKind::Class(_) | TypeKind::Reference { .. }
-        ) {
+        // Class value results have additional constructor competition rules.
+        let object = match self.graph.types.get(target).kind {
+            TypeKind::Reference { element, .. } => element,
+            _ => target,
+        };
+        if self.graph.class_of(object).is_some() {
             return Ok(None);
         }
         let receiver = ObjectArgument {
@@ -185,6 +202,7 @@ impl Analyzer<'_> {
         sequence: ArgumentSequence,
         scope: ScopeId,
         location: SourceOffset,
+        builtin_operand: bool,
     ) -> Result<FunctionConversion, Error> {
         let Some(UserConversion::Function(binding)) = sequence.user_conversion else {
             return Err(Error::Invariant("conversion function without selection"));
@@ -194,7 +212,10 @@ impl Analyzer<'_> {
             .class_of(source.ty)
             .ok_or(Error::Invariant("conversion function without class"))?;
         let entity = self.graph.binding(binding).entity;
-        if self.graph.entity(entity).availability == FunctionAvailability::Deleted {
+        // convert_class_operand does not check deletion in the frozen builtin path.
+        if !builtin_operand
+            && self.graph.entity(entity).availability == FunctionAvailability::Deleted
+        {
             return Err(Error::at(location, "use of a deleted function"));
         }
         let owner = self
@@ -230,6 +251,8 @@ impl Analyzer<'_> {
             result: produced.ty,
             category: produced.category,
             path,
+            builtin_operand,
+            after_path: None,
             after: sequence.application.ok_or(Error::Invariant(
                 "conversion function without second sequence",
             ))?,
@@ -268,6 +291,7 @@ impl Analyzer<'_> {
             sequence,
             scope,
             self.tree.expressions.get(id).location,
+            false,
         )?;
         self.graph
             .expression_facts

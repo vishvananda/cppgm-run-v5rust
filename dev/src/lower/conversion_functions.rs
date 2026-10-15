@@ -89,8 +89,10 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
-        let receiver = self.address(id)?;
-        self.emit_conversion_call(receiver, call, throws)
+        let source = self.graph.lower_expression(id)?.ty;
+        let place = self.original_scalar_place(self.without_parentheses(id))?;
+        let receiver = self.storage_address(place, source)?;
+        self.emit_conversion_call(receiver, call, throws, self.graph.lower_builtin_operand(id))
     }
     pub(super) fn call_conversion_at(
         &mut self,
@@ -99,13 +101,14 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
-        self.emit_conversion_call(receiver, call, throws)
+        self.emit_conversion_call(receiver, call, throws, false)
     }
     fn emit_conversion_call(
         &mut self,
         mut receiver: crate::lowir::model::Value,
         call: MemberCall,
         throws: bool,
+        builtin_operand: bool,
     ) -> Result<RValue, Error> {
         if let Some(offset) = call.offset {
             receiver = self.base_projection(receiver, call.result, offset)?;
@@ -130,23 +133,27 @@ impl Function<'_, '_, '_, '_> {
         self.before_lifetime_call(throws)?;
         let value = self.finish_result_call(instruction, call.result, None, throws)?;
         if call.place {
-            // converted_value creates an unqualified Place, so this load is
-            // typed even for a volatile reference conversion result.
             let ty = super::types::storage(self.graph, call.result)?;
-            self.emit(
-                I::Load(
-                    crate::lowir::model::Facts::memory(
-                        false,
-                        !matches!(
-                            ty,
-                            crate::lowir::vocabulary::Type::I8 | crate::lowir::vocabulary::Type::U8
-                        ),
+            // A builtin conversion result is a normal glvalue. Ordinary scalar
+            // initialization uses converted_value's unqualified Place instead.
+            let memory = if builtin_operand
+                && matches!(
+                    self.graph.lower_type(call.result)?,
+                    crate::sema::lowering::TypeView::Array { .. }
+                ) {
+                crate::lowir::model::Facts::default()
+            } else if builtin_operand {
+                super::types::memory(self.graph, call.result)?
+            } else {
+                crate::lowir::model::Facts::memory(
+                    false,
+                    !matches!(
+                        ty,
+                        crate::lowir::vocabulary::Type::I8 | crate::lowir::vocabulary::Type::U8
                     ),
-                    ty,
-                    value.value,
-                ),
-                call.result,
-            )
+                )
+            };
+            self.emit(I::Load(memory, ty, value.value), call.result)
         } else {
             Ok(value)
         }

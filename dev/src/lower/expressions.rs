@@ -101,6 +101,11 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
+        if self.graph.lower_builtin_operand(id)
+            && let Some((call, _)) = self.graph.lower_function_conversion(id)?
+        {
+            return self.call_conversion(id, call);
+        }
         if self.graph.lower_literal_call(id)?.is_some() {
             let value = self.text_literal_call(id)?;
             return if facts.is_place
@@ -332,10 +337,10 @@ impl Function<'_, '_, '_, '_> {
         }
         if matches!(op, P::Add | P::Subtract)
             && (self
-                .pointer_element(self.graph.lower_expression(left)?.ty)?
+                .pointer_element(self.graph.lower_builtin_operand_type(left)?)?
                 .is_some()
                 || self
-                    .pointer_element(self.graph.lower_expression(right)?.ty)?
+                    .pointer_element(self.graph.lower_builtin_operand_type(right)?)?
                     .is_some())
         {
             return self.pointer_arithmetic(id, left, right, op == P::Subtract);

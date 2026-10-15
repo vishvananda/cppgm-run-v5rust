@@ -3,6 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    expression_facts::ExprFacts,
     function_names::{SpecialName, ValueKey},
     graph::{BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::{Filter, LookupResult},
@@ -136,20 +137,40 @@ impl Analyzer<'_> {
             self.bare_type(ty)
         }
     }
-    // Only called when at least one operand is an enum and no operand is a
-    // class. Class conversion-function builtin candidates have their own owner.
-    pub(super) fn enum_builtin_parameters(
+    pub(super) fn builtin_parameters(
         &mut self,
         op: P,
-        operands: &[ast::ExprId],
+        operands: &[ExprFacts],
         postfix: bool,
         same_enum_list: bool,
     ) -> Result<Option<[TypeId; 2]>, Error> {
-        let a = self.graph.expression_facts.get(operands[0])?;
+        let a = operands[0];
         let boolean = self.graph.types.scalar(Scalar::Bool)?;
         if operands.len() == 1 {
-            if postfix || matches!(op, P::Increment | P::Decrement) {
+            if matches!(op, P::Increment | P::Decrement) {
+                let parameter = self.graph.types.reference(a.ty, RefKind::Lvalue)?;
+                let counted = if self.is_arithmetic_type(a.ty) {
+                    op == P::Increment || self.bare_type(a.ty)? != boolean
+                } else {
+                    matches!(self.graph.types.get(a.ty).kind, TypeKind::Pointer(element)
+                        if !matches!(self.graph.types.get(element).kind,
+                            TypeKind::Function { .. } | TypeKind::Scalar(Scalar::Void)))
+                };
+                return Ok(
+                    (counted && self.type_cv(a.ty).0 & 1 == 0).then_some([parameter, parameter])
+                );
+            }
+            if postfix {
                 return Ok(None);
+            }
+            if op == P::Multiply
+                || op == P::Add && matches!(self.graph.types.get(a.ty).kind, TypeKind::Pointer(_))
+            {
+                let parameter = self.bare_type(a.ty)?;
+                return Ok(
+                    matches!(self.graph.types.get(parameter).kind, TypeKind::Pointer(_))
+                        .then_some([parameter, parameter]),
+                );
             }
             let parameter = if op == P::LogicalNot {
                 boolean
@@ -161,7 +182,7 @@ impl Analyzer<'_> {
                 || op == P::Complement && self.is_integral_operand(a.ty))
             .then_some([parameter, parameter]));
         }
-        let b = self.graph.expression_facts.get(operands[1])?;
+        let b = operands[1];
         let p1 = self.decayed_type(a.ty)?;
         let p2 = self.decayed_type(b.ty)?;
         let difference = self.graph.types.scalar(Scalar::Basic(F::LongInt))?;
@@ -175,18 +196,14 @@ impl Analyzer<'_> {
         let (ptr1, ptr2) = (pointer(p1), pointer(p2));
         let viable = match op {
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual => {
-                if (p1 == p2
+                if p1 == p2
                     && matches!(self.graph.types.get(p1).kind, TypeKind::Enum(_))
-                    && !same_enum_list)
-                    || (matches!(self.graph.types.get(p1).kind, TypeKind::Pointer(_))
-                        && b.null_literal)
+                    && !same_enum_list
                 {
                     parameters.fill(p1);
                     true
-                } else if matches!(self.graph.types.get(p2).kind, TypeKind::Pointer(_))
-                    && a.null_literal
-                {
-                    parameters.fill(p2);
+                } else if let Some(common) = self.builtin_comparison_pointer(a, b, p1, p2)? {
+                    parameters.fill(common);
                     true
                 } else {
                     arithmetic
@@ -201,6 +218,22 @@ impl Analyzer<'_> {
                     true
                 } else if op != P::Subtract && self.is_integral_operand(a.ty) && ptr2 {
                     parameters = [difference, p2];
+                    true
+                } else if op == P::Subtract && ptr1 && ptr2 {
+                    let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (
+                        self.graph.types.get(p1).kind.clone(),
+                        self.graph.types.get(p2).kind.clone(),
+                    ) else {
+                        return Err(Error::Invariant("pointer candidate without pointees"));
+                    };
+                    if self.bare_type(a)? != self.bare_type(b)? {
+                        return Ok(None);
+                    }
+                    parameters.fill(if self.type_cv(a).0 & !self.type_cv(b).0 != 0 {
+                        p1
+                    } else {
+                        p2
+                    });
                     true
                 } else {
                     false
@@ -244,6 +277,49 @@ impl Analyzer<'_> {
             _ => false,
         };
         Ok(viable.then_some(parameters))
+    }
+
+    fn builtin_comparison_pointer(
+        &mut self,
+        a: ExprFacts,
+        b: ExprFacts,
+        p1: TypeId,
+        p2: TypeId,
+    ) -> Result<Option<TypeId>, Error> {
+        let pointer_like = |ty| {
+            matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr)
+            )
+        };
+        let ptr1 = matches!(self.graph.types.get(p1).kind, TypeKind::Pointer(_));
+        let ptr2 = matches!(self.graph.types.get(p2).kind, TypeKind::Pointer(_));
+        if !(pointer_like(p1) || a.null_literal && ptr2)
+            || !(pointer_like(p2) || b.null_literal && ptr1)
+            || !(ptr1 || ptr2)
+        {
+            return Ok(None);
+        }
+        if !ptr1 {
+            return Ok(Some(p2));
+        }
+        if !ptr2 || p1 == p2 {
+            return Ok(Some(p1));
+        }
+        let value = super::expression_facts::ValueCategory::Prvalue;
+        if self
+            .scalar_sequence(ExprFacts::new(p2, value), p1, false)?
+            .is_some()
+        {
+            Ok(Some(p1))
+        } else if self
+            .scalar_sequence(ExprFacts::new(p1, value), p2, false)?
+            .is_some()
+        {
+            Ok(Some(p2))
+        } else {
+            Ok(None)
+        }
     }
 
     pub(super) fn check_operator_declaration(

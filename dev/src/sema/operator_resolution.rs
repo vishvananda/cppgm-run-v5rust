@@ -20,6 +20,7 @@ struct OperatorQuery<'a> {
     postfix: bool,
     scope: ScopeId,
     class_operand: bool,
+    converted_builtins: bool,
 }
 
 #[cfg(test)]
@@ -81,13 +82,15 @@ mod tests {
 
 #[derive(Default)]
 pub(super) struct OperatorScratch {
-    candidates: Vec<(Option<BindingId>, usize)>,
-    sequences: Vec<ArgumentSequence>,
+    pub(super) candidates: Vec<(Option<BindingId>, usize)>,
+    pub(super) sequences: Vec<ArgumentSequence>,
+    pub(super) operand_options: Vec<super::types::TypeId>,
 }
 impl OperatorScratch {
     fn clear(&mut self) {
         self.candidates.clear();
         self.sequences.clear();
+        self.operand_options.clear();
     }
 }
 impl Analyzer<'_> {
@@ -128,7 +131,15 @@ impl Analyzer<'_> {
         let mut scratch = std::mem::take(&mut self.operator_scratch);
         let result = (|| {
             self.operator_candidates(op, operands, scope, &mut lookup)?;
-            if lookup.bindings.is_empty() {
+            let converted_builtins = class_operand
+                && operands.iter().all(|&operand| {
+                    !matches!(
+                        self.tree.expressions.get(operand).kind,
+                        ast::ExprKind::Braced { .. }
+                    )
+                })
+                && super::builtin_operators::converted_builtin(op, operands.len());
+            if lookup.bindings.is_empty() && !converted_builtins {
                 return Ok(None);
             }
             self.select_operator(
@@ -139,6 +150,7 @@ impl Analyzer<'_> {
                     postfix,
                     scope,
                     class_operand,
+                    converted_builtins,
                 },
                 &lookup.bindings,
                 &mut scratch,
@@ -164,6 +176,7 @@ impl Analyzer<'_> {
             postfix,
             scope,
             class_operand,
+            converted_builtins,
         } = query;
         let mut same_enum_list = false;
         for &primary in set {
@@ -266,13 +279,22 @@ impl Analyzer<'_> {
                 scratch.sequences.truncate(first);
             }
         }
+        if converted_builtins {
+            self.class_builtin_candidates(op, operands, postfix, scratch)?;
+        }
         if scratch.candidates.is_empty() {
             return Ok(None);
         }
-        if !class_operand
-            && let Some(parameters) =
-                self.enum_builtin_parameters(op, operands, postfix, same_enum_list)?
-        {
+        let parameters = if class_operand {
+            None
+        } else {
+            let mut views = [self.graph.expression_facts.get(operands[0])?; 2];
+            for (view, &operand) in views.iter_mut().zip(operands) {
+                *view = self.graph.expression_facts.get(operand)?;
+            }
+            self.builtin_parameters(op, &views[..operands.len()], postfix, same_enum_list)?
+        };
+        if let Some(parameters) = parameters {
             let first = scratch.sequences.len();
             for (&operand, target) in operands.iter().zip(parameters) {
                 let Some(sequence) = self.argument_sequence(operand, target)? else {
@@ -307,6 +329,15 @@ impl Analyzer<'_> {
         }
         let (binding, first) = scratch.candidates[best];
         let Some(binding) = binding else {
+            for (index, &operand) in operands.iter().enumerate() {
+                let sequence = scratch.sequences[first + index];
+                if matches!(
+                    sequence.user_conversion,
+                    Some(super::procedural_calls::UserConversion::Function(_))
+                ) {
+                    self.apply_builtin_conversion(operand, sequence, scope)?;
+                }
+            }
             return Ok(None);
         };
         let location = self.tree.expressions.get(id).location;

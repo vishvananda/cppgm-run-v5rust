@@ -9,6 +9,7 @@ mod assignment;
 mod bit_fields;
 mod bit_layout;
 mod builtin_calls;
+mod builtin_operators;
 mod call_lookup;
 mod class_casts;
 mod class_conditionals;

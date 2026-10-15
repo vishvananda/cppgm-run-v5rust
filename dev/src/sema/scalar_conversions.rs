@@ -348,7 +348,7 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<(), Error> {
-        let facts = self.graph.expression_facts.get(id)?;
+        let facts = self.builtin_operand_facts(id)?;
         if facts.functions.is_some() {
             let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
                 Some(binding)
@@ -365,7 +365,7 @@ impl Analyzer<'_> {
             }
         }
         self.check_bound_function(id)?;
-        let facts = self.graph.expression_facts.get(id)?;
+        let facts = self.builtin_operand_facts(id)?;
         let conversion = self.scalar_sequence(facts, target, direct)?;
         let Some(conversion) = conversion else {
             if let Some(sequence) = self.user_conversion_sequence(facts, target, direct)? {
@@ -386,6 +386,29 @@ impl Analyzer<'_> {
             ));
         };
         self.check_bit_field_binding(id, conversion)?;
+        if let Some(mut step) = self.graph.expression_facts.function_conversion(id)
+            && step.builtin_operand
+        {
+            step.after = conversion;
+            let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant(
+                    "builtin conversion without expression scope",
+                ))?;
+            step.after_path = self.conversion_base_path(
+                facts,
+                conversion,
+                scope,
+                self.tree.expressions.get(id).location,
+                true,
+            )?;
+            self.graph
+                .expression_facts
+                .set_function_conversion(id, step);
+            let mut original = self.graph.expression_facts.get(id)?;
+            original.conversion = Some(conversion);
+            self.graph.expression_facts.set(id, original);
+            return Ok(());
+        }
         let mut facts = facts;
         if conversion.second == C::DerivedToBase {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
