@@ -48,6 +48,12 @@ pub(crate) struct MemberConstruction {
     pub constructor: ConstructorId,
     pub arguments: Option<ConstructorArguments>,
 }
+#[derive(Clone, Copy)]
+pub(crate) struct Delegation {
+    pub constructor: ConstructorId,
+    pub arguments: ConstructorArguments,
+    pub initializer: ast::Initializer,
+}
 pub(super) struct Constructor {
     pub class: EntityId,
     pub binding: Option<BindingId>,
@@ -61,6 +67,7 @@ pub(super) struct Constructor {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub bases: Vec<BaseInitialization>,
     pub subobjects: Vec<MemberConstruction>,
+    pub delegation: Option<Delegation>,
     pub(super) triviality: Triviality,
 }
 impl Constructor {
@@ -643,6 +650,7 @@ impl Analyzer<'_> {
             members: plans,
             bases,
             subobjects,
+            delegation: None,
             triviality: Triviality::Trivial,
         };
         self.publish_constructor(record)
@@ -783,6 +791,7 @@ impl Analyzer<'_> {
             members: Vec::new(),
             bases: Vec::new(),
             subobjects: Vec::new(),
+            delegation: None,
             triviality: Triviality::Trivial,
         })
     }
@@ -942,6 +951,15 @@ impl Analyzer<'_> {
                 return Err(Error::Missing("constructor initializer pack expansion"));
             }
             let member = self.constructor_member_target(initializer, owner, scope, class)?;
+            if member == class {
+                if self.tree.mem_initializers.get(body.initializers).len() != 1 {
+                    return Err(Error::at(
+                        initializer.location,
+                        "a delegating mem-initializer is not the only mem-initializer",
+                    ));
+                }
+                return self.delegate_construction(id, initializer, scope);
+            }
             if written.insert(member, initializer).is_some() {
                 return Err(Error::at(
                     initializer.location,
@@ -997,6 +1015,52 @@ impl Analyzer<'_> {
         self.check_subobject_destruction(class, scope, location)?;
         self.prepare_destruction(class)?;
         Ok(())
+    }
+
+    fn delegate_construction(
+        &mut self,
+        id: ConstructorId,
+        written: &ast::MemInitializer,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let class = self.graph.constructors.get(id).class;
+        let ty = self.graph.entity(class).ty.ok_or(Error::Invariant(
+            "delegating constructor without class type",
+        ))?;
+        let initializer = ast::Initializer {
+            location: written.location,
+            ..written.initializer
+        };
+        let (constructor, arguments) = self
+            .initialize_class_object_context(
+                ty,
+                initializer,
+                scope,
+                written.location,
+                super::constructor_initialization::ClassContext::Delegation,
+            )?
+            .ok_or(Error::Invariant("delegation without selected constructor"))?;
+        let mut next = Some(constructor);
+        while let Some(target) = next {
+            if target == id {
+                return Err(Error::at(
+                    written.location,
+                    "a constructor delegates to itself",
+                ));
+            }
+            next = self
+                .graph
+                .constructors
+                .get(target)
+                .delegation
+                .map(|edge| edge.constructor);
+        }
+        self.graph.constructors.records[id.0 as usize].delegation = Some(Delegation {
+            constructor,
+            arguments,
+            initializer,
+        });
+        self.prepare_destruction(class)
     }
 
     pub(super) fn written_member_construction(
@@ -1079,7 +1143,7 @@ impl Analyzer<'_> {
         }
         self.check_direct_member_access(binding, scope, initializer.location)?;
         if node.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity) if entity == class)) {
-            return Err(Error::Missing("delegating constructor plans"));
+            return Ok(class);
         }
         if let Some(base) = node.ty.and_then(|ty| self.graph.class_of(ty))
             && self

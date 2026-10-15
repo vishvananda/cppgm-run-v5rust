@@ -68,6 +68,7 @@ pub(super) enum TemporarySegment {
     Delayed,
     Hidden,
     Eager,
+    Nothrow,
 }
 impl TemporarySegment {
     pub(super) fn new(made: bool, eager: bool) -> Self {
@@ -81,6 +82,9 @@ impl TemporarySegment {
     }
     pub(super) fn is_eager(self) -> bool {
         matches!(self, Self::Eager)
+    }
+    pub(super) fn is_nothrow(self) -> bool {
+        matches!(self, Self::Nothrow)
     }
     pub(super) fn allows_eager_arguments(self) -> bool {
         matches!(self, Self::Hidden | Self::Eager)

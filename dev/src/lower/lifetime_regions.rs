@@ -182,7 +182,9 @@ impl Function<'_, '_, '_, '_> {
         if let Some(floor) = self.aggregation.floor {
             self.aggregation.landing |= self.lifetime.cleanups[floor..].iter().any(|c| c.member());
         }
-        if let Some(position) = self
+        if self.lifetime.temporary_segment.is_nothrow() {
+            self.effect(I::Runtime(R::EhTry(entry)))?;
+        } else if let Some(position) = self
             .lifetime
             .call_marks
             .iter()

@@ -311,6 +311,7 @@ impl Function<'_, '_, '_, '_> {
         if destructor.is_some()
             && !persistent
             && self.lifetime.full_expression
+            && !self.lifetime.temporary_segment.is_nothrow()
             && !self.lifetime.region
             && !deferred
             && (owner.is_none() || self.operand_temporaries(id)?.made)

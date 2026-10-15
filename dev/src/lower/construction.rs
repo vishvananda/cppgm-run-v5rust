@@ -372,6 +372,29 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         self.destruction.class = Some(plan.class);
+        if let Some(delegation) = plan.delegation {
+            let first = self.lifetime.cleanups.len();
+            let began =
+                self.begin_constructor_initializer(delegation.initializer, delegation.constructor)?;
+            if began && self.lifetime.temporary_segment.is_eager() && !self.lifetime.tracking.active
+            {
+                self.open_temporary_region_at(self.lifetime.expression_start)?;
+            }
+            let object = self.object_pointer(plan.object_pointer)?.value;
+            self.call_constructor(
+                delegation.constructor,
+                variant,
+                object,
+                Some(delegation.arguments),
+            )?;
+            if !began || self.lifetime.temporary_segment.is_nothrow() {
+                self.close_lifetime_region()?;
+            }
+            self.destroy_temporaries(first)?;
+            self.end_lifetime_expression(began)?;
+            self.delegated_object_constructed(self.graph.lower_entity_type(plan.class)?, variant)?;
+            return Ok(());
+        }
         self.bit_initialization = super::bit_fields::Initialization::default();
         if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
             self.bit_initialization.limit = self

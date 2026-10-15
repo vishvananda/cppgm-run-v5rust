@@ -2,14 +2,36 @@
 //! Full-expression queries use the original operands and selected default arguments.
 use super::{Error, function::Function};
 use crate::{
-    sema::lowering::{CallTarget, TypeId, TypeView},
+    sema::lowering::{CallTarget, ConstructorId, TypeId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
 #[derive(Clone, Copy, Default)]
+pub(super) enum CallTemporaries {
+    #[default]
+    Absent,
+    Nothrow,
+    ThrowingDestructor,
+}
+impl CallTemporaries {
+    fn include(&mut self, throws: bool) {
+        if throws {
+            *self = Self::ThrowingDestructor;
+        } else if matches!(self, Self::Absent) {
+            *self = Self::Nothrow;
+        }
+    }
+    fn present(self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+    fn destructor_throws(self) -> bool {
+        matches!(self, Self::ThrowingDestructor)
+    }
+}
+#[derive(Clone, Copy, Default)]
 pub(super) struct TemporarySummary {
     pub made: bool,
-    pub call_result: bool,
+    pub call_result: CallTemporaries,
     pub caller_destroyed: bool,
 }
 #[derive(Clone, Copy)]
@@ -21,6 +43,81 @@ pub(super) enum ExpressionUse {
     ClassResult,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn begin_constructor_initializer(
+        &mut self,
+        initializer: ast::Initializer,
+        constructor: ConstructorId,
+    ) -> Result<bool, Error> {
+        if self.lifetime.full_expression {
+            return Ok(false);
+        }
+        let function = self.graph.lower_constructor_function(constructor)?;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
+            return Err(crate::sema::Error::Invariant("initializer without function type").into());
+        };
+        let mut caller = false;
+        for &parameter in parameters {
+            caller |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
+                && self.temporary_type_destroyed(parameter)?;
+        }
+        let (arguments, root) = match initializer.kind {
+            ast::InitializerKind::Parenthesized(arguments) => (arguments, None),
+            ast::InitializerKind::Braced(id) => {
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+                    return Err(
+                        crate::sema::Error::Invariant("delegating initializer list shape").into(),
+                    );
+                };
+                (elements, Some(id))
+            }
+            _ => return Err(crate::sema::Error::Invariant("delegating initializer shape").into()),
+        };
+        let mut made = caller;
+        let mut calls = false;
+        let mut throwing_destructor = false;
+        for &argument in self.tree.expr_lists.get(arguments) {
+            let summary = self.expression_temporaries(argument)?;
+            made |= summary.made;
+            calls |= summary.call_result.present() || summary.caller_destroyed;
+            throwing_destructor |= summary.call_result.destructor_throws();
+        }
+        if !made && self.lifetime.cleanups.is_empty() {
+            return Ok(false);
+        }
+        // The braced list's root describes the destination, so it is not
+        // another temporary. Its selected constructor does contribute to
+        // the C++ owner's full-expression throw query for that list.
+        let mut throwing = root
+            .map(|id| self.expression_throws(id))
+            .transpose()?
+            .unwrap_or(false);
+        for &argument in self.tree.expr_lists.get(arguments) {
+            throwing |= self.expression_throws(argument)?;
+        }
+        if !caller && !throwing && (!calls || throwing_destructor) {
+            return Ok(false);
+        }
+        self.lifetime.full_expression = true;
+        self.lifetime.temporary_segment = if caller || made && throwing {
+            super::lifetime::TemporarySegment::Eager
+        } else if made {
+            super::lifetime::TemporarySegment::Nothrow
+        } else {
+            super::lifetime::TemporarySegment::Empty
+        };
+        self.ensure_insertion()?;
+        self.lifetime.expression_start = Some(self.builder.position()?);
+        if let Some(root) = root {
+            if caller || throwing {
+                self.begin_tracking(root, ExpressionUse::Initialization)?;
+            }
+        } else if !caller && throwing {
+            for &argument in self.tree.expr_lists.get(arguments) {
+                self.begin_tracking(argument, ExpressionUse::InitializerArgument)?;
+            }
+        }
+        Ok(true)
+    }
     pub(super) fn begin_full_expression(
         &mut self,
         root: Option<ast::ExprId>,
@@ -40,7 +137,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let throwing = self.expression_throws(root)?;
         if (summary.made || !self.lifetime.cleanups.is_empty())
-            && (throwing || summary.call_result || summary.caller_destroyed)
+            && (throwing || summary.call_result.present() || summary.caller_destroyed)
         {
             self.lifetime.full_expression = true;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::new(
@@ -99,7 +196,9 @@ impl Function<'_, '_, '_, '_> {
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {
                 if !call.place && self.temporary_type_destroyed(call.result)? {
                     summary.made = true;
-                    summary.call_result = true;
+                    summary
+                        .call_result
+                        .include(self.temporary_destructor_throws(call.result)?);
                 }
                 step += 1;
             }
@@ -115,8 +214,11 @@ impl Function<'_, '_, '_, '_> {
                 && self.temporary_type_destroyed(facts.ty)?
             {
                 summary.made = true;
-                summary.call_result |=
-                    call || operator || self.graph.lower_literal_call(id)?.is_some();
+                if call || operator || self.graph.lower_literal_call(id)?.is_some() {
+                    summary
+                        .call_result
+                        .include(self.temporary_destructor_throws(facts.ty)?);
+                }
             }
             if (include_root || id != root)
                 && let Some((constructor, _)) = self.graph.lower_class_conversion(id)
@@ -232,6 +334,19 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(matches!(self.graph.lower_type(ty)?, TypeView::Class(class)
             if self.graph.lower_complete_object(ty)? && self.graph.lower_nontrivial_destructor(class)?))
+    }
+    fn temporary_destructor_throws(&self, mut ty: TypeId) -> Result<bool, Error> {
+        while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
+            ty = element;
+        }
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(false);
+        };
+        self.graph
+            .lower_destructor_entity(class)
+            .map_or(Ok(false), |entity| {
+                Ok(!self.graph.lower_function(entity)?.nothrow)
+            })
     }
     pub(super) fn constructor_expression(
         &self,

@@ -28,6 +28,7 @@ pub(crate) struct ConstructorView<'a> {
     pub bases: &'a [super::construction::BaseInitialization],
     pub class: EntityId,
     pub subobjects: &'a [super::construction::MemberConstruction],
+    pub delegation: Option<super::construction::Delegation>,
 }
 pub(crate) struct AllocationView {
     pub function: EntityId,
@@ -267,6 +268,7 @@ impl Graph {
             members: &plan.members,
             bases: &plan.bases,
             subobjects: &plan.subobjects,
+            delegation: plan.delegation,
         }
     }
     pub(crate) fn lower_constructor_arguments(
@@ -283,6 +285,17 @@ impl Graph {
             .get(id)
             .binding
             .map(|binding| self.binding(binding).entity)
+    }
+    pub(crate) fn lower_root_delegations(&self) -> impl Iterator<Item = ConstructorId> + '_ {
+        self.root_demands.as_slice().iter().filter_map(|demand| {
+            let id = match *demand {
+                super::function_demands::Demand::Constructor(id) => id,
+                super::function_demands::Demand::Function { binding, .. } => {
+                    self.entity(self.binding(binding).entity).constructor?
+                }
+            };
+            self.constructors.get(id).delegation.map(|_| id)
+        })
     }
     pub(crate) fn lower_constructor_function(
         &self,

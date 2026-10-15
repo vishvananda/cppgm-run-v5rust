@@ -26,6 +26,7 @@ pub(crate) enum ConstructorArguments {
 pub(super) enum ClassContext {
     Object,
     AggregateMember,
+    Delegation,
 }
 #[derive(Clone, Copy)]
 pub(super) struct ClassInput {
@@ -68,6 +69,22 @@ impl Analyzer<'_> {
         initializer: ast::Initializer,
         scope: ScopeId,
         location: SourceOffset,
+    ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
+        self.initialize_class_object_context(
+            target,
+            initializer,
+            scope,
+            location,
+            ClassContext::Object,
+        )
+    }
+    pub(super) fn initialize_class_object_context(
+        &mut self,
+        target: TypeId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+        location: SourceOffset,
+        context: ClassContext,
     ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("class initialization without class"));
@@ -119,7 +136,7 @@ impl Analyzer<'_> {
                 list,
                 converting,
                 copy_list,
-                context: ClassContext::Object,
+                context,
                 selected: None,
             },
             scope,
@@ -168,7 +185,8 @@ impl Analyzer<'_> {
                 self.type_call_argument(argument, scope)?;
             }
         }
-        if list.is_none()
+        if context != ClassContext::Delegation
+            && list.is_none()
             && let [id] = args
             && self.graph.aggregate_class(class)
             && matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
@@ -186,7 +204,8 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         // Preserve the existing checked copy-elision path for same-class sources.
-        if list.is_none()
+        if context != ClassContext::Delegation
+            && list.is_none()
             && let [id] = args
             && !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
         {

@@ -234,6 +234,7 @@ impl Analyzer<'_> {
             members,
             bases: Vec::new(),
             subobjects,
+            delegation: None,
             triviality: Triviality::Trivial,
         })
     }

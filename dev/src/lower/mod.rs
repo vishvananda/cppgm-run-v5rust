@@ -262,6 +262,12 @@ pub(crate) fn lower_unit(
             _ => return Err(Error::Missing("class and template declaration lowering")),
         }
     }
+    for id in graph.lower_root_delegations() {
+        symbols.demand_entry(construction::Entry::Constructor(
+            id,
+            construction::Variant::Complete,
+        ));
+    }
     let mut next = 0;
     exception_helpers::emit_pending(&mut output.program, &mut symbols, &mut output.definitions)?;
     aggregate_helpers::emit_pending(
