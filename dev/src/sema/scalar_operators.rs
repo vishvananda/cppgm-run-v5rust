@@ -195,6 +195,7 @@ impl Analyzer<'_> {
         op: P,
         left: ast::ExprId,
         right: ast::ExprId,
+        scope: super::graph::ScopeId,
     ) -> Result<ExprFacts, Error> {
         self.check_resolved_function(left)?;
         if matches!(op, P::LogicalAnd | P::LogicalOr) {
@@ -208,6 +209,7 @@ impl Analyzer<'_> {
         let lf = self.graph.expression_facts.get(left)?;
         let rf = self.graph.expression_facts.get(right)?;
         if op == P::Comma {
+            self.check_temporary_destruction(lf, scope, self.tree.expressions.get(left).location)?;
             let mut result = self.new_expression_facts(rf.ty, rf.category)?;
             result.set_bit_field(rf.is_bit_field());
             return Ok(result);

@@ -13,6 +13,13 @@ impl Analyzer<'_> {
         if self.semantic() {
             self.typed_expression(id, scope)?;
             self.check_resolved_function(id)?;
+            if self.template_depth == 0 && self.body_context.is_some() {
+                self.check_temporary_destruction(
+                    self.graph.expression_facts.get(id)?,
+                    scope,
+                    self.tree.expressions.get(id).location,
+                )?;
+            }
             return Ok(());
         }
         let base = self.expression_work.len();

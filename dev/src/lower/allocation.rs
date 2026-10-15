@@ -115,25 +115,28 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.construct_at(constructor, use_.target, object, Some(arguments));
         }
-        if matches!(self.graph.lower_type(use_.target)?, TypeView::Class(_)) {
-            if let Some(initializer) = initializer {
-                if let ast::InitializerKind::Braced(list) = initializer.kind {
-                    let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind
-                    else {
-                        return Err(
-                            crate::sema::Error::Invariant("allocated aggregate list").into()
-                        );
+        if let TypeView::Class(class) = self.graph.lower_type(use_.target)? {
+            let initializer =
+                initializer.ok_or(Error::Missing("allocated class initialization shape"))?;
+            if let ast::InitializerKind::Braced(list) = initializer.kind {
+                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
+                    return Err(crate::sema::Error::Invariant("allocated aggregate list").into());
+                };
+                if elements.is_empty() {
+                    return if self.symbols.empty_list_constructs(class)? {
+                        self.aggregate_array(use_.target, object, &[])
+                    } else {
+                        self.zero_class_object(use_.target, object, None)
                     };
-                    return self.aggregate_prvalue(
-                        use_.target,
-                        object,
-                        self.tree.expr_lists.get(elements),
-                    );
                 }
-                let source = self.initializer_expression(initializer)?;
-                return self.materialize_class(source, use_.target, object);
+                return self.aggregate_prvalue(
+                    use_.target,
+                    object,
+                    self.tree.expr_lists.get(elements),
+                );
             }
-            return Err(Error::Missing("allocated class initialization shape"));
+            let source = self.initializer_expression(initializer)?;
+            return self.materialize_class(source, use_.target, object);
         }
         // The frozen allocation_initializer starts with an ordinary Place;
         // scalar initialization stores are typed even for a volatile target.

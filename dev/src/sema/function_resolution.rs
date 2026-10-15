@@ -4,7 +4,8 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{
-        Conversion, ConversionRank as R, ExprFacts, ValueCategory as V, ValueConversion as C,
+        Conversion, ConversionRank as R, ExprFacts, ReferenceSource, ValueCategory as V,
+        ValueConversion as C,
     },
     graph::{BindingId, BindingKind, ScopeId, ScopeKind},
     lookup::Filter,
@@ -461,7 +462,10 @@ impl Analyzer<'_> {
         ) {
             let af = a.reference_source.is_function_lvalue();
             let bf = b.reference_source.is_function_lvalue();
-            if ak != bk && af == bf {
+            let unqualified_object =
+                matches!(a.reference_source, ReferenceSource::UnqualifiedObject)
+                    || matches!(b.reference_source, ReferenceSource::UnqualifiedObject);
+            if ak != bk && af == bf && (af || !unqualified_object) {
                 return Ok(if (ak == RefKind::Rvalue) == af {
                     Ordering::Less
                 } else {

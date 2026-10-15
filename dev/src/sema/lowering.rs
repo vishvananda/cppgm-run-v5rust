@@ -253,10 +253,15 @@ impl Graph {
             object_pointer: plan.object_pointer,
             class: plan.class,
             zero_before_value: plan.binding.is_none_or(|binding| {
-                matches!(
-                    self.entity(self.binding(binding).entity).special_definition,
-                    Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
-                )
+                let function = self.binding(binding).entity;
+                self.inherited_constructors.source(function).is_some()
+                    || matches!(
+                        self.entity(function).special_definition,
+                        Some(super::special_members::SpecialDefinition::Defaulted {
+                            first: true,
+                            ..
+                        })
+                    )
             }),
             union: self.entity(plan.class).key == crate::lex::vocabulary::Keyword::Union,
             members: &plan.members,

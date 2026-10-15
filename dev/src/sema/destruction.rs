@@ -181,6 +181,38 @@ impl Analyzer<'_> {
         }
         Ok(Some(binding))
     }
+    pub(super) fn check_temporary_destruction(
+        &mut self,
+        facts: super::expression_facts::ExprFacts,
+        scope: super::graph::ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if facts.category == super::expression_facts::ValueCategory::Prvalue
+            && facts.functions.is_none()
+        {
+            self.class_parameter_destruction(facts.ty, scope, location)?;
+        }
+        Ok(())
+    }
+    pub(super) fn check_binding_temporary(
+        &mut self,
+        facts: super::expression_facts::ExprFacts,
+        conversion: super::expression_facts::Conversion,
+        scope: super::graph::ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if matches!(
+            self.graph.types.get(conversion.target).kind,
+            TypeKind::Reference { .. }
+        ) {
+            if conversion.temporary {
+                self.class_parameter_destruction(conversion.result, scope, location)?;
+            } else {
+                self.check_temporary_destruction(facts, scope, location)?;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn check_subobject_destruction(
         &mut self,
         class: EntityId,

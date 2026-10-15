@@ -319,9 +319,42 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         self.check_specialization_body(binding)?;
+        self.operator_conversions(
+            id,
+            operands,
+            binding,
+            &scratch.sequences[first..first + operands.len()],
+            scope,
+        )?;
+        if self.unevaluated == 0 {
+            self.demand_function(binding, true);
+        }
+        let ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("operator without result"))?;
+        let mut facts = self.call_result(ty)?;
+        facts.call = Some(CallTarget::Direct(
+            self.graph
+                .function_origin(self.graph.binding(binding).entity)?,
+        ));
+        facts.call_form = super::expression_facts::CallForm::Operator;
+        self.graph.record_call_binding(id, binding);
+        Ok(Some(facts))
+    }
+    fn operator_conversions(
+        &mut self,
+        id: ast::ExprId,
+        operands: &[ast::ExprId],
+        binding: BindingId,
+        sequences: &[ArgumentSequence],
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let location = self.tree.expressions.get(id).location;
         let member = self.member_function_owner(binding).is_some();
         for (index, &operand) in operands.iter().enumerate() {
-            let sequence = scratch.sequences[first + index];
+            let sequence = sequences[index];
             if matches!(
                 self.tree.expressions.get(operand).kind,
                 ast::ExprKind::Braced { .. }
@@ -359,6 +392,12 @@ impl Analyzer<'_> {
                 location,
                 !(member && index == 0),
             )?;
+            let operand_location = self.tree.expressions.get(operand).location;
+            if member && index == 0 {
+                self.check_temporary_destruction(facts, scope, operand_location)?;
+            } else {
+                self.check_binding_temporary(facts, conversion, scope, operand_location)?;
+            }
             facts.conversion = Some(conversion);
             self.odr_use_constants(operand, Some(conversion))?;
             self.graph.expression_facts.set(operand, facts);
@@ -373,22 +412,7 @@ impl Analyzer<'_> {
                 )?;
             }
         }
-        if self.unevaluated == 0 {
-            self.demand_function(binding, true);
-        }
-        let ty = self
-            .graph
-            .binding(binding)
-            .ty
-            .ok_or(Error::Invariant("operator without result"))?;
-        let mut facts = self.call_result(ty)?;
-        facts.call = Some(CallTarget::Direct(
-            self.graph
-                .function_origin(self.graph.binding(binding).entity)?,
-        ));
-        facts.call_form = super::expression_facts::CallForm::Operator;
-        self.graph.record_call_binding(id, binding);
-        Ok(Some(facts))
+        Ok(())
     }
     fn compare_operator_candidates(
         &mut self,

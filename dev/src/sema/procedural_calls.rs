@@ -400,7 +400,13 @@ impl Analyzer<'_> {
                 object.category
             },
         );
-        self.scalar_sequence(facts, target, false)
+        let mut conversion = self.scalar_sequence(facts, target, false)?;
+        if reference.is_none()
+            && let Some(conversion) = &mut conversion
+        {
+            conversion.reference_source = ReferenceSource::UnqualifiedObject;
+        }
+        Ok(conversion)
     }
     fn indirect_call(
         &mut self,
@@ -1008,6 +1014,14 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(arg).location,
                     "invalid implicit conversion",
                 ))?);
+                self.check_binding_temporary(
+                    facts,
+                    facts
+                        .conversion
+                        .ok_or(Error::Invariant("call argument without conversion"))?,
+                    scope,
+                    self.tree.expressions.get(arg).location,
+                )?;
                 self.odr_use_constants(arg, facts.conversion)?;
                 self.graph.expression_facts.set(arg, facts);
             } else {

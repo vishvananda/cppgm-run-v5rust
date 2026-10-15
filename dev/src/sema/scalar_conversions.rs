@@ -354,7 +354,6 @@ impl Analyzer<'_> {
             ));
         };
         self.check_bit_field_binding(id, conversion)?;
-        self.odr_use_constants(id, Some(conversion))?;
         let mut facts = facts;
         if conversion.second == C::DerivedToBase {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
@@ -367,6 +366,22 @@ impl Analyzer<'_> {
                 true,
             )?;
         }
+        if matches!(
+            self.graph.types.get(conversion.target).kind,
+            TypeKind::Reference { .. }
+        ) {
+            let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant(
+                    "reference conversion without expression scope",
+                ))?;
+            self.check_binding_temporary(
+                facts,
+                conversion,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+        }
+        self.odr_use_constants(id, Some(conversion))?;
         facts.conversion = Some(conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())

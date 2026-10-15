@@ -73,6 +73,16 @@ impl Analyzer<'_> {
             false
         } else if zeroed {
             self.static_value_zero(target, &mut image)?
+        } else if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
+            && self
+                .graph
+                .lower_construction(entity)
+                .is_some_and(|constructor| !self.graph.lower_constructor_trivial(constructor))
+        {
+            // A complete object selected for construction takes the evaluated
+            // constant-initialization path, not static_element's nested member
+            // list spelling (global_lowering.cpp::static_global).
+            false
         } else {
             self.static_array_element(target, Some(expr), scope, &mut image)?
         };

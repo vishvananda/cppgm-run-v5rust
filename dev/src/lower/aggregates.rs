@@ -712,20 +712,21 @@ impl Function<'_, '_, '_, '_> {
             if let Some((constructor, arguments)) = self.graph.lower_class_conversion(id) {
                 self.call_converting_constructor(id, constructor, object, arguments)?;
             } else {
-                self.materialize_class(id, ty, object)?;
+                self.materialize_class_qualified(id, ty, object, path.volatile)?;
             }
             Some(object)
         } else if !aggregate {
             let object = self.named_address(path, ty)?;
             if let Some(id) = expr {
                 input.next += 1;
-                self.materialize_class(id, ty, object)?;
+                self.materialize_class_qualified(id, ty, object, path.volatile)?;
             } else {
-                self.construct_at(
+                self.construct_at_qualified(
                     self.graph.lower_default_constructor(class)?,
                     ty,
                     object,
                     Some(crate::sema::lowering::ConstructorArguments::Value),
+                    path.volatile,
                 )?;
             }
             Some(object)

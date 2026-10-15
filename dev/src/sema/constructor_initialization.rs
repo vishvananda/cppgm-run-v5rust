@@ -266,6 +266,7 @@ impl Analyzer<'_> {
             )
         };
         let chosen = chosen.and_then(|selected| {
+            self.check_inherited_constructor_access(selected.binding, location)?;
             let function = self.graph.binding(selected.binding).entity;
             if copy_list && self.graph.entity(function).explicitness == Explicitness::Explicit {
                 return Err(Error::at(
@@ -370,7 +371,6 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
-            self.check_inherited_constructor_access(binding, location)?;
             self.check_special_member_access(
                 binding,
                 self.base_object

@@ -90,6 +90,10 @@ impl SymbolTable {
         Ok(symbol)
     }
 }
+enum EmptyListConstruction {
+    Complete(bool),
+    DepthCut,
+}
 pub(super) struct Symbols<'a, 'source> {
     graph: &'a Graph,
     tree: &'a ast::Tree,
@@ -121,6 +125,7 @@ pub(super) struct Symbols<'a, 'source> {
     tls_wrappers: HashMap<EntityId, SymbolId>,
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
+    empty_list_constructions: HashMap<EntityId, bool>,
     class_parameters: super::class_parameters::Classes,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<EntityId, bool>,
@@ -167,6 +172,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             tls_wrappers: HashMap::new(),
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
+            empty_list_constructions: HashMap::new(),
             class_parameters: super::class_parameters::Classes::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
@@ -362,6 +368,54 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let symbol = self.function_symbol(program, entity)?;
         program.root_function(symbol);
         Ok(())
+    }
+    pub(super) fn empty_list_constructs(&mut self, class: EntityId) -> Result<bool, Error> {
+        Ok(!matches!(
+            self.empty_list_construction(class, 0)?,
+            EmptyListConstruction::Complete(false)
+        ))
+    }
+    fn empty_list_construction(
+        &mut self,
+        class: EntityId,
+        depth: u16,
+    ) -> Result<EmptyListConstruction, Error> {
+        self.check_stack()?;
+        if let Some(&known) = self.empty_list_constructions.get(&class) {
+            return Ok(EmptyListConstruction::Complete(known));
+        }
+        // This is the frozen semantic query cap, independent of native stack
+        // exhaustion. A conservative cut is never published as a class fact.
+        if depth > 64 {
+            return Ok(EmptyListConstruction::DepthCut);
+        }
+        let graph = self.graph;
+        let mut result = EmptyListConstruction::Complete(false);
+        for &member in graph.lower_class_member_entities(class) {
+            let mut ty = graph.lower_entity_type(member)?;
+            while let TypeView::Array { element, .. } = graph.lower_type(ty)? {
+                ty = element;
+            }
+            let TypeView::Class(child) = graph.lower_type(ty)? else {
+                continue;
+            };
+            result = if graph.lower_aggregate_class(child) {
+                self.empty_list_construction(child, depth + 1)?
+            } else {
+                EmptyListConstruction::Complete(
+                    graph
+                        .lower_ready_default_constructor(child)
+                        .is_none_or(|constructor| !graph.lower_constructor_trivial(constructor)),
+                )
+            };
+            if !matches!(result, EmptyListConstruction::Complete(false)) {
+                break;
+            }
+        }
+        if let EmptyListConstruction::Complete(constructs) = result {
+            self.empty_list_constructions.insert(class, constructs);
+        }
+        Ok(result)
     }
     pub(super) fn zeroed_by_value(&mut self, ty: TypeId) -> Result<bool, Error> {
         if let TypeView::Class(class) = self.graph.lower_type(ty)? {

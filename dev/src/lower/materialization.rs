@@ -355,6 +355,15 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
     ) -> Result<(), Error> {
+        self.materialize_class_qualified(id, ty, object, false)
+    }
+    pub(super) fn materialize_class_qualified(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+        volatile: bool,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
@@ -400,13 +409,13 @@ impl Function<'_, '_, '_, '_> {
                     .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                         "class prvalue without selected constructor",
                     )))?;
-                self.construct_at(constructor, ty, object, Some(arguments))
+                self.construct_at_qualified(constructor, ty, object, Some(arguments), volatile)
             }
             Some(ClassInitialization::Aggregate(arguments)) => {
                 self.aggregate_prvalue(ty, object, self.tree.expr_lists.get(arguments))
             }
             Some(ClassInitialization::FromExpression(source)) => {
-                self.materialize_class(source, ty, object)
+                self.materialize_class_qualified(source, ty, object, volatile)
             }
             None => match self.tree.expressions.get(id).kind {
                 _ if self.graph.lower_operator_call(id)? => {
@@ -425,7 +434,7 @@ impl Function<'_, '_, '_, '_> {
                     op, left, right, ..
                 } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
                     self.discard(left)?;
-                    self.materialize_class(right, ty, object)
+                    self.materialize_class_qualified(right, ty, object, volatile)
                 }
                 _ => Err(Error::Missing("class conditional materialization")),
             },

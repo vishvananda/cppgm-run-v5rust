@@ -49,6 +49,7 @@ pub(super) enum ConversionRank {
 pub(super) enum ReferenceSource {
     Other,
     FunctionLvalue,
+    UnqualifiedObject,
 }
 impl ReferenceSource {
     pub(super) fn is_function_lvalue(self) -> bool {

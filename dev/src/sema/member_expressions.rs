@@ -101,6 +101,7 @@ impl Analyzer<'_> {
         let mut object = self.typed_expression(base, scope)?;
         self.check_resolved_function(base)?;
         let location = self.tree.expressions.get(id).location;
+        self.check_temporary_destruction(object, scope, location)?;
         let arrow = op.token.as_punctuator() == Some(P::Arrow);
         let mut ty = object.ty;
         if arrow {

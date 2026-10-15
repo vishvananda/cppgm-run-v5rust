@@ -135,7 +135,10 @@ impl Analyzer<'_> {
                     }
                 });
             if let Some(written) = written.get(&member) {
-                let initializer = written.initializer;
+                let initializer = ast::Initializer {
+                    location: written.location,
+                    ..written.initializer
+                };
                 if let Some((constructor, arguments)) =
                     self.written_member_construction(ty, initializer, scope)?
                 {

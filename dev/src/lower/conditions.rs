@@ -224,13 +224,27 @@ impl Function<'_, '_, '_, '_> {
         if let Condition::Expression(id) = condition {
             if self.expression_temporaries(id)?.made {
                 let value = self.truth(id)?;
-                if !self.lifetime.cleanups[first..]
-                    .iter()
-                    .any(|c| matches!(c.place, super::lifetime::CleanupPlace::Temporary(_)))
+                let root = self.without_parentheses(id);
+                let logical_left = match self.tree.expressions.get(root).kind {
+                    ExprKind::Binary { op, left, .. }
+                        if matches!(
+                            op.token.as_punctuator(),
+                            Some(P::LogicalAnd | P::LogicalOr)
+                        ) =>
+                    {
+                        Some(left)
+                    }
+                    _ => None,
+                };
+                if let Some(left) = logical_left
+                    && (self.lifetime.cleanups.len() == first
+                        || self.literal_truth(left)?.is_some())
                 {
+                    self.destroy_temporaries(first)?;
+                    self.end_lifetime_expression(began)?;
                     self.effect(I::Branch(value.value, yes, no))?;
                     self.terminated = true;
-                    return self.end_lifetime_expression(began);
+                    return Ok(());
                 }
                 let true_cleanup = self.new_block("cond_true_cleanup")?;
                 let false_cleanup = self.new_block("cond_false_cleanup")?;
@@ -242,6 +256,17 @@ impl Function<'_, '_, '_, '_> {
                 self.place(false_cleanup)?;
                 self.destroy_temporaries(first)?;
                 return self.jump(no);
+            }
+            let root = self.without_parentheses(id);
+            let logical = matches!(self.tree.expressions.get(root).kind,
+                ExprKind::Binary { op, .. } if matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr)))
+                && !self.graph.lower_operator_call(root)?;
+            if logical && !self.lifetime.cleanups.is_empty() && self.expression_throws(id)? {
+                let value = self.truth(id)?;
+                self.end_lifetime_expression(began)?;
+                self.effect(I::Branch(value.value, yes, no))?;
+                self.terminated = true;
+                return Ok(());
             }
             self.branch_condition(id, yes, no, fold)?;
         } else {
@@ -520,11 +545,13 @@ impl Function<'_, '_, '_, '_> {
         }
         match self.tree.expressions.get(id).kind {
             ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
-                if types::storage(self.graph, facts.ty)? == Type::Void
-                    && (matches!(
-                        self.tree.expressions.get(id).kind,
-                        ExprKind::FunctionalCast { .. }
-                    ) || self.graph.lower_functional_call(id)?) =>
+                if matches!(
+                    self.graph.lower_type(facts.ty)?,
+                    crate::sema::lowering::TypeView::Scalar(crate::sema::lowering::Scalar::Void)
+                ) && (matches!(
+                    self.tree.expressions.get(id).kind,
+                    ExprKind::FunctionalCast { .. }
+                ) || self.graph.lower_functional_call(id)?) =>
             {
                 // The frozen discard owner does not evaluate a void functional
                 // cast. Its rvalue path still evaluates the cast's operand.
@@ -544,7 +571,11 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_expr,
                 else_expr,
-            } if types::storage(self.graph, self.graph.lower_expression(id)?.ty)? == Type::Void => {
+            } if matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Scalar(crate::sema::lowering::Scalar::Void)
+            ) =>
+            {
                 let yes = self.new_block("discard_cond_then")?;
                 let no = self.new_block("discard_cond_else")?;
                 let end = self.new_block("discard_cond_end")?;
@@ -577,8 +608,10 @@ impl Function<'_, '_, '_, '_> {
                 self.discard(right)
             }
             ExprKind::Cast { operand, .. }
-                if types::storage(self.graph, self.graph.lower_expression(id)?.ty)?
-                    == Type::Void =>
+                if matches!(
+                    self.graph.lower_type(facts.ty)?,
+                    crate::sema::lowering::TypeView::Scalar(crate::sema::lowering::Scalar::Void)
+                ) =>
             {
                 self.discard_to_void(operand)
             }

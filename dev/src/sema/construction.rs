@@ -952,7 +952,10 @@ impl Analyzer<'_> {
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         for index in 0..self.graph.entity(class).bases.len() {
             let base = self.graph.entity(class).bases[index].class;
-            let initializer = written.get(&base).map(|written| written.initializer);
+            let initializer = written.get(&base).map(|written| ast::Initializer {
+                location: written.location,
+                ..written.initializer
+            });
             let selected = if let Some(initializer) = initializer {
                 let ty = self
                     .graph

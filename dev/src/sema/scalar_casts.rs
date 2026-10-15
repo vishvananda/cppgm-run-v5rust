@@ -166,6 +166,11 @@ impl Analyzer<'_> {
             self.graph.types.get(goal).kind,
             TypeKind::Scalar(Scalar::Void)
         ) {
+            self.check_temporary_destruction(
+                source,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
             return self.new_expression_facts(goal, V::Prvalue);
         }
         if matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)) {

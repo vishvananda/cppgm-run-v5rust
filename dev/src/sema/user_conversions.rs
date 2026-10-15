@@ -185,6 +185,7 @@ impl Analyzer<'_> {
         }
         let constructor = self.selected_constructor_plan(binding, location)?;
         self.validate_constructor_use(constructor, scope, location)?;
+        self.check_inherited_constructor_access(binding, location)?;
         if matches!(
             self.graph.types.get(sequence.conversion.target).kind,
             TypeKind::Class(_)

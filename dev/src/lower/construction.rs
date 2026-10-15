@@ -82,10 +82,20 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: Option<ConstructorArguments>,
     ) -> Result<(), Error> {
+        self.construct_at_qualified(id, ty, object, arguments, false)
+    }
+    pub(super) fn construct_at_qualified(
+        &mut self,
+        id: ConstructorId,
+        ty: TypeId,
+        object: Value,
+        arguments: Option<ConstructorArguments>,
+        volatile: bool,
+    ) -> Result<(), Error> {
         if matches!(arguments, Some(ConstructorArguments::Value)) {
             if self.graph.lower_constructor(id).zero_before_value {
                 // Value-initialization zeroes storage before any nontrivial call.
-                self.zero_class_object(ty, object, None)?;
+                self.zero_class_object_qualified(ty, object, None, volatile)?;
             }
             if self.graph.lower_constructor_trivial(id) {
                 return Ok(());
@@ -247,9 +257,18 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         span: Option<u64>,
     ) -> Result<(), Error> {
+        self.zero_class_object_qualified(ty, object, span, false)
+    }
+    pub(super) fn zero_class_object_qualified(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        span: Option<u64>,
+        volatile: bool,
+    ) -> Result<(), Error> {
         let (size, alignment) = super::types::layout(self.graph, ty)?;
         let size = span.unwrap_or(size);
-        if self.graph.lower_contiguous_zero(ty)? {
+        if !volatile && self.graph.lower_contiguous_zero(ty)? {
             return self.effect(I::ZeroInit(size, alignment, object));
         }
         let mut offset = 0;

@@ -458,7 +458,7 @@ impl Analyzer<'_> {
                 {
                     facts
                 } else {
-                    self.scalar_binary(current, op, left, right)?
+                    self.scalar_binary(current, op, left, right, scope)?
                 };
                 self.graph.expression_facts.set(current, facts);
                 super::record(&mut self.graph.expression_types, current.index(), facts.ty);

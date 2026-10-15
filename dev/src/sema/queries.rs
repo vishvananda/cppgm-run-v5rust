@@ -9,6 +9,7 @@ use super::{
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{
+    lex::pp_lexer::Punctuator as P,
     support::source::SourceOffset,
     syntax::ast::{self, ExprKind},
     types::FundamentalType as F,
@@ -65,6 +66,7 @@ impl Analyzer<'_> {
                 {
                     return Err(Error::at(location, "sizeof of a function"));
                 }
+                self.check_temporary_destruction(facts, scope, location)?;
                 Ok(facts.ty)
             });
             self.unevaluated -= 1;
@@ -425,6 +427,24 @@ impl Analyzer<'_> {
                 });
                 self.unevaluated -= 1;
                 let facts = result?;
+                let mut tail = self.graph.expression_facts.root(operand);
+                while let ExprKind::Binary { op, right, .. } = self.tree.expressions.get(tail).kind
+                {
+                    if op.token.as_punctuator() != Some(P::Comma) {
+                        break;
+                    }
+                    tail = self.graph.expression_facts.root(right);
+                }
+                if !matches!(
+                    self.tree.expressions.get(tail).kind,
+                    ExprKind::Call { .. } | ExprKind::TypeTrait { .. }
+                ) {
+                    self.check_temporary_destruction(
+                        facts,
+                        scope,
+                        self.tree.expressions.get(operand).location,
+                    )?;
+                }
                 return match facts.category {
                     super::expression_facts::ValueCategory::Prvalue => Ok(facts.ty),
                     super::expression_facts::ValueCategory::Lvalue => {
