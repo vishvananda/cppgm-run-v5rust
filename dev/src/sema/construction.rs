@@ -807,6 +807,14 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if kind == MemberKind::Destructor {
+            if self.defaulted_destructor_deleted(class)? {
+                self.graph.entity_mut(function).availability =
+                    super::graph::FunctionAvailability::Deleted;
+                return Err(Error::at(
+                    location,
+                    "an explicitly defaulted function is defined as deleted",
+                ));
+            }
             return self.prepare_destruction(class);
         }
         if kind != MemberKind::Constructor {

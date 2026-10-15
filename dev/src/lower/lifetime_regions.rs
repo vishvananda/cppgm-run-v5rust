@@ -11,7 +11,7 @@ use crate::{
         model::{Facts, InstructionKind as I, RuntimeInstruction as R},
         vocabulary::Type,
     },
-    sema::lowering::TypeId,
+    sema::lowering::{EntityId, TypeId},
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn has_tracked_region(&self) -> bool {
@@ -79,7 +79,17 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.function_guard = Some(landing);
         self.effect(I::Runtime(R::EhTry(landing)))
     }
-    pub(super) fn place_function_guard(&mut self) -> Result<(), Error> {
+    pub(super) fn place_function_guard(
+        &mut self,
+        destructor: Option<EntityId>,
+    ) -> Result<(), Error> {
+        // lower_definition returns directly after finish_body for an inert
+        // destructor. It retains the entry marker but never places its guard.
+        if let Some(entity) = destructor
+            && self.symbols.destructor_inert(entity)?
+        {
+            return Ok(());
+        }
         let Some(landing) = self.lifetime.function_guard.take() else {
             return Ok(());
         };

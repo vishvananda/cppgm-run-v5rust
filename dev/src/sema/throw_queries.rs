@@ -184,9 +184,11 @@ impl Analyzer<'_> {
             {
                 return Ok(true);
             }
-        } else if facts.class_initialization.is_none() {
-            return Err(Error::Missing("class temporary exception queries"));
         }
+        // Calls, conditionals and member projections can produce a class
+        // prvalue without a construction plan on that expression. Their
+        // selected calls/operands are visited by the syntax walk; the result
+        // itself contributes only its destructor (temporary_may_throw).
         self.aggregate_destruction_may_throw(class)
     }
 
@@ -471,6 +473,47 @@ mod tests {
             panic!("missing return");
         };
         expr
+    }
+
+    #[test]
+    fn class_call_query_retains_the_result_without_inventing_a_constructor() {
+        for (specification, bits) in [("noexcept", 1), ("noexcept(false)", 0)] {
+            let source = SourceBuffer::new(format!(
+                "struct X{{int n;~X(){specification};}};X make()noexcept;bool f(){{return noexcept(make());}}"
+            ).into_bytes()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"result-unwind").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let expressions = tree.expressions.mark();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let graph = analyzer.analyze(declarations).unwrap();
+            let query = return_expression(tree, declarations);
+            assert_eq!(
+                graph.expression_facts.get(query).unwrap().folded,
+                Some(bits)
+            );
+            let ExprKind::TypeTrait {
+                operand: Some(call),
+                ..
+            } = tree.expressions.get(query).kind
+            else {
+                panic!("missing query operand");
+            };
+            let facts = graph.expression_facts.get(call).unwrap();
+            assert!(facts.constructor.is_none() && facts.class_initialization.is_none());
+            assert!(matches!(facts.call, Some(CallTarget::Direct(_))));
+            let TypeKind::Class(class) = graph.types.get(facts.ty).kind else {
+                panic!("missing class result");
+            };
+            assert!(matches!(
+                graph.entity(class).layout,
+                super::super::layout::LayoutState::NotStarted
+            ));
+            assert!(super::super::function_demands::trailing(&graph).is_empty());
+            assert_eq!(tree.expressions.mark(), expressions);
+        }
     }
 
     #[test]

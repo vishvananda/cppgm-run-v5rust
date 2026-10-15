@@ -268,6 +268,12 @@ impl Analyzer<'_> {
                     super::function_demands::DefinitionEmission::Demanded;
             } else if self.semantic() && self.template_depth == 0 {
                 self.defaulted_constructor_definition(function, class, kind, location)?;
+                if self.lowering()
+                    && self.graph.entity(function).inline
+                        != super::specifiers::InlinePreference::Inline
+                {
+                    self.boundary_roots.push(function);
+                }
             }
         }
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Delete)) {

@@ -3033,7 +3033,14 @@ fn recursive_destructor_properties_preserve_reference_and_demand_boundaries() {
         };
         let facts = graph.entity(class).destruction.unwrap();
         assert_eq!(facts.trivial, matches!(index, 2..=4));
-        assert_eq!(facts.nothrow, index >= 2);
+        let nothrow = match facts.unwind {
+            super::destruction::DestructorUnwind::Implicit { nothrow } => nothrow,
+            super::destruction::DestructorUnwind::Declared(function) => matches!(
+                graph.entity(function).exceptions,
+                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
+            ),
+        };
+        assert_eq!(nothrow, index >= 2);
         assert_eq!(facts.deleted, index >= 3);
         // Merely completing a class does not demand an implicit definition.
         assert!(graph.entity(class).implicit_destructor.is_none());

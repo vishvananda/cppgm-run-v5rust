@@ -38,6 +38,7 @@ pub(super) enum ExceptionState {
 #[derive(Clone, Copy)]
 enum SpecificationMode {
     Ordinary,
+    ImplicitDestructor,
     TemplateExpression,
     TemplateCompatibility,
 }
@@ -175,7 +176,7 @@ impl Analyzer<'_> {
             // instantiation when its first specification is pending.
             return Ok(());
         }
-        if !first
+        let implicit_destructor = !first
             && qualifier.is_none()
             && self.template_depth == 0
             && (special == Some(super::function_names::SpecialName::Destructor)
@@ -183,8 +184,8 @@ impl Analyzer<'_> {
                     .graph
                     .entity(entity)
                     .member_function
-                    .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor))
-        {
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor));
+        if implicit_destructor && !self.semantic() {
             // Types mode never synthesizes the subobjects' destructor facts.
             // The C++ omitted redeclaration therefore has the implicit true
             // specification, while its first omitted declaration allowed all.
@@ -259,7 +260,10 @@ impl Analyzer<'_> {
             location,
             first,
             done: false,
-            mode: if self.template_depth == 0 && self.graph.entity(entity).template_head.is_none() {
+            mode: if implicit_destructor && self.semantic() {
+                SpecificationMode::ImplicitDestructor
+            } else if self.template_depth == 0 && self.graph.entity(entity).template_head.is_none()
+            {
                 SpecificationMode::Ordinary
             } else {
                 SpecificationMode::TemplateCompatibility
@@ -312,7 +316,24 @@ impl Analyzer<'_> {
         }
         let saved_limit = self.graph.lookup_limit;
         self.graph.lookup_limit = Some(pending.limit);
-        let result = self.exception_set(pending.qualifier, pending.scope);
+        let result = if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
+            self.graph
+                .entity(pending.entity)
+                .member_function
+                .ok_or(Error::Invariant(
+                    "implicit destructor specification without member",
+                ))
+                .and_then(|member| self.implicit_destructor_nothrow(member.class))
+                .map(|nothrow| {
+                    if nothrow {
+                        ExceptionSet::None
+                    } else {
+                        ExceptionSet::All
+                    }
+                })
+        } else {
+            self.exception_set(pending.qualifier, pending.scope)
+        };
         self.graph.lookup_limit = saved_limit;
         let result = result?;
         if pending.first {
