@@ -13,6 +13,17 @@ use super::{
 use crate::syntax::ast::{self, ExprKind};
 
 impl Analyzer<'_> {
+    fn constructor_function_may_throw(
+        &mut self,
+        id: super::construction::ConstructorId,
+    ) -> Result<bool, Error> {
+        let plan = self.graph.constructors.get(id);
+        if let Some(binding) = plan.binding {
+            self.function_may_throw(self.graph.binding(binding).entity)
+        } else {
+            Ok(!plan.nothrow)
+        }
+    }
     fn constructor_may_throw(
         &mut self,
         id: super::construction::ConstructorId,
@@ -139,6 +150,46 @@ impl Analyzer<'_> {
         Ok(false)
     }
 
+    fn class_temporary_may_throw(&mut self, facts: ExprFacts, depth: u16) -> Result<bool, Error> {
+        let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind else {
+            return Ok(false);
+        };
+        if facts.category != ValueCategory::Prvalue {
+            return Ok(false);
+        }
+        if let Some(constructor) = facts.constructor {
+            let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) =
+                facts.class_initialization
+            else {
+                return Err(Error::Invariant(
+                    "constructor throw query without arguments",
+                ));
+            };
+            if self.constructor_may_throw(constructor, arguments, depth)? {
+                return Ok(true);
+            }
+        } else if let Some(super::expression_facts::ClassInitialization::FromExpression(source)) =
+            facts.class_initialization
+        {
+            // This is written class construction whose selected copy
+            // lives on its source use, rather than a separate plan on
+            // the class prvalue. Its defaults still belong to this call.
+            if let Some(super::copy_initialization::CopyAction::Constructor { constructor, .. }) =
+                self.graph.expression_facts.copy_action(source)
+                && self.constructor_may_throw(
+                    constructor,
+                    super::constructor_initialization::ConstructorArguments::Single(source),
+                    depth,
+                )?
+            {
+                return Ok(true);
+            }
+        } else if facts.class_initialization.is_none() {
+            return Err(Error::Missing("class temporary exception queries"));
+        }
+        self.aggregate_destruction_may_throw(class)
+    }
+
     fn walk_throw_query(&mut self, base: usize) -> Result<bool, Error> {
         while self.throw_work.len() > base {
             let (id, depth) = self
@@ -153,6 +204,23 @@ impl Analyzer<'_> {
                 continue;
             }
             self.check_stack()?;
+            if let Some(selected) = self.graph.expression_facts.function_conversion(id) {
+                if self.function_may_throw(self.graph.binding(selected.binding).entity)? {
+                    return Ok(true);
+                }
+                if selected.usage != super::conversion_functions::ConversionUse::Scalar {
+                    // kUserConverted is terminal in the frozen may_throw query:
+                    // only the converter and original prvalue's destruction
+                    // count, not the original expression's construction/children.
+                    if facts.category == ValueCategory::Prvalue
+                        && let Some(class) = self.graph.class_of(facts.ty)
+                        && self.aggregate_destruction_may_throw(class)?
+                    {
+                        return Ok(true);
+                    }
+                    continue;
+                }
+            }
             for index in 0..self.graph.expression_facts.arrow_calls(id).len() {
                 let step = self.graph.expression_facts.arrow_calls(id)[index];
                 if self.function_may_throw(self.graph.binding(step.binding).entity)? {
@@ -165,27 +233,19 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
-            if let Some(selected) = self.graph.expression_facts.function_conversion(id)
-                && self.function_may_throw(self.graph.binding(selected.binding).entity)?
-            {
-                return Ok(true);
-            }
             let kind = self.tree.expressions.get(id).kind;
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;
             }
             // A selected value transfer belongs to the original operand,
-            // including an unevaluated implicit copy. Query its callable
-            // properties and trailing defaults without demanding its body.
+            // including an unevaluated implicit copy. conversion_may_throw
+            // queries only the callable; written construction separately
+            // queries its defaults through constructor_may_throw below.
             match self.graph.expression_facts.copy_action(id) {
                 Some(super::copy_initialization::CopyAction::Constructor {
                     constructor, ..
                 }) => {
-                    if self.constructor_may_throw(
-                        constructor,
-                        super::constructor_initialization::ConstructorArguments::Single(id),
-                        depth,
-                    )? {
+                    if self.constructor_function_may_throw(constructor)? {
                         return Ok(true);
                     }
                 }
@@ -212,26 +272,8 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
-            if let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind
-                && facts.category == ValueCategory::Prvalue
-            {
-                if let Some(constructor) = facts.constructor {
-                    let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) =
-                        facts.class_initialization
-                    else {
-                        return Err(Error::Invariant(
-                            "constructor throw query without arguments",
-                        ));
-                    };
-                    if self.constructor_may_throw(constructor, arguments, depth)? {
-                        return Ok(true);
-                    }
-                } else if facts.class_initialization.is_none() {
-                    return Err(Error::Missing("class temporary exception queries"));
-                }
-                if self.aggregate_destruction_may_throw(class)? {
-                    return Ok(true);
-                }
+            if self.class_temporary_may_throw(facts, depth)? {
+                return Ok(true);
             }
             if (facts.call_form == super::expression_facts::CallForm::Operator
                 || facts.literal_call.is_some())
@@ -453,6 +495,32 @@ mod tests {
         };
         assert_ne!(graph.binding(first).entity, graph.binding(second).entity);
         assert!(matches!(calls[2], CallTarget::Indirect(_, Some(_))));
+    }
+
+    #[test]
+    fn converted_query_distinguishes_contextual_operands_from_scalar_initialization() {
+        for (expression, bits) in [("+X()", 1), ("!X()", 1), ("static_cast<int>(X())", 0)] {
+            let source = SourceBuffer::new(
+                format!("struct X{{X();~X()noexcept;operator int()noexcept;}};bool f(){{return noexcept({expression});}}")
+                    .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"converted-query").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let expressions = tree.expressions.mark();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let graph = analyzer.analyze(declarations).unwrap();
+            assert_eq!(tree.expressions.mark(), expressions);
+            assert!(super::super::function_demands::trailing(&graph).is_empty());
+            let query = return_expression(tree, declarations);
+            assert_eq!(
+                graph.expression_facts.get(query).unwrap().folded,
+                Some(bits)
+            );
+        }
     }
 
     #[test]

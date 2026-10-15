@@ -387,7 +387,7 @@ impl Analyzer<'_> {
         };
         self.check_bit_field_binding(id, conversion)?;
         if let Some(mut step) = self.graph.expression_facts.function_conversion(id)
-            && step.builtin_operand
+            && step.usage == super::conversion_functions::ConversionUse::Builtin
         {
             step.after = conversion;
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
@@ -459,6 +459,13 @@ impl Analyzer<'_> {
     }
     pub(super) fn convert_bool(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let target = self.graph.types.scalar(Scalar::Bool)?;
-        self.convert_operand_scalar(id, target, true)
+        self.convert_operand_scalar(id, target, true)?;
+        if let Some(mut step) = self.graph.expression_facts.function_conversion(id) {
+            step.usage = super::conversion_functions::ConversionUse::Contextual;
+            self.graph
+                .expression_facts
+                .set_function_conversion(id, step);
+        }
+        Ok(())
     }
 }

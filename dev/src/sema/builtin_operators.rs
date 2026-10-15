@@ -235,7 +235,7 @@ impl Analyzer<'_> {
             sequence,
             scope,
             self.tree.expressions.get(id).location,
-            true,
+            super::conversion_functions::ConversionUse::Builtin,
         )?;
         // The ordinary builtin checker applies the final standard conversion
         // to the conversion function's result, preserving the original receiver.
@@ -247,7 +247,7 @@ impl Analyzer<'_> {
 
     pub(super) fn builtin_operand_facts(&self, id: ast::ExprId) -> Result<ExprFacts, Error> {
         if let Some(step) = self.graph.expression_facts.function_conversion(id)
-            && step.builtin_operand
+            && step.usage == super::conversion_functions::ConversionUse::Builtin
         {
             Ok(ExprFacts::new(step.result, step.category))
         } else {
@@ -308,7 +308,7 @@ mod tests {
         let class = graph.class_of(original.ty).unwrap();
         assert_eq!(original.category, V::Lvalue);
         let selection = graph.expression_facts.function_conversion(operand).unwrap();
-        assert!(selection.builtin_operand);
+        assert!(selection.usage == super::super::conversion_functions::ConversionUse::Builtin);
         assert!(matches!(
             graph.types.get(selection.result).kind,
             TypeKind::Scalar(super::super::types::Scalar::Basic(

@@ -87,12 +87,29 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         call: MemberCall,
     ) -> Result<RValue, Error> {
+        self.call_conversion_value(id, call, self.graph.lower_builtin_operand(id))
+    }
+    pub(super) fn call_truth_conversion(
+        &mut self,
+        id: ast::ExprId,
+        call: MemberCall,
+    ) -> Result<RValue, Error> {
+        // Contextual boolean conversion uses converted_operand's qualified
+        // glvalue read, just like a converted builtin operand.
+        self.call_conversion_value(id, call, true)
+    }
+    fn call_conversion_value(
+        &mut self,
+        id: ast::ExprId,
+        call: MemberCall,
+        qualified: bool,
+    ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
         let source = self.graph.lower_expression(id)?.ty;
         let place = self.original_scalar_place(self.without_parentheses(id))?;
         let receiver = self.storage_address(place, source)?;
-        self.emit_conversion_call(receiver, call, throws, self.graph.lower_builtin_operand(id))
+        self.emit_conversion_call(receiver, call, throws, qualified)
     }
     pub(super) fn call_conversion_at(
         &mut self,
@@ -108,7 +125,7 @@ impl Function<'_, '_, '_, '_> {
         mut receiver: crate::lowir::model::Value,
         call: MemberCall,
         throws: bool,
-        builtin_operand: bool,
+        qualified: bool,
     ) -> Result<RValue, Error> {
         if let Some(offset) = call.offset {
             receiver = self.base_projection(receiver, call.result, offset)?;
@@ -136,13 +153,13 @@ impl Function<'_, '_, '_, '_> {
             let ty = super::types::storage(self.graph, call.result)?;
             // A builtin conversion result is a normal glvalue. Ordinary scalar
             // initialization uses converted_value's unqualified Place instead.
-            let memory = if builtin_operand
+            let memory = if qualified
                 && matches!(
                     self.graph.lower_type(call.result)?,
                     crate::sema::lowering::TypeView::Array { .. }
                 ) {
                 crate::lowir::model::Facts::default()
-            } else if builtin_operand {
+            } else if qualified {
                 super::types::memory(self.graph, call.result)?
             } else {
                 crate::lowir::model::Facts::memory(

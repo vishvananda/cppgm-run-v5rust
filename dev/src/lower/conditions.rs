@@ -148,7 +148,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
         let value = if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
-            self.call_conversion(id, call)?
+            self.call_truth_conversion(id, call)?
         } else {
             self.expression(id, Context::Operand)?
         };

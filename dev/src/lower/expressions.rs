@@ -20,6 +20,11 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn operand(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         if let Some((call, target)) = self.graph.lower_function_conversion(id)? {
             let value = self.call_conversion(id, call)?;
+            if context != Context::Cast
+                && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+            {
+                return self.adjust_base_pointer(value, target, offset, offset != 0);
+            }
             return self.convert(value, target, context);
         }
         let value = self.expression(id, context)?;
@@ -498,7 +503,7 @@ impl Function<'_, '_, '_, '_> {
             // The boolean conversion fact belongs to semantic checking. C++
             // emits ! as one equality comparison on the raw truth operand.
             if let Some((call, _)) = self.graph.lower_function_conversion(operand)? {
-                self.call_conversion(operand, call)?
+                self.call_truth_conversion(operand, call)?
             } else {
                 self.expression(operand, Context::Unary)?
             }

@@ -20,6 +20,13 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConversionUse {
+    Scalar,
+    Contextual,
+    Builtin,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct FunctionConversion {
     pub binding: BindingId,
@@ -28,7 +35,7 @@ pub(super) struct FunctionConversion {
     pub path: Option<BasePathId>,
     pub after: Conversion,
     pub after_path: Option<BasePathId>,
-    pub builtin_operand: bool,
+    pub usage: ConversionUse,
 }
 
 impl Analyzer<'_> {
@@ -202,7 +209,7 @@ impl Analyzer<'_> {
         sequence: ArgumentSequence,
         scope: ScopeId,
         location: SourceOffset,
-        builtin_operand: bool,
+        usage: ConversionUse,
     ) -> Result<FunctionConversion, Error> {
         let Some(UserConversion::Function(binding)) = sequence.user_conversion else {
             return Err(Error::Invariant("conversion function without selection"));
@@ -213,7 +220,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("conversion function without class"))?;
         let entity = self.graph.binding(binding).entity;
         // convert_class_operand does not check deletion in the frozen builtin path.
-        if !builtin_operand
+        if usage != ConversionUse::Builtin
             && self.graph.entity(entity).availability == FunctionAvailability::Deleted
         {
             return Err(Error::at(location, "use of a deleted function"));
@@ -246,16 +253,25 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("conversion without signature"))?;
         let produced = self.call_result(ty)?;
+        let after = sequence.application.ok_or(Error::Invariant(
+            "conversion function without second sequence",
+        ))?;
+        // The ordinary converted_value path projects the result, independently
+        // of the receiver. The frozen scalar path does not check access for
+        // this second step (the builtin checker does so when applying it).
+        let after_path = if usage == ConversionUse::Builtin {
+            None
+        } else {
+            self.conversion_base_path(produced, after, scope, location, false)?
+        };
         Ok(FunctionConversion {
             binding,
             result: produced.ty,
             category: produced.category,
             path,
-            builtin_operand,
-            after_path: None,
-            after: sequence.application.ok_or(Error::Invariant(
-                "conversion function without second sequence",
-            ))?,
+            usage,
+            after_path,
+            after,
         })
     }
 
@@ -291,7 +307,7 @@ impl Analyzer<'_> {
             sequence,
             scope,
             self.tree.expressions.get(id).location,
-            false,
+            ConversionUse::Scalar,
         )?;
         self.graph
             .expression_facts
@@ -311,6 +327,92 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn unevaluated_result_projection_keeps_layout_and_emission_undemanded() {
+        let source = SourceBuffer::new(
+            b"struct B{int n;};struct D:B{int m;};struct X{operator D*()noexcept;};\
+              void take(B*)noexcept;bool f(X&x){return noexcept(take(x));}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"unevaluated-result-path").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert!(super::super::function_demands::trailing(&graph).is_empty());
+        for name in [b"B", b"D"] {
+            let name = cursor.intern_name(name).unwrap();
+            let binding = graph
+                .own(graph.global, name, super::super::lookup::Filter::Prefix)
+                .unwrap();
+            assert!(matches!(
+                graph.entity(graph.binding(binding).entity).layout,
+                super::super::layout::LayoutState::NotStarted
+            ));
+        }
+    }
+
+    #[test]
+    fn scalar_result_and_receiver_keep_separate_base_paths() {
+        let source = SourceBuffer::new(
+            b"struct B{int n;};struct D:B{int m;};struct S{operator D*&();};\
+              struct X:S{};int take(B*);int f(X&x){return take(((x)));}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"scalar-result-path").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return");
+        };
+        let ast::ExprKind::Call { arguments, .. } = tree.expressions.get(call).kind else {
+            panic!("call");
+        };
+        let operand = tree.expr_lists.get(arguments)[0];
+        let selected = graph.expression_facts.function_conversion(operand).unwrap();
+        assert!(selected.usage == ConversionUse::Scalar);
+        assert!(selected.path.is_some());
+        assert!(selected.after_path.is_some());
+        assert_ne!(selected.path, selected.after_path);
+        assert_eq!(selected.category, ValueCategory::Lvalue);
+        assert_eq!(selected.after.second, ValueConversion::DerivedToBase);
+        let facts = graph.expression_facts.get(operand).unwrap();
+        assert!(graph.class_of(facts.ty).is_some());
+        assert!(facts.base_path.is_none());
+        assert_eq!(
+            graph.lower_base_conversion_offset(operand).unwrap(),
+            Some(0)
+        );
+        assert_ne!(operand, graph.expression_facts.root(operand));
+    }
 
     #[test]
     fn selected_conversion_keeps_source_aliases_and_does_not_demand_hidden_or_losing_members() {

@@ -392,8 +392,13 @@ impl Analyzer<'_> {
                     let binding = self.graph.declared_bindings[declarator.index()]
                         .ok_or(Error::Invariant("condition without binding"))?;
                     let scope = self.graph.binding_scope(binding);
-                    let selected =
-                        self.select_conversion_function(facts, sequence, scope, location, false)?;
+                    let selected = self.select_conversion_function(
+                        facts,
+                        sequence,
+                        scope,
+                        location,
+                        super::conversion_functions::ConversionUse::Contextual,
+                    )?;
                     self.graph.record_condition_function(declarator, selected);
                     sequence.conversion
                 } else {

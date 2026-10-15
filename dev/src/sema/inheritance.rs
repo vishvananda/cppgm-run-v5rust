@@ -192,7 +192,7 @@ impl Analyzer<'_> {
         if access {
             self.check_base_path_access(path, scope, location)?;
         }
-        if self.lowering() {
+        if self.lowering() && self.unevaluated == 0 {
             self.request_storage_layout(derived, location)?;
         }
         Ok(path)

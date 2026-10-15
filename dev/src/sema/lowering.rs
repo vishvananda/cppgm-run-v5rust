@@ -219,13 +219,13 @@ impl Graph {
         Ok(self
             .expression_facts
             .function_conversion(id)
-            .filter(|step| step.builtin_operand)
+            .filter(|step| step.usage == super::conversion_functions::ConversionUse::Builtin)
             .map_or(self.expression_facts.get(id)?.ty, |step| step.result))
     }
     pub(crate) fn lower_builtin_operand(&self, id: ast::ExprId) -> bool {
         self.expression_facts
             .function_conversion(id)
-            .is_some_and(|step| step.builtin_operand)
+            .is_some_and(|step| step.usage == super::conversion_functions::ConversionUse::Builtin)
     }
     pub(crate) fn lower_function_conversion(
         &self,
@@ -506,9 +506,7 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<u64>, Error> {
-        if let Some(step) = self.expression_facts.function_conversion(id)
-            && step.builtin_operand
-        {
+        if let Some(step) = self.expression_facts.function_conversion(id) {
             return step
                 .after_path
                 .map(|path| self.lower_path_offset(path))

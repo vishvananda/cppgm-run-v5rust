@@ -621,6 +621,11 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .expression_facts
+                    .function_conversion(argument)
+                    .is_none()
+                && self
+                    .graph
+                    .expression_facts
                     .user_conversion(argument)
                     .is_none()
             {
