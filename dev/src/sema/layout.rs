@@ -114,6 +114,7 @@ impl Analyzer<'_> {
             if !seen.insert(entity) {
                 continue;
             }
+            self.assignment_boundaries(entity, &mut work, &mut constructors)?;
             if let Some(constructor) = self.graph.entity(entity).constructor {
                 constructors.push(constructor);
             }

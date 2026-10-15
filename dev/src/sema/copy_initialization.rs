@@ -380,10 +380,11 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
+        direct: bool,
     ) -> Result<CopySelection, Error> {
         // Preserve the selected identity even when access deletes the enclosing
         // defaulted member. Its owner checks base/member protected access next.
-        self.select_copy_sequence(class, facts, None, true, SourceOffset(0))
+        self.select_copy_sequence(class, facts, None, direct, SourceOffset(0))
     }
     fn select_copy_sequence(
         &mut self,

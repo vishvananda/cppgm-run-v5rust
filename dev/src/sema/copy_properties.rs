@@ -443,7 +443,7 @@ impl Analyzer<'_> {
                     ValueCategory::Xvalue
                 },
             );
-            let selected = match self.select_subobject_copy(child, source) {
+            let selected = match self.select_subobject_copy(child, source, true) {
                 Ok(selected) => Some(selected),
                 Err(Error::Diagnostic { .. }) => {
                     facts.deleted = true;

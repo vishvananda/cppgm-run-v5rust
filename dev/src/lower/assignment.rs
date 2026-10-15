@@ -383,19 +383,38 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("assignment call signature").into());
         };
+        let caller_destroyed = matches!(self.graph.lower_type(parameters[0])?, TypeView::Class(_))
+            && self.symbols.storage_destructor(parameters[0])?.is_some();
+        let began = caller_destroyed && !self.lifetime.full_expression;
+        if began {
+            self.lifetime.full_expression = true;
+            self.lifetime.region_start = super::lifetime::RegionStart::Pending;
+            self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
+            self.ensure_insertion()?;
+            self.lifetime.expression_start = Some(self.builder.position()?);
+        }
+        let first = self.lifetime.cleanups.len();
+        if caller_destroyed {
+            self.open_temporary_region()?;
+        }
         let mut source = source;
         if let TypeView::Class(class) = self.graph.lower_type(parameters[0])? {
-            if !self.graph.lower_assignment_parameter_storage(action)? {
-                return Err(Error::Missing(
-                    "nontrivial assignment parameter constructor body",
-                ));
-            }
-            if self.symbols.storage_destructor(parameters[0])?.is_some() {
-                return Err(Error::Missing("assignment parameter temporary cleanup"));
-            }
             let slot = self.generated_slot("argobj", types::storage(self.graph, parameters[0])?)?;
             let object = self.emit(I::Addr(slot), parameters[0])?.value;
-            if !self.graph.lower_class_empty(class)? {
+            let constructor = action
+                .parameter_constructor
+                .ok_or(crate::sema::Error::Invariant(
+                    "assignment parameter constructor plan",
+                ))?;
+            let empty = self.graph.lower_class_empty(class)?;
+            if !self.graph.lower_constructor_trivial(constructor) || empty && caller_destroyed {
+                self.call_copy_constructor(
+                    constructor,
+                    super::construction::Variant::Complete,
+                    object,
+                    source,
+                )?;
+            } else if !empty {
                 let (size, alignment) = types::layout(self.graph, parameters[0])?;
                 self.effect(I::CopyObject(size, alignment, source, object))?;
             }
@@ -404,12 +423,15 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 object
             };
+            if caller_destroyed {
+                self.temporary_alive(parameters[0], source)?;
+            }
         }
         self.symbols.demand(selected);
         let callee = self.symbols.callee(selected, &mut self.builder)?;
         let arguments = self.builder.arguments(&[destination, source])?;
         self.before_lifetime_call(!facts.nothrow)?;
-        self.emit(
+        let result = self.emit(
             I::Call(Call {
                 result: Type::Ptr,
                 callee,
@@ -419,6 +441,8 @@ impl Function<'_, '_, '_, '_> {
             }),
             ty,
         )?;
-        Ok(())
+        self.finish_lifetime_call(result, false)?;
+        self.destroy_temporaries(first)?;
+        self.end_lifetime_expression(began)
     }
 }

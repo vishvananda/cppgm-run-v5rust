@@ -30,6 +30,73 @@ mod tests {
     };
 
     #[test]
+    fn assignment_parameter_plans_follow_reached_selections_without_reparsing() {
+        let source = SourceBuffer::new(b"struct M{int n;M(const M&);M&operator=(M);~M();};struct X{M m[9];};struct Unused{M m;};void f(X&a,const X&b){a=b;a=b;}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"assignment-plans").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"X").unwrap(),
+            cursor.intern_name(b"Unused").unwrap(),
+        ];
+        let expressions = tree.expressions.mark();
+        let declarations_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let classes: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let binding = analyzer
+                    .graph
+                    .own(global, name, super::super::lookup::Filter::Elaborated)
+                    .unwrap();
+                analyzer.graph.binding(binding).entity
+            })
+            .collect();
+        let home = analyzer.graph.entity(classes[0]).scope.unwrap();
+        let function = analyzer
+            .graph
+            .functions_at(home, key().unwrap())
+            .map(|b| analyzer.graph.binding(b).entity)
+            .find(|&f| analyzer.graph.entity(f).assignment_kind == Some(RefKind::Lvalue))
+            .unwrap();
+        let action = analyzer.graph.lower_assignment(function).unwrap().actions[0];
+        assert!(action.parameter_copy.is_some());
+        assert!(action.parameter_constructor.is_none());
+        analyzer.finish_lowering_boundaries().unwrap();
+        let action = analyzer.graph.lower_assignment(function).unwrap().actions[0];
+        let constructor = action.parameter_constructor.unwrap();
+        let plan = analyzer.graph.lower_constructor(constructor);
+        let child = plan.class;
+        assert_eq!(
+            analyzer
+                .copy_constructor_plan(child, action.parameter_copy.unwrap(), SourceOffset(0))
+                .unwrap(),
+            constructor
+        );
+        let selected = action.function.unwrap();
+        let signature = analyzer.graph.lower_entity_type(selected).unwrap();
+        let parameter = analyzer
+            .graph
+            .types
+            .function_parameter(signature, 0)
+            .unwrap();
+        assert_eq!(analyzer.graph.class_of(parameter), Some(child));
+        assert!(analyzer.graph.destructor_binding(child).is_some());
+        assert!(
+            analyzer.graph.entity(classes[1]).copy_preparation
+                == super::super::copy_properties::Preparation::Pending
+        );
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declarations_count);
+    }
+
+    #[test]
     fn assignment_demand_keeps_syntax_and_reuses_deepest_first_selections() {
         let source = SourceBuffer::new(b"struct Leaf{int n;};struct Holder{Leaf a;};struct Unused{int n;};int f(Holder&a,const Holder&b){a=b;a=b;return 0;}".to_vec()).unwrap();
         let mut unit =
@@ -114,29 +181,11 @@ pub(crate) struct Action {
     pub ty: TypeId,
     pub function: Option<EntityId>,
     parameter_copy: Option<super::copy_initialization::CopySelection>,
+    pub parameter_constructor: Option<super::construction::ConstructorId>,
 }
 impl Graph {
     pub(crate) fn lower_assignment(&self, function: EntityId) -> Option<&Properties> {
         self.entity(function).assignment.as_ref()
-    }
-    pub(crate) fn lower_assignment_parameter_storage(&self, action: Action) -> Result<bool, Error> {
-        let selected = action
-            .parameter_copy
-            .ok_or(Error::Invariant("assignment parameter copy selection"))?;
-        let function = action
-            .function
-            .ok_or(Error::Invariant("assignment parameter function"))?;
-        let signature = self
-            .entity(function)
-            .ty
-            .ok_or(Error::Invariant("assignment parameter signature"))?;
-        let parameter = self.types.function_parameter(signature, 0)?;
-        let class = self
-            .class_of(parameter)
-            .ok_or(Error::Invariant("assignment parameter class"))?;
-        Ok(self
-            .copy_property_id(class, selected)?
-            .is_some_and(|id| self.copy_properties.get(id).trivial))
     }
     pub(crate) fn lower_implicit_assignment(&self, function: EntityId) -> bool {
         self.entity(function).assignment_origin == Origin::Implicit
@@ -148,6 +197,50 @@ impl Graph {
     }
 }
 impl Analyzer<'_> {
+    /// Prepare only the selected edges of an assignment reached by lowering.
+    pub(super) fn assignment_boundaries(
+        &mut self,
+        function: EntityId,
+        work: &mut Vec<EntityId>,
+        constructors: &mut Vec<super::construction::ConstructorId>,
+    ) -> Result<(), Error> {
+        let count = self
+            .graph
+            .entity(function)
+            .assignment
+            .as_ref()
+            .map_or(0, |p| p.actions.len());
+        for index in 0..count {
+            let action = self
+                .graph
+                .entity(function)
+                .assignment
+                .as_ref()
+                .ok_or(Error::Invariant("assignment boundary plan"))?
+                .actions[index];
+            if let Some(selected) = action.function {
+                work.push(selected);
+                if let Some(copy) = action.parameter_copy {
+                    let signature = self.graph.lower_entity_type(selected)?;
+                    let parameter = self.graph.types.function_parameter(signature, 0)?;
+                    let class = self
+                        .graph
+                        .class_of(parameter)
+                        .ok_or(Error::Invariant("assignment parameter class"))?;
+                    let constructor = self.copy_constructor_plan(class, copy, SourceOffset(0))?;
+                    self.graph
+                        .entity_mut(function)
+                        .assignment
+                        .as_mut()
+                        .ok_or(Error::Invariant("assignment boundary plan"))?
+                        .actions[index]
+                        .parameter_constructor = Some(constructor);
+                    constructors.push(constructor);
+                }
+            }
+        }
+        Ok(())
+    }
     pub(super) fn prepare_assignment_lookup(
         &mut self,
         mut scope: ScopeId,
@@ -292,15 +385,9 @@ impl Analyzer<'_> {
                 .add_scope(ScopeKind::Function, home, None, None)?;
             self.graph.scope_mut(scope).owner = Some(function);
             self.graph.entity_mut(function).scope = Some(scope);
-            let parameter_syntax = self
-                .graph
-                .entity(function)
-                .function_parameters
-                .and_then(|p| self.tree.parameters.get(p.parameters).first());
-            let name = parameter_syntax
-                .map(|p| self.declarator_name(p.declarator))
-                .transpose()?
-                .flatten();
+            // A defaulted assignment has a synthesized body, with an unnamed
+            // parameter binding even when its declaration supplied a name.
+            let name = None;
             let other = self.graph.add_entity(
                 Some(parameter),
                 name,
@@ -459,6 +546,7 @@ impl Analyzer<'_> {
                 ty,
                 function: None,
                 parameter_copy: None,
+                parameter_constructor: None,
             };
             properties.deleted |=
                 matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
@@ -535,7 +623,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         properties: &mut Properties,
     ) -> Result<Option<super::copy_initialization::CopySelection>, Error> {
-        let selected = match self.select_subobject_copy(child, source) {
+        let selected = match self.select_subobject_copy(child, source, false) {
             Ok(selected) => Some(selected),
             Err(Error::Diagnostic { .. }) => {
                 properties.deleted = true;
