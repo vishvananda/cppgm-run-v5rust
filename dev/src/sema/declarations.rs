@@ -1376,6 +1376,12 @@ impl Analyzer<'_> {
         let qualified_name = *self.tree.names.get(name);
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(self.declaration_scope(scope));
+        if prefix.is_some() && self.graph.scope(home).kind == ScopeKind::Enum {
+            return Err(Error::at(
+                qualified_name.location,
+                "qualified class name must name a class or namespace member",
+            ));
+        }
         if prefix.is_some() && !self.graph.encloses(self.declaration_scope(scope), home) {
             return Err(Error::at(
                 qualified_name.location,
@@ -1386,7 +1392,12 @@ impl Analyzer<'_> {
         if prefix.is_none() {
             self.check_template_parameter_name(scope, key_name, qualified_name.location)?;
         }
-        let existing = self.graph.declared_name(home, key_name, Filter::Elaborated);
+        let existing = if prefix.is_some() {
+            self.qualified_declaration_result(home, key_name.into(), Filter::Elaborated)?
+                .binding
+        } else {
+            self.graph.declared_name(home, key_name, Filter::Elaborated)
+        };
         if prefix.is_some() && existing.is_none() {
             return Err(Error::at(
                 qualified_name.location,
@@ -1398,7 +1409,11 @@ impl Analyzer<'_> {
             if binding.kind != BindingKind::Type {
                 return Err(Error::at(
                     qualified_name.location,
-                    "type name conflicts with an earlier declaration",
+                    if prefix.is_some() {
+                        "qualified class definition does not match a declaration"
+                    } else {
+                        "type name conflicts with an earlier declaration"
+                    },
                 ));
             }
             if self.graph.entity(binding.entity).enumeration.is_some() {

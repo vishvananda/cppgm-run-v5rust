@@ -19,6 +19,7 @@ pub(super) enum Filter {
     Namespace,
     Elaborated,
 }
+
 #[derive(Default)]
 pub(super) enum FunctionCandidates {
     #[default]
@@ -26,6 +27,7 @@ pub(super) enum FunctionCandidates {
     One(BindingId),
     Many(Vec<BindingId>),
 }
+
 impl FunctionCandidates {
     pub(super) fn as_slice(&self) -> &[BindingId] {
         match self {
@@ -58,10 +60,24 @@ impl FromIterator<BindingId> for FunctionCandidates {
 pub(super) struct LookupResult {
     pub binding: Option<BindingId>,
     pub functions: FunctionCandidates,
+    // The qualifier belongs to this query, so nested decltype lookups cannot
+    // overwrite the named-type caller's class context.
+    pub qualifier: Option<ScopeId>,
+    pub ambiguous: bool,
+}
+impl LookupResult {
+    fn checked(self, location: crate::support::source::SourceOffset) -> Result<Self, Error> {
+        if self.ambiguous {
+            Err(Error::at(location, "ambiguous name"))
+        } else {
+            Ok(self)
+        }
+    }
 }
 impl Analyzer<'_> {
-    fn merge(&self, first: &mut LookupResult, second: &LookupResult) -> Result<(), Error> {
+    fn merge(&self, first: &mut LookupResult, second: &LookupResult) {
         if let Some(second_id) = second.binding {
+            first.ambiguous |= second.ambiguous;
             if let Some(first_id) = first.binding {
                 let a = self.graph.binding(first_id);
                 let b = self.graph.binding(second_id);
@@ -74,7 +90,7 @@ impl Analyzer<'_> {
                         && matches!(b.kind, BindingKind::Namespace | BindingKind::NamespaceAlias)
                         && self.graph.entity(a.entity).scope == self.graph.entity(b.entity).scope)
                 {
-                    return Err(Error::at(self.lookup_location, "ambiguous name"));
+                    first.ambiguous = true;
                 }
             } else {
                 first.binding = Some(second_id);
@@ -90,7 +106,6 @@ impl Analyzer<'_> {
                 }
             }
         }
-        Ok(())
     }
     fn own_lookup(&self, scope: ScopeId, key: ValueKey, filter: Filter) -> LookupResult {
         let binding = self.graph.own_key(scope, key, filter);
@@ -100,7 +115,12 @@ impl Analyzer<'_> {
             } else {
                 FunctionCandidates::default()
             };
-        LookupResult { binding, functions }
+        LookupResult {
+            binding,
+            functions,
+            qualifier: None,
+            ambiguous: false,
+        }
     }
     fn class_lookup(
         &self,
@@ -185,7 +205,7 @@ impl Analyzer<'_> {
         filter: Filter,
         visited: &mut HashSet<ScopeId>,
         members: &mut Vec<ScopeId>,
-    ) -> Result<LookupResult, Error> {
+    ) -> LookupResult {
         let mut result = LookupResult::default();
         let mut frontier = vec![scope];
         while let Some(current) = frontier.pop() {
@@ -193,10 +213,12 @@ impl Analyzer<'_> {
                 continue;
             }
             members.push(current);
-            self.merge(&mut result, &self.own_lookup(current, name, filter))?;
-            frontier.extend(self.graph.visible_edges(current, true));
+            self.merge(&mut result, &self.own_lookup(current, name, filter));
+            // C++ prepends inline members, then pushes that list onto a LIFO
+            // frontier: the oldest member supplies the representative first.
+            frontier.extend(self.graph.visible_edges(current, true).rev());
         }
-        Ok(result)
+        result
     }
     pub(super) fn qualified(
         &self,
@@ -220,6 +242,17 @@ impl Analyzer<'_> {
         name: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        self.qualified_declaration_result(scope, name, filter)?
+            .checked(self.lookup_location)
+    }
+    // C++ class_specifier consumes the representative even when namespace
+    // lookup marks it ambiguous. Ordinary name uses diagnose that fact.
+    pub(super) fn qualified_declaration_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
             return self.class_lookup(scope, name, filter);
         }
@@ -230,9 +263,9 @@ impl Analyzer<'_> {
             let mut next = Vec::new();
             for current in level {
                 let mut members = Vec::new();
-                let found = self.inline_set(current, name, filter, &mut visited, &mut members)?;
+                let found = self.inline_set(current, name, filter, &mut visited, &mut members);
                 if found.binding.is_some() {
-                    self.merge(&mut result, &found)?;
+                    self.merge(&mut result, &found);
                 } else {
                     for member in members {
                         next.extend(self.graph.visible_edges(member, false).rev());
@@ -294,14 +327,14 @@ impl Analyzer<'_> {
             while index < pending.len() {
                 let (nominated, home) = pending[index];
                 if home == scope {
-                    self.merge(&mut result, &self.own_lookup(nominated, name, filter))?;
+                    self.merge(&mut result, &self.own_lookup(nominated, name, filter));
                     pending.swap_remove(index);
                 } else {
                     index += 1;
                 }
             }
             if result.binding.is_some() {
-                return Ok(result);
+                return result.checked(self.lookup_location);
             }
             current = self.graph.scope(scope).parent;
         }
@@ -338,15 +371,45 @@ impl Analyzer<'_> {
             .get(..count)
             .ok_or(Error::Invariant("name prefix outside components"))?
         {
+            if let NameKind::Decltype(operand) = component.kind {
+                let ty = self.decltype_type(operand, scope)?;
+                if !matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Class(_) | TypeKind::Enum(_)
+                ) {
+                    return Err(Error::at(
+                        component.location,
+                        "decltype in a nested-name-specifier must name a class or enumeration",
+                    ));
+                }
+                prefix = Some(self.type_qualifier(ty, component.location)?);
+                continue;
+            }
             if component.arguments.is_some() {
                 return Err(Error::Missing("template specialization lookup"));
             }
-            let key = Self::component_name(component.kind)?;
-            let found = if let Some(prefix) = prefix {
-                self.qualified(prefix, key, Filter::Prefix)?
-            } else {
-                self.unqualified(scope, key, Filter::Prefix)?
+            let NameKind::Identifier(key) = component.kind else {
+                return Err(Error::at(
+                    component.location,
+                    "invalid nested-name-specifier",
+                ));
             };
+            self.lookup_location = component.location;
+            let found = if let Some(prefix) = prefix {
+                self.qualified(prefix, key, Filter::Prefix)
+            } else {
+                self.unqualified(scope, key, Filter::Prefix)
+            }
+            .map_err(|error| match error {
+                Error::Diagnostic {
+                    message: "ambiguous name",
+                    ..
+                } => Error::at(
+                    component.location,
+                    "ambiguous name in a nested-name-specifier",
+                ),
+                other => other,
+            })?;
             let binding_id = found.ok_or_else(|| {
                 Error::at(
                     component.location,
@@ -366,32 +429,58 @@ impl Analyzer<'_> {
                     component.location,
                 )?;
             }
-            let binding = self.graph.binding(binding_id);
-            let entity = self.graph.entity(binding.entity);
-            prefix = entity.scope;
-            if prefix.is_none()
-                && let Some(ty) = binding.ty
-                && let TypeKind::Class(entity) | TypeKind::Enum(entity) =
-                    self.graph.types.get(ty).kind
-            {
-                prefix = self.graph.entity(entity).scope;
-            }
-            if prefix.is_none() {
-                if binding.ty.is_some_and(|ty| {
-                    matches!(
-                        self.graph.types.get(ty).kind,
-                        TypeKind::TemplateParameter { .. }
-                    )
-                }) {
-                    return Err(Error::Missing("dependent qualified name lookup"));
-                }
-                return Err(Error::at(
-                    component.location,
-                    "name before :: is not a class, namespace or enumeration",
-                ));
-            }
+            prefix = Some(self.binding_qualifier(binding_id, component.location)?);
         }
         Ok(prefix)
+    }
+    pub(super) fn binding_qualifier(
+        &self,
+        binding: BindingId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<ScopeId, Error> {
+        let binding = self.graph.binding(binding);
+        match binding.kind {
+            BindingKind::Namespace | BindingKind::NamespaceAlias => self
+                .graph
+                .entity(binding.entity)
+                .scope
+                .ok_or(Error::Invariant("namespace qualifier without scope")),
+            BindingKind::Type | BindingKind::Alias => self.type_qualifier(
+                binding
+                    .ty
+                    .ok_or(Error::Invariant("type qualifier without type"))?,
+                location,
+            ),
+            _ => Err(Error::at(
+                location,
+                "name before :: is not a class, namespace or enumeration",
+            )),
+        }
+    }
+    fn type_qualifier(
+        &self,
+        ty: super::types::TypeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<ScopeId, Error> {
+        match self.graph.types.get(ty).kind {
+            TypeKind::Class(class) => {
+                self.graph.entity(class).scope.ok_or_else(|| {
+                    Error::at(location, "incomplete class in a nested-name-specifier")
+                })
+            }
+            TypeKind::Enum(enumeration) => self
+                .graph
+                .entity(enumeration)
+                .scope
+                .ok_or(Error::Invariant("enumeration qualifier without scope")),
+            TypeKind::TemplateParameter { .. } => {
+                Err(Error::Missing("dependent qualified name lookup"))
+            }
+            _ => Err(Error::at(
+                location,
+                "name before :: is not a class, namespace or enumeration",
+            )),
+        }
     }
     pub(super) fn lookup(
         &mut self,
@@ -446,6 +535,7 @@ impl Analyzer<'_> {
         }
         let key = Self::expression_name(last.kind)?;
         let prefix = self.prefix(name, scope)?;
+        self.lookup_location = node.location;
         let mut found = if let Some(prefix) = prefix {
             self.qualified_result(prefix, key, filter)?
         } else {
@@ -491,6 +581,155 @@ impl Analyzer<'_> {
             }
             super::record(&mut self.graph.resolved_names, name.index(), binding);
         }
+        found.qualifier = prefix;
         Ok(found)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Analyzer, Filter};
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{function_demands::Demand, layout::LayoutState, types::TypeKind},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    #[test]
+    fn decltype_qualifier_keeps_original_call_facts_without_emission_or_layout_demand() {
+        let source = SourceBuffer::new(b"struct S{struct T{static int g(){return 7;}};};S make();int f(){return decltype(make())::T::g();}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"qualifier-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(count, tree.expressions.mark());
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+        else {
+            panic!("return");
+        };
+        let ast::ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+            panic!("call");
+        };
+        let ast::ExprKind::Id(name) = tree.expressions.get(callee).kind else {
+            panic!("name");
+        };
+        let components = tree.name_lists.get(tree.names.get(name).components);
+        let ast::NameKind::Decltype(operand) = components[0].kind else {
+            panic!("decltype");
+        };
+        let class_name = cursor.intern_name(b"S").unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, class_name, Filter::Prefix).unwrap())
+            .entity;
+        let facts = graph.expression_facts.get(operand).unwrap();
+        assert!(matches!(graph.types.get(facts.ty).kind, TypeKind::Class(owner) if owner == class));
+        assert!(facts.conversion.is_none());
+        assert!(matches!(
+            graph.entity(class).layout,
+            LayoutState::NotStarted
+        ));
+        let make = graph.call_binding(operand).unwrap();
+        assert!(!graph.root_demands.as_slice().iter().any(|demand| {
+            matches!(demand, Demand::Function{binding,..} if graph.binding(*binding).entity == graph.binding(make).entity)
+        }));
+        let selected = graph.call_binding(call).unwrap();
+        assert_eq!(graph.resolved_name(name), Some(selected));
+        assert!(graph.root_demands.as_slice().iter().any(|demand| {
+            matches!(demand, Demand::Function{binding,..} if graph.binding(*binding).entity == graph.binding(selected).entity)
+        }));
+    }
+
+    #[test]
+    fn qualified_class_completion_preserves_inline_namespace_entity_and_home() {
+        let source = SourceBuffer::new(
+            b"namespace N{inline namespace I{struct X;}}struct N::X{int n;};".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"inline-completion").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let namespace = cursor.intern_name(b"N").unwrap();
+        let namespace = graph
+            .binding(
+                graph
+                    .own(graph.global, namespace, Filter::Namespace)
+                    .unwrap(),
+            )
+            .entity;
+        let outer = graph.entity(namespace).scope.unwrap();
+        let inline = cursor.intern_name(b"I").unwrap();
+        let inline = graph
+            .binding(graph.own(outer, inline, Filter::Namespace).unwrap())
+            .entity;
+        let inner = graph.entity(inline).scope.unwrap();
+        let class = cursor.intern_name(b"X").unwrap();
+        let forward = graph.own(inner, class, Filter::Elaborated).unwrap();
+        let complete = graph.own(outer, class, Filter::Elaborated).unwrap();
+        let entity = graph.binding(forward).entity;
+        assert_eq!(entity, graph.binding(complete).entity);
+        assert_eq!(graph.entity(entity).home, Some(inner));
+        assert_eq!(
+            graph.scope(graph.entity(entity).scope.unwrap()).parent,
+            Some(outer)
+        );
+        assert!(graph.entity(entity).complete);
+        assert!(matches!(
+            graph.entity(entity).layout,
+            LayoutState::NotStarted
+        ));
+    }
+
+    #[test]
+    fn class_head_keeps_the_first_inline_representative_of_an_ambiguous_set() {
+        let source = SourceBuffer::new(b"namespace N{inline namespace I{struct X;}inline namespace J{struct X;}}struct N::X{};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"class-representative").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let namespace = cursor.intern_name(b"N").unwrap();
+        let namespace = graph
+            .binding(
+                graph
+                    .own(graph.global, namespace, Filter::Namespace)
+                    .unwrap(),
+            )
+            .entity;
+        let outer = graph.entity(namespace).scope.unwrap();
+        let class_name = cursor.intern_name(b"X").unwrap();
+        for (name, completed) in [(b"I".as_slice(), true), (b"J".as_slice(), false)] {
+            let name = cursor.intern_name(name).unwrap();
+            let namespace = graph
+                .binding(graph.own(outer, name, Filter::Namespace).unwrap())
+                .entity;
+            let home = graph.entity(namespace).scope.unwrap();
+            let class = graph
+                .binding(graph.own(home, class_name, Filter::Elaborated).unwrap())
+                .entity;
+            assert_eq!(graph.entity(class).complete, completed);
+        }
     }
 }

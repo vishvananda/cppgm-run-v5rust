@@ -672,7 +672,10 @@ impl Analyzer<'_> {
     ) -> Result<TypeId, Error> {
         match spec.kind {
             SpecifierKind::Named(name) => {
-                let found = self.lookup(name, scope, super::lookup::Filter::Ordinary)?;
+                let result = self.lookup_result(name, scope, super::lookup::Filter::Ordinary)?;
+                let found = result.binding.ok_or_else(|| {
+                    Error::at(self.tree.names.get(name).location, "undeclared name")
+                })?;
                 let binding = self.graph.binding(found);
                 if !matches!(
                     binding.kind,
@@ -681,6 +684,25 @@ impl Analyzer<'_> {
                     return Err(Error::at(spec.location, "name does not denote a type"));
                 }
                 let entity = self.graph.entity(binding.entity);
+                let node = self.tree.names.get(name);
+                if !node.typename_keyword
+                    && binding.kind == super::graph::BindingKind::Type
+                    && result.qualifier.is_some_and(|qualifier| {
+                        self.graph.binding_scope(found) == qualifier
+                            && self.graph.scope(qualifier).owner == Some(binding.entity)
+                    })
+                    && self
+                        .tree
+                        .name_lists
+                        .get(node.components)
+                        .last()
+                        .is_some_and(|last| last.arguments.is_none())
+                {
+                    return Err(Error::at(
+                        node.location,
+                        "a class's qualified injected-class-name names its constructor, not a type",
+                    ));
+                }
                 if binding.kind == super::graph::BindingKind::Type
                     && entity.template_head.is_some()
                     && !entity.scope.is_some_and(|home| {

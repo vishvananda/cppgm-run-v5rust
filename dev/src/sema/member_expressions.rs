@@ -344,23 +344,7 @@ impl Analyzer<'_> {
             };
             let binding = found
                 .ok_or_else(|| Error::at(node.location, "undeclared name in a member access"))?;
-            let binding = self.graph.binding(binding);
-            prefix = self.graph.entity(binding.entity).scope.or_else(|| {
-                binding
-                    .ty
-                    .and_then(|ty| match self.graph.types.get(ty).kind {
-                        TypeKind::Class(class) | TypeKind::Enum(class) => {
-                            self.graph.entity(class).scope
-                        }
-                        _ => None,
-                    })
-            });
-            if prefix.is_none() {
-                return Err(Error::at(
-                    node.location,
-                    "name before :: is not a class, namespace or enumeration",
-                ));
-            }
+            prefix = Some(self.binding_qualifier(binding, node.location)?);
         }
         if !prefix
             .and_then(|scope| self.graph.scope(scope).owner)

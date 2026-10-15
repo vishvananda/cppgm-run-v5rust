@@ -201,6 +201,8 @@ impl Analyzer<'_> {
         Ok(Some(LookupResult {
             binding: Some(binding),
             functions,
+            qualifier: None,
+            ambiguous: false,
         }))
     }
     pub(super) fn builtin_call(
