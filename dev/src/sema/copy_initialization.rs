@@ -256,6 +256,14 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .is_some()
+        {
+            return Ok(());
+        }
         if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(
                 location,
@@ -338,7 +346,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn copy_action(
+    pub(super) fn copy_action(
         &mut self,
         class: EntityId,
         selected: CopySelection,
@@ -419,6 +427,43 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<CopySelection, Error> {
         self.select_copy_sequence(class, facts, Some(scope), true, location)
+    }
+    pub(super) fn select_result_constructor(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<CopySelection, Error> {
+        let resolution = self.resolve_class_copy(class, facts, true)?;
+        if let CopyResolution::Selected(candidate) = resolution
+            && !matches!(
+                self.graph
+                    .types
+                    .get(candidate.selection.binding.target)
+                    .kind,
+                TypeKind::Reference { .. }
+            )
+        {
+            return Err(Error::at(
+                location,
+                "a class object initialized through a constructor's class parameter is not supported",
+            ));
+        }
+        self.check_copy_selection(resolution, Some(scope), location)
+            .map_err(|error| match error {
+                Error::Diagnostic {
+                    message:
+                        "no viable function for the call"
+                        | "no constructor for the initialization"
+                        | "ambiguous call to overloaded function",
+                    ..
+                } => Error::at(
+                    location,
+                    "no unambiguous constructor initializes the class object from the value",
+                ),
+                other => other,
+            })
     }
     pub(super) fn select_subobject_copy(
         &mut self,

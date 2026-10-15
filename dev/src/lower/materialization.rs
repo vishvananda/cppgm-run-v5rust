@@ -450,6 +450,9 @@ impl Function<'_, '_, '_, '_> {
         if let Some((constructor, arguments)) = self.class_conversion(id) {
             return self.call_converting_constructor(id, constructor, object, arguments);
         }
+        if self.initialize_function_conversion(id, ty, object)? {
+            return Ok(());
+        }
         if self.materialize_copy(id, ty, object, self.graph.lower_class_copy(id)?)? {
             return Ok(());
         }

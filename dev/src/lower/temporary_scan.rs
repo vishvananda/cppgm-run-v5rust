@@ -374,6 +374,15 @@ impl Function<'_, '_, '_, '_> {
                 summary.made |= caller;
                 summary.caller_destroyed |= caller;
             }
+            if (include_root || id != root)
+                && let Some((call, target)) = self.graph.lower_function_conversion(id)?
+            {
+                summary.made |= !self.graph.lower_builtin_operand(id)
+                    && self.temporary_type_destroyed(target)?;
+                if self.graph.lower_conversion_copy(id).is_some() && !call.place {
+                    summary.made |= self.temporary_type_destroyed(call.result)?;
+                }
+            }
             let kind = self.tree.expressions.get(id).kind;
             let call =
                 matches!(kind, ExprKind::Call { .. }) && !self.graph.lower_functional_call(id)?;

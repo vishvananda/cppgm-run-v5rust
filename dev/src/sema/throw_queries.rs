@@ -208,6 +208,23 @@ impl Analyzer<'_> {
                 if self.function_may_throw(self.graph.binding(selected.binding).entity)? {
                     return Ok(true);
                 }
+                if let Some(copy) = selected.copy {
+                    let throws = match (copy.selection.origin, copy.action) {
+                        (super::copy_initialization::CopyOrigin::Declared(binding), _) => {
+                            self.function_may_throw(self.graph.binding(binding).entity)?
+                        }
+                        (
+                            _,
+                            super::copy_initialization::CopyAction::Constructor {
+                                constructor, ..
+                            },
+                        ) => self.constructor_function_may_throw(constructor)?,
+                        (_, super::copy_initialization::CopyAction::Storage { .. }) => false,
+                    };
+                    if throws {
+                        return Ok(true);
+                    }
+                }
                 if selected.usage != super::conversion_functions::ConversionUse::Scalar {
                     // kUserConverted is terminal in the frozen may_throw query:
                     // only the converter and original prvalue's destruction

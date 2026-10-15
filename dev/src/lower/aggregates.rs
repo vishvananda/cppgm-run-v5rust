@@ -105,6 +105,7 @@ impl Function<'_, '_, '_, '_> {
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
+        self.stage_local_conversion(ty, initializer)?;
         self.initialize_aggregate(entity, ty, slot, initializer, NamedStorage::Automatic)
     }
     pub(super) fn initialize_aggregate(

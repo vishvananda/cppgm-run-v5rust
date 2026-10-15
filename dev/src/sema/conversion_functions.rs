@@ -33,6 +33,12 @@ pub(super) enum ConversionTarget {
 }
 
 #[derive(Clone, Copy)]
+pub(super) struct ResultCopy {
+    pub selection: super::copy_initialization::CopySelection,
+    pub action: super::copy_initialization::CopyAction,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct FunctionConversion {
     pub binding: BindingId,
     pub result: TypeId,
@@ -41,6 +47,7 @@ pub(super) struct FunctionConversion {
     pub after: Conversion,
     pub after_path: Option<BasePathId>,
     pub usage: ConversionUse,
+    pub copy: Option<ResultCopy>,
 }
 
 impl Analyzer<'_> {
@@ -282,6 +289,7 @@ impl Analyzer<'_> {
                 after,
                 after_path: None,
                 usage: ConversionUse::Builtin,
+                copy: None,
             },
         );
         Ok(produced)
@@ -508,6 +516,7 @@ impl Analyzer<'_> {
             usage,
             after_path,
             after,
+            copy: None,
         })
     }
 
@@ -584,17 +593,47 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let source = self.graph.expression_facts.get(id)?;
-        let selected = self.select_conversion_function(
+        let mut selected = self.select_conversion_function(
             source,
             sequence,
             scope,
             location,
             ConversionUse::Scalar,
         )?;
-        if self.graph.class_of(sequence.conversion.target).is_some() {
-            return Err(Error::Missing(
-                "conversion-function class result initialization",
-            ));
+        if let Some(class) = self.graph.class_of(sequence.conversion.target) {
+            let produced = self.new_expression_facts(selected.result, selected.category)?;
+            // operand_constructor elides only a prvalue of the destination's own
+            // unqualified class; it does not select or demand a copy for it.
+            if selected.category != ValueCategory::Prvalue
+                || self.bare_type(selected.result)?
+                    != self
+                        .graph
+                        .entity(class)
+                        .ty
+                        .ok_or(Error::Invariant("conversion destination without type"))?
+            {
+                let copy = self.select_result_constructor(class, produced, scope, location)?;
+                selected.after_path =
+                    self.conversion_base_path(produced, copy.binding, scope, location, true)?;
+                let action = self.copy_action(
+                    class,
+                    copy,
+                    super::copy_initialization::CopyUse::Value { in_place: false },
+                    location,
+                )?;
+                selected.copy = Some(ResultCopy {
+                    selection: copy,
+                    action,
+                });
+                self.check_binding_temporary(produced, copy.binding, scope, location)?;
+            }
+        }
+        if matches!(
+            self.graph.types.get(sequence.conversion.target).kind,
+            TypeKind::Reference { .. }
+        ) {
+            let produced = self.new_expression_facts(selected.result, selected.category)?;
+            self.check_temporary_destruction(produced, scope, location)?;
         }
         self.graph
             .expression_facts
@@ -614,6 +653,110 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn class_results_retain_selected_transfers_without_replacing_or_reparsing_receivers() {
+        use super::super::{copy_initialization::CopyAction, lookup::Filter};
+        let source = SourceBuffer::new(
+            br"
+            struct A{int n;A();A(const A&)=delete;};
+            struct B{int n;B();B(const B&);~B();};
+            struct D:B{int m;};
+            struct Own{operator A();};
+            struct Ref{operator B&();};
+            struct Derived{operator D();};
+            A own(Own&s){return ((s));}
+            B reference(Ref&s){return ((s));}
+            B derived(Derived&s){return ((s));}
+            B again(Derived&s){return s;}
+            struct Unused{B b;};
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"conversion-result-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expression_count = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expression_count);
+        assert_eq!(tree.declarations.mark(), declaration_count);
+        let mut shared_copy = None;
+        for (spelling, source_name, copied, projected) in [
+            (b"own".as_slice(), b"Own".as_slice(), false, false),
+            (b"reference", b"Ref", true, false),
+            (b"derived", b"Derived", true, true),
+            (b"again", b"Derived", true, true),
+        ] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let function = graph
+                .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+                .entity;
+            let definition = graph.entity(function).function_definition.unwrap();
+            let ast::DeclKind::Function { body, .. } = tree.declarations.get(definition).kind
+            else {
+                panic!("function")
+            };
+            let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+                panic!("body")
+            };
+            let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+                panic!("compound")
+            };
+            let ast::StmtKind::Return(Some(operand)) =
+                tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+            else {
+                panic!("return")
+            };
+            let facts = graph.expression_facts.get(operand).unwrap();
+            let name = cursor.intern_name(source_name).unwrap();
+            let source = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert_eq!(graph.class_of(facts.ty), Some(source));
+            assert_eq!(facts.category, ValueCategory::Lvalue);
+            assert!(facts.class_copy.is_none());
+            let step = graph.expression_facts.function_conversion(operand).unwrap();
+            assert_eq!(step.after_path.is_some(), projected);
+            assert_eq!(step.copy.is_some(), copied);
+            if let Some(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            }) = step.copy.map(|copy| copy.action)
+            {
+                assert_eq!(*shared_copy.get_or_insert(constructor), constructor);
+            } else {
+                assert!(!copied);
+            }
+            assert!(graph.lower_class_copy(operand).unwrap().is_none());
+            assert_eq!(
+                graph.expression_type(graph.expression_facts.root(operand)),
+                Some(facts.ty)
+            );
+        }
+        for spelling in [b"A".as_slice(), b"Unused".as_slice()] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            if spelling == b"Unused" {
+                assert!(graph.entity(class).implicit_copies.is_none());
+            }
+            for &binding in &graph.entity(class).declared_constructors {
+                assert!(
+                    graph
+                        .entity(graph.binding(binding).entity)
+                        .constructor
+                        .is_none()
+                );
+            }
+        }
+    }
 
     #[test]
     fn named_calls_and_addresses_share_typed_identity_without_demanding_losing_imports() {

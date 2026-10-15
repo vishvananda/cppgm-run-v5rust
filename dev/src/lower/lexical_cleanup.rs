@@ -20,10 +20,12 @@ enum Block {
     Dispatch {
         block: BlockId,
         tail: BlockId,
+        returned: Option<Cleanup>,
     },
 }
 #[derive(Default)]
 pub(super) struct Lexical {
+    pub returned: Option<Cleanup>,
     pending: Vec<Block>,
     resume: Option<(Option<BlockId>, BlockId)>,
     placing: bool,
@@ -57,7 +59,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(None);
         }
         let target = self.constructor_unwind_target();
-        if depth == 0 && target.is_none() {
+        if depth == 0 && target.is_none() && self.lexical.returned.is_none() {
             return Ok(None);
         }
         let mut first = depth;
@@ -91,7 +93,11 @@ impl Function<'_, '_, '_, '_> {
             tail = block;
         }
         let block = self.new_block("lexical_cleanup_dispatch")?;
-        self.lexical.pending.push(Block::Dispatch { block, tail });
+        self.lexical.pending.push(Block::Dispatch {
+            block,
+            tail,
+            returned: self.lexical.returned,
+        });
         Ok(Some(block))
     }
     pub(super) fn place_lexical_cleanups(&mut self) -> Result<(), Error> {
@@ -120,10 +126,17 @@ impl Function<'_, '_, '_, '_> {
                     self.destroy_cleanup_in(cleanup, None, true)?;
                     self.jump(tail)?;
                 }
-                Block::Dispatch { block, tail } => {
+                Block::Dispatch {
+                    block,
+                    tail,
+                    returned,
+                } => {
                     self.place(block)?;
                     self.effect(I::Runtime(R::EhCleanup(None)))?;
                     self.effect(I::Runtime(R::EhEnd))?;
+                    if let Some(returned) = returned {
+                        self.destroy_cleanup_in(returned, None, true)?;
+                    }
                     self.jump(tail)?;
                 }
             }

@@ -79,6 +79,9 @@ impl Function<'_, '_, '_, '_> {
         result
     }
     fn conversion_temporary_destroyed(&mut self, id: ast::ExprId) -> Result<bool, Error> {
+        if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
+            return Ok(!call.place && self.symbols.class_destructor(call.result)?.is_some());
+        }
         let Some((constructor, _)) = self.class_conversion(id) else {
             return Ok(false);
         };

@@ -41,6 +41,20 @@ pub(super) enum CleanupPlace {
     },
 }
 impl Cleanup {
+    pub(super) fn temporary(ty: TypeId, object: Value) -> Self {
+        Self {
+            place: CleanupPlace::Temporary(object),
+            ty,
+            variable: None,
+            unwind: None,
+            conditional: None,
+            shared_return: None,
+            lexical: None,
+            guard: None,
+            branched: false,
+            made_at: None,
+        }
+    }
     pub(super) fn member(self) -> bool {
         matches!(
             self.place,
@@ -362,18 +376,7 @@ impl Function<'_, '_, '_, '_> {
             .insert(owner, self.lifetime.cleanups.len());
     }
     pub(super) fn register_temporary(&mut self, ty: TypeId, object: Value) {
-        self.lifetime.cleanups.push(Cleanup {
-            place: CleanupPlace::Temporary(object),
-            ty,
-            variable: None,
-            unwind: None,
-            conditional: None,
-            shared_return: None,
-            lexical: None,
-            guard: None,
-            branched: false,
-            made_at: None,
-        });
+        self.lifetime.cleanups.push(Cleanup::temporary(ty, object));
     }
     pub(super) fn extend_last_temporary(&mut self, owner: EntityId) -> Result<(), Error> {
         let cleanup = self

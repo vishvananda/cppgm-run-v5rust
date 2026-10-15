@@ -12,6 +12,11 @@ use crate::{
     syntax::ast,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum InitializationContext {
+    Ordinary,
+    Return,
+}
 #[derive(Clone, Copy)]
 pub(super) struct ResultBoundary {
     pub ty: Type,
@@ -187,6 +192,10 @@ impl Function<'_, '_, '_, '_> {
                 super::construction::EmptyValueZeroing::Emit
             },
         );
+        let returning = std::mem::replace(
+            &mut self.initialization_context,
+            InitializationContext::Return,
+        );
         let initialized = self.initialize_class_result(
             id,
             result,
@@ -195,8 +204,17 @@ impl Function<'_, '_, '_, '_> {
             None,
         );
         self.empty_value_zeroing = saved;
+        self.initialization_context = returning;
         initialized?;
-        self.cleanup_return(boundary.ty, value, began)
+        // CWG 2176: once its own full-expression finishes, a completed
+        // result is destroyed first if a local destructor throws on return.
+        let returned = self.lexical.returned;
+        if self.symbols.storage_destructor(result)?.is_some() {
+            self.lexical.returned = Some(super::lifetime::Cleanup::temporary(result, object));
+        }
+        let finished = self.cleanup_return(boundary.ty, value, began);
+        self.lexical.returned = returned;
+        finished
     }
     fn initialize_class_result(
         &mut self,

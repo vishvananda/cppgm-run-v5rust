@@ -1,6 +1,6 @@
 // Translated from lower/conversion_lowering.cpp::call_conversion/converted_value.
 // See NOTICE.
-//! Selected scalar conversions borrow the original receiver and ordinary call lifetime state.
+//! Selected conversions borrow original receivers and own only their result destinations and lifetimes.
 use super::{
     Error,
     function::{Function, RValue},
@@ -39,7 +39,12 @@ impl Function<'_, '_, '_, '_> {
             self.graph.lower_type(call.result)?,
             crate::sema::lowering::TypeView::Class(_)
         ) {
-            return Err(Error::Missing("conversion-function reference temporary"));
+            let address = self.conversion_temporary(id, call, persistent)?;
+            return if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+                self.base_projection(address, element, offset)
+            } else {
+                Ok(address)
+            };
         }
         let value = self.call_conversion(id, call)?;
         let value = self.convert(value, element, super::conversions::Context::Initialization)?;
@@ -59,6 +64,186 @@ impl Function<'_, '_, '_, '_> {
             slot,
         ))?;
         Ok(self.emit(I::Addr(slot), element)?.value)
+    }
+    fn conversion_receiver(
+        &mut self,
+        id: ast::ExprId,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        let facts = self.graph.lower_expression(id)?;
+        let saved = self.empty_value_zeroing;
+        if self.initialization_context == super::class_results::InitializationContext::Return {
+            self.empty_value_zeroing = super::construction::EmptyValueZeroing::Omit;
+        }
+        let place = self.original_scalar_place(self.without_parentheses(id));
+        self.empty_value_zeroing = saved;
+        let place = place?;
+        if !facts.is_place
+            && self.symbols.class_destructor(facts.ty)?.is_none()
+            && self.lifetime.full_expression
+            && self.lifetime.region
+            && self.lifetime.guarded_operands == 0
+            && !self.lifetime.tracking.active
+            && !self
+                .lifetime
+                .cleanups
+                .iter()
+                .skip(self.lifetime.temporary_segment.floor())
+                .any(|cleanup| matches!(cleanup.place, super::lifetime::CleanupPlace::Temporary(_)))
+        {
+            self.close_lifetime_region()?;
+            self.before_lifetime_call(false)?;
+        }
+        self.storage_address(place, facts.ty)
+    }
+    pub(super) fn stage_local_conversion(
+        &mut self,
+        ty: crate::sema::lowering::TypeId,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(), Error> {
+        use crate::sema::lowering::TypeView;
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(());
+        };
+        let Some(ast::Initializer {
+            kind: ast::InitializerKind::Assign(source),
+            ..
+        }) = initializer
+        else {
+            return Ok(());
+        };
+        let Some((call, _)) = self.graph.lower_function_conversion(source)? else {
+            return Ok(());
+        };
+        if self.graph.lower_aggregate_class(class) {
+            let signature = self.graph.lower_function(call.function)?.ty;
+            let TypeView::Function { result, .. } = self.graph.lower_type(signature)? else {
+                return Err(crate::sema::Error::Invariant("staged conversion signature").into());
+            };
+            if !self.symbols.result_boundary(result)?.indirect {
+                // local_object plans this staging slot even when the converter
+                // initializes the variable itself; its identity is observable.
+                self.generated_slot("argobj", super::types::storage(self.graph, ty)?)?;
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn conversion_temporary(
+        &mut self,
+        id: ast::ExprId,
+        call: MemberCall,
+        persistent: bool,
+    ) -> Result<crate::lowir::model::Value, Error> {
+        let destroyed = !persistent && self.symbols.class_destructor(call.result)?.is_some();
+        let opens = destroyed && self.lifetime.full_expression && !self.lifetime.region;
+        let deferred = opens
+            && !self.lifetime.cleanups.is_empty()
+            && !self.lifetime.tracking.active
+            && !self
+                .lifetime
+                .call_marks
+                .iter()
+                .any(|mark| !mark.declared && self.builder.same_block(mark.position));
+        if opens && !deferred {
+            self.open_temporary_region()?;
+        }
+        let slot = self.temporary_storage(call.result, persistent, "arg")?;
+        let address = self.emit(I::Addr(slot), call.result)?.value;
+        self.storage_region_event()?;
+        if deferred && !self.lifetime.region {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        self.conversion_call_into(id, call, Some(address))?;
+        if destroyed {
+            self.temporary_alive(call.result, address)?;
+        } else if persistent {
+            self.persistent_alive(call.result, slot)?;
+        }
+        Ok(address)
+    }
+    fn conversion_call_into(
+        &mut self,
+        id: ast::ExprId,
+        call: MemberCall,
+        destination: Option<crate::lowir::model::Value>,
+    ) -> Result<RValue, Error> {
+        let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
+        self.begin_lifetime_call(throws)?;
+        let receiver = self.conversion_receiver(id)?;
+        self.emit_conversion_call(receiver, call, throws, false, destination)
+    }
+    pub(super) fn elide_conversion_copy(
+        &mut self,
+        id: ast::ExprId,
+        constructor: crate::sema::lowering::ConstructorId,
+        object: crate::lowir::model::Value,
+    ) -> Result<bool, Error> {
+        if self.graph.lower_elides_conversion(id, constructor) {
+            let (call, _) =
+                self.graph
+                    .lower_function_conversion(id)?
+                    .ok_or(crate::sema::Error::Invariant(
+                        "elided conversion without call",
+                    ))?;
+            self.conversion_call_into(id, call, Some(object))?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+    pub(super) fn initialize_function_conversion(
+        &mut self,
+        id: ast::ExprId,
+        ty: crate::sema::lowering::TypeId,
+        object: crate::lowir::model::Value,
+    ) -> Result<bool, Error> {
+        use crate::sema::lowering::CopyAction;
+        let Some((call, _)) = self.graph.lower_function_conversion(id)? else {
+            return Ok(false);
+        };
+        let Some(copy) = self.graph.lower_conversion_copy(id) else {
+            self.conversion_call_into(id, call, Some(object))?;
+            return Ok(true);
+        };
+        let mut source = if call.place {
+            self.conversion_call_into(
+                id,
+                MemberCall {
+                    place: false,
+                    ..call
+                },
+                None,
+            )?
+            .value
+        } else {
+            self.conversion_temporary(id, call, false)?
+        };
+        if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+            if !call.place {
+                let slot = self.builder.addressed_storage(source);
+                source = self.emit(I::Addr(slot), call.result)?.value;
+            }
+            source = self.base_projection(source, ty, offset)?;
+        }
+        match copy {
+            CopyAction::Storage { .. } => {
+                let crate::sema::lowering::TypeView::Class(class) = self.graph.lower_type(ty)?
+                else {
+                    return Err(crate::sema::Error::Invariant("conversion copy class").into());
+                };
+                if !self.graph.lower_class_empty(class)? {
+                    let (bytes, align) = super::types::layout(self.graph, ty)?;
+                    let bytes = bytes.min(self.graph.lower_nonvirtual_bytes(class)?);
+                    self.effect(I::CopyObject(bytes, align, source, object))?;
+                }
+            }
+            CopyAction::Constructor { constructor, .. } => self.call_copy_constructor(
+                constructor,
+                super::construction::Variant::Complete,
+                object,
+                source,
+            )?,
+        }
+        Ok(true)
     }
     pub(super) fn condition_conversion_call(
         &mut self,
@@ -154,10 +339,8 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
-        let source = self.graph.lower_expression(id)?.ty;
-        let place = self.original_scalar_place(self.without_parentheses(id))?;
-        let receiver = self.storage_address(place, source)?;
-        self.emit_conversion_call(receiver, call, throws, qualified)
+        let receiver = self.conversion_receiver(id)?;
+        self.emit_conversion_call(receiver, call, throws, qualified, None)
     }
     pub(super) fn call_conversion_at(
         &mut self,
@@ -166,7 +349,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
-        self.emit_conversion_call(receiver, call, throws, false)
+        self.emit_conversion_call(receiver, call, throws, false, None)
     }
     fn emit_conversion_call(
         &mut self,
@@ -174,6 +357,7 @@ impl Function<'_, '_, '_, '_> {
         call: MemberCall,
         throws: bool,
         qualified: bool,
+        destination: Option<crate::lowir::model::Value>,
     ) -> Result<RValue, Error> {
         if let Some(offset) = call.offset {
             receiver = self.base_projection(receiver, call.result, offset)?;
@@ -187,7 +371,16 @@ impl Function<'_, '_, '_, '_> {
         };
         let boundary = self.symbols.result_boundary(result)?;
         let callee = self.symbols.callee(call.function, &mut self.builder)?;
-        let arguments = self.builder.arguments(&[receiver])?;
+        let arguments = if boundary.indirect {
+            self.builder.arguments(&[
+                destination.ok_or(crate::sema::Error::Invariant(
+                    "conversion result without destination",
+                ))?,
+                receiver,
+            ])?
+        } else {
+            self.builder.arguments(&[receiver])?
+        };
         let instruction = I::Call(Call {
             result: boundary.ty,
             callee,
@@ -196,7 +389,7 @@ impl Function<'_, '_, '_, '_> {
             signature: None,
         });
         self.before_lifetime_call(throws)?;
-        let value = self.finish_result_call(instruction, call.result, None, throws)?;
+        let value = self.finish_result_call(instruction, call.result, destination, throws)?;
         if call.place {
             let ty = super::types::storage(self.graph, call.result)?;
             // A builtin conversion result is a normal glvalue. Ordinary scalar

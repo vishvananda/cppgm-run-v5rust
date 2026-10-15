@@ -249,6 +249,29 @@ impl Graph {
             })
             .transpose()
     }
+    pub(crate) fn lower_elides_conversion(
+        &self,
+        id: ast::ExprId,
+        constructor: ConstructorId,
+    ) -> bool {
+        let Some(step) = self.expression_facts.function_conversion(id) else {
+            return false;
+        };
+        let plan = self.constructors.get(constructor);
+        plan.binding.is_some_and(|binding| {
+            self.entity(self.binding(binding).entity)
+                .copy_kind
+                .is_some()
+        }) && self.entity(self.binding(step.binding).entity).explicitness
+            != super::specifiers::Explicitness::Explicit
+            && step.category == super::expression_facts::ValueCategory::Prvalue
+            && self.class_of(step.result) == Some(plan.class)
+    }
+    pub(crate) fn lower_conversion_copy(&self, id: ast::ExprId) -> Option<CopyAction> {
+        self.expression_facts
+            .function_conversion(id)
+            .and_then(|step| step.copy.map(|copy| copy.action))
+    }
     pub(crate) fn lower_arrow_count(&self, base: ast::ExprId) -> usize {
         self.expression_facts.arrow_calls(base).len()
     }

@@ -68,8 +68,10 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
-            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
-                self.graph.lower_class_copy(id)?
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) = self
+                .graph
+                .lower_class_copy(id)?
+                .or(self.graph.lower_conversion_copy(id))
                 && (hidden
                     || !Entry::Constructor(constructor, Variant::Complete)
                         .facts(self.graph)?

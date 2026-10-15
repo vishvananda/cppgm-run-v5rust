@@ -159,6 +159,11 @@ impl Function<'_, '_, '_, '_> {
         if declared {
             self.lifetime.declared_object = None;
         }
+        if let [source] = written
+            && self.elide_conversion_copy(*source, id, object)?
+        {
+            return Ok(());
+        }
         if !declared {
             self.note_constructor_temporaries(id, written)?;
         }
