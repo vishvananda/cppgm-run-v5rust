@@ -21,6 +21,7 @@ pub(super) struct Step {
 enum Root {
     Slot(Value),
     Address(Value),
+    ArrayStorage(Value),
     This(TypeId),
 }
 struct Path {
@@ -393,6 +394,21 @@ impl Function<'_, '_, '_, '_> {
         let scope = self.begin_aggregate(ty, values)?;
         self.named_contents(ty, &mut input, &mut path, false)?;
         self.end_aggregate(scope, None)
+    }
+    /// An explicit-storage array keeps every typed path step, including index
+    /// zero. Its prefix does not acquire an automatic object's lifetime scope.
+    pub(super) fn allocated_array_prefix(
+        &mut self,
+        ty: TypeId,
+        address: Value,
+        values: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        let mut path = Path {
+            root: Root::ArrayStorage(address),
+            steps: Vec::new(),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        self.named_contents(ty, &mut Input { values, next: 0 }, &mut path, false)
     }
     pub(super) fn automatic_array_contents(
         &mut self,
@@ -1052,7 +1068,7 @@ impl Function<'_, '_, '_, '_> {
     fn named_address(&mut self, path: &Path, source: TypeId) -> Result<Value, Error> {
         let mut address = match path.root {
             Root::Slot(slot) => self.storage_address(slot, source)?,
-            Root::Address(address) => address,
+            Root::Address(address) | Root::ArrayStorage(address) => address,
             Root::This(pointer) => self.object_pointer(pointer)?.value,
         };
         let mut untyped = false;

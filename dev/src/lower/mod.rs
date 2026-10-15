@@ -5,7 +5,9 @@ mod aggregate_cleanup;
 mod aggregate_helpers;
 mod aggregates;
 mod allocation;
+mod allocation_runtime;
 mod anonymous_names;
+mod array_allocation;
 mod arrays;
 mod arrow_calls;
 mod assignment;
@@ -120,6 +122,7 @@ fn finish_unit(
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held();
     globals::finish(program, symbols, graph)?;
+    symbols.resolve_allocation_roles(program, definitions)?;
     symbols.publish_finalizers(finalizers);
     Ok(symbols.initialization)
 }

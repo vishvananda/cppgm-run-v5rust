@@ -26,6 +26,16 @@ pub(super) struct Allocation {
     pub constructor: Option<(ConstructorId, ConstructorArguments)>,
     pub deallocator: Option<BindingId>,
     pub reserved: bool,
+    pub array: Option<ArrayAllocation>,
+}
+
+/// The first dimension stays a checked expression; only its listed prefix
+/// has a fixed array type. Neither the tree nor a runtime-sized type is copied.
+#[derive(Clone, Copy)]
+pub(crate) struct ArrayAllocation {
+    pub count: ast::ExprId,
+    pub constant: Option<u64>,
+    pub prefix: Option<TypeId>,
 }
 
 #[derive(Clone, Copy)]
@@ -35,10 +45,10 @@ pub(super) struct Deletion {
     pub incomplete: bool,
 }
 
-fn key(keyword: Keyword) -> ValueKey {
+fn key(keyword: Keyword, array: bool) -> ValueKey {
     ValueKey::Special(SpecialName::Operator {
         token: SimpleToken::keyword(keyword),
-        array: false,
+        array,
     })
 }
 
@@ -57,8 +67,13 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("allocation throw query without syntax"));
         };
         let use_ = self.graph.expression_facts.allocation(id)?;
-        if self.function_may_throw(self.graph.binding(use_.function).entity)? {
+        if self.function_may_throw(self.graph.binding(use_.function).entity)?
+            || self.array_length_may_throw(id)?
+        {
             return Ok(true);
+        }
+        if let Some(array) = use_.array {
+            self.throw_work.push((array.count, next));
         }
         if let Some((constructor, _)) = use_.constructor {
             let plan = self.graph.constructors.get(constructor);
@@ -126,9 +141,6 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("deletion without delete syntax"));
         };
         let location = node.location;
-        if array {
-            return Err(Error::Missing("array deletion expressions"));
-        }
         let facts = self.typed_expression(operand, scope)?;
         self.check_resolved_function(operand)?;
         if self.graph.class_of(facts.ty).is_some() {
@@ -152,7 +164,16 @@ impl Analyzer<'_> {
             }
         };
         self.convert_operand_scalar(operand, pointer, false)?;
-        let class = self.graph.class_of(target);
+        let mut element = target;
+        while array
+            && let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind
+        {
+            element = inner;
+        }
+        if array && self.graph.class_of(element).is_some() {
+            return Err(Error::Missing("class array deletion cleanup"));
+        }
+        let class = self.graph.class_of(element);
         let incomplete = class.is_some_and(|class| !self.graph.entity(class).complete);
         let class = class.filter(|_| !incomplete);
         if let Some(class) = class {
@@ -164,7 +185,7 @@ impl Analyzer<'_> {
             }
         }
         self.lookup_location = location;
-        let (found, naming) = self.allocation_lookup(global, class, Keyword::Delete)?;
+        let (found, naming) = self.allocation_lookup((global, array), class, Keyword::Delete)?;
         if !found
             .binding
             .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
@@ -257,9 +278,24 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("allocation without new syntax"));
         };
         let location = node.location;
+        let count = self.allocation_bound(ty, location)?;
+        let constant = count
+            .map(|count| self.check_allocation_count(count, scope))
+            .transpose()?
+            .flatten();
         let (target, count) = self.allocation_type(ty, scope)?;
-        if count.is_some() || matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
-            return Err(Error::Missing("array allocation expressions"));
+        if count.is_none() && matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+            return Err(Error::at(
+                location,
+                "array new-expressions are not supported here",
+            ));
+        }
+        let mut element = target;
+        while let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind {
+            element = inner;
+        }
+        if count.is_some() && self.graph.class_of(element).is_some() {
+            return Err(Error::Missing("class array allocation construction"));
         }
         if matches!(
             self.graph.types.get(target).kind,
@@ -277,13 +313,23 @@ impl Analyzer<'_> {
                 "a new-expression allocates an incomplete class type",
             ));
         }
+        if let (Some(count), Some(value)) = (count, constant) {
+            let (bytes, _) = self.type_size(target, location)?;
+            if bytes != 0 && value > i64::MAX.cast_unsigned() / bytes {
+                return Err(Error::at(
+                    self.tree.expressions.get(count).location,
+                    "an array new-expression whose size exceeds PTRDIFF_MAX",
+                ));
+            }
+        }
         let tree = self.tree;
         let args = tree.expr_lists.get(placement.unwrap_or_default());
         for &arg in args {
             self.type_call_argument(arg, scope)?;
         }
         self.lookup_location = location;
-        let (found, naming) = self.allocation_lookup(global, class, Keyword::New)?;
+        let (found, naming) =
+            self.allocation_lookup((global, count.is_some()), class, Keyword::New)?;
         if !found
             .binding
             .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
@@ -324,7 +370,21 @@ impl Analyzer<'_> {
         self.record_argument_base_paths(args, scope)?;
         self.check_class_argument_slice(function, args, 1, scope)?;
         self.demand_function(function, true);
-        let constructor = if let Some(initializer) = initializer {
+        let array = if let Some(count) = count {
+            Some(self.initialize_array_allocation(
+                count,
+                constant,
+                target,
+                initializer,
+                scope,
+                location,
+            )?)
+        } else {
+            None
+        };
+        let constructor = if array.is_some() {
+            None
+        } else if let Some(initializer) = initializer {
             if class.is_some() {
                 self.initialize_class_object(target, initializer, scope, location)?
             } else {
@@ -343,9 +403,14 @@ impl Analyzer<'_> {
             }
             None
         };
-        let deallocator = if class.is_some() || initializer.is_some() {
+        let needs_deallocator = if let Some(array) = array {
+            array.prefix.is_some_and(|prefix| matches!(self.graph.types.get(prefix).kind, TypeKind::Array { bound, .. } if bound != 0))
+        } else {
+            class.is_some() || initializer.is_some()
+        };
+        let deallocator = if needs_deallocator {
             self.allocation_deallocator(
-                global,
+                (global, array.is_some()),
                 class,
                 function,
                 placement.is_some_and(|args| !args.is_empty()),
@@ -376,6 +441,7 @@ impl Analyzer<'_> {
                 constructor,
                 deallocator,
                 reserved,
+                array,
             },
         );
         let pointer = self.graph.types.pointer(target)?;
@@ -384,11 +450,11 @@ impl Analyzer<'_> {
 
     fn allocation_lookup(
         &mut self,
-        global: bool,
+        (global, array): (bool, bool),
         class: Option<EntityId>,
         keyword: Keyword,
     ) -> Result<(LookupResult, Option<EntityId>), Error> {
-        let key = key(keyword);
+        let key = key(keyword, array);
         if !global
             && let Some(class) = class
             && let Some(home) = self.graph.entity(class).scope
@@ -421,14 +487,14 @@ impl Analyzer<'_> {
 
     fn allocation_deallocator(
         &mut self,
-        global: bool,
+        form: (bool, bool),
         class: Option<EntityId>,
         allocation: BindingId,
         placement: bool,
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<Option<BindingId>, Error> {
-        let (found, naming) = self.allocation_lookup(global, class, Keyword::Delete)?;
+        let (found, naming) = self.allocation_lookup(form, class, Keyword::Delete)?;
         let selected = if placement {
             self.placement_deallocation(found.functions.as_slice(), allocation)?
         } else {

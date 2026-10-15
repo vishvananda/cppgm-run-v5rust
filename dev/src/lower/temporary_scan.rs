@@ -437,6 +437,9 @@ impl Function<'_, '_, '_, '_> {
                     initializer,
                     ..
                 } => {
+                    if let Some(array) = self.graph.lower_allocation(id)?.array {
+                        work.push(array.count);
+                    }
                     work.extend(self.tree.expr_lists.get(placement.unwrap_or_default()));
                     if let Some(initializer) = initializer {
                         match initializer.kind {

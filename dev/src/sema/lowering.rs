@@ -32,12 +32,14 @@ pub(crate) struct ConstructorView<'a> {
     pub delegation: Option<super::construction::Delegation>,
     pub copy: Option<&'a [SubobjectCopy]>,
 }
+pub(crate) use super::allocation::ArrayAllocation;
 pub(crate) struct AllocationView {
     pub function: EntityId,
     pub target: TypeId,
     pub constructor: Option<(ConstructorId, ConstructorArguments)>,
     pub deallocator: Option<EntityId>,
     pub reserved: bool,
+    pub array: Option<ArrayAllocation>,
 }
 pub(crate) struct DeletionView {
     pub function: EntityId,
@@ -123,7 +125,7 @@ pub(crate) enum FunctionName {
     },
     Literal(NameId),
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AllocationRole {
     Allocate,
     Free,
@@ -220,6 +222,7 @@ impl Graph {
             constructor: use_.constructor,
             deallocator: use_.deallocator.map(|binding| self.binding(binding).entity),
             reserved: use_.reserved,
+            array: use_.array,
         })
     }
     pub(crate) fn lower_deletion(&self, id: ast::ExprId) -> Result<DeletionView, Error> {

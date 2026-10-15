@@ -200,6 +200,17 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
+        // A call closes only a region it opened, never an enclosing storage
+        // initializer's region that was already active before its operands.
+        self.lifetime.call_region = if throws
+            && !self.lifetime.full_expression
+            && !self.lifetime.construction
+            && !self.lifetime.region
+        {
+            super::lifetime::CallRegion::Transient
+        } else {
+            super::lifetime::CallRegion::Enclosing
+        };
         if self.element_temporaries.depth != 0 {
             return Ok(());
         }
@@ -316,7 +327,8 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.call_marks.pop();
         }
         let transient = !self.lifetime.full_expression && !self.lifetime.construction;
-        if transient {
+        if std::mem::take(&mut self.lifetime.call_region) == super::lifetime::CallRegion::Transient
+        {
             self.close_lifetime_region()?;
         }
         if !transient

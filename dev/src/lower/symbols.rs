@@ -27,6 +27,8 @@ pub(super) struct SymbolTable {
     initializer: Option<SymbolId>,
     exception_helpers: Option<super::exception_helpers::Helpers>,
     terminate_pending: bool,
+    bad_array_length: Option<SymbolId>,
+    pub(super) allocations: Vec<super::allocation_runtime::AllocationSymbol>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
@@ -248,6 +250,27 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.initialization = Some(symbol);
         Ok(())
+    }
+    pub(super) fn resolve_allocation_roles(
+        &mut self,
+        program: &mut Program,
+        definitions: &mut super::definition_order::Definitions,
+    ) -> Result<(), Error> {
+        super::allocation_runtime::resolve(program, definitions, &self.table.allocations)
+    }
+    pub(super) fn bad_array_length(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
+        if let Some(symbol) = self.table.bad_array_length {
+            return Ok(symbol);
+        }
+        let symbol = self.table.allocate(
+            program,
+            "__external_runtime____cxa_throw_bad_array_new_length",
+            None,
+            true,
+        )?;
+        super::exception_helpers::declare_bad_array_length(program, symbol)?;
+        self.table.bad_array_length = Some(symbol);
+        Ok(symbol)
     }
     pub(super) fn terminate_helper(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
         if let Some(helpers) = self.table.exception_helpers {
@@ -1052,6 +1075,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, object, facts.internal)?;
         self.objects.insert(entity, local_object);
         self.callees.insert(entity, Value::Symbol(symbol));
+        if let Some(allocation) = facts.allocation {
+            self.table
+                .allocations
+                .push(super::allocation_runtime::AllocationSymbol {
+                    symbol,
+                    role: allocation.role,
+                    array: allocation.array,
+                });
+        }
         Ok(symbol)
     }
     pub(super) fn name(&mut self, entity: EntityId) -> Result<std::sync::Arc<str>, Error> {
@@ -1602,16 +1634,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             return Ok(metadata);
         }
-        if let Some(allocation) = facts.allocation {
-            if allocation.array && facts.definition.is_none() {
-                return Err(Error::Missing("array allocation runtime forwarding"));
-            }
-            if !allocation.array {
-                metadata.role = Some(match allocation.role {
-                    crate::sema::lowering::AllocationRole::Allocate => Role::AllocateMemory,
-                    crate::sema::lowering::AllocationRole::Free => Role::FreeMemory,
-                });
-            }
+        if let Some(allocation) = facts.allocation
+            && (!allocation.array || facts.definition.is_none())
+        {
+            metadata.role = Some(match allocation.role {
+                crate::sema::lowering::AllocationRole::Allocate => Role::AllocateMemory,
+                crate::sema::lowering::AllocationRole::Free => Role::FreeMemory,
+            });
         }
         if facts.c_linkage {
             metadata.linkage = Linkage::C;

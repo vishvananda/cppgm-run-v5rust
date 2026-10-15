@@ -434,6 +434,27 @@ impl Analyzer<'_> {
         }
         self.allocation_type(id, scope).map(Some)
     }
+    pub(super) fn allocation_bound(
+        &self,
+        id: ast::TypeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<ast::ExprId>, Error> {
+        let syntax = self.tree.types.get(id);
+        let suffix = syntax.declarator.and_then(|id| {
+            self.tree
+                .suffixes
+                .get(self.tree.declarators.get(id).suffixes)
+                .first()
+        });
+        match suffix {
+            Some(ast::Suffix::Array(None)) => Err(Error::at(
+                location,
+                "an array new-expression without a bound",
+            )),
+            Some(ast::Suffix::Array(Some(bound))) => Ok(Some(*bound)),
+            _ => Ok(None),
+        }
+    }
     pub(super) fn allocation_type(
         &mut self,
         id: ast::TypeId,

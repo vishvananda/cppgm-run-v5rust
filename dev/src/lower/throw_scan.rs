@@ -120,8 +120,13 @@ impl Function<'_, '_, '_, '_> {
                     ..
                 } => {
                     let use_ = self.graph.lower_allocation(id)?;
-                    if self.call_throws_in_context(CallTarget::Direct(use_.function), hidden)? {
+                    if self.call_throws_in_context(CallTarget::Direct(use_.function), hidden)?
+                        || self.array_length_throws(&use_)?
+                    {
                         return Ok(true);
+                    }
+                    if let Some(array) = use_.array {
+                        work.push(array.count);
                     }
                     if let Some((constructor, arguments)) = use_.constructor
                         && (hidden

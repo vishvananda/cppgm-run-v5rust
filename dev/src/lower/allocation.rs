@@ -122,6 +122,9 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("allocation without syntax").into());
         };
         let use_ = self.graph.lower_allocation(id)?;
+        if let Some(array) = use_.array {
+            return self.array_allocation(id, &use_, array);
+        }
         let source = self.graph.lower_expression(id)?.ty;
         self.begin_storage_expression(placement.is_some_and(|values| !values.is_empty()))?;
         let bytes = types::layout(self.graph, use_.target)?.0;

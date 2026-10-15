@@ -114,6 +114,13 @@ impl RegionStart {
         matches!(self, Self::Pending)
     }
 }
+/// The call owns only a region that was closed when its emission began.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum CallRegion {
+    #[default]
+    Enclosing,
+    Transient,
+}
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
@@ -135,6 +142,7 @@ pub(super) struct Lifetime {
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,
+    pub call_region: CallRegion,
     pub region_start: RegionStart,
     pub region_depth: usize,
     pub regions_opened: usize,

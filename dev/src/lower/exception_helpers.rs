@@ -137,3 +137,38 @@ pub(super) fn emit_pending(
     builder.finish()?;
     definitions.stream(program, None)
 }
+
+/// ABI runtime entry demanded only by a potentially invalid array bound.
+pub(super) fn declare_bad_array_length(
+    program: &mut Program,
+    symbol: SymbolId,
+) -> Result<(), Error> {
+    let name = program.symbol(symbol).name;
+    let object = program.names.intern("__cxa_throw_bad_array_new_length")?;
+    let signature = program.add_signature(crate::lowir::model::Signature {
+        parameters: Vec::new(),
+        result: Type::Void,
+        boundary: Boundary {
+            returns: Returns::NoReturn,
+            ..Boundary::default()
+        },
+    })?;
+    program.add(
+        symbol,
+        crate::lowir::model::Function {
+            name,
+            signature,
+            metadata: Metadata {
+                role: Some(Role::BadArrayNewLength),
+                object: Some(object),
+                linkage: Linkage::C,
+                binding: Some(Binding::Strong),
+                ..Metadata::default()
+            },
+            body: None,
+            location: None,
+        },
+    )?;
+    program.publish_runtime_declaration(symbol);
+    Ok(())
+}
