@@ -76,6 +76,9 @@ impl<'a> Cursor<'a> {
             peak_window: 0,
         }
     }
+    pub(super) fn set_origin(&mut self, origin: u64) {
+        self.base = origin;
+    }
     pub(super) fn peek(&mut self, ahead: usize) -> Result<Token, ParseError> {
         let index = self
             .position

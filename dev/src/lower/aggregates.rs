@@ -294,7 +294,7 @@ impl Function<'_, '_, '_, '_> {
             scale: None,
             ty: Type::I8,
             projection: Projection::Field,
-            offset: self.graph.lower_member_offset(member)?,
+            offset: self.member_initialization_offset(member, pointer)?,
             untyped: union,
         });
         let string = if let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {

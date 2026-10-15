@@ -27,4 +27,5 @@ pub enum TokenToolError {
 
 pub mod abimangle;
 pub mod ast;
+mod host_declarations;
 pub mod lowir;

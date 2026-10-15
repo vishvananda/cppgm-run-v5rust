@@ -93,6 +93,11 @@ impl<'a> SyntaxUnit<'a> {
             declarations: None,
         }
     }
+    pub(crate) fn with_token_origin(preprocessor: Preprocessor<'a>, origin: u64) -> Self {
+        let mut unit = Self::new(preprocessor);
+        unit.parser.cursor.set_origin(origin);
+        unit
+    }
     pub(crate) fn parse(&mut self) -> Result<(), ParseError> {
         if self.declarations.is_some() {
             return Ok(());

@@ -124,6 +124,7 @@ pub(super) struct Symbols<'a, 'source> {
     class_parameters: super::class_parameters::Classes,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<EntityId, bool>,
+    anonymous_names: super::anonymous_names::Names,
     // A source declaration is shared by every ABI entry running its body.
     local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
     persistent_finalizers: Vec<super::shutdown::Finalizer>,
@@ -169,6 +170,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             class_parameters: super::class_parameters::Classes::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
+            anonymous_names: super::anonymous_names::Names::default(),
             local_statics: HashMap::new(),
             persistent_finalizers: Vec::new(),
             signatures: HashMap::new(),
@@ -283,11 +285,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .lower_nominal_name(self.graph.lower_entity_type(class)?)?;
         let label = self.identifier(name)?;
         let mut components = vec![format!("{label}__{label}__aggregate")];
-        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
-            components.push(
-                name.map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
-                    .to_owned(),
-            );
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+            components.push(self.presentation_scope_label(scope, name)?);
             scope = parent;
         }
         components.reverse();
@@ -339,6 +338,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(None);
         };
         if !self.graph.lower_complete_object(ty)? {
+            return Ok(None);
+        }
+        if self.graph.lower_implicit_union_destructor(class) {
             return Ok(None);
         }
         if !self.class_storage_properties(class)?.destruction {
@@ -410,6 +412,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.data)
     }
+    fn presentation_scope_label(
+        &self,
+        scope: ScopeId,
+        name: Option<crate::lex::identifiers::NameId>,
+    ) -> Result<String, Error> {
+        if let Some((_, tokens, _)) = self.graph.lower_anonymous_scope(scope) {
+            return Ok(format!(
+                "__anonymous_union_type__{}_{}",
+                tokens.begin, tokens.end
+            ));
+        }
+        Ok(name
+            .map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
+            .to_owned())
+    }
     fn function_label(
         &self,
         name: FunctionName,
@@ -418,7 +435,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut bytes = Vec::new();
         if let FunctionName::Destructor(name) = name {
             bytes.push(b'~');
-            bytes.extend_from_slice(self.cursor.name(name));
+            if let Some(name) = name {
+                bytes.extend_from_slice(self.cursor.name(name));
+            }
         } else if let FunctionName::Identifier(name) | FunctionName::Constructor(name) = name {
             bytes.extend_from_slice(self.cursor.name(name));
         } else if let Some(label) = label {
@@ -720,9 +739,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.scopes.insert(scope, id);
                 return Ok(id);
             }
-            let terminal = self
-                .abi
-                .string(name.map_or(&b"_GLOBAL__N_1"[..], |name| self.cursor.name(name)))?;
+            let terminal = if let Some(terminal) =
+                self.anonymous_names
+                    .scope_terminal(self.graph, &mut self.abi, scope)?
+            {
+                terminal
+            } else {
+                self.abi
+                    .string(name.map_or(&b"_GLOBAL__N_1"[..], |name| self.cursor.name(name)))?
+            };
             let occurrence = if let Some((class, function, declared)) =
                 self.graph.lower_local_class_scope(scope)
             {
@@ -989,15 +1014,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             _ => self.function_label(facts.name, facts.label)?,
         };
-        let mut components = vec![own.as_str()];
+        let mut components = vec![own];
         if !facts.c_linkage || facts.internal {
             let mut scope = facts.home;
-            while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
-                components.push(if let Some(name) = name {
-                    self.identifier(name)?
-                } else {
-                    "_GLOBAL__N_1"
-                });
+            while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+                components.push(self.presentation_scope_label(scope, name)?);
                 scope = parent;
             }
         }
@@ -1035,21 +1056,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(*symbol);
         }
         let facts = self.graph.lower_variable(entity)?;
-        let mut components = vec![self.identifier(facts.name)?];
+        let mut components = vec![self.identifier(facts.name)?.to_owned()];
         let mut scope = facts.home;
-        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
-            components.push(if let Some(name) = name {
-                self.identifier(name)?
-            } else {
-                "_GLOBAL__N_1"
-            });
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+            components.push(self.presentation_scope_label(scope, name)?);
             scope = parent;
         }
         components.reverse();
         let spelling = components.join("__");
         let name = self.variable_abi_name(entity)?;
         let object = if facts.c_linkage
-            || self.graph.lower_presentation_scope(facts.home)?.0.is_none() && !facts.internal
+            || self.graph.lower_presentation_scope(facts.home).0.is_none() && !facts.internal
         {
             program.names.intern_bytes(self.cursor.name(facts.name))?
         } else {
@@ -1390,7 +1407,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         use crate::lowir::vocabulary::{Binding, Role};
         let entity = self.graph.lower_function_entity(entity);
         let facts = self.graph.lower_function(entity)?;
-        if name == "main" && self.graph.lower_presentation_scope(facts.home)?.0.is_none() {
+        if name == "main" && self.graph.lower_presentation_scope(facts.home).0.is_none() {
             return Ok(Metadata {
                 role: Some(Role::Entry),
                 binding: Some(Binding::Strong),
@@ -1524,11 +1541,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let facts = entry.facts(self.graph)?;
         let mut components = vec![self.function_label(facts.name, facts.label)?];
         let mut scope = facts.home;
-        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope)? {
-            components.push(
-                name.map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
-                    .to_owned(),
-            );
+        while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+            components.push(self.presentation_scope_label(scope, name)?);
             scope = parent;
         }
         components.reverse();
@@ -1738,7 +1752,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let FunctionName::Identifier(identifier) = facts.name
             && (facts.c_linkage
                 || self.cursor.name(identifier) == b"main"
-                    && self.graph.lower_presentation_scope(facts.home)?.0.is_none())
+                    && self.graph.lower_presentation_scope(facts.home).0.is_none())
         {
             let terminal = self.abi.string(self.cursor.name(identifier))?;
             return Ok(self.abi.intern(

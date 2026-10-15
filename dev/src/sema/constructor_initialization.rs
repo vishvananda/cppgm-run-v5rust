@@ -382,7 +382,12 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) {
-        if self.unevaluated != 0 {
+        if self.unevaluated != 0
+            || self
+                .graph
+                .anonymous_member_storage(self.graph.constructors.get(id).class)
+                .is_some()
+        {
             return;
         }
         if self.body_context.is_none()

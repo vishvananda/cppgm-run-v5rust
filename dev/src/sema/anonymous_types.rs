@@ -33,6 +33,44 @@ impl AnonymousClass {
 }
 
 impl Graph {
+    pub(crate) fn lower_anonymous_scope(
+        &self,
+        scope: ScopeId,
+    ) -> Option<(EntityId, ast::TokenSpan, bool)> {
+        let node = self.scope(scope);
+        if node.kind != ScopeKind::Class || node.name.is_some() {
+            return None;
+        }
+        let class = node.owner?;
+        let tokens = self.entity(class).anonymous_class?.label()?;
+        let home = self.entity(class).home?;
+        let numbered = self.scope(home).kind == ScopeKind::Class
+            && self
+                .scope(home)
+                .owner
+                .is_some_and(|owner| self.lower_visible_type(owner));
+        Some((class, tokens, numbered))
+    }
+    pub(crate) fn lower_unnamed_scope_types(
+        &self,
+        scope: ScopeId,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.scope(scope).bindings.iter().filter_map(move |&id| {
+            let binding = self.binding(id);
+            let entity = self.entity(binding.entity);
+            (binding.kind == BindingKind::Type
+                && entity.name.is_none()
+                && entity.home == Some(scope)
+                && entity.ty.is_some_and(|ty| {
+                    matches!(
+                        self.types.get(ty).kind,
+                        TypeKind::Class(_) | TypeKind::Enum(_)
+                    )
+                }))
+            .then_some(binding.entity)
+        })
+    }
+
     // Anonymous injection changes the lookup declaration, but the entity keeps
     // its original class. Follow its owned storage to the object being named;
     // only then can the caller select a base route or a union memory fact.

@@ -556,6 +556,13 @@ impl<'a> Encoder<'a> {
                 self.put(b"li");
                 self.source_name(suffix);
             }
+            Node::UnnamedType(number) => {
+                self.put(b"Ut");
+                if number != 0 {
+                    self.number(u64::from(number - 1));
+                }
+                self.put(b"_");
+            }
             Node::ClosureName { number, variadic } => {
                 self.put(b"Ul");
                 self.parameters(terminal, variadic)?;

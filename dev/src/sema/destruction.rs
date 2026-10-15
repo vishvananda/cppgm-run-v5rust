@@ -195,6 +195,9 @@ impl Analyzer<'_> {
             let Some((child, member)) = self.graph.destruction_child(class, index)? else {
                 continue;
             };
+            if member && self.graph.entity(child).anonymous_class.is_some() {
+                continue;
+            }
             if let Some(binding) = self.destructor_callable(child)? {
                 if self
                     .graph

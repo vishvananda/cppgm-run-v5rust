@@ -63,6 +63,16 @@ impl Graph {
                     .is_some_and(|home| self.scope(home).kind == ScopeKind::Class)
     }
 
+    pub(crate) fn lower_visible_type(&self, class: EntityId) -> bool {
+        if let Some(function) = self
+            .entity(class)
+            .home
+            .and_then(|home| self.lower_scope_function(home))
+        {
+            return self.lower_inline_function(self.outermost_function(function));
+        }
+        !self.lower_entity_unit_local(class)
+    }
     pub(super) fn lower_shared_local(&self, mut class: EntityId) -> bool {
         loop {
             let node = self.entity(class);

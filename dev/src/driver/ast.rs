@@ -82,7 +82,12 @@ pub fn emit_unit(
         values,
     )
     .map_err(AstToolError::Initialization)?;
-    let mut unit = SyntaxUnit::new(preprocessor);
+    let origin = if mode == EmitMode::LowIr {
+        super::host_declarations::token_origin().map_err(AstToolError::Internal)?
+    } else {
+        0
+    };
+    let mut unit = SyntaxUnit::with_token_origin(preprocessor, origin);
     unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {
         return Err(match error {

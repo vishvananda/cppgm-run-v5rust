@@ -101,7 +101,7 @@ pub(crate) use super::construction::ConstructorId;
 pub(crate) enum FunctionName {
     Identifier(NameId),
     Constructor(NameId),
-    Destructor(NameId),
+    Destructor(Option<NameId>),
     Operator {
         token: crate::lex::vocabulary::SimpleToken,
         array: bool,
@@ -500,19 +500,13 @@ impl Graph {
     pub(crate) fn lower_presentation_scope(
         &self,
         id: ScopeId,
-    ) -> Result<(Option<ScopeId>, Option<NameId>), Error> {
+    ) -> (Option<ScopeId>, Option<NameId>) {
         let scope = self.scope(id);
         match scope.kind {
-            super::graph::ScopeKind::Namespace => Ok((scope.parent, scope.name)),
-            super::graph::ScopeKind::Class => Ok((
-                scope.parent,
-                Some(
-                    scope
-                        .name
-                        .ok_or(Error::Missing("anonymous class helper label"))?,
-                ),
-            )),
-            _ => Ok((None, None)),
+            super::graph::ScopeKind::Namespace | super::graph::ScopeKind::Class => {
+                (scope.parent, scope.name)
+            }
+            _ => (None, None),
         }
     }
     pub(crate) fn lower_trivial_default_construction(
@@ -800,8 +794,7 @@ impl Graph {
                 {
                     FunctionName::Destructor(
                         self.entity(object.ok_or(Error::Invariant("destructor without class"))?)
-                            .name
-                            .ok_or(Error::Missing("anonymous destructor name"))?,
+                            .name,
                     )
                 }
                 None if entity
@@ -886,7 +879,7 @@ impl Graph {
         if !namespace && self.scope(id).kind != super::graph::ScopeKind::Class {
             return Err(Error::Missing("lowering class and local scopes"));
         }
-        let (parent, name) = self.lower_presentation_scope(id)?;
+        let (parent, name) = self.lower_presentation_scope(id);
         Ok((parent, name, namespace))
     }
     pub(crate) fn lower_overloads(
@@ -1243,14 +1236,24 @@ impl Graph {
         let binding = facts
             .member
             .ok_or(Error::Invariant("member without designation"))?;
-        let entity = self.binding(binding).entity;
+        self.lower_anonymous_member_offset(self.binding(binding).entity, facts.member_naming)
+    }
+    pub(crate) fn lower_anonymous_constructor(&self, id: ConstructorId) -> bool {
+        self.anonymous_member_storage(self.constructors.get(id).class)
+            .is_some()
+    }
+    pub(crate) fn lower_anonymous_member_offset(
+        &self,
+        entity: EntityId,
+        within: Option<EntityId>,
+    ) -> Result<u64, Error> {
         let mut owner = self
             .entity(entity)
             .home
             .and_then(|home| self.scope(home).owner);
         let mut offset = 0u64;
         while let Some(class) = owner {
-            if Some(class) == facts.member_naming {
+            if Some(class) == within {
                 break;
             }
             let Some(object) = self.anonymous_member_storage(class) else {
@@ -1291,6 +1294,9 @@ impl Graph {
     }
     pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> Result<bool, Error> {
         Ok(!self.destructor_trivial(entity)?)
+    }
+    pub(crate) fn lower_implicit_union_destructor(&self, class: EntityId) -> bool {
+        self.lower_union_class(class) && self.entity(class).declared_destructor.is_none()
     }
     pub(crate) fn lower_destructor_entity(&self, class: EntityId) -> Option<EntityId> {
         self.destructor_binding(class)

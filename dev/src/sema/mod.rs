@@ -55,6 +55,7 @@ mod local_classes;
 mod local_names;
 mod lookup;
 pub(crate) mod lowering;
+mod member_construction;
 mod member_expressions;
 mod name_keys;
 mod operator_candidates;

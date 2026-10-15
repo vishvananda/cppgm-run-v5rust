@@ -119,9 +119,9 @@ impl Function<'_, '_, '_, '_> {
         // The constructor owner registers this completed member with its
         // subobject cleanup after materialization succeeds.
         let object = self.object_pointer(pointer)?.value;
-        let offset = self
-            .builder
-            .integer(u128::from(self.graph.lower_member_offset(member)?))?;
+        let offset = self.builder.integer(u128::from(
+            self.member_initialization_offset(member, pointer)?,
+        ))?;
         let address = self
             .emit(
                 I::Index(

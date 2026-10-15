@@ -107,6 +107,7 @@ pub enum Node {
         /// Number of earlier entities with this name directly in the function.
         occurrence: u32,
     },
+    UnnamedType(u32),
     ClosureName {
         /// Zero when omitted; otherwise the Itanium closure number plus one.
         number: u32,

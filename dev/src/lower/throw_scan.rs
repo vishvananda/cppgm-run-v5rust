@@ -312,6 +312,7 @@ impl Function<'_, '_, '_, '_> {
         })
     }
     pub(super) fn constructor_plan_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
+        self.check_stack()?;
         let plan = self.graph.lower_constructor(id);
         for base in plan.bases {
             if let Some(constructor) = base.constructor
@@ -333,6 +334,12 @@ impl Function<'_, '_, '_, '_> {
         }
         for child in plan.subobjects {
             let constructor = child.constructor;
+            if self.graph.lower_anonymous_constructor(constructor) {
+                if self.constructor_plan_throws(constructor)? {
+                    return Ok(true);
+                }
+                continue;
+            }
             if !Entry::Constructor(constructor, Variant::Complete)
                 .facts(self.graph)?
                 .nothrow

@@ -37,7 +37,7 @@ pub(super) enum ConstructorState {
     Ready(ConstructorId),
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum Triviality {
+pub(super) enum Triviality {
     #[default]
     Trivial,
     Nontrivial,
@@ -57,11 +57,11 @@ pub(super) struct Constructor {
     pub callable_type: TypeId,
     pub nothrow: bool,
     pub(super) deleted: bool,
-    const_default: bool,
+    pub(super) const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub bases: Vec<BaseInitialization>,
     pub subobjects: Vec<MemberConstruction>,
-    triviality: Triviality,
+    pub(super) triviality: Triviality,
 }
 impl Constructor {
     fn initialized_members(&self) -> usize {
@@ -511,11 +511,16 @@ impl Analyzer<'_> {
                 if union {
                     deleted |=
                         self.graph.entity(class).initialized_members == 0 && child.nontrivial();
-                    continue;
+                    if self.graph.anonymous_member_storage(child_class).is_none()
+                        || self.graph.entity(child_class).initialized_members == 0
+                    {
+                        continue;
+                    }
                 }
-                if child.deleted {
+                if child.deleted && self.graph.anonymous_member_storage(child_class).is_none() {
                     return Err(Error::at(SourceOffset(0), "use of a deleted function"));
                 }
+                deleted |= child.deleted;
                 let scope = self
                     .graph
                     .entity(class)
@@ -643,7 +648,7 @@ impl Analyzer<'_> {
         self.publish_constructor(record)
     }
 
-    fn constructor_types(
+    pub(super) fn constructor_types(
         &mut self,
         class: EntityId,
         binding: Option<BindingId>,
@@ -698,7 +703,10 @@ impl Analyzer<'_> {
         )?;
         Ok((object_pointer, presentation_type, callable_type))
     }
-    fn publish_constructor(&mut self, mut record: Constructor) -> Result<ConstructorId, Error> {
+    pub(super) fn publish_constructor(
+        &mut self,
+        mut record: Constructor,
+    ) -> Result<ConstructorId, Error> {
         // Child default facts are ready bottom-up. Memoize transitive triviality
         // so use sites never walk the hierarchy again.
         record.triviality = if record.own_action(&self.graph)
@@ -941,21 +949,6 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        if self.graph.entity(class).key == Keyword::Union && written.len() > 1 {
-            let second = self
-                .graph
-                .entity(class)
-                .members
-                .iter()
-                .filter_map(|member| written.get(member))
-                .nth(1)
-                .ok_or(Error::Invariant("union initializer without member"))?
-                .location;
-            return Err(Error::at(
-                second,
-                "a union's constructor initializes several members",
-            ));
-        }
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         for index in 0..self.graph.entity(class).bases.len() {
             let base = self.graph.entity(class).bases[index].class;
@@ -991,83 +984,10 @@ impl Analyzer<'_> {
                 forwards: false,
             });
         }
-        let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
-        let mut subobjects = Vec::new();
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
-            let ty = self
-                .graph
-                .entity(member)
-                .ty
-                .ok_or(Error::Invariant("member without type"))?;
-            let variant = self.graph.entity(class).key == Keyword::Union;
-            let source = written
-                .get(&member)
-                .map(|written| written.initializer)
-                .or_else(|| {
-                    if variant && !written.is_empty() {
-                        None
-                    } else {
-                        self.graph.entity(member).member_initializer
-                    }
-                });
-            if let Some(written) = written.get(&member) {
-                let initializer = written.initializer;
-                if let Some((constructor, arguments)) =
-                    self.written_member_construction(ty, initializer, scope)?
-                {
-                    subobjects.push(MemberConstruction {
-                        member,
-                        constructor,
-                        arguments: Some(arguments),
-                    });
-                }
-            } else if source.is_none() && !variant {
-                let mut object = ty;
-                while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
-                    object = element;
-                }
-                if let TypeKind::Class(child) = self.graph.types.get(object).kind {
-                    let constructor = self.default_constructor(child, location)?;
-                    self.validate_constructor_use(constructor, scope, location)?;
-                    if self.graph.types.get(object).cv.0 & 1 != 0
-                        && !self.graph.constructors.get(constructor).const_default
-                    {
-                        return Err(Error::at(
-                            location,
-                            "a const object leaves a member uninitialized",
-                        ));
-                    }
-                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
-                        self.demand_constructor_use(constructor);
-                    }
-                    subobjects.push(MemberConstruction {
-                        member,
-                        constructor,
-                        arguments: None,
-                    });
-                    plans.push((member, source));
-                    continue;
-                }
-                if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
-                    return Err(Error::at(location, "a reference member is not initialized"));
-                }
-                if self.graph.types.get(object).cv.0 & 1 != 0 {
-                    return Err(Error::at(location, "a const member is not initialized"));
-                }
-            }
-            if !written.contains_key(&member)
-                && source.is_some()
-                && let Some(constructor) = self.graph.entity(member).constructor
-            {
-                subobjects.push(MemberConstruction {
-                    member,
-                    constructor,
-                    arguments: self.graph.entity(member).constructor_arguments,
-                });
-            }
-            plans.push((member, source));
-        }
+        let super::member_construction::MemberActions {
+            members: plans,
+            subobjects,
+        } = self.written_member_plans(class, &written, scope, location)?;
         self.graph.constructors.records[id.0 as usize].members = plans;
         self.graph.constructors.records[id.0 as usize].bases = bases;
         self.graph.constructors.records[id.0 as usize].subobjects = subobjects;
@@ -1076,7 +996,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn written_member_construction(
+    pub(super) fn written_member_construction(
         &mut self,
         ty: TypeId,
         initializer: ast::Initializer,
@@ -1135,12 +1055,10 @@ impl Analyzer<'_> {
             {
                 return Ok(node.entity);
             }
-            if member
-                .home
-                .and_then(|home| self.graph.scope(home).owner)
-                .is_some_and(|owner| self.graph.entity(owner).anonymous_storage.is_some())
+            if member.data_member == Some(super::graph::DataMemberKind::Instance)
+                && self.graph.member_holder(node.entity, Some(class))? == class
             {
-                return Err(Error::Missing("anonymous subobject constructor plans"));
+                return Ok(node.entity);
             }
             return Err(Error::at(
                 initializer.location,
