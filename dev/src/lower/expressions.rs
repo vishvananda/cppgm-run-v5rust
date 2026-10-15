@@ -718,11 +718,13 @@ impl Function<'_, '_, '_, '_> {
             condition
         };
         self.effect(I::Branch(condition.value, then_block, else_block))?;
+        let local = self.branch_local(id);
         for (name, expression) in [(&then_name, then_expr), (&else_name, else_expr)] {
             self.builder.block(name)?;
-            self.lifetime.guarded_operands += 1;
+            let first = self.lifetime.cleanups.len();
+            self.lifetime.guarded_operands += u32::from(!local);
             let value = self.operand(expression, Context::Operand)?;
-            self.lifetime.guarded_operands -= 1;
+            self.lifetime.guarded_operands -= u32::from(!local);
             let value = self.fit(value, source)?;
             self.effect(I::Store(
                 types::memory(self.graph, source)?,
@@ -730,6 +732,9 @@ impl Function<'_, '_, '_, '_> {
                 value.value,
                 slot,
             ))?;
+            if local {
+                self.destroy_temporaries(first)?;
+            }
             self.effect(I::Jump(end_block))?;
         }
         self.builder.block(&end_name)?;

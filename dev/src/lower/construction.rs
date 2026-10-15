@@ -57,6 +57,22 @@ impl Function<'_, '_, '_, '_> {
             )))?;
         let object = self.storage_address(slot, ty)?;
         let arguments = self.graph.lower_constructor_arguments(entity);
+        if self.lifetime.full_expression
+            && let Some(ConstructorArguments::Values(values)) = arguments
+            && self.tree.expr_lists.get(values).len() > 1
+        {
+            let saved = self.lifetime.expression_start;
+            self.lifetime.expression_start = Some(self.builder.position()?);
+            for &id in self.tree.expr_lists.get(values) {
+                self.begin_tracking(
+                    id,
+                    super::temporary_scan::ExpressionUse::InitializerArgument,
+                )?;
+            }
+            if !self.lifetime.tracking.active {
+                self.lifetime.expression_start = saved;
+            }
+        }
         self.construct_at(id, ty, object, arguments)
     }
     pub(super) fn construct_at(

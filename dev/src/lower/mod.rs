@@ -43,6 +43,7 @@ mod symbols;
 mod temporary_scan;
 mod thread_local;
 mod throw_scan;
+mod tracked_lifetimes;
 mod types;
 use crate::{
     lowir::model::Program,

@@ -15,6 +15,8 @@ pub(super) struct TemporarySummary {
 #[derive(Clone, Copy)]
 pub(super) enum ExpressionUse {
     Ordinary,
+    Initialization,
+    InitializerArgument,
     Value,
     ClassResult,
 }
@@ -43,10 +45,11 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.full_expression = true;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::new(
                 summary.made,
-                !matches!(usage, ExpressionUse::Ordinary) && throwing,
+                matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult) && throwing,
             );
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);
+            self.begin_tracking(root, usage)?;
             return Ok(true);
         }
         Ok(false)

@@ -19,14 +19,21 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: crate::lowir::model::Value,
     ) -> Result<(), Error> {
-        if self.lifetime.guarded_operands != 0 {
+        if self.lifetime.guarded_operands != 0 && !self.lifetime.tracking.active {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
         let split = self.lifetime.region;
+        if self.lifetime.tracking.active {
+            self.register_temporary(ty, object);
+            self.track_temporary()?;
+            self.close_lifetime_region()?;
+            return self.tracked_region(None);
+        }
         self.close_lifetime_region()?;
         self.register_temporary(ty, object);
         if split {
-            self.open_temporary_region()?;
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
         }
         Ok(())
     }
@@ -161,6 +168,9 @@ impl Function<'_, '_, '_, '_> {
         {
             return self.open_temporary_region_at(self.lifetime.expression_start);
         }
+        if self.lifetime.tracking.active && !self.lifetime.region {
+            return self.open_temporary_region();
+        }
         if self.static_initializer
             || !throws
             || self.lifetime.region
@@ -194,6 +204,15 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         start: Option<crate::lowir::builder::Position>,
     ) -> Result<(), Error> {
+        if self.lifetime.tracking.active {
+            let position = self
+                .lifetime
+                .call_marks
+                .iter()
+                .copied()
+                .find(|&p| self.builder.same_block(p));
+            return self.tracked_region(position);
+        }
         let entry = self.unwind_entry()?;
         if let Some(position) = start
             .filter(|&position| self.builder.same_block(position))
@@ -283,6 +302,10 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn end_lifetime_expression(&mut self, began: bool) -> Result<(), Error> {
         if began {
             self.close_lifetime_region()?;
+            self.finish_tracking()?;
+            self.end_tracked_cleanups();
+            self.lifetime.tracking.active = false;
+            self.lifetime.tracking.root = None;
             self.lifetime.full_expression = false;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Empty;
             self.lifetime.expression_start = None;

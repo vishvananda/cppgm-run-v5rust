@@ -818,13 +818,27 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         if let Some(initializer) = initializer {
             match initializer.kind {
                 ast::InitializerKind::Parenthesized(arguments) => {
-                    for &argument in self.tree.expr_lists.get(arguments) {
-                        self.expression(argument, depth + 1, false, None)?;
+                    for &id in self.tree.expr_lists.get(arguments).iter().rev() {
+                        self.work.push((
+                            Item::Expression {
+                                id,
+                                bare: false,
+                                retyped: None,
+                            },
+                            depth + 1,
+                        ));
                     }
                 }
                 ast::InitializerKind::Assign(expression)
                 | ast::InitializerKind::Braced(expression) => {
-                    self.expression(expression, depth + 1, false, None)?;
+                    self.work.push((
+                        Item::Expression {
+                            id: expression,
+                            bare: false,
+                            retyped: None,
+                        },
+                        depth + 1,
+                    ));
                 }
                 _ => return Err(io::Error::other("constructor initializer shape")),
             }

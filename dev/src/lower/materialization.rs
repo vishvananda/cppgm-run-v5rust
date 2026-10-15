@@ -296,7 +296,10 @@ impl Function<'_, '_, '_, '_> {
         let ty = self.graph.lower_expression(id)?.ty;
         let owner = self.extended_temporary_owner(id);
         let destructor = self.symbols.storage_destructor(ty)?;
-        if destructor.is_some() && self.lifetime.guarded_operands != 0 {
+        if destructor.is_some()
+            && self.lifetime.guarded_operands != 0
+            && !self.lifetime.tracking.active
+        {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
         if destructor.is_some() && persistent {
@@ -329,8 +332,13 @@ impl Function<'_, '_, '_, '_> {
         if destructor.is_some()
             && let Some(owner) = owner
         {
-            self.close_lifetime_region()?;
-            self.register_extended_temporary(ty, object, owner);
+            if self.lifetime.tracking.active {
+                self.temporary_alive(ty, object)?;
+                self.extend_last_temporary(owner)?;
+            } else {
+                self.close_lifetime_region()?;
+                self.register_extended_temporary(ty, object, owner);
+            }
             if self.lifetime.full_expression {
                 self.before_lifetime_call(true)?;
             }

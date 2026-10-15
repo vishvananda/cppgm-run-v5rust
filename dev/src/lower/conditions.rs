@@ -224,6 +224,14 @@ impl Function<'_, '_, '_, '_> {
         if let Condition::Expression(id) = condition {
             if self.expression_temporaries(id)?.made {
                 let value = self.truth(id)?;
+                if !self.lifetime.cleanups[first..]
+                    .iter()
+                    .any(|c| matches!(c.place, super::lifetime::CleanupPlace::Temporary(_)))
+                {
+                    self.effect(I::Branch(value.value, yes, no))?;
+                    self.terminated = true;
+                    return self.end_lifetime_expression(began);
+                }
                 let true_cleanup = self.new_block("cond_true_cleanup")?;
                 let false_cleanup = self.new_block("cond_false_cleanup")?;
                 self.effect(I::Branch(value.value, true_cleanup, false_cleanup))?;
@@ -342,6 +350,8 @@ impl Function<'_, '_, '_, '_> {
                 });
                 continue;
             }
+            let local = self.branch_local(node);
+            let first = self.lifetime.cleanups.len();
             let prefix = if conjunction { "land" } else { "lor" };
             let slot = self.generated_slot(prefix, Type::I64)?;
             let rhs = self.new_block(&format!("{prefix}_rhs"))?;
@@ -359,15 +369,18 @@ impl Function<'_, '_, '_, '_> {
             };
             self.effect(I::Branch(value.value, yes, no))?;
             self.place(rhs)?;
-            self.lifetime.guarded_operands += 1;
+            self.lifetime.guarded_operands += u32::from(!local);
             let value = self.normalized_truth(right)?;
-            self.lifetime.guarded_operands -= 1;
+            self.lifetime.guarded_operands -= u32::from(!local);
             self.effect(I::Store(
                 Facts::memory(false, true),
                 Type::I64,
                 value.value,
                 slot,
             ))?;
+            if local {
+                self.destroy_temporaries(first)?;
+            }
             self.jump(end)?;
             self.place(shortcut)?;
             let value = self.builder.integer(u128::from(!conjunction))?;
@@ -538,11 +551,16 @@ impl Function<'_, '_, '_, '_> {
                 let value = self.truth(condition)?;
                 self.effect(I::Branch(value.value, yes, no))?;
                 self.terminated = true;
+                let local = self.branch_local(id);
                 for (block, operand) in [(yes, then_expr), (no, else_expr)] {
                     self.place(block)?;
-                    self.lifetime.guarded_operands += 1;
+                    let first = self.lifetime.cleanups.len();
+                    self.lifetime.guarded_operands += u32::from(!local);
                     self.discard(operand)?;
-                    self.lifetime.guarded_operands -= 1;
+                    self.lifetime.guarded_operands -= u32::from(!local);
+                    if local {
+                        self.destroy_temporaries(first)?;
+                    }
                     if !self.terminated {
                         self.jump(end)?;
                     }

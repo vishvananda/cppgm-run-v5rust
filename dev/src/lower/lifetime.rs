@@ -19,6 +19,9 @@ pub(super) struct Cleanup {
     unwind: Option<BlockId>,
     conditional: Option<BlockId>,
     shared_return: Option<BlockId>,
+    pub guard: Option<Value>,
+    pub branched: bool,
+    pub made_at: Option<Value>,
 }
 #[derive(Clone, Copy)]
 pub(super) enum CleanupPlace {
@@ -112,6 +115,7 @@ pub(super) struct Lifetime {
     pub temporary_work: Vec<ast::ExprId>,
     pub temporary_queries: HashMap<ast::ExprId, super::temporary_scan::TemporarySummary>,
     pub guarded_operands: u32,
+    pub tracking: super::tracked_lifetimes::Tracking,
 }
 impl Lifetime {
     pub(super) fn add_live(
@@ -172,6 +176,9 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            guard: None,
+            branched: false,
+            made_at: None,
         });
         self.lifetime
             .depths
@@ -186,6 +193,9 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            guard: None,
+            branched: false,
+            made_at: None,
         });
     }
     pub(super) fn register_extended_temporary(
@@ -201,6 +211,9 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            guard: None,
+            branched: false,
+            made_at: None,
         });
         self.lifetime
             .depths
@@ -214,6 +227,9 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            guard: None,
+            branched: false,
+            made_at: None,
         });
     }
     pub(super) fn extend_last_temporary(&mut self, owner: EntityId) -> Result<(), Error> {
@@ -245,6 +261,9 @@ impl Function<'_, '_, '_, '_> {
         first: usize,
         pop: bool,
     ) -> Result<(), Error> {
+        if first <= self.lifetime.tracking.floor {
+            self.finish_tracking()?;
+        }
         for index in (first..self.lifetime.cleanups.len()).rev() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
@@ -321,15 +340,45 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
-        match cleanup.place {
+        let done = if let Some(flag) = cleanup.guard {
+            let destroy = self.new_block("conditional_temporary_destroy")?;
+            let done = self.new_block("conditional_temporary_done")?;
+            let value = self
+                .emit(I::Load(Facts::default(), Type::U8, flag), cleanup.ty)?
+                .value;
+            // A tracked segment covers both the test and destruction.
+            self.builder.effect(I::Branch(value, destroy, done))?;
+            self.terminated = true;
+            self.place(destroy)?;
+            let zero = self.builder.integer(0)?;
+            self.effect(I::Store(Facts::default(), Type::U8, zero, flag))?;
+            Some(done)
+        } else {
+            None
+        };
+        let result = match cleanup.place {
             CleanupPlace::Storage(storage) => self.destroy_storage(cleanup.ty, storage),
             CleanupPlace::Subobject(object)
             | CleanupPlace::Extended(object)
-            | CleanupPlace::Temporary(object) => self.destroy_completed_object(cleanup.ty, object),
+            | CleanupPlace::Temporary(object) => {
+                let object = self.storage_address(object, cleanup.ty)?;
+                self.destroy_completed_object(cleanup.ty, object)
+            }
             CleanupPlace::Counted { .. } => {
                 Err(crate::sema::Error::Invariant("counted cleanup outside unwind chain").into())
             }
+        };
+        result?;
+        if let Some(done) = done {
+            if self.lifetime.tracking.active {
+                self.builder.effect(I::Jump(done))?;
+                self.terminated = true;
+            } else {
+                self.jump(done)?;
+            }
+            self.place(done)?;
         }
+        Ok(())
     }
     fn destroy_completed_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
@@ -486,7 +535,7 @@ impl Function<'_, '_, '_, '_> {
         self.place(end)
     }
     fn cleanup_entry(&mut self, unwinding: bool) -> Result<BlockId, Error> {
-        let late = unwinding && self.lifetime.cleanups.len() > 8;
+        let late = unwinding && (self.lifetime.cleanups.len() > 8 || self.lifetime.tracking.active);
         let terminal = if !unwinding {
             self.lifetime.return_terminal
         } else if late {
@@ -552,7 +601,7 @@ impl Function<'_, '_, '_, '_> {
         for index in first..self.lifetime.cleanups.len() {
             let block = self.new_block(if !unwinding {
                 "return_cleanup_action"
-            } else if late {
+            } else if late || self.lifetime.cleanups[index].guard.is_some() {
                 "conditional_cleanup_dispatch"
             } else if self.lifetime.cleanups[index].member() {
                 "construction_cleanup"
@@ -667,7 +716,17 @@ impl Function<'_, '_, '_, '_> {
         } else {
             std::mem::take(&mut self.lifetime.pending)
         };
-        for &block in &blocks {
+        self.place_chain_blocks(&blocks)?;
+        blocks.clear();
+        if late {
+            self.lifetime.late = blocks;
+        } else {
+            self.lifetime.pending = blocks;
+        }
+        Ok(())
+    }
+    fn place_chain_blocks(&mut self, blocks: &[ChainBlock]) -> Result<(), Error> {
+        for &block in blocks {
             self.place(block.block)?;
             if let Some(action) = block.action {
                 let tail = block
@@ -702,12 +761,55 @@ impl Function<'_, '_, '_, '_> {
                 self.terminated = true;
             }
         }
-        blocks.clear();
-        if late {
-            self.lifetime.late = blocks;
-        } else {
-            self.lifetime.pending = blocks;
+        Ok(())
+    }
+    pub(super) fn end_tracked_cleanups(&mut self) {
+        for cleanup in self
+            .lifetime
+            .cleanups
+            .iter_mut()
+            .skip(self.lifetime.tracking.floor)
+        {
+            if cleanup.guard.is_some() && !matches!(cleanup.place, CleanupPlace::Temporary(_)) {
+                if !cleanup.branched {
+                    cleanup.guard = None;
+                    if let (CleanupPlace::Extended(_), Some(object)) =
+                        (cleanup.place, cleanup.made_at)
+                    {
+                        cleanup.place = CleanupPlace::Extended(object);
+                    }
+                }
+                cleanup.unwind = None;
+                cleanup.conditional = None;
+                cleanup.shared_return = None;
+            }
         }
+    }
+    pub(super) fn place_tracked_chain(&mut self) -> Result<(), Error> {
+        let before = self.builder.layout_len();
+        let saved = self.builder.position()?;
+        let terminated = self.terminated;
+        let region = std::mem::replace(&mut self.lifetime.region, false);
+        let full = std::mem::replace(&mut self.lifetime.full_expression, false);
+        let pending = std::mem::take(&mut self.lifetime.pending);
+        let mark = self.lifetime.late.len();
+        let head = self.unwind_entry()?;
+        let blocks = self.lifetime.late.split_off(mark);
+        self.place_chain_blocks(&blocks)?;
+        self.lifetime.pending = pending;
+        self.lifetime.full_expression = full;
+        self.lifetime.region = region;
+        self.terminated = terminated;
+        let start = self
+            .lifetime
+            .tracking
+            .start
+            .ok_or(crate::sema::Error::Invariant("tracking without start"))?;
+        self.builder.restore_after_cleanup(saved, start, before)?;
+        for marker in self.lifetime.tracking.markers.drain(..) {
+            self.builder.retarget_region(marker, head)?;
+        }
+        self.lifetime.tracking.head = Some(head);
         Ok(())
     }
 }

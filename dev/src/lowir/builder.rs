@@ -17,7 +17,7 @@ pub(crate) struct FunctionBuilder<'a> {
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Position {
     block: BlockId,
     after: Option<super::model::InstId>,
@@ -251,22 +251,86 @@ impl<'a> FunctionBuilder<'a> {
         position: Position,
         kind: super::model::RuntimeInstruction,
     ) -> Result<(), Error> {
-        let id = self.body.append(
-            position.block,
-            Instruction::new(None, InstructionKind::Runtime(kind), 0),
-        )?;
+        self.insert_effect(position, InstructionKind::Runtime(kind))?;
+        Ok(())
+    }
+    /// Inserts a result-free instruction without changing stable definition IDs.
+    pub(crate) fn insert_effect(
+        &mut self,
+        position: Position,
+        kind: InstructionKind,
+    ) -> Result<Position, Error> {
+        self.insert_effects(position, std::iter::once(kind))
+    }
+    /// Splices a group once, so resetting many lifetime flags does not shift
+    /// the entire expression's instruction sequence once per temporary.
+    pub(crate) fn insert_effects(
+        &mut self,
+        position: Position,
+        kinds: impl Iterator<Item = InstructionKind>,
+    ) -> Result<Position, Error> {
+        let before = self.body.block(position.block).instructions.len();
+        for kind in kinds {
+            let _id = self
+                .body
+                .append(position.block, Instruction::new(None, kind, 0))?;
+        }
         let instructions = &mut self.body.block_mut(position.block).instructions;
-        instructions.pop();
-        let index = if let Some(after) = position.after {
-            instructions
+        let after = instructions
+            .last()
+            .copied()
+            .filter(|_| instructions.len() > before)
+            .or(position.after);
+        let index = if let Some(previous) = position.after {
+            instructions[..before]
                 .iter()
-                .rposition(|&instruction| instruction == after)
+                .rposition(|&id| id == previous)
                 .ok_or(Error::Limit)?
                 + 1
         } else {
             0
         };
-        instructions.insert(index, id);
+        let added = instructions.len() - before;
+        instructions[index..].rotate_right(added);
+        Ok(Position {
+            block: position.block,
+            after,
+        })
+    }
+    pub(crate) fn retarget_region(
+        &mut self,
+        marker: Position,
+        target: BlockId,
+    ) -> Result<(), Error> {
+        let id = marker.after.ok_or(Error::Limit)?;
+        self.body.retarget_region(id, target)
+    }
+    pub(crate) fn addressed_storage(&self, address: Value) -> Value {
+        if let Value::Temp(temp) = address
+            && let Some(id) = self.body.temp(temp).definition
+            && let InstructionKind::Addr(storage @ Value::Slot(_)) = self.body.instruction(id).kind
+        {
+            return storage;
+        }
+        address
+    }
+    pub(crate) fn layout_len(&self) -> usize {
+        self.body.layout.len()
+    }
+    /// Places newly emitted cleanup blocks after their full-expression's first
+    /// block, then restores insertion without placing the saved block twice.
+    pub(crate) fn restore_after_cleanup(
+        &mut self,
+        saved: Position,
+        start: Position,
+        before: usize,
+    ) -> Result<(), Error> {
+        let at = self.body.layout[..before]
+            .iter()
+            .position(|&block| block == start.block)
+            .ok_or(Error::Limit)?;
+        self.body.layout[at + 1..].rotate_left(before - at - 1);
+        self.block = Some(saved.block);
         Ok(())
     }
     /// C++ lowering's incoming-edge policy for a syntactic non-void end.
@@ -400,6 +464,45 @@ mod tests {
         builder.effect(I::Return(Type::I32, Some(result)))?;
         builder.place_block(handler)?;
         builder.effect(I::Runtime(R::Resume))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        Ok(())
+    }
+
+    #[test]
+    fn tracked_regions_keep_definitions_and_restore_expression_layout() -> Result<(), Error> {
+        use crate::lowir::model::{Facts, RuntimeInstruction as R};
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "tracked", &[], Type::Void)?;
+        builder.block("entry")?;
+        let start = builder.position()?;
+        let slot = builder.generated_slot("object", Type::I32)?;
+        let flag = builder.generated_slot("flag", Type::U8)?;
+        let object = builder.generated(I::Addr(slot))?;
+        assert_eq!(builder.addressed_storage(object), slot);
+        let placeholder = builder.block_id("placeholder")?;
+        let marker = builder.insert_effect(start, I::Runtime(R::EhTry(placeholder)))?;
+        let zero = builder.integer(0)?;
+        let _reset =
+            builder.insert_effect(start, I::Store(Facts::default(), Type::U8, zero, flag))?;
+        builder.effect(I::Runtime(R::EhEnd))?;
+        let end = builder.block_id("end")?;
+        builder.effect(I::Jump(end))?;
+        builder.place_block(end)?;
+        let saved = builder.position()?;
+        let before = builder.layout_len();
+        let cleanup = builder.block_id("cleanup")?;
+        builder.place_block(cleanup)?;
+        builder.effect(I::Runtime(R::Resume))?;
+        builder.retarget_region(marker, cleanup)?;
+        builder.restore_after_cleanup(saved, start, before)?;
+        builder.effect(I::Return(Type::Void, None))?;
+        let Value::Temp(object) = object else {
+            return Err(Error::Limit);
+        };
+        assert!(builder.body.temp(object).definition.is_some());
+        assert_eq!(builder.body.layout[1], cleanup);
+        assert_eq!(builder.body.layout[2], end);
         builder.finish()?;
         validator::validate_constructed(&program)?;
         Ok(())
