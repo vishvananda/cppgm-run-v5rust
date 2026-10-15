@@ -18,10 +18,13 @@ use crate::{
 
 impl Function<'_, '_, '_, '_> {
     pub(super) fn deletion(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
-        let ExprKind::Delete { operand, .. } = self.tree.expressions.get(id).kind else {
+        let ExprKind::Delete { operand, array, .. } = self.tree.expressions.get(id).kind else {
             return Err(crate::sema::Error::Invariant("deletion without syntax").into());
         };
         let use_ = self.graph.lower_deletion(id)?;
+        if array {
+            return self.delete_array(id, operand, &use_);
+        }
         let source = self.graph.lower_expression(id)?.ty;
         let object = self.operand(operand, Context::Operand)?;
         let class =

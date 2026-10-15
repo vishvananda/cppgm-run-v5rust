@@ -27,6 +27,7 @@ pub(super) struct Allocation {
     pub deallocator: Option<BindingId>,
     pub reserved: bool,
     pub array: Option<ArrayAllocation>,
+    pub sized_array_delete: bool,
 }
 
 /// The first dimension stays a checked expression; only its listed prefix
@@ -43,6 +44,7 @@ pub(super) struct Deletion {
     pub function: BindingId,
     pub target: TypeId,
     pub incomplete: bool,
+    pub sized_array_delete: bool,
 }
 
 fn key(keyword: Keyword, array: bool) -> ValueKey {
@@ -170,14 +172,11 @@ impl Analyzer<'_> {
         {
             element = inner;
         }
-        if array && self.graph.class_of(element).is_some() {
-            return Err(Error::Missing("class array deletion cleanup"));
-        }
         let class = self.graph.class_of(element);
         let incomplete = class.is_some_and(|class| !self.graph.entity(class).complete);
         let class = class.filter(|_| !incomplete);
         if let Some(class) = class {
-            self.class_parameter_destruction(target, scope, location)?;
+            self.class_parameter_destruction(element, scope, location)?;
             if !self.graph.destructor_trivial(class)?
                 && let Some(binding) = self.destructor_callable(class)?
             {
@@ -216,12 +215,14 @@ impl Analyzer<'_> {
         if !incomplete && self.unevaluated == 0 {
             self.request_object_layout(target, location);
         }
+        let sized_array_delete = array && self.sized_array_deallocation(class)?;
         self.graph.expression_facts.set_deletion(
             id,
             Deletion {
                 function,
                 target,
                 incomplete,
+                sized_array_delete,
             },
         );
         let void = self.graph.types.scalar(Scalar::Void)?;
@@ -294,9 +295,6 @@ impl Analyzer<'_> {
         while let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind {
             element = inner;
         }
-        if count.is_some() && self.graph.class_of(element).is_some() {
-            return Err(Error::Missing("class array allocation construction"));
-        }
         if matches!(
             self.graph.types.get(target).kind,
             TypeKind::Function { .. } | TypeKind::Reference { .. } | TypeKind::Scalar(Scalar::Void)
@@ -306,7 +304,7 @@ impl Analyzer<'_> {
                 "a new-expression allocates an object type",
             ));
         }
-        let class = self.graph.class_of(target);
+        let class = self.graph.class_of(element);
         if class.is_some_and(|class| !self.graph.entity(class).complete) {
             return Err(Error::at(
                 location,
@@ -382,8 +380,8 @@ impl Analyzer<'_> {
         } else {
             None
         };
-        let constructor = if array.is_some() {
-            None
+        let constructor = if let Some(array) = array {
+            self.array_allocation_constructor(array, constant, element, scope, location)?
         } else if let Some(initializer) = initializer {
             if class.is_some() {
                 self.initialize_class_object(target, initializer, scope, location)?
@@ -404,7 +402,7 @@ impl Analyzer<'_> {
             None
         };
         let needs_deallocator = if let Some(array) = array {
-            array.prefix.is_some_and(|prefix| matches!(self.graph.types.get(prefix).kind, TypeKind::Array { bound, .. } if bound != 0))
+            class.is_some() || array.prefix.is_some_and(|prefix| matches!(self.graph.types.get(prefix).kind, TypeKind::Array { bound, .. } if bound != 0))
         } else {
             class.is_some() || initializer.is_some()
         };
@@ -433,6 +431,7 @@ impl Analyzer<'_> {
         if self.unevaluated == 0 {
             self.request_object_layout(target, location);
         }
+        let sized_array_delete = array.is_some() && self.sized_array_deallocation(class)?;
         self.graph.expression_facts.set_allocation(
             id,
             Allocation {
@@ -442,6 +441,7 @@ impl Analyzer<'_> {
                 deallocator,
                 reserved,
                 array,
+                sized_array_delete,
             },
         );
         let pointer = self.graph.types.pointer(target)?;
@@ -483,6 +483,32 @@ impl Analyzer<'_> {
             self.qualified_result(self.graph.global, key, Filter::Ordinary)?,
             None,
         ))
+    }
+
+    fn sized_array_deallocation(&mut self, class: Option<EntityId>) -> Result<bool, Error> {
+        let Some(home) = class.and_then(|class| self.graph.entity(class).scope) else {
+            return Ok(false);
+        };
+        let found = match self.qualified_result(home, key(Keyword::Delete, true), Filter::Ordinary)
+        {
+            Ok(found) => found,
+            Err(Error::Diagnostic {
+                message: "ambiguous name",
+                ..
+            }) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let Some(function) = self.usual_deallocation(found.functions.as_slice())? else {
+            return Ok(false);
+        };
+        let ty = self
+            .graph
+            .binding(function)
+            .ty
+            .ok_or(Error::Invariant("array deallocator type"))?;
+        Ok(
+            matches!(&self.graph.types.get(ty).kind, TypeKind::Function { parameters, .. } if parameters.len() == 2),
+        )
     }
 
     fn allocation_deallocator(

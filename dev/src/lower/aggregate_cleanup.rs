@@ -13,6 +13,7 @@ pub(super) struct State {
     pub floor: Option<usize>,
     pub landing: bool,
     pub count: Option<super::aggregate_arrays::Count>,
+    pub counted_item: bool,
     pub call_scope: CallScope,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]

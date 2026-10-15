@@ -605,7 +605,9 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Class(class) if self.graph.lower_aggregate_class(class) => Some(first),
                 _ => None,
             };
+            self.aggregation.counted_item = true;
             self.named_item(ty, input, path, item)?;
+            self.aggregation.counted_item = false;
             self.aggregation.count = Some(self.aggregate_element_made(count, first)?);
             self.aggregation.floor = floor;
             return Ok(());
@@ -729,8 +731,10 @@ impl Function<'_, '_, '_, '_> {
         self.begin_aggregate_member(ty, input.values.get(input.next).copied())?;
         let first = self.lifetime.cleanups.len();
         let aggregate = self.graph.lower_aggregate_class(class);
-        let destroyed =
-            self.aggregation.floor.is_some() && self.symbols.storage_destructor(ty)?.is_some();
+        let counted = std::mem::take(&mut self.aggregation.counted_item);
+        let destroyed = self.aggregation.floor.is_some()
+            && !(aggregate && counted)
+            && self.symbols.storage_destructor(ty)?.is_some();
         let expr = input.values.get(input.next).copied();
         // Omitted scalar-class subobjects end their value-initialization's
         // temporaries separately; array elements remain in the array segment.
@@ -873,8 +877,23 @@ impl Function<'_, '_, '_, '_> {
         {
             let root = self.named_address(path, ty)?;
             let scope = self.begin_counted_elements(ty, root)?;
+            if matches!(path.root, Root::ArrayStorage(_))
+                && matches!(self.graph.lower_type(ty)?, TypeView::Array { element, .. } if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }))
+            {
+                let mut rows = false;
+                for &id in &input.values[input.next..] {
+                    rows |= self.expression_temporaries(id)?.made;
+                }
+                if let Some(count) = self.aggregation.count.as_mut() {
+                    count.rows = rows;
+                }
+            }
             let mut child = Path {
-                root: Root::Address(root),
+                root: if matches!(path.root, Root::ArrayStorage(_)) {
+                    Root::ArrayStorage(root)
+                } else {
+                    Root::Address(root)
+                },
                 steps: Vec::new(),
                 volatile: path.volatile,
             };
@@ -1074,7 +1093,9 @@ impl Function<'_, '_, '_, '_> {
         let mut untyped = false;
         for step in &path.steps {
             let mut offset = self.builder.integer(u128::from(step.offset))?;
-            if let Some(bytes) = step.scale {
+            if let Some(bytes) = step.scale
+                && (bytes != 1 || !matches!(path.root, Root::ArrayStorage(_)))
+            {
                 let size = self.builder.integer(u128::from(bytes))?;
                 offset = self
                     .emit(

@@ -16,9 +16,13 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 
-struct Shape {
-    stride: u64,
-    listed: u64,
+pub(super) struct Shape {
+    pub element: TypeId,
+    pub per_element: u64,
+    pub element_size: u64,
+    pub cookie_bytes: u64,
+    pub stride: u64,
+    pub listed: u64,
     largest: u64,
     checked: bool,
 }
@@ -38,7 +42,25 @@ impl Function<'_, '_, '_, '_> {
         use_: &AllocationView,
         array: ArrayAllocation,
     ) -> Result<Shape, Error> {
-        let stride = types::layout(self.graph, use_.target)?.0;
+        let mut element = use_.target;
+        let mut per_element = 1_u64;
+        while let TypeView::Array {
+            element: inner,
+            bound,
+        } = self.graph.lower_type(element)?
+        {
+            per_element = per_element.wrapping_mul(bound);
+            element = inner;
+        }
+        let (element_size, _) = types::layout(self.graph, element)?;
+        let stride = element_size.wrapping_mul(per_element);
+        let signature = self.graph.lower_function(use_.function)?.ty;
+        let variadic = matches!(
+            self.graph.lower_type(signature)?,
+            TypeView::Function { variadic: true, .. }
+        );
+        let cookie_bytes =
+            self.array_cookie_bytes(element, use_.sized_array_delete, use_.reserved && !variadic)?;
         let listed = match array
             .prefix
             .map(|ty| self.graph.lower_type(ty))
@@ -49,6 +71,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let largest = i64::MAX
             .cast_unsigned()
+            .wrapping_sub(cookie_bytes)
             .checked_div(stride)
             .unwrap_or(i64::MAX.cast_unsigned());
         let checked = if let Some(value) = array.constant {
@@ -63,6 +86,10 @@ impl Function<'_, '_, '_, '_> {
                 || ((1_u64 << bits) - 1) > largest
         };
         Ok(Shape {
+            element,
+            per_element,
+            element_size,
+            cookie_bytes,
             stride,
             listed,
             largest,
@@ -76,12 +103,7 @@ impl Function<'_, '_, '_, '_> {
         use_: &AllocationView,
         array: ArrayAllocation,
     ) -> Result<RValue, Error> {
-        let ExprKind::New {
-            placement,
-            initializer,
-            ..
-        } = self.tree.expressions.get(id).kind
-        else {
+        let ExprKind::New { placement, .. } = self.tree.expressions.get(id).kind else {
             return Err(crate::sema::Error::Invariant("array allocation without syntax").into());
         };
         let shape = self.array_storage_shape(use_, array)?;
@@ -164,52 +186,33 @@ impl Function<'_, '_, '_, '_> {
             .map(|slot| self.emit(I::Load(Facts::memory(false, true), Type::I64, slot), source))
             .transpose()?
             .map_or(size, |value| value.value);
-        let freed = self.initialize_array_storage(id, use_, array, &shape, raw.value, &values)?;
-        let rest = if shape.listed == 0 {
-            raw.value
-        } else {
-            let offset = self
-                .builder
-                .integer(u128::from(shape.listed.wrapping_mul(shape.stride)))?;
-            self.emit(I::Index(Type::I8, None, raw.value, offset), source)?
-                .value
-        };
-        if initializer.is_some() && array.constant.is_none_or(|count| count > shape.listed) {
-            let mut bytes = if let Some(count) = array.constant {
-                self.builder
-                    .integer(u128::from(count.wrapping_mul(shape.stride)))?
-            } else {
-                known_size
-            };
-            if shape.listed != 0 {
-                let listed = self
-                    .builder
-                    .integer(u128::from(shape.listed.wrapping_mul(shape.stride)))?;
-                bytes = self
-                    .emit(
-                        I::Binary(Binary::Sub, Facts::default(), Type::I64, bytes, listed),
-                        source,
-                    )?
-                    .value;
-            }
-            self.zero_allocated_bytes(source, rest, bytes)?;
-        }
-        if let Some(first) = freed {
-            self.close_lifetime_region()?;
-            self.release_aggregate_members(first);
-        }
+        let elements = self.initialize_allocated_array(
+            id,
+            use_,
+            array,
+            &shape,
+            super::array_initialization::Storage {
+                raw: raw.value,
+                size,
+                known_size,
+            },
+            &values,
+        )?;
         if let Some((slot, end)) = slot.zip(end) {
             self.effect(I::Store(
                 Facts::memory(false, true),
                 Type::Ptr,
-                raw.value,
+                elements,
                 slot,
             ))?;
             self.jump(end)?;
             self.place(end)?;
             return self.emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source);
         }
-        Ok(raw)
+        Ok(RValue {
+            value: elements,
+            ..raw
+        })
     }
 
     fn array_storage_size(
@@ -235,7 +238,11 @@ impl Function<'_, '_, '_, '_> {
             let size = if shape.checked {
                 u128::MAX
             } else {
-                u128::from(count.wrapping_mul(shape.stride))
+                u128::from(
+                    count
+                        .wrapping_mul(shape.stride)
+                        .wrapping_add(shape.cookie_bytes),
+                )
             };
             return Ok((self.builder.integer(size)?, None));
         }
@@ -273,7 +280,7 @@ impl Function<'_, '_, '_, '_> {
                 .value;
             self.invalid_array_length(Some(invalid), null)?;
         }
-        let size = if shape.stride == 1 {
+        let mut size = if shape.stride == 1 {
             count
         } else {
             let stride = self.builder.integer(u128::from(shape.stride))?;
@@ -283,6 +290,15 @@ impl Function<'_, '_, '_, '_> {
             )?
             .value
         };
+        if shape.cookie_bytes != 0 {
+            let cookie = self.builder.integer(u128::from(shape.cookie_bytes))?;
+            size = self
+                .emit(
+                    I::Binary(Binary::Add, Facts::default(), Type::I64, size, cookie),
+                    source,
+                )?
+                .value;
+        }
         let slot = self.generated_slot("array_new_size", Type::I64)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, size, slot))?;
         Ok((size, Some(slot)))
@@ -344,61 +360,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
 
-    fn initialize_array_storage(
-        &mut self,
-        id: ast::ExprId,
-        use_: &AllocationView,
-        array: ArrayAllocation,
-        shape: &Shape,
-        raw: Value,
-        values: &[Value],
-    ) -> Result<Option<usize>, Error> {
-        if shape.listed == 0 {
-            return Ok(None);
-        }
-        let ExprKind::New {
-            initializer:
-                Some(ast::Initializer {
-                    kind: ast::InitializerKind::Braced(list),
-                    ..
-                }),
-            ..
-        } = self.tree.expressions.get(id).kind
-        else {
-            return Err(crate::sema::Error::Invariant("array prefix without list").into());
-        };
-        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
-            return Err(crate::sema::Error::Invariant("array prefix without list syntax").into());
-        };
-        let prefix = array
-            .prefix
-            .ok_or(crate::sema::Error::Invariant("array prefix without type"))?;
-        let freed = if let Some(function) = use_.deallocator
-            && self.expression_throws(list)?
-        {
-            let first = self.lifetime.cleanups.len();
-            let mut arguments = values.to_vec();
-            arguments[0] = raw;
-            let ty = self.graph.lower_function(function)?.ty;
-            let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
-                return Err(crate::sema::Error::Invariant("array deallocation signature").into());
-            };
-            arguments.truncate(parameters.len());
-            let arguments = self.builder.arguments(&arguments)?;
-            self.register_storage_cleanup(prefix, raw, function, Some(arguments))?;
-            Some(first)
-        } else {
-            None
-        };
-        let saved = self.reference_lifetimes.aggregate.take();
-        let initialized =
-            self.allocated_array_prefix(prefix, raw, self.tree.expr_lists.get(elements));
-        self.reference_lifetimes.aggregate = saved;
-        initialized?;
-        Ok(freed)
-    }
-
-    fn zero_allocated_bytes(
+    pub(super) fn zero_allocated_bytes(
         &mut self,
         source: TypeId,
         storage: Value,

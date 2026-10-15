@@ -214,7 +214,11 @@ impl Function<'_, '_, '_, '_> {
         if self.element_temporaries.depth != 0 {
             return Ok(());
         }
+        let storage = self.storage_region_pending();
         self.storage_region_event()?;
+        if storage && self.lifetime.region {
+            self.lifetime.call_region = super::lifetime::CallRegion::Enclosing;
+        }
         if throws && self.storage_region_pending() && self.lifetime.tracking.construction.active() {
             let position = self.builder.position()?;
             return self.open_temporary_region_at(Some(position));

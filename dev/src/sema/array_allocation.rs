@@ -5,10 +5,12 @@ use super::{
     Error,
     allocation::ArrayAllocation,
     analyzer::Analyzer,
+    construction::ConstructorId,
+    constructor_initialization::ConstructorArguments,
     graph::ScopeId,
     types::{TypeId, TypeKind},
 };
-use crate::syntax::ast;
+use crate::syntax::{ast, storage::List};
 
 impl Analyzer<'_> {
     pub(super) fn check_allocation_count(
@@ -88,7 +90,7 @@ impl Analyzer<'_> {
                     ));
                 }
             }
-        } else if self.type_cv(element).0 & 1 != 0 {
+        } else if self.graph.class_of(element).is_none() && self.type_cv(element).0 & 1 != 0 {
             return Err(Error::at(location, "a const object needs an initializer"));
         }
         // Validation uses any integral constant expression. The frozen O0
@@ -108,6 +110,54 @@ impl Analyzer<'_> {
         })
     }
 
+    pub(super) fn array_allocation_constructor(
+        &mut self,
+        array: ArrayAllocation,
+        constant: Option<u64>,
+        element: TypeId,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
+        let Some(class) = self.graph.class_of(element) else {
+            return Ok(None);
+        };
+        let listed = match array.prefix.map(|ty| &self.graph.types.get(ty).kind) {
+            Some(TypeKind::Array { bound, .. }) => *bound,
+            _ => 0,
+        };
+        let mut trailing = constant.is_none_or(|count| count > listed)
+            || constant == Some(0) && array.prefix.is_none();
+        if constant == Some(0) && array.prefix.is_some() {
+            trailing = if self.graph.entity(class).user_constructor.is_none() {
+                true
+            } else {
+                match self.default_constructor_binding(class, location) {
+                    Ok(binding) => {
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .availability
+                            != super::graph::FunctionAvailability::Deleted
+                    }
+                    Err(Error::Diagnostic {
+                        message: "no default constructor for the class",
+                        ..
+                    }) => false,
+                    Err(error) => return Err(error),
+                }
+            };
+        }
+        let constructor = if trailing {
+            let constructor = self.default_constructor(class, location)?;
+            self.validate_constructor_use(constructor, scope, location)?;
+            self.demand_constructor_use(constructor);
+            Some((constructor, ConstructorArguments::Values(List::default())))
+        } else {
+            None
+        };
+        self.class_parameter_destruction(element, scope, location)?;
+        Ok(constructor)
+    }
+
     pub(super) fn array_length_may_throw(&mut self, id: ast::ExprId) -> Result<bool, Error> {
         let use_ = self.graph.expression_facts.allocation(id)?;
         let Some(array) = use_.array else {
@@ -123,8 +173,36 @@ impl Analyzer<'_> {
         let size = self
             .type_size(use_.target, self.tree.expressions.get(id).location)?
             .0;
+        let mut element = use_.target;
+        while let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind {
+            element = inner;
+        }
+        let cookie = if let Some(class) = self.graph.class_of(element) {
+            let signature = self
+                .graph
+                .binding(use_.function)
+                .ty
+                .ok_or(Error::Invariant("array allocation type"))?;
+            let variadic = matches!(
+                self.graph.types.get(signature).kind,
+                TypeKind::Function { variadic: true, .. }
+            );
+            if (!use_.reserved || variadic)
+                && (use_.sized_array_delete || !self.graph.destructor_trivial(class)?)
+            {
+                8_u64.max(
+                    self.type_size(element, self.tree.expressions.get(id).location)?
+                        .1,
+                )
+            } else {
+                0
+            }
+        } else {
+            0
+        };
         let largest = i64::MAX
             .cast_unsigned()
+            .wrapping_sub(cookie)
             .checked_div(size)
             .unwrap_or(i64::MAX.cast_unsigned());
         if let Some(value) = array.constant {
@@ -149,6 +227,66 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn full_class_prefix_keeps_cookie_facts_without_demanding_a_deleted_default() {
+        let source = SourceBuffer::new(
+            b"struct Unused{};struct A{A(int);A()=delete;~A();\
+              static void operator delete[](void*,unsigned long)noexcept;};\
+              A*f(){return new A[2]{1,2};}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"class-array-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declaration_count);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[2])
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let ast::StmtKind::Return(Some(id)) =
+            tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return");
+        };
+        let allocation = graph.lower_allocation(id).unwrap();
+        assert!(allocation.constructor.is_none());
+        assert!(allocation.sized_array_delete);
+        assert!(allocation.deallocator.is_some());
+        let array = allocation.array.unwrap();
+        assert_eq!(array.constant, Some(2));
+        assert!(matches!(graph.lower_type(array.prefix.unwrap()).unwrap(),
+            super::super::lowering::TypeView::Array { element, bound: 2 } if element == allocation.target));
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(
+                graph
+                    .own(graph.global, unused, super::super::lookup::Filter::Prefix)
+                    .unwrap(),
+            )
+            .entity;
+        assert!(matches!(
+            graph.entity(unused).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+    }
 
     #[test]
     fn runtime_array_keeps_original_bound_and_only_interns_its_list_prefix() {

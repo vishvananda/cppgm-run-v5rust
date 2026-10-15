@@ -931,7 +931,7 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        self.check_direct_member_access(binding, scope, location)
+        self.check_special_member_access(binding, class, scope, location)
     }
 
     pub(super) fn written_constructor_plan(

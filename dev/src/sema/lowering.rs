@@ -40,11 +40,13 @@ pub(crate) struct AllocationView {
     pub deallocator: Option<EntityId>,
     pub reserved: bool,
     pub array: Option<ArrayAllocation>,
+    pub sized_array_delete: bool,
 }
 pub(crate) struct DeletionView {
     pub function: EntityId,
     pub target: TypeId,
     pub incomplete: bool,
+    pub sized_array_delete: bool,
 }
 pub(crate) struct VariableFacts {
     pub name: Option<NameId>,
@@ -223,6 +225,7 @@ impl Graph {
             deallocator: use_.deallocator.map(|binding| self.binding(binding).entity),
             reserved: use_.reserved,
             array: use_.array,
+            sized_array_delete: use_.sized_array_delete,
         })
     }
     pub(crate) fn lower_deletion(&self, id: ast::ExprId) -> Result<DeletionView, Error> {
@@ -231,6 +234,7 @@ impl Graph {
             function: self.binding(use_.function).entity,
             target: use_.target,
             incomplete: use_.incomplete,
+            sized_array_delete: use_.sized_array_delete,
         })
     }
     pub(crate) fn lower_base_initialization_span(

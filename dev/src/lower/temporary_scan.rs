@@ -437,8 +437,25 @@ impl Function<'_, '_, '_, '_> {
                     initializer,
                     ..
                 } => {
-                    if let Some(array) = self.graph.lower_allocation(id)?.array {
+                    let allocation = self.graph.lower_allocation(id)?;
+                    if let Some(array) = allocation.array {
                         work.push(array.count);
+                    }
+                    if let Some((constructor, _)) = allocation.constructor {
+                        let ty = self.graph.lower_constructor_function(constructor)?.ty;
+                        let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)?
+                        else {
+                            return Err(
+                                crate::sema::Error::Invariant("new constructor signature").into()
+                            );
+                        };
+                        for &parameter in parameters {
+                            let caller =
+                                matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
+                                    && self.temporary_type_destroyed(parameter)?;
+                            summary.made |= caller;
+                            summary.caller_destroyed |= caller;
+                        }
                     }
                     work.extend(self.tree.expr_lists.get(placement.unwrap_or_default()));
                     if let Some(initializer) = initializer {

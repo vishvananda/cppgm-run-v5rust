@@ -231,7 +231,9 @@ impl Function<'_, '_, '_, '_> {
         let transient = !nothrow
             && !self.lifetime.full_expression
             && !self.lifetime.construction
-            && !self.lifetime.region;
+            && !self.lifetime.region
+            && self.aggregation.floor.is_none()
+            && !self.storage_region_pending();
         self.before_lifetime_call(
             !nothrow
                 || self.lifetime.full_expression
