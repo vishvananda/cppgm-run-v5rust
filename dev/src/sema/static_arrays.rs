@@ -58,7 +58,24 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let mut image = Vec::new();
-        let complete = self.static_array_element(target, Some(expr), scope, &mut image)?;
+        let zeroed = matches!(self.tree.expressions.get(expr).kind,
+            ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty())
+            && self
+                .graph
+                .lower_construction(entity)
+                .is_some_and(|constructor| {
+                    self.graph.lower_constructor_trivial(constructor)
+                        && self.graph.lower_constructor(constructor).zero_before_value
+                });
+        let complete = if zeroed && self.graph.lower_variable(entity)?.thread_local {
+            // The frozen static-global path does not probe evaluated class
+            // initialization for TLS; its first-use initializer retains the work.
+            false
+        } else if zeroed {
+            self.static_value_zero(target, &mut image)?
+        } else {
+            self.static_array_element(target, Some(expr), scope, &mut image)?
+        };
         self.graph.array_images.values.insert(
             entity,
             if complete {
@@ -78,6 +95,24 @@ impl Analyzer<'_> {
     ) -> Result<bool, Error> {
         self.check_stack()?;
         if let TypeKind::Class(class) = self.graph.types.get(target).kind {
+            if expr.is_none() && !self.graph.aggregate_class(class) {
+                // An omitted nonaggregate subobject with trivial default
+                // construction is zero bytes (missing_element), distinct from
+                // the scalar zeros of an evaluated value-initialization.
+                if !self
+                    .graph
+                    .lower_ready_default_constructor(class)
+                    .is_some_and(|constructor| self.graph.lower_constructor_trivial(constructor))
+                {
+                    return Ok(false);
+                }
+                append_zero(
+                    out,
+                    self.type_size(target, crate::support::source::SourceOffset(0))?
+                        .0,
+                )?;
+                return Ok(true);
+            }
             if let Some(expr) = expr
                 && let Some(complete) = self.static_zero_prvalue(target, expr, out)?
             {

@@ -9,6 +9,7 @@ use crate::{
     sema::lowering::{EntityId, StaticValue, TypeView},
     syntax::ast,
 };
+#[derive(Clone, Copy)]
 pub(super) struct StorageSymbols {
     pub object: crate::lowir::model::SymbolId,
     pub metadata: crate::lowir::model::Metadata,
@@ -53,77 +54,85 @@ impl Function<'_, '_, '_, '_> {
             ordinal,
             dynamic,
         )?;
-        let mut init = if array {
-            GlobalInit::Data(
-                if initializer.is_some()
-                    && !dynamic
-                    && let Some(image) = self.graph.lower_array_image(entity)
-                {
-                    data::items(
-                        self.builder.program(),
-                        self.symbols,
-                        self.graph,
-                        self.tree,
-                        image,
-                    )?
-                } else {
-                    vec![DataItem::Zero(
-                        i64::try_from(types::layout(self.graph, facts.ty)?.0)
-                            .map_err(|_| crate::lowir::Error::Limit)?,
-                    )]
-                },
-            )
-        } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
-            match value {
-                StaticValue::Address(..) | StaticValue::Literal(..) => {
-                    let (target, offset) = data::address(
-                        self.builder.program(),
-                        self.symbols,
-                        self.graph,
-                        self.tree,
-                        value,
-                    )?;
-                    GlobalInit::Address(target, offset)
+        let defined = {
+            let program = self.builder.program();
+            program.global(program.symbol(symbol)).is_some()
+        };
+        if !defined {
+            let mut init = if array {
+                GlobalInit::Data(
+                    if initializer.is_some()
+                        && !dynamic
+                        && let Some(image) = self.graph.lower_array_image(entity)
+                    {
+                        data::items(
+                            self.builder.program(),
+                            self.symbols,
+                            self.graph,
+                            self.tree,
+                            image,
+                        )?
+                    } else {
+                        vec![DataItem::Zero(
+                            i64::try_from(types::layout(self.graph, facts.ty)?.0)
+                                .map_err(|_| crate::lowir::Error::Limit)?,
+                        )]
+                    },
+                )
+            } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
+                match value {
+                    StaticValue::Address(..) | StaticValue::Literal(..) => {
+                        let (target, offset) = data::address(
+                            self.builder.program(),
+                            self.symbols,
+                            self.graph,
+                            self.tree,
+                            value,
+                        )?;
+                        GlobalInit::Address(target, offset)
+                    }
+                    _ => GlobalInit::Constant(data::constant(value)?),
                 }
-                _ => GlobalInit::Constant(data::constant(value)?),
+            } else {
+                GlobalInit::Zero
+            };
+            if !dynamic && !facts.thread_local && self.symbols.readonly_object(facts.ty)? {
+                metadata.storage = Some(Storage::ReadOnly);
             }
-        } else {
-            GlobalInit::Zero
-        };
-        if !dynamic && !facts.thread_local && self.symbols.readonly_object(facts.ty)? {
-            metadata.storage = Some(Storage::ReadOnly);
+            let program = self.builder.program();
+            let name = program.symbol(symbol).name;
+            let mut ty = if let GlobalInit::Data(items) = &init {
+                super::globals::structured_type(self.graph, facts.ty, items)?
+            } else {
+                Some(types::storage(self.graph, facts.ty)?)
+            };
+            super::globals::align_storage(self.graph, entity, &mut ty, &mut init)?;
+            program.add_global(
+                symbol,
+                Global {
+                    name,
+                    ty,
+                    metadata,
+                    init,
+                },
+            )?;
+            if let Some((guard, metadata)) = guard {
+                let name = program.symbol(guard).name;
+                program.add_global(
+                    guard,
+                    Global {
+                        name,
+                        ty: Some(Type::I64),
+                        metadata,
+                        init: GlobalInit::Zero,
+                    },
+                )?;
+            }
         }
-        let program = self.builder.program();
-        let name = program.symbol(symbol).name;
-        let mut ty = if let GlobalInit::Data(items) = &init {
-            super::globals::structured_type(self.graph, facts.ty, items)?
-        } else {
-            Some(types::storage(self.graph, facts.ty)?)
-        };
-        super::globals::align_storage(self.graph, entity, &mut ty, &mut init)?;
-        program.add_global(
-            symbol,
-            Global {
-                name,
-                ty,
-                metadata,
-                init,
-            },
-        )?;
         self.locals.insert(entity, Value::Symbol(symbol));
-        let Some((guard, metadata)) = guard else {
+        let Some((guard, _)) = guard else {
             return Ok(());
         };
-        let name = program.symbol(guard).name;
-        program.add_global(
-            guard,
-            Global {
-                name,
-                ty: Some(Type::I64),
-                metadata,
-                init: GlobalInit::Zero,
-            },
-        )?;
         if self.terminated {
             return Ok(());
         }

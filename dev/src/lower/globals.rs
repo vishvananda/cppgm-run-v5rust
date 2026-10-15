@@ -179,10 +179,10 @@ fn define_storage(
         }
     } else if array {
         GlobalInit::Data(
-            if !constructed
-                && initializer.is_some()
+            if initializer.is_some()
                 && let Some(image) = graph.lower_array_image(entity)
             {
+                dynamic = false;
                 data::items(program, symbols, graph, tree, image)?
             } else {
                 dynamic |= initializer.is_some();

@@ -124,6 +124,8 @@ pub(super) struct Symbols<'a, 'source> {
     class_parameters: super::class_parameters::Classes,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<EntityId, bool>,
+    // A source declaration is shared by every ABI entry running its body.
+    local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn new(
@@ -166,6 +168,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             class_parameters: super::class_parameters::Classes::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
+            local_statics: HashMap::new(),
             signatures: HashMap::new(),
         }
     }
@@ -1227,6 +1230,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         dynamic: bool,
     ) -> Result<super::local_storage::StorageSymbols, Error> {
         use crate::lowir::vocabulary::{Binding, Storage};
+        if let Some(&symbols) = self.local_statics.get(&entity) {
+            return Ok(symbols);
+        }
         let facts = self.graph.lower_variable(entity)?;
         let owner = self.function_symbol(program, function)?;
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
@@ -1301,11 +1307,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             None
         };
-        Ok(super::local_storage::StorageSymbols {
+        let symbols = super::local_storage::StorageSymbols {
             object: symbol,
             guard,
             metadata,
-        })
+        };
+        self.local_statics.insert(entity, symbols);
+        Ok(symbols)
     }
     pub(super) fn variable_metadata(
         &self,
