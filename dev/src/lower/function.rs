@@ -521,29 +521,34 @@ impl Function<'_, '_, '_, '_> {
         let expression = self.lifetime.full_expression;
         let temporary_floor = self.lifetime.cleanups.len();
         let temporaries = self.initializer_temporaries(initializer)?;
-        let began =
-            if !expression && self.constructor_expression(entity, initializer, temporaries)? {
-                self.lifetime.full_expression = true;
-                self.ensure_insertion()?;
-                self.lifetime.expression_start = Some(self.builder.position()?);
-                true
-            } else if object && !temporaries {
-                false
-            } else if let Some(ast::Initializer {
-                kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),
-                ..
-            }) = initializer
-            {
-                self.begin_full_expression(Some(id))?
-            } else if temporaries
-                && self.initializer_throws(initializer)?
-                && !self.lifetime.full_expression
-            {
-                self.lifetime.full_expression = true;
-                true
-            } else {
-                self.begin_lifetime_expression()
-            };
+        let began = if !expression
+            && self.constructor_expression(entity, initializer, temporaries)?
+        {
+            self.lifetime.full_expression = true;
+            self.lifetime.temporary_segment =
+                super::lifetime::TemporarySegment::new(temporaries, false);
+            self.ensure_insertion()?;
+            self.lifetime.expression_start = Some(self.builder.position()?);
+            true
+        } else if object && !temporaries {
+            false
+        } else if let Some(ast::Initializer {
+            kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),
+            ..
+        }) = initializer
+        {
+            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Ordinary)?
+        } else if temporaries
+            && self.initializer_throws(initializer)?
+            && !self.lifetime.full_expression
+        {
+            self.lifetime.full_expression = true;
+            self.lifetime.temporary_segment =
+                super::lifetime::TemporarySegment::new(temporaries, false);
+            true
+        } else {
+            self.begin_lifetime_expression()
+        };
         let construction = self.lifetime.construction;
         self.lifetime.construction |= object;
         let saved_owner = self.reference_lifetimes.aggregate;

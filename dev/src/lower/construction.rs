@@ -95,6 +95,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let entry = Entry::Constructor(id, variant);
         let facts = entry.facts(self.graph)?;
+        self.begin_lifetime_call(!facts.nothrow)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "constructor signature missing",
@@ -104,8 +105,7 @@ impl Function<'_, '_, '_, '_> {
         for index in 0..parameters.len().max(written.len()) {
             let parameter = parameters.get(index).copied();
             if parameter.is_none() {
-                let value = self.operand(written[index], Context::Argument)?;
-                values.push(value.value);
+                values.push(self.ellipsis_argument(written[index])?);
                 continue;
             }
             let parameter = parameter.ok_or(Error::Semantic(crate::sema::Error::Invariant(
@@ -137,7 +137,11 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        self.emit_constructor_call(entry, facts.nothrow, &values)
+        let result = self.emit_constructor_call(entry, facts.nothrow, &values);
+        if !facts.nothrow && self.lifetime.full_expression {
+            self.lifetime.call_marks.pop();
+        }
+        result
     }
     fn emit_constructor_call(
         &mut self,

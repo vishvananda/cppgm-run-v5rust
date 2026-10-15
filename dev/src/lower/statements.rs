@@ -86,7 +86,8 @@ impl Function<'_, '_, '_, '_> {
                         result,
                     );
                 }
-                let began = self.begin_full_expression(operand)?;
+                let began = self
+                    .begin_full_expression(operand, super::temporary_scan::ExpressionUse::Value)?;
                 let value = if let Some(id) = operand {
                     if matches!(
                         self.graph.lower_type(result)?,

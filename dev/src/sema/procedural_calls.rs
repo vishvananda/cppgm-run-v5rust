@@ -26,6 +26,7 @@ pub(super) enum Candidates {
         converting: bool,
     },
 }
+
 impl Candidates {
     fn bindings(self, graph: &super::graph::Graph) -> &[BindingId] {
         match self {
@@ -1088,7 +1089,19 @@ impl Analyzer<'_> {
                 "argument of type void",
             ));
         }
-        let mut target = self.decayed_type(facts.ty)?;
+        let mut target = if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)) {
+            facts.ty
+        } else {
+            self.decayed_type(facts.ty)?
+        };
+        if self.lowering()
+            && self.unevaluated == 0
+            && matches!(self.graph.types.get(target).kind, TypeKind::Class(class) if self.graph.entity(class).complete)
+        {
+            // The ellipsis has no declared parameter whose call boundary
+            // would request this storage. Defer layout with the owning body.
+            self.request_object_layout(target, crate::support::source::SourceOffset(0));
+        }
         if matches!(
             self.graph.types.get(target).kind,
             TypeKind::Scalar(Scalar::Basic(F::Float))
@@ -1103,9 +1116,21 @@ impl Analyzer<'_> {
         } else if self.is_integral_operand(target) {
             target = self.promoted_type(target)?;
         }
+        // The frozen ellipsis path records a target even when no ordinary
+        // implicit sequence exists; it does not select a copy constructor.
         let mut conversion = self
             .scalar_sequence(facts, target, false)?
-            .ok_or(Error::Missing("class ellipsis argument"))?;
+            .unwrap_or(Conversion {
+                target,
+                result: target,
+                first: L::None,
+                second: C::None,
+                rank: R::Exact,
+                qualification: false,
+                initialization: false,
+                temporary: false,
+                reference_source: ReferenceSource::Other,
+            });
         conversion.rank = R::Ellipsis;
         facts.conversion = Some(conversion);
         self.graph.expression_facts.set(id, facts);
@@ -1133,6 +1158,105 @@ impl Analyzer<'_> {
                 self.bare_type(result)?
             };
             self.new_expression_facts(result, V::Prvalue)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{
+            Analyzer,
+            expression_facts::{ConversionRank, ValueCategory},
+            layout::LayoutState,
+            lookup::Filter,
+            types::Cv,
+        },
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    #[test]
+    fn ellipsis_retains_class_operand_identity_without_selecting_a_copy() {
+        let source = SourceBuffer::new(
+            b"struct E{int n;};int take(...);int g(const E&e){return take(((e)));}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"ellipsis-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(syntax_count, tree.expressions.mark());
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[2])
+            .kind
+        else {
+            panic!("function body");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound body");
+        };
+        let ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+        else {
+            panic!("return call");
+        };
+        let ast::ExprKind::Call { arguments, .. } = tree.expressions.get(call).kind else {
+            panic!("ordinary call");
+        };
+        let argument = tree.expr_lists.get(arguments)[0];
+        let root = graph.expression_facts.root(argument);
+        assert_ne!(argument, root);
+        let facts = graph.expression_facts.get(argument).unwrap();
+        assert_eq!(facts.category, ValueCategory::Lvalue);
+        assert_eq!(graph.types.get(facts.ty).cv, Cv::CONST);
+        let conversion = facts.conversion.unwrap();
+        assert_eq!(conversion.target, facts.ty);
+        assert_eq!(graph.types.get(conversion.result).cv, Cv::default());
+        assert_eq!(graph.class_of(conversion.result), graph.class_of(facts.ty));
+        assert_eq!(conversion.rank, ConversionRank::Ellipsis);
+        assert_eq!(graph.expression_facts.get(root).unwrap().ty, facts.ty);
+        assert!(facts.class_copy.is_none());
+        assert!(graph.lower_class_copy(argument).unwrap().is_none());
+    }
+
+    #[test]
+    fn ellipsis_storage_layout_follows_emission_and_unevaluated_boundaries() {
+        let source = SourceBuffer::new(
+            b"int take(...);struct Used{int n;};struct Unused{int n;};struct Query{int n;};inline int unused(){return take(Unused{});}int g(){return take(Used{2})+sizeof(take(Query{}));}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"ellipsis-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        for (name, needed) in [
+            (b"Used".as_slice(), true),
+            (b"Unused", false),
+            (b"Query", false),
+        ] {
+            let name = cursor.intern_name(name).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert_eq!(
+                matches!(graph.entity(class).layout, LayoutState::Value { .. }),
+                needed,
+            );
+            assert!(graph.entity(class).implicit_copies.is_none());
         }
     }
 }

@@ -25,6 +25,32 @@ impl TemporaryUse {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    // expression_lowering.cpp::push_converted's null-parameter class path:
+    // course LowIR passes the address of a caller-owned byte copy. Unlike a
+    // declared class parameter, this path neither selects a copy constructor
+    // nor registers destruction of the copied argument.
+    pub(super) fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+        let facts = self.graph.lower_expression(id)?;
+        let TypeView::Class(class) = self.graph.lower_type(facts.ty)? else {
+            return Ok(self
+                .operand(id, super::conversions::Context::Argument)?
+                .value);
+        };
+        let ty = facts.ty;
+        let slot = self.generated_slot("arg", types::storage(self.graph, ty)?)?;
+        let object = self.emit(I::Addr(slot), ty)?.value;
+        if facts.is_place {
+            let source = self.address(id)?;
+            if !self.graph.lower_class_empty(class)? {
+                let (size, alignment) = types::layout(self.graph, ty)?;
+                let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
+                self.effect(I::CopyObject(size, alignment, source, object))?;
+            }
+        } else {
+            self.materialize_class(id, ty, object)?;
+        }
+        Ok(object)
+    }
     pub(super) fn named_elided_list(
         &self,
         initializer: Option<ast::Initializer>,

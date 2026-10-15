@@ -3,7 +3,6 @@
 //! Allocation results own explicit storage, never an automatic object's cleanup.
 use super::{
     Error,
-    conversions::Context,
     function::{Function, RValue},
     types,
 };
@@ -52,7 +51,7 @@ impl Function<'_, '_, '_, '_> {
             let value = if let Some(&parameter) = parameters.get(index) {
                 self.operator_argument(argument, parameter)?
             } else {
-                self.operand(argument, Context::Argument)?.value
+                self.ellipsis_argument(argument)?
             };
             values.push(value);
         }

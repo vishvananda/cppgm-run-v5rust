@@ -570,7 +570,7 @@ impl Function<'_, '_, '_, '_> {
             return self.zero(source);
         }
         let throws = self.lifetime_call_throws(target)?;
-        self.begin_lifetime_call(throws)?;
+        self.begin_argument_call(throws, self.tree.expr_lists.get(arguments))?;
         let function_type = match target {
             CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
@@ -658,7 +658,7 @@ impl Function<'_, '_, '_, '_> {
         }
         if variadic {
             for &argument in supplied.iter().skip(parameters.len()) {
-                values.push(self.operand(argument, Context::Argument)?.value);
+                values.push(self.ellipsis_argument(argument)?);
             }
         }
         let (callee, signature) = match target {

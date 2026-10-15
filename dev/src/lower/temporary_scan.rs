@@ -12,16 +12,27 @@ pub(super) struct TemporarySummary {
     pub call_result: bool,
     pub caller_destroyed: bool,
 }
+#[derive(Clone, Copy)]
+pub(super) enum ExpressionUse {
+    Ordinary,
+    Value,
+    ClassResult,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn begin_full_expression(
         &mut self,
         root: Option<ast::ExprId>,
+        usage: ExpressionUse,
     ) -> Result<bool, Error> {
         if self.lifetime.full_expression || self.static_initializer {
             return Ok(false);
         }
         let Some(root) = root else { return Ok(false) };
-        let summary = self.expression_temporaries(root)?;
+        let summary = if matches!(usage, ExpressionUse::ClassResult) {
+            self.operand_temporaries(root)?
+        } else {
+            self.expression_temporaries(root)?
+        };
         if !summary.made && self.lifetime.cleanups.is_empty() {
             return Ok(false);
         }
@@ -30,6 +41,10 @@ impl Function<'_, '_, '_, '_> {
             && (throwing || summary.call_result || summary.caller_destroyed)
         {
             self.lifetime.full_expression = true;
+            self.lifetime.temporary_segment = super::lifetime::TemporarySegment::new(
+                summary.made,
+                !matches!(usage, ExpressionUse::Ordinary) && throwing,
+            );
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);
             return Ok(true);
@@ -152,6 +167,24 @@ impl Function<'_, '_, '_, '_> {
                 }
                 ExprKind::Braced { elements, .. } => {
                     work.extend(self.tree.expr_lists.get(elements));
+                }
+                ExprKind::New {
+                    placement,
+                    initializer,
+                    ..
+                } => {
+                    work.extend(self.tree.expr_lists.get(placement.unwrap_or_default()));
+                    if let Some(initializer) = initializer {
+                        match initializer.kind {
+                            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                                work.push(id);
+                            }
+                            ast::InitializerKind::Parenthesized(arguments) => {
+                                work.extend(self.tree.expr_lists.get(arguments));
+                            }
+                            _ => (),
+                        }
+                    }
                 }
                 _ => (),
             }

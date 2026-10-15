@@ -165,7 +165,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let first = self.lifetime.cleanups.len();
         let began = if let Condition::Expression(id) = condition {
-            self.begin_full_expression(Some(id))?
+            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?
         } else {
             self.begin_lifetime_expression()
         };
@@ -217,7 +217,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let first = self.lifetime.cleanups.len();
         let began = if let Condition::Expression(id) = condition {
-            self.begin_full_expression(Some(id))?
+            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?
         } else {
             self.begin_lifetime_expression()
         };

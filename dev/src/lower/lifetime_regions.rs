@@ -127,7 +127,40 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    pub(super) fn begin_argument_call(
+        &mut self,
+        throws: bool,
+        arguments: &[crate::syntax::ast::ExprId],
+    ) -> Result<(), Error> {
+        self.begin_lifetime_call(throws)?;
+        // cleanup_lowering.cpp::note_call_arguments/begin_call: a return or
+        // condition's hidden segment opens before a throwing call's operands
+        // when they make temporaries, even if none has become alive yet.
+        if self.lifetime.full_expression
+            && self.lifetime.temporary_segment.allows_eager_arguments()
+            && !self.lifetime.region
+        {
+            for &argument in arguments {
+                if self.expression_temporaries(argument)?.made {
+                    self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
+                    if throws {
+                        self.open_temporary_region()?;
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
+        if throws
+            && self.lifetime.full_expression
+            && self.lifetime.temporary_segment.is_eager()
+            && !self.lifetime.region
+            && !self.lifetime.call_marks.is_empty()
+        {
+            return self.open_temporary_region_at(self.lifetime.expression_start);
+        }
         if self.static_initializer
             || !throws
             || self.lifetime.region
@@ -193,7 +226,8 @@ impl Function<'_, '_, '_, '_> {
             self.close_lifetime_region()?;
         }
         if !transient
-            && self.lifetime.region
+            && (self.lifetime.region
+                || self.lifetime.full_expression && self.lifetime.temporary_segment.is_present())
             && !matches!(value.ty, Type::Void | Type::Object { .. })
         {
             let slot = self.generated_slot("call", value.ty)?;
@@ -240,7 +274,8 @@ impl Function<'_, '_, '_, '_> {
         id: crate::syntax::ast::ExprId,
     ) -> Result<(), Error> {
         let first = self.lifetime.cleanups.len();
-        let began = self.begin_full_expression(Some(id))?;
+        let began =
+            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Ordinary)?;
         self.discard(id)?;
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(began)
@@ -249,6 +284,7 @@ impl Function<'_, '_, '_, '_> {
         if began {
             self.close_lifetime_region()?;
             self.lifetime.full_expression = false;
+            self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Empty;
             self.lifetime.expression_start = None;
         }
         Ok(())

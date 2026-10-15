@@ -56,6 +56,34 @@ pub(super) struct LiveNode {
     pub variable: EntityId,
     pub parent: Option<LiveId>,
 }
+#[derive(Clone, Copy, Default)]
+pub(super) enum TemporarySegment {
+    #[default]
+    Empty,
+    Delayed,
+    Hidden,
+    Eager,
+}
+impl TemporarySegment {
+    pub(super) fn new(made: bool, eager: bool) -> Self {
+        if !made {
+            Self::Empty
+        } else if eager {
+            Self::Hidden
+        } else {
+            Self::Delayed
+        }
+    }
+    pub(super) fn is_eager(self) -> bool {
+        matches!(self, Self::Eager)
+    }
+    pub(super) fn allows_eager_arguments(self) -> bool {
+        matches!(self, Self::Hidden | Self::Eager)
+    }
+    pub(super) fn is_present(self) -> bool {
+        !matches!(self, Self::Empty)
+    }
+}
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
@@ -72,6 +100,7 @@ pub(super) struct Lifetime {
     pub labels: HashMap<crate::lex::identifiers::NameId, Option<LiveId>>,
     pub depths: HashMap<EntityId, usize>,
     pub full_expression: bool,
+    pub temporary_segment: TemporarySegment,
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,

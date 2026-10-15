@@ -153,7 +153,8 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn class_return(&mut self, id: ast::ExprId, result: TypeId) -> Result<(), Error> {
         let boundary = self.symbols.result_boundary(result)?;
-        let began = self.begin_full_expression(Some(id))?;
+        let began = self
+            .begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::ClassResult)?;
         let (object, value) = if let Some(object) = self.result_destination {
             (object, None)
         } else {
