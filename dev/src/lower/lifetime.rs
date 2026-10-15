@@ -470,32 +470,41 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.full_expression = false;
         }
         let pending = self.lifetime.pending.len();
+        // Objects completed after a temporary (notably a conversion result
+        // whose reference extends it) must also unwind if its destructor
+        // throws. Retain only these actions while walking backwards, rather
+        // than repeatedly scanning or copying the complete cleanup suffix.
+        let mut extended = Vec::new();
         for index in (first..self.lifetime.cleanups.len()).rev() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
                 let destroys_completed = self.destructor_throws(cleanup.ty)?;
-                let below = if constructed {
-                    Some(self.cleanup_prefix(true, index)?)
-                } else if throwing && destroys_completed && (index != 0 || completed.is_some()) {
-                    let tail = self.cleanup_prefix(true, index)?;
-                    if let Some(completed) = completed {
+                let below = if throwing
+                    && destroys_completed
+                    && (completed.is_some() || !extended.is_empty())
+                {
+                    let mut tail = self.cleanup_prefix(true, index)?;
+                    for &action in extended.iter().rev().chain(completed.iter()) {
                         let block = self.new_block("cleanup_action")?;
                         self.lifetime.pending.push(ChainBlock {
                             block,
-                            action: Some(completed),
+                            action: Some(action),
                             tail: Some(tail),
                             unwinding: true,
                             constructor_tail: self.constructor_unwind_target(),
                             below: None,
                         });
-                        Some(block)
-                    } else {
-                        Some(tail)
+                        tail = block;
                     }
+                    Some(tail)
+                } else if constructed || throwing && destroys_completed && index != 0 {
+                    Some(self.cleanup_prefix(true, index)?)
                 } else {
                     None
                 };
                 self.destroy_cleanup_in(cleanup, below, false)?;
+            } else {
+                extended.push(cleanup);
             }
         }
         self.lifetime.full_expression = full_expression;

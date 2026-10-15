@@ -707,7 +707,17 @@ impl Function<'_, '_, '_, '_> {
                 "reference without initializer",
             )))?;
             let expr = self.initializer_expression(initializer)?;
-            let address = self.bind_extended_reference(expr, ty, entity)?;
+            let saved = self.empty_value_zeroing;
+            self.empty_value_zeroing = if self.graph.lower_function_conversion(expr)?.is_some()
+                || self.graph.lower_base_conversion_offset(expr)?.is_none()
+            {
+                super::construction::EmptyValueZeroing::Omit
+            } else {
+                super::construction::EmptyValueZeroing::Emit
+            };
+            let address = self.bind_extended_reference(expr, ty, entity);
+            self.empty_value_zeroing = saved;
+            let address = address?;
             return self.effect(I::Store(
                 crate::lowir::model::Facts::memory(false, true),
                 Type::Ptr,

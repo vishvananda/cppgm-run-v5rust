@@ -122,12 +122,15 @@ impl Function<'_, '_, '_, '_> {
         owner: EntityId,
     ) -> Result<Value, Error> {
         let mark = self.reference_lifetimes.path.len();
-        self.reference_extension_path(id)?;
+        let own = self.conversion_temporary_destroyed(id)?;
+        if !own {
+            self.reference_extension_path(id)?;
+        }
         let saved = self.reference_lifetimes.owner.replace(owner);
         let expression = self.lifetime.full_expression;
         self.lifetime.full_expression |= self.expression_throws(id)?;
         let result = self.bind_reference(id, ty, Context::Initialization);
-        if result.is_ok() && self.conversion_temporary_destroyed(id)? {
+        if result.is_ok() && own {
             self.extend_last_temporary(owner)?;
         }
         self.reference_lifetimes.owner = saved;
@@ -182,7 +185,14 @@ impl Function<'_, '_, '_, '_> {
                         return Ok(());
                     }
                 }
-                ExprKind::Cast { operand, .. } if facts.reference_cast.is_some() => operand,
+                ExprKind::Cast { operand, .. }
+                    if facts.reference_cast.is_some()
+                        && self.graph.lower_expression(operand)?.temporary.is_none()
+                        && self.class_conversion(operand).is_none()
+                        && self.graph.lower_function_conversion(operand)?.is_none() =>
+                {
+                    operand
+                }
                 ExprKind::Conditional {
                     then_expr,
                     else_expr,

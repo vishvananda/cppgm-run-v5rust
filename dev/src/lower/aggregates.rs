@@ -203,6 +203,9 @@ impl Function<'_, '_, '_, '_> {
                     self.open_temporary_region_at(self.lifetime.expression_start)?;
                 }
                 let object = self.storage_address(slot, ty)?;
+                if self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {
+                    self.lifetime.expression_start = Some(self.builder.position()?);
+                }
                 let saved = self.lifetime.declared_object.replace(object);
                 let result = self.materialize_class(expr, ty, object);
                 self.lifetime.declared_object = saved;

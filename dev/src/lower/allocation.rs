@@ -241,26 +241,10 @@ impl Function<'_, '_, '_, '_> {
             self.jump(end)?;
             self.place(end)?;
         }
-        let elided_result = if let Some((constructor, arguments)) = use_.constructor {
-            let single = match arguments {
-                crate::sema::lowering::ConstructorArguments::Single(id) => Some(id),
-                crate::sema::lowering::ConstructorArguments::Values(values) => {
-                    if let [id] = self.tree.expr_lists.get(values) {
-                        Some(*id)
-                    } else {
-                        None
-                    }
-                }
-                crate::sema::lowering::ConstructorArguments::Value => None,
-            };
-            single.is_some_and(|id| self.graph.lower_elides_conversion(id, constructor))
-        } else {
-            false
-        };
-        if opened
-            && !self.lifetime.region
-            && (self.lifetime.cleanups.len() > first || elided_result)
-        {
+        // The allocation split resumes the full-expression's region even
+        // when its initializer only binds an existing object and leaves no
+        // temporaries. Its landing owns the chain below the freed storage.
+        if opened && !self.lifetime.region {
             self.open_storage_completion_region(first)?;
         }
         Ok(object)

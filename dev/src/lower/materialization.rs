@@ -384,7 +384,9 @@ impl Function<'_, '_, '_, '_> {
             let position =
                 if !self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {
                     Some(self.builder.position()?)
-                } else if (branched || self.lifetime.temporary_segment.allows_eager_arguments())
+                } else if (branched
+                    || self.lifetime.temporary_segment.allows_eager_arguments()
+                    || self.lifetime.region_start.is_pending() && self.lifetime.cleanups.is_empty())
                     && !self.lifetime.tracking.active
                 {
                     self.lifetime.expression_start

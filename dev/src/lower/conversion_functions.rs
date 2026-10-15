@@ -149,7 +149,13 @@ impl Function<'_, '_, '_, '_> {
                 .iter()
                 .any(|mark| !mark.declared && self.builder.same_block(mark.position));
         if opens && !deferred {
-            self.open_temporary_region()?;
+            let start = self
+                .lifetime
+                .region_start
+                .is_pending()
+                .then_some(self.lifetime.expression_start)
+                .flatten();
+            self.open_temporary_region_at(start)?;
         }
         let slot = self.temporary_storage(call.result, persistent, "arg")?;
         let address = self.emit(I::Addr(slot), call.result)?.value;
