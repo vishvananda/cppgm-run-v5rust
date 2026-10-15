@@ -223,6 +223,7 @@ impl Analyzer<'_> {
         let (object_pointer, presentation_type, callable_type) =
             self.constructor_types(class, None)?;
         self.publish_constructor(Constructor {
+            copy: None,
             class,
             binding: None,
             object_pointer,

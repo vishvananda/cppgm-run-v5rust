@@ -275,42 +275,25 @@ impl Analyzer<'_> {
         usage: CopyUse,
         location: SourceOffset,
     ) -> Result<CopyAction, Error> {
-        if let CopyOrigin::Declared(binding) = selected.origin {
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if !matches!(
-                entity.special_definition,
-                Some(SpecialDefinition::Defaulted { first: true, .. })
-            ) {
-                let constructor = self.selected_constructor_plan(binding, location)?;
-                self.demand_constructor_use(constructor);
-                return Ok(CopyAction::Constructor(constructor));
-            }
-            if matches!(usage, CopyUse::Object { direct: true })
-                && entity.copy_kind == Some(RefKind::Rvalue)
-            {
-                return Err(Error::Missing("direct defaulted move constructor body"));
-            }
+        let properties = self.selected_copy_properties(class, selected)?;
+        let written_move = matches!(usage, CopyUse::Object { direct: true })
+            && matches!(selected.origin, CopyOrigin::Declared(binding)
+                if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
+        let empty_lifetime = !self.graph.destructor_trivial(class)? && {
+            self.class_layout(class, location)?;
+            self.graph.lower_class_empty(class)?
+        };
+        let provided = matches!(selected.origin, CopyOrigin::Declared(binding)
+            if !matches!(self.graph.entity(self.graph.binding(binding).entity).special_definition,
+                Some(SpecialDefinition::Defaulted { .. })));
+        if provided || !properties.trivial || written_move || empty_lifetime {
+            let constructor = self.copy_constructor_plan(class, selected, location)?;
+            self.demand_constructor_use(constructor);
+            return Ok(CopyAction::Constructor(constructor));
         }
-        if !self.selected_copy_properties(class, selected)?.trivial {
-            return Err(Error::Missing(
-                "recursive nontrivial copy constructor bodies",
-            ));
-        }
-        // Selecting a written defaulted constructor is an odr-use even when
-        // lowering performs its trivial transfer as bytes. The semantic dump
-        // retains its declaration; emission still follows actual LowIR calls.
+        // A written defaulted declaration is odr-used even for a byte transfer.
         if let CopyOrigin::Declared(binding) = selected.origin {
             self.demand_function(binding, true);
-        }
-        // Empty classes with nontrivial destructors call even a trivial copy.
-        // Their implicit callable entry is a separate special-member body owner.
-        if !self.graph.destructor_trivial(class)? {
-            self.class_layout(class, location)?;
-            if self.graph.lower_class_empty(class)? {
-                return Err(Error::Missing(
-                    "empty nontrivial-lifetime copy constructor body",
-                ));
-            }
         }
         Ok(CopyAction::Storage {
             reference: selected.binding.target,

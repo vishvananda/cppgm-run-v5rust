@@ -4,6 +4,7 @@ pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
+pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
@@ -29,6 +30,7 @@ pub(crate) struct ConstructorView<'a> {
     pub class: EntityId,
     pub subobjects: &'a [super::construction::MemberConstruction],
     pub delegation: Option<super::construction::Delegation>,
+    pub copy: Option<&'a [SubobjectCopy]>,
 }
 pub(crate) struct AllocationView {
     pub function: EntityId,
@@ -245,6 +247,9 @@ impl Graph {
             Err(Error::Invariant("subobject span without completed layout"))
         }
     }
+    pub(crate) fn lower_implicit_copy(&self, entity: EntityId) -> bool {
+        self.entity(entity).copy_origin == super::copy_construction::Origin::Implicit
+    }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
         !self.constructors.get(id).nontrivial()
     }
@@ -269,6 +274,7 @@ impl Graph {
             bases: &plan.bases,
             subobjects: &plan.subobjects,
             delegation: plan.delegation,
+            copy: plan.copy.as_deref(),
         }
     }
     pub(crate) fn lower_constructor_arguments(

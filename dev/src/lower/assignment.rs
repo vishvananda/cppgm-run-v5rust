@@ -120,6 +120,19 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant("assignment class"))?;
         let ty = self.graph.lower_entity_type(class)?;
         let actions = &properties.actions;
+        let transfers: Vec<_> = actions
+            .iter()
+            .map(|&action| {
+                Ok(super::bit_fields::Transfer {
+                    member: action.member,
+                    ty: action.ty,
+                    offset: self.assignment_offset(action)?,
+                    trivial: action
+                        .function
+                        .is_none_or(|f| self.graph.lower_assignment(f).is_some_and(|p| p.trivial)),
+                })
+            })
+            .collect::<Result<_, Error>>()?;
         let mut first = 0;
         while let Some(&action) = actions.get(first) {
             if self.empty_assignment_member(action)?
@@ -180,7 +193,13 @@ impl Function<'_, '_, '_, '_> {
                     && self.graph.lower_bit_field(member)?.is_some()
                 {
                     if self.graph.lower_local_name(member).is_some() {
-                        first = self.assign_bit_fields(function, class, actions, first)?;
+                        first = self.transfer_bit_fields(
+                            function,
+                            class,
+                            &transfers,
+                            first,
+                            self.graph.lower_nonvirtual_bytes(class)?,
+                        )?;
                     }
                 } else {
                     self.assign_subobject(function, ty, action)?;

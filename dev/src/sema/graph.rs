@@ -149,6 +149,7 @@ pub(super) struct Entity {
     pub implicit_copies: Option<super::copy_initialization::ImplicitCopies>,
     pub copy_preparation: super::copy_properties::Preparation,
     pub copy_properties: Option<super::copy_properties::CopyPropertiesId>,
+    pub copy_origin: super::copy_construction::Origin,
     pub copy_kind: Option<super::types::RefKind>,
     pub assignment_kind: Option<super::types::RefKind>,
     pub assignment: Option<super::assignment::Properties>,
@@ -527,6 +528,7 @@ impl Graph {
             implicit_copies: None,
             copy_preparation: super::copy_properties::Preparation::default(),
             copy_properties: None,
+            copy_origin: super::copy_construction::Origin::Declared,
             copy_kind: None,
             assignment_kind: None,
             assignment: None,
@@ -968,6 +970,26 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+    pub(super) fn add_implicit_copy_binding(
+        &mut self,
+        home: ScopeId,
+        function: EntityId,
+        signature: TypeId,
+    ) -> Result<BindingId, Error> {
+        let binding = self.add_binding(
+            home,
+            None,
+            Binding {
+                kind: BindingKind::Function,
+                name: None,
+                entity: function,
+                ty: Some(signature),
+                key: Keyword::Int,
+            },
+        )?;
+        self.binding_access[binding.0 as usize] = Access::Public;
+        Ok(binding)
     }
     pub(super) fn add_implicit_assignment(
         &mut self,

@@ -169,7 +169,7 @@ impl Function<'_, '_, '_, '_> {
         }
         result
     }
-    fn emit_constructor_call(
+    pub(super) fn emit_constructor_call(
         &mut self,
         entry: Entry,
         nothrow: bool,
@@ -353,6 +353,9 @@ impl Function<'_, '_, '_, '_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(id);
+        if let Some(actions) = plan.copy {
+            return self.copy_members(id, variant, actions);
+        }
         self.construction.detached = self
             .lifetime
             .body
@@ -381,12 +384,14 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
             let object = self.object_pointer(plan.object_pointer)?.value;
-            self.call_constructor(
-                delegation.constructor,
-                variant,
-                object,
-                Some(delegation.arguments),
-            )?;
+            if !self.delegate_copy_storage(delegation.constructor, object, delegation.arguments)? {
+                self.call_constructor(
+                    delegation.constructor,
+                    variant,
+                    object,
+                    Some(delegation.arguments),
+                )?;
+            }
             if !began || self.lifetime.temporary_segment.is_nothrow() {
                 self.close_lifetime_region()?;
             }

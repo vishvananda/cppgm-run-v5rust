@@ -39,6 +39,7 @@ pub(super) struct CopyProperties {
     pub deleted: bool,
     pub trivial: bool,
     pub nothrow: bool,
+    pub plan: super::construction::ConstructorState,
     pub subobjects: Vec<(Option<EntityId>, EntityId, Option<CopySelection>)>,
 }
 #[derive(Default)]
@@ -52,6 +53,9 @@ impl CopyPropertiesStore {
         );
         self.records.push(facts);
         Ok(id)
+    }
+    pub(super) fn get_mut(&mut self, id: CopyPropertiesId) -> &mut CopyProperties {
+        &mut self.records[id.0 as usize]
     }
     pub(super) fn get(&self, id: CopyPropertiesId) -> &CopyProperties {
         &self.records[id.0 as usize]
@@ -275,6 +279,7 @@ impl Analyzer<'_> {
                     deleted: true,
                     trivial: false,
                     nothrow: false,
+                    plan: super::construction::ConstructorState::NotStarted,
                     subobjects: Vec::new(),
                 }
             } else {
@@ -389,6 +394,7 @@ impl Analyzer<'_> {
             deleted: false,
             trivial: true,
             nothrow: true,
+            plan: super::construction::ConstructorState::NotStarted,
             subobjects: Vec::new(),
         };
         let scope = self

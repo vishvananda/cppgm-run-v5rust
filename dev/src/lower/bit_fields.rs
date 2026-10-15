@@ -14,6 +14,14 @@ use crate::{
     sema::lowering::{EntityId, TypeId},
 };
 
+/// The storage facts shared by synthesized constructors and assignments.
+#[derive(Clone, Copy)]
+pub(super) struct Transfer {
+    pub member: Option<EntityId>,
+    pub ty: TypeId,
+    pub offset: u64,
+    pub trivial: bool,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Field {
     pub source: TypeId,
@@ -79,12 +87,13 @@ fn piece_type(width: u8) -> Type {
     }
 }
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn assign_bit_fields(
+    pub(super) fn transfer_bit_fields(
         &mut self,
         function: EntityId,
         class: EntityId,
-        actions: &[crate::sema::lowering::AssignmentAction],
+        actions: &[Transfer],
         first: usize,
+        limit: u64,
     ) -> Result<usize, Error> {
         let member = actions[first]
             .member
@@ -108,7 +117,7 @@ impl Function<'_, '_, '_, '_> {
             last = index;
         }
         let end = field.offset.wrapping_add(u64::from(field.unit.bits() / 8));
-        let mut whole = !field.shared && end <= self.graph.lower_nonvirtual_bytes(class)?;
+        let mut whole = !field.shared && end <= limit;
         for action in &actions[first..=last] {
             whole &= self.graph.lower_cv(action.ty) & 2 == 0;
         }
@@ -119,25 +128,25 @@ impl Function<'_, '_, '_, '_> {
             .rev()
             .take_while(|a| a.member.is_some())
         {
-            let (_, stop) = self.assignment_bytes(action)?;
+            let (_, stop) = self.transfer_bytes(action)?;
             if stop <= field.offset {
                 break;
             }
-            whole &= self.assignment_bytes_trivial(action);
+            whole &= self.transfer_bytes_trivial(action);
         }
         for &action in actions[..first].iter().take_while(|a| a.member.is_none()) {
-            let (start, stop) = self.assignment_bytes(action)?;
+            let (start, stop) = self.transfer_bytes(action)?;
             if start < end && stop > field.offset {
-                whole &= self.assignment_bytes_trivial(action);
+                whole &= self.transfer_bytes_trivial(action);
             }
         }
         for &action in &actions[last + 1..] {
-            let (start, stop) = self.assignment_bytes(action)?;
+            let (start, stop) = self.transfer_bytes(action)?;
             if start >= end {
                 break;
             }
             if start < stop {
-                whole &= self.assignment_bytes_trivial(action);
+                whole &= self.transfer_bytes_trivial(action);
             }
         }
         let ty = self.graph.lower_entity_type(class)?;
@@ -224,17 +233,11 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(last)
     }
-    fn assignment_bytes_trivial(&self, action: crate::sema::lowering::AssignmentAction) -> bool {
-        self.graph.lower_cv(action.ty) & 2 == 0
-            && action
-                .function
-                .is_none_or(|f| self.graph.lower_assignment(f).is_some_and(|p| p.trivial))
+    fn transfer_bytes_trivial(&self, action: Transfer) -> bool {
+        self.graph.lower_cv(action.ty) & 2 == 0 && action.trivial
     }
-    fn assignment_bytes(
-        &self,
-        action: crate::sema::lowering::AssignmentAction,
-    ) -> Result<(u64, u64), Error> {
-        let start = self.assignment_offset(action)?;
+    fn transfer_bytes(&self, action: Transfer) -> Result<(u64, u64), Error> {
+        let start = action.offset;
         let stop = if let Some(member) = action.member {
             if let Some(layout) = self.graph.lower_bit_field(member)? {
                 layout.bit.wrapping_add(layout.width).wrapping_add(7) / 8

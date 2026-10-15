@@ -53,6 +53,8 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub lexical: super::lexical_cleanup::Lexical,
     pub destruction: super::destruction::Destruction,
     pub construction: super::constructor_cleanup::Construction,
+    pub copying: super::copy_cleanup::State,
+    pub element_temporaries: super::element_temporaries::State,
     pub terminated: bool,
     pub result: Option<TypeId>,
     pub result_destination: Option<Value>,
@@ -125,7 +127,9 @@ pub(super) fn lower<'a>(
     }
     for &(_, name, ty) in &parameter_bindings {
         names.push((
-            if entity.is_some_and(|entity| graph.lower_implicit_assignment(entity)) {
+            if entity.is_some_and(|entity| {
+                graph.lower_implicit_assignment(entity) || graph.lower_implicit_copy(entity)
+            }) {
                 "other".to_owned()
             } else if let Some(name) = name {
                 symbols.identifier(name)?.to_owned()
@@ -351,6 +355,8 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             lexical: super::lexical_cleanup::Lexical::default(),
             destruction: super::destruction::Destruction::default(),
             construction: super::constructor_cleanup::Construction::default(),
+            copying: super::copy_cleanup::State::default(),
+            element_temporaries: super::element_temporaries::State::default(),
             terminated: false,
             result,
             result_destination: None,
@@ -372,10 +378,9 @@ impl Function<'_, '_, '_, '_> {
             let index = ordinal + first;
             let storage = types::storage(self.graph, parameter)?;
             let slot = if name.is_some()
-                || self
-                    .entity
-                    .is_some_and(|e| self.graph.lower_implicit_assignment(e))
-            {
+                || self.entity.is_some_and(|e| {
+                    self.graph.lower_implicit_assignment(e) || self.graph.lower_implicit_copy(e)
+                }) {
                 self.builder.slot(&names[index].0, storage)?
             } else {
                 self.builder.parameter_slot(index, storage)?

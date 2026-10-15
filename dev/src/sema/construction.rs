@@ -68,6 +68,7 @@ pub(super) struct Constructor {
     pub bases: Vec<BaseInitialization>,
     pub subobjects: Vec<MemberConstruction>,
     pub delegation: Option<Delegation>,
+    pub copy: Option<Vec<super::copy_construction::SubobjectCopy>>,
     pub(super) triviality: Triviality,
 }
 impl Constructor {
@@ -97,7 +98,7 @@ pub(super) struct Constructors {
     records: Vec<Constructor>,
 }
 impl Constructors {
-    fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
+    pub(super) fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
         let id = ConstructorId(
             u32::try_from(self.records.len())
                 .map_err(|_| Error::Limit("implicit constructor limit"))?,
@@ -651,6 +652,7 @@ impl Analyzer<'_> {
             bases,
             subobjects,
             delegation: None,
+            copy: None,
             triviality: Triviality::Trivial,
         };
         self.publish_constructor(record)
@@ -771,7 +773,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("constructor without type"))?,
             )? != 0
             {
-                return Err(Error::Missing("defaulted copy or move constructor plans"));
+                return self.declared_copy_plan(class, binding);
             }
             return self.scalar_constructor_facts(class, Some(binding));
         }
@@ -792,6 +794,7 @@ impl Analyzer<'_> {
             bases: Vec::new(),
             subobjects: Vec::new(),
             delegation: None,
+            copy: None,
             triviality: Triviality::Trivial,
         })
     }
@@ -832,6 +835,7 @@ impl Analyzer<'_> {
                     "an explicitly defaulted function is defined as deleted",
                 ));
             }
+            self.declared_copy_plan(class, binding)?;
             return Ok(());
         }
         let binding = self.graph.function_origin(function)?;

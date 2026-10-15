@@ -314,6 +314,17 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn constructor_plan_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
         self.check_stack()?;
         let plan = self.graph.lower_constructor(id);
+        if let Some(actions) = plan.copy {
+            for action in actions {
+                if let Some(constructor) = action.constructor
+                    && !self.graph.lower_constructor_trivial(constructor)
+                    && self.default_constructor_throws(constructor)?
+                {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
         if let Some(delegation) = plan.delegation {
             return Ok(
                 !Entry::Constructor(delegation.constructor, Variant::Complete)

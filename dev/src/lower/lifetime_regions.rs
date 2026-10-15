@@ -22,6 +22,9 @@ impl Function<'_, '_, '_, '_> {
         if self.lifetime.guarded_operands != 0 && !self.lifetime.tracking.active {
             return Err(Error::Missing("guarded full-expression temporary cleanup"));
         }
+        if self.element_temporaries.depth != 0 {
+            return self.element_temporary_alive(ty, object);
+        }
         let split = self.lifetime.region;
         if self.lifetime.tracking.active {
             self.register_temporary(ty, object);
@@ -160,6 +163,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
+        if self.element_temporaries.depth != 0 {
+            return Ok(());
+        }
         if throws
             && self.lifetime.full_expression
             && self.lifetime.temporary_segment.is_eager()
@@ -206,6 +212,9 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         start: Option<crate::lowir::builder::Position>,
     ) -> Result<(), Error> {
+        if self.element_temporaries.depth != 0 {
+            return Ok(());
+        }
         if self.lifetime.tracking.active {
             let position = self
                 .lifetime

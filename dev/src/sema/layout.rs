@@ -99,6 +99,13 @@ impl Analyzer<'_> {
                 }
                 constructors.extend(plan.bases.iter().filter_map(|base| base.constructor));
                 constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
+                constructors.extend(
+                    plan.copy
+                        .iter()
+                        .flatten()
+                        .filter_map(|action| action.constructor)
+                        .filter(|&id| self.graph.constructors.get(id).nontrivial()),
+                );
                 continue;
             }
             let entity = work
@@ -106,6 +113,9 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("missing boundary demand"))?;
             if !seen.insert(entity) {
                 continue;
+            }
+            if let Some(constructor) = self.graph.entity(entity).constructor {
+                constructors.push(constructor);
             }
             if let Some(children) = constructor_edges.remove(&entity) {
                 constructors.extend(children);
