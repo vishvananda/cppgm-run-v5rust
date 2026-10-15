@@ -128,6 +128,19 @@ impl<'a> FunctionBuilder<'a> {
         parameter.no_alias = no_alias;
         Ok(())
     }
+    pub(crate) fn parameter_classes(
+        &mut self,
+        index: usize,
+        classes: Option<super::vocabulary::ObjectClasses>,
+    ) -> Result<(), Error> {
+        self.program
+            .signature_mut(self.function.signature)
+            .parameters
+            .get_mut(index)
+            .ok_or(Error::Limit)?
+            .classes = classes;
+        Ok(())
+    }
     pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
         let name = self.program.names.intern(name)?;
         self.slot_names

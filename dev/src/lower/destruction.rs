@@ -11,16 +11,16 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-struct Subobject {
-    ty: TypeId,
-    offset: u64,
-    member: bool,
-    element: Option<u64>,
+pub(super) struct Subobject {
+    pub ty: TypeId,
+    pub offset: u64,
+    pub member: bool,
+    pub element: Option<u64>,
 }
 #[derive(Default)]
 pub(super) struct Destruction {
     actions: Vec<Subobject>,
-    class: Option<EntityId>,
+    pub class: Option<EntityId>,
     pub cleanup: Option<BlockId>,
     pub epilogue: Option<BlockId>,
     progress: Option<Value>,
@@ -106,7 +106,11 @@ impl Function<'_, '_, '_, '_> {
         }
         self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))
     }
-    fn destroy_subobject(&mut self, action: Subobject, unwinding: bool) -> Result<(), Error> {
+    pub(super) fn destroy_subobject(
+        &mut self,
+        action: Subobject,
+        unwinding: bool,
+    ) -> Result<(), Error> {
         let destructor =
             self.symbols
                 .class_destructor(action.ty)?
@@ -119,6 +123,35 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
+        if action.element.is_none()
+            && let TypeView::Array { bound, .. } = self.graph.lower_type(action.ty)?
+        {
+            let mut element = action.ty;
+            let mut count = 1u64;
+            while let TypeView::Array {
+                element: inner,
+                bound,
+            } = self.graph.lower_type(element)?
+            {
+                count = count.wrapping_mul(bound);
+                element = inner;
+            }
+            if count <= 8 {
+                for index in (0..bound).rev() {
+                    self.destroy_subobject(
+                        Subobject {
+                            element: Some(index),
+                            ..action
+                        },
+                        false,
+                    )?;
+                }
+                if guard.is_some() {
+                    self.effect(I::Runtime(R::EhEnd))?;
+                }
+                return Ok(());
+            }
+        }
         let class = self.destruction.class.ok_or(crate::sema::Error::Invariant(
             "destruction actions without class",
         ))?;

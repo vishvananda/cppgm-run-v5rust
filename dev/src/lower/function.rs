@@ -45,6 +45,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub conditional_slot: Option<Value>,
     pub lifetime: super::lifetime::Lifetime,
     pub destruction: super::destruction::Destruction,
+    pub construction: super::constructor_cleanup::Construction,
     pub terminated: bool,
     pub result: Option<TypeId>,
     pub budget: StackBudget,
@@ -142,6 +143,7 @@ pub(super) fn lower<'a>(
     }
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
         let (pass, bytes) = reference_boundary(graph, ty)?;
+        builder.parameter_classes(index + object_count, symbols.parameter_classes(ty)?)?;
         builder.parameter_boundary(
             index + object_count,
             pass,
@@ -219,17 +221,7 @@ pub(super) fn lower<'a>(
             function.builder.parameter_slot(index, names[index].1)?
         };
         let incoming = function.builder.parameter(index)?;
-        function.builder.effect(I::Store(
-            // Prologue initialization uses an unqualified place. Subsequent
-            // source accesses retain the parameter object's volatile fact.
-            crate::lowir::model::Facts::memory(
-                false,
-                !matches!(names[index].1, Type::I8 | Type::U8),
-            ),
-            names[index].1,
-            incoming,
-            slot,
-        ))?;
+        function.initialize_parameter(parameter_bindings[ordinal].2, incoming, slot)?;
         function.locals.insert(entity, slot);
     }
     if let super::construction::Entry::Constructor(id, variant) = entry {
@@ -272,6 +264,7 @@ pub(super) fn lower<'a>(
             function.effect(I::Return(ty, value))?;
         }
     }
+    function.finish_constructor_cleanups()?;
     function.place_cleanup_chains(true)?;
     function.place_destructor_terminates()?;
     function.place_function_guard()?;
@@ -312,6 +305,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             conditional_slot: None,
             lifetime: super::lifetime::Lifetime::default(),
             destruction: super::destruction::Destruction::default(),
+            construction: super::constructor_cleanup::Construction::default(),
             terminated: false,
             result,
             budget,
@@ -320,6 +314,34 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
     }
 }
 impl Function<'_, '_, '_, '_> {
+    fn initialize_parameter(
+        &mut self,
+        ty: TypeId,
+        incoming: Value,
+        slot: Value,
+    ) -> Result<(), Error> {
+        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+            if !self.graph.lower_direct_class_parameter(class)? {
+                return Err(Error::Missing("indirect class parameter ownership"));
+            }
+            if !self.graph.lower_class_empty(class)? {
+                let address = self.emit(I::Addr(slot), ty)?.value;
+                let (bytes, align) = types::layout(self.graph, ty)?;
+                self.effect(I::CopyObject(bytes, align, incoming, address))?;
+            }
+        } else {
+            let storage = types::storage(self.graph, ty)?;
+            // Prologue writes an unqualified frame place. Source accesses
+            // retain the parameter object's volatile fact.
+            self.builder.effect(I::Store(
+                crate::lowir::model::Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                storage,
+                incoming,
+                slot,
+            ))?;
+        }
+        Ok(())
+    }
     pub(super) fn object_pointer(&mut self, source: TypeId) -> Result<RValue, Error> {
         let slot = self
             .this_slot
@@ -370,6 +392,9 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
         if kind.terminator() && self.lifetime.full_expression {
             self.close_lifetime_region()?;
+        }
+        if matches!(kind, I::Return(..)) && !self.construction.placing {
+            self.end_constructor_region()?;
         }
         if matches!(kind, I::Return(..)) && self.lifetime.function_guard.is_some() {
             self.builder
@@ -534,6 +559,7 @@ impl Function<'_, '_, '_, '_> {
 
 pub(super) fn signature(
     program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
     ty: TypeId,
     nothrow: bool,
@@ -558,7 +584,7 @@ pub(super) fn signature(
             pass,
             no_alias: false,
             object_bytes,
-            classes: None,
+            classes: symbols.parameter_classes(ty)?,
         });
     }
     Ok(program.add_signature(Signature {
@@ -633,7 +659,7 @@ pub(super) fn declare(
     }
     let facts = entry.facts(graph)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let signature = signature(program, graph, facts.ty, facts.nothrow)?;
+    let signature = signature(program, symbols, graph, facts.ty, facts.nothrow)?;
     if let Some(class) = facts.object {
         let name = program.names.intern("arg0")?;
         for index in 0..program.signature_mut(signature).parameters.len() {

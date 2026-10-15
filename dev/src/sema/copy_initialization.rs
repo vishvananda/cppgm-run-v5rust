@@ -28,11 +28,56 @@ pub(super) struct CopySelection {
     pub binding: Conversion,
 }
 #[derive(Clone, Copy)]
+enum ClassPassing {
+    Direct,
+    Indirect,
+}
+#[derive(Clone, Copy)]
 pub(super) struct ImplicitCopies {
     copy: Option<(TypeId, bool)>,
     moving: Option<TypeId>,
     copy_deleted: bool,
+    passing: Option<ClassPassing>,
 }
+impl super::graph::Graph {
+    pub(crate) fn lower_direct_class_parameter(&self, class: EntityId) -> Result<bool, Error> {
+        self.entity(class)
+            .implicit_copies
+            .and_then(|copies| copies.passing)
+            .map(|passing| matches!(passing, ClassPassing::Direct))
+            .ok_or(Error::Missing("class parameter call boundary"))
+    }
+    fn class_parameter_direct(&self, class: EntityId) -> Result<bool, Error> {
+        let entity = self.entity(class);
+        let copies = entity
+            .implicit_copies
+            .ok_or(Error::Missing("class parameter copy properties"))?;
+        let mut usable =
+            copies.copy.is_some_and(|(_, deleted)| !deleted) || copies.moving.is_some();
+        let mut trivial = self.destructor_trivial(class)?;
+        for &binding in &entity.declared_constructors {
+            let constructor = self.entity(self.binding(binding).entity);
+            if constructor.copy_kind.is_none()
+                || constructor.availability == FunctionAvailability::Deleted
+                || constructor.copy_kind == Some(RefKind::Lvalue)
+                    && copies.copy_deleted
+                    && matches!(
+                        constructor.special_definition,
+                        Some(SpecialDefinition::Defaulted { .. })
+                    )
+            {
+                continue;
+            }
+            usable = true;
+            trivial &= matches!(
+                constructor.special_definition,
+                Some(SpecialDefinition::Defaulted { first: true, .. })
+            );
+        }
+        Ok(trivial && usable)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Candidate {
     selection: CopySelection,
@@ -46,6 +91,18 @@ pub(super) struct CopyScratch {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn prepare_class_parameter(&mut self, class: EntityId) -> Result<(), Error> {
+        let mut copies = self.implicit_copy_candidates(class)?;
+        if copies.passing.is_none() {
+            copies.passing = Some(if self.graph.class_parameter_direct(class)? {
+                ClassPassing::Direct
+            } else {
+                ClassPassing::Indirect
+            });
+            self.graph.entity_mut(class).implicit_copies = Some(copies);
+        }
+        Ok(())
+    }
     fn classify_copy_kind(
         &self,
         binding: BindingId,
@@ -206,6 +263,7 @@ impl Analyzer<'_> {
             copy,
             moving,
             copy_deleted,
+            passing: None,
         };
         self.graph.entity_mut(class).implicit_copies = Some(copies);
         Ok(copies)
@@ -433,5 +491,33 @@ impl Analyzer<'_> {
             self.check_direct_member_access(binding, scope, location)?;
         }
         Ok(chosen.selection)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{Analyzer, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+    #[test]
+    fn class_parameter_boundary_consumes_completed_copy_properties() {
+        let source = SourceBuffer::new(b"struct W{int w;W(int);};int f(W v){return v.w;}int g(){return f(W(1));}struct N{N();N(const N&);};void h(N){}void i(){h(N());}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"class-parameter-boundary").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        for (spelling, direct) in [(b"W".as_slice(), true), (b"N".as_slice(), false)] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert_eq!(graph.lower_direct_class_parameter(class).unwrap(), direct);
+        }
     }
 }

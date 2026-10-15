@@ -24,7 +24,7 @@ pub(crate) struct ConstructorView<'a> {
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
     pub bases: &'a [super::construction::BaseInitialization],
     pub class: EntityId,
-    pub subobjects: &'a [(EntityId, ConstructorId)],
+    pub subobjects: &'a [super::construction::MemberConstruction],
 }
 pub(crate) struct VariableFacts {
     pub name: NameId,
@@ -986,7 +986,13 @@ impl Graph {
         }
         false
     }
-    pub(crate) fn lower_contiguous_zero(&self, ty: TypeId) -> Result<bool, Error> {
+    pub(crate) fn lower_contiguous_zero(&self, mut ty: TypeId) -> Result<bool, Error> {
+        while let TypeView::Array { element, .. } = self.lower_type(ty)? {
+            if self.lower_cv(ty) & 2 != 0 {
+                return Ok(false);
+            }
+            ty = element;
+        }
         if self.lower_cv(ty) & 2 != 0 {
             return Ok(false);
         }
@@ -1001,6 +1007,13 @@ impl Graph {
             return Err(Error::Invariant("class zeroing without layout"));
         };
         Ok(!contains_volatile_or_union)
+    }
+    pub(crate) fn lower_class_empty(&self, class: EntityId) -> Result<bool, Error> {
+        if let super::layout::LayoutState::Value { empty, .. } = self.entity(class).layout {
+            Ok(empty)
+        } else {
+            Err(Error::Invariant("class parameter without layout"))
+        }
     }
     pub(crate) fn lower_class_layout(&self, entity: EntityId) -> Result<(u64, u8), Error> {
         let super::layout::LayoutState::Value {

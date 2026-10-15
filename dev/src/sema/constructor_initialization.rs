@@ -238,6 +238,24 @@ impl Analyzer<'_> {
         let count = self.graph.types.function_parameter_count(ty)?;
         for (index, &argument) in args.iter().enumerate().take(count) {
             let parameter = self.graph.types.function_parameter(ty, index)?;
+            self.class_parameter_destruction(
+                parameter,
+                scope,
+                tree.expressions.get(argument).location,
+            )?;
+            if !matches!(
+                tree.expressions.get(argument).kind,
+                ast::ExprKind::Braced { .. }
+            ) {
+                self.elide_class_copy(
+                    argument,
+                    parameter,
+                    scope,
+                    false,
+                    false,
+                    tree.expressions.get(argument).location,
+                )?;
+            }
             let mut facts = self.graph.expression_facts.get(argument)?;
             if let Some(conversion) = facts.conversion {
                 facts.base_path = self.conversion_base_path(

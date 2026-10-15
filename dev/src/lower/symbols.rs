@@ -120,6 +120,7 @@ pub(super) struct Symbols<'a, 'source> {
     tls_wrappers: HashMap<EntityId, SymbolId>,
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
+    class_parameters: super::class_parameters::Classes,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<EntityId, bool>,
 }
@@ -161,10 +162,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             tls_wrappers: HashMap::new(),
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
+            class_parameters: super::class_parameters::Classes::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
             signatures: HashMap::new(),
         }
+    }
+    pub(super) fn parameter_classes(
+        &mut self,
+        ty: TypeId,
+    ) -> Result<Option<crate::lowir::vocabulary::ObjectClasses>, Error> {
+        self.class_parameters.parameter(self.graph, ty, self.budget)
     }
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
@@ -925,7 +933,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&signature) = self.signatures.get(&(ty, nothrow)) {
             return Ok(signature);
         }
-        let signature = super::function::signature(program, self.graph, ty, nothrow)?;
+        let signature = super::function::signature(program, self, self.graph, ty, nothrow)?;
         self.signatures.insert((ty, nothrow), signature);
         Ok(signature)
     }

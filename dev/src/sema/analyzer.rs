@@ -67,6 +67,10 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) bit_layout: super::bit_layout::BitLayout,
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
     pub(super) storage_layouts: Vec<(Option<super::graph::EntityId>, TypeId, SourceOffset)>,
+    pub(super) constructor_boundaries: Vec<(
+        Option<super::graph::EntityId>,
+        super::construction::ConstructorId,
+    )>,
     pub(super) storage_destructions: Vec<(Option<super::graph::EntityId>, super::graph::EntityId)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
     pub(super) throw_work: Vec<(ast::ExprId, u16)>,
@@ -187,6 +191,7 @@ impl<'tree> Analyzer<'tree> {
             bit_layout: super::bit_layout::BitLayout::default(),
             boundary_roots: Vec::new(),
             storage_layouts: Vec::new(),
+            constructor_boundaries: Vec::new(),
             storage_destructions: Vec::new(),
             exception_work: Vec::new(),
             throw_work: Vec::new(),

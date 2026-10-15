@@ -89,7 +89,7 @@ impl Function<'_, '_, '_, '_> {
         }
         id
     }
-    fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
+    pub(super) fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
         if let Some(shape) = self.graph.lower_literal_call(id)? {

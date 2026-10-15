@@ -61,17 +61,57 @@ impl Analyzer<'_> {
                 work.push(self.graph.binding(*binding).entity);
             }
         }
+        let mut constructors = Vec::new();
+        let mut constructor_edges =
+            std::collections::HashMap::<EntityId, Vec<super::construction::ConstructorId>>::new();
+        for (owner, constructor) in std::mem::take(&mut self.constructor_boundaries) {
+            if let Some(owner) = owner {
+                constructor_edges
+                    .entry(owner)
+                    .or_default()
+                    .push(constructor);
+            } else {
+                constructors.push(constructor);
+            }
+        }
+        for demand in self.graph.root_demands.as_slice() {
+            if let Demand::Constructor(id) = demand {
+                constructors.push(*id);
+            }
+        }
+        let mut seen_constructors = std::collections::HashSet::new();
         let mut seen = std::collections::HashSet::new();
-        while let Some(entity) = work.pop() {
+        while !work.is_empty() || !constructors.is_empty() {
+            if let Some(constructor) = constructors.pop() {
+                if !seen_constructors.insert(constructor) {
+                    continue;
+                }
+                let plan = self.graph.constructors.get(constructor);
+                if let Some(binding) = plan.binding {
+                    work.push(self.graph.binding(binding).entity);
+                }
+                constructors.extend(plan.bases.iter().filter_map(|base| base.constructor));
+                constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
+                continue;
+            }
+            let entity = work
+                .pop()
+                .ok_or(Error::Invariant("missing boundary demand"))?;
             if !seen.insert(entity) {
                 continue;
+            }
+            if let Some(children) = constructor_edges.remove(&entity) {
+                constructors.extend(children);
             }
             if let Some(destructors) = destruction_edges.remove(&entity) {
                 work.extend(destructors);
             }
             for demand in self.graph.entity(entity).demands.as_slice() {
-                if let Demand::Function { binding, .. } = demand {
-                    work.push(self.graph.binding(*binding).entity);
+                match demand {
+                    Demand::Function { binding, .. } => {
+                        work.push(self.graph.binding(*binding).entity);
+                    }
+                    Demand::Constructor(id) => constructors.push(*id),
                 }
             }
             if let Some(class) = self.graph.lower_function(entity)?.object {
@@ -81,6 +121,12 @@ impl Analyzer<'_> {
             let count = self.graph.types.function_parameter_count(ty)?;
             for index in 0..count {
                 let parameter = self.graph.types.function_parameter(ty, index)?;
+                if let TypeKind::Class(class) = self.graph.types.get(parameter).kind
+                    && self.graph.entity(class).complete
+                {
+                    self.class_layout(class, SourceOffset(0))?;
+                    self.prepare_class_parameter(class)?;
+                }
                 if let TypeKind::Reference { element, .. } = self.graph.types.get(parameter).kind {
                     if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
                     {

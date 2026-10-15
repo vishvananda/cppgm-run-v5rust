@@ -146,3 +146,125 @@ impl Function<'_, '_, '_, '_> {
         self.destroy_cleanups(depth)
     }
 }
+
+// Translated from lexical_cleanup_lowering.cpp::body_unwinds/detached_body.
+impl Function<'_, '_, '_, '_> {
+    fn declaration_unwinds(
+        &mut self,
+        declaration: ast::DeclId,
+        alive: &mut bool,
+    ) -> Result<bool, Error> {
+        let ast::DeclKind::Simple { declarators, .. } =
+            self.tree.declarations.get(declaration).kind
+        else {
+            return Ok(false);
+        };
+        for init in self.tree.init_declarators.get(declarators) {
+            let entity = self.graph.lower_declared(init.declarator)?;
+            if *alive && self.variable_throws(entity, init.initializer)? {
+                return Ok(true);
+            }
+            if !self.graph.lower_is_variable(entity) || !self.graph.lower_automatic(entity) {
+                continue;
+            }
+            let ty = self.graph.lower_entity_type(entity)?;
+            if let Some(destructor) = self.symbols.class_destructor(ty)? {
+                if !self.graph.lower_function(destructor)?.nothrow {
+                    return Ok(true);
+                }
+                *alive |= self.automatic_destructor(entity)?.is_some();
+            }
+        }
+        Ok(false)
+    }
+    pub(super) fn body_unwinds(
+        &mut self,
+        id: ast::StmtId,
+        alive: &mut bool,
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        match self.tree.statements.get(id).kind {
+            StmtKind::Compound(items) => {
+                let mut inner = *alive;
+                for &item in self.tree.stmt_lists.get(items) {
+                    if self.body_unwinds(item, &mut inner)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            StmtKind::Ambiguous { .. } => self.body_unwinds(self.graph.lower_statement(id)?, alive),
+            StmtKind::Declaration(declaration) => self.declaration_unwinds(declaration, alive),
+            StmtKind::Try { .. } => Ok(true),
+            StmtKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                if *alive && self.condition_throws(condition)? {
+                    return Ok(true);
+                }
+                let known = if let Condition::Expression(expr) = condition {
+                    self.literal_truth(expr)?
+                } else {
+                    None
+                };
+                let mut then_alive = *alive;
+                let mut else_alive = *alive;
+                Ok(
+                    known != Some(false) && self.body_unwinds(then_branch, &mut then_alive)?
+                        || known != Some(true)
+                            && else_branch
+                                .map(|branch| self.body_unwinds(branch, &mut else_alive))
+                                .transpose()?
+                                .unwrap_or(false),
+                )
+            }
+            StmtKind::ConditionalLoop {
+                condition, body, ..
+            } => {
+                if *alive && self.condition_throws(condition)? {
+                    return Ok(true);
+                }
+                self.body_unwinds(body, &mut { *alive })
+            }
+            StmtKind::Do { condition, body } => Ok(*alive && self.expression_throws(condition)?
+                || self.body_unwinds(body, &mut { *alive })?),
+            StmtKind::For {
+                declaration,
+                init,
+                condition,
+                iteration,
+                body,
+            } => {
+                let mut inner = *alive;
+                if let Some(decl) = declaration
+                    && self.declaration_unwinds(decl, &mut inner)?
+                {
+                    return Ok(true);
+                }
+                if inner
+                    && (init
+                        .map(|id| self.expression_throws(id))
+                        .transpose()?
+                        .unwrap_or(false)
+                        || iteration
+                            .map(|id| self.expression_throws(id))
+                            .transpose()?
+                            .unwrap_or(false)
+                        || condition
+                            .map(|condition| self.condition_throws(condition))
+                            .transpose()?
+                            .unwrap_or(false))
+                {
+                    return Ok(true);
+                }
+                self.body_unwinds(body, &mut inner)
+            }
+            StmtKind::Case { body, .. }
+            | StmtKind::Default(body)
+            | StmtKind::Label { body, .. } => self.body_unwinds(body, alive),
+            _ => Ok(*alive && self.statement_throws(id)?),
+        }
+    }
+}

@@ -87,6 +87,8 @@ impl Function<'_, '_, '_, '_> {
             TypeView::Reference { .. }
         ) {
             self.bind_reference(operand, parameter, Context::Argument)
+        } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
+            self.class_argument(operand, parameter)
         } else {
             let value = self.operand(operand, Context::Argument)?;
             Ok(self.fit(value, parameter)?.value)

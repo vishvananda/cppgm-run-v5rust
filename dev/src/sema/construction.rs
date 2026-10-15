@@ -41,6 +41,12 @@ enum Triviality {
     Trivial,
     Nontrivial,
 }
+#[derive(Clone, Copy)]
+pub(crate) struct MemberConstruction {
+    pub member: EntityId,
+    pub constructor: ConstructorId,
+    pub arguments: Option<ConstructorArguments>,
+}
 pub(super) struct Constructor {
     pub class: EntityId,
     pub binding: Option<BindingId>,
@@ -53,7 +59,7 @@ pub(super) struct Constructor {
     const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub bases: Vec<BaseInitialization>,
-    pub subobjects: Vec<(EntityId, ConstructorId)>,
+    pub subobjects: Vec<MemberConstruction>,
     triviality: Triviality,
 }
 impl Constructor {
@@ -178,6 +184,16 @@ impl Analyzer<'_> {
                 ));
             }
             self.graph.entity_mut(variable).constructor = Some(constructor);
+            if self.lowering()
+                && self.unevaluated == 0
+                && self.graph.entity(variable).data_member
+                    != Some(super::graph::DataMemberKind::Instance)
+            {
+                self.constructor_boundaries.push((
+                    self.body_context.as_ref().map(|body| body.entity),
+                    constructor,
+                ));
+            }
             // An array shows one element action without demanding a definition.
             if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
                 && self.unevaluated == 0
@@ -433,6 +449,13 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("constructor member without type"))?;
             if member.member_initializer.is_some() {
+                if let Some(constructor) = member.constructor {
+                    subobjects.push(MemberConstruction {
+                        member: member_id,
+                        constructor,
+                        arguments: member.constructor_arguments,
+                    });
+                }
                 plans.push((member_id, member.member_initializer));
                 continue;
             }
@@ -449,8 +472,10 @@ impl Analyzer<'_> {
                     ));
                 };
                 let child = self.graph.constructors.get(id);
-                if child.nontrivial() {
-                    return Err(Error::Missing("class subobject default construction"));
+                if union {
+                    deleted |=
+                        self.graph.entity(class).initialized_members == 0 && child.nontrivial();
+                    continue;
                 }
                 if child.deleted {
                     return Err(Error::at(SourceOffset(0), "use of a deleted function"));
@@ -479,9 +504,16 @@ impl Analyzer<'_> {
                     const_members += 1;
                 }
                 if self.graph.types.get(ty).cv.0 & 1 != 0 && !child.const_default {
-                    return Err(Error::Missing("const class subobject default construction"));
+                    return Err(Error::at(
+                        SourceOffset(0),
+                        "a const object leaves a member uninitialized",
+                    ));
                 }
-                subobjects.push((member_id, id));
+                subobjects.push(MemberConstruction {
+                    member: member_id,
+                    constructor: id,
+                    arguments: None,
+                });
                 continue;
             }
             if !union {
@@ -536,7 +568,7 @@ impl Analyzer<'_> {
         for id in bases
             .iter()
             .filter_map(|base| base.constructor)
-            .chain(subobjects.iter().map(|&(_, id)| id))
+            .chain(subobjects.iter().map(|child| child.constructor))
         {
             let child = self.graph.constructors.get(id);
             if let Some(binding) = child.binding
@@ -591,7 +623,7 @@ impl Analyzer<'_> {
                 .bases
                 .iter()
                 .filter_map(|base| base.constructor)
-                .chain(record.subobjects.iter().map(|&(_, id)| id))
+                .chain(record.subobjects.iter().map(|child| child.constructor))
                 .any(|id| self.graph.constructors.get(id).nontrivial())
         {
             Triviality::Nontrivial
@@ -897,6 +929,7 @@ impl Analyzer<'_> {
             });
         }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
+        let mut subobjects = Vec::new();
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
             let ty = self
@@ -917,14 +950,41 @@ impl Analyzer<'_> {
                 });
             if let Some(written) = written.get(&member) {
                 let initializer = written.initializer;
-                self.object_initializer(initializer, scope, ty, initializer.location)?;
+                if let Some((constructor, arguments)) =
+                    self.written_member_construction(ty, initializer, scope)?
+                {
+                    subobjects.push(MemberConstruction {
+                        member,
+                        constructor,
+                        arguments: Some(arguments),
+                    });
+                }
             } else if source.is_none() && !variant {
                 let mut object = ty;
                 while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
                     object = element;
                 }
-                if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
-                    return Err(Error::Missing("class subobject constructor plans"));
+                if let TypeKind::Class(child) = self.graph.types.get(object).kind {
+                    let constructor = self.default_constructor(child, location)?;
+                    self.validate_constructor_use(constructor, scope, location)?;
+                    if self.graph.types.get(object).cv.0 & 1 != 0
+                        && !self.graph.constructors.get(constructor).const_default
+                    {
+                        return Err(Error::at(
+                            location,
+                            "a const object leaves a member uninitialized",
+                        ));
+                    }
+                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
+                        self.demand_constructor_use(constructor);
+                    }
+                    subobjects.push(MemberConstruction {
+                        member,
+                        constructor,
+                        arguments: None,
+                    });
+                    plans.push((member, source));
+                    continue;
                 }
                 if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
                     return Err(Error::at(location, "a reference member is not initialized"));
@@ -933,26 +993,50 @@ impl Analyzer<'_> {
                     return Err(Error::at(location, "a const member is not initialized"));
                 }
             }
+            if !written.contains_key(&member)
+                && source.is_some()
+                && let Some(constructor) = self.graph.entity(member).constructor
+            {
+                subobjects.push(MemberConstruction {
+                    member,
+                    constructor,
+                    arguments: self.graph.entity(member).constructor_arguments,
+                });
+            }
             plans.push((member, source));
         }
         self.graph.constructors.records[id.0 as usize].members = plans;
         self.graph.constructors.records[id.0 as usize].bases = bases;
-        // A non-delegating user body potentially destroys its bases even when
-        // none of the following actions can throw (12.6.2p10).
-        for edge in &self.graph.entity(class).bases {
-            if let Some(binding) = self.graph.entity(edge.class).declared_destructor {
-                if self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .availability
-                    == super::graph::FunctionAvailability::Deleted
-                {
-                    return Err(Error::at(location, "use of a deleted function"));
-                }
-                self.check_special_member_access(binding, class, scope, location)?;
-            }
-        }
+        self.graph.constructors.records[id.0 as usize].subobjects = subobjects;
+        self.check_subobject_destruction(class, scope, location)?;
+        self.prepare_destruction(class)?;
         Ok(())
+    }
+
+    fn written_member_construction(
+        &mut self,
+        ty: TypeId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
+            return self.initialize_class_object(ty, initializer, scope, initializer.location);
+        }
+        self.object_initializer(initializer, scope, ty, initializer.location)?;
+        if !matches!(initializer.kind, ast::InitializerKind::Parenthesized(values) if self.tree.expr_lists.get(values).is_empty())
+        {
+            return Ok(None);
+        }
+        let mut element = ty;
+        while let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind {
+            element = inner;
+        }
+        let TypeKind::Class(child) = self.graph.types.get(element).kind else {
+            return Ok(None);
+        };
+        let constructor = self.default_constructor(child, initializer.location)?;
+        self.validate_constructor_use(constructor, scope, initializer.location)?;
+        Ok(Some((constructor, ConstructorArguments::Value)))
     }
 
     fn constructor_member_target(
@@ -1027,5 +1111,102 @@ impl Analyzer<'_> {
             initializer.location,
             "the mem-initializer does not name a direct or virtual base",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{Analyzer, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn recursive_construction_keeps_child_selection_and_original_arguments() {
+        use crate::sema::{
+            construction::ConstructorState, constructor_initialization::ConstructorArguments,
+        };
+        use crate::syntax::ast::{ExprKind, InitializerKind};
+        let source = SourceBuffer::new(b"struct Leaf{int n;Leaf(int x):n(x){}~Leaf(){}};struct Mid{Leaf a{7};};struct Outer{Mid m;};void f(){Outer x;}struct Unused{Leaf a;};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"recursive-construction").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(expressions, tree.expressions.mark());
+        let mut class = |spelling: &[u8]| {
+            let name = cursor.intern_name(spelling).unwrap();
+            graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity
+        };
+        let mid = class(b"Mid");
+        let outer = class(b"Outer");
+        let ConstructorState::Ready(outer_id) = graph.entity(outer).default_construction else {
+            panic!("outer constructor was not prepared");
+        };
+        let ConstructorState::Ready(mid_id) = graph.entity(mid).default_construction else {
+            panic!("child constructor was not prepared");
+        };
+        let outer_plan = graph.constructors.get(outer_id);
+        assert!(outer_plan.nontrivial());
+        assert_eq!(outer_plan.subobjects.len(), 1);
+        let child = outer_plan.subobjects[0];
+        assert_eq!(child.member, graph.entity(outer).members[0]);
+        assert_eq!(child.constructor, mid_id);
+        assert!(child.arguments.is_none());
+        let mid_plan = graph.constructors.get(mid_id);
+        let child = mid_plan.subobjects[0];
+        assert_eq!(child.member, graph.entity(mid).members[0]);
+        assert_eq!(
+            Some(child.constructor),
+            graph.entity(child.member).constructor
+        );
+        let InitializerKind::Braced(list) =
+            graph.entity(child.member).member_initializer.unwrap().kind
+        else {
+            panic!("member initializer shape changed");
+        };
+        let ExprKind::Braced { elements, .. } = tree.expressions.get(list).kind else {
+            panic!("member initializer lost original list");
+        };
+        assert!(
+            matches!(child.arguments, Some(ConstructorArguments::Values(values)) if std::ptr::eq(tree.expr_lists.get(values), tree.expr_lists.get(elements)))
+        );
+        assert!(matches!(
+            graph.entity(class(b"Unused")).default_construction,
+            ConstructorState::NotStarted
+        ));
+    }
+    #[test]
+    fn array_constructor_boundaries_prepare_only_demanded_parameter_facts() {
+        let source = SourceBuffer::new(b"struct P{int n;P(int);};struct Q{Q(P=P(7));};struct R{Q a[2];};void f(){R r;}struct U{};struct Unused{Unused(U=U());};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-boundaries").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let p = cursor.intern_name(b"P").unwrap();
+        let p = graph
+            .binding(graph.own(graph.global, p, Filter::Prefix).unwrap())
+            .entity;
+        assert!(graph.lower_direct_class_parameter(p).unwrap());
+        assert_eq!(graph.lower_class_layout(p).unwrap(), (4, 2));
+        let u = cursor.intern_name(b"U").unwrap();
+        let u = graph
+            .binding(graph.own(graph.global, u, Filter::Prefix).unwrap())
+            .entity;
+        assert!(graph.lower_direct_class_parameter(u).is_err());
+        assert!(matches!(
+            graph.entity(u).layout,
+            crate::sema::layout::LayoutState::NotStarted
+        ));
     }
 }

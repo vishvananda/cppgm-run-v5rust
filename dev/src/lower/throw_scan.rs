@@ -160,7 +160,7 @@ impl Function<'_, '_, '_, '_> {
             _ => Ok(false),
         }
     }
-    fn variable_throws(
+    pub(super) fn variable_throws(
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,
@@ -191,7 +191,7 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(false)
     }
-    fn condition_throws(&mut self, condition: Condition) -> Result<bool, Error> {
+    pub(super) fn condition_throws(&mut self, condition: Condition) -> Result<bool, Error> {
         match condition {
             Condition::Expression(id) => self.expression_throws(id),
             Condition::Declaration { initializer, .. } => {
@@ -285,7 +285,8 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(true);
             }
         }
-        for &(_, constructor) in plan.subobjects {
+        for child in plan.subobjects {
+            let constructor = child.constructor;
             if !Entry::Constructor(constructor, Variant::Complete)
                 .facts(self.graph)?
                 .nothrow

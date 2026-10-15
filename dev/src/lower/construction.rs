@@ -129,6 +129,8 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Reference { .. }
             ) {
                 self.bind_reference(default, parameter, Context::Argument)?
+            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                self.class_argument(default, parameter)?
             } else {
                 let value = self.operand(default, Context::Argument)?;
                 self.fit(value, parameter)?.value
@@ -189,6 +191,51 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    fn initialize_class_member(
+        &mut self,
+        pointer: TypeId,
+        ty: TypeId,
+        offset: u64,
+        constructor: ConstructorId,
+        arguments: Option<ConstructorArguments>,
+    ) -> Result<(), Error> {
+        let trivial = self.graph.lower_constructor_trivial(constructor);
+        if arguments.is_none() && trivial {
+            return Ok(());
+        }
+        if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
+            if matches!(arguments, Some(ConstructorArguments::Value))
+                && self.graph.lower_constructor(constructor).zero_before_value
+            {
+                let object = self.object_pointer(pointer)?.value;
+                let index = self.builder.integer(u128::from(offset))?;
+                let object = self
+                    .emit(
+                        I::Index(Type::I8, Some(Projection::Field), object, index),
+                        ty,
+                    )?
+                    .value;
+                self.zero_class_object(ty, object, None)?;
+            }
+            if trivial {
+                return Ok(());
+            }
+            return self.construct_class_elements(
+                ty,
+                super::object_arrays::ArrayBase::Member { pointer, offset },
+                constructor,
+            );
+        }
+        let object = self.object_pointer(pointer)?.value;
+        let offset = self.builder.integer(u128::from(offset))?;
+        let object = self
+            .emit(
+                I::Index(Type::I8, Some(Projection::Field), object, offset),
+                ty,
+            )?
+            .value;
+        self.construct_at(constructor, ty, object, arguments)
+    }
     pub(super) fn initialize_constructor(
         &mut self,
         id: ConstructorId,
@@ -196,13 +243,25 @@ impl Function<'_, '_, '_, '_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(id);
-        if plan
-            .subobjects
-            .iter()
-            .any(|&(_, child)| !self.graph.lower_constructor_trivial(child))
-        {
-            return Err(Error::Missing("recursive constructor subobject lowering"));
+        self.construction.detached = self
+            .lifetime
+            .body
+            .map(|body| self.body_unwinds(body, &mut false))
+            .transpose()?
+            .unwrap_or(false);
+        for child in plan.subobjects {
+            let ty = self.graph.lower_entity_type(child.member)?;
+            if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+                && !self.graph.lower_constructor_trivial(child.constructor)
+                && !Entry::Constructor(child.constructor, Variant::Complete)
+                    .facts(self.graph)?
+                    .nothrow
+            {
+                self.construction.detached = true;
+                break;
+            }
         }
+        self.destruction.class = Some(plan.class);
         self.bit_initialization = super::bit_fields::Initialization::default();
         if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
             self.bit_initialization.limit = self
@@ -230,6 +289,11 @@ impl Function<'_, '_, '_, '_> {
                     false
                 });
             if base.initializer.is_none() && trivial || empty && value && trivial {
+                self.subobject_constructed(
+                    self.graph.lower_entity_type(base.class)?,
+                    offset,
+                    false,
+                )?;
                 continue;
             }
             self.bit_initialization.high = self.bit_initialization.high.max(
@@ -246,6 +310,7 @@ impl Function<'_, '_, '_, '_> {
                         self.zero_class_object(ty, object, Some(span))?;
                     }
                     if trivial {
+                        self.subobject_constructed(ty, offset, false)?;
                         continue;
                     }
                 }
@@ -258,125 +323,67 @@ impl Function<'_, '_, '_, '_> {
                         )))?;
                 self.constructor_aggregate_base(ty, object, initializer)?;
             }
+            self.subobject_constructed(ty, offset, false)?;
         }
+        let mut children = plan.subobjects.iter().peekable();
         for &(member, initializer) in plan.members {
-            let Some(initializer) = initializer else {
-                continue;
-            };
             let ty = self.graph.lower_entity_type(member)?;
-            if matches!(
+            if !matches!(
                 self.graph.lower_type(ty)?,
                 TypeView::Class(_) | TypeView::Array { .. }
             ) {
-                self.constructor_aggregate_member(
-                    member,
+                if let Some(initializer) = initializer {
+                    self.initialize_scalar_member(
+                        member,
+                        plan.object_pointer,
+                        initializer,
+                        plan.union,
+                    )?;
+                }
+                continue;
+            }
+            let offset = self.graph.lower_member_offset(member)?;
+            let child = if children.peek().is_some_and(|child| child.member == member) {
+                children.next()
+            } else {
+                None
+            };
+            if let Some(child) = child {
+                self.initialize_class_member(
                     plan.object_pointer,
-                    initializer,
-                    plan.union,
-                    location,
+                    ty,
+                    offset,
+                    child.constructor,
+                    child.arguments,
                 )?;
+                if !plan.union {
+                    self.subobject_constructed(ty, offset, true)?;
+                }
                 self.bit_initialization.unit = 0;
                 self.bit_initialization.high = self.bit_initialization.high.max(
-                    self.graph
-                        .lower_member_offset(member)?
+                    offset
                         .wrapping_add(super::types::layout(self.graph, ty)?.0)
                         .wrapping_mul(8),
                 );
                 continue;
             }
-            let single = match initializer.kind {
-                ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
-                    if let ast::ExprKind::Braced { elements, .. } =
-                        self.tree.expressions.get(id).kind
-                    {
-                        if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
-                            Some(self.initializer_expression(initializer)?)
-                        } else {
-                            self.tree.expr_lists.get(elements).first().copied()
-                        }
-                    } else {
-                        Some(id)
-                    }
+            let Some(initializer) = initializer else {
+                if !plan.union {
+                    self.subobject_constructed(ty, offset, true)?;
                 }
-                ast::InitializerKind::Parenthesized(arguments) => {
-                    self.tree.expr_lists.get(arguments).first().copied()
-                }
-                _ => {
-                    return Err(Error::Semantic(crate::sema::Error::Invariant(
-                        "constructor initializer action",
-                    )));
-                }
-            };
-            if self.graph.lower_bit_field(member)?.is_some() {
-                let field = self.field(member)?;
-                let value = if let Some(single) = single {
-                    let value = self.operand(single, Context::MemberInitialization)?;
-                    self.fit(value, ty)?
-                } else {
-                    self.zero(ty)?
-                };
-                let object = self.object_pointer(plan.object_pointer)?.value;
-                let offset = self.builder.integer(u128::from(field.offset))?;
-                let address = self
-                    .emit(
-                        I::Index(Type::I8, Some(Projection::Field), object, offset),
-                        ty,
-                    )?
-                    .value;
-                self.initialize_field_value(
-                    field,
-                    super::bit_fields::Unit {
-                        address,
-                        volatile: self.graph.lower_cv(ty) & 2 != 0,
-                    },
-                    value,
-                )?;
-                let layout = self
-                    .graph
-                    .lower_bit_field(member)?
-                    .ok_or(Error::Missing("constructor field layout"))?;
-                self.bit_initialization.high = self
-                    .bit_initialization
-                    .high
-                    .max(layout.bit.wrapping_add(layout.width));
                 continue;
+            };
+            self.constructor_aggregate_member(
+                member,
+                plan.object_pointer,
+                initializer,
+                plan.union,
+                location,
+            )?;
+            if !plan.union {
+                self.subobject_constructed(ty, offset, true)?;
             }
             self.bit_initialization.unit = 0;
-            let value = if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
-                self.bind_reference(
-                    single.ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                        "reference member without source",
-                    )))?,
-                    ty,
-                    Context::Initialization,
-                )?
-            } else if let Some(single) = single {
-                let value = self.operand(single, Context::Initialization)?;
-                self.fit(value, ty)?.value
-            } else {
-                self.zero(ty)?.value
-            };
-            let object = self.object_pointer(plan.object_pointer)?.value;
-            let offset = self
-                .builder
-                .integer(u128::from(self.graph.lower_member_offset(member)?))?;
-            let address = self
-                .emit(
-                    I::Index(Type::I8, Some(Projection::Field), object, offset),
-                    ty,
-                )?
-                .value;
-            self.effect(I::Store(
-                Facts::memory(
-                    self.graph.lower_cv(ty) & 2 != 0,
-                    self.graph.lower_cv(ty) & 2 == 0
-                        && !plan.union
-                        && !matches!(super::types::storage(self.graph, ty)?, Type::I8 | Type::U8),
-                ),
-                super::types::storage(self.graph, ty)?,
-                value,
-                address,
-            ))?;
             self.bit_initialization.high = self.bit_initialization.high.max(
                 self.graph
                     .lower_member_offset(member)?
@@ -384,6 +391,113 @@ impl Function<'_, '_, '_, '_> {
                     .wrapping_mul(8),
             );
         }
+        Ok(())
+    }
+    fn initialize_scalar_member(
+        &mut self,
+        member: EntityId,
+        pointer: TypeId,
+        initializer: ast::Initializer,
+        union: bool,
+    ) -> Result<(), Error> {
+        let ty = self.graph.lower_entity_type(member)?;
+        let single = match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                if let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+                    if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                        Some(self.initializer_expression(initializer)?)
+                    } else {
+                        self.tree.expr_lists.get(elements).first().copied()
+                    }
+                } else {
+                    Some(id)
+                }
+            }
+            ast::InitializerKind::Parenthesized(arguments) => {
+                self.tree.expr_lists.get(arguments).first().copied()
+            }
+            _ => {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "constructor initializer action",
+                )));
+            }
+        };
+        if self.graph.lower_bit_field(member)?.is_some() {
+            let field = self.field(member)?;
+            let value = if let Some(single) = single {
+                let value = self.operand(single, Context::MemberInitialization)?;
+                self.fit(value, ty)?
+            } else {
+                self.zero(ty)?
+            };
+            let object = self.object_pointer(pointer)?.value;
+            let offset = self.builder.integer(u128::from(field.offset))?;
+            let address = self
+                .emit(
+                    I::Index(Type::I8, Some(Projection::Field), object, offset),
+                    ty,
+                )?
+                .value;
+            self.initialize_field_value(
+                field,
+                super::bit_fields::Unit {
+                    address,
+                    volatile: self.graph.lower_cv(ty) & 2 != 0,
+                },
+                value,
+            )?;
+            let layout = self
+                .graph
+                .lower_bit_field(member)?
+                .ok_or(Error::Missing("constructor field layout"))?;
+            self.bit_initialization.high = self
+                .bit_initialization
+                .high
+                .max(layout.bit.wrapping_add(layout.width));
+            return Ok(());
+        }
+        self.bit_initialization.unit = 0;
+        let value = if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+            self.bind_reference(
+                single.ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "reference member without source",
+                )))?,
+                ty,
+                Context::Initialization,
+            )?
+        } else if let Some(single) = single {
+            let value = self.operand(single, Context::Initialization)?;
+            self.fit(value, ty)?.value
+        } else {
+            self.zero(ty)?.value
+        };
+        let object = self.object_pointer(pointer)?.value;
+        let offset = self
+            .builder
+            .integer(u128::from(self.graph.lower_member_offset(member)?))?;
+        let address = self
+            .emit(
+                I::Index(Type::I8, Some(Projection::Field), object, offset),
+                ty,
+            )?
+            .value;
+        self.effect(I::Store(
+            Facts::memory(
+                self.graph.lower_cv(ty) & 2 != 0,
+                self.graph.lower_cv(ty) & 2 == 0
+                    && !union
+                    && !matches!(super::types::storage(self.graph, ty)?, Type::I8 | Type::U8),
+            ),
+            super::types::storage(self.graph, ty)?,
+            value,
+            address,
+        ))?;
+        self.bit_initialization.high = self.bit_initialization.high.max(
+            self.graph
+                .lower_member_offset(member)?
+                .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                .wrapping_mul(8),
+        );
         Ok(())
     }
 }

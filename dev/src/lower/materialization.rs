@@ -98,6 +98,59 @@ impl Function<'_, '_, '_, '_> {
         self.materialize_class(expr, ty, address)?;
         Ok(true)
     }
+    pub(super) fn class_argument(&mut self, id: ast::ExprId, ty: TypeId) -> Result<Value, Error> {
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Err(crate::sema::Error::Invariant("class argument without class").into());
+        };
+        if !self.graph.lower_direct_class_parameter(class)? {
+            return Err(Error::Missing("indirect class parameter ownership"));
+        }
+        self.symbols.require_trivial_storage(ty)?;
+        let slot = self.generated_slot("argobj", types::storage(self.graph, ty)?)?;
+        let object = self.emit(I::Addr(slot), ty)?.value;
+        let source = self.without_parentheses(id);
+        let functional = matches!(
+            self.tree.expressions.get(source).kind,
+            ExprKind::FunctionalCast { .. }
+        ) || self.graph.lower_functional_call(source)?;
+        if self.graph.lower_class_empty(class)? && functional {
+            self.materialize_empty_argument(source, ty, object)?;
+        } else {
+            self.materialize_class(id, ty, object)?;
+        }
+        Ok(slot)
+    }
+    fn materialize_empty_argument(
+        &mut self,
+        source: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        match self.graph.lower_prvalue_initialization(source)? {
+            Some(ClassInitialization::Constructed(
+                crate::sema::lowering::ConstructorArguments::Value,
+            )) => {
+                let constructor = self.graph.lower_list_constructor(source)?.ok_or(
+                    crate::sema::Error::Invariant("empty argument without constructor"),
+                )?;
+                if !self.graph.lower_constructor_trivial(constructor) {
+                    self.call_constructor(
+                        constructor,
+                        super::construction::Variant::Complete,
+                        object,
+                        None,
+                    )?;
+                }
+                Ok(())
+            }
+            Some(ClassInitialization::Aggregate(values)) if values.is_empty() => Ok(()),
+            Some(ClassInitialization::Elided(inner)) => {
+                self.materialize_empty_argument(inner, ty, object)
+            }
+            _ => self.materialize_class(source, ty, object),
+        }
+    }
     pub(super) fn class_temporary(
         &mut self,
         id: ast::ExprId,

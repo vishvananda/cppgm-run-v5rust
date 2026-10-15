@@ -628,6 +628,8 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Reference { .. }
             ) {
                 values.push(self.bind_reference(argument, parameter, Context::Argument)?);
+            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                values.push(self.class_argument(argument, parameter)?);
             } else {
                 let value = self.operand(argument, Context::Argument)?;
                 let value = self.fit(value, parameter)?;

@@ -9,6 +9,11 @@ use crate::{
     },
     sema::lowering::{ConstructorId, EntityId, TypeId, TypeView},
 };
+#[derive(Clone, Copy)]
+pub(super) enum ArrayBase {
+    Storage(Value),
+    Member { pointer: TypeId, offset: u64 },
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn default_class_array(
         &mut self,
@@ -22,6 +27,14 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "array without constructor plan",
             )))?;
+        self.construct_class_elements(ty, ArrayBase::Storage(storage), constructor)
+    }
+    pub(super) fn construct_class_elements(
+        &mut self,
+        ty: TypeId,
+        base: ArrayBase,
+        constructor: ConstructorId,
+    ) -> Result<(), Error> {
         let mut element = ty;
         let mut count = 1_u64;
         while let TypeView::Array {
@@ -32,20 +45,37 @@ impl Function<'_, '_, '_, '_> {
             count = count.wrapping_mul(bound);
             element = inner;
         }
-        // Default argument expressions use the same constructor call path.
-        // Temporaries with nontrivial destruction retain their materialization boundary.
         let throws = self.default_constructor_throws(constructor)?;
-        let destroyed = self.symbols.storage_destructor(element)?.is_some();
+        let destroyed = self.symbols.class_destructor(element)?.is_some();
         if count <= 8 {
-            self.construct_small_array(element, storage, count, constructor, throws && destroyed)
+            self.construct_small_array(element, base, count, constructor, throws && destroyed)
         } else {
-            self.construct_array_loop(element, storage, count, constructor, throws, destroyed)
+            self.construct_array_loop(element, base, count, constructor, throws, destroyed)
+        }
+    }
+    fn construction_array_base(
+        &mut self,
+        base: ArrayBase,
+        element: TypeId,
+    ) -> Result<Value, Error> {
+        match base {
+            ArrayBase::Storage(storage) => Ok(self.emit(I::Addr(storage), element)?.value),
+            ArrayBase::Member { pointer, offset } => {
+                let object = self.object_pointer(pointer)?.value;
+                let offset = self.builder.integer(u128::from(offset))?;
+                Ok(self
+                    .emit(
+                        I::Index(Type::I8, Some(Projection::Field), object, offset),
+                        element,
+                    )?
+                    .value)
+            }
         }
     }
     fn construct_small_array(
         &mut self,
         element: TypeId,
-        storage: Value,
+        storage: ArrayBase,
         count: u64,
         constructor: ConstructorId,
         guarded: bool,
@@ -60,7 +90,7 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 None
             };
-            let base = self.emit(I::Addr(storage), element)?.value;
+            let base = self.construction_array_base(storage, element)?;
             let object = self.element_address(base, index, size, element)?;
             self.call_constructor(constructor, Variant::Complete, object, None)?;
             if let Some((dispatch, next)) = guard {
@@ -68,12 +98,11 @@ impl Function<'_, '_, '_, '_> {
                 self.jump(next)?;
                 self.place(dispatch)?;
                 for previous in (0..index).rev() {
-                    let base = self.emit(I::Addr(storage), element)?.value;
+                    let base = self.construction_array_base(storage, element)?;
                     let object = self.element_address(base, previous, size, element)?;
                     self.call_destructor(element, object)?;
                 }
-                self.effect(I::Runtime(R::Resume))?;
-                self.terminated = true;
+                self.finish_array_unwind()?;
                 self.place(next)?;
             }
         }
@@ -82,7 +111,7 @@ impl Function<'_, '_, '_, '_> {
     fn construct_array_loop(
         &mut self,
         element: TypeId,
-        storage: Value,
+        storage: ArrayBase,
         count: u64,
         constructor: ConstructorId,
         throws: bool,
@@ -157,19 +186,18 @@ impl Function<'_, '_, '_, '_> {
             self.call_destructor(element, object)?;
             self.jump(cleanup)?;
             self.place(resume)?;
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
+            self.finish_array_unwind()?;
         }
         self.place(end)
     }
     fn dynamic_element(
         &mut self,
-        storage: Value,
+        storage: ArrayBase,
         element: TypeId,
         index: Value,
         size: u64,
     ) -> Result<Value, Error> {
-        let base = self.emit(I::Addr(storage), element)?.value;
+        let base = self.construction_array_base(storage, element)?;
         let offset = if size == 1 {
             index
         } else {

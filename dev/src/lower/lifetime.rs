@@ -26,6 +26,7 @@ struct ChainBlock {
     action: Option<Cleanup>,
     tail: Option<BlockId>,
     unwinding: bool,
+    constructor_tail: Option<BlockId>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct LiveId(u32);
@@ -307,6 +308,7 @@ impl Function<'_, '_, '_, '_> {
                 action: None,
                 tail: None,
                 unwinding,
+                constructor_tail: self.constructor_unwind_target(),
             };
             if !unwinding {
                 self.lifetime.return_terminal = Some(block);
@@ -359,6 +361,7 @@ impl Function<'_, '_, '_, '_> {
                 action: Some(self.lifetime.cleanups[index]),
                 tail: Some(tail),
                 unwinding,
+                constructor_tail: self.constructor_unwind_target(),
             };
             if late {
                 self.lifetime.late.push(record);
@@ -375,6 +378,14 @@ impl Function<'_, '_, '_, '_> {
             tail = block;
         }
         Ok(tail)
+    }
+    pub(super) fn constructor_unwind_changed(&mut self) {
+        self.lifetime.resume = None;
+        self.lifetime.conditional_resume = None;
+        for cleanup in &mut self.lifetime.cleanups {
+            cleanup.unwind = None;
+            cleanup.conditional = None;
+        }
     }
     pub(super) fn unwind_entry(&mut self) -> Result<BlockId, Error> {
         self.cleanup_entry(true)
@@ -450,7 +461,11 @@ impl Function<'_, '_, '_, '_> {
                         )))?,
                 )?;
             } else if block.unwinding {
-                if self.lifetime.function_guard.is_some() {
+                if let Some(tail) = block.constructor_tail {
+                    self.effect(I::Runtime(R::EhEnd))?;
+                    self.effect(I::Runtime(R::EhEnd))?;
+                    self.jump(tail)?;
+                } else if self.lifetime.function_guard.is_some() {
                     self.terminate_unwinding()?;
                 } else {
                     self.effect(I::Runtime(R::Resume))?;
