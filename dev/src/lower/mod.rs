@@ -31,6 +31,7 @@ mod mutations;
 mod object_arrays;
 mod operator_calls;
 mod pointers;
+mod reference_lifetimes;
 mod references;
 mod shutdown;
 mod startup;
@@ -328,3 +329,6 @@ pub(crate) fn lower_unit(
     }
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) use reference_lifetimes::tests::assert_extended_ownership;

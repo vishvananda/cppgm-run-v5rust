@@ -19,11 +19,13 @@ impl Function<'_, '_, '_, '_> {
     fn declared_live(
         &mut self,
         entity: crate::sema::lowering::EntityId,
+        initializer: Option<ast::Initializer>,
         live: Option<LiveId>,
     ) -> Result<Option<LiveId>, Error> {
         if self.graph.lower_is_variable(entity)
             && self.graph.lower_automatic(entity)
-            && self.automatic_destructor(entity)?.is_some()
+            && (self.automatic_destructor(entity)?.is_some()
+                || self.initializer_extends_temporary(initializer)?)
         {
             return Ok(Some(self.lifetime.add_live(entity, live)?));
         }
@@ -36,7 +38,11 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Option<LiveId>, Error> {
         if let ast::DeclKind::Simple { declarators, .. } = self.tree.declarations.get(decl).kind {
             for decl in self.tree.init_declarators.get(declarators) {
-                live = self.declared_live(self.graph.lower_declared(decl.declarator)?, live)?;
+                live = self.declared_live(
+                    self.graph.lower_declared(decl.declarator)?,
+                    decl.initializer,
+                    live,
+                )?;
             }
         }
         Ok(live)
@@ -46,8 +52,17 @@ impl Function<'_, '_, '_, '_> {
         condition: Condition,
         live: Option<LiveId>,
     ) -> Result<Option<LiveId>, Error> {
-        if let Condition::Declaration { declarator, .. } = condition {
-            return self.declared_live(self.graph.lower_declared(declarator)?, live);
+        if let Condition::Declaration {
+            declarator,
+            initializer,
+            ..
+        } = condition
+        {
+            return self.declared_live(
+                self.graph.lower_declared(declarator)?,
+                Some(initializer),
+                live,
+            );
         }
         Ok(live)
     }
@@ -168,6 +183,13 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             let ty = self.graph.lower_entity_type(entity)?;
+            if matches!(
+                self.graph.lower_type(ty)?,
+                crate::sema::lowering::TypeView::Reference { .. }
+            ) {
+                *alive |= self.initializer_extends_temporary(init.initializer)?;
+                continue;
+            }
             if let Some(destructor) = self.symbols.class_destructor(ty)? {
                 if !self.graph.lower_function(destructor)?.nothrow {
                     return Ok(true);

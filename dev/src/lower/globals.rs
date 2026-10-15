@@ -165,7 +165,7 @@ fn define_storage(
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
     let mut dynamic = constructed;
     let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
-        if facts.reference_temporary.is_some() {
+        if facts.reference_temporary.is_some() && facts.initializer.is_some() {
             GlobalInit::Address(
                 data::reference_temporary(program, symbols, graph, tree, entity, false)?,
                 0,

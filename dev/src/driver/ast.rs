@@ -410,4 +410,26 @@ mod tests {
             "extern aliases own no frame storage"
         );
     }
+    #[test]
+    fn extended_cleanups_keep_distinct_declaring_owners_and_original_syntax() {
+        for (source, per_owner) in [
+            (b"int n;struct A{A(int){}~A(){++n;}};struct R{const A&r;};void f(){R a={A(1)};R b={A(2)};}".as_slice(), 1),
+            (b"int n;struct A{A(int){}~A(){++n;}};struct R{A a;const A&r;};void f(){R a={A(1),A(1)};R b={A(2),A(2)};}".as_slice(), 2),
+        ] {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(
+            crate::preprocess::unit::Preprocessor::with_name(&source, b"reference-ownership")
+                .unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer =
+            crate::sema::Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        crate::lower::assert_extended_ownership(&graph, tree, cursor, declarations, per_owner);
+        assert_eq!(count, tree.expressions.mark());
+        }
+    }
 }

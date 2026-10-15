@@ -24,11 +24,15 @@ pub(super) struct Cleanup {
 pub(super) enum CleanupPlace {
     Storage(Value),
     Subobject(Value),
+    Extended(Value),
     Counted { root: Value, counter: Value },
 }
 impl Cleanup {
     pub(super) fn member(self) -> bool {
-        !matches!(self.place, CleanupPlace::Storage(_))
+        matches!(
+            self.place,
+            CleanupPlace::Subobject(_) | CleanupPlace::Counted { .. }
+        )
     }
 }
 #[derive(Clone, Copy)]
@@ -148,6 +152,51 @@ impl Function<'_, '_, '_, '_> {
             shared_return: None,
         });
     }
+    pub(super) fn register_extended_temporary(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        owner: EntityId,
+    ) {
+        self.lifetime.cleanups.push(Cleanup {
+            place: CleanupPlace::Extended(object),
+            ty,
+            variable: Some(owner),
+            unwind: None,
+            conditional: None,
+            shared_return: None,
+        });
+        self.lifetime
+            .depths
+            .insert(owner, self.lifetime.cleanups.len());
+    }
+    pub(super) fn release_aggregate_members(&mut self, first: usize) {
+        let mut kept = first;
+        let mut removed = false;
+        for index in first..self.lifetime.cleanups.len() {
+            let mut cleanup = self.lifetime.cleanups[index];
+            if cleanup.member() {
+                removed = true;
+                continue;
+            }
+            // A retained temporary's old tail may contain a member now owned
+            // by the completed aggregate. Keep that handler for earlier calls;
+            // later calls need a chain from the new lexical ownership alone.
+            if removed {
+                cleanup.unwind = None;
+                cleanup.conditional = None;
+                cleanup.shared_return = None;
+            }
+            self.lifetime.cleanups[kept] = cleanup;
+            kept += 1;
+        }
+        self.lifetime.cleanups.truncate(kept);
+        for (index, cleanup) in self.lifetime.cleanups.iter().enumerate().skip(first) {
+            if let Some(variable) = cleanup.variable {
+                self.lifetime.depths.insert(variable, index + 1);
+            }
+        }
+    }
     pub(super) fn leave_scope(&mut self, depth: usize) -> Result<(), Error> {
         if !self.terminated {
             self.destroy_cleanups(depth)?;
@@ -170,13 +219,15 @@ impl Function<'_, '_, '_, '_> {
     fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
         match cleanup.place {
             CleanupPlace::Storage(storage) => self.destroy_storage(cleanup.ty, storage),
-            CleanupPlace::Subobject(object) => self.destroy_completed_subobject(cleanup.ty, object),
+            CleanupPlace::Subobject(object) | CleanupPlace::Extended(object) => {
+                self.destroy_completed_object(cleanup.ty, object)
+            }
             CleanupPlace::Counted { .. } => {
                 Err(crate::sema::Error::Invariant("counted cleanup outside unwind chain").into())
             }
         }
     }
-    fn destroy_completed_subobject(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+    fn destroy_completed_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
             if bound > 8 && !matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
                 return self.destroy_array_loop(element, object, bound);

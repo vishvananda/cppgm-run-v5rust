@@ -142,6 +142,13 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())
     }
+    pub(super) fn open_temporary_region(&mut self) -> Result<(), Error> {
+        let entry = self.unwind_entry()?;
+        self.effect(I::Runtime(R::EhTry(entry)))?;
+        self.lifetime.region = true;
+        self.lifetime.region_depth = self.lifetime.cleanups.len();
+        Ok(())
+    }
     pub(super) fn finish_lifetime_call(
         &mut self,
         value: RValue,

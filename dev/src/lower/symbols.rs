@@ -23,6 +23,7 @@ pub(super) struct SymbolTable {
     source: Option<SourceId>,
     string_literals: u32,
     reference_temporaries: u32,
+    initializer_list_backings: u32,
     initializer: Option<SymbolId>,
     exception_helpers: Option<super::exception_helpers::Helpers>,
     terminate_pending: bool,
@@ -529,8 +530,52 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.identifier(self.graph.lower_variable(entity)?.name)?
             )
         };
+        self.named_reference_temporary(program, &spelling)
+    }
+    pub(super) fn dynamic_temporary_symbol(
+        &mut self,
+        program: &mut Program,
+        ty: TypeId,
+    ) -> Result<(SymbolId, Option<NameId>), Error> {
+        let spelling = if let Some((owner, sequence)) = self.temporary_owner {
+            let facts = self.graph.lower_variable(owner)?;
+            if !matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
+                && matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            {
+                self.table.initializer_list_backings = self
+                    .table
+                    .initializer_list_backings
+                    .checked_add(1)
+                    .ok_or(crate::lowir::Error::Limit)?;
+                format!(
+                    "__cppgm_initlist_backing_{}",
+                    self.table.initializer_list_backings
+                )
+            } else {
+                let symbol = self.variable_symbol(program, owner)?;
+                format!(
+                    "__cppgm_ref_temporary__{}_{}",
+                    program.names.get(program.symbol(symbol).name),
+                    sequence
+                )
+            }
+        } else {
+            self.table.reference_temporaries = self
+                .table
+                .reference_temporaries
+                .checked_add(1)
+                .ok_or(crate::lowir::Error::Limit)?;
+            format!("__ref_tmp__{}", self.table.reference_temporaries)
+        };
+        self.named_reference_temporary(program, &spelling)
+    }
+    fn named_reference_temporary(
+        &mut self,
+        program: &mut Program,
+        spelling: &str,
+    ) -> Result<(SymbolId, Option<NameId>), Error> {
         let Some((owner, sequence)) = self.temporary_owner else {
-            return Ok((self.table.allocate(program, &spelling, None, true)?, None));
+            return Ok((self.table.allocate(program, spelling, None, true)?, None));
         };
         self.temporary_owner = Some((
             owner,
@@ -557,9 +602,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         )?;
         let object = program.names.intern_bytes(&bytes)?;
         let local_object = (!self.table.objects.contains_key(&object)).then_some(object);
-        let symbol = self
-            .table
-            .allocate(program, &spelling, Some(object), true)?;
+        let symbol = self.table.allocate(program, spelling, Some(object), true)?;
         Ok((symbol, local_object))
     }
     pub(super) fn replace_temporary_owner(

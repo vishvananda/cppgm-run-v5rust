@@ -74,7 +74,7 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(crate::lowir::model::InstructionKind::Addr(storage), ty)?;
             }
             self.close_lifetime_region()?;
-            self.lifetime.cleanups.truncate(scope.first);
+            self.release_aggregate_members(scope.first);
         }
         self.aggregation.floor = scope.floor;
         self.aggregation.landing = scope.landing;
@@ -116,7 +116,7 @@ impl Function<'_, '_, '_, '_> {
         first: usize,
     ) -> Result<(), Error> {
         self.close_lifetime_region()?;
-        self.lifetime.cleanups.truncate(first);
+        self.release_aggregate_members(first);
         self.register_aggregate_member(ty, object);
         Ok(())
     }

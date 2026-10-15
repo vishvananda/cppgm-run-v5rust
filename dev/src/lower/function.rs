@@ -36,6 +36,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
     pub persistent_references: bool,
+    pub reference_lifetimes: super::reference_lifetimes::Extensions,
     pub next_static: u32,
     pub next_block: u32,
     pub jumps: Vec<super::statements::JumpTargets>,
@@ -297,6 +298,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             entity,
             this_slot: None,
             persistent_references: false,
+            reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
             next_block: 0,
             jumps: Vec::new(),
@@ -464,6 +466,7 @@ impl Function<'_, '_, '_, '_> {
             self.graph.lower_type(ty)?,
             TypeView::Class(_) | TypeView::Array { .. }
         );
+        let expression = self.lifetime.full_expression;
         let began = if object {
             false
         } else {
@@ -471,12 +474,19 @@ impl Function<'_, '_, '_, '_> {
         };
         let construction = self.lifetime.construction;
         self.lifetime.construction |= object;
-        self.initialize_local_variable(declarator, initializer)?;
-        if object {
+        let saved_owner = self.reference_lifetimes.aggregate;
+        if object && self.graph.lower_automatic(entity) {
+            self.reference_lifetimes.aggregate = Some(entity);
+        }
+        let result = self.initialize_local_variable(declarator, initializer);
+        self.reference_lifetimes.aggregate = saved_owner;
+        result?;
+        if object || !expression {
             self.close_lifetime_region()?;
         }
         self.lifetime.construction = construction;
         self.end_lifetime_expression(began)?;
+        self.lifetime.full_expression = expression;
         if reachable && self.graph.lower_is_variable(entity) && self.graph.lower_automatic(entity) {
             self.register_local_destruction(entity)?;
         }
@@ -516,8 +526,7 @@ impl Function<'_, '_, '_, '_> {
                 "reference without initializer",
             )))?;
             let expr = self.initializer_expression(initializer)?;
-            let address =
-                self.bind_reference(expr, ty, super::conversions::Context::Initialization)?;
+            let address = self.bind_extended_reference(expr, ty, entity)?;
             return self.effect(I::Store(
                 crate::lowir::model::Facts::memory(false, true),
                 Type::Ptr,

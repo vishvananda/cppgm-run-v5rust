@@ -156,11 +156,49 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         stem: &'static str,
     ) -> Result<Value, Error> {
+        self.bound_class_temporary(id, stem, false)
+    }
+    pub(super) fn bound_class_temporary(
+        &mut self,
+        id: ast::ExprId,
+        stem: &'static str,
+        persistent: bool,
+    ) -> Result<Value, Error> {
+        let root = self.without_parentheses(id);
+        if let ExprKind::Binary {
+            op, left, right, ..
+        } = self.tree.expressions.get(root).kind
+            && op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma)
+            && !self.graph.lower_operator_call(root)?
+        {
+            self.discard(left)?;
+            return self.comma_class_temporary(root, right, stem, persistent);
+        }
+        let persistent = persistent || self.persistent_temporary_path(id);
         let ty = self.graph.lower_expression(id)?.ty;
-        self.symbols.require_trivial_storage(ty)?;
-        let slot = self.generated_slot(stem, types::storage(self.graph, ty)?)?;
+        let owner = self.extended_temporary_owner(id);
+        let destructor = self.symbols.storage_destructor(ty)?;
+        if destructor.is_some() && persistent {
+            return Err(Error::Missing("persistent class temporary finalization"));
+        }
+        if destructor.is_some() && owner.is_none() {
+            return Err(Error::Missing("full-expression class temporary cleanup"));
+        }
+        if destructor.is_some() && self.lifetime.full_expression && self.aggregate_has_members() {
+            self.before_lifetime_call(true)?;
+        }
+        let slot = self.temporary_storage(ty, persistent, stem)?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.materialize_class(id, ty, object)?;
+        if destructor.is_some()
+            && let Some(owner) = owner
+        {
+            self.close_lifetime_region()?;
+            self.register_extended_temporary(ty, object, owner);
+            if self.lifetime.full_expression {
+                self.before_lifetime_call(true)?;
+            }
+        }
         Ok(object)
     }
     pub(super) fn materialize_class(

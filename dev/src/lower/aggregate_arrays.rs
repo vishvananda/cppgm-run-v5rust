@@ -107,7 +107,7 @@ impl Function<'_, '_, '_, '_> {
             .any(|cleanup| cleanup.member())
         {
             self.close_lifetime_region()?;
-            self.lifetime.cleanups.truncate(first);
+            self.release_aggregate_members(first);
         }
         count.made = count.made.wrapping_add(1);
         if count.made < count.total {
@@ -124,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn end_counted_elements(&mut self, scope: Scope) -> Result<(), Error> {
         self.close_lifetime_region()?;
         self.aggregation.count = None;
-        self.lifetime.cleanups.truncate(scope.first);
+        self.release_aggregate_members(scope.first);
         self.aggregation.floor = scope.floor;
         if scope.floor.is_some() {
             self.register_aggregate_member(scope.ty, scope.root);

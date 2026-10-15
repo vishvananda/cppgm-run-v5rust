@@ -866,6 +866,18 @@ impl Graph {
         Ok(self.expression_facts.get(id)?.category
             == super::expression_facts::ValueCategory::Lvalue)
     }
+    pub(crate) fn lower_reference_binding(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .conversion
+            .is_some_and(|conversion| {
+                matches!(
+                    self.types.get(conversion.target).kind,
+                    TypeKind::Reference { .. }
+                )
+            }))
+    }
     pub(crate) fn lower_expression(&self, id: ast::ExprId) -> Result<Expression, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(Expression {

@@ -33,6 +33,15 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         stem: &'static str,
     ) -> Result<Value, Error> {
+        self.bound_array_temporary(id, stem, false)
+    }
+    pub(super) fn bound_array_temporary(
+        &mut self,
+        id: ast::ExprId,
+        stem: &'static str,
+        persistent: bool,
+    ) -> Result<Value, Error> {
+        let persistent = persistent || self.persistent_temporary_path(id);
         let ty = self.graph.lower_expression(id)?.ty;
         let root = self.without_parentheses(id);
         let list = match self.tree.expressions.get(root).kind {
@@ -49,9 +58,37 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => return Err(Error::Missing("non-list array temporary lowering")),
         };
-        let slot = self.generated_slot(stem, types::storage(self.graph, ty)?)?;
+        let slot = self.temporary_storage(ty, persistent, stem)?;
+        if persistent {
+            self.static_array_temporary(ty, slot, self.tree.expr_lists.get(list))?;
+            return Ok(self.emit(I::Addr(slot), ty)?.value);
+        }
+        let owner = self.extended_temporary_owner(id);
+        let destructor = self.symbols.storage_destructor(ty)?;
+        if destructor.is_some() && owner.is_none() {
+            return Err(Error::Missing(
+                "full-expression class array temporary cleanup",
+            ));
+        }
+        if destructor.is_some() && self.lifetime.full_expression && !self.lifetime.region {
+            self.open_temporary_region()?;
+        }
         let address = self.emit(I::Addr(slot), ty)?.value;
-        self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+        let mut element = ty;
+        while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
+            element = inner;
+        }
+        if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
+            self.aggregate_array(ty, address, self.tree.expr_lists.get(list))?;
+        } else {
+            self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+        }
+        if destructor.is_some()
+            && let Some(owner) = owner
+        {
+            self.close_lifetime_region()?;
+            self.register_extended_temporary(ty, address, owner);
+        }
         Ok(address)
     }
     pub(super) fn literal_array_unit(

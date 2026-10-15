@@ -287,10 +287,15 @@ impl Function<'_, '_, '_, '_> {
         let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("class array non-list initialization"));
         };
-        let mut input = Input {
-            values: self.tree.expr_lists.get(elements),
-            next: 0,
-        };
+        self.static_array_temporary(ty, storage, self.tree.expr_lists.get(elements))
+    }
+    pub(super) fn static_array_temporary(
+        &mut self,
+        ty: TypeId,
+        storage: Value,
+        values: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        let mut input = Input { values, next: 0 };
         let mut path = Path {
             root: Root::Slot(storage),
             steps: std::mem::take(&mut self.named_path),
@@ -557,7 +562,7 @@ impl Function<'_, '_, '_, '_> {
                         "empty aggregate reference list",
                     )))?;
             }
-            self.bind_reference(id, ty, Context::Initialization)?
+            self.bind_aggregate_reference(id, ty)?
         } else if let Some(id) = expr {
             let context = if matches!(item, Item::ArrayElement) {
                 Context::Initialization

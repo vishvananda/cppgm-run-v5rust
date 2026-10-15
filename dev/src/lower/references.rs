@@ -8,8 +8,8 @@ use super::{
 };
 use crate::{
     lowir::{
-        model::{Facts, InstructionKind as I, Value},
-        vocabulary::Type,
+        model::{DataItem, Facts, Global, GlobalInit, InstructionKind as I, Metadata, Value},
+        vocabulary::{Binding, Type},
     },
     sema::lowering::{TypeId, TypeView},
     syntax::ast::{self, ExprKind},
@@ -68,42 +68,34 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let facts = self.graph.lower_expression(id)?;
-        if self.persistent_references
+        let persistent = self.persistent_references
             && matches!(
                 context,
                 Context::Initialization | Context::MemberInitialization
-            )
-            && (facts.temporary.is_some()
-                || !facts.is_place
-                    && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Function { .. }))
-        {
-            // A namespace object's bound temporary needs static storage, never
-            // the shared initializer's automatic frame. That owner is not ported yet.
-            return Err(Error::Missing(
-                "persistent static reference temporary lowering",
-            ));
-        }
+            );
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. })
             && !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Array { .. })
         {
-            return self.array_temporary(
+            return self.bound_array_temporary(
                 id,
                 if matches!(context, Context::Argument) {
                     "argarr"
                 } else {
                     "arraytmp"
                 },
+                persistent,
             );
         }
         if !facts.is_place && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_)) {
-            let address = self.class_temporary(
+            let address = self.bound_class_temporary(
                 id,
                 if matches!(context, Context::Argument) {
                     "arg"
                 } else {
                     "tmpobj"
                 },
+                persistent,
             )?;
             if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
                 return self.base_projection(address, facts.ty, offset);
@@ -143,7 +135,8 @@ impl Function<'_, '_, '_, '_> {
             };
             let value = self.fit(value, target)?;
             let storage = types::storage(self.graph, target)?;
-            let slot = if let Some(slot) = chosen
+            let slot = if !persistent
+                && let Some(slot) = chosen
                 && matches!(
                     self.tree.expressions.get(self.without_parentheses(id)).kind,
                     ExprKind::Conditional { .. }
@@ -157,7 +150,7 @@ impl Function<'_, '_, '_, '_> {
                     Context::Return => "retref",
                     _ => "tmpref",
                 };
-                self.generated_slot(stem, storage)?
+                self.temporary_storage(target, persistent, stem)?
             };
             self.effect(I::Store(
                 Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
@@ -204,5 +197,50 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn generated_slot(&mut self, stem: &'static str, ty: Type) -> Result<Value, Error> {
         Ok(self.builder.generated_slot(stem, ty)?)
+    }
+    pub(super) fn temporary_storage(
+        &mut self,
+        ty: TypeId,
+        persistent: bool,
+        stem: &'static str,
+    ) -> Result<Value, Error> {
+        if !persistent {
+            return self.generated_slot(stem, types::storage(self.graph, ty)?);
+        }
+        // A temporary's global has its own identity and sequence under the
+        // initializing variable. It is never shared by value with another one.
+        self.symbols.require_trivial_storage(ty)?;
+        let (symbol, object) = self
+            .symbols
+            .dynamic_temporary_symbol(self.builder.program(), ty)?;
+        let (storage, init) = if matches!(
+            self.graph.lower_type(ty)?,
+            TypeView::Class(_) | TypeView::Array { .. }
+        ) {
+            (
+                None,
+                GlobalInit::Data(vec![DataItem::Zero(
+                    i64::try_from(types::layout(self.graph, ty)?.0)
+                        .map_err(|_| crate::lowir::Error::Limit)?,
+                )]),
+            )
+        } else {
+            (Some(types::storage(self.graph, ty)?), GlobalInit::Zero)
+        };
+        let program = self.builder.program();
+        program.add_global(
+            symbol,
+            Global {
+                name: program.symbol(symbol).name,
+                ty: storage,
+                metadata: Metadata {
+                    binding: Some(Binding::Internal),
+                    object,
+                    ..Metadata::default()
+                },
+                init,
+            },
+        )?;
+        Ok(Value::Symbol(symbol))
     }
 }
