@@ -45,6 +45,13 @@ impl Function<'_, '_, '_, '_> {
         while let Some(id) = work.pop() {
             let id = self.without_parentheses(id);
             let facts = self.graph.lower_expression(id)?;
+            let mut step = 0;
+            while let Some(call) = self.graph.lower_arrow_call(id, step)? {
+                if self.lifetime_call_throws(CallTarget::Direct(call.function))? {
+                    return Ok(true);
+                }
+                step += 1;
+            }
             if facts.folded.is_some() {
                 continue;
             }

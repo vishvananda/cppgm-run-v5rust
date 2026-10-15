@@ -3,6 +3,7 @@ mod aggregate_initialization;
 mod allocation;
 mod analyzer;
 mod anonymous_types;
+mod arrow_calls;
 mod bit_fields;
 mod bit_layout;
 mod builtin_calls;

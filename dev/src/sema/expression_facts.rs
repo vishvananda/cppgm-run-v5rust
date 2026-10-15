@@ -222,8 +222,22 @@ pub(super) struct ExpressionFacts {
     // them separate from the source's original type and argument conversion.
     class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
     allocations: std::collections::HashMap<ast::ExprId, super::allocation::Allocation>,
+    // The member access owns a bounded selected-call chain over its original base.
+    arrow_calls: std::collections::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
 }
 impl ExpressionFacts {
+    pub(super) fn arrow_calls(&self, base: ast::ExprId) -> &[super::arrow_calls::ArrowStep] {
+        self.arrow_calls
+            .get(&self.root(base))
+            .map_or(&[], Vec::as_slice)
+    }
+    pub(super) fn set_arrow_calls(
+        &mut self,
+        base: ast::ExprId,
+        calls: Vec<super::arrow_calls::ArrowStep>,
+    ) {
+        self.arrow_calls.insert(self.root(base), calls);
+    }
     pub(super) fn allocation(
         &self,
         id: ast::ExprId,

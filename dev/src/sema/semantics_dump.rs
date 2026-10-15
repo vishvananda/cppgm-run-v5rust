@@ -30,6 +30,7 @@ enum Item {
     Binding(BindingId, Option<ast::Initializer>),
     Storage(BindingId),
     ObjectReceiver(ast::ExprId, BindingId),
+    ArrowCall(ast::ExprId, usize),
     This(TypeId),
     Constructor(super::construction::ConstructorId),
     DemandedFunction(BindingId),
@@ -90,6 +91,7 @@ impl Graph {
                 Item::ObjectReceiver(callee, binding) => {
                     printer.object_receiver(callee, binding, depth)?;
                 }
+                Item::ArrowCall(base, index) => printer.arrow_call(base, index, depth)?,
                 Item::This(ty) => printer.this_pointer(ty, depth)?,
                 Item::Constructor(id) => printer.constructor_definition(id, depth)?,
                 Item::DemandedFunction(binding) => {
@@ -580,7 +582,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.ty(object.ty)?;
                     writeln!(self.output, " OP_AMP:&")?;
                 }
-                self.expr(expression, at + usize::from(!arrow));
+                if arrow {
+                    self.arrow_operand(expression, at);
+                } else {
+                    self.expr(expression, at + 1);
+                }
             }
         }
         Ok(())
@@ -1046,7 +1052,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             Some(super::expression_facts::DestructorTarget::Scalar)
         ) {
             write!(self.output, " {}:", op.token.name())?;
-            self.expr(base, depth + 1);
+            self.arrow_operand(base, depth + 1);
             return Ok(());
         }
         let binding = facts
@@ -1057,7 +1063,75 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         write!(self.output, " {}:", op.token.name())?;
         self.name(self.graph.binding(binding).name)?;
-        self.expr(base, depth + 1);
+        self.arrow_operand(base, depth + 1);
+        Ok(())
+    }
+    fn arrow_operand(&mut self, base: ast::ExprId, depth: usize) {
+        if let Some(last) = self
+            .graph
+            .expression_facts
+            .arrow_calls(base)
+            .len()
+            .checked_sub(1)
+        {
+            self.work.push((Item::ArrowCall(base, last), depth));
+        } else {
+            self.expr(base, depth);
+        }
+    }
+    fn arrow_call(&mut self, base: ast::ExprId, index: usize, depth: usize) -> io::Result<()> {
+        let step = self.graph.expression_facts.arrow_calls(base)[index];
+        let binding = self
+            .graph
+            .function_origin(self.graph.binding(step.binding).entity)
+            .map_err(|_| io::Error::other("arrow without origin"))?;
+        let function = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or_else(|| io::Error::other("arrow without type"))?;
+        let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {
+            return Err(io::Error::other("arrow without signature"));
+        };
+        self.indent(depth)?;
+        write!(self.output, "call-expression {} ", step.category.spelling())?;
+        self.ty(result)?;
+        writeln!(self.output)?;
+        self.indent(depth + 1)?;
+        self.output.write_all(b"callee ")?;
+        self.function_name(binding)?;
+        self.output.write_all(b" ")?;
+        self.function_type(binding)?;
+        writeln!(self.output)?;
+        let (owner, cv) = self
+            .function_object(binding)
+            .ok_or_else(|| io::Error::other("arrow without owner"))?;
+        let at = depth + 1 + usize::from(step.path.is_some());
+        if step.path.is_some() {
+            self.indent(depth + 1)?;
+            self.output.write_all(b"cast-expression prvalue ")?;
+            self.object_pointer(owner, cv)?;
+            writeln!(self.output)?;
+        }
+        let ty = if let Some(previous) = index.checked_sub(1) {
+            self.graph.expression_facts.arrow_calls(base)[previous].result
+        } else {
+            self.graph
+                .expression_facts
+                .get(base)
+                .map_err(|_| io::Error::other("arrow base without facts"))?
+                .ty
+        };
+        self.indent(at)?;
+        self.output
+            .write_all(b"unary-expression prvalue pointer to ")?;
+        self.ty(ty)?;
+        writeln!(self.output, " OP_AMP:&")?;
+        if let Some(previous) = index.checked_sub(1) {
+            self.work.push((Item::ArrowCall(base, previous), at + 1));
+        } else {
+            self.expr(base, at + 1);
+        }
         Ok(())
     }
     fn conversion_node(

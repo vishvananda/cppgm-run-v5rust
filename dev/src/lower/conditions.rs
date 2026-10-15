@@ -24,7 +24,10 @@ impl Function<'_, '_, '_, '_> {
         depth: u32,
     ) -> Result<bool, Error> {
         let id = self.without_parentheses(id);
-        if depth > 64 || read && self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 != 0 {
+        if self.graph.lower_arrow_call(id, 0)?.is_some()
+            || depth > 64
+            || read && self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 != 0
+        {
             return Ok(false);
         }
         Ok(match self.tree.expressions.get(id).kind {
@@ -45,7 +48,9 @@ impl Function<'_, '_, '_, '_> {
         })
     }
     pub(super) fn member_object(&mut self, base: ast::ExprId, arrow: bool) -> Result<(), Error> {
-        if !self.side_effect_free(base, arrow, 0)? {
+        if arrow && self.graph.lower_arrow_call(base, 0)?.is_some() {
+            self.arrow_operand(base)?;
+        } else if !self.side_effect_free(base, arrow, 0)? {
             self.discard(base)?;
         }
         Ok(())

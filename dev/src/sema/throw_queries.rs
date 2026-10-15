@@ -153,6 +153,18 @@ impl Analyzer<'_> {
                 continue;
             }
             self.check_stack()?;
+            for index in 0..self.graph.expression_facts.arrow_calls(id).len() {
+                let step = self.graph.expression_facts.arrow_calls(id)[index];
+                if self.function_may_throw(self.graph.binding(step.binding).entity)? {
+                    return Ok(true);
+                }
+                if step.category == ValueCategory::Prvalue
+                    && let TypeKind::Class(class) = self.graph.types.get(step.result).kind
+                    && self.aggregate_destruction_may_throw(class)?
+                {
+                    return Ok(true);
+                }
+            }
             let kind = self.tree.expressions.get(id).kind;
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;

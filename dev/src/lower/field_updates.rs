@@ -151,7 +151,7 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(id)?.ty;
         let root = if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
             if op.token.as_punctuator() == Some(P::Arrow) {
-                self.operand(base, Context::Operand)?.value
+                self.arrow_operand(base)?.value
             } else {
                 self.address(base)?
             }

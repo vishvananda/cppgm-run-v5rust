@@ -6,6 +6,7 @@ mod aggregate_helpers;
 mod aggregates;
 mod allocation;
 mod arrays;
+mod arrow_calls;
 mod base_projections;
 mod bit_fields;
 mod class_parameters;

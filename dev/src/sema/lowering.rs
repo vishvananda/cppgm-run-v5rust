@@ -89,6 +89,12 @@ pub(crate) enum CallTarget {
     Direct(EntityId),
     Indirect(TypeId, bool),
 }
+pub(crate) struct ArrowCall {
+    pub function: EntityId,
+    pub result: TypeId,
+    pub place: bool,
+    pub offset: Option<u64>,
+}
 pub(crate) use super::construction::ConstructorId;
 #[derive(Clone, Copy)]
 pub(crate) enum FunctionName {
@@ -159,6 +165,30 @@ impl Expression {
 }
 pub(crate) use super::expression_facts::{GlvalueKind, ObjectSource};
 impl Graph {
+    pub(crate) fn lower_arrow_count(&self, base: ast::ExprId) -> usize {
+        self.expression_facts.arrow_calls(base).len()
+    }
+    pub(crate) fn lower_arrow_call(
+        &self,
+        base: ast::ExprId,
+        index: usize,
+    ) -> Result<Option<ArrowCall>, Error> {
+        self.expression_facts
+            .arrow_calls(base)
+            .get(index)
+            .map(|step| {
+                Ok(ArrowCall {
+                    function: self.binding(step.binding).entity,
+                    result: step.result,
+                    place: step.category != super::expression_facts::ValueCategory::Prvalue,
+                    offset: step
+                        .path
+                        .map(|path| self.lower_path_offset(path))
+                        .transpose()?,
+                })
+            })
+            .transpose()
+    }
     pub(crate) fn lower_allocation(&self, id: ast::ExprId) -> Result<AllocationView, Error> {
         let use_ = self.expression_facts.allocation(id)?;
         Ok(AllocationView {

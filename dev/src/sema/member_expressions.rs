@@ -94,20 +94,23 @@ impl Analyzer<'_> {
         name: ast::Name,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let object = self.typed_expression(base, scope)?;
+        let mut object = self.typed_expression(base, scope)?;
         self.check_resolved_function(base)?;
         let location = self.tree.expressions.get(id).location;
         let arrow = op.token.as_punctuator() == Some(P::Arrow);
         let mut ty = object.ty;
         if arrow {
             if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
-                return Err(Error::Missing("class operator-> calls"));
+                object = self.arrow_calls(id, base, object, scope)?;
+                ty = object.ty;
             }
             let pointer = self.decayed_type(ty)?;
             let TypeKind::Pointer(element) = self.graph.types.get(pointer).kind else {
                 return Err(Error::at(location, "-> requires a pointer to a class"));
             };
-            self.convert_operand_scalar(base, pointer, false)?;
+            if self.graph.expression_facts.arrow_calls(base).is_empty() {
+                self.convert_operand_scalar(base, pointer, false)?;
+            }
             ty = element;
         }
         let node = *self.tree.names.get(name);

@@ -552,7 +552,7 @@ impl Function<'_, '_, '_, '_> {
                 )));
             };
             if op.token.as_punctuator() == Some(P::Arrow) {
-                self.operand(base, Context::Operand)?;
+                self.arrow_operand(base)?;
             } else {
                 self.address(base)?;
             }
@@ -608,7 +608,7 @@ impl Function<'_, '_, '_, '_> {
                     }
                     crate::sema::lowering::ObjectSource::Explicit { expression, arrow } => {
                         if arrow {
-                            self.operand(expression, Context::Operand)?.value
+                            self.arrow_operand(expression)?.value
                         } else {
                             self.address(expression)?
                         }
