@@ -140,7 +140,7 @@ impl Analyzer<'_> {
                 self.check_resolved_function(else_expr)?;
                 let a = self.graph.expression_facts.get(then_expr)?;
                 let b = self.graph.expression_facts.get(else_expr)?;
-                self.scalar_conditional(id, then_expr, else_expr, a, b)?
+                self.scalar_conditional(id, [then_expr, else_expr], &[a, b], scope)?
             }
             ExprKind::Member { base, op, member } => {
                 self.data_member_expression(id, base, op, member, scope)?

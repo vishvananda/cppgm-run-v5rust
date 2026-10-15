@@ -514,6 +514,10 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let operand = braced.or_else(|| self.tree.expr_lists.get(arguments).first().copied());
         if let Some(operand) = operand {
+            if braced.is_none() && types::storage(self.graph, source)? == Type::Void {
+                self.discard_to_void(operand)?;
+                return self.zero(source);
+            }
             let value = self.operand(operand, Context::Cast)?;
             self.convert(value, source, Context::Cast)
         } else {

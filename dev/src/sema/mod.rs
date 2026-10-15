@@ -7,6 +7,7 @@ mod bit_layout;
 mod builtin_calls;
 mod call_lookup;
 mod class_casts;
+mod class_conditionals;
 mod constant_addresses;
 mod constant_mutations;
 mod constant_pointer_operations;

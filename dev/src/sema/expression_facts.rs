@@ -205,6 +205,9 @@ pub(super) struct ExpressionFacts {
     records: Vec<Option<ExprFacts>>,
     // Parentheses share facts, as in the C++ owner. Chains are flattened at publication.
     aliases: Vec<Option<ast::ExprId>>,
+    // Only differing-class glvalue conditionals need a base-subobject route.
+    conditional_paths:
+        std::collections::HashMap<ast::ExprId, [Option<super::inheritance::BasePathId>; 2]>,
     // Converting class-subobject initializations are sparse use facts. Keep
     // them separate from the source's original type and argument conversion.
     class_conversions: std::collections::HashMap<
@@ -216,6 +219,22 @@ pub(super) struct ExpressionFacts {
     >,
 }
 impl ExpressionFacts {
+    pub(super) fn conditional_paths(
+        &self,
+        id: ast::ExprId,
+    ) -> [Option<super::inheritance::BasePathId>; 2] {
+        self.conditional_paths
+            .get(&self.root(id))
+            .copied()
+            .unwrap_or([None; 2])
+    }
+    pub(super) fn set_conditional_paths(
+        &mut self,
+        id: ast::ExprId,
+        paths: [Option<super::inheritance::BasePathId>; 2],
+    ) {
+        self.conditional_paths.insert(self.root(id), paths);
+    }
     pub(super) fn class_conversion(
         &self,
         id: ast::ExprId,

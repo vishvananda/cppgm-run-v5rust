@@ -59,10 +59,14 @@ impl Function<'_, '_, '_, '_> {
         let end = self.new_block("condaddr_end")?;
         let condition = self.truth(condition)?;
         self.effect(I::Branch(condition.value, then_block, else_block))?;
-        for (block, expr) in [(then_block, then_expr), (else_block, else_expr)] {
+        let offsets = self.graph.lower_conditional_base_offsets(id)?;
+        for ((block, expr), offset) in [(then_block, then_expr), (else_block, else_expr)]
+            .into_iter()
+            .zip(offsets)
+        {
             self.place(block)?;
             let place = self.scalar_place(expr)?;
-            let address = if matches!(
+            let mut address = if matches!(
                 place,
                 crate::lowir::model::Value::Slot(_) | crate::lowir::model::Value::Symbol(_)
             ) {
@@ -70,6 +74,9 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 place
             };
+            if let Some(offset) = offset {
+                address = self.base_projection(address, source, offset)?;
+            }
             self.effect(I::Store(
                 Facts::memory(false, true),
                 Type::Ptr,
@@ -459,6 +466,17 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
+                if types::storage(self.graph, facts.ty)? == Type::Void
+                    && (matches!(
+                        self.tree.expressions.get(id).kind,
+                        ExprKind::FunctionalCast { .. }
+                    ) || self.graph.lower_functional_call(id)?) =>
+            {
+                // The frozen discard owner does not evaluate a void functional
+                // cast. Its rvalue path still evaluates the cast's operand.
+                Ok(())
+            }
             ExprKind::FunctionalCast {
                 braced: Some(_), ..
             } if matches!(
@@ -551,6 +569,15 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn discard_to_void(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
+        let kind = self.graph.lower_type(facts.ty)?;
+        let class_or_array = matches!(
+            kind,
+            crate::sema::lowering::TypeView::Class(_)
+                | crate::sema::lowering::TypeView::Array { .. }
+        );
+        if self.graph.lower_cv(facts.ty) & 2 != 0 && !class_or_array {
+            return self.discard(id);
+        }
         let writes = matches!(
             self.tree.expressions.get(id).kind,
             ExprKind::Binary {
@@ -559,10 +586,12 @@ impl Function<'_, '_, '_, '_> {
             }
         ) || matches!(self.tree.expressions.get(id).kind,
                 ExprKind::Unary { op, .. } if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)));
-        if facts.is_place
+        let named = matches!(self.tree.expressions.get(id).kind, ExprKind::Id(_));
+        if !named
+            && facts.is_place
             && facts.folded.is_none()
-            && self.graph.lower_cv(facts.ty) & 2 == 0
             && !writes
+            && !class_or_array
             && !matches!(
                 self.graph.lower_type(facts.ty)?,
                 crate::sema::lowering::TypeView::Function { .. }
@@ -571,6 +600,18 @@ impl Function<'_, '_, '_, '_> {
             // The course reads nonvolatile scalar glvalues cast to void,
             // while ordinary discarded indirections only evaluate the place.
             self.expression(id, Context::Operand)?;
+            Ok(())
+        } else if named
+            && self.graph.lower_lvalue(id)?
+            && facts.folded.is_none()
+            && !facts.is_bit_field()
+            && matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name) if self.graph.lower_named_object(name)?)
+        {
+            if class_or_array {
+                self.address(id)?;
+            } else {
+                self.expression(id, Context::Operand)?;
+            }
             Ok(())
         } else {
             self.discard(id)

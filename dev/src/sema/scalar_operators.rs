@@ -620,11 +620,12 @@ impl Analyzer<'_> {
     pub(super) fn scalar_conditional(
         &mut self,
         id: ast::ExprId,
-        left: ast::ExprId,
-        right: ast::ExprId,
-        a: ExprFacts,
-        b: ExprFacts,
+        operands: [ast::ExprId; 2],
+        facts: &[ExprFacts; 2],
+        scope: super::graph::ScopeId,
     ) -> Result<ExprFacts, Error> {
+        let [left, right] = operands;
+        let [a, b] = *facts;
         let at = self.bare_type(a.ty)?;
         let bt = self.bare_type(b.ty)?;
         let va = matches!(
@@ -664,7 +665,7 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(at).kind, TypeKind::Class(_))
             || matches!(self.graph.types.get(bt).kind, TypeKind::Class(_))
         {
-            return Err(Error::Missing("class conditional expressions"));
+            return self.class_conditional(id, facts, scope);
         }
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;

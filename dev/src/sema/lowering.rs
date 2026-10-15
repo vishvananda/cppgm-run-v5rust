@@ -334,6 +334,16 @@ impl Graph {
             .ok_or(Error::Invariant("base conversion without retained path"))?;
         self.lower_path_offset(path).map(Some)
     }
+    pub(crate) fn lower_conditional_base_offsets(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<[Option<u64>; 2], Error> {
+        let [left, right] = self.expression_facts.conditional_paths(id);
+        Ok([
+            left.map(|path| self.lower_path_offset(path)).transpose()?,
+            right.map(|path| self.lower_path_offset(path)).transpose()?,
+        ])
+    }
     pub(crate) fn lower_receiver_base_offsets(
         &self,
         id: ast::ExprId,
@@ -899,6 +909,15 @@ impl Graph {
         self.resolved_name(name)
             .map(|id| self.binding(id).entity)
             .ok_or(Error::Invariant("lowering name without entity"))
+    }
+    pub(crate) fn lower_named_object(&self, name: ast::Name) -> Result<bool, Error> {
+        let binding = self
+            .resolved_name(name)
+            .ok_or(Error::Invariant("lowering name without binding"))?;
+        Ok(matches!(
+            self.binding(binding).kind,
+            BindingKind::Variable | BindingKind::Parameter
+        ))
     }
     pub(crate) fn lower_entity_type(&self, id: EntityId) -> Result<TypeId, Error> {
         self.entity(id)
