@@ -131,7 +131,10 @@ impl Function<'_, '_, '_, '_> {
             return self
                 .graph
                 .lower_ready_default_constructor(class)
-                .map(|id| self.default_constructor_throws(id))
+                .map(|id| {
+                    Ok(!self.graph.lower_constructor_trivial(id)
+                        && !self.graph.lower_constructor_function(id)?.nothrow)
+                })
                 .transpose()
                 .map(Option::unwrap_or_default);
         }

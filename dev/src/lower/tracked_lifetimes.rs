@@ -277,6 +277,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
+        self.lifetime.region_entry = Some(target);
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         self.lifetime.regions_opened += 1;
         Ok(())

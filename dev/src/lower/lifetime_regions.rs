@@ -39,6 +39,7 @@ impl Function<'_, '_, '_, '_> {
         self.effect(I::Runtime(R::EhTry(entry)))?;
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
+        self.lifetime.region_entry = Some(entry);
         self.lifetime.region_depth = first;
         self.lifetime.regions_opened += 1;
         Ok(())
@@ -327,6 +328,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
+        self.lifetime.region_entry = Some(entry);
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         self.lifetime.regions_opened += 1;
         Ok(())
@@ -368,6 +370,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
+        self.lifetime.region_entry = Some(entry);
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         self.lifetime.regions_opened += 1;
         Ok(())
@@ -415,7 +418,11 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.lifetime.region = false;
+        if self.drop_empty_lifetime_region()? {
+            return Ok(());
+        }
         self.effect(I::Runtime(R::EhEnd))?;
+        let reused = self.reused_dropped_chains();
         // An allocated aggregate's omitted class member has its own value
         // initialization segment. Its handlers wait for the function's final
         // placement instead of adding a continuation between member stores.
@@ -435,7 +442,7 @@ impl Function<'_, '_, '_, '_> {
             self.defer_cleanup_chains();
             return Ok(());
         }
-        if self.lifetime_has_pending_chains() {
+        if self.lifetime_has_pending_chains() && !reused {
             let next = self.new_block("call_unwind_end")?;
             self.jump(next)?;
             self.place_cleanup_chains(false)?;

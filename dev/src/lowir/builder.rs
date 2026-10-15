@@ -244,6 +244,24 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn same_block(&self, position: Position) -> bool {
         self.block == Some(position.block)
     }
+    /// Unlinks an empty region without renumbering instructions or definitions.
+    /// Callers rebase captured positions equal to the removed marker.
+    pub(crate) fn drop_empty_region(
+        &mut self,
+        target: BlockId,
+    ) -> Result<Option<(Position, Position)>, Error> {
+        let removed = self.position()?;
+        let Some(id) = removed.after else {
+            return Ok(None);
+        };
+        if !matches!(self.body.instruction(id).kind,
+            InstructionKind::Runtime(super::model::RuntimeInstruction::EhTry(entry)) if entry == target)
+        {
+            return Ok(None);
+        }
+        let _removed = self.body.block_mut(removed.block).instructions.pop();
+        Ok(Some((removed, self.position()?)))
+    }
     /// Whether a captured call boundary has already crossed an EH marker.
     pub(crate) fn region_since(&self, position: Position) -> bool {
         use super::model::RuntimeInstruction as R;
@@ -487,6 +505,41 @@ mod tests {
         builder.effect(I::Runtime(R::Resume))?;
         builder.finish()?;
         validator::validate_constructed(&program)?;
+        Ok(())
+    }
+
+    #[test]
+    fn empty_region_removal_preserves_definitions_and_rebased_insertion() -> Result<(), Error> {
+        use crate::lowir::model::RuntimeInstruction as R;
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "empty_region", &[], Type::I32)?;
+        builder.block("entry")?;
+        let one = builder.integer(1)?;
+        let result = builder.generated(I::Copy(Type::I32, one))?;
+        let before = builder.position()?;
+        let handler = builder.block_id("unwind")?;
+        let other = builder.block_id("other")?;
+        builder.effect(I::Runtime(R::EhTry(handler)))?;
+        let removed = builder.position()?;
+        assert!(builder.drop_empty_region(other)?.is_none());
+        assert!(builder.drop_empty_region(handler)? == Some((removed, before)));
+        assert!(!builder.region_since(before));
+        let marker = builder.insert_effect(before, I::Runtime(R::EhTry(handler)))?;
+        let Value::Temp(temp) = result else {
+            return Err(Error::Limit);
+        };
+        assert_eq!(builder.body.temp(temp).definition, before.after);
+        builder.effect(I::Runtime(R::EhEnd))?;
+        assert!(builder.drop_empty_region(handler)?.is_none());
+        builder.retarget_region(marker, handler)?;
+        builder.effect(I::Return(Type::I32, Some(result)))?;
+        builder.place_block(handler)?;
+        builder.effect(I::Runtime(R::Resume))?;
+        builder.place_block(other)?;
+        builder.effect(I::Unreachable)?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        assert_eq!(program.statistics().instructions, 6);
         Ok(())
     }
 

@@ -150,6 +150,8 @@ pub(super) struct Lifetime {
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,
+    pub region_entry: Option<BlockId>,
+    pub dropped_chains: usize,
     pub call_region: CallRegion,
     pub region_start: RegionStart,
     pub region_depth: usize,
@@ -232,6 +234,38 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn lifetime_has_pending_chains(&self) -> bool {
         !self.lifetime.pending.is_empty()
+    }
+    pub(super) fn drop_empty_lifetime_region(&mut self) -> Result<bool, Error> {
+        if self.terminated || self.lifetime.tracking.active {
+            return Ok(false);
+        }
+        let Some(entry) = self.lifetime.region_entry else {
+            return Ok(false);
+        };
+        let Some((removed, previous)) = self.builder.drop_empty_region(entry)? else {
+            return Ok(false);
+        };
+        for position in [
+            &mut self.lifetime.expression_start,
+            &mut self.lifetime.storage_split,
+            &mut self.lifetime.guard_start,
+            &mut self.lifetime.tracking.start,
+        ] {
+            if *position == Some(removed) {
+                *position = Some(previous);
+            }
+        }
+        for mark in &mut self.lifetime.call_marks {
+            if mark.position == removed {
+                mark.position = previous;
+            }
+        }
+        self.lifetime.dropped_chains = self.lifetime.pending.len();
+        Ok(true)
+    }
+    pub(super) fn reused_dropped_chains(&mut self) -> bool {
+        let dropped = std::mem::take(&mut self.lifetime.dropped_chains);
+        dropped != 0 && dropped == self.lifetime.pending.len()
     }
     pub(super) fn defer_cleanup_chains(&mut self) {
         self.lifetime.omitted.append(&mut self.lifetime.pending);

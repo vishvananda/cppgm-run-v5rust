@@ -121,7 +121,11 @@ impl Program {
             .filter_map(|function| function.body.as_ref())
         {
             stats.blocks += body.blocks.len();
-            stats.instructions += body.instructions.len();
+            stats.instructions += body
+                .blocks
+                .iter()
+                .map(|block| block.instructions.len())
+                .sum::<usize>();
             stats.temps += body.temps.len();
             stats.literals += body.literals.len();
             stats.extra_operands += body.operands.len();
