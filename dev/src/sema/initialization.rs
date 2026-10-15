@@ -141,7 +141,7 @@ impl Analyzer<'_> {
             id,
             sequence.conversion.target,
             scope,
-            sequence.user_constructor,
+            sequence.user_conversion,
         )
     }
     pub(super) fn initialize_list_argument(
@@ -149,7 +149,7 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         parameter: TypeId,
         scope: ScopeId,
-        selected: Option<super::procedural_calls::ConversionConstructor>,
+        selected: Option<super::procedural_calls::UserConversion>,
     ) -> Result<(), Error> {
         // A parameter default's list denotes the temporary object, rather
         // than binding a reference directly to its single source element.
@@ -168,8 +168,7 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
             self.array_braced_list(id, target, scope)?;
         } else if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
-            && let Some(super::procedural_calls::ConversionConstructor::Declared(binding)) =
-                selected
+            && let Some(super::procedural_calls::UserConversion::Constructor(binding)) = selected
         {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
                 return Err(Error::Invariant("ranked class list without list"));

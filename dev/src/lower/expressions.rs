@@ -18,6 +18,10 @@ use crate::{
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn operand(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
+        if let Some((call, target)) = self.graph.lower_function_conversion(id)? {
+            let value = self.call_conversion(id, call)?;
+            return self.convert(value, target, context);
+        }
         let value = self.expression(id, context)?;
         self.apply_conversion(id, value, context)
     }
@@ -488,7 +492,11 @@ impl Function<'_, '_, '_, '_> {
         let value = if op.token.as_punctuator() == Some(P::LogicalNot) {
             // The boolean conversion fact belongs to semantic checking. C++
             // emits ! as one equality comparison on the raw truth operand.
-            self.expression(operand, Context::Unary)?
+            if let Some((call, _)) = self.graph.lower_function_conversion(operand)? {
+                self.call_conversion(operand, call)?
+            } else {
+                self.expression(operand, Context::Unary)?
+            }
         } else {
             self.operand(operand, Context::Unary)?
         };
@@ -712,7 +720,7 @@ impl Function<'_, '_, '_, '_> {
         if guard_start.is_none() {
             self.lifetime.guard_start = Some(self.builder.position()?);
         }
-        let condition = self.expression(condition, Context::Operand)?;
+        let condition = self.truth(condition)?;
         let condition = if condition.ty.float_rank() != 0 {
             let zero = self.zero(condition.source)?;
             self.emit(

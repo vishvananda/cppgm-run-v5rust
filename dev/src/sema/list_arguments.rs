@@ -7,7 +7,7 @@ use super::{
         Conversion, ConversionRank, LvalueTransform, ReferenceSource, ValueConversion,
     },
     graph::{EntityId, ScopeId},
-    procedural_calls::{ArgumentSequence, Candidates, ConversionConstructor},
+    procedural_calls::{ArgumentSequence, Candidates, UserConversion},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{
@@ -87,11 +87,11 @@ impl Analyzer<'_> {
                         conversion: sequence,
                         application: Some(sequence),
                         function: None,
-                        user_constructor: constructor,
+                        user_conversion: constructor,
                     };
                     if self.compare_argument_sequences(step, current)? == std::cmp::Ordering::Less {
                         sequence = step.conversion;
-                        constructor = step.user_constructor;
+                        constructor = step.user_conversion;
                     }
                 }
                 sequence.result = target;
@@ -132,7 +132,7 @@ impl Analyzer<'_> {
                         return Ok(None);
                     };
                     sequence = step.conversion;
-                    constructor = step.user_constructor;
+                    constructor = step.user_conversion;
                 }
                 sequence.result = self.bare_type(target)?;
             }
@@ -146,7 +146,7 @@ impl Analyzer<'_> {
             conversion: sequence,
             application: Some(sequence),
             function: None,
-            user_constructor: constructor,
+            user_conversion: constructor,
         }))
     }
 
@@ -248,13 +248,13 @@ impl Analyzer<'_> {
         &mut self,
         elements: List<ast::ExprId>,
         class: EntityId,
-    ) -> Result<Option<ConversionConstructor>, Error> {
+    ) -> Result<Option<UserConversion>, Error> {
         if elements.is_empty() && self.class_has_default_constructor(class)? {
             return Ok(Some(
                 if self.graph.entity(class).user_constructor.is_none() {
-                    ConversionConstructor::Implicit(class)
+                    UserConversion::ImplicitConstructor(class)
                 } else {
-                    ConversionConstructor::Declared(self.default_constructor_binding(
+                    UserConversion::Constructor(self.default_constructor_binding(
                         class,
                         crate::support::source::SourceOffset(0),
                     )?)
@@ -274,9 +274,7 @@ impl Analyzer<'_> {
             )
             .and_then(|()| {
                 self.unique_call(self.tree.expr_lists.get(elements).len(), 0, &scratch)
-                    .map(|chosen| {
-                        chosen.map(|chosen| ConversionConstructor::Declared(chosen.binding))
-                    })
+                    .map(|chosen| chosen.map(|chosen| UserConversion::Constructor(chosen.binding)))
             });
         scratch.clear();
         self.call_scratch = scratch;
@@ -349,11 +347,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(sequence.conversion.rank, ConversionRank::UserDefined);
-        assert!(sequence.user_constructor.is_none());
+        assert!(sequence.user_conversion.is_none());
         let class_ty = analyzer.graph.entity(constructed).ty.unwrap();
         let declared = analyzer.list_sequence(lists[0], class_ty).unwrap().unwrap();
         assert!(
-            matches!(declared.user_constructor, Some(ConversionConstructor::Declared(binding)) if binding == analyzer.graph.entity(constructed).declared_constructors[0])
+            matches!(declared.user_conversion, Some(UserConversion::Constructor(binding)) if binding == analyzer.graph.entity(constructed).declared_constructors[0])
         );
         let implicit_ty = analyzer.graph.entity(implicit).ty.unwrap();
         let default = analyzer
@@ -361,7 +359,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(
-            matches!(default.user_constructor, Some(ConversionConstructor::Implicit(class)) if class == implicit)
+            matches!(default.user_conversion, Some(UserConversion::ImplicitConstructor(class)) if class == implicit)
         );
         let element_ty = analyzer.graph.types.qualify(class_ty, Cv::CONST).unwrap();
         let array = analyzer
@@ -394,7 +392,7 @@ mod tests {
         assert_eq!(array_step.conversion.result, array);
         assert_eq!(array_step.conversion.target, reference);
         assert!(array_step.conversion.temporary);
-        assert!(array_step.user_constructor == declared.user_constructor);
+        assert!(array_step.user_conversion == declared.user_conversion);
         assert_eq!(tree.expressions.mark(), expression_count);
         let after = analyzer.graph.expression_facts.get(lists[0]).unwrap();
         assert_eq!(after.ty, original.ty);

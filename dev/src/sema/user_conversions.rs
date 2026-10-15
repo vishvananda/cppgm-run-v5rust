@@ -1,6 +1,6 @@
 // Translated from analyzer_conversions.cpp::user_conversion/apply_user_conversion.
 // See NOTICE.
-//! Converting constructors rank without body demand; only the chosen use owns construction.
+//! User sequences rank without body demand; only a selected use owns its call or construction.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -9,7 +9,7 @@ use super::{
         ValueConversion,
     },
     graph::{BindingId, ScopeId},
-    procedural_calls::{ArgumentSequence, ConversionConstructor},
+    procedural_calls::{ArgumentSequence, UserConversion},
     specifiers::Explicitness,
     types::{RefKind, TypeId, TypeKind},
 };
@@ -26,6 +26,18 @@ pub(super) struct UserScratch {
     candidates: Vec<(BindingId, Conversion)>,
 }
 impl Analyzer<'_> {
+    pub(super) fn user_conversion_sequence(
+        &mut self,
+        source: ExprFacts,
+        target: TypeId,
+        direct: bool,
+    ) -> Result<Option<ArgumentSequence>, Error> {
+        if let Some(sequence) = self.conversion_function_sequence(source, target, direct)? {
+            return Ok(Some(sequence));
+        }
+        self.converting_constructor_sequence(source, target)
+    }
+
     pub(super) fn converting_constructor_sequence(
         &mut self,
         source: ExprFacts,
@@ -82,7 +94,7 @@ impl Analyzer<'_> {
             },
             application: Some(first),
             function: None,
-            user_constructor: Some(ConversionConstructor::Declared(binding)),
+            user_conversion: Some(UserConversion::Constructor(binding)),
         }))
     }
     fn select_converting_constructor(
@@ -156,23 +168,38 @@ impl Analyzer<'_> {
     ) -> Result<Ordering, Error> {
         if a.conversion.rank == R::UserDefined
             && b.conversion.rank == R::UserDefined
-            && a.user_constructor != b.user_constructor
+            && a.user_conversion != b.user_conversion
         {
             return Ok(Ordering::Equal);
         }
+        if matches!(a.user_conversion, Some(UserConversion::Function(_)))
+            && a.user_conversion == b.user_conversion
+        {
+            let after_a = a.application.ok_or(Error::Invariant(
+                "conversion function without second sequence",
+            ))?;
+            let after_b = b.application.ok_or(Error::Invariant(
+                "conversion function without second sequence",
+            ))?;
+            return self.compare_sequences(after_a, after_b);
+        }
         self.compare_sequences(a.conversion, b.conversion)
     }
-    pub(super) fn apply_constructor_sequence(
+    pub(super) fn apply_user_sequence(
         &mut self,
         id: ast::ExprId,
         sequence: ArgumentSequence,
         scope: ScopeId,
         site: ConversionSite,
     ) -> Result<bool, Error> {
-        let Some(constructor) = sequence.user_constructor else {
+        let Some(constructor) = sequence.user_conversion else {
             return Ok(false);
         };
-        let ConversionConstructor::Declared(binding) = constructor else {
+        if matches!(constructor, UserConversion::Function(_)) {
+            self.apply_function_sequence(id, sequence, scope)?;
+            return Ok(true);
+        }
+        let UserConversion::Constructor(binding) = constructor else {
             return Err(Error::Invariant(
                 "implicit constructor outside list argument",
             ));

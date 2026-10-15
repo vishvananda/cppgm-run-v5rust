@@ -222,12 +222,27 @@ pub(super) struct ExpressionFacts {
     // Converting class-subobject initializations are sparse use facts. Keep
     // them separate from the source's original type and argument conversion.
     class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
+    function_conversions:
+        std::collections::HashMap<ast::ExprId, super::conversion_functions::FunctionConversion>,
     allocations: std::collections::HashMap<ast::ExprId, super::allocation::Allocation>,
     deletions: std::collections::HashMap<ast::ExprId, super::allocation::Deletion>,
     // The member access owns a bounded selected-call chain over its original base.
     arrow_calls: std::collections::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
 }
 impl ExpressionFacts {
+    pub(super) fn function_conversion(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::conversion_functions::FunctionConversion> {
+        self.function_conversions.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_function_conversion(
+        &mut self,
+        id: ast::ExprId,
+        conversion: super::conversion_functions::FunctionConversion,
+    ) {
+        self.function_conversions.insert(self.root(id), conversion);
+    }
     pub(super) fn deletion(&self, id: ast::ExprId) -> Result<super::allocation::Deletion, Error> {
         self.deletions
             .get(&self.root(id))

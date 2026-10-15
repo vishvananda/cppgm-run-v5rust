@@ -547,7 +547,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 }
                 FunctionName::Identifier(_)
                 | FunctionName::Constructor(_)
-                | FunctionName::Destructor(_) => {
+                | FunctionName::Destructor(_)
+                | FunctionName::Conversion(_) => {
                     return Err(Error::Semantic(crate::sema::Error::Invariant(
                         "ordinary function label",
                     )));
@@ -585,6 +586,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             FunctionName::Identifier(name) => {
                 return Ok(self.abi.string(self.cursor.name(name))?);
             }
+            FunctionName::Conversion(target) => Node::Conversion(self.abi_type(target)?),
             FunctionName::Literal(suffix) => {
                 Node::LiteralOperator(self.abi.string(self.cursor.name(suffix))?)
             }
@@ -1100,6 +1102,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         "constructor without owner",
                     )))?;
                 for (index, overload) in self.graph.lower_constructor_overloads(class).enumerate() {
+                    self.ordinals.insert(overload, index + 1);
+                }
+            } else if matches!(facts.name, FunctionName::Conversion(_)) {
+                let class = facts
+                    .object
+                    .ok_or(crate::sema::Error::Invariant("conversion without owner"))?;
+                for (index, overload) in self.graph.lower_conversion_overloads(class).enumerate() {
                     self.ordinals.insert(overload, index + 1);
                 }
             } else if !matches!(facts.name, FunctionName::Destructor(_)) {

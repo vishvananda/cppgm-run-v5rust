@@ -109,7 +109,8 @@ pub(crate) enum CallTarget {
     Direct(EntityId),
     Indirect(TypeId, bool),
 }
-pub(crate) struct ArrowCall {
+#[derive(Clone, Copy)]
+pub(crate) struct MemberCall {
     pub function: EntityId,
     pub result: TypeId,
     pub place: bool,
@@ -126,6 +127,7 @@ pub(crate) enum FunctionName {
         array: bool,
     },
     Literal(NameId),
+    Conversion(TypeId),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AllocationRole {
@@ -192,6 +194,49 @@ impl Expression {
 }
 pub(crate) use super::expression_facts::{GlvalueKind, ObjectSource};
 impl Graph {
+    pub(crate) fn lower_condition_function(
+        &self,
+        id: ast::DeclaratorId,
+    ) -> Result<Option<(MemberCall, TypeId)>, Error> {
+        self.condition_function(id)
+            .map(|step| {
+                Ok((
+                    MemberCall {
+                        function: self.binding(step.binding).entity,
+                        result: step.result,
+                        place: step.category != super::expression_facts::ValueCategory::Prvalue,
+                        offset: step
+                            .path
+                            .map(|path| self.lower_path_offset(path))
+                            .transpose()?,
+                    },
+                    step.after.result,
+                ))
+            })
+            .transpose()
+    }
+    pub(crate) fn lower_function_conversion(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<(MemberCall, TypeId)>, Error> {
+        self.expression_facts
+            .function_conversion(id)
+            .map(|step| {
+                Ok((
+                    MemberCall {
+                        function: self.binding(step.binding).entity,
+                        result: step.result,
+                        place: step.category != super::expression_facts::ValueCategory::Prvalue,
+                        offset: step
+                            .path
+                            .map(|path| self.lower_path_offset(path))
+                            .transpose()?,
+                    },
+                    step.after.result,
+                ))
+            })
+            .transpose()
+    }
     pub(crate) fn lower_arrow_count(&self, base: ast::ExprId) -> usize {
         self.expression_facts.arrow_calls(base).len()
     }
@@ -199,12 +244,12 @@ impl Graph {
         &self,
         base: ast::ExprId,
         index: usize,
-    ) -> Result<Option<ArrowCall>, Error> {
+    ) -> Result<Option<MemberCall>, Error> {
         self.expression_facts
             .arrow_calls(base)
             .get(index)
             .map(|step| {
-                Ok(ArrowCall {
+                Ok(MemberCall {
                     function: self.binding(step.binding).entity,
                     result: step.result,
                     place: step.category != super::expression_facts::ValueCategory::Prvalue,
@@ -376,6 +421,15 @@ impl Graph {
             object: Some(plan.class),
             qualifiers: crate::abi::graph::Qualifiers::default(),
         })
+    }
+    pub(crate) fn lower_conversion_overloads(
+        &self,
+        class: EntityId,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.entity(class)
+            .declared_conversions
+            .iter()
+            .map(|&binding| self.binding(binding).entity)
     }
     pub(crate) fn lower_constructor_overloads(
         &self,
@@ -874,6 +928,18 @@ impl Graph {
                     FunctionName::Constructor(self.lower_class_spelling(
                         object.ok_or(Error::Invariant("constructor without class"))?,
                     )?)
+                }
+                None if entity
+                    .member_function
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Conversion) =>
+                {
+                    let ty = entity
+                        .ty
+                        .ok_or(Error::Invariant("conversion without signature"))?;
+                    let TypeKind::Function { result, .. } = self.types.get(ty).kind else {
+                        return Err(Error::Invariant("conversion signature"));
+                    };
+                    FunctionName::Conversion(result)
                 }
                 None => FunctionName::Identifier(
                     entity

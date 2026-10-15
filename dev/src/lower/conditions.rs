@@ -147,7 +147,11 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
-        let value = self.expression(id, Context::Operand)?;
+        let value = if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
+            self.call_conversion(id, call)?
+        } else {
+            self.expression(id, Context::Operand)?
+        };
         self.scalar_truth(value)
     }
     fn scalar_truth(&mut self, value: RValue) -> Result<RValue, Error> {
@@ -161,25 +165,50 @@ impl Function<'_, '_, '_, '_> {
             Ok(value)
         }
     }
+    fn declared_condition_value(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        entity: crate::sema::lowering::EntityId,
+        to_bool: bool,
+    ) -> Result<RValue, Error> {
+        let source = self.graph.lower_entity_type(entity)?;
+        if let Some((call, target)) = self.graph.lower_condition_function(declarator)? {
+            let place = *self
+                .locals
+                .get(&entity)
+                .ok_or(crate::sema::Error::Invariant("condition without storage"))?;
+            let value = self.condition_conversion_call(place, source, call)?;
+            return self.convert(value, target, Context::Operand);
+        }
+        let ty = types::storage(self.graph, source)?;
+        let place =
+            *self
+                .locals
+                .get(&entity)
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "condition without storage",
+                )))?;
+        let value = self.emit(
+            I::Load(types::memory(self.graph, source)?, ty, place),
+            source,
+        )?;
+        if to_bool {
+            self.scalar_truth(value)
+        } else {
+            self.convert(
+                value,
+                self.graph.lower_condition_target(declarator)?,
+                Context::Operand,
+            )
+        }
+    }
     pub(super) fn condition_value(
         &mut self,
         condition: Condition,
         to_bool: bool,
     ) -> Result<RValue, Error> {
-        let first = self.lifetime.cleanups.len();
-        let began = if let Condition::Expression(id) = condition {
-            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?
-        } else {
-            self.begin_lifetime_expression()
-        };
-        let value = match condition {
-            Condition::Expression(id) => {
-                if to_bool {
-                    self.truth(id)
-                } else {
-                    self.operand(id, Context::Operand)
-                }
-            }
+        let id = match condition {
+            Condition::Expression(id) => id,
             Condition::Declaration {
                 declarator,
                 initializer,
@@ -187,25 +216,16 @@ impl Function<'_, '_, '_, '_> {
             } => {
                 self.local_variable(declarator, Some(initializer))?;
                 let entity = self.graph.lower_declared(declarator)?;
-                let source = self.graph.lower_entity_type(entity)?;
-                let ty = types::storage(self.graph, source)?;
-                let place = *self.locals.get(&entity).ok_or(Error::Semantic(
-                    crate::sema::Error::Invariant("condition without storage"),
-                ))?;
-                let value = self.emit(
-                    I::Load(types::memory(self.graph, source)?, ty, place),
-                    source,
-                )?;
-                if to_bool {
-                    self.scalar_truth(value)
-                } else {
-                    self.convert(
-                        value,
-                        self.graph.lower_condition_target(declarator)?,
-                        Context::Operand,
-                    )
-                }
+                return self.declared_condition_value(declarator, entity, to_bool);
             }
+        };
+        let first = self.lifetime.cleanups.len();
+        let began =
+            self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?;
+        let value = if to_bool {
+            self.truth(id)
+        } else {
+            self.operand(id, Context::Operand)
         };
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(began)?;
@@ -218,6 +238,12 @@ impl Function<'_, '_, '_, '_> {
         no: BlockId,
         fold: bool,
     ) -> Result<(), Error> {
+        if matches!(condition, Condition::Declaration { .. }) {
+            let value = self.condition_value(condition, true)?;
+            self.effect(I::Branch(value.value, yes, no))?;
+            self.terminated = true;
+            return Ok(());
+        }
         let first = self.lifetime.cleanups.len();
         let began = if let Condition::Expression(id) = condition {
             self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?

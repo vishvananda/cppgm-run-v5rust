@@ -246,7 +246,7 @@ impl Analyzer<'_> {
                             conversion,
                             application: Some(conversion),
                             function: None,
-                            user_constructor: None,
+                            user_conversion: None,
                         })
                 } else {
                     let target = self
@@ -365,7 +365,7 @@ impl Analyzer<'_> {
             if let Some(function) = sequence.function {
                 self.select_function_designation(operand, function)?;
             }
-            if self.apply_constructor_sequence(
+            if self.apply_user_sequence(
                 operand,
                 sequence,
                 scope,

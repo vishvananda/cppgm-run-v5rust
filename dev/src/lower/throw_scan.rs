@@ -60,6 +60,11 @@ impl Function<'_, '_, '_, '_> {
                 }
                 step += 1;
             }
+            if let Some((call, _)) = self.graph.lower_function_conversion(id)?
+                && self.call_throws_in_context(CallTarget::Direct(call.function), hidden)?
+            {
+                return Ok(true);
+            }
             if facts.folded.is_some() {
                 continue;
             }
@@ -274,7 +279,16 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn condition_throws(&mut self, condition: Condition) -> Result<bool, Error> {
         match condition {
             Condition::Expression(id) => self.expression_throws(id),
-            Condition::Declaration { initializer, .. } => {
+            Condition::Declaration {
+                declarator,
+                initializer,
+                ..
+            } => {
+                if let Some((call, _)) = self.graph.lower_condition_function(declarator)?
+                    && self.lifetime_call_throws(CallTarget::Direct(call.function))?
+                {
+                    return Ok(true);
+                }
                 self.initializer_throws(Some(initializer))
             }
         }

@@ -57,6 +57,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
     pub(super) operator_lookup: super::operator_candidates::OperatorLookup,
     pub(super) association_scratch: super::call_lookup::AssociationScratch,
+    pub(super) conversion_sets:
+        std::collections::HashMap<super::graph::EntityId, Vec<super::graph::BindingId>>,
     pub(super) user_conversion_scratch: super::user_conversions::UserScratch,
     pub(super) call_scratch: super::procedural_calls::CallScratch,
     pub(super) copy_scratch: super::copy_initialization::CopyScratch,
@@ -185,6 +187,7 @@ impl<'tree> Analyzer<'tree> {
             operator_scratch: super::operator_resolution::OperatorScratch::default(),
             operator_lookup: super::operator_candidates::OperatorLookup::default(),
             association_scratch: super::call_lookup::AssociationScratch::default(),
+            conversion_sets: std::collections::HashMap::new(),
             user_conversion_scratch: super::user_conversions::UserScratch::default(),
             call_scratch: super::procedural_calls::CallScratch::default(),
             copy_scratch: super::copy_initialization::CopyScratch::default(),

@@ -70,14 +70,17 @@ pub(super) struct ArgumentSequence {
     pub(super) conversion: Conversion,
     // An overload designation ranks as an exact target match, even when its
     // actual unary shape cannot bind that target. Diagnose only after selection.
+    // User conversions keep the constructor's first or conversion function's
+    // second standard sequence here, with its original rank.
     pub(super) application: Option<Conversion>,
     pub(super) function: Option<BindingId>,
-    pub(super) user_constructor: Option<ConversionConstructor>,
+    pub(super) user_conversion: Option<UserConversion>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ConversionConstructor {
-    Declared(BindingId),
-    Implicit(super::graph::EntityId),
+pub(super) enum UserConversion {
+    Constructor(BindingId),
+    ImplicitConstructor(super::graph::EntityId),
+    Function(BindingId),
 }
 impl Analyzer<'_> {
     pub(super) fn procedural_call(
@@ -590,11 +593,11 @@ impl Analyzer<'_> {
                 },
                 application,
                 function,
-                user_constructor: None,
+                user_conversion: None,
             }));
         }
         if application.is_none() && !overloaded {
-            let mut sequence = self.converting_constructor_sequence(facts, target)?;
+            let mut sequence = self.user_conversion_sequence(facts, target, false)?;
             if let Some(sequence) = &mut sequence {
                 sequence.function = function;
             }
@@ -604,7 +607,7 @@ impl Analyzer<'_> {
             conversion,
             application: Some(conversion),
             function,
-            user_constructor: None,
+            user_conversion: None,
         }))
     }
     pub(super) fn record_argument_base_paths(
@@ -758,7 +761,7 @@ impl Analyzer<'_> {
                         conversion,
                         application: Some(conversion),
                         function: None,
-                        user_constructor: None,
+                        user_conversion: None,
                     })
                 } else {
                     None
@@ -777,7 +780,7 @@ impl Analyzer<'_> {
                     conversion,
                     application: Some(conversion),
                     function: None,
-                    user_constructor: None,
+                    user_conversion: None,
                 }));
             }
             let mut viable = true;
@@ -954,7 +957,7 @@ impl Analyzer<'_> {
                         conversion,
                         application: Some(conversion),
                         function: None,
-                        user_constructor: None,
+                        user_conversion: None,
                     })
                 } else {
                     None
@@ -997,7 +1000,7 @@ impl Analyzer<'_> {
                     self.initialize_ranked_list_argument(arg, sequence, scope)?;
                     continue;
                 }
-                if self.apply_constructor_sequence(
+                if self.apply_user_sequence(
                     arg,
                     sequence,
                     scope,

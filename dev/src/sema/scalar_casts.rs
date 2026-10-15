@@ -174,7 +174,7 @@ impl Analyzer<'_> {
             return self.new_expression_facts(goal, V::Prvalue);
         }
         if matches!(self.graph.types.get(source.ty).kind, TypeKind::Class(_)) {
-            return Err(Error::Missing("class explicit conversions"));
+            return self.cast_conversion_function(id, operand, goal, scope, static_kind);
         }
         let from = self.decayed_type(source.ty)?;
         // analyzer_member_pointers.cpp shows a successful static member-pointer

@@ -243,6 +243,10 @@ pub(crate) struct Graph {
     pub(super) overloads: super::function_resolution::FunctionSets,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
+    condition_functions: std::collections::HashMap<
+        crate::syntax::ast::DeclaratorId,
+        super::conversion_functions::FunctionConversion,
+    >,
     condition_conversions: Vec<Option<super::expression_facts::Conversion>>,
     pub(super) case_values: Vec<Option<u64>>,
     call_bindings: Vec<Option<BindingId>>,
@@ -398,6 +402,7 @@ impl Graph {
             overloads: super::function_resolution::FunctionSets::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
+            condition_functions: std::collections::HashMap::new(),
             condition_conversions: Vec::new(),
             case_values: Vec::new(),
             call_bindings: Vec::new(),
@@ -1188,6 +1193,19 @@ impl Graph {
         right: TypeId,
     ) {
         super::record(&mut self.arithmetic_types, id.index(), (left, right));
+    }
+    pub(super) fn record_condition_function(
+        &mut self,
+        id: crate::syntax::ast::DeclaratorId,
+        selected: super::conversion_functions::FunctionConversion,
+    ) {
+        self.condition_functions.insert(id, selected);
+    }
+    pub(super) fn condition_function(
+        &self,
+        id: crate::syntax::ast::DeclaratorId,
+    ) -> Option<super::conversion_functions::FunctionConversion> {
+        self.condition_functions.get(&id).copied()
     }
     pub(super) fn record_condition_conversion(
         &mut self,

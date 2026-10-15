@@ -212,6 +212,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let then_block = self.new_block("if_then")?;
         let else_block = self.new_block("if_else")?;
+        let depth = self.lifetime.cleanups.len();
         self.condition_branch(condition, then_block, else_block, true)?;
         self.place(then_block)?;
         self.scoped_statement(then_branch)?;
@@ -237,7 +238,29 @@ impl Function<'_, '_, '_, '_> {
         if let Some(block) = end {
             self.place(block)?;
         }
-        Ok(())
+        self.leave_scope(depth)
+    }
+    fn loop_condition(
+        &mut self,
+        condition: Condition,
+        run: BlockId,
+        end: BlockId,
+        depth: usize,
+    ) -> Result<BlockId, Error> {
+        if matches!(condition, Condition::Declaration { .. }) {
+            let value = self.condition_value(condition, true)?;
+            let exit = if self.lifetime.cleanups.len() > depth {
+                self.new_block("cond_false_cleanup")?
+            } else {
+                end
+            };
+            self.effect(I::Branch(value.value, run, exit))?;
+            self.terminated = true;
+            Ok(exit)
+        } else {
+            self.condition_branch(condition, run, end, false)?;
+            Ok(end)
+        }
     }
     fn while_statement(&mut self, condition: Condition, body: ast::StmtId) -> Result<(), Error> {
         let test = self.new_block("while_cond")?;
@@ -245,18 +268,26 @@ impl Function<'_, '_, '_, '_> {
         let end = self.new_block("while_end")?;
         self.jump(test)?;
         self.place(test)?;
-        self.condition_branch(condition, run, end, false)?;
+        let depth = self.lifetime.cleanups.len();
+        let exit = self.loop_condition(condition, run, end, depth)?;
         self.place(run)?;
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(test),
-            cleanup_depth: self.lifetime.cleanups.len(),
+            cleanup_depth: depth,
         });
         self.scoped_statement(body)?;
         self.jumps.pop();
         if !self.terminated {
+            self.destroy_cleanups(depth)?;
             self.jump(test)?;
         }
+        if exit != end {
+            self.place(exit)?;
+            self.destroy_cleanups(depth)?;
+            self.jump(end)?;
+        }
+        self.lifetime.cleanups.truncate(depth);
         self.place(end)
     }
     fn do_statement(&mut self, body: ast::StmtId, condition: ast::ExprId) -> Result<(), Error> {
@@ -299,14 +330,16 @@ impl Function<'_, '_, '_, '_> {
         let end = self.new_block("for_end")?;
         self.jump(test)?;
         self.place(test)?;
-        if let Some(condition) = condition {
-            self.condition_branch(condition, run, end, false)?;
+        let scope = self.lifetime.cleanups.len();
+        let exit = if let Some(condition) = condition {
+            self.loop_condition(condition, run, end, scope)?
         } else {
             self.jump(run)?;
-        }
+            end
+        };
         self.place(run)?;
         self.jumps.push(JumpTargets {
-            end,
+            end: exit,
             continuation: Some(step),
             cleanup_depth: self.lifetime.cleanups.len(),
         });
@@ -319,11 +352,19 @@ impl Function<'_, '_, '_, '_> {
         if let Some(id) = iteration {
             self.discard_full_expression(id)?;
         }
+        self.destroy_cleanups(scope)?;
         self.jump(test)?;
+        if exit != end {
+            self.place(exit)?;
+            self.destroy_cleanups(scope)?;
+            self.jump(end)?;
+        }
+        self.lifetime.cleanups.truncate(scope);
         self.place(end)?;
         self.leave_scope(depth)
     }
     fn switch_statement(&mut self, condition: Condition, body: ast::StmtId) -> Result<(), Error> {
+        let depth = self.lifetime.cleanups.len();
         let selector = self.condition_value(condition, false)?;
         let dispatch = self.new_block("switch_dispatch")?;
         let end = self.new_block("switch_end")?;
@@ -364,7 +405,7 @@ impl Function<'_, '_, '_, '_> {
         for id in labels {
             self.switch_blocks.remove(&id);
         }
-        Ok(())
+        self.leave_scope(depth)
     }
     fn scan_switch(&mut self, id: ast::StmtId, labels: &mut Vec<ast::StmtId>) -> Result<(), Error> {
         self.check_stack()?;

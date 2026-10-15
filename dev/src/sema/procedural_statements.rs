@@ -384,12 +384,24 @@ impl Analyzer<'_> {
             if let Some(expr) = expr {
                 self.convert_bool(expr)?;
             } else if let Condition::Declaration { declarator, .. } = condition {
-                let conversion = self.standard_conversion(facts, ty, true)?.ok_or_else(|| {
-                    Error::at(
+                let conversion = if let Some(conversion) =
+                    self.standard_conversion(facts, ty, true)?
+                {
+                    conversion
+                } else if let Some(sequence) = self.conversion_function_sequence(facts, ty, true)? {
+                    let binding = self.graph.declared_bindings[declarator.index()]
+                        .ok_or(Error::Invariant("condition without binding"))?;
+                    let scope = self.graph.binding_scope(binding);
+                    let selected =
+                        self.select_conversion_function(facts, sequence, scope, location)?;
+                    self.graph.record_condition_function(declarator, selected);
+                    sequence.conversion
+                } else {
+                    return Err(Error::at(
                         location,
                         "condition is not contextually convertible to bool",
-                    )
-                })?;
+                    ));
+                };
                 self.graph
                     .record_condition_conversion(declarator, conversion);
             }

@@ -165,6 +165,11 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
+            if let Some(selected) = self.graph.expression_facts.function_conversion(id)
+                && self.function_may_throw(self.graph.binding(selected.binding).entity)?
+            {
+                return Ok(true);
+            }
             let kind = self.tree.expressions.get(id).kind;
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;

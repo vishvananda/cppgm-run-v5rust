@@ -276,11 +276,6 @@ impl Analyzer<'_> {
                 "converting and derived class initialization",
             ));
         }
-        if !self.graph.entity(class).declared_conversions.is_empty() {
-            return Err(Error::Missing(
-                "copy construction with user conversion candidates",
-            ));
-        }
         let own_class = self.graph.class_of(facts.ty) == Some(class);
         let elided = own_class
             && facts.category == V::Prvalue

@@ -23,6 +23,7 @@ mod class_results;
 mod conditions;
 mod construction;
 mod constructor_cleanup;
+mod conversion_functions;
 mod conversions;
 mod copy_arrays;
 mod copy_cleanup;
