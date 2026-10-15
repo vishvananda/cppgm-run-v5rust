@@ -1,5 +1,6 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
+pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
@@ -100,7 +101,7 @@ pub(crate) use super::construction::ConstructorId;
 #[derive(Clone, Copy)]
 pub(crate) enum FunctionName {
     Identifier(NameId),
-    Constructor(NameId),
+    Constructor(ClassSpelling),
     Destructor(Option<NameId>),
     Operator {
         token: crate::lex::vocabulary::SimpleToken,
@@ -288,11 +289,7 @@ impl Graph {
         }
         let class = self.entity(plan.class);
         Ok(FunctionFacts {
-            name: FunctionName::Constructor(
-                class
-                    .name
-                    .ok_or(Error::Missing("anonymous constructor name"))?,
-            ),
+            name: FunctionName::Constructor(self.lower_class_spelling(plan.class)?),
             label: None,
             home: class
                 .scope
@@ -794,18 +791,18 @@ impl Graph {
                 {
                     FunctionName::Destructor(
                         self.entity(object.ok_or(Error::Invariant("destructor without class"))?)
-                            .name,
+                            .destruction
+                            .ok_or(Error::Invariant("destructor without completed facts"))?
+                            .declared_name,
                     )
                 }
                 None if entity
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor) =>
                 {
-                    FunctionName::Constructor(
-                        self.entity(object.ok_or(Error::Invariant("constructor without class"))?)
-                            .name
-                            .ok_or(Error::Missing("anonymous constructor name"))?,
-                    )
+                    FunctionName::Constructor(self.lower_class_spelling(
+                        object.ok_or(Error::Invariant("constructor without class"))?,
+                    )?)
                 }
                 None => FunctionName::Identifier(
                     entity
@@ -1078,16 +1075,18 @@ impl Graph {
         Ok(body.handlers.is_none()
             && matches!(tree.statements.get(body.compound).kind, ast::StmtKind::Compound(items) if tree.stmt_lists.get(items).is_empty()))
     }
-    pub(crate) fn lower_nominal_name(&self, ty: TypeId) -> Result<(ScopeId, NameId), Error> {
+    pub(crate) fn lower_nominal_name(
+        &self,
+        ty: TypeId,
+    ) -> Result<(EntityId, ScopeId, Option<NameId>), Error> {
         let (TypeKind::Enum(id) | TypeKind::Class(id)) = self.types.get(ty).kind else {
             return Err(Error::Invariant("non-nominal ABI type"));
         };
         let entity = self.entity(id);
         Ok((
+            id,
             entity.home.ok_or(Error::Invariant("enum without home"))?,
-            entity
-                .name
-                .ok_or(Error::Missing("anonymous enum ABI name"))?,
+            entity.name,
         ))
     }
     pub(crate) fn lower_default(&self, entity: EntityId, index: usize) -> Option<ast::ExprId> {

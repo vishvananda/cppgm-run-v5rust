@@ -20,6 +20,7 @@ pub(super) enum Preparation {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Destruction {
+    pub declared_name: Option<crate::lex::identifiers::NameId>,
     pub trivial: bool,
     pub deleted: bool,
     pub nothrow: bool,
@@ -84,6 +85,7 @@ impl Analyzer<'_> {
             "destructor properties without class scope",
         ))?;
         let mut facts = Destruction {
+            declared_name: self.graph.entity(class).name,
             trivial: true,
             deleted: false,
             nothrow: true,

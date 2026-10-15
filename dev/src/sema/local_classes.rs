@@ -12,6 +12,8 @@ use std::collections::HashMap;
 pub(super) struct LocalClasses {
     counts: HashMap<(EntityId, NameId), u32>,
     declared: HashMap<EntityId, u16>,
+    unnamed_counts: HashMap<EntityId, u32>,
+    unnamed: HashMap<EntityId, u16>,
     by_outer_function: HashMap<EntityId, Vec<EntityId>>,
 }
 impl Analyzer<'_> {
@@ -29,6 +31,7 @@ impl Analyzer<'_> {
         let Some(function) = self.body_context.as_ref().map(|body| body.entity) else {
             return Ok(());
         };
+        self.record_unnamed_local_type(class, home)?;
         if let Some(name) = self.graph.entity(class).name {
             let count = self
                 .graph
@@ -51,8 +54,41 @@ impl Analyzer<'_> {
             .push(class);
         Ok(())
     }
+    pub(super) fn record_unnamed_local_type(
+        &mut self,
+        entity: EntityId,
+        home: ScopeId,
+    ) -> Result<(), Error> {
+        if self.graph.entity(entity).name.is_none()
+            && matches!(
+                self.graph.scope(home).kind,
+                ScopeKind::Block | ScopeKind::Function
+            )
+            && let Some(function) = self.body_context.as_ref().map(|body| body.entity)
+        {
+            let count = self
+                .graph
+                .local_classes
+                .unnamed_counts
+                .entry(function)
+                .or_default();
+            let earlier = u16::try_from(*count).unwrap_or(u16::MAX);
+            self.graph.local_classes.unnamed.insert(entity, earlier);
+            *count = count
+                .checked_add(1)
+                .ok_or(Error::Limit("unnamed local type count"))?;
+        }
+        Ok(())
+    }
 }
 impl Graph {
+    pub(super) fn unnamed_local_ordinal(&self, entity: EntityId) -> Option<u32> {
+        self.local_classes
+            .unnamed
+            .get(&entity)
+            .copied()
+            .map(u32::from)
+    }
     fn lower_inline_function(&self, function: EntityId) -> bool {
         let node = self.entity(function);
         node.inline == super::specifiers::InlinePreference::Inline
@@ -176,10 +212,49 @@ impl Graph {
         Ok(self.lower_type_unit_local(result))
     }
 
+    pub(crate) fn lower_class_no_linkage(&self, mut class: EntityId) -> bool {
+        loop {
+            let entity = self.entity(class);
+            let Some(home) = entity.home else {
+                return true;
+            };
+            let scope = self.scope(home);
+            if scope.kind != ScopeKind::Class {
+                return entity.name.is_none()
+                    || matches!(scope.kind, ScopeKind::Block | ScopeKind::Function);
+            }
+            let Some(owner) = scope.owner else {
+                return true;
+            };
+            class = owner;
+        }
+    }
     pub(crate) fn lower_function_local_class(&self, function: EntityId) -> bool {
         self.entity(function).home.is_some_and(|home| {
-            self.scope(home).kind == ScopeKind::Class && self.lower_scope_function(home).is_some()
+            self.scope(home).kind == ScopeKind::Class
+                && self
+                    .scope(home)
+                    .owner
+                    .is_some_and(|owner| self.lower_class_no_linkage(owner))
         })
+    }
+    pub(crate) fn lower_unnamed_member_owner(&self, function: EntityId) -> Option<ScopeId> {
+        let home = self.entity(function).home?;
+        if self.scope(home).kind != ScopeKind::Class {
+            return None;
+        }
+        let mut scope = home;
+        loop {
+            let node = self.scope(scope);
+            let owner = self.entity(node.owner?);
+            if owner.name.is_none() {
+                return Some(home);
+            }
+            scope = owner.home?;
+            if self.scope(scope).kind != ScopeKind::Class {
+                return None;
+            }
+        }
     }
     pub(crate) fn lower_scope_function(&self, mut scope: ScopeId) -> Option<EntityId> {
         loop {

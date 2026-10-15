@@ -280,10 +280,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(symbol) = self.aggregate_helpers.get(key) {
             return Ok(symbol);
         }
-        let (mut scope, name) = self
+        let (_, mut scope, _) = self
             .graph
             .lower_nominal_name(self.graph.lower_entity_type(class)?)?;
-        let label = self.identifier(name)?;
+        let label = self.class_label(self.graph.lower_class_spelling(class)?)?;
         let mut components = vec![format!("{label}__{label}__aggregate")];
         while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
             components.push(self.presentation_scope_label(scope, name)?);
@@ -417,15 +417,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         scope: ScopeId,
         name: Option<crate::lex::identifiers::NameId>,
     ) -> Result<String, Error> {
-        if let Some((_, tokens, _)) = self.graph.lower_anonymous_scope(scope) {
-            return Ok(format!(
-                "__anonymous_union_type__{}_{}",
-                tokens.begin, tokens.end
-            ));
+        if let Some((class, _, _)) = self.graph.lower_anonymous_scope(scope) {
+            return self.class_label(self.graph.lower_class_spelling(class)?);
         }
         Ok(name
             .map_or(Ok("_GLOBAL__N_1"), |name| self.identifier(name))?
             .to_owned())
+    }
+    fn class_label(&self, label: crate::sema::lowering::ClassSpelling) -> Result<String, Error> {
+        use crate::sema::lowering::ClassSpelling;
+        Ok(match label {
+            ClassSpelling::Name(name) => self.identifier(name)?.to_owned(),
+            ClassSpelling::Local(ordinal) => format!("__local_type{ordinal}"),
+            ClassSpelling::Anonymous(tokens) => {
+                format!("__anonymous_union_type__{}_{}", tokens.begin, tokens.end)
+            }
+        })
     }
     fn function_label(
         &self,
@@ -438,8 +445,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             if let Some(name) = name {
                 bytes.extend_from_slice(self.cursor.name(name));
             }
-        } else if let FunctionName::Identifier(name) | FunctionName::Constructor(name) = name {
+        } else if let FunctionName::Identifier(name) = name {
             bytes.extend_from_slice(self.cursor.name(name));
+        } else if let FunctionName::Constructor(spelling) = name {
+            bytes.extend_from_slice(self.class_label(spelling)?.as_bytes());
         } else if let Some(label) = label {
             crate::syntax::write_member_label(self.tree, self.cursor, label, &mut bytes).map_err(
                 |_| Error::Semantic(crate::sema::Error::Invariant("function label rendering")),
@@ -796,6 +805,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.local_discriminators.insert(entity, occurrence);
         Ok(occurrence)
     }
+    pub(super) fn name_scopes(&mut self, scopes: &[ScopeId]) -> Result<(), Error> {
+        for &scope in scopes {
+            self.scope(scope)?;
+        }
+        Ok(())
+    }
     fn name_local_classes(&mut self, function: EntityId) -> Result<(), Error> {
         if self.graph.lower_function_visible_locals(function) {
             return Ok(());
@@ -859,13 +874,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 operand: self.abi_type(element)?,
             },
             TypeView::Enum(_) | TypeView::Class(_) => {
-                let (home, name) = self.graph.lower_nominal_name(ty)?;
+                let (entity, home, name) = self.graph.lower_nominal_name(ty)?;
                 let parent = self.scope(home)?;
-                let terminal = self.abi.string(self.cursor.name(name))?;
+                let terminal = if let Some(name) = name {
+                    self.abi.string(self.cursor.name(name))?
+                } else {
+                    self.anonymous_names
+                        .terminal(self.graph, &mut self.abi, entity)?
+                };
                 let occurrence = if let TypeView::Class(class) = self.graph.lower_type(ty)?
                     && let Some((function, declared)) = self.graph.lower_local_type(class)
                 {
-                    self.local_discriminator(class, function, Some(name), declared)?
+                    self.local_discriminator(class, function, name, declared)?
                 } else {
                     0
                 };
@@ -1630,7 +1650,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 4
             } else {
                 0
-            } | if self.graph.lower_scope_function(facts.home).is_some() {
+            } | if facts
+                .object
+                .is_some_and(|class| self.graph.lower_class_no_linkage(class))
+            {
                 2
             } else {
                 0

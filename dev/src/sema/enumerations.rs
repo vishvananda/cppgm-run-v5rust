@@ -346,6 +346,7 @@ impl Analyzer<'_> {
         print: ScopeId,
     ) -> Result<(EntityId, BindingId), Error> {
         let entity = self.graph.add_entity(None, name, Keyword::Enum)?;
+        self.record_unnamed_local_type(entity, info.owner)?;
         let ty = self
             .graph
             .types

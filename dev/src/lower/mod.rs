@@ -126,21 +126,11 @@ pub(crate) fn lower_unit(
     budget: StackBudget,
 ) -> Result<(), Error> {
     let mut symbols = symbols::Symbols::new(graph, tree, cursor, budget, &mut output.symbols);
-    let mut work: Vec<_> = tree
-        .decl_lists
-        .get(declarations)
-        .iter()
-        .rev()
-        .copied()
-        .collect();
+    let mut declarations = anonymous_names::Declarations::new(tree, declarations);
     let mut emitted = std::collections::HashSet::new();
     let mut emitted_entries = std::collections::HashSet::new();
-    while let Some(id) = work.pop() {
+    while let Some(id) = declarations.next(tree, graph, &mut symbols)? {
         match tree.declarations.get(id).kind {
-            ast::DeclKind::Namespace { declarations, .. }
-            | ast::DeclKind::Linkage { declarations, .. } => {
-                work.extend(tree.decl_lists.get(declarations).iter().rev().copied());
-            }
             ast::DeclKind::Function {
                 declarator, body, ..
             } => {
@@ -260,7 +250,9 @@ pub(crate) fn lower_unit(
                     budget,
                 )?;
             }
-            ast::DeclKind::Empty
+            ast::DeclKind::Namespace { .. }
+            | ast::DeclKind::Linkage { .. }
+            | ast::DeclKind::Empty
             | ast::DeclKind::Alias { .. }
             | ast::DeclKind::NamespaceAlias { .. }
             | ast::DeclKind::Enum { .. }

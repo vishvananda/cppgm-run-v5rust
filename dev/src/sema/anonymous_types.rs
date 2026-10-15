@@ -32,24 +32,65 @@ impl AnonymousClass {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ClassSpelling {
+    Name(NameId),
+    Local(u32),
+    Anonymous(ast::TokenSpan),
+}
+#[derive(Clone, Copy)]
+pub(crate) enum UnnamedNumbering {
+    Members(ScopeId),
+    Local(u32),
+    Private(Option<EntityId>),
+}
 impl Graph {
     pub(crate) fn lower_anonymous_scope(
         &self,
         scope: ScopeId,
-    ) -> Option<(EntityId, ast::TokenSpan, bool)> {
+    ) -> Option<(EntityId, ast::TokenSpan, UnnamedNumbering)> {
         let node = self.scope(scope);
         if node.kind != ScopeKind::Class || node.name.is_some() {
             return None;
         }
         let class = node.owner?;
         let tokens = self.entity(class).anonymous_class?.label()?;
-        let home = self.entity(class).home?;
-        let numbered = self.scope(home).kind == ScopeKind::Class
-            && self
-                .scope(home)
-                .owner
-                .is_some_and(|owner| self.lower_visible_type(owner));
-        Some((class, tokens, numbered))
+        Some((class, tokens, self.lower_unnamed_numbering(class)))
+    }
+    pub(crate) fn lower_unnamed_numbering(&self, entity: EntityId) -> UnnamedNumbering {
+        if let Some(home) = self.entity(entity).home {
+            if self.scope(home).kind == ScopeKind::Class {
+                if self
+                    .scope(home)
+                    .owner
+                    .is_some_and(|owner| self.lower_visible_type(owner))
+                {
+                    return UnnamedNumbering::Members(home);
+                }
+                return UnnamedNumbering::Private(None);
+            }
+            if self.lower_visible_type(entity)
+                && let Some(ordinal) = self.unnamed_local_ordinal(entity)
+            {
+                return UnnamedNumbering::Local(ordinal);
+            }
+            return UnnamedNumbering::Private(self.lower_local_scope(home));
+        }
+        UnnamedNumbering::Private(None)
+    }
+    pub(crate) fn lower_class_spelling(&self, class: EntityId) -> Result<ClassSpelling, Error> {
+        let entity = self.entity(class);
+        if let Some(name) = entity.name {
+            return Ok(ClassSpelling::Name(name));
+        }
+        if let Some(ordinal) = entity.local_type_ordinal {
+            return Ok(ClassSpelling::Local(ordinal));
+        }
+        entity
+            .anonymous_class
+            .and_then(AnonymousClass::label)
+            .map(ClassSpelling::Anonymous)
+            .ok_or(Error::Invariant("class without presentation provenance"))
     }
     pub(crate) fn lower_unnamed_scope_types(
         &self,
