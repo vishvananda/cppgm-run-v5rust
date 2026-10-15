@@ -106,6 +106,25 @@ impl Constructors {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn validate_const_default(
+        &self,
+        target: TypeId,
+        constructor: ConstructorId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        let plan = self.graph.constructors.get(constructor);
+        if self.graph.types.get(target).cv.0 & 1 != 0 && !plan.const_default {
+            return Err(Error::at(
+                location,
+                if self.graph.entity(plan.class).key == Keyword::Union {
+                    "a const union object initializes no member"
+                } else {
+                    "a const object leaves a member uninitialized"
+                },
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn default_initialize_declaration(
         &mut self,
         binding: BindingId,

@@ -86,7 +86,34 @@ impl Function<'_, '_, '_, '_> {
                     work.push(callee);
                 }
                 ExprKind::Throw(_) => return Ok(true),
-                ExprKind::New { .. } | ExprKind::Delete { .. } => {
+                ExprKind::New {
+                    placement,
+                    initializer,
+                    ..
+                } => {
+                    let use_ = self.graph.lower_allocation(id)?;
+                    if self.lifetime_call_throws(CallTarget::Direct(use_.function))? {
+                        return Ok(true);
+                    }
+                    if let Some((constructor, arguments)) = use_.constructor
+                        && self.allocated_constructor_work(constructor, arguments, work)?
+                    {
+                        return Ok(true);
+                    }
+                    work.extend(self.tree.expr_lists.get(placement.unwrap_or_default()));
+                    if let Some(initializer) = initializer {
+                        match initializer.kind {
+                            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                                work.push(id);
+                            }
+                            ast::InitializerKind::Parenthesized(args) => {
+                                work.extend(self.tree.expr_lists.get(args));
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                ExprKind::Delete { .. } => {
                     return Err(Error::Missing("allocation exception lowering"));
                 }
                 ExprKind::Binary { left, right, .. } => {
@@ -148,7 +175,10 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn initializer_throws(&mut self, initializer: Option<ast::Initializer>) -> Result<bool, Error> {
+    pub(super) fn initializer_throws(
+        &mut self,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<bool, Error> {
         let Some(initializer) = initializer else {
             return Ok(false);
         };

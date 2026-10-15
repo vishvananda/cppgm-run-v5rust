@@ -276,25 +276,7 @@ impl Analyzer<'_> {
             scratch.clear();
             self.call_scratch = scratch;
             let binding = chosen?;
-            for &argument in self.tree.expr_lists.get(arguments) {
-                let mut facts = self.graph.expression_facts.get(argument)?;
-                if let Some(conversion) = facts.conversion
-                    && self
-                        .graph
-                        .expression_facts
-                        .user_conversion(argument)
-                        .is_none()
-                {
-                    facts.base_path = self.conversion_base_path(
-                        facts,
-                        conversion,
-                        scope,
-                        self.tree.expressions.get(argument).location,
-                        true,
-                    )?;
-                    self.graph.expression_facts.set(argument, facts);
-                }
-            }
+            self.record_argument_base_paths(self.tree.expr_lists.get(arguments), scope)?;
             self.check_class_arguments(binding, arguments, scope)?;
             let location = self.tree.expressions.get(id).location;
             self.record_call_receiver(callee, binding, facts, scope, location)?;
@@ -618,10 +600,45 @@ impl Analyzer<'_> {
             user_constructor: None,
         }))
     }
+    pub(super) fn record_argument_base_paths(
+        &mut self,
+        arguments: &[ast::ExprId],
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        for &argument in arguments {
+            let mut facts = self.graph.expression_facts.get(argument)?;
+            if let Some(conversion) = facts.conversion
+                && self
+                    .graph
+                    .expression_facts
+                    .user_conversion(argument)
+                    .is_none()
+            {
+                facts.base_path = self.conversion_base_path(
+                    facts,
+                    conversion,
+                    scope,
+                    self.tree.expressions.get(argument).location,
+                    true,
+                )?;
+                self.graph.expression_facts.set(argument, facts);
+            }
+        }
+        Ok(())
+    }
     fn check_class_arguments(
         &mut self,
         binding: BindingId,
         arguments: List<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        self.check_class_argument_slice(binding, self.tree.expr_lists.get(arguments), 0, scope)
+    }
+    pub(super) fn check_class_argument_slice(
+        &mut self,
+        binding: BindingId,
+        arguments: &[ast::ExprId],
+        offset: usize,
         scope: ScopeId,
     ) -> Result<(), Error> {
         let ty = self
@@ -630,15 +647,12 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("selected function without type"))?;
         let count = self.graph.types.function_parameter_count(ty)?;
-        for (index, &id) in self
-            .tree
-            .expr_lists
-            .get(arguments)
+        for (index, &id) in arguments
             .iter()
             .enumerate()
-            .take(count)
+            .take(count.saturating_sub(offset))
         {
-            let target = self.graph.types.function_parameter(ty, index)?;
+            let target = self.graph.types.function_parameter(ty, index + offset)?;
             self.class_parameter_destruction(
                 target,
                 scope,
@@ -677,12 +691,33 @@ impl Analyzer<'_> {
         object: Option<super::expression_facts::ObjectArgument>,
         scratch: &mut CallScratch,
     ) -> Result<(), Error> {
+        self.rank_prefixed_call(set, args, object, None, scratch)
+    }
+    pub(super) fn rank_prefixed_call(
+        &mut self,
+        set: Candidates,
+        args: &[ast::ExprId],
+        object: Option<super::expression_facts::ObjectArgument>,
+        prefix: Option<ExprFacts>,
+        scratch: &mut CallScratch,
+    ) -> Result<(), Error> {
         scratch.candidates.clear();
         scratch.sequences.clear();
+        let offset = usize::from(prefix.is_some());
+        let written = args.len() + offset;
         for index in 0..set.bindings(&self.graph).len() {
             let primary = set.bindings(&self.graph)[index];
             if !set.includes(&self.graph, primary) {
                 continue;
+            }
+            if prefix.is_some()
+                && self
+                    .graph
+                    .entity(self.graph.binding(primary).entity)
+                    .template_head
+                    .is_some()
+            {
+                return Err(Error::Missing("allocation function template deduction"));
             }
             let Some(binding) = self.deduce_function_call(primary, args)? else {
                 continue;
@@ -699,8 +734,8 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("candidate without function type"));
             };
             let count = parameters.len();
-            if args.len() > count && !variadic
-                || (args.len()..count).any(|index| {
+            if written > count && !variadic
+                || (written..count).any(|index| {
                     !self.function_has_default(self.graph.binding(binding).entity, index)
                 })
             {
@@ -723,8 +758,24 @@ impl Analyzer<'_> {
                 };
                 scratch.sequences.push(sequence);
             }
+            if let Some(facts) = prefix {
+                if count == 0 {
+                    continue;
+                }
+                let target = self.graph.types.function_parameter(ty, 0)?;
+                let Some(conversion) = self.scalar_sequence(facts, target, false)? else {
+                    continue;
+                };
+                scratch.sequences.push(Some(ArgumentSequence {
+                    conversion,
+                    application: Some(conversion),
+                    function: None,
+                    user_constructor: None,
+                }));
+            }
             let mut viable = true;
             for (index, &arg) in args.iter().enumerate() {
+                let index = index + offset;
                 let sequence = if index < count {
                     let target = self.graph.types.function_parameter(ty, index)?;
                     let Some(conversion) = self.argument_sequence(arg, target)? else {
@@ -963,6 +1014,16 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+    pub(super) fn apply_prefixed_arguments(
+        &mut self,
+        mut selected: CallSelection,
+        args: &[ast::ExprId],
+        scope: ScopeId,
+        scratch: &CallScratch,
+    ) -> Result<(), Error> {
+        selected.object_count += 1;
+        self.apply_call_arguments(selected, args, scope, scratch)
     }
     fn compare_candidates(
         &mut self,

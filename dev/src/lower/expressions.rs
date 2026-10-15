@@ -227,6 +227,7 @@ impl Function<'_, '_, '_, '_> {
                 })
             }
             ExprKind::Keyword(Keyword::This) => self.object_pointer(source),
+            ExprKind::New { .. } => self.allocation(id),
             ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)

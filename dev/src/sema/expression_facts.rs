@@ -221,8 +221,25 @@ pub(super) struct ExpressionFacts {
     // Converting class-subobject initializations are sparse use facts. Keep
     // them separate from the source's original type and argument conversion.
     class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
+    allocations: std::collections::HashMap<ast::ExprId, super::allocation::Allocation>,
 }
 impl ExpressionFacts {
+    pub(super) fn allocation(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<super::allocation::Allocation, Error> {
+        self.allocations
+            .get(&self.root(id))
+            .copied()
+            .ok_or(Error::Invariant("allocation without selected use"))
+    }
+    pub(super) fn set_allocation(
+        &mut self,
+        id: ast::ExprId,
+        allocation: super::allocation::Allocation,
+    ) {
+        self.allocations.insert(self.root(id), allocation);
+    }
     pub(super) fn copy_action(
         &self,
         id: ast::ExprId,

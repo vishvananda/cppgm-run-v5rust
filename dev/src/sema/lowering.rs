@@ -27,6 +27,13 @@ pub(crate) struct ConstructorView<'a> {
     pub class: EntityId,
     pub subobjects: &'a [super::construction::MemberConstruction],
 }
+pub(crate) struct AllocationView {
+    pub function: EntityId,
+    pub target: TypeId,
+    pub constructor: Option<(ConstructorId, ConstructorArguments)>,
+    pub deallocator: Option<EntityId>,
+    pub reserved: bool,
+}
 pub(crate) struct VariableFacts {
     pub name: NameId,
     pub home: ScopeId,
@@ -152,6 +159,16 @@ impl Expression {
 }
 pub(crate) use super::expression_facts::{GlvalueKind, ObjectSource};
 impl Graph {
+    pub(crate) fn lower_allocation(&self, id: ast::ExprId) -> Result<AllocationView, Error> {
+        let use_ = self.expression_facts.allocation(id)?;
+        Ok(AllocationView {
+            function: self.binding(use_.function).entity,
+            target: use_.target,
+            constructor: use_.constructor,
+            deallocator: use_.deallocator.map(|binding| self.binding(binding).entity),
+            reserved: use_.reserved,
+        })
+    }
     pub(crate) fn lower_base_initialization_span(
         &self,
         class: EntityId,

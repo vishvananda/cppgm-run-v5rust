@@ -32,6 +32,14 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let ty = self.graph.lower_entity_type(entity)?;
+        self.request_object_layout(ty, location);
+        Ok(())
+    }
+    pub(super) fn request_object_layout(
+        &mut self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+    ) {
         let mut object = ty;
         while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
             object = element;
@@ -43,7 +51,6 @@ impl Analyzer<'_> {
                 location,
             ));
         }
-        Ok(())
     }
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
         use super::function_demands::Demand;

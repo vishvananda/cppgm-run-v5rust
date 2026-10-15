@@ -1222,6 +1222,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
+            ExprKind::New { .. } => "expression",
             ExprKind::Call { .. } => {
                 if facts.functional_call || facts.intrinsic.is_some() {
                     "cast-expression"

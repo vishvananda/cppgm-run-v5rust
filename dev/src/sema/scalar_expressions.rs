@@ -221,6 +221,7 @@ impl Analyzer<'_> {
                     "a braced-init-list is not an expression here",
                 ));
             }
+            ExprKind::New { .. } => self.allocation_expression(id, scope)?,
             _ => return Err(Error::Missing("extended semantic expressions")),
         };
         // A constexpr initializer's printed cv type is applied by its declaration view,

@@ -77,7 +77,7 @@ impl Function<'_, '_, '_, '_> {
         let value = self.lifetime_result(call, source)?;
         self.finish_lifetime_call(value, throws)
     }
-    fn operator_argument(
+    pub(super) fn operator_argument(
         &mut self,
         operand: ast::ExprId,
         parameter: crate::sema::lowering::TypeId,

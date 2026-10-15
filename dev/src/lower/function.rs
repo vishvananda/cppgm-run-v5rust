@@ -553,6 +553,15 @@ impl Function<'_, '_, '_, '_> {
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
+        self.initialize_scalar_memory(ty, slot, initializer, types::memory(self.graph, ty)?)
+    }
+    pub(super) fn initialize_scalar_memory(
+        &mut self,
+        ty: TypeId,
+        slot: Value,
+        initializer: Option<ast::Initializer>,
+        memory: crate::lowir::model::Facts,
+    ) -> Result<(), Error> {
         if let Some(initializer) = initializer {
             let value = match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
@@ -570,7 +579,7 @@ impl Function<'_, '_, '_, '_> {
             let value = self.convert(value, ty, super::conversions::Context::Initialization)?;
             let value = self.fit(value, ty)?;
             self.effect(I::Store(
-                types::memory(self.graph, ty)?,
+                memory,
                 types::storage(self.graph, ty)?,
                 value.value,
                 slot,

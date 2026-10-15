@@ -318,7 +318,52 @@ impl Analyzer<'_> {
                             .map(|&id| (id, next)),
                     );
                 }
-                ExprKind::New { .. } | ExprKind::Delete { .. } => {
+                ExprKind::New {
+                    placement,
+                    initializer,
+                    ..
+                } => {
+                    let use_ = self.graph.expression_facts.allocation(id)?;
+                    if self.function_may_throw(self.graph.binding(use_.function).entity)? {
+                        return Ok(true);
+                    }
+                    if let Some((constructor, _)) = use_.constructor {
+                        let plan = self.graph.constructors.get(constructor);
+                        let throws = if let Some(binding) = plan.binding {
+                            self.function_may_throw(self.graph.binding(binding).entity)?
+                        } else {
+                            !plan.nothrow
+                        };
+                        if throws {
+                            return Ok(true);
+                        }
+                    }
+                    self.throw_work.extend(
+                        self.tree
+                            .expr_lists
+                            .get(placement.unwrap_or_default())
+                            .iter()
+                            .rev()
+                            .map(|&id| (id, next)),
+                    );
+                    if let Some(initializer) = initializer {
+                        match initializer.kind {
+                            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                                self.throw_work.push((id, next));
+                            }
+                            ast::InitializerKind::Parenthesized(args) => self.throw_work.extend(
+                                self.tree
+                                    .expr_lists
+                                    .get(args)
+                                    .iter()
+                                    .rev()
+                                    .map(|&id| (id, next)),
+                            ),
+                            _ => (),
+                        }
+                    }
+                }
+                ExprKind::Delete { .. } => {
                     return Err(Error::Missing("allocation exception queries"));
                 }
                 // sizeof, traits (including nested noexcept) and lambdas

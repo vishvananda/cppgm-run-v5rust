@@ -4,6 +4,7 @@ mod aggregate_arrays;
 mod aggregate_cleanup;
 mod aggregate_helpers;
 mod aggregates;
+mod allocation;
 mod arrays;
 mod base_projections;
 mod bit_fields;
