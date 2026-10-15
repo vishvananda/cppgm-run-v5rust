@@ -382,6 +382,7 @@ impl Function<'_, '_, '_, '_> {
             && throws;
         if began {
             self.lifetime.full_expression = true;
+            self.lifetime.region_start = super::lifetime::RegionStart::Pending;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);

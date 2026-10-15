@@ -11,6 +11,7 @@ mod arrow_calls;
 mod assignment;
 mod base_projections;
 mod bit_fields;
+mod class_conditionals;
 mod class_parameters;
 mod class_results;
 mod conditions;

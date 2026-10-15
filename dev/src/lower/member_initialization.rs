@@ -96,6 +96,12 @@ impl Function<'_, '_, '_, '_> {
                 }
                 wrote |= initializer.is_some()
                     || !self.graph.lower_constructor_trivial(child.constructor);
+                let first = self.lifetime.cleanups.len();
+                let region = if let Some(initializer) = initializer {
+                    self.begin_subobject_initializer(initializer, Some(child.constructor))?
+                } else {
+                    false
+                };
                 self.initialize_class_member(
                     pointer,
                     ty,
@@ -103,6 +109,8 @@ impl Function<'_, '_, '_, '_> {
                     child.constructor,
                     child.arguments,
                 )?;
+                self.destroy_temporaries(first)?;
+                self.end_lifetime_expression(region)?;
                 if !plan.union && !nested {
                     self.subobject_constructed(ty, offset, true)?;
                 }
@@ -121,7 +129,11 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             };
             wrote = true;
+            let first = self.lifetime.cleanups.len();
+            let region = self.begin_subobject_initializer(initializer, None)?;
             self.constructor_aggregate_member(member, pointer, initializer, union, location)?;
+            self.destroy_temporaries(first)?;
+            self.end_lifetime_expression(region)?;
             if !plan.union && !nested {
                 self.subobject_constructed(ty, offset, true)?;
             }

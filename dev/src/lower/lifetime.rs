@@ -93,6 +93,17 @@ impl TemporarySegment {
         !matches!(self, Self::Empty)
     }
 }
+#[derive(Clone, Copy, Default)]
+pub(super) enum RegionStart {
+    Pending,
+    #[default]
+    Consumed,
+}
+impl RegionStart {
+    pub(super) fn is_pending(self) -> bool {
+        matches!(self, Self::Pending)
+    }
+}
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
@@ -113,6 +124,7 @@ pub(super) struct Lifetime {
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,
+    pub region_start: RegionStart,
     pub region_depth: usize,
     pub call_marks: Vec<crate::lowir::builder::Position>,
     pub function_guard: Option<BlockId>,

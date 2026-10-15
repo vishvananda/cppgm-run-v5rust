@@ -397,9 +397,14 @@ impl Graph {
         id: ast::ExprId,
     ) -> Result<Option<u64>, Error> {
         let facts = self.expression_facts.get(id)?;
-        if !facts.conversion.is_some_and(|conversion| {
-            conversion.second == super::expression_facts::ValueConversion::DerivedToBase
-        }) {
+        if !facts
+            .conversion
+            .into_iter()
+            .chain(facts.class_copy.map(|copy| copy.binding))
+            .any(|conversion| {
+                conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+            })
+        {
             return Ok(None);
         }
         let path = facts

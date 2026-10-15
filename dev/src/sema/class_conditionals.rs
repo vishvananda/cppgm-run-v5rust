@@ -4,6 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    copy_initialization::CopyUse,
     expression_facts::{ExprFacts, ValueCategory as V},
     graph::ScopeId,
     types::RefKind,
@@ -77,12 +78,16 @@ impl Analyzer<'_> {
     pub(super) fn class_conditional(
         &mut self,
         id: ast::ExprId,
+        operands: [ast::ExprId; 2],
         facts: &[ExprFacts; 2],
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
         let [a, b] = *facts;
         if self.bare_type(a.ty)? == self.bare_type(b.ty)? {
-            return Err(Error::Missing("class conditional copy initialization"));
+            let ac = self.type_cv(a.ty).0;
+            let bc = self.type_cv(b.ty).0;
+            let target = if ac & !bc == 0 { b.ty } else { a.ty };
+            return self.class_conditional_value(operands, target, scope);
         }
         if !self
             .graph
@@ -111,7 +116,7 @@ impl Analyzer<'_> {
             }
         };
         if matches[selected] == Match::Prvalue {
-            return Err(Error::Missing("conditional base class copy initialization"));
+            return self.class_conditional_value(operands, facts[1 - selected].ty, scope);
         }
         let target = facts[1 - selected];
         let mut paths = [None; 2];
@@ -129,6 +134,23 @@ impl Analyzer<'_> {
         result.set_bit_field(a.is_bit_field() || b.is_bit_field());
         Ok(result)
     }
+    fn class_conditional_value(
+        &mut self,
+        operands: [ast::ExprId; 2],
+        target: super::types::TypeId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        for operand in operands {
+            self.record_class_copy(
+                operand,
+                target,
+                scope,
+                CopyUse::Value { in_place: true },
+                self.tree.expressions.get(operand).location,
+            )?;
+        }
+        self.new_expression_facts(target, V::Prvalue)
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +164,103 @@ mod tests {
             ast::{Body, DeclKind, ExprKind, StmtKind},
         },
     };
+
+    #[test]
+    fn branch_copies_and_outer_elision_preserve_original_facts_and_demand() {
+        use crate::sema::copy_initialization::CopyAction;
+        let source = SourceBuffer::new(
+            b"struct V{V();V(const V&);V(V&&);};struct Unused{Unused(const Unused&);};V a;const V b;V copied=true?a:V();V direct(false?a:V());const V cv=true?a:b;"
+                .to_vec(),
+        ).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"conditional-copy-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(count, tree.expressions.mark());
+        let mut conditionals = Vec::new();
+        for &declaration in tree.decl_lists.get(declarations) {
+            let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+            else {
+                continue;
+            };
+            for declarator in tree.init_declarators.get(declarators) {
+                let Some(initializer) = declarator.initializer else {
+                    continue;
+                };
+                let expression = match initializer.kind {
+                    crate::syntax::ast::InitializerKind::Assign(id) => id,
+                    crate::syntax::ast::InitializerKind::Parenthesized(arguments) => {
+                        tree.expr_lists.get(arguments)[0]
+                    }
+                    _ => continue,
+                };
+                if let ExprKind::Conditional {
+                    then_expr,
+                    else_expr,
+                    ..
+                } = tree.expressions.get(expression).kind
+                {
+                    conditionals.push((expression, then_expr, else_expr));
+                }
+            }
+        }
+        assert_eq!(conditionals.len(), 3);
+        let mut branch_constructor = None;
+        for ((expression, left, right), elision) in
+            conditionals[..2].iter().copied().zip([true, false])
+        {
+            let facts = graph.expression_facts.get(expression).unwrap();
+            assert_eq!(facts.category, ValueCategory::Prvalue);
+            assert!(
+                matches!(graph.lower_class_copy(expression).unwrap(), Some(CopyAction::Constructor { elision: permission, .. }) if permission == elision)
+            );
+            let left_facts = graph.expression_facts.get(left).unwrap();
+            assert_eq!(left_facts.category, ValueCategory::Lvalue);
+            assert!(left_facts.conversion.is_none());
+            let Some(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            }) = graph.lower_class_copy(left).unwrap()
+            else {
+                panic!("selected branch copy")
+            };
+            assert_eq!(*branch_constructor.get_or_insert(constructor), constructor);
+            assert_eq!(
+                graph.expression_facts.get(right).unwrap().category,
+                ValueCategory::Prvalue
+            );
+            assert!(graph.lower_class_copy(right).unwrap().is_none());
+        }
+        let (expression, left, right) = conditionals[2];
+        let facts = graph.expression_facts.get(expression).unwrap();
+        assert_eq!(facts.category, ValueCategory::Lvalue);
+        assert_eq!(graph.types.get(facts.ty).cv, Cv::CONST);
+        for operand in [left, right] {
+            assert!(
+                graph
+                    .expression_facts
+                    .get(operand)
+                    .unwrap()
+                    .class_copy
+                    .is_none()
+            );
+            assert!(graph.lower_class_copy(operand).unwrap().is_none());
+        }
+        let name = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(
+                graph
+                    .own(graph.global, name, crate::sema::lookup::Filter::Prefix)
+                    .unwrap(),
+            )
+            .entity;
+        assert!(graph.entity(unused).implicit_copies.is_none());
+    }
 
     #[test]
     fn conditional_routes_belong_to_the_use_and_keep_original_operand_facts() {

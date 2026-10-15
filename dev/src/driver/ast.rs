@@ -39,7 +39,9 @@ impl LowIrOutput {
                 || self.output.initializer.is_some()
                 || self.output.finalizer.is_some(),
         )?;
-        self.output.definitions.write(output)?;
+        self.output
+            .definitions
+            .write(&self.output.program, output)?;
         for symbol in [self.output.initializer, self.output.finalizer]
             .into_iter()
             .flatten()

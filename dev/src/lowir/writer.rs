@@ -177,20 +177,55 @@ fn write_function(
     floating: &mut FloatingScanner,
     out: &mut impl Write,
 ) -> io::Result<()> {
+    write_function_header(program, f, f.body.is_some(), out)?;
+    let Some(body) = &f.body else { return Ok(()) };
+    write_function_body(program, body, floating, out)
+}
+pub(crate) fn write_definition_header(
+    program: &Program,
+    f: &Function,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    write_function_header(program, f, true, out)
+}
+fn write_function_header(
+    program: &Program,
+    f: &Function,
+    defined: bool,
+    out: &mut impl Write,
+) -> io::Result<()> {
     write!(
         out,
         "{}function @{}",
-        if f.body.is_some() { "" } else { "declare " },
+        if defined { "" } else { "declare " },
         program.names.get(f.name)
     )?;
     let signature = program.signature(f.signature);
     parameters(program, signature, out)?;
     metadata(program, Some(&f.metadata), Some(signature), out)?;
-    let Some(body) = &f.body else {
+    if !defined {
         return writeln!(out);
-    };
+    }
     write_location(program, f.location, out)?;
-    writeln!(out, " {{")?;
+    writeln!(out, " {{")
+}
+pub(crate) fn write_definition_body(
+    program: &Program,
+    f: &Function,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    let body = f
+        .body
+        .as_ref()
+        .ok_or_else(|| io::Error::other("missing deferred definition body"))?;
+    write_function_body(program, body, &mut FloatingScanner::default(), out)
+}
+fn write_function_body(
+    program: &Program,
+    body: &Body,
+    floating: &mut FloatingScanner,
+    out: &mut impl Write,
+) -> io::Result<()> {
     let names = temporary_names(program, body)?;
     for slot in body.slots() {
         writeln!(

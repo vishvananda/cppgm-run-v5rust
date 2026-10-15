@@ -110,6 +110,31 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: Option<ConstructorArguments>,
     ) -> Result<(), Error> {
+        self.call_constructor_with_elision(id, variant, object, arguments, false)
+    }
+    pub(super) fn call_constructor_from_expression(
+        &mut self,
+        id: ConstructorId,
+        object: Value,
+        source: ast::ExprId,
+        elision: bool,
+    ) -> Result<(), Error> {
+        self.call_constructor_with_elision(
+            id,
+            Variant::Complete,
+            object,
+            Some(ConstructorArguments::Single(source)),
+            elision,
+        )
+    }
+    fn call_constructor_with_elision(
+        &mut self,
+        id: ConstructorId,
+        variant: Variant,
+        object: Value,
+        arguments: Option<ConstructorArguments>,
+        copy_elision: bool,
+    ) -> Result<(), Error> {
         let single;
         let written = match arguments {
             Some(ConstructorArguments::Values(values)) => self.tree.expr_lists.get(values),
@@ -163,7 +188,8 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        let result = self.emit_constructor_call(entry, facts.nothrow, &values);
+        let result =
+            self.emit_constructor_call_with_elision(entry, facts.nothrow, &values, copy_elision);
         if !facts.nothrow && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
@@ -174,6 +200,15 @@ impl Function<'_, '_, '_, '_> {
         entry: Entry,
         nothrow: bool,
         values: &[Value],
+    ) -> Result<(), Error> {
+        self.emit_constructor_call_with_elision(entry, nothrow, values, false)
+    }
+    fn emit_constructor_call_with_elision(
+        &mut self,
+        entry: Entry,
+        nothrow: bool,
+        values: &[Value],
+        copy_elision: bool,
     ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
         // nonthrowing call once prior subobjects need destruction.
@@ -192,7 +227,7 @@ impl Function<'_, '_, '_, '_> {
             callee: Value::Symbol(symbol),
             arguments,
             signature: None,
-            copy_elision: false,
+            copy_elision,
         }))?;
         Ok(())
     }

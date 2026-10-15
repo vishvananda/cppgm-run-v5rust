@@ -308,15 +308,44 @@ impl Function<'_, '_, '_, '_> {
         let deferred = matches!(use_, TemporaryUse::Discard)
             && !self.lifetime.cleanups.is_empty()
             && call_result;
-        if destructor.is_some()
+        let branched = matches!(
+            self.tree.expressions.get(root).kind,
+            ExprKind::Conditional { .. }
+        );
+        let opens = destructor.is_some()
             && !persistent
             && self.lifetime.full_expression
             && !self.lifetime.temporary_segment.is_nothrow()
             && !self.lifetime.region
             && !deferred
             && (owner.is_none() || self.operand_temporaries(id)?.made)
-        {
-            self.open_temporary_region()?;
+            && (if branched {
+                self.lifetime.region_start.is_pending() && self.lifetime.guarded_operands == 0
+            } else {
+                self.lifetime.region_start.is_pending()
+                    || self.lifetime.cleanups.is_empty()
+                    || self.aggregate_has_members()
+                    || self.lifetime.tracking.active
+            });
+        let deferred_region = opens
+            && !branched
+            && !self.lifetime.cleanups.is_empty()
+            && !self.lifetime.tracking.active
+            && !self
+                .lifetime
+                .call_marks
+                .iter()
+                .any(|&p| self.builder.same_block(p));
+        if opens && !deferred_region {
+            let position =
+                if !self.lifetime.region_start.is_pending() && !self.lifetime.tracking.active {
+                    Some(self.builder.position()?)
+                } else if branched && !self.lifetime.tracking.active {
+                    self.lifetime.expression_start
+                } else {
+                    None
+                };
+            self.open_temporary_region_at(position)?;
         }
         if destructor.is_some()
             && !persistent
@@ -327,7 +356,11 @@ impl Function<'_, '_, '_, '_> {
         }
         let slot = self.temporary_storage(ty, persistent, use_.stem())?;
         let object = self.emit(I::Addr(slot), ty)?.value;
-        self.materialize_class(id, ty, object)?;
+        if deferred_region {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        self.materialize_prvalue(id, ty, object, false)?;
         if persistent && !self.terminated {
             self.persistent_alive(ty, slot)?;
         } else if destructor.is_some() && owner.is_none() && !self.terminated {
@@ -371,7 +404,19 @@ impl Function<'_, '_, '_, '_> {
         if let Some((constructor, arguments)) = self.class_conversion(id) {
             return self.call_converting_constructor(id, constructor, object, arguments);
         }
-        match self.graph.lower_class_copy(id)? {
+        if self.materialize_copy(id, ty, object, self.graph.lower_class_copy(id)?)? {
+            return Ok(());
+        }
+        self.materialize_prvalue(id, ty, object, volatile)
+    }
+    pub(super) fn materialize_copy(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+        action: Option<CopyAction>,
+    ) -> Result<bool, Error> {
+        match action {
             Some(CopyAction::Storage {
                 reference,
                 skip_empty,
@@ -381,7 +426,7 @@ impl Function<'_, '_, '_, '_> {
                 };
                 let empty = self.graph.lower_class_empty(class)?;
                 if empty && skip_empty && self.side_effect_free(id, false, 0)? {
-                    return Ok(());
+                    return Ok(true);
                 }
                 let source =
                     self.bind_reference(id, reference, super::conversions::Context::Argument)?;
@@ -390,18 +435,30 @@ impl Function<'_, '_, '_, '_> {
                     let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
                     self.effect(I::CopyObject(size, alignment, source, object))?;
                 }
-                return Ok(());
+                return Ok(true);
             }
-            Some(CopyAction::Constructor(constructor)) => {
-                return self.call_constructor(
-                    constructor,
-                    super::construction::Variant::Complete,
-                    object,
-                    Some(crate::sema::lowering::ConstructorArguments::Single(id)),
-                );
+            Some(CopyAction::Constructor {
+                constructor,
+                elision,
+            }) => {
+                self.call_constructor_from_expression(constructor, object, id, elision)?;
+                return Ok(true);
             }
             None => (),
         }
+        Ok(false)
+    }
+    // Construct the source expression itself, without replaying the outer
+    // initialization's selected copy when a reference materializes its argument.
+    pub(super) fn materialize_prvalue(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+        volatile: bool,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        let id = self.without_parentheses(id);
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {
                 let constructor = self
@@ -437,7 +494,18 @@ impl Function<'_, '_, '_, '_> {
                     self.discard(left)?;
                     self.materialize_class_qualified(right, ty, object, volatile)
                 }
-                _ => Err(Error::Missing("class conditional materialization")),
+                ExprKind::Conditional {
+                    condition,
+                    then_expr,
+                    else_expr,
+                } => self.materialize_conditional(
+                    condition,
+                    [then_expr, else_expr],
+                    ty,
+                    object,
+                    volatile,
+                ),
+                _ => Err(Error::Missing("class prvalue materialization")),
             },
         }
     }

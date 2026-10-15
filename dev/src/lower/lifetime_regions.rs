@@ -148,6 +148,7 @@ impl Function<'_, '_, '_, '_> {
         // when they make temporaries, even if none has become alive yet.
         if self.lifetime.full_expression
             && self.lifetime.temporary_segment.allows_eager_arguments()
+            && self.lifetime.region_start.is_pending()
             && !self.lifetime.region
         {
             for &argument in arguments {
@@ -169,6 +170,7 @@ impl Function<'_, '_, '_, '_> {
         if throws
             && self.lifetime.full_expression
             && self.lifetime.temporary_segment.is_eager()
+            && self.lifetime.region_start.is_pending()
             && !self.lifetime.region
             && !self.lifetime.call_marks.is_empty()
         {
@@ -176,6 +178,15 @@ impl Function<'_, '_, '_, '_> {
         }
         if self.lifetime.tracking.active && !self.lifetime.region {
             return self.open_temporary_region();
+        }
+        if !throws
+            && self.lifetime.full_expression
+            && self.lifetime.temporary_segment.is_nothrow()
+            && !self.lifetime.region
+            && !self.lifetime.cleanups.is_empty()
+        {
+            let position = self.builder.position()?;
+            return self.open_temporary_region_at(Some(position));
         }
         if self.static_initializer
             || !throws
@@ -195,12 +206,20 @@ impl Function<'_, '_, '_, '_> {
             .call_marks
             .iter()
             .copied()
-            .find(|&position| self.builder.same_block(position))
+            .filter(|&position| self.builder.same_block(position))
+            .reduce(|first, last| {
+                if self.lifetime.region_start.is_pending() {
+                    first
+                } else {
+                    last
+                }
+            })
         {
             self.builder.insert_marker(position, R::EhTry(entry))?;
         } else {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())
@@ -239,6 +258,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())
@@ -279,6 +299,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(value)
     }
     pub(super) fn close_lifetime_region(&mut self) -> Result<(), Error> {
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         if !self.lifetime.region {
             return Ok(());
         }
@@ -297,6 +318,7 @@ impl Function<'_, '_, '_, '_> {
             return false;
         }
         self.lifetime.full_expression = true;
+        self.lifetime.region_start = super::lifetime::RegionStart::Pending;
         true
     }
     pub(super) fn discard_full_expression(

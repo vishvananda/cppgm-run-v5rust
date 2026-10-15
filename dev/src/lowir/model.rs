@@ -225,18 +225,37 @@ impl Program {
         &mut self,
         output: &mut impl std::io::Write,
     ) -> Result<(), Error> {
+        self.stream_last_function(output, false).map(|_| ())
+    }
+    pub(crate) fn stream_last_body(
+        &mut self,
+        output: &mut impl std::io::Write,
+    ) -> Result<SymbolId, Error> {
+        self.stream_last_function(output, true)
+    }
+    fn stream_last_function(
+        &mut self,
+        output: &mut impl std::io::Write,
+        body_only: bool,
+    ) -> Result<SymbolId, Error> {
         let function = self
             .functions
             .last()
             .ok_or(Error::Construction("missing completed definition".into()))?;
-        super::writer::write_definition(self, function, output).map_err(Error::Output)?;
-        if let Some(symbol) = self.find_symbol(function.name) {
-            self.streamed_functions.insert(symbol);
+        if body_only {
+            super::writer::write_definition_body(self, function, output)
+        } else {
+            super::writer::write_definition(self, function, output)
         }
+        .map_err(Error::Output)?;
+        let symbol = self
+            .find_symbol(function.name)
+            .ok_or_else(|| Error::Construction("completed definition without symbol".into()))?;
+        self.streamed_functions.insert(symbol);
         if let Some(function) = self.functions.last_mut() {
             function.body = None;
         }
-        Ok(())
+        Ok(symbol)
     }
     pub(crate) fn function_defined(&self, symbol: SymbolId) -> bool {
         self.streamed_functions.contains(&symbol)

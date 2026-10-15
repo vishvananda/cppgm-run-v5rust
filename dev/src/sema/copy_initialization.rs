@@ -24,8 +24,14 @@ pub(super) struct CopySelection {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CopyAction {
-    Storage { reference: TypeId, skip_empty: bool },
-    Constructor(super::construction::ConstructorId),
+    Storage {
+        reference: TypeId,
+        skip_empty: bool,
+    },
+    Constructor {
+        constructor: super::construction::ConstructorId,
+        elision: bool,
+    },
 }
 #[derive(Clone, Copy)]
 pub(super) enum CopyUse {
@@ -103,7 +109,6 @@ impl super::graph::Graph {
 struct Candidate {
     selection: CopySelection,
     deleted: bool,
-    elidable: bool,
 }
 
 #[derive(Default)]
@@ -230,7 +235,8 @@ impl Analyzer<'_> {
         let direct = matches!(usage, CopyUse::Object { direct: true });
         let in_place = matches!(usage, CopyUse::Value { in_place: true });
         if facts.functions.is_some()
-            || !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(from) if from == class)
+            || !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(from)
+                if from == class || self.graph.is_base_of(class, from))
         {
             return Err(Error::Missing(
                 "converting and derived class initialization",
@@ -241,7 +247,9 @@ impl Analyzer<'_> {
                 "copy construction with user conversion candidates",
             ));
         }
-        let elided = facts.category == V::Prvalue
+        let own_class = self.graph.class_of(facts.ty) == Some(class);
+        let elided = own_class
+            && facts.category == V::Prvalue
             && (in_place
                 || !matches!(
                     self.tree
@@ -250,17 +258,35 @@ impl Analyzer<'_> {
                         .kind,
                     ast::ExprKind::Conditional { .. }
                 ));
-        if !elided && facts.category == V::Prvalue {
-            return Err(Error::Missing(
-                "conditional class temporary copy construction",
-            ));
-        }
         let selected = self.select_copy_sequence(class, facts, Some(scope), direct, location)?;
+        let special = match selected.origin {
+            CopyOrigin::Implicit { .. } => true,
+            CopyOrigin::Declared(binding) => self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .copy_kind
+                .is_some(),
+        };
         let mut facts = facts;
-        let action = if elided {
+        facts.base_path =
+            self.conversion_base_path(facts, selected.binding, scope, location, true)?;
+        let written_move = direct
+            && matches!(selected.origin, CopyOrigin::Declared(binding)
+            if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
+        let action = if special
+            && (elided
+                || own_class
+                    && facts.category == V::Prvalue
+                    && !written_move
+                    && self.selected_copy_properties(class, selected)?.trivial)
+        {
             None
         } else {
-            Some(self.copy_action(class, selected, usage, location)?)
+            let mut action = self.copy_action(class, selected, usage, location)?;
+            if let CopyAction::Constructor { elision, .. } = &mut action {
+                *elision = special && own_class && facts.category == V::Prvalue && !direct;
+            }
+            Some(action)
         };
         self.graph.expression_facts.set_copy_action(id, action);
         facts.class_copy = Some(selected);
@@ -275,6 +301,20 @@ impl Analyzer<'_> {
         usage: CopyUse,
         location: SourceOffset,
     ) -> Result<CopyAction, Error> {
+        if let CopyOrigin::Declared(binding) = selected.origin
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .copy_kind
+                .is_none()
+        {
+            let constructor = self.selected_constructor_plan(binding, location)?;
+            self.demand_constructor_use(constructor);
+            return Ok(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            });
+        }
         let properties = self.selected_copy_properties(class, selected)?;
         let written_move = matches!(usage, CopyUse::Object { direct: true })
             && matches!(selected.origin, CopyOrigin::Declared(binding)
@@ -289,7 +329,10 @@ impl Analyzer<'_> {
         if provided || !properties.trivial || written_move || empty_lifetime {
             let constructor = self.copy_constructor_plan(class, selected, location)?;
             self.demand_constructor_use(constructor);
-            return Ok(CopyAction::Constructor(constructor));
+            return Ok(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            });
         }
         // A written defaulted declaration is odr-used even for a byte transfer.
         if let CopyOrigin::Declared(binding) = selected.origin {
@@ -432,7 +475,6 @@ impl Analyzer<'_> {
                     binding: conversion,
                 },
                 deleted,
-                elidable: kind.is_some(),
             });
         }
         for (kind, parameter, deleted) in [
@@ -453,7 +495,6 @@ impl Analyzer<'_> {
                         binding: conversion,
                     },
                     deleted,
-                    elidable: true,
                 });
             }
         }
@@ -488,12 +529,10 @@ impl Analyzer<'_> {
         if chosen.deleted {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        if !chosen.elidable
-            || !matches!(
-                self.graph.types.get(chosen.selection.binding.target).kind,
-                TypeKind::Reference { .. }
-            )
-            || chosen.selection.binding.temporary
+        if !matches!(
+            self.graph.types.get(chosen.selection.binding.target).kind,
+            TypeKind::Reference { .. }
+        ) || chosen.selection.binding.temporary
         {
             return Err(Error::Missing("nonelided constructor argument conversion"));
         }

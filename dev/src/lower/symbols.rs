@@ -1809,13 +1809,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             None
         };
-        output.stream(program, family)?;
         if let super::construction::Entry::Function(entity) = entry
             && self.destructor_inert(entity)?
         {
-            output.hold_last();
+            // Later object declarations may root this destructor after its
+            // source definition. Release its body now, defer only its header.
+            output.defer_definition(program)
+        } else {
+            output.stream(program, family)
         }
-        Ok(())
     }
     fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         let facts = self.graph.lower_function(entity)?;

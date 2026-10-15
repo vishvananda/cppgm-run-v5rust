@@ -1,7 +1,7 @@
 // Translated from lower/definition_order.cpp's constructor entry families. See NOTICE.
 //! Serialized spans retain completion order while function bodies are released.
 use super::Error;
-use crate::lowir::model::{NameId, Program};
+use crate::lowir::model::{NameId, Program, SymbolId};
 use std::{
     collections::HashMap,
     io::{self, Write},
@@ -10,11 +10,15 @@ use std::{
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct FamilyId(u32);
+struct Definition {
+    bytes: Range<usize>,
+    header: Option<SymbolId>,
+}
 #[derive(Default)]
 pub(crate) struct Definitions {
     bytes: Vec<u8>,
-    spans: Vec<Range<usize>>,
-    held: Vec<Range<usize>>,
+    spans: Vec<Definition>,
+    held: Vec<Definition>,
     external: HashMap<NameId, FamilyId>,
     families: Vec<[Option<usize>; 2]>,
 }
@@ -44,7 +48,10 @@ impl Definitions {
         let start = self.bytes.len();
         program.stream_last_definition(&mut self.bytes)?;
         let position = self.spans.len();
-        self.spans.push(start..self.bytes.len());
+        self.spans.push(Definition {
+            bytes: start..self.bytes.len(),
+            header: None,
+        });
         if let Some((family, variant)) = entry {
             let rank = usize::from(variant == super::construction::Variant::Complete);
             let positions = &mut self.families[family.0 as usize];
@@ -58,16 +65,26 @@ impl Definitions {
         }
         Ok(())
     }
-    pub(crate) fn write(&self, output: &mut impl Write) -> io::Result<()> {
+    pub(crate) fn write(&self, program: &Program, output: &mut impl Write) -> io::Result<()> {
         for span in self.spans.iter().chain(&self.held) {
-            output.write_all(&self.bytes[span.clone()])?;
+            if let Some(symbol) = span.header {
+                let function = program
+                    .function(program.symbol(symbol))
+                    .ok_or_else(|| io::Error::other("deferred function header without identity"))?;
+                crate::lowir::writer::write_definition_header(program, function, output)?;
+            }
+            output.write_all(&self.bytes[span.bytes.clone()])?;
         }
         Ok(())
     }
-    pub(super) fn hold_last(&mut self) {
-        if let Some(span) = self.spans.pop() {
-            self.held.push(span);
-        }
+    pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
+        let start = self.bytes.len();
+        let symbol = program.stream_last_body(&mut self.bytes)?;
+        self.held.push(Definition {
+            bytes: start..self.bytes.len(),
+            header: Some(symbol),
+        });
+        Ok(())
     }
     pub(super) fn release_held(&mut self) {
         self.spans.append(&mut self.held);

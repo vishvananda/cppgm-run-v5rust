@@ -68,6 +68,9 @@ impl Function<'_, '_, '_, '_> {
         let else_block = self.new_block("condaddr_else")?;
         let end = self.new_block("condaddr_end")?;
         let condition = self.truth(condition)?;
+        if self.lifetime.construction && !self.lifetime.full_expression {
+            self.close_lifetime_region()?;
+        }
         self.effect(I::Branch(condition.value, then_block, else_block))?;
         let offsets = self.graph.lower_conditional_base_offsets(id)?;
         for ((block, expr), offset) in [(then_block, then_expr), (else_block, else_expr)]

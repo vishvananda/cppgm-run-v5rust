@@ -210,7 +210,11 @@ impl Analyzer<'_> {
             && !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
         {
             let facts = self.graph.expression_facts.get(*id)?;
-            if self.graph.class_of(facts.ty) == Some(class) {
+            if self
+                .graph
+                .class_of(facts.ty)
+                .is_some_and(|source| source == class || self.graph.is_base_of(class, source))
+            {
                 self.record_class_copy(
                     *id,
                     target,

@@ -55,6 +55,14 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                self.graph.lower_class_copy(id)?
+                && !Entry::Constructor(constructor, Variant::Complete)
+                    .facts(self.graph)?
+                    .nothrow
+            {
+                return Ok(true);
+            }
             if let Some((constructor, _)) = self.graph.lower_class_conversion(id)
                 && !Entry::Constructor(constructor, Variant::Complete)
                     .facts(self.graph)?

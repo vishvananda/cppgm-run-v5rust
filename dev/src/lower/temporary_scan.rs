@@ -48,19 +48,33 @@ impl Function<'_, '_, '_, '_> {
         initializer: ast::Initializer,
         constructor: ConstructorId,
     ) -> Result<bool, Error> {
+        self.begin_subobject_initializer(initializer, Some(constructor))
+    }
+    pub(super) fn begin_subobject_initializer(
+        &mut self,
+        initializer: ast::Initializer,
+        constructor: Option<ConstructorId>,
+    ) -> Result<bool, Error> {
         if self.lifetime.full_expression {
             return Ok(false);
         }
-        let function = self.graph.lower_constructor_function(constructor)?;
-        let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
-            return Err(crate::sema::Error::Invariant("initializer without function type").into());
-        };
         let mut caller = false;
-        for &parameter in parameters {
-            caller |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self.temporary_type_destroyed(parameter)?;
+        if let Some(constructor) = constructor {
+            let function = self.graph.lower_constructor_function(constructor)?;
+            let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
+                return Err(
+                    crate::sema::Error::Invariant("initializer without function type").into(),
+                );
+            };
+            for &parameter in parameters {
+                caller |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
+                    && self.temporary_type_destroyed(parameter)?;
+            }
         }
         let (arguments, root) = match initializer.kind {
+            ast::InitializerKind::Assign(root) => {
+                (crate::syntax::storage::List::default(), Some(root))
+            }
             ast::InitializerKind::Parenthesized(arguments) => (arguments, None),
             ast::InitializerKind::Braced(id) => {
                 let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
@@ -75,6 +89,22 @@ impl Function<'_, '_, '_, '_> {
         let mut made = caller;
         let mut calls = false;
         let mut throwing_destructor = false;
+        if let Some(root) = root {
+            // A class prvalue with no outer transfer constructs the member
+            // itself. Only its operands can create expression temporaries.
+            let facts = self.graph.lower_expression(root)?;
+            let in_place = !facts.is_place
+                && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
+                && self.graph.lower_class_copy(root)?.is_none();
+            let summary = if in_place {
+                self.operand_temporaries(root)?
+            } else {
+                self.expression_temporaries(root)?
+            };
+            made |= summary.made;
+            calls |= summary.call_result.present() || summary.caller_destroyed;
+            throwing_destructor |= summary.call_result.destructor_throws();
+        }
         for &argument in self.tree.expr_lists.get(arguments) {
             let summary = self.expression_temporaries(argument)?;
             made |= summary.made;
@@ -98,6 +128,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         }
         self.lifetime.full_expression = true;
+        self.lifetime.region_start = super::lifetime::RegionStart::Pending;
         self.lifetime.temporary_segment = if caller || made && throwing {
             super::lifetime::TemporarySegment::Eager
         } else if made {
@@ -140,10 +171,15 @@ impl Function<'_, '_, '_, '_> {
             && (throwing || summary.call_result.present() || summary.caller_destroyed)
         {
             self.lifetime.full_expression = true;
-            self.lifetime.temporary_segment = super::lifetime::TemporarySegment::new(
-                summary.made,
-                matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult) && throwing,
-            );
+            self.lifetime.region_start = super::lifetime::RegionStart::Pending;
+            self.lifetime.temporary_segment = if throwing {
+                super::lifetime::TemporarySegment::new(
+                    summary.made,
+                    matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult),
+                )
+            } else {
+                super::lifetime::TemporarySegment::Nothrow
+            };
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);
             self.begin_tracking(root, usage)?;

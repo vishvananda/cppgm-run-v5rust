@@ -562,6 +562,7 @@ impl Function<'_, '_, '_, '_> {
         let began =
             if !expression && self.constructor_expression(entity, initializer, temporaries)? {
                 self.lifetime.full_expression = true;
+                self.lifetime.region_start = super::lifetime::RegionStart::Pending;
                 self.lifetime.temporary_segment =
                     super::lifetime::TemporarySegment::new(temporaries, false);
                 self.ensure_insertion()?;
@@ -583,6 +584,7 @@ impl Function<'_, '_, '_, '_> {
                 && !self.lifetime.full_expression
             {
                 self.lifetime.full_expression = true;
+                self.lifetime.region_start = super::lifetime::RegionStart::Pending;
                 self.lifetime.temporary_segment =
                     super::lifetime::TemporarySegment::new(temporaries, false);
                 self.ensure_insertion()?;
@@ -618,6 +620,25 @@ impl Function<'_, '_, '_, '_> {
         let result = self.initialize_local_variable(declarator, initializer);
         self.reference_lifetimes.aggregate = saved_owner;
         result?;
+        // A conditional's private result remains alive through the outer copy,
+        // including a nonthrowing copy. Its final destruction shares that region.
+        if object
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && !self.lifetime.tracking.active
+            && self.lifetime.cleanups.len() > temporary_floor
+            && let Some(initializer) = initializer
+        {
+            let source = self.initializer_expression(initializer)?;
+            let root = self.without_parentheses(source);
+            if matches!(
+                self.tree.expressions.get(root).kind,
+                ast::ExprKind::Conditional { .. }
+            ) && !self.graph.lower_expression(root)?.is_place
+            {
+                self.open_temporary_region()?;
+            }
+        }
         self.destroy_temporaries(temporary_floor)?;
         if object || !expression {
             self.close_lifetime_region()?;

@@ -182,8 +182,104 @@ impl Function<'_, '_, '_, '_> {
         {
             self.materialize_empty_argument(source, result, object)?;
         } else {
-            self.materialize_class(id, result, object)?;
+            self.initialize_class_result(
+                id,
+                result,
+                object,
+                self.graph.lower_class_copy(id)?,
+                None,
+            )?;
         }
         self.cleanup_return(boundary.ty, value, began)
+    }
+    fn initialize_class_result(
+        &mut self,
+        id: ast::ExprId,
+        result: TypeId,
+        object: Value,
+        action: Option<crate::sema::lowering::CopyAction>,
+        projection: Option<u64>,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        let root = self.without_parentheses(id);
+        let facts = self.graph.lower_expression(root)?;
+        if let ast::ExprKind::Conditional {
+            condition,
+            then_expr,
+            else_expr,
+        } = self.tree.expressions.get(root).kind
+            && (facts.is_place
+                || matches!((self.graph.lower_type(facts.ty)?, self.graph.lower_type(result)?), (TypeView::Class(a), TypeView::Class(b)) if a == b))
+        {
+            let left = self.new_block("condobj_then")?;
+            let right = self.new_block("condobj_else")?;
+            let end = self.new_block("condobj_end")?;
+            let condition = self.truth(condition)?;
+            self.effect(I::Branch(condition.value, left, right))?;
+            // C++ initialize_result passes the whole glvalue's selected
+            // argument binding to either branch. Its base projection belongs
+            // to that binding, not to a new branch-specific conversion.
+            let projection = if facts.is_place {
+                projection.or(self.graph.lower_base_conversion_offset(root)?)
+            } else {
+                None
+            };
+            for (block, operand) in [(left, then_expr), (right, else_expr)] {
+                self.place(block)?;
+                let first = self.lifetime.cleanups.len();
+                let own = if facts.is_place {
+                    action
+                } else {
+                    self.graph.lower_class_copy(operand)?
+                };
+                self.initialize_class_result(operand, result, object, own, projection)?;
+                if !self.lifetime.tracking.active {
+                    self.destroy_temporaries(first)?;
+                }
+                if !self.terminated {
+                    self.jump(end)?;
+                }
+            }
+            self.place(end)
+        } else if let (Some(offset), Some(action)) = (projection, action) {
+            self.materialize_projected_copy(id, result, object, action, offset)
+        } else if self.materialize_copy(id, result, object, action)? {
+            Ok(())
+        } else {
+            self.materialize_class(id, result, object)
+        }
+    }
+    fn materialize_projected_copy(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+        action: crate::sema::lowering::CopyAction,
+        offset: u64,
+    ) -> Result<(), Error> {
+        use crate::sema::lowering::CopyAction;
+        let source = self.address(id)?;
+        let source = self.base_projection(source, ty, offset)?;
+        match action {
+            CopyAction::Constructor { constructor, .. } => self.call_copy_constructor(
+                constructor,
+                super::construction::Variant::Complete,
+                object,
+                source,
+            ),
+            CopyAction::Storage { .. } => {
+                let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+                    return Err(
+                        crate::sema::Error::Invariant("projected copy without class").into(),
+                    );
+                };
+                if !self.graph.lower_class_empty(class)? {
+                    let (bytes, align) = types::layout(self.graph, ty)?;
+                    let bytes = bytes.min(self.graph.lower_nonvirtual_bytes(class)?);
+                    self.effect(I::CopyObject(bytes, align, source, object))?;
+                }
+                Ok(())
+            }
+        }
     }
 }

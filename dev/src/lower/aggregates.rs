@@ -181,6 +181,25 @@ impl Function<'_, '_, '_, '_> {
                         slot,
                     ));
                 }
+                // A destroyed conditional source starts its declaration's
+                // pending region before the destination address (C++ local_object).
+                if matches!(
+                    self.tree.expressions.get(source).kind,
+                    ExprKind::Conditional { .. }
+                ) && matches!(
+                    self.graph.lower_class_copy(source)?,
+                    Some(crate::sema::lowering::CopyAction::Constructor { .. })
+                ) && self.lifetime.full_expression
+                    && !self.lifetime.region
+                    && !self.lifetime.tracking.active
+                    && self.lifetime.cleanups.is_empty()
+                    && self
+                        .symbols
+                        .storage_destructor(self.graph.lower_expression(source)?.ty)?
+                        .is_some()
+                {
+                    self.open_temporary_region_at(self.lifetime.expression_start)?;
+                }
                 let object = self.storage_address(slot, ty)?;
                 return self.materialize_class(expr, ty, object);
             }

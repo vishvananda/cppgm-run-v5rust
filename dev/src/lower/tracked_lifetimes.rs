@@ -224,6 +224,7 @@ impl Function<'_, '_, '_, '_> {
         if !self.lifetime.tracking.made {
             self.lifetime.tracking.markers.push(marker);
         }
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.region = true;
         self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())

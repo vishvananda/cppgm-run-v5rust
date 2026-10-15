@@ -25,6 +25,7 @@ pub(super) struct Scope {
     full_expression: bool,
     segment: TemporarySegment,
     region: bool,
+    region_start: super::lifetime::RegionStart,
     start: Option<Position>,
     tracking: bool,
 }
@@ -58,12 +59,14 @@ impl Function<'_, '_, '_, '_> {
             full_expression: self.lifetime.full_expression,
             segment: self.lifetime.temporary_segment,
             region: self.lifetime.region,
+            region_start: self.lifetime.region_start,
             start: self.lifetime.expression_start,
             tracking: self.lifetime.tracking.active,
         };
         self.lifetime.full_expression = false;
         self.lifetime.temporary_segment = TemporarySegment::Empty;
         self.lifetime.region = false;
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.expression_start = None;
         self.lifetime.tracking.active = false;
         self.element_temporaries.depth += 1;
@@ -113,6 +116,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.full_expression = scope.full_expression;
         self.lifetime.temporary_segment = scope.segment;
         self.lifetime.region = scope.region;
+        self.lifetime.region_start = scope.region_start;
         self.lifetime.expression_start = scope.start;
         self.lifetime.tracking.active = scope.tracking;
         Ok(())

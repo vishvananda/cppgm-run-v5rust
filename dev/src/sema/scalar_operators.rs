@@ -667,7 +667,7 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(at).kind, TypeKind::Class(_))
             || matches!(self.graph.types.get(bt).kind, TypeKind::Class(_))
         {
-            return self.class_conditional(id, facts, scope);
+            return self.class_conditional(id, operands, facts, scope);
         }
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;

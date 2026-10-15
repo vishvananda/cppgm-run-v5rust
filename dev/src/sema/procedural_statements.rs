@@ -124,7 +124,16 @@ impl Analyzer<'_> {
                 ))
             }
         } else {
-            self.convert_scalar(id, result, false)?;
+            let slicing = self
+                .graph
+                .class_of(result)
+                .zip(self.graph.class_of(facts.ty))
+                .is_some_and(|(target, source)| {
+                    target != source && self.graph.is_base_of(target, source)
+                });
+            if !slicing {
+                self.convert_scalar(id, result, false)?;
+            }
             self.record_class_copy(
                 id,
                 result,

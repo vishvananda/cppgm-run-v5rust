@@ -754,6 +754,32 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn deferred_header_observes_late_roots_after_releasing_the_body() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "destructor", &[], Type::Void)?;
+        builder.block("entry")?;
+        builder.effect(I::Return(Type::Void, None))?;
+        builder.finish()?;
+        let mut body = Vec::new();
+        let symbol = program.stream_last_body(&mut body)?;
+        assert!(program.function_defined(symbol));
+        assert!(
+            program
+                .function(program.symbol(symbol))
+                .unwrap()
+                .body
+                .is_none()
+        );
+        program.root_function(symbol);
+        let function = program.function(program.symbol(symbol)).unwrap();
+        let mut rendered = Vec::new();
+        crate::lowir::writer::write_definition_header(&program, function, &mut rendered)
+            .map_err(Error::Output)?;
+        rendered.extend(body);
+        assert_eq!(rendered, b"function @destructor() -> void [object_root=yes] {\n  block ^entry:\n    return void\n}\n");
+        Ok(())
+    }
+    #[test]
     fn generated_names_avoid_later_slots_and_streamed_bodies_are_released() -> Result<(), Error> {
         let mut program = Program::default();
         let mut builder =
