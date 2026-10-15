@@ -204,8 +204,26 @@ impl Analyzer<'_> {
         class: EntityId,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        let mark = self.begin_base_access(scope);
+        let result = self.resolve_class_bases(node, class, scope).and_then(|()| {
+            let home = self
+                .graph
+                .entity(class)
+                .scope
+                .ok_or(Error::Invariant("base owner without scope"))?;
+            self.settle_base_access(home)
+        });
+        self.finish_declaration_access(mark);
+        result
+    }
+
+    fn resolve_class_bases(
+        &mut self,
+        node: ast::ClassSyntax,
+        class: EntityId,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
         let mut seen = HashSet::new();
-        let mut bindings = Vec::new();
         for base in self.tree.bases.get(node.bases) {
             if base.pack {
                 return Err(if self.template_depth == 0 {
@@ -216,20 +234,17 @@ impl Analyzer<'_> {
             }
             let name = self.tree.names.get(base.name);
             let components = self.tree.name_lists.get(name.components);
-            let (ty, binding) = if !name.global
+            let ty = if !name.global
                 && components.len() == 1
                 && let ast::NameKind::Decltype(operand) = components[0].kind
             {
-                (self.decltype_type(operand, scope)?, None)
+                self.decltype_type(operand, scope)?
             } else {
                 let binding = self.lookup(base.name, scope, Filter::Elaborated)?;
-                (
-                    self.graph
-                        .binding(binding)
-                        .ty
-                        .ok_or_else(|| Error::at(base.location, "name does not denote a type"))?,
-                    Some(binding),
-                )
+                self.graph
+                    .binding(binding)
+                    .ty
+                    .ok_or_else(|| Error::at(base.location, "name does not denote a type"))?
             };
             let Some(parent) = self.graph.class_of(ty) else {
                 if matches!(
@@ -267,23 +282,12 @@ impl Analyzer<'_> {
                 offset: None,
             });
             seen.insert(parent);
-            if let Some(binding) = binding {
-                bindings.push((binding, base.location));
-            }
         }
         if seen.len() != self.graph.entity(class).bases.len() {
             return Err(Error::at(
                 node.location,
                 "a class named twice as a direct base class",
             ));
-        }
-        let home = self
-            .graph
-            .entity(class)
-            .scope
-            .ok_or(Error::Invariant("base owner without scope"))?;
-        for (binding, location) in bindings {
-            self.check_direct_member_access(binding, home, location)?;
         }
         Ok(())
     }

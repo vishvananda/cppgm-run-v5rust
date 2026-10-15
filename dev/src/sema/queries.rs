@@ -445,6 +445,18 @@ impl Analyzer<'_> {
                         self.tree.expressions.get(operand).location,
                     )?;
                 }
+                if matches!(
+                    self.tree.expressions.get(operand).kind,
+                    ExprKind::Member { .. }
+                ) && let Some(binding) = facts.member
+                    && self.graph.binding(binding).kind == BindingKind::Variable
+                {
+                    return self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .ty
+                        .ok_or(Error::Invariant("decltype member without declared type"));
+                }
                 return match facts.category {
                     super::expression_facts::ValueCategory::Prvalue => Ok(facts.ty),
                     super::expression_facts::ValueCategory::Lvalue => {

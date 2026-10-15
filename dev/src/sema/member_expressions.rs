@@ -16,6 +16,19 @@ use crate::{
     syntax::ast::{self, NameKind},
 };
 
+pub(super) enum AccessFailure {
+    Inaccessible,
+    ProtectedObject,
+}
+impl AccessFailure {
+    pub(super) fn message(&self) -> &'static str {
+        match self {
+            Self::Inaccessible => "inaccessible member",
+            Self::ProtectedObject => "protected member accessed through an object of another class",
+        }
+    }
+}
+
 impl Analyzer<'_> {
     pub(super) fn current_object_type(&mut self) -> Result<Option<super::types::TypeId>, Error> {
         if self.default_argument_scope.is_some() {
@@ -421,14 +434,14 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn check_named_member_access(
-        &self,
+        &mut self,
         binding: BindingId,
         naming: EntityId,
         object: EntityId,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.validate_member_access(binding, naming, Some(object), scope, location)
+        self.check_declaration_member_access(binding, naming, Some(object), scope, location)
     }
     pub(super) fn validate_member_access(
         &self,
@@ -438,13 +451,25 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.check_direct_member_access(binding, scope, location)?;
+        if let Some(failure) = self.member_access_failure(binding, naming, object, scope) {
+            return Err(Error::at(location, failure.message()));
+        }
+        Ok(())
+    }
+    pub(super) fn member_access_failure(
+        &self,
+        binding: BindingId,
+        naming: EntityId,
+        object: Option<EntityId>,
+        scope: ScopeId,
+    ) -> Option<AccessFailure> {
+        if !self.direct_member_accessible(binding, scope) {
+            return Some(AccessFailure::Inaccessible);
+        }
         let home = self.graph.binding_scope(binding);
-        let Some(owner) = self.graph.scope(home).owner else {
-            return Ok(());
-        };
+        let owner = self.graph.scope(home).owner?;
         if naming != owner && !self.accessible_base_name(naming, owner, scope) {
-            return Err(Error::at(location, "inaccessible member"));
+            return Some(AccessFailure::Inaccessible);
         }
         if self.graph.binding_access(binding) == Access::Protected
             && (self
@@ -455,11 +480,8 @@ impl Analyzer<'_> {
                 || self.member_function_owner(binding).is_some())
             && object.is_some_and(|object| !self.protected_object_accessible(scope, owner, object))
         {
-            return Err(Error::at(
-                location,
-                "protected member accessed through an object of another class",
-            ));
+            return Some(AccessFailure::ProtectedObject);
         }
-        Ok(())
+        None
     }
 }

@@ -1,9 +1,10 @@
 // Translated from sema/analyzer_access.cpp's declaration access deferral. See NOTICE.
-//! Failed signature checks wait only for their declaration's canonical identity.
+//! Failed signature and base-clause checks wait for their owning declaration.
 use super::{
     Error,
     analyzer::Analyzer,
     graph::{BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
+    member_expressions::AccessFailure,
 };
 use crate::support::source::SourceOffset;
 
@@ -74,6 +75,25 @@ impl Analyzer<'_> {
         self.declaration_access.pending.truncate(mark.length);
         self.declaration_access.context = mark;
     }
+    pub(super) fn begin_base_access(&mut self, scope: ScopeId) -> Mark {
+        // Base names use the enclosing lookup scope, including at block/class
+        // scope. Their access waits for the complete base list (11p6-p7).
+        let mark = self.begin_declaration_access(scope, false);
+        self.declaration_access.context.scope = self.semantic().then_some(scope);
+        mark
+    }
+    pub(super) fn settle_base_access(&self, scope: ScopeId) -> Result<(), Error> {
+        for pending in &self.declaration_access.pending[self.declaration_access.context.first..] {
+            self.validate_member_access(
+                pending.binding,
+                pending.naming,
+                pending.object,
+                scope,
+                pending.location,
+            )?;
+        }
+        Ok(())
+    }
     pub(super) fn resume_declaration_access(&mut self, scope: ScopeId) {
         self.declaration_access.context.scope = (self.semantic()
             && self.template_depth == 0
@@ -91,10 +111,16 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let result = self.validate_member_access(binding, naming, object, scope, location);
-        if result.is_ok() {
-            return result;
-        }
+        let failure = match self.member_access_failure(binding, naming, object, scope) {
+            None => return Ok(()),
+            Some(AccessFailure::ProtectedObject) => {
+                return Err(Error::at(
+                    location,
+                    AccessFailure::ProtectedObject.message(),
+                ));
+            }
+            Some(failure) => failure,
+        };
         let mut owner = scope;
         while self.graph.scope(owner).kind == ScopeKind::Function
             && self.graph.scope(owner).owner.is_none()
@@ -115,7 +141,21 @@ impl Analyzer<'_> {
             });
             return Ok(());
         }
-        result
+        Err(Error::at(location, failure.message()))
+    }
+    pub(super) fn check_special_use_access(
+        &mut self,
+        binding: BindingId,
+        object: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let owner = self
+            .graph
+            .scope(self.graph.binding_scope(binding))
+            .owner
+            .ok_or(Error::Invariant("special member without class"))?;
+        self.check_declaration_member_access(binding, owner, Some(object), scope, location)
     }
     pub(super) fn check_declaration_direct_access(
         &mut self,
@@ -170,5 +210,88 @@ impl Analyzer<'_> {
             .pending
             .truncate(self.declaration_access.context.keep);
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Analyzer;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{layout::LayoutState, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn base_access_uses_complete_edges_and_releases_declaration_local_checks() {
+        for source in [
+            "struct A{private:struct B{};friend struct X;};struct X:A::B{};",
+            "struct A{protected:struct B{};};struct X:A::B,A{};",
+            "struct A{protected:struct B{};};struct X:A,A::B{};",
+            "struct A{private:struct B{};friend struct X;};struct X{struct Y:A::B{};};",
+            "struct A{private:struct B{};static B make();friend struct X;};struct X:decltype(A::make()){};",
+        ] {
+            let source = SourceBuffer::new(source.as_bytes().to_vec()).unwrap();
+            let mut unit = SyntaxUnit::new(
+                Preprocessor::with_name(&source, b"base-access-ownership").unwrap(),
+            );
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let expressions = tree.expressions.mark();
+            let names = [
+                cursor.intern_name(b"A").unwrap(),
+                cursor.intern_name(b"X").unwrap(),
+            ];
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            for &declaration in tree.decl_lists.get(declarations) {
+                analyzer
+                    .declaration(declaration, analyzer.graph.global)
+                    .unwrap();
+                assert!(analyzer.declaration_access.pending.is_empty());
+                assert!(analyzer.declaration_access.context.scope.is_none());
+            }
+            assert_eq!(expressions, tree.expressions.mark());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            for name in names {
+                let binding = analyzer
+                    .graph
+                    .own(analyzer.graph.global, name, Filter::Elaborated)
+                    .unwrap();
+                let class = analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(binding).entity);
+                assert!(class.complete);
+                assert!(matches!(class.layout, LayoutState::NotStarted));
+            }
+        }
+    }
+
+    #[test]
+    fn rejected_base_clause_restores_the_enclosing_access_mark() {
+        let source =
+            SourceBuffer::new(b"struct A{private:struct B{};};struct X:A::B{};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"base-access-failure").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let declarations = tree.decl_lists.get(declarations);
+        analyzer
+            .declaration(declarations[0], analyzer.graph.global)
+            .unwrap();
+        assert!(
+            analyzer
+                .declaration(declarations[1], analyzer.graph.global)
+                .is_err()
+        );
+        assert!(analyzer.declaration_access.pending.is_empty());
+        assert!(analyzer.declaration_access.context.scope.is_none());
     }
 }

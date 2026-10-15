@@ -334,7 +334,7 @@ impl Analyzer<'_> {
                 self.graph.expression_facts.set(callee, selected);
             }
         } else {
-            self.check_direct_member_access(binding, scope, location)?;
+            self.check_declaration_direct_access(binding, scope, location)?;
             if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
                 return Err(Error::at(
                     location,

@@ -839,7 +839,7 @@ impl Analyzer<'_> {
         if let CopyOrigin::Declared(binding) = chosen.selection.origin
             && let Some(scope) = access_scope
         {
-            self.check_direct_member_access(binding, scope, location)?;
+            self.check_declaration_direct_access(binding, scope, location)?;
         }
         Ok(chosen)
     }

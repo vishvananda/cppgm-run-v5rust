@@ -132,7 +132,7 @@ impl Analyzer<'_> {
                 .template_head
                 .is_none()
         {
-            self.check_direct_member_access(binding, scope, node.location)?;
+            self.check_declaration_direct_access(binding, scope, node.location)?;
             if self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -324,7 +324,7 @@ impl Analyzer<'_> {
         let root = self.graph.expression_facts.root(id);
         let address_scope = self.graph.expression_facts.get(root)?.member_address_scope;
         if let Some(scope) = address_scope {
-            self.check_direct_member_access(
+            self.check_declaration_direct_access(
                 binding,
                 scope,
                 self.tree.expressions.get(root).location,
