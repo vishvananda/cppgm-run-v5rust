@@ -180,16 +180,35 @@ impl Function<'_, '_, '_, '_> {
         } else {
             slot
         };
-        if let TypeView::Class(class) = self.graph.lower_type(element)? {
-            self.symbols.require_trivial_storage(ty)?;
+        let mut leaf = element;
+        while let TypeView::Array { element: child, .. } = self.graph.lower_type(leaf)? {
+            leaf = child;
+        }
+        if let TypeView::Class(class) = self.graph.lower_type(leaf)? {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
                 return Err(Error::Missing("class array non-list initialization"));
             };
             let list = self.tree.expr_lists.get(elements);
-            if self.array_helper_eligible(class, bound, list, Some(entity))? {
-                return self.aggregate_array_helpers(class, bound, base, list);
+            let counted = if self.counts_aggregate_elements(ty, list)? {
+                Some(self.begin_counted_elements(ty, slot)?)
+            } else {
+                None
+            };
+            if leaf != element
+                && self.expression_temporaries(expr)?.made
+                && let Some(count) = self.aggregation.count.as_mut()
+            {
+                count.rows = true;
             }
-            return self.aggregate_array(ty, base, list);
+            if leaf == element && self.array_helper_eligible(class, bound, list, Some(entity))? {
+                self.aggregate_array_helpers(class, bound, base, list)?;
+            } else {
+                self.automatic_array_contents(ty, base, expr)?;
+            }
+            if let Some(scope) = counted {
+                self.end_counted_elements(scope)?;
+            }
+            return Ok(());
         }
         if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
             let mut next = 0;

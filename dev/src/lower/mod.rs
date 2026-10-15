@@ -25,6 +25,7 @@ mod field_updates;
 mod floating_intrinsics;
 mod function;
 mod globals;
+mod lexical_cleanup;
 mod lifetime;
 mod lifetime_regions;
 mod lifetime_scan;

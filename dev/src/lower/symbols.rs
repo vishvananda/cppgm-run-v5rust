@@ -291,13 +291,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Ok(())
     }
     pub(super) fn storage_destructor(&mut self, ty: TypeId) -> Result<Option<EntityId>, Error> {
-        let destructor = self.class_destructor(ty)?;
-        if let Some(destructor) = destructor
-            && !self.graph.lower_function(destructor)?.nothrow
-        {
-            return Err(Error::Missing("throwing storage destructor cleanup"));
-        }
-        Ok(destructor)
+        self.class_destructor(ty)
     }
     pub(super) fn class_destructor(&mut self, mut ty: TypeId) -> Result<Option<EntityId>, Error> {
         while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {

@@ -50,6 +50,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub folded_targets: Vec<crate::lowir::model::BlockId>,
     pub conditional_slot: Option<Value>,
     pub lifetime: super::lifetime::Lifetime,
+    pub lexical: super::lexical_cleanup::Lexical,
     pub destruction: super::destruction::Destruction,
     pub construction: super::constructor_cleanup::Construction,
     pub terminated: bool,
@@ -303,6 +304,7 @@ pub(super) fn lower<'a>(
         }
     }
     function.finish_constructor_cleanups()?;
+    function.place_lexical_cleanups()?;
     function.place_cleanup_chains(true)?;
     function.place_destructor_terminates()?;
     function.place_function_guard()?;
@@ -346,6 +348,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             folded_targets: Vec::new(),
             conditional_slot: None,
             lifetime: super::lifetime::Lifetime::default(),
+            lexical: super::lexical_cleanup::Lexical::default(),
             destruction: super::destruction::Destruction::default(),
             construction: super::constructor_cleanup::Construction::default(),
             terminated: false,

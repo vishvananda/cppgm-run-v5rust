@@ -372,6 +372,27 @@ impl Function<'_, '_, '_, '_> {
         self.named_contents(ty, &mut input, &mut path, false)?;
         self.end_aggregate(scope, None)
     }
+    pub(super) fn automatic_array_contents(
+        &mut self,
+        ty: TypeId,
+        address: Value,
+        expr: ast::ExprId,
+    ) -> Result<(), Error> {
+        let mut path = Path {
+            root: Root::Address(address),
+            steps: Vec::new(),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        self.named_item(
+            ty,
+            &mut Input {
+                values: &[expr],
+                next: 0,
+            },
+            &mut path,
+            Item::ArrayElement,
+        )
+    }
     fn aggregate_stores(&self, class: EntityId) -> Result<bool, Error> {
         self.check_stack()?;
         let (members, _) = self.graph.lower_class_members(class)?;
@@ -523,6 +544,18 @@ impl Function<'_, '_, '_, '_> {
         item: Item,
     ) -> Result<(), Error> {
         self.check_stack()?;
+        if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            && self
+                .aggregation
+                .count
+                .as_ref()
+                .is_some_and(|count| count.rows)
+        {
+            let root = self.named_address(path, ty)?;
+            let (parent, scope) = self.begin_counted_row(ty, root)?;
+            self.named_item_value(ty, input, path, item)?;
+            return self.end_counted_row(parent, scope);
+        }
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
             && let Some(count) = self.aggregation.count.take()
         {
@@ -537,6 +570,15 @@ impl Function<'_, '_, '_, '_> {
             self.aggregation.floor = floor;
             return Ok(());
         }
+        self.named_item_value(ty, input, path, item)
+    }
+    fn named_item_value(
+        &mut self,
+        ty: TypeId,
+        input: &mut Input<'_>,
+        path: &mut Path,
+        item: Item,
+    ) -> Result<(), Error> {
         let value_first = matches!(item, Item::NamedMember)
             && !matches!(path.root, Root::This(_))
             && !self.aggregate_has_members();

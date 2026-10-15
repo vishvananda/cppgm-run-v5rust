@@ -1,0 +1,136 @@
+// Translated from lower/lexical_cleanup_lowering.cpp and
+// object_lowering.cpp::destroy_local. See NOTICE.
+//! Lexical destruction has its own interned exceptional suffixes per body context.
+use super::{Error, function::Function, lifetime::Cleanup};
+use crate::{
+    lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R},
+    sema::lowering::TypeId,
+};
+
+enum Block {
+    Resume {
+        block: BlockId,
+        target: Option<BlockId>,
+    },
+    Destroy {
+        block: BlockId,
+        cleanup: Cleanup,
+        tail: BlockId,
+    },
+    Dispatch {
+        block: BlockId,
+        tail: BlockId,
+    },
+}
+#[derive(Default)]
+pub(super) struct Lexical {
+    pending: Vec<Block>,
+    resume: Option<(Option<BlockId>, BlockId)>,
+    placing: bool,
+    terminate: Option<BlockId>,
+}
+impl Function<'_, '_, '_, '_> {
+    pub(super) fn destructor_throws(&mut self, ty: TypeId) -> Result<bool, Error> {
+        self.symbols
+            .class_destructor(ty)?
+            .map_or(Ok(false), |entity| {
+                Ok(!self.graph.lower_function(entity)?.nothrow)
+            })
+    }
+    pub(super) fn cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {
+        if self.lexical.placing
+            && let Some(block) = self.lexical.terminate
+        {
+            // Emitted LowIR shares one terminate landing across lexical suffixes.
+            return Ok(block);
+        }
+        let block = self.new_cleanup_terminate()?;
+        // The caller opens the region around the complete cleanup, including
+        // any flag test. Keep guard allocation separate from region emission.
+        if self.lexical.placing {
+            self.lexical.terminate = Some(block);
+        }
+        Ok(block)
+    }
+    pub(super) fn lexical_handler(&mut self, depth: usize) -> Result<Option<BlockId>, Error> {
+        if !self.destructor_throws(self.lifetime.cleanups[depth].ty)? {
+            return Ok(None);
+        }
+        let target = self.constructor_unwind_target();
+        if depth == 0 && target.is_none() {
+            return Ok(None);
+        }
+        let mut first = depth;
+        while first > 0 && self.lifetime.cleanups[first - 1].lexical.is_none() {
+            first -= 1;
+        }
+        let mut tail = if first == 0 {
+            if let Some((_, block)) = self.lexical.resume.filter(|(saved, _)| *saved == target) {
+                block
+            } else {
+                let block = self.new_block("lexical_unwind")?;
+                self.lexical.pending.push(Block::Resume { block, target });
+                self.lexical.resume = Some((target, block));
+                block
+            }
+        } else {
+            self.lifetime.cleanups[first - 1]
+                .lexical
+                .ok_or(crate::sema::Error::Invariant(
+                    "lexical cleanup without tail",
+                ))?
+        };
+        for index in first..depth {
+            let block = self.new_block("lexical_unwind")?;
+            self.lexical.pending.push(Block::Destroy {
+                block,
+                cleanup: self.lifetime.cleanups[index],
+                tail,
+            });
+            self.lifetime.cleanups[index].lexical = Some(block);
+            tail = block;
+        }
+        let block = self.new_block("lexical_cleanup_dispatch")?;
+        self.lexical.pending.push(Block::Dispatch { block, tail });
+        Ok(Some(block))
+    }
+    pub(super) fn place_lexical_cleanups(&mut self) -> Result<(), Error> {
+        let mut pending = std::mem::take(&mut self.lexical.pending);
+        let saved = std::mem::replace(&mut self.lexical.placing, true);
+        for item in &pending {
+            match *item {
+                Block::Resume { block, target } => {
+                    self.place(block)?;
+                    if let Some(target) = target {
+                        self.effect(I::Runtime(R::EhEnd))?;
+                        self.jump(target)?;
+                    } else if self.lifetime.function_guard.is_some() {
+                        self.terminate_unwinding()?;
+                    } else {
+                        self.effect(I::Runtime(R::Resume))?;
+                        self.terminated = true;
+                    }
+                }
+                Block::Destroy {
+                    block,
+                    cleanup,
+                    tail,
+                } => {
+                    self.place(block)?;
+                    self.destroy_cleanup_in(cleanup, None, true)?;
+                    self.jump(tail)?;
+                }
+                Block::Dispatch { block, tail } => {
+                    self.place(block)?;
+                    self.effect(I::Runtime(R::EhCleanup(None)))?;
+                    self.effect(I::Runtime(R::EhEnd))?;
+                    self.jump(tail)?;
+                }
+            }
+        }
+        self.lexical.placing = saved;
+        pending.clear();
+        self.lexical.pending = pending;
+        Ok(())
+    }
+}

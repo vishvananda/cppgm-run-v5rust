@@ -19,6 +19,7 @@ pub(super) struct Cleanup {
     unwind: Option<BlockId>,
     conditional: Option<BlockId>,
     shared_return: Option<BlockId>,
+    pub lexical: Option<BlockId>,
     pub guard: Option<Value>,
     pub branched: bool,
     pub made_at: Option<Value>,
@@ -46,6 +47,7 @@ struct ChainBlock {
     tail: Option<BlockId>,
     unwinding: bool,
     constructor_tail: Option<BlockId>,
+    below: Option<BlockId>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct LiveId(u32);
@@ -176,6 +178,7 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            lexical: None,
             guard: None,
             branched: false,
             made_at: None,
@@ -193,6 +196,7 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            lexical: None,
             guard: None,
             branched: false,
             made_at: None,
@@ -211,6 +215,7 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            lexical: None,
             guard: None,
             branched: false,
             made_at: None,
@@ -227,6 +232,7 @@ impl Function<'_, '_, '_, '_> {
             unwind: None,
             conditional: None,
             shared_return: None,
+            lexical: None,
             guard: None,
             branched: false,
             made_at: None,
@@ -335,11 +341,29 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn destroy_cleanups(&mut self, depth: usize) -> Result<(), Error> {
         for index in (depth..self.lifetime.cleanups.len()).rev() {
             let cleanup = self.lifetime.cleanups[index];
-            self.destroy_cleanup(cleanup)?;
+            let below = self.lexical_handler(index)?;
+            self.destroy_cleanup_in(cleanup, below, false)?;
         }
         Ok(())
     }
     pub(super) fn destroy_cleanup(&mut self, cleanup: Cleanup) -> Result<(), Error> {
+        self.destroy_cleanup_in(cleanup, None, false)
+    }
+    pub(super) fn destroy_cleanup_in(
+        &mut self,
+        cleanup: Cleanup,
+        below: Option<BlockId>,
+        unwinding: bool,
+    ) -> Result<(), Error> {
+        let terminate = unwinding && self.destructor_throws(cleanup.ty)?;
+        let region = if terminate {
+            Some(self.cleanup_unwind_guard()?)
+        } else {
+            below
+        };
+        if let Some(region) = region {
+            self.effect(I::Runtime(R::EhTry(region)))?;
+        }
         let done = if let Some(flag) = cleanup.guard {
             let destroy = self.new_block("conditional_temporary_destroy")?;
             let done = self.new_block("conditional_temporary_done")?;
@@ -357,15 +381,17 @@ impl Function<'_, '_, '_, '_> {
             None
         };
         let result = match cleanup.place {
-            CleanupPlace::Storage(storage) => self.destroy_storage(cleanup.ty, storage),
+            CleanupPlace::Storage(storage) => {
+                self.destroy_storage_guarded(cleanup.ty, storage, !unwinding)
+            }
             CleanupPlace::Subobject(object)
             | CleanupPlace::Extended(object)
             | CleanupPlace::Temporary(object) => {
                 let object = self.storage_address(object, cleanup.ty)?;
                 self.destroy_completed_object(cleanup.ty, object)
             }
-            CleanupPlace::Counted { .. } => {
-                Err(crate::sema::Error::Invariant("counted cleanup outside unwind chain").into())
+            CleanupPlace::Counted { root, counter } => {
+                self.destroy_counted_elements(cleanup.ty, root, counter)
             }
         };
         result?;
@@ -377,6 +403,9 @@ impl Function<'_, '_, '_, '_> {
                 self.jump(done)?;
             }
             self.place(done)?;
+        }
+        if region.is_some() {
+            self.effect(I::Runtime(R::EhEnd))?;
         }
         Ok(())
     }
@@ -434,8 +463,27 @@ impl Function<'_, '_, '_, '_> {
             self.call_destructor(ty, object)
         }
     }
-    pub(super) fn destroy_storage(&mut self, ty: TypeId, storage: Value) -> Result<(), Error> {
+    fn destroy_storage_guarded(
+        &mut self,
+        ty: TypeId,
+        storage: Value,
+        guarded: bool,
+    ) -> Result<(), Error> {
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
+            if guarded && self.destructor_throws(ty)? {
+                let mut element = ty;
+                let mut count = 1_u64;
+                while let TypeView::Array {
+                    element: child,
+                    bound,
+                } = self.graph.lower_type(element)?
+                {
+                    count = count.wrapping_mul(bound);
+                    element = child;
+                }
+                let base = self.emit(I::Addr(storage), ty)?.value;
+                return self.destroy_member_array_guarded(element, base, count);
+            }
             if bound > 8 && !matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
                 let base = self.emit(I::Addr(storage), ty)?.value;
                 return self.destroy_array_loop(element, base, bound);
@@ -535,7 +583,14 @@ impl Function<'_, '_, '_, '_> {
         self.place(end)
     }
     fn cleanup_entry(&mut self, unwinding: bool) -> Result<BlockId, Error> {
-        let late = unwinding && (self.lifetime.cleanups.len() > 8 || self.lifetime.tracking.active);
+        self.cleanup_prefix(unwinding, self.lifetime.cleanups.len())
+    }
+    pub(super) fn cleanup_prefix(
+        &mut self,
+        unwinding: bool,
+        count: usize,
+    ) -> Result<BlockId, Error> {
+        let late = unwinding && (count > 8 || self.lifetime.tracking.active);
         let terminal = if !unwinding {
             self.lifetime.return_terminal
         } else if late {
@@ -559,6 +614,7 @@ impl Function<'_, '_, '_, '_> {
                 tail: None,
                 unwinding,
                 constructor_tail: self.constructor_unwind_target(),
+                below: None,
             };
             if !unwinding {
                 self.lifetime.return_terminal = Some(block);
@@ -574,7 +630,7 @@ impl Function<'_, '_, '_, '_> {
             }
             block
         };
-        let mut first = self.lifetime.cleanups.len();
+        let mut first = count;
         while first > 0
             && if late {
                 self.lifetime.cleanups[first - 1].conditional.is_none()
@@ -598,7 +654,7 @@ impl Function<'_, '_, '_, '_> {
         .ok_or(Error::Semantic(crate::sema::Error::Invariant(
             "cleanup chain tail",
         )))?;
-        for index in first..self.lifetime.cleanups.len() {
+        for index in first..count {
             let block = self.new_block(if !unwinding {
                 "return_cleanup_action"
             } else if late || self.lifetime.cleanups[index].guard.is_some() {
@@ -608,12 +664,21 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 "cleanup_action"
             })?;
+            let below = if !unwinding
+                && index != 0
+                && self.destructor_throws(self.lifetime.cleanups[index].ty)?
+            {
+                Some(self.cleanup_prefix(true, index)?)
+            } else {
+                None
+            };
             let record = ChainBlock {
                 block,
                 action: Some(self.lifetime.cleanups[index]),
                 tail: Some(tail),
                 unwinding,
                 constructor_tail: self.constructor_unwind_target(),
+                below,
             };
             if late {
                 self.lifetime.late.push(record);
@@ -637,6 +702,7 @@ impl Function<'_, '_, '_, '_> {
         for cleanup in &mut self.lifetime.cleanups {
             cleanup.unwind = None;
             cleanup.conditional = None;
+            cleanup.lexical = None;
         }
     }
     pub(super) fn unwind_entry(&mut self) -> Result<BlockId, Error> {
@@ -680,7 +746,8 @@ impl Function<'_, '_, '_, '_> {
                     || cleanup.variable != self.returned_local
                     || !matches!(cleanup.place, CleanupPlace::Storage(_))
                 {
-                    self.destroy_cleanup(cleanup)?;
+                    let below = self.lexical_handler(index)?;
+                    self.destroy_cleanup_in(cleanup, below, false)?;
                 }
             }
             self.effect(I::Return(ty, value))?;
@@ -732,12 +799,8 @@ impl Function<'_, '_, '_, '_> {
                 let tail = block
                     .tail
                     .ok_or(crate::sema::Error::Invariant("cleanup without tail"))?;
-                if let CleanupPlace::Counted { root, counter } = action.place {
-                    self.destroy_counted_elements(action.ty, root, counter, tail)?;
-                } else {
-                    self.destroy_cleanup(action)?;
-                    self.jump(tail)?;
-                }
+                self.destroy_cleanup_in(action, block.below, block.unwinding)?;
+                self.jump(tail)?;
             } else if block.unwinding {
                 if let Some(tail) = block.constructor_tail {
                     self.effect(I::Runtime(R::EhEnd))?;

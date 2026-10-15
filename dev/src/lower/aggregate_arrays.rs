@@ -4,7 +4,7 @@
 use super::{Error, function::Function, lifetime::CleanupPlace, types};
 use crate::{
     lowir::{
-        model::{BlockId, Facts, InstructionKind as I, Value},
+        model::{Facts, InstructionKind as I, Value},
         vocabulary::{Binary, Compare, Projection, Type},
     },
     sema::lowering::{TypeId, TypeView},
@@ -15,6 +15,8 @@ pub(super) struct Count {
     slot: Value,
     made: u64,
     total: u64,
+    pub rows: bool,
+    row_slot: Option<Value>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Scope {
@@ -54,6 +56,14 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         root: Value,
     ) -> Result<Scope, Error> {
+        self.begin_counted_using(ty, root, None)
+    }
+    fn begin_counted_using(
+        &mut self,
+        ty: TypeId,
+        root: Value,
+        reusable: Option<Value>,
+    ) -> Result<Scope, Error> {
         let scope = Scope {
             first: self.lifetime.cleanups.len(),
             floor: self.aggregation.floor,
@@ -70,7 +80,11 @@ impl Function<'_, '_, '_, '_> {
             total = total.wrapping_mul(bound);
             element = inner;
         }
-        let slot = self.generated_slot("constructor_array_index", Type::I64)?;
+        let slot = if let Some(slot) = reusable {
+            slot
+        } else {
+            self.generated_slot("constructor_array_index", Type::I64)?
+        };
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;
         self.register_aggregate_member(ty, root);
@@ -90,12 +104,55 @@ impl Function<'_, '_, '_, '_> {
             slot,
             made: 0,
             total,
+            rows: false,
+            row_slot: None,
         });
         if self.lifetime.region {
             self.close_lifetime_region()?;
             self.before_lifetime_call(true)?;
         }
         Ok(scope)
+    }
+    pub(super) fn begin_counted_row(
+        &mut self,
+        ty: TypeId,
+        root: Value,
+    ) -> Result<(Count, Scope), Error> {
+        let mut parent = self
+            .aggregation
+            .count
+            .take()
+            .ok_or(crate::sema::Error::Invariant("counted row without parent"))?;
+        let scope = self.begin_counted_using(ty, root, parent.row_slot)?;
+        let row = self
+            .aggregation
+            .count
+            .as_mut()
+            .ok_or(crate::sema::Error::Invariant("counted row without counter"))?;
+        parent.row_slot = Some(row.slot);
+        row.rows = matches!(self.graph.lower_type(ty)?, TypeView::Array { element, .. }
+            if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }));
+        Ok((parent, scope))
+    }
+    pub(super) fn end_counted_row(&mut self, mut parent: Count, scope: Scope) -> Result<(), Error> {
+        let row = self
+            .aggregation
+            .count
+            .take()
+            .ok_or(crate::sema::Error::Invariant("counted row without counter"))?;
+        self.end_counted_elements(scope)?;
+        parent.made = parent.made.wrapping_add(row.total);
+        if parent.made < parent.total {
+            let made = self.builder.integer(u128::from(parent.made))?;
+            self.effect(I::Store(
+                Facts::memory(false, true),
+                Type::I64,
+                made,
+                parent.slot,
+            ))?;
+        }
+        self.aggregation.count = Some(parent);
+        Ok(())
     }
     pub(super) fn aggregate_element_made(
         &mut self,
@@ -136,7 +193,6 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         root: Value,
         counter: Value,
-        tail: BlockId,
     ) -> Result<(), Error> {
         let mut element = ty;
         while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
@@ -183,15 +239,15 @@ impl Function<'_, '_, '_, '_> {
             )?
             .value
         };
+        let base = self.storage_address(root, ty)?;
         let object = self
             .emit(
-                I::Index(Type::I8, Some(Projection::ArrayElement), root, offset),
+                I::Index(Type::I8, Some(Projection::ArrayElement), base, offset),
                 element,
             )?
             .value;
         self.call_destructor(element, object)?;
         self.jump(condition)?;
-        self.place(end)?;
-        self.jump(tail)
+        self.place(end)
     }
 }

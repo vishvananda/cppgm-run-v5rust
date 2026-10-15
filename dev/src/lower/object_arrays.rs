@@ -97,10 +97,17 @@ impl Function<'_, '_, '_, '_> {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(next)?;
                 self.place(dispatch)?;
+                let throws = self.destructor_throws(element)?;
+                if throws {
+                    self.open_destructor_unwind_guard()?;
+                }
                 for previous in (0..index).rev() {
                     let base = self.construction_array_base(storage, element)?;
                     let object = self.element_address(base, previous, size, element)?;
                     self.call_destructor(element, object)?;
+                }
+                if throws {
+                    self.effect(I::Runtime(R::EhEnd))?;
                 }
                 self.finish_array_unwind()?;
                 self.place(next)?;
@@ -146,7 +153,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
-        let object = self.dynamic_element(storage, element, current, size)?;
+        let object = self.dynamic_element(storage, element, current, size, false)?;
         self.call_constructor(constructor, Variant::Complete, object, None)?;
         if cleanup.is_some() {
             self.effect(I::Runtime(R::EhEnd))?;
@@ -182,8 +189,12 @@ impl Function<'_, '_, '_, '_> {
                 )?
                 .value;
             self.effect(I::Store(Facts::memory(false, true), Type::I64, last, slot))?;
-            let object = self.dynamic_element(storage, element, last, size)?;
+            let throws = self.destructor_throws(element)?;
+            let object = self.dynamic_element(storage, element, last, size, throws)?;
             self.call_destructor(element, object)?;
+            if throws {
+                self.effect(I::Runtime(R::EhEnd))?;
+            }
             self.jump(cleanup)?;
             self.place(resume)?;
             self.finish_array_unwind()?;
@@ -196,6 +207,7 @@ impl Function<'_, '_, '_, '_> {
         element: TypeId,
         index: Value,
         size: u64,
+        unwind_guard: bool,
     ) -> Result<Value, Error> {
         let base = self.construction_array_base(storage, element)?;
         let offset = if size == 1 {
@@ -208,6 +220,9 @@ impl Function<'_, '_, '_, '_> {
             )?
             .value
         };
+        if unwind_guard {
+            self.open_destructor_unwind_guard()?;
+        }
         Ok(self
             .emit(
                 I::Index(Type::I8, Some(Projection::ArrayElement), base, offset),

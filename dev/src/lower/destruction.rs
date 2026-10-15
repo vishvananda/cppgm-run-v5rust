@@ -23,9 +23,10 @@ pub(super) struct Destruction {
     pub class: Option<EntityId>,
     pub cleanup: Option<BlockId>,
     pub epilogue: Option<BlockId>,
+    pub body_target: Option<BlockId>,
     progress: Option<Value>,
     terminates: Vec<(BlockId, i64)>,
-    selector: i64,
+    pub selector: i64,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn begin_destructor(&mut self, entity: EntityId) -> Result<(), Error> {
@@ -104,7 +105,17 @@ impl Function<'_, '_, '_, '_> {
             ))?;
             self.destruction.progress = Some(progress);
         }
-        self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))
+        self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))?;
+        if self
+            .lifetime
+            .body
+            .map(|body| self.body_unwinds(body, &mut false))
+            .transpose()?
+            .unwrap_or(false)
+        {
+            self.destruction.body_target = Some(self.new_block("destructor_cleanup_entry")?);
+        }
+        Ok(())
     }
     pub(super) fn destroy_subobject(
         &mut self,
@@ -216,7 +227,12 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn open_destructor_unwind_guard(&mut self) -> Result<BlockId, Error> {
+    pub(super) fn open_destructor_unwind_guard(&mut self) -> Result<BlockId, Error> {
+        let guard = self.new_cleanup_terminate()?;
+        self.effect(I::Runtime(R::EhTry(guard)))?;
+        Ok(guard)
+    }
+    pub(super) fn new_cleanup_terminate(&mut self) -> Result<BlockId, Error> {
         let guard = self.new_block("lexical_cleanup_terminate")?;
         self.destruction.selector = self
             .destruction
@@ -227,10 +243,9 @@ impl Function<'_, '_, '_, '_> {
             .terminates
             .push((guard, self.destruction.selector));
         self.symbols.terminate_helper(self.builder.program())?;
-        self.effect(I::Runtime(R::EhTry(guard)))?;
         Ok(guard)
     }
-    fn destroy_member_array_guarded(
+    pub(super) fn destroy_member_array_guarded(
         &mut self,
         element: TypeId,
         base: Value,
@@ -349,6 +364,7 @@ impl Function<'_, '_, '_, '_> {
         let Some(cleanup) = self.destruction.cleanup else {
             return Ok(());
         };
+        let body_entry = self.destruction.body_target.take();
         if !self.terminated {
             self.effect(I::Runtime(R::EhEnd))?;
             if let Some(epilogue) = self.destruction.epilogue {
@@ -395,6 +411,11 @@ impl Function<'_, '_, '_, '_> {
         }
         self.jump(end)?;
         self.place(cleanup)?;
+        if let Some(entry) = body_entry {
+            self.effect(I::Runtime(R::EhEnd))?;
+            self.jump(entry)?;
+            self.place(entry)?;
+        }
         if let Some(progress) = self.destruction.progress {
             let mut chain = Vec::with_capacity(count);
             let mut cases = Vec::with_capacity(count);
@@ -422,6 +443,8 @@ impl Function<'_, '_, '_, '_> {
                 self.destroy_subobject(self.destruction.actions[index], true)?;
                 if let Some(&next) = chain.get(index + 1) {
                     self.jump(next)?;
+                } else if body_entry.is_some() {
+                    self.continue_destructor_unwind()?;
                 } else {
                     self.destruction_resume()?;
                 }
@@ -430,7 +453,11 @@ impl Function<'_, '_, '_, '_> {
             for index in 0..count {
                 self.destroy_subobject(self.destruction.actions[index], true)?;
             }
-            self.destruction_resume()?;
+            if body_entry.is_some() {
+                self.continue_destructor_unwind()?;
+            } else {
+                self.destruction_resume()?;
+            }
         }
         self.place(end)?;
         self.destruction.cleanup = None;
@@ -440,12 +467,9 @@ impl Function<'_, '_, '_, '_> {
         for (block, selector) in std::mem::take(&mut self.destruction.terminates) {
             self.place(block)?;
             self.effect(I::Runtime(R::EhCatchAll(Some(selector))))?;
-            let source = self.result.ok_or(crate::sema::Error::Invariant(
-                "destructor terminate without result",
-            ))?;
             let exception = self
-                .emit(I::Runtime(R::Exception(Type::Ptr)), source)?
-                .value;
+                .builder
+                .generated(I::Runtime(R::Exception(Type::Ptr)))?;
             self.terminate_exception(exception)?;
             self.effect(I::Unreachable)?;
             self.terminated = true;

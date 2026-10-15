@@ -20,6 +20,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn place(&mut self, block: BlockId) -> Result<(), Error> {
         if self.terminated {
             self.place_constructor_cleanups()?;
+            self.place_lexical_cleanups()?;
             self.place_destructor_terminates()?;
         }
         self.builder.place_block(block)?;

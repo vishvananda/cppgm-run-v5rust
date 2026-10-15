@@ -22,6 +22,7 @@ pub(super) struct Startup {
     body: Option<SuspendedFunction>,
     next_block: u32,
     terminated: bool,
+    selector: i64,
 }
 impl Startup {
     fn builder<'a>(
@@ -63,6 +64,7 @@ impl Startup {
         let mut function = Function::new(graph, tree, builder, symbols, None, None, budget);
         function.next_block = self.next_block;
         function.terminated = self.terminated;
+        function.destruction.selector = self.selector;
         function.persistent_references = true;
         function.static_initializer = true;
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
@@ -73,6 +75,7 @@ impl Startup {
         result?;
         self.next_block = function.next_block;
         self.terminated = function.terminated;
+        self.selector = function.destruction.selector;
         self.body = Some(function.builder.suspend());
         Ok(())
     }

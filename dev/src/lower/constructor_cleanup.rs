@@ -61,6 +61,7 @@ impl Function<'_, '_, '_, '_> {
             .detached
             .then_some(self.construction.active)
             .flatten()
+            .or(self.destruction.body_target)
     }
     pub(super) fn finish_array_unwind(&mut self) -> Result<(), Error> {
         if let Some(target) = self.constructor_unwind_target() {
@@ -99,7 +100,10 @@ impl Function<'_, '_, '_, '_> {
             entry,
         } in pending
         {
-            self.place(landing)?;
+            // A deferred batch places its landings directly. Nested entry
+            // placement, rather than the next landing, flushes terminate guards.
+            self.builder.place_block(landing)?;
+            self.terminated = false;
             if let Some(entry) = entry {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(entry)?;

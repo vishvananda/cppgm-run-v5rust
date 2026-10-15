@@ -291,6 +291,7 @@ impl Function<'_, '_, '_, '_> {
         let mut next = 0;
         let element = self.graph.lower_entity_type(class)?;
         for index in 0..bound {
+            let first = self.lifetime.cleanups.len();
             let object = if index == 0 {
                 address
             } else {
@@ -327,6 +328,9 @@ impl Function<'_, '_, '_, '_> {
                     list,
                     &mut next,
                 )?;
+            }
+            if let Some(count) = self.aggregation.count.take() {
+                self.aggregation.count = Some(self.aggregate_element_made(count, first)?);
             }
         }
         Ok(())
