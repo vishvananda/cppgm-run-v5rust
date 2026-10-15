@@ -95,6 +95,21 @@ impl Analyzer<'_> {
             self.resume_declaration_access(scope);
             self.declare_init(specs, *init, scope, location, &mut deduced)?;
             self.apply_storage_attributes(init.declarator, attributes)?;
+            if init
+                .initializer
+                .is_some_and(|i| matches!(i.kind, ast::InitializerKind::Default))
+                && let Some(binding) = self
+                    .graph
+                    .declared_bindings
+                    .get(init.declarator.index())
+                    .copied()
+                    .flatten()
+                && self.graph.binding(binding).kind == BindingKind::Function
+            {
+                self.graph
+                    .entity_mut(self.graph.binding(binding).entity)
+                    .function_definition = Some(id);
+            }
         }
         Ok(())
     }
@@ -271,6 +286,7 @@ impl Analyzer<'_> {
         if self.note_inherited_constructors(scope, prefix, target_key, target)? {
             return Ok(());
         }
+        self.prepare_assignment_lookup(prefix, target_key, false)?;
         let found = self.qualified_result(prefix, target_key, Filter::Ordinary)?;
         let target_id = found
             .binding

@@ -153,6 +153,7 @@ impl Analyzer<'_> {
             return Err(Error::Missing("member template specialization lookup"));
         }
         let search = self.data_member_qualifier(name, class, scope)?;
+        self.prepare_assignment_lookup(search, key, false)?;
         self.lookup_location = node.location;
         let found = self
             .qualified_result(search, key, Filter::Ordinary)

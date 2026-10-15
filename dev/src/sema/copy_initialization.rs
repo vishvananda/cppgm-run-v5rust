@@ -162,6 +162,7 @@ impl Analyzer<'_> {
             let function = self.graph.binding(binding).entity;
             self.graph.entity_mut(function).copy_kind = kind;
         }
+        self.classify_assignments(class)?;
         // A written defaulted member publishes its own facts at class completion;
         // the class's implicit constructors still wait for a use to demand them.
         for index in 0..self.graph.entity(class).declared_constructors.len() {

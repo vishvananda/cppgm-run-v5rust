@@ -1,5 +1,6 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
+pub(crate) use super::assignment::Action as AssignmentAction;
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_initialization::CopyAction;
@@ -322,6 +323,9 @@ impl Graph {
     }
     pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
         self.entity(entity).defined
+    }
+    pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
+        self.lower_implicit_destructor(id) || self.entity(id).assignment.is_some()
     }
     pub(crate) fn lower_function_body(&self, id: EntityId) -> Option<ast::BodyId> {
         match self.entity(id).special_definition {

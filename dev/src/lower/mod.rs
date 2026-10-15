@@ -7,6 +7,7 @@ mod aggregates;
 mod allocation;
 mod arrays;
 mod arrow_calls;
+mod assignment;
 mod base_projections;
 mod bit_fields;
 mod class_parameters;
@@ -217,6 +218,18 @@ pub(crate) fn lower_unit(
                 }
             }
             ast::DeclKind::Simple { declarators, .. } => {
+                assignment::lower_definitions(
+                    assignment::DefinitionOutput {
+                        program: &mut output.program,
+                        definitions: &mut output.definitions,
+                        emitted: &mut emitted,
+                    },
+                    &mut symbols,
+                    graph,
+                    tree,
+                    declarators,
+                    budget,
+                )?;
                 globals::lower_declaration(
                     &mut globals::GlobalOutput {
                         program: &mut output.program,
@@ -261,8 +274,7 @@ pub(crate) fn lower_unit(
                 continue;
             }
             let facts = graph.lower_function(entity)?;
-            let declaration = facts.definition;
-            if declaration.is_none() && !graph.lower_implicit_destructor(entity) {
+            if facts.definition.is_none() && !graph.lower_has_synthesized_body(entity) {
                 function::declare(&mut output.program, &mut symbols, graph, entry)?;
                 continue;
             }
@@ -272,12 +284,7 @@ pub(crate) fn lower_unit(
                     continue;
                 }
             }
-            match declaration.map(|id| &tree.declarations.get(id).kind) {
-                Some(ast::DeclKind::Function { body, .. }) => Some(*body),
-                Some(ast::DeclKind::SpecialMember { .. }) => graph.lower_function_body(entity),
-                None => None,
-                _ => return Err(Error::Missing("special function definition lowering")),
-            }
+            function::definition_body(graph, tree, entity)?
         } else {
             let construction::Entry::Constructor(id, _) = entry else {
                 return Err(Error::Missing("entry kind"));

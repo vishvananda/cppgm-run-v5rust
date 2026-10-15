@@ -535,6 +535,7 @@ impl Analyzer<'_> {
         }
         let key = Self::expression_name(last.kind)?;
         let prefix = self.prefix(name, scope)?;
+        self.prepare_assignment_lookup(prefix.unwrap_or(scope), key, prefix.is_none())?;
         self.lookup_location = node.location;
         let mut found = if let Some(prefix) = prefix {
             self.qualified_result(prefix, key, filter)?

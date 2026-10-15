@@ -60,6 +60,25 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub budget: StackBudget,
     pub stack_base: usize,
 }
+pub(super) fn definition_body(
+    graph: &Graph,
+    tree: &ast::Tree,
+    entity: EntityId,
+) -> Result<Option<ast::BodyId>, Error> {
+    Ok(
+        match graph
+            .lower_function(entity)?
+            .definition
+            .map(|id| &tree.declarations.get(id).kind)
+        {
+            Some(ast::DeclKind::Function { body, .. }) => Some(*body),
+            Some(ast::DeclKind::SpecialMember { .. }) => graph.lower_function_body(entity),
+            Some(ast::DeclKind::Simple { .. }) if graph.lower_assignment(entity).is_some() => None,
+            None => None,
+            _ => return Err(Error::Missing("special function definition lowering")),
+        },
+    )
+}
 pub(super) fn lower<'a>(
     program: &mut Program,
     symbols: &mut Symbols<'a, '_>,
@@ -105,7 +124,9 @@ pub(super) fn lower<'a>(
     }
     for &(_, name, ty) in &parameter_bindings {
         names.push((
-            if let Some(name) = name {
+            if entity.is_some_and(|entity| graph.lower_implicit_assignment(entity)) {
+                "other".to_owned()
+            } else if let Some(name) = name {
                 symbols.identifier(name)?.to_owned()
             } else {
                 let mut name = format!("__param{}", names.len());
@@ -240,6 +261,11 @@ pub(super) fn lower<'a>(
         function.initialize_this(result_count)?;
     }
     function.initialize_parameters(&parameter_bindings, &names, object_count + result_count)?;
+    if let Some(entity) = entity
+        && graph.lower_assignment(entity).is_some()
+    {
+        function.assign_members(entity)?;
+    }
     if let super::construction::Entry::Constructor(id, variant) = entry {
         let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
             tree.statements.get(body.compound).location
@@ -342,7 +368,11 @@ impl Function<'_, '_, '_, '_> {
         for (ordinal, &(entity, name, parameter)) in bindings.iter().enumerate() {
             let index = ordinal + first;
             let storage = types::storage(self.graph, parameter)?;
-            let slot = if name.is_some() {
+            let slot = if name.is_some()
+                || self
+                    .entity
+                    .is_some_and(|e| self.graph.lower_implicit_assignment(e))
+            {
                 self.builder.slot(&names[index].0, storage)?
             } else {
                 self.builder.parameter_slot(index, storage)?

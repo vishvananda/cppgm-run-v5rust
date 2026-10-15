@@ -472,6 +472,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         {
             self.output.write_all(b"~")?;
             self.name(self.graph.entity(key.class).name)?;
+        } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
+            entity.function.and_then(|f| f.special)
+        {
+            write!(
+                self.output,
+                "operator{}{}",
+                token.spelling(),
+                if array { "[]" } else { "" }
+            )?;
         } else {
             self.name(binding.name)?;
         }

@@ -59,6 +59,7 @@ impl Analyzer<'_> {
             && self.graph.entity(class).complete
             && let Some(home) = self.graph.entity(class).scope
         {
+            self.prepare_assignment_lookup(home, key, false)?;
             let found = self
                 .qualified_result(home, key, Filter::Ordinary)
                 .map_err(|error| match error {

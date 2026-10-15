@@ -84,6 +84,7 @@ impl Analyzer<'_> {
         let prefix = self
             .prefix(name, scope)?
             .ok_or(Error::Invariant("qualified address without prefix"))?;
+        self.prepare_assignment_lookup(prefix, key, false)?;
         self.lookup_location = location;
         let mut found = self
             .qualified_result(prefix, key, Filter::Ordinary)

@@ -589,6 +589,61 @@ impl Analyzer<'_> {
         self.settle_declaration_access(Some(binding))?;
         if defaulted {
             self.default_assignment(&info, key, home, location)?;
+            if self.semantic()
+                && self
+                    .graph
+                    .entity(entity)
+                    .defaults
+                    .iter()
+                    .any(Option::is_some)
+            {
+                return Err(Error::at(
+                    location,
+                    "an explicitly defaulted function has a default argument",
+                ));
+            }
+            let first = self.graph.function_origin(entity)? == binding;
+            self.graph.entity_mut(entity).special_definition =
+                Some(super::special_members::SpecialDefinition::Defaulted { first, body: None });
+            self.graph.entity_mut(entity).assignment_exceptions =
+                if first && !self.declarator_specifies_exceptions(Some(init.declarator)) {
+                    super::assignment::ExceptionSource::Subobjects
+                } else {
+                    super::assignment::ExceptionSource::Explicit
+                };
+            if first {
+                self.graph.entity_mut(entity).definition_emission =
+                    super::function_demands::DefinitionEmission::Demanded;
+            }
+            if self.semantic()
+                && self
+                    .graph
+                    .entity(
+                        self.graph
+                            .scope(home)
+                            .owner
+                            .ok_or(Error::Invariant("assignment without class"))?,
+                    )
+                    .complete
+            {
+                self.prepare_default_assignment(binding)?;
+                if !first
+                    && self
+                        .graph
+                        .entity(entity)
+                        .assignment
+                        .as_ref()
+                        .is_some_and(|p| p.deleted)
+                {
+                    return Err(Error::at(
+                        location,
+                        "an explicitly defaulted function is defined as deleted",
+                    ));
+                }
+            }
+            if self.lowering() && !first {
+                self.boundary_roots.push(entity);
+            }
         }
         self.graph.entity_mut(entity).defined |= deleted || defaulted;
         super::record(

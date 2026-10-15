@@ -79,6 +79,177 @@ fn piece_type(width: u8) -> Type {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn assign_bit_fields(
+        &mut self,
+        function: EntityId,
+        class: EntityId,
+        actions: &[crate::sema::lowering::AssignmentAction],
+        first: usize,
+    ) -> Result<usize, Error> {
+        let member = actions[first]
+            .member
+            .ok_or(crate::sema::Error::Invariant("assignment field member"))?;
+        let field = self.field(member)?;
+        let mut last = first;
+        for (index, action) in actions.iter().enumerate().skip(first + 1) {
+            let Some(member) = action.member else { break };
+            let Some(layout) = self.graph.lower_bit_field(member)? else {
+                break;
+            };
+            if layout.width == 0 {
+                break;
+            }
+            if self.graph.lower_local_name(member).is_some() {
+                let next = self.field(member)?;
+                if next.offset != field.offset || next.unit != field.unit {
+                    break;
+                }
+            }
+            last = index;
+        }
+        let end = field.offset.wrapping_add(u64::from(field.unit.bits() / 8));
+        let mut whole = !field.shared && end <= self.graph.lower_nonvirtual_bytes(class)?;
+        for action in &actions[first..=last] {
+            whole &= self.graph.lower_cv(action.ty) & 2 == 0;
+        }
+        // Members are in offset order: inspect adjacent overlaps only. Bases
+        // may be laid out separately and are checked once per allocation unit.
+        for &action in actions[..first]
+            .iter()
+            .rev()
+            .take_while(|a| a.member.is_some())
+        {
+            let (_, stop) = self.assignment_bytes(action)?;
+            if stop <= field.offset {
+                break;
+            }
+            whole &= self.assignment_bytes_trivial(action);
+        }
+        for &action in actions[..first].iter().take_while(|a| a.member.is_none()) {
+            let (start, stop) = self.assignment_bytes(action)?;
+            if start < end && stop > field.offset {
+                whole &= self.assignment_bytes_trivial(action);
+            }
+        }
+        for &action in &actions[last + 1..] {
+            let (start, stop) = self.assignment_bytes(action)?;
+            if start >= end {
+                break;
+            }
+            if start < stop {
+                whole &= self.assignment_bytes_trivial(action);
+            }
+        }
+        let ty = self.graph.lower_entity_type(class)?;
+        if whole {
+            let unit = match field.unit.bits() {
+                8 => Type::U8,
+                16 => Type::U16,
+                32 => Type::U32,
+                _ => field.unit,
+            };
+            let source = self.assignment_source(function)?;
+            let offset = self.builder.integer(u128::from(field.offset))?;
+            let source = self
+                .emit(
+                    I::Index(
+                        Type::I8,
+                        Some(crate::lowir::vocabulary::Projection::Field),
+                        source,
+                        offset,
+                    ),
+                    ty,
+                )?
+                .value;
+            let value = self
+                .emit(I::Load(Facts::memory(false, false), unit, source), ty)?
+                .value;
+            let destination = self.assignment_this(ty)?;
+            let destination = self
+                .emit(
+                    I::Index(
+                        Type::I8,
+                        Some(crate::lowir::vocabulary::Projection::Field),
+                        destination,
+                        offset,
+                    ),
+                    ty,
+                )?
+                .value;
+            self.effect(I::Store(
+                Facts::memory(false, false),
+                unit,
+                value,
+                destination,
+            ))?;
+        } else {
+            for action in &actions[first..=last] {
+                let member = action
+                    .member
+                    .ok_or(crate::sema::Error::Invariant("assignment field member"))?;
+                if self.graph.lower_local_name(member).is_none() {
+                    continue;
+                }
+                let field = self.field(member)?;
+                let volatile = self.graph.lower_cv(action.ty) & 2 != 0;
+                let source = self.assignment_source(function)?;
+                let offset = self.builder.integer(u128::from(field.offset))?;
+                let address = self
+                    .emit(
+                        I::Index(
+                            Type::I8,
+                            Some(crate::lowir::vocabulary::Projection::Field),
+                            source,
+                            offset,
+                        ),
+                        ty,
+                    )?
+                    .value;
+                let value = self.read_field_view(field, Unit { address, volatile }, false)?;
+                let destination = self.assignment_this(ty)?;
+                let address = self
+                    .emit(
+                        I::Index(
+                            Type::I8,
+                            Some(crate::lowir::vocabulary::Projection::Field),
+                            destination,
+                            offset,
+                        ),
+                        ty,
+                    )?
+                    .value;
+                let value = self.convert_field_unit(field, value)?;
+                self.write_field_view(field, Unit { address, volatile }, value, false)?;
+            }
+        }
+        Ok(last)
+    }
+    fn assignment_bytes_trivial(&self, action: crate::sema::lowering::AssignmentAction) -> bool {
+        self.graph.lower_cv(action.ty) & 2 == 0
+            && action
+                .function
+                .is_none_or(|f| self.graph.lower_assignment(f).is_some_and(|p| p.trivial))
+    }
+    fn assignment_bytes(
+        &self,
+        action: crate::sema::lowering::AssignmentAction,
+    ) -> Result<(u64, u64), Error> {
+        let start = self.assignment_offset(action)?;
+        let stop = if let Some(member) = action.member {
+            if let Some(layout) = self.graph.lower_bit_field(member)? {
+                layout.bit.wrapping_add(layout.width).wrapping_add(7) / 8
+            } else {
+                start.wrapping_add(types::layout(self.graph, action.ty)?.0)
+            }
+        } else if let crate::sema::lowering::TypeView::Class(base) =
+            self.graph.lower_type(action.ty)?
+        {
+            start.wrapping_add(self.graph.lower_nonvirtual_bytes(base)?)
+        } else {
+            return Err(crate::sema::Error::Invariant("assignment base type").into());
+        };
+        Ok((start, stop))
+    }
     pub(super) fn field(&self, entity: EntityId) -> Result<Field, Error> {
         let layout = self.graph.lower_bit_field(entity)?.ok_or(Error::Semantic(
             crate::sema::Error::Invariant("field access without bit-field"),
@@ -304,6 +475,14 @@ impl Function<'_, '_, '_, '_> {
         self.field_binary(field, Binary::Shr, field.unit, up, shift)
     }
     pub(super) fn read_field(&mut self, field: Field, unit: Unit) -> Result<RValue, Error> {
+        self.read_field_view(field, unit, true)
+    }
+    pub(super) fn read_field_view(
+        &mut self,
+        field: Field,
+        unit: Unit,
+        typed: bool,
+    ) -> Result<RValue, Error> {
         let mut value = self.load_unit(field, field.unit, unit)?;
         if field.shift != 0 {
             let shift = self.field_integer(field, field.unit, u128::from(field.shift))?;
@@ -324,13 +503,26 @@ impl Function<'_, '_, '_, '_> {
         if field.signed {
             value = self.sign_extend_field(field, value)?;
         }
-        self.declared_width(field, value)
+        if !typed && value.ty.bits() == field.declared.bits() {
+            Ok(value)
+        } else {
+            self.declared_width(field, value)
+        }
     }
     pub(super) fn write_field(
         &mut self,
         field: Field,
         unit: Unit,
         value: RValue,
+    ) -> Result<RValue, Error> {
+        self.write_field_view(field, unit, value, true)
+    }
+    pub(super) fn write_field_view(
+        &mut self,
+        field: Field,
+        unit: Unit,
+        value: RValue,
+        typed: bool,
     ) -> Result<RValue, Error> {
         let mask = self.field_mask(field, field.unit, false)?;
         let masked = self.field_binary(field, Binary::And, field.unit, value, mask)?;
@@ -339,7 +531,11 @@ impl Function<'_, '_, '_, '_> {
         } else {
             masked
         };
-        let result = self.declared_width(field, result)?;
+        let result = if !typed && result.ty.bits() == field.declared.bits() {
+            result
+        } else {
+            self.declared_width(field, result)?
+        };
         self.merge_field(field, field.unit, unit, masked)?;
         Ok(result)
     }

@@ -101,12 +101,13 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
                     }
                     Demand::Function { binding, call } => {
                         let entity = graph.entity(graph.binding(binding).entity);
-                        if (entity.definition_emission == DefinitionEmission::Demanded
-                            || call
-                                && !entity.defined
-                                && entity
-                                    .home
-                                    .is_some_and(|home| graph.scope(home).kind == ScopeKind::Class))
+                        if entity.assignment_origin != super::assignment::Origin::Implicit
+                            && (entity.definition_emission == DefinitionEmission::Demanded
+                                || call
+                                    && !entity.defined
+                                    && entity.home.is_some_and(|home| {
+                                        graph.scope(home).kind == ScopeKind::Class
+                                    }))
                             && seen_members.insert(graph.binding(binding).entity)
                         {
                             members.push_back(demand);

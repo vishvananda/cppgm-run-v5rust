@@ -4,6 +4,7 @@ mod allocation;
 mod analyzer;
 mod anonymous_types;
 mod arrow_calls;
+mod assignment;
 mod bit_fields;
 mod bit_layout;
 mod builtin_calls;

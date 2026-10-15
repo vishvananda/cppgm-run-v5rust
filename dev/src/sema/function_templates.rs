@@ -591,6 +591,12 @@ impl Analyzer<'_> {
         binding: BindingId,
         args: &[ast::ExprId],
     ) -> Result<Option<BindingId>, Error> {
+        if self
+            .graph
+            .ignored_assignment(self.graph.binding(binding).entity)
+        {
+            return Ok(None);
+        }
         let Some(head) = self.function_template_head(binding)? else {
             return Ok(Some(binding));
         };

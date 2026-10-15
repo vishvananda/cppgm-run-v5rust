@@ -59,7 +59,7 @@ impl CopyPropertiesStore {
 }
 impl Graph {
     // References do not make an object dependency. Array cv lives on its element.
-    fn copy_child(
+    pub(super) fn copy_child(
         &self,
         class: EntityId,
         index: usize,
@@ -224,7 +224,10 @@ impl Analyzer<'_> {
         let mut move_assignment = false;
         for binding in self.graph.functions_at(home, assignment) {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() || entity.function.is_some_and(|p| p.is_static) {
+            if entity.home != Some(home)
+                || entity.template_head.is_some()
+                || entity.function.is_some_and(|p| p.is_static)
+            {
                 continue;
             }
             let ty = entity
@@ -297,6 +300,11 @@ impl Analyzer<'_> {
             move_properties,
             passing: None,
         });
+        self.declare_assignments(
+            class,
+            has_copy || has_move || destructor,
+            has_move || move_assignment,
+        )?;
         Ok(())
     }
     pub(super) fn prepare_declared_copy(
