@@ -22,9 +22,100 @@ pub(crate) enum ConstructorArguments {
     Single(ast::ExprId),
     Value,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{copy_initialization::CopyAction, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn base_initializers_retain_original_operands_and_share_the_selected_copy() {
+        let source = SourceBuffer::new(
+            br"
+            struct A{int n;A(int);A(const A&);};
+            struct B:A{B():A{A(7)}{}};
+            struct C:A{C(const A&a):A(a){}};
+            struct D:A{D(const A&a):A(a){}};
+            struct Unused{A a;};
+            void f(A&a){B b;C c(a);D d(a);}
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"base-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declaration_count);
+        let mut selected = None;
+        for spelling in [b"B", b"C", b"D"] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            let binding = graph.entity(class).declared_constructors[0];
+            let function = graph.binding(binding).entity;
+            let constructor = graph.entity(function).constructor.unwrap();
+            let bases = &graph.constructors.get(constructor).bases;
+            assert_eq!(bases.len(), 1);
+            let written = bases[0].initializer.unwrap();
+            if spelling == b"B" {
+                let ast::InitializerKind::Braced(list) = written.kind else {
+                    panic!("base list");
+                };
+                let ast::ExprKind::Braced { elements, .. } = tree.expressions.get(list).kind else {
+                    panic!("list syntax");
+                };
+                let operand = tree.expr_lists.get(elements)[0];
+                let facts = graph.expression_facts.get(list).unwrap();
+                assert!(matches!(facts.class_initialization,
+                    Some(super::super::expression_facts::ClassInitialization::FromExpression(id)) if id == operand));
+                assert_eq!(
+                    graph.expression_facts.get(operand).unwrap().category,
+                    ValueCategory::Prvalue
+                );
+                assert!(graph.lower_class_copy(operand).unwrap().is_none());
+            } else {
+                let ast::InitializerKind::Parenthesized(arguments) = written.kind else {
+                    panic!("base arguments");
+                };
+                let operand = tree.expr_lists.get(arguments)[0];
+                assert_eq!(
+                    graph.expression_facts.get(operand).unwrap().category,
+                    ValueCategory::Lvalue
+                );
+                let Some(CopyAction::Constructor { constructor, .. }) =
+                    graph.lower_class_copy(operand).unwrap()
+                else {
+                    panic!("selected base copy");
+                };
+                assert_eq!(*selected.get_or_insert(constructor), constructor);
+                let entity = graph.lower_constructor_entity(constructor).unwrap();
+                assert!(graph.entity(entity).function_definition.is_none());
+            }
+        }
+        let name = cursor.intern_name(b"Unused").unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        assert!(graph.entity(class).implicit_copies.is_none());
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClassContext {
     Object,
+    Base,
     AggregateMember,
     Delegation,
 }
@@ -186,7 +277,7 @@ impl Analyzer<'_> {
             }
         }
         if context != ClassContext::Delegation
-            && list.is_none()
+            && (list.is_none() || context == ClassContext::Base)
             && let [id] = args
             && self.graph.aggregate_class(class)
             && matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
@@ -205,7 +296,7 @@ impl Analyzer<'_> {
         }
         // Preserve the existing checked copy-elision path for same-class sources.
         if context != ClassContext::Delegation
-            && list.is_none()
+            && (list.is_none() || context == ClassContext::Base)
             && let [id] = args
             && !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
         {
@@ -224,6 +315,20 @@ impl Analyzer<'_> {
                     },
                     location,
                 )?;
+                if context == ClassContext::Base {
+                    self.check_temporary_destruction(
+                        facts,
+                        scope,
+                        tree.expressions.get(*id).location,
+                    )?;
+                    if let Some(list) = list {
+                        self.publish_list(list, target, ValueCategory::Prvalue)?;
+                        let mut facts = self.graph.expression_facts.get(list)?;
+                        facts.class_initialization =
+                            Some(super::expression_facts::ClassInitialization::FromExpression(*id));
+                        self.graph.expression_facts.set(list, facts);
+                    }
+                }
                 return Ok(None);
             }
         }

@@ -237,7 +237,18 @@ impl Graph {
         else {
             return Err(Error::Invariant("constructor owner without size"));
         };
-        let occupied = base_entry && offset.wrapping_add(size) > limit;
+        let begin = offset.wrapping_add(non_virtual_size);
+        let end = offset.wrapping_add(size);
+        let mut occupied = base_entry && end > limit;
+        // Earlier initialized bases can occupy a later base's tail padding.
+        // Source order and layout order need not agree (primary/empty bases).
+        for prior in &self.entity(class).bases[..index] {
+            let from = prior
+                .offset
+                .ok_or(Error::Invariant("prior base without layout"))?;
+            let to = from.wrapping_add(self.lower_nonvirtual_bytes(prior.class)?);
+            occupied |= from < end && to > begin;
+        }
         Ok((
             offset,
             empty,

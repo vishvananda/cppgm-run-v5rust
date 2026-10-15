@@ -153,6 +153,9 @@ impl Function<'_, '_, '_, '_> {
         if declared {
             self.lifetime.declared_object = None;
         }
+        if !declared {
+            self.note_constructor_temporaries(id, written)?;
+        }
         self.begin_lifetime_call(!facts.nothrow)?;
         if !facts.nothrow
             && self.lifetime.full_expression
@@ -246,7 +249,11 @@ impl Function<'_, '_, '_, '_> {
         }))?;
         Ok(())
     }
-    fn forward_constructor(&mut self, id: ConstructorId, object: Value) -> Result<(), Error> {
+    pub(super) fn forward_constructor(
+        &mut self,
+        id: ConstructorId,
+        object: Value,
+    ) -> Result<(), Error> {
         let entry = Entry::Constructor(id, Variant::Base);
         let facts = entry.facts(self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
@@ -457,68 +464,8 @@ impl Function<'_, '_, '_, '_> {
                 .lower_nonvirtual_bytes(plan.class)?
                 .wrapping_mul(8);
         }
-        for (index, base) in plan.bases.iter().enumerate() {
-            let (offset, empty, span) = self.graph.lower_base_initialization_span(
-                plan.class,
-                index,
-                variant == Variant::Base,
-            )?;
-            let trivial = base
-                .constructor
-                .is_none_or(|id| self.graph.lower_constructor_trivial(id));
-            let value = matches!(base.arguments, Some(ConstructorArguments::Value))
-                || base.initializer.is_some_and(|initializer| {
-                    if let ast::InitializerKind::Braced(id) = initializer.kind
-                        && let ast::ExprKind::Braced { elements, .. } =
-                            self.tree.expressions.get(id).kind
-                    {
-                        return self.tree.expr_lists.get(elements).is_empty();
-                    }
-                    false
-                });
-            if !base.forwards
-                && (base.initializer.is_none() && trivial || empty && value && trivial)
-            {
-                self.subobject_constructed(
-                    self.graph.lower_entity_type(base.class)?,
-                    offset,
-                    false,
-                )?;
-                continue;
-            }
-            self.bit_initialization.high = self.bit_initialization.high.max(
-                offset
-                    .wrapping_add(self.graph.lower_nonvirtual_bytes(base.class)?)
-                    .wrapping_mul(8),
-            );
-            let ty = self.graph.lower_entity_type(base.class)?;
-            let object = self.object_pointer(plan.object_pointer)?.value;
-            let object = self.base_projection(object, ty, offset)?;
-            if let Some(constructor) = base.constructor {
-                if base.forwards {
-                    self.forward_constructor(constructor, object)?;
-                    self.subobject_constructed(ty, offset, false)?;
-                    continue;
-                }
-                if value {
-                    if !empty && self.graph.lower_constructor(constructor).zero_before_value {
-                        self.zero_class_object(ty, object, Some(span))?;
-                    }
-                    if trivial {
-                        self.subobject_constructed(ty, offset, false)?;
-                        continue;
-                    }
-                }
-                self.call_constructor(constructor, Variant::Base, object, base.arguments)?;
-            } else {
-                let initializer =
-                    base.initializer
-                        .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                            "aggregate base without initializer",
-                        )))?;
-                self.constructor_aggregate_base(ty, object, initializer)?;
-            }
-            self.subobject_constructed(ty, offset, false)?;
+        for index in 0..plan.bases.len() {
+            self.initialize_base(id, variant, index)?;
         }
         self.initialize_member_plan(id, plan.object_pointer, location)
             .map(|_| ())

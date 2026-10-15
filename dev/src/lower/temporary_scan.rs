@@ -43,6 +43,49 @@ pub(super) enum ExpressionUse {
     ClassResult,
 }
 impl Function<'_, '_, '_, '_> {
+    // cleanup_lowering.cpp::note_call_arguments: an in-place constructor
+    // contributes its operands/defaults, rather than its destination object.
+    pub(super) fn note_constructor_temporaries(
+        &mut self,
+        constructor: ConstructorId,
+        written: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        if !self.lifetime.full_expression
+            || !self.lifetime.temporary_segment.allows_eager_arguments()
+            || !self.lifetime.region_start.is_pending()
+            || self.lifetime.region
+        {
+            return Ok(());
+        }
+        let mut made = false;
+        for &argument in written {
+            made |= self.expression_temporaries(argument)?.made;
+            if made {
+                break;
+            }
+        }
+        let function = self.graph.lower_constructor_function(constructor)?;
+        if !made
+            && let Some(entity) = self.graph.lower_constructor_entity(constructor)
+            && let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)?
+        {
+            for index in written.len()..parameters.len() {
+                if let Some(argument) = self.graph.lower_default(entity, index) {
+                    made |= self.expression_temporaries(argument)?.made;
+                }
+                if made {
+                    break;
+                }
+            }
+        }
+        if made {
+            self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
+            if !function.nothrow {
+                self.open_temporary_region_at(self.lifetime.expression_start)?;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn begin_constructor_initializer(
         &mut self,
         initializer: ast::Initializer,
@@ -54,6 +97,21 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         initializer: ast::Initializer,
         constructor: Option<ConstructorId>,
+    ) -> Result<bool, Error> {
+        self.begin_initializer(initializer, constructor, false)
+    }
+    pub(super) fn begin_base_initializer(
+        &mut self,
+        initializer: ast::Initializer,
+        constructor: Option<ConstructorId>,
+    ) -> Result<bool, Error> {
+        self.begin_initializer(initializer, constructor, true)
+    }
+    fn begin_initializer(
+        &mut self,
+        initializer: ast::Initializer,
+        constructor: Option<ConstructorId>,
+        base: bool,
     ) -> Result<bool, Error> {
         if self.lifetime.full_expression {
             return Ok(false);
@@ -106,7 +164,13 @@ impl Function<'_, '_, '_, '_> {
             throwing_destructor |= summary.call_result.destructor_throws();
         }
         for &argument in self.tree.expr_lists.get(arguments) {
-            let summary = self.expression_temporaries(argument)?;
+            let summary = if base {
+                // The base's selected transfer initializes the destination;
+                // it is not a conversion made while evaluating its argument.
+                self.scan_temporaries(argument, true, false)?
+            } else {
+                self.expression_temporaries(argument)?
+            };
             made |= summary.made;
             calls |= summary.call_result.present() || summary.caller_destroyed;
             throwing_destructor |= summary.call_result.destructor_throws();
@@ -204,7 +268,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(&summary) = self.lifetime.temporary_queries.get(&root) {
             return Ok(summary);
         }
-        let summary = self.scan_temporaries(root, true)?;
+        let summary = self.scan_temporaries(root, true, true)?;
         self.lifetime.temporary_queries.insert(root, summary);
         Ok(summary)
     }
@@ -212,15 +276,16 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         root: ast::ExprId,
     ) -> Result<TemporarySummary, Error> {
-        self.scan_temporaries(root, false)
+        self.scan_temporaries(root, false, true)
     }
     fn scan_temporaries(
         &mut self,
         root: ast::ExprId,
         include_root: bool,
+        root_transfer: bool,
     ) -> Result<TemporarySummary, Error> {
         let mut work = std::mem::take(&mut self.lifetime.temporary_work);
-        let result = self.scan_temporary_operands(root, include_root, &mut work);
+        let result = self.scan_temporary_operands(root, include_root, root_transfer, &mut work);
         work.clear();
         self.lifetime.temporary_work = work;
         result
@@ -229,6 +294,7 @@ impl Function<'_, '_, '_, '_> {
         &self,
         root: ast::ExprId,
         include_root: bool,
+        root_transfer: bool,
         work: &mut Vec<ast::ExprId>,
     ) -> Result<TemporarySummary, Error> {
         let root = self.without_parentheses(root);
@@ -250,8 +316,9 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
-            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
-                self.graph.lower_class_copy(id)?
+            if (root_transfer || id != root)
+                && let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                    self.graph.lower_class_copy(id)?
             {
                 let function = self.graph.lower_constructor_function(constructor)?;
                 // A recorded nonelided class transfer is an initialization

@@ -985,8 +985,13 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("base without type"))?;
                 let saved = self.base_object.replace(class);
-                let selected =
-                    self.initialize_class_object(ty, initializer, scope, initializer.location);
+                let selected = self.initialize_class_object_context(
+                    ty,
+                    initializer,
+                    scope,
+                    initializer.location,
+                    super::constructor_initialization::ClassContext::Base,
+                );
                 self.base_object = saved;
                 selected?
             } else {

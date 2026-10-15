@@ -9,6 +9,7 @@ mod anonymous_names;
 mod arrays;
 mod arrow_calls;
 mod assignment;
+mod base_initialization;
 mod base_projections;
 mod bit_fields;
 mod class_conditionals;
