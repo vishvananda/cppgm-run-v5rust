@@ -379,7 +379,6 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             let local = self.branch_local(node);
-            let first = self.lifetime.cleanups.len();
             let prefix = if conjunction { "land" } else { "lor" };
             let slot = self.generated_slot(prefix, Type::I64)?;
             let rhs = self.new_block(&format!("{prefix}_rhs"))?;
@@ -397,6 +396,10 @@ impl Function<'_, '_, '_, '_> {
             };
             self.effect(I::Branch(value.value, yes, no))?;
             self.place(rhs)?;
+            // Only the right operand's temporaries end on this branch.
+            // Evaluating the left may already have registered objects owned
+            // by the enclosing full-expression, including by-value arguments.
+            let first = self.lifetime.cleanups.len();
             self.lifetime.guarded_operands += u32::from(!local);
             let value = self.normalized_truth(right)?;
             self.lifetime.guarded_operands -= u32::from(!local);

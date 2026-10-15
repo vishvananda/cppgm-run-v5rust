@@ -128,15 +128,7 @@ impl Function<'_, '_, '_, '_> {
         let mut caller = false;
         if let Some(constructor) = constructor {
             let function = self.graph.lower_constructor_function(constructor)?;
-            let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
-                return Err(
-                    crate::sema::Error::Invariant("initializer without function type").into(),
-                );
-            };
-            for &parameter in parameters {
-                caller |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                    && self.temporary_type_destroyed(parameter)?;
-            }
+            caller = self.caller_destroys_parameters(function.ty)?;
         }
         let (arguments, root) = match initializer.kind {
             ast::InitializerKind::Assign(root) => {
@@ -205,7 +197,9 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.temporary_segment = if caller || made && throwing {
             super::lifetime::TemporarySegment::Eager
         } else if made {
-            super::lifetime::TemporarySegment::Nothrow
+            super::lifetime::TemporarySegment::Nothrow {
+                floor: self.lifetime.cleanups.len(),
+            }
         } else {
             super::lifetime::TemporarySegment::Empty
         };
@@ -274,7 +268,9 @@ impl Function<'_, '_, '_, '_> {
                     matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult),
                 )
             } else {
-                super::lifetime::TemporarySegment::Nothrow
+                super::lifetime::TemporarySegment::Nothrow {
+                    floor: self.lifetime.cleanups.len(),
+                }
             };
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);
@@ -352,16 +348,9 @@ impl Function<'_, '_, '_, '_> {
                     summary.made |=
                         self.temporary_type_destroyed(self.graph.lower_entity_type(class)?)?;
                 }
-                let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)?
-                else {
-                    return Err(crate::sema::Error::Invariant("copy temporary signature").into());
-                };
-                for &parameter in parameters {
-                    let caller = matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                        && self.temporary_type_destroyed(parameter)?;
-                    summary.made |= caller;
-                    summary.caller_destroyed |= caller;
-                }
+                let caller = self.caller_destroys_parameters(function.ty)?;
+                summary.made |= caller;
+                summary.caller_destroyed |= caller;
             }
             let kind = self.tree.expressions.get(id).kind;
             let call =
@@ -385,6 +374,19 @@ impl Function<'_, '_, '_, '_> {
                     .graph
                     .lower_entity_type(self.graph.lower_constructor(constructor).class)?;
                 summary.made |= self.temporary_type_destroyed(ty)?;
+            }
+            // Constructor call-like nodes can own by-value arguments even
+            // when their destination has no destructor. An operand-only
+            // query excludes that destination, never these parameters.
+            let conversion = self.graph.lower_class_conversion(id).map(|(id, _)| id);
+            for constructor in [self.graph.lower_list_constructor(id)?, conversion]
+                .into_iter()
+                .flatten()
+            {
+                let ty = self.graph.lower_constructor_function(constructor)?.ty;
+                let caller = self.caller_destroys_parameters(ty)?;
+                summary.made |= caller;
+                summary.caller_destroyed |= caller;
             }
             if operator {
                 self.call_temporary_operands(id, usize::MAX, work, &mut summary)?;
@@ -443,19 +445,9 @@ impl Function<'_, '_, '_, '_> {
                     }
                     if let Some((constructor, _)) = allocation.constructor {
                         let ty = self.graph.lower_constructor_function(constructor)?.ty;
-                        let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)?
-                        else {
-                            return Err(
-                                crate::sema::Error::Invariant("new constructor signature").into()
-                            );
-                        };
-                        for &parameter in parameters {
-                            let caller =
-                                matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                                    && self.temporary_type_destroyed(parameter)?;
-                            summary.made |= caller;
-                            summary.caller_destroyed |= caller;
-                        }
+                        let caller = self.caller_destroys_parameters(ty)?;
+                        summary.made |= caller;
+                        summary.caller_destroyed |= caller;
                     }
                     work.extend(self.tree.expr_lists.get(placement.unwrap_or_default()));
                     if let Some(initializer) = initializer {
@@ -494,18 +486,32 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("temporary call without function").into());
         };
-        for (index, &parameter) in parameters.iter().enumerate() {
-            let caller = matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self.temporary_type_destroyed(parameter)?;
-            summary.made |= caller;
-            summary.caller_destroyed |= caller;
-            if index >= given
-                && let Some(entity) = entity
-            {
+        let caller = self.caller_destroys_parameters(ty)?;
+        summary.made |= caller;
+        summary.caller_destroyed |= caller;
+        for index in given..parameters.len() {
+            if let Some(entity) = entity {
                 work.extend(self.graph.lower_default(entity, index));
             }
         }
         Ok(())
+    }
+    fn caller_destroys_parameters(&self, ty: TypeId) -> Result<bool, Error> {
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
+            return Err(
+                crate::sema::Error::Invariant("temporary signature without function").into(),
+            );
+        };
+        for &parameter in parameters {
+            // A nontrivial destructor implies the indirect class boundary.
+            // References and ordinary direct-register classes contribute none.
+            if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
+                && self.temporary_type_destroyed(parameter)?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     fn temporary_type_destroyed(&self, mut ty: TypeId) -> Result<bool, Error> {
         while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
@@ -541,17 +547,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         };
         let function = self.graph.lower_constructor_function(constructor)?;
-        let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
-            return Err(crate::sema::Error::Invariant(
-                "constructor temporary boundary without function",
-            )
-            .into());
-        };
-        let mut caller = false;
-        for &parameter in parameters {
-            caller |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self.temporary_type_destroyed(parameter)?;
-        }
+        let caller = self.caller_destroys_parameters(function.ty)?;
         let single = match initializer.map(|initializer| initializer.kind) {
             Some(ast::InitializerKind::Parenthesized(arguments)) => {
                 self.tree.expr_lists.get(arguments).len() == 1
@@ -584,5 +580,88 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => Ok(false),
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::{
+        lowir::{builder::FunctionBuilder, model::Program, vocabulary::Type},
+        support::stack::StackBudget,
+    };
+
+    pub(crate) fn assert_constructor_parameter_temporaries(
+        graph: &crate::sema::Graph,
+        tree: &ast::Tree,
+        cursor: &crate::syntax::cursor::Cursor<'_>,
+        declarations: crate::syntax::storage::List<ast::DeclId>,
+    ) {
+        let count = tree.expressions.mark();
+        let ast::DeclKind::Function {
+            declarator, body, ..
+        } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let entity = graph.lower_declared(declarator).unwrap();
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let statement = tree.stmt_lists.get(statements)[0];
+        let statement = if matches!(
+            tree.statements.get(statement).kind,
+            ast::StmtKind::Ambiguous { .. }
+        ) {
+            graph.lower_statement(statement).unwrap()
+        } else {
+            statement
+        };
+        let ast::StmtKind::Expression(Some(root)) = tree.statements.get(statement).kind else {
+            panic!("constructor expression");
+        };
+        let mut program = Program::default();
+        let mut table = super::super::symbols::SymbolTable::default();
+        let mut symbols = super::super::symbols::Symbols::new(
+            graph,
+            tree,
+            cursor,
+            StackBudget::default(),
+            &mut table,
+        );
+        let mut builder = FunctionBuilder::new(&mut program, "f", &[], Type::Void).unwrap();
+        builder.block("entry").unwrap();
+        let mut function = Function::new(
+            graph,
+            tree,
+            builder,
+            &mut symbols,
+            Some(entity),
+            None,
+            StackBudget::default(),
+        );
+        assert!(
+            !function
+                .temporary_type_destroyed(graph.lower_expression(root).unwrap().ty)
+                .unwrap()
+        );
+        for summary in [
+            function.operand_temporaries(root).unwrap(),
+            function.expression_temporaries(root).unwrap(),
+        ] {
+            assert!(summary.made);
+            assert!(summary.caller_destroyed);
+            assert!(!summary.call_result.present());
+        }
+        assert!(function.lifetime.temporary_work.is_empty());
+        assert!(function.lifetime.cleanups.is_empty());
+        assert!(!function.lifetime.full_expression);
+        assert_eq!(tree.expressions.mark(), count);
     }
 }

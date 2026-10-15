@@ -244,6 +244,22 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn same_block(&self, position: Position) -> bool {
         self.block == Some(position.block)
     }
+    /// Whether a captured call boundary has already crossed an EH marker.
+    pub(crate) fn region_since(&self, position: Position) -> bool {
+        use super::model::RuntimeInstruction as R;
+        self.body
+            .block(position.block)
+            .instructions
+            .iter()
+            .rev()
+            .take_while(|&&id| Some(id) != position.after)
+            .any(|&id| {
+                matches!(
+                    self.body.instruction(id).kind,
+                    InstructionKind::Runtime(R::EhTry(_) | R::EhEnd | R::EhCleanup(_))
+                )
+            })
+    }
     /// Inserts a region marker at a captured call boundary. Instruction IDs
     /// remain stable; only that block's execution order changes.
     pub(crate) fn insert_marker(
@@ -453,7 +469,11 @@ mod tests {
             return Err(Error::Limit);
         };
         let definition = builder.body.temp(temp).definition.ok_or(Error::Limit)?;
+        let after_result = builder.position()?;
+        assert!(!builder.region_since(position));
         builder.insert_marker(position, R::EhTry(handler))?;
+        assert!(builder.region_since(position));
+        assert!(!builder.region_since(after_result));
         assert_eq!(builder.body.temp(temp).definition, Some(definition));
         let instructions = &builder.body.block(position.block).instructions;
         assert!(
@@ -461,6 +481,7 @@ mod tests {
         );
         assert_eq!(instructions[2], definition);
         builder.effect(I::Runtime(R::EhEnd))?;
+        assert!(builder.region_since(after_result));
         builder.effect(I::Return(Type::I32, Some(result)))?;
         builder.place_block(handler)?;
         builder.effect(I::Runtime(R::Resume))?;

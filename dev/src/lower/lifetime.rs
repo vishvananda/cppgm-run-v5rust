@@ -78,7 +78,9 @@ pub(super) enum TemporarySegment {
     Delayed,
     Hidden,
     Eager,
-    Nothrow,
+    Nothrow {
+        floor: usize,
+    },
 }
 impl TemporarySegment {
     pub(super) fn new(made: bool, eager: bool) -> Self {
@@ -94,7 +96,13 @@ impl TemporarySegment {
         matches!(self, Self::Eager)
     }
     pub(super) fn is_nothrow(self) -> bool {
-        matches!(self, Self::Nothrow)
+        matches!(self, Self::Nothrow { .. })
+    }
+    pub(super) fn floor(self) -> usize {
+        match self {
+            Self::Nothrow { floor } => floor,
+            _ => 0,
+        }
     }
     pub(super) fn allows_eager_arguments(self) -> bool {
         matches!(self, Self::Hidden | Self::Eager)
@@ -162,6 +170,8 @@ pub(super) struct Lifetime {
 pub(super) struct CallMark {
     pub position: crate::lowir::builder::Position,
     pub declared: bool,
+    pub depth: usize,
+    pub regioned: bool,
 }
 impl Lifetime {
     pub(super) fn add_live(
@@ -178,6 +188,15 @@ impl Lifetime {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn drop_segment_floor(&mut self) {
+        let floor = self.lifetime.temporary_segment.floor();
+        if floor != 0 {
+            for cleanup in self.lifetime.cleanups.iter_mut().skip(floor) {
+                cleanup.unwind = None;
+            }
+            self.lifetime.temporary_segment = TemporarySegment::Nothrow { floor: 0 };
+        }
+    }
     pub(super) fn register_storage_cleanup(
         &mut self,
         ty: TypeId,
@@ -407,6 +426,7 @@ impl Function<'_, '_, '_, '_> {
         }
         if throwing {
             self.close_lifetime_region()?;
+            self.drop_segment_floor();
         }
         let full_expression = self.lifetime.full_expression;
         if throwing {
@@ -822,8 +842,13 @@ impl Function<'_, '_, '_, '_> {
             }
             block
         };
+        let floor = if unwinding && !late {
+            self.lifetime.temporary_segment.floor().min(count)
+        } else {
+            0
+        };
         let mut first = count;
-        while first > 0
+        while first > floor
             && if late {
                 self.lifetime.cleanups[first - 1].conditional.is_none()
             } else if unwinding {
@@ -834,7 +859,7 @@ impl Function<'_, '_, '_, '_> {
         {
             first -= 1;
         }
-        let mut tail = if first == 0 {
+        let mut tail = if first == floor {
             Some(terminal)
         } else if late {
             self.lifetime.cleanups[first - 1].conditional

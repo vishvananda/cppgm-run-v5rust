@@ -441,4 +441,26 @@ mod tests {
         assert_eq!(count, tree.expressions.mark());
         }
     }
+    #[test]
+    fn operand_queries_keep_constructor_parameters_without_a_result_temporary() {
+        let source = crate::support::source::SourceBuffer::new(
+            b"struct A{A(const A&)noexcept;~A()noexcept;};\
+              struct E{E(A,A)noexcept;};\
+              void f(A&a,A&b){E(a,b);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            crate::preprocess::unit::Preprocessor::with_name(&source, b"temporary-facts").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer =
+            crate::sema::Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        crate::lower::assert_constructor_parameter_temporaries(&graph, tree, cursor, declarations);
+        assert_eq!(tree.expressions.mark(), count);
+    }
 }

@@ -169,7 +169,39 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.call_marks.push(super::lifetime::CallMark {
                 position: self.builder.position()?,
                 declared: false,
+                depth: self.lifetime.cleanups.len(),
+                regioned: false,
             });
+        }
+        Ok(())
+    }
+    pub(super) fn pause_call_region(&mut self) -> Result<(), Error> {
+        if !self.lifetime.full_expression
+            || self.lifetime.region
+            || self.element_temporaries.depth != 0
+            || self.static_initializer
+            || self.has_tracked_region()
+            || self.terminated
+            || self.lifetime.cleanups.len() <= self.lifetime.temporary_segment.floor()
+        {
+            return Ok(());
+        }
+        let position = self.lifetime.call_marks.iter().find_map(|mark| {
+            (self.builder.same_block(mark.position)
+                && !mark.declared
+                && !mark.regioned
+                && mark.depth == self.lifetime.cleanups.len())
+            .then_some(mark.position)
+        });
+        let Some(position) = position else {
+            return Ok(());
+        };
+        if self.builder.region_since(position) {
+            return Ok(());
+        }
+        self.open_temporary_region_at(Some(position))?;
+        for mark in &mut self.lifetime.call_marks {
+            mark.regioned |= self.builder.same_block(mark.position);
         }
         Ok(())
     }
@@ -200,6 +232,24 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
+        if throws
+            && !self.lifetime.region
+            && self
+                .lifetime
+                .call_marks
+                .last()
+                .is_some_and(|mark| mark.regioned)
+        {
+            return Ok(());
+        }
+        if throws && self.lifetime.temporary_segment.floor() != 0 {
+            self.drop_segment_floor();
+            if self.lifetime.region {
+                self.close_lifetime_region()?;
+                let position = self.builder.position()?;
+                return self.open_temporary_region_at(Some(position));
+            }
+        }
         // A call closes only a region it opened, never an enclosing storage
         // initializer's region that was already active before its operands.
         self.lifetime.call_region = if throws
@@ -391,6 +441,14 @@ impl Function<'_, '_, '_, '_> {
             self.place_cleanup_chains(false)?;
             self.place(next)?;
         }
+        if self.lifetime.full_expression && !self.terminated {
+            let position = self.builder.position()?;
+            for mark in &mut self.lifetime.call_marks {
+                if self.builder.same_block(mark.position) {
+                    mark.position = position;
+                }
+            }
+        }
         Ok(())
     }
     pub(super) fn begin_lifetime_expression(&mut self) -> bool {
@@ -419,6 +477,7 @@ impl Function<'_, '_, '_, '_> {
             self.end_tracked_cleanups();
             self.lifetime.tracking.active = false;
             self.lifetime.tracking.root = None;
+            self.drop_segment_floor();
             self.lifetime.full_expression = false;
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Empty;
             self.lifetime.expression_start = None;

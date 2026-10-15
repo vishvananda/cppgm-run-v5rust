@@ -379,3 +379,6 @@ fn emit_pending<'a>(
 
 #[cfg(test)]
 pub(crate) use reference_lifetimes::tests::assert_extended_ownership;
+
+#[cfg(test)]
+pub(crate) use temporary_scan::tests::assert_constructor_parameter_temporaries;

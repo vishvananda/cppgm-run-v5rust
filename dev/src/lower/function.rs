@@ -493,6 +493,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
+        if matches!(kind, I::Branch(..) | I::Jump(_)) {
+            self.pause_call_region()?;
+        }
         if kind.terminator() && self.lifetime.full_expression {
             self.close_lifetime_region()?;
         }

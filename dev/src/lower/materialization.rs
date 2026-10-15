@@ -226,7 +226,19 @@ impl Function<'_, '_, '_, '_> {
             && !self.lifetime.region
             && !self.storage_region_pending()
         {
-            self.open_temporary_region()?;
+            if self.lifetime.region_start.is_pending()
+                && (self.lifetime.temporary_segment.is_nothrow()
+                    || self.lifetime.cleanups.is_empty()
+                        && self.lifetime.temporary_segment.allows_eager_arguments())
+            {
+                self.open_temporary_region_at(self.lifetime.expression_start)?;
+            } else if self.lifetime.region_start.is_pending()
+                || self.lifetime.cleanups.is_empty()
+                || self.has_tracked_region()
+                || self.aggregation.floor.is_some()
+            {
+                self.open_temporary_region()?;
+            }
         }
         let slot = self.generated_slot(
             if direct { "argobj" } else { "arg" },
