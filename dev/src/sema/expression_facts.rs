@@ -205,8 +205,36 @@ pub(super) struct ExpressionFacts {
     records: Vec<Option<ExprFacts>>,
     // Parentheses share facts, as in the C++ owner. Chains are flattened at publication.
     aliases: Vec<Option<ast::ExprId>>,
+    // Converting class-subobject initializations are sparse use facts. Keep
+    // them separate from the source's original type and argument conversion.
+    class_conversions: std::collections::HashMap<
+        ast::ExprId,
+        (
+            super::construction::ConstructorId,
+            super::constructor_initialization::ConstructorArguments,
+        ),
+    >,
 }
 impl ExpressionFacts {
+    pub(super) fn class_conversion(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<(
+        super::construction::ConstructorId,
+        super::constructor_initialization::ConstructorArguments,
+    )> {
+        self.class_conversions.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_class_conversion(
+        &mut self,
+        id: ast::ExprId,
+        selected: (
+            super::construction::ConstructorId,
+            super::constructor_initialization::ConstructorArguments,
+        ),
+    ) {
+        self.class_conversions.insert(self.root(id), selected);
+    }
     pub(super) fn root(&self, id: ast::ExprId) -> ast::ExprId {
         self.aliases
             .get(id.index())

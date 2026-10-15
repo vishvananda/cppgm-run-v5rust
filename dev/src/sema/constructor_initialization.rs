@@ -22,12 +22,18 @@ pub(crate) enum ConstructorArguments {
     Single(ast::ExprId),
     Value,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ClassContext {
+    Object,
+    AggregateMember,
+}
 #[derive(Clone, Copy)]
 pub(super) struct ClassInput {
     pub arguments: ConstructorArguments,
     pub list: Option<ast::ExprId>,
     pub converting: bool,
     pub copy_list: bool,
+    pub context: ClassContext,
 }
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
@@ -102,6 +108,7 @@ impl Analyzer<'_> {
                 list,
                 converting,
                 copy_list,
+                context: ClassContext::Object,
             },
             scope,
             location,
@@ -122,6 +129,7 @@ impl Analyzer<'_> {
             list,
             converting,
             copy_list,
+            context,
         } = input;
         let tree = self.tree;
         let single;
@@ -203,12 +211,23 @@ impl Analyzer<'_> {
                 self.select_copy_initialization(class, facts, scope, location)?;
                 return Err(Error::Missing("class list copy initialization"));
             }
-            return Err(Error::at(location, "no constructor for the initialization"));
+            return Err(Error::at(
+                location,
+                if context == ClassContext::AggregateMember {
+                    "no conversion to the member's class"
+                } else {
+                    "no constructor for the initialization"
+                },
+            ));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
         let chosen = self.resolve_call(
             location,
-            Candidates::Constructors { class, converting },
+            if context == ClassContext::AggregateMember {
+                Candidates::ConvertingMember(class)
+            } else {
+                Candidates::Constructors { class, converting }
+            },
             args,
             None,
             &mut scratch,

@@ -20,6 +20,7 @@ use std::cmp::Ordering;
 #[derive(Clone, Copy)]
 pub(super) enum Candidates {
     Functions(super::function_resolution::OverloadId),
+    ConvertingMember(super::graph::EntityId),
     Constructors {
         class: super::graph::EntityId,
         converting: bool,
@@ -29,7 +30,9 @@ impl Candidates {
     fn bindings(self, graph: &super::graph::Graph) -> &[BindingId] {
         match self {
             Self::Functions(set) => graph.overloads.get(set),
-            Self::Constructors { class, .. } => &graph.entity(class).declared_constructors,
+            Self::Constructors { class, .. } | Self::ConvertingMember(class) => {
+                &graph.entity(class).declared_constructors
+            }
         }
     }
     fn includes(self, graph: &super::graph::Graph, binding: BindingId) -> bool {
@@ -38,7 +41,7 @@ impl Candidates {
             Self::Constructors {
                 converting: true,
                 ..
-            }
+            } | Self::ConvertingMember(_)
         ) || graph.entity(graph.binding(binding).entity).explicitness
             != super::specifiers::Explicitness::Explicit
     }
@@ -728,6 +731,11 @@ impl Analyzer<'_> {
                 scratch.sequences.truncate(first);
             }
         }
+        if matches!(set, Candidates::ConvertingMember(_)) {
+            return self
+                .unique_call(args.len(), usize::from(object.is_some()), scratch)?
+                .ok_or_else(|| Error::at(location, "no conversion to the member's class"));
+        }
         self.select_call(location, args.len(), usize::from(object.is_some()), scratch)
     }
     pub(super) fn select_call(
@@ -739,6 +747,18 @@ impl Analyzer<'_> {
     ) -> Result<CallSelection, Error> {
         if scratch.candidates.is_empty() {
             return Err(Error::at(location, "no viable function for the call"));
+        }
+        self.unique_call(count, object_count, scratch)?
+            .ok_or_else(|| Error::at(location, "ambiguous call to overloaded function"))
+    }
+    fn unique_call(
+        &mut self,
+        count: usize,
+        object_count: usize,
+        scratch: &CallScratch,
+    ) -> Result<Option<CallSelection>, Error> {
+        if scratch.candidates.is_empty() {
+            return Ok(None);
         }
         let mut best = 0;
         for index in 1..scratch.candidates.len() {
@@ -753,15 +773,15 @@ impl Analyzer<'_> {
                 && self.compare_candidates(scratch, best, index, count, object_count)?
                     != Ordering::Greater
             {
-                return Err(Error::at(location, "ambiguous call to overloaded function"));
+                return Ok(None);
             }
         }
         let (binding, first) = scratch.candidates[best];
-        Ok(CallSelection {
+        Ok(Some(CallSelection {
             binding,
             first,
             object_count,
-        })
+        }))
     }
     // Literal operands are already typed values, not synthetic syntax. They
     // use the same standard sequences and candidate ordering as ordinary calls.

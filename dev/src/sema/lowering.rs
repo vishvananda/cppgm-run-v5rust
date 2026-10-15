@@ -529,11 +529,23 @@ impl Graph {
         };
         Ok(id)
     }
+    pub(crate) fn lower_ready_default_constructor(&self, class: EntityId) -> Option<ConstructorId> {
+        match self.entity(class).default_construction {
+            super::construction::ConstructorState::Ready(id) => Some(id),
+            _ => None,
+        }
+    }
     pub(crate) fn lower_list_constructor(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<ConstructorId>, Error> {
         Ok(self.expression_facts.get(id)?.constructor)
+    }
+    pub(crate) fn lower_class_conversion(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<(ConstructorId, ConstructorArguments)> {
+        self.expression_facts.class_conversion(id)
     }
     pub(crate) fn lower_prvalue_initialization(
         &self,

@@ -72,7 +72,7 @@ impl Function<'_, '_, '_, '_> {
                 "base aggregate list shape",
             )));
         };
-        self.symbols.require_trivial_storage(ty)?;
+        self.symbols.storage_destructor(ty)?;
         let mut input = Input {
             values: self.tree.expr_lists.get(elements),
             next: 0,
@@ -82,10 +82,12 @@ impl Function<'_, '_, '_, '_> {
             steps: std::mem::take(&mut self.named_path),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
+        let scope = self.begin_aggregate(ty, input.values)?;
         let result = self.named_contents(ty, &mut input, &mut path, false);
         path.steps.clear();
         self.named_path = path.steps;
-        result
+        result?;
+        self.end_aggregate(scope, None)
     }
     pub(super) fn local_aggregate(
         &mut self,
@@ -177,10 +179,14 @@ impl Function<'_, '_, '_, '_> {
             steps: std::mem::take(&mut self.named_path),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        let result = self.named_members(class, &mut input, &mut path);
+        let scope = self.begin_aggregate(ty, input.values)?;
+        self.named_members(class, &mut input, &mut path)?;
         path.steps.clear();
         self.named_path = path.steps;
-        result
+        self.end_aggregate(
+            scope,
+            (storage == NamedStorage::Automatic).then_some((slot, ty)),
+        )
     }
     pub(super) fn constructor_aggregate_member(
         &mut self,
@@ -228,7 +234,7 @@ impl Function<'_, '_, '_, '_> {
                 ));
             }
         };
-        self.symbols.require_trivial_storage(ty)?;
+        self.symbols.storage_destructor(ty)?;
         let mut input = Input { values, next: 0 };
         let mut path = Path {
             root: Root::This(pointer),
@@ -256,6 +262,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             false
         };
+        let scope = self.begin_aggregate(ty, values)?;
         let result = if string {
             self.named_item(ty, &mut input, &mut path, Item::ArrayElement)
         } else {
@@ -263,7 +270,8 @@ impl Function<'_, '_, '_, '_> {
         };
         path.steps.clear();
         self.named_path = path.steps;
-        result
+        result?;
+        self.end_aggregate(scope, None)
     }
     pub(super) fn global_class_array(
         &mut self,
@@ -299,14 +307,16 @@ impl Function<'_, '_, '_, '_> {
         address: Value,
         values: &[ast::ExprId],
     ) -> Result<(), Error> {
-        self.symbols.require_trivial_storage(ty)?;
+        self.symbols.storage_destructor(ty)?;
         let mut input = Input { values, next: 0 };
         let mut path = Path {
             root: Root::Address(address),
             steps: Vec::new(),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        self.named_contents(ty, &mut input, &mut path, false)
+        let scope = self.begin_aggregate(ty, values)?;
+        self.named_contents(ty, &mut input, &mut path, false)?;
+        self.end_aggregate(scope, None)
     }
     fn aggregate_stores(&self, class: EntityId) -> Result<bool, Error> {
         self.check_stack()?;
@@ -320,7 +330,7 @@ impl Function<'_, '_, '_, '_> {
                 ty = element;
             }
             if let TypeView::Class(class) = self.graph.lower_type(ty)? {
-                if self.aggregate_stores(class)? {
+                if !self.graph.lower_aggregate_class(class) || self.aggregate_stores(class)? {
                     return Ok(true);
                 }
             } else {
@@ -459,37 +469,26 @@ impl Function<'_, '_, '_, '_> {
         item: Item,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        let value_first = matches!(item, Item::NamedMember) && !matches!(path.root, Root::This(_));
-        let mut expr = input.values.get(input.next).copied();
-        if let TypeView::Class(class) = self.graph.lower_type(ty)?
-            && !self.graph.lower_aggregate_class(class)
+        if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            && let Some(count) = self.aggregation.count.take()
         {
-            self.symbols.require_trivial_storage(ty)?;
-            let object = self.named_address(path, ty)?;
-            let (constructor, arguments) = if let Some(id) = expr {
-                let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
-                    return Err(Error::Missing("class subobject expression materialization"));
-                };
-                input.next += 1;
-                let constructor = self
-                    .graph
-                    .lower_list_constructor(id)?
-                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                        "class list without selected constructor",
-                    )))?;
-                let arguments = if self.tree.expr_lists.get(elements).is_empty() {
-                    crate::sema::lowering::ConstructorArguments::Value
-                } else {
-                    crate::sema::lowering::ConstructorArguments::Values(elements)
-                };
-                (constructor, arguments)
-            } else {
-                (
-                    self.graph.lower_default_constructor(class)?,
-                    crate::sema::lowering::ConstructorArguments::Value,
-                )
+            let first = self.lifetime.cleanups.len();
+            let floor = self.aggregation.floor;
+            self.aggregation.floor = match self.graph.lower_type(ty)? {
+                TypeView::Class(class) if self.graph.lower_aggregate_class(class) => Some(first),
+                _ => None,
             };
-            return self.construct_at(constructor, ty, object, Some(arguments));
+            self.named_item(ty, input, path, item)?;
+            self.aggregation.count = Some(self.aggregate_element_made(count, first)?);
+            self.aggregation.floor = floor;
+            return Ok(());
+        }
+        let value_first = matches!(item, Item::NamedMember)
+            && !matches!(path.root, Root::This(_))
+            && !self.aggregate_has_members();
+        let mut expr = input.values.get(input.next).copied();
+        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
+            return self.named_class_item(class, ty, input, path, item);
         }
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
             && types::character(self.graph, element)?
@@ -577,6 +576,87 @@ impl Function<'_, '_, '_, '_> {
         };
         self.named_store(ty, path, address, value)
     }
+    fn named_class_item(
+        &mut self,
+        class: EntityId,
+        ty: TypeId,
+        input: &mut Input<'_>,
+        path: &mut Path,
+        item: Item,
+    ) -> Result<(), Error> {
+        self.begin_aggregate_member(ty, input.values.get(input.next).copied())?;
+        let first = self.lifetime.cleanups.len();
+        let aggregate = self.graph.lower_aggregate_class(class);
+        let destroyed =
+            self.aggregation.floor.is_some() && self.symbols.storage_destructor(ty)?.is_some();
+        let expr = input.values.get(input.next).copied();
+        // Omitted scalar-class subobjects end their value-initialization's
+        // temporaries separately; array elements remain in the array segment.
+        let saved_scope = self.aggregation.call_scope;
+        self.aggregation.call_scope = if expr.is_none() && !matches!(item, Item::ArrayElement) {
+            super::aggregate_cleanup::CallScope::OmittedValue
+        } else {
+            super::aggregate_cleanup::CallScope::FullExpression
+        };
+        let object = if let Some(id) = expr
+            && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
+            && (self.graph.lower_class_conversion(id).is_some()
+                || matches!(
+                    self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
+                    TypeView::Class(_)
+                )) {
+            input.next += 1;
+            let object = self.named_address(path, ty)?;
+            if let Some((constructor, arguments)) = self.graph.lower_class_conversion(id) {
+                self.construct_at(constructor, ty, object, Some(arguments))?;
+            } else {
+                self.materialize_class(id, ty, object)?;
+            }
+            Some(object)
+        } else if !aggregate {
+            let object = self.named_address(path, ty)?;
+            if let Some(id) = expr {
+                input.next += 1;
+                self.materialize_class(id, ty, object)?;
+            } else {
+                self.construct_at(
+                    self.graph.lower_default_constructor(class)?,
+                    ty,
+                    object,
+                    Some(crate::sema::lowering::ConstructorArguments::Value),
+                )?;
+            }
+            Some(object)
+        } else {
+            if let Some(id) = expr
+                && let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind
+            {
+                input.next += 1;
+                self.named_contents(
+                    ty,
+                    &mut Input {
+                        values: self.tree.expr_lists.get(elements),
+                        next: 0,
+                    },
+                    path,
+                    matches!(item, Item::StructuredMember),
+                )?;
+            } else {
+                self.named_contents(ty, input, path, matches!(item, Item::StructuredMember))?;
+            }
+            None
+        };
+        if destroyed {
+            let object = if let Some(object) = object {
+                object
+            } else {
+                self.named_address(path, ty)?
+            };
+            self.aggregate_member_made(ty, object, first)?;
+        }
+        self.aggregation.call_scope = saved_scope;
+        Ok(())
+    }
     fn named_store(
         &mut self,
         ty: TypeId,
@@ -638,6 +718,19 @@ impl Function<'_, '_, '_, '_> {
         field: bool,
     ) -> Result<(), Error> {
         self.check_stack()?;
+        if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            && self.counts_aggregate_elements(ty, &input.values[input.next..])?
+        {
+            let root = self.named_address(path, ty)?;
+            let scope = self.begin_counted_elements(ty, root)?;
+            let mut child = Path {
+                root: Root::Address(root),
+                steps: Vec::new(),
+                volatile: path.volatile,
+            };
+            self.named_contents(ty, input, &mut child, field)?;
+            return self.end_counted_elements(scope);
+        }
         match self.graph.lower_type(ty)? {
             TypeView::Class(class) => self.named_members(class, input, path),
             TypeView::Array { element, bound } => {
@@ -716,6 +809,7 @@ impl Function<'_, '_, '_, '_> {
             }
             self.bit_initialization.unit = 0;
             let ty = self.graph.lower_entity_type(member)?;
+            self.begin_aggregate_member(ty, input.values.get(input.next).copied())?;
             let offset = self
                 .builder
                 .integer(u128::from(self.graph.lower_member_offset(member)?))?;

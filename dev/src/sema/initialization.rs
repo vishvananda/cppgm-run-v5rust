@@ -351,8 +351,29 @@ impl Analyzer<'_> {
                     false,
                     self.tree.expressions.get(id).location,
                 )?;
-            } else {
+            } else if self.graph.aggregate_class(class) {
                 self.aggregate_members(elements, next, class, scope, location)?;
+            } else {
+                *next += 1;
+                let selected = self.initialize_class_arguments(
+                    target,
+                    super::constructor_initialization::ClassInput {
+                        arguments: super::constructor_initialization::ConstructorArguments::Single(
+                            id,
+                        ),
+                        list: None,
+                        converting: true,
+                        copy_list: false,
+                        context: super::constructor_initialization::ClassContext::AggregateMember,
+                    },
+                    scope,
+                    self.tree.expressions.get(id).location,
+                )?;
+                if let Some(selected) = selected {
+                    self.graph
+                        .expression_facts
+                        .set_class_conversion(id, selected);
+                }
             }
         } else {
             *next += 1;

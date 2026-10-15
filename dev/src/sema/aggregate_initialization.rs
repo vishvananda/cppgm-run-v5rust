@@ -17,6 +17,7 @@ pub(super) enum Aggregation {
     Eligible,
     Ineligible,
 }
+
 impl Graph {
     pub(super) fn aggregate_class(&self, class: EntityId) -> bool {
         let entity = self.entity(class);
@@ -122,5 +123,79 @@ impl Analyzer<'_> {
             }
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{
+            Analyzer, constructor_initialization::ConstructorArguments, lookup::Filter,
+            types::TypeKind,
+        },
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{
+            SyntaxUnit,
+            ast::{DeclKind, ExprKind, InitializerKind},
+        },
+    };
+
+    #[test]
+    fn aggregate_conversions_preserve_source_and_constructor_identities() {
+        let source = SourceBuffer::new(
+            b"struct A{int n;A(int k):n(k){}};struct B{A a,b;};struct Unused{};B value{1,A(2)};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"aggregate-conversions").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(expressions, tree.expressions.mark());
+        let declaration = *tree.decl_lists.get(declarations).last().unwrap();
+        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+            panic!("object declaration");
+        };
+        let InitializerKind::Braced(list) = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap()
+            .kind
+        else {
+            panic!("aggregate list");
+        };
+        let ExprKind::Braced { elements, .. } = tree.expressions.get(list).kind else {
+            panic!("list");
+        };
+        let values = tree.expr_lists.get(elements);
+        let first = graph.expression_facts.get(values[0]).unwrap();
+        let second = graph.expression_facts.get(values[1]).unwrap();
+        assert!(matches!(
+            graph.types.get(first.ty).kind,
+            TypeKind::Scalar(_)
+        ));
+        assert!(first.constructor.is_none());
+        assert!(first.class_initialization.is_none());
+        let (constructor, ConstructorArguments::Single(original)) =
+            graph.expression_facts.class_conversion(values[0]).unwrap()
+        else {
+            panic!("retained converting argument");
+        };
+        assert_eq!(original, values[0]);
+        assert_eq!(Some(constructor), second.constructor);
+        assert!(graph.expression_facts.class_conversion(values[1]).is_none());
+        assert!(second.elided_copy.is_some());
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
+            .entity;
+        assert!(matches!(
+            graph.entity(unused).layout,
+            crate::sema::layout::LayoutState::NotStarted
+        ));
     }
 }

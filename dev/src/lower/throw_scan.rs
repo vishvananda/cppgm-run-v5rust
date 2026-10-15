@@ -48,6 +48,13 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
+            if let Some((constructor, _)) = self.graph.lower_class_conversion(id)
+                && !Entry::Constructor(constructor, Variant::Complete)
+                    .facts(self.graph)?
+                    .nothrow
+            {
+                return Ok(true);
+            }
             if (self.graph.lower_operator_call(id)? || self.graph.lower_literal_call(id)?.is_some())
                 && self.lifetime_call_throws(self.graph.lower_call(id)?)?
             {

@@ -1,5 +1,7 @@
 // Translated from lower/program_lowering.cpp. See NOTICE.
 //! Typed, demand-driven source lowering into the shared function-owned `LowIR` model.
+mod aggregate_arrays;
+mod aggregate_cleanup;
 mod aggregate_helpers;
 mod aggregates;
 mod arrays;

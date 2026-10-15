@@ -138,6 +138,7 @@ impl Analyzer<'_> {
                 list: None,
                 converting: false,
                 copy_list: false,
+                context: super::constructor_initialization::ClassContext::Object,
             },
             scope,
             location,

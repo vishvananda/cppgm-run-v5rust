@@ -124,6 +124,9 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         let entry = self.unwind_entry()?;
+        if let Some(floor) = self.aggregation.floor {
+            self.aggregation.landing |= self.lifetime.cleanups[floor..].iter().any(|c| c.member());
+        }
         if let Some(position) = self
             .lifetime
             .call_marks
@@ -136,6 +139,7 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }
         self.lifetime.region = true;
+        self.lifetime.region_depth = self.lifetime.cleanups.len();
         Ok(())
     }
     pub(super) fn finish_lifetime_call(

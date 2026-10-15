@@ -136,7 +136,7 @@ impl Function<'_, '_, '_, '_> {
                     .lifetime
                     .cleanups
                     .get(found - 1)
-                    .is_some_and(|cleanup| cleanup.variable == live.variable)
+                    .is_some_and(|cleanup| cleanup.variable == Some(live.variable))
             {
                 depth = found;
                 break;

@@ -16,7 +16,7 @@ impl Analyzer<'_> {
     fn constructor_may_throw(
         &mut self,
         id: super::construction::ConstructorId,
-        expression: ast::ExprId,
+        arguments: super::constructor_initialization::ConstructorArguments,
         depth: u16,
     ) -> Result<bool, Error> {
         let plan = self.graph.constructors.get(id);
@@ -25,16 +25,6 @@ impl Analyzer<'_> {
             if self.function_may_throw(entity)? {
                 return Ok(true);
             }
-            let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) = self
-                .graph
-                .expression_facts
-                .get(expression)?
-                .class_initialization
-            else {
-                return Err(Error::Invariant(
-                    "constructor throw query without arguments",
-                ));
-            };
             let written = match arguments {
                 super::constructor_initialization::ConstructorArguments::Values(values) => {
                     self.tree.expr_lists.get(values).len()
@@ -167,11 +157,29 @@ impl Analyzer<'_> {
             if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;
             }
+            if let Some((constructor, _)) = self.graph.expression_facts.class_conversion(id) {
+                let plan = self.graph.constructors.get(constructor);
+                let throws = if let Some(binding) = plan.binding {
+                    self.function_may_throw(self.graph.binding(binding).entity)?
+                } else {
+                    !plan.nothrow
+                };
+                if throws {
+                    return Ok(true);
+                }
+            }
             if let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind
                 && facts.category == ValueCategory::Prvalue
             {
                 if let Some(constructor) = facts.constructor {
-                    if self.constructor_may_throw(constructor, id, depth)? {
+                    let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) =
+                        facts.class_initialization
+                    else {
+                        return Err(Error::Invariant(
+                            "constructor throw query without arguments",
+                        ));
+                    };
+                    if self.constructor_may_throw(constructor, arguments, depth)? {
                         return Ok(true);
                     }
                 } else if facts.class_initialization.is_none() {

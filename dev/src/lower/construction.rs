@@ -137,7 +137,15 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        self.before_lifetime_call(!facts.nothrow)?;
+        // An aggregate construction's active segment also brackets a
+        // nonthrowing call once prior subobjects need destruction.
+        self.before_lifetime_call(
+            !facts.nothrow
+                || self.lifetime.full_expression
+                    && self.aggregate_has_members()
+                    && self.aggregation.call_scope
+                        == super::aggregate_cleanup::CallScope::FullExpression,
+        )?;
         let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
         self.symbols.demand_entry(entry);
         let arguments = self.builder.arguments(&values)?;
