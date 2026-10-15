@@ -133,12 +133,11 @@ impl Analyzer<'_> {
                     } else {
                         self.typed_expression(expression, scope)?;
                         self.convert_scalar(expression, target, false)?;
-                        self.elide_class_copy(
+                        self.record_class_copy(
                             expression,
                             target,
                             scope,
-                            false,
-                            false,
+                            super::copy_initialization::CopyUse::Value { in_place: false },
                             self.tree.expressions.get(expression).location,
                         )
                     }

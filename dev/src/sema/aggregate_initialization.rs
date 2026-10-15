@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(original, values[0]);
         assert_eq!(Some(constructor), second.constructor);
         assert!(graph.expression_facts.class_conversion(values[1]).is_none());
-        assert!(second.elided_copy.is_some());
+        assert!(second.class_copy.is_some());
         let unused = cursor.intern_name(b"Unused").unwrap();
         let unused = graph
             .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())

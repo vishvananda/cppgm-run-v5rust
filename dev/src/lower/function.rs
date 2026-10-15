@@ -135,12 +135,13 @@ pub(super) fn lower<'a>(
     let mut builder =
         FunctionBuilder::new(program, &name, &parameters, types::storage(graph, result)?)?;
     builder.metadata(metadata);
+    let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
     if let Some(class) = facts.object {
         builder.parameter_boundary(
             0,
             None,
             types::layout(graph, graph.lower_entity_type(class)?)?.0,
-            false,
+            distinct,
         )?;
     }
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
@@ -150,7 +151,7 @@ pub(super) fn lower<'a>(
             index + object_count,
             pass,
             bytes,
-            parameter_no_alias(facts.builtin, index),
+            distinct && index == 0 || parameter_no_alias(facts.builtin, index),
         )?;
     }
     let mut boundary = Boundary {
@@ -698,8 +699,11 @@ pub(super) fn declare(
         );
     }
     let boundary = program.signature_mut(signature);
+    let distinct = entry
+        .entity(graph)
+        .is_some_and(|entity| graph.lower_copy_constructor(entity));
     for (index, parameter) in boundary.parameters.iter_mut().enumerate() {
-        parameter.no_alias = parameter_no_alias(facts.builtin, index);
+        parameter.no_alias = distinct && index < 2 || parameter_no_alias(facts.builtin, index);
     }
     builtin_boundary(&mut boundary.boundary, facts.builtin);
     let mut metadata = symbols.entry_metadata(program, entry, &name)?;

@@ -1256,7 +1256,7 @@ fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
             graph.expression_type(graph.expression_facts.root(expression)),
             Some(facts.ty)
         );
-        let selected = facts.elided_copy.unwrap();
+        let selected = facts.class_copy.unwrap();
         assert!(!selected.binding.temporary);
         let TypeKind::Reference { element, .. } = graph.types.get(selected.binding.target).kind
         else {

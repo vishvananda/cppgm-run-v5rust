@@ -4,7 +4,7 @@
 use super::{Error, function::Function, types};
 use crate::{
     lowir::model::{InstructionKind as I, Value},
-    sema::lowering::{ClassInitialization, EntityId, TypeId, TypeView},
+    sema::lowering::{ClassInitialization, CopyAction, EntityId, TypeId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
@@ -145,7 +145,7 @@ impl Function<'_, '_, '_, '_> {
                 Ok(())
             }
             Some(ClassInitialization::Aggregate(values)) if values.is_empty() => Ok(()),
-            Some(ClassInitialization::Elided(inner)) => {
+            Some(ClassInitialization::FromExpression(inner)) => {
                 self.materialize_empty_argument(inner, ty, object)
             }
             _ => self.materialize_class(source, ty, object),
@@ -210,6 +210,37 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
+        match self.graph.lower_class_copy(id)? {
+            Some(CopyAction::Storage {
+                reference,
+                skip_empty,
+            }) => {
+                let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+                    return Err(crate::sema::Error::Invariant("storage copy without class").into());
+                };
+                let empty = self.graph.lower_class_empty(class)?;
+                if empty && skip_empty && self.side_effect_free(id, false, 0)? {
+                    return Ok(());
+                }
+                let source =
+                    self.bind_reference(id, reference, super::conversions::Context::Argument)?;
+                if !empty {
+                    let (size, alignment) = types::layout(self.graph, ty)?;
+                    let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
+                    self.effect(I::CopyObject(size, alignment, source, object))?;
+                }
+                return Ok(());
+            }
+            Some(CopyAction::Constructor(constructor)) => {
+                return self.call_constructor(
+                    constructor,
+                    super::construction::Variant::Complete,
+                    object,
+                    Some(crate::sema::lowering::ConstructorArguments::Single(id)),
+                );
+            }
+            None => (),
+        }
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {
                 let constructor = self
@@ -223,7 +254,9 @@ impl Function<'_, '_, '_, '_> {
             Some(ClassInitialization::Aggregate(arguments)) => {
                 self.aggregate_prvalue(ty, object, self.tree.expr_lists.get(arguments))
             }
-            Some(ClassInitialization::Elided(source)) => self.materialize_class(source, ty, object),
+            Some(ClassInitialization::FromExpression(source)) => {
+                self.materialize_class(source, ty, object)
+            }
             None => Err(Error::Missing("class call and conditional materialization")),
         }
     }

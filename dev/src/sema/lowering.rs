@@ -2,6 +2,7 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
+pub(crate) use super::copy_initialization::CopyAction;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::literal_calls::TextCall;

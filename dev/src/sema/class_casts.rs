@@ -72,14 +72,16 @@ impl Analyzer<'_> {
                     };
                     ClassInitialization::Aggregate(elements)
                 }
-                ast::InitializerKind::Parenthesized(arguments) => ClassInitialization::Elided(
-                    *self
-                        .tree
-                        .expr_lists
-                        .get(arguments)
-                        .first()
-                        .ok_or(Error::Invariant("elided class prvalue without source"))?,
-                ),
+                ast::InitializerKind::Parenthesized(arguments) => {
+                    ClassInitialization::FromExpression(
+                        *self
+                            .tree
+                            .expr_lists
+                            .get(arguments)
+                            .first()
+                            .ok_or(Error::Invariant("elided class prvalue without source"))?,
+                    )
+                }
                 _ => return Err(Error::Invariant("class prvalue initialization shape")),
             });
         }
@@ -148,7 +150,7 @@ impl Analyzer<'_> {
             facts.constructor = Some(constructor);
             facts.class_initialization = Some(ClassInitialization::Constructed(arguments));
         } else {
-            facts.class_initialization = Some(ClassInitialization::Elided(operand));
+            facts.class_initialization = Some(ClassInitialization::FromExpression(operand));
         }
         Ok(facts)
     }

@@ -1,6 +1,6 @@
 // Translated from analyzer_copy.cpp and analyzer_construction.cpp. See NOTICE.
-//! Checked same-class prvalue copy elision. Selection is retained independently
-//! of operand conversions; an elided constructor never contributes body demand.
+//! Same-class construction retains selection separately from operand conversions.
+//! Elision, storage transfer and constructor calls have distinct demand boundaries.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -27,6 +27,16 @@ pub(super) struct CopySelection {
     pub origin: CopyOrigin,
     pub binding: Conversion,
 }
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CopyAction {
+    Storage { reference: TypeId, skip_empty: bool },
+    Constructor(super::construction::ConstructorId),
+}
+#[derive(Clone, Copy)]
+pub(super) enum CopyUse {
+    Object { direct: bool },
+    Value { in_place: bool },
+}
 #[derive(Clone, Copy)]
 enum ClassPassing {
     Direct,
@@ -40,6 +50,13 @@ pub(super) struct ImplicitCopies {
     passing: Option<ClassPassing>,
 }
 impl super::graph::Graph {
+    pub(crate) fn lower_copy_constructor(&self, function: EntityId) -> bool {
+        self.entity(function).copy_kind.is_some()
+    }
+    pub(crate) fn lower_class_copy(&self, id: ast::ExprId) -> Result<Option<CopyAction>, Error> {
+        self.expression_facts.get(id)?;
+        Ok(self.expression_facts.copy_action(id))
+    }
     pub(crate) fn lower_direct_class_parameter(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
             .implicit_copies
@@ -269,13 +286,12 @@ impl Analyzer<'_> {
         Ok(copies)
     }
 
-    pub(super) fn elide_class_copy(
+    pub(super) fn record_class_copy(
         &mut self,
         id: ast::ExprId,
         target: TypeId,
         scope: ScopeId,
-        direct: bool,
-        in_place: bool,
+        usage: CopyUse,
         location: SourceOffset,
     ) -> Result<(), Error> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
@@ -288,6 +304,8 @@ impl Analyzer<'_> {
             ));
         }
         let facts = self.graph.expression_facts.get(id)?;
+        let direct = matches!(usage, CopyUse::Object { direct: true });
+        let in_place = matches!(usage, CopyUse::Value { in_place: true });
         if facts.functions.is_some()
             || !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(from) if from == class)
         {
@@ -300,20 +318,22 @@ impl Analyzer<'_> {
                 "copy construction with user conversion candidates",
             ));
         }
-        if facts.category != V::Prvalue
-            || !in_place
-                && matches!(
+        let elided = facts.category == V::Prvalue
+            && (in_place
+                || !matches!(
                     self.tree
                         .expressions
                         .get(self.graph.expression_facts.root(id))
                         .kind,
                     ast::ExprKind::Conditional { .. }
-                )
-        {
-            return Err(Error::Missing("nonelided class copy and move construction"));
+                ));
+        if !elided && facts.category == V::Prvalue {
+            return Err(Error::Missing(
+                "conditional class temporary copy construction",
+            ));
         }
         let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected = self.select_elided_copy(
+        let selected = self.select_class_copy(
             class,
             facts,
             scope,
@@ -324,9 +344,55 @@ impl Analyzer<'_> {
         scratch.candidates.clear();
         self.copy_scratch = scratch;
         let mut facts = facts;
-        facts.elided_copy = Some(selected?);
+        let selected = selected?;
+        let action = if elided {
+            None
+        } else {
+            Some(self.copy_action(class, selected, usage, location)?)
+        };
+        self.graph.expression_facts.set_copy_action(id, action);
+        facts.class_copy = Some(selected);
         self.graph.expression_facts.set(id, facts);
         Ok(())
+    }
+
+    fn copy_action(
+        &mut self,
+        class: EntityId,
+        selected: CopySelection,
+        usage: CopyUse,
+        location: SourceOffset,
+    ) -> Result<CopyAction, Error> {
+        if let CopyOrigin::Declared(binding) = selected.origin {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if !matches!(
+                entity.special_definition,
+                Some(SpecialDefinition::Defaulted { first: true, .. })
+            ) {
+                let constructor = self.selected_constructor_plan(binding, location)?;
+                self.demand_constructor_use(constructor);
+                return Ok(CopyAction::Constructor(constructor));
+            }
+            if matches!(usage, CopyUse::Object { direct: true })
+                && entity.copy_kind == Some(RefKind::Rvalue)
+            {
+                return Err(Error::Missing("direct defaulted move constructor body"));
+            }
+        }
+        // Empty classes with nontrivial destructors call even a trivial copy.
+        // Their implicit callable entry is a separate special-member body owner.
+        if !self.graph.destructor_trivial(class)? {
+            self.class_layout(class, location)?;
+            if self.graph.lower_class_empty(class)? {
+                return Err(Error::Missing(
+                    "empty nontrivial-lifetime copy constructor body",
+                ));
+            }
+        }
+        Ok(CopyAction::Storage {
+            reference: selected.binding.target,
+            skip_empty: matches!(usage, CopyUse::Object { .. }),
+        })
     }
 
     pub(super) fn check_final_copy_selection(
@@ -361,12 +427,12 @@ impl Analyzer<'_> {
     ) -> Result<CopySelection, Error> {
         let mut scratch = std::mem::take(&mut self.copy_scratch);
         let selected =
-            self.select_elided_copy(class, facts, scope, true, location, &mut scratch.candidates);
+            self.select_class_copy(class, facts, scope, true, location, &mut scratch.candidates);
         scratch.candidates.clear();
         self.copy_scratch = scratch;
         selected
     }
-    fn select_elided_copy(
+    fn select_class_copy(
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
@@ -512,12 +578,58 @@ impl Analyzer<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::CopyAction;
     use crate::{
         preprocess::unit::Preprocessor,
         sema::{Analyzer, lookup::Filter},
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn nonelided_copy_actions_share_source_identity_without_replacing_operand_facts() {
+        use crate::{sema::expression_facts::ValueCategory, syntax::ast};
+        let source =
+            SourceBuffer::new(b"struct A{int n;};A a={3};A b=((a));A c=A(a);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"copy-use-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let parsed_expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), parsed_expressions);
+        let ast::DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[2])
+            .kind
+        else {
+            panic!("copy object declaration");
+        };
+        let ast::InitializerKind::Assign(outer) = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap()
+            .kind
+        else {
+            panic!("copy source");
+        };
+        let root = graph.expression_facts.root(outer);
+        assert_ne!(root, outer);
+        let facts = graph.expression_facts.get(outer).unwrap();
+        assert_eq!(facts.category, ValueCategory::Lvalue);
+        assert!(facts.conversion.is_none());
+        assert_eq!(graph.expression_type(root), Some(facts.ty));
+        let Some(CopyAction::Storage {
+            reference,
+            skip_empty: true,
+        }) = graph.lower_class_copy(outer).unwrap()
+        else {
+            panic!("named storage copy action");
+        };
+        assert_eq!(facts.class_copy.unwrap().binding.target, reference);
+        assert!(matches!(graph.lower_class_copy(root).unwrap(),
+            Some(CopyAction::Storage { reference: inner, skip_empty: true }) if inner == reference));
+    }
     #[test]
     fn class_parameter_boundary_consumes_completed_copy_properties() {
         let source = SourceBuffer::new(b"struct W{int w;W(int);};int f(W v){return v.w;}int g(){return f(W(1));}struct N{N();N(const N&);};void h(N){}void i(){h(N());}".to_vec()).unwrap();

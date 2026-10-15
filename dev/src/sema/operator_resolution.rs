@@ -355,7 +355,13 @@ impl Analyzer<'_> {
             self.graph.expression_facts.set(operand, facts);
             if !member || index != 0 {
                 self.class_parameter_destruction(conversion.target, scope, location)?;
-                self.elide_class_copy(operand, conversion.target, scope, false, false, location)?;
+                self.record_class_copy(
+                    operand,
+                    conversion.target,
+                    scope,
+                    super::copy_initialization::CopyUse::Value { in_place: false },
+                    location,
+                )?;
             }
         }
         if self.unevaluated == 0 {

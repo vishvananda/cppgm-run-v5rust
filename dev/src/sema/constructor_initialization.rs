@@ -161,7 +161,15 @@ impl Analyzer<'_> {
             && matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
         {
             self.class_list_initialize(*id, target, scope)?;
-            self.elide_class_copy(*id, target, scope, !converting, false, location)?;
+            self.record_class_copy(
+                *id,
+                target,
+                scope,
+                super::copy_initialization::CopyUse::Object {
+                    direct: !converting,
+                },
+                location,
+            )?;
             return Ok(None);
         }
         // Preserve the existing checked copy-elision path for same-class sources.
@@ -171,7 +179,15 @@ impl Analyzer<'_> {
         {
             let facts = self.graph.expression_facts.get(*id)?;
             if self.graph.class_of(facts.ty) == Some(class) {
-                self.elide_class_copy(*id, target, scope, !converting, false, location)?;
+                self.record_class_copy(
+                    *id,
+                    target,
+                    scope,
+                    super::copy_initialization::CopyUse::Object {
+                        direct: !converting,
+                    },
+                    location,
+                )?;
                 return Ok(None);
             }
         }
@@ -266,12 +282,11 @@ impl Analyzer<'_> {
                 tree.expressions.get(argument).kind,
                 ast::ExprKind::Braced { .. }
             ) {
-                self.elide_class_copy(
+                self.record_class_copy(
                     argument,
                     parameter,
                     scope,
-                    false,
-                    false,
+                    super::copy_initialization::CopyUse::Value { in_place: false },
                     tree.expressions.get(argument).location,
                 )?;
             }

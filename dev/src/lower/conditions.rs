@@ -17,7 +17,12 @@ use crate::{
 impl Function<'_, '_, '_, '_> {
     // Match the frozen address/value effect query for static member objects.
     // Its semantic depth cap is independent of the native stack budget.
-    fn side_effect_free(&self, id: ast::ExprId, read: bool, depth: u32) -> Result<bool, Error> {
+    pub(super) fn side_effect_free(
+        &self,
+        id: ast::ExprId,
+        read: bool,
+        depth: u32,
+    ) -> Result<bool, Error> {
         let id = self.without_parentheses(id);
         if depth > 64 || read && self.graph.lower_cv(self.graph.lower_expression(id)?.ty) & 2 != 0 {
             return Ok(false);

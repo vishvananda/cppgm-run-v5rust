@@ -466,12 +466,11 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(argument).location,
                 )?;
                 self.convert_scalar(argument, target, false)?;
-                self.elide_class_copy(
+                self.record_class_copy(
                     argument,
                     target,
                     scope,
-                    false,
-                    false,
+                    super::copy_initialization::CopyUse::Value { in_place: false },
                     self.tree.expressions.get(argument).location,
                 )?;
             } else {
@@ -630,12 +629,11 @@ impl Analyzer<'_> {
                 scope,
                 self.tree.expressions.get(id).location,
             )?;
-            self.elide_class_copy(
+            self.record_class_copy(
                 id,
                 target,
                 scope,
-                false,
-                false,
+                super::copy_initialization::CopyUse::Value { in_place: false },
                 self.tree.expressions.get(id).location,
             )?;
         }

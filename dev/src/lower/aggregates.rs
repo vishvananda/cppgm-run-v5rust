@@ -135,6 +135,44 @@ impl Function<'_, '_, '_, '_> {
                 && self.graph.lower_constructor_arguments(entity).is_none()
                 && elided.is_none()
             {
+                let source = self.without_parentheses(expr);
+                if storage == NamedStorage::Automatic
+                    && matches!(initializer.kind, ast::InitializerKind::Assign(_))
+                    && matches!(
+                        self.tree.expressions.get(source).kind,
+                        ExprKind::Cast { .. }
+                    )
+                    && self
+                        .graph
+                        .lower_expression(source)?
+                        .reference_cast
+                        .is_some()
+                    && matches!(
+                        self.graph.lower_class_copy(source)?,
+                        Some(crate::sema::lowering::CopyAction::Storage { .. })
+                    )
+                    && let TypeView::Class(class) = self.graph.lower_type(ty)?
+                    && !self.graph.lower_class_empty(class)?
+                {
+                    // A named object's reference-cast initializer transfers the
+                    // object value directly, before taking its destination address.
+                    let source_ty = self.graph.lower_expression(source)?.ty;
+                    let source = self.scalar_place(source)?;
+                    let value = self.emit(
+                        I::Load(
+                            Facts::memory(self.graph.lower_cv(source_ty) & 2 != 0, false),
+                            types::storage(self.graph, ty)?,
+                            source,
+                        ),
+                        ty,
+                    )?;
+                    return self.effect(I::Store(
+                        Facts::memory(self.graph.lower_cv(ty) & 2 != 0, false),
+                        types::storage(self.graph, ty)?,
+                        value.value,
+                        slot,
+                    ));
+                }
                 let object = self.emit(I::Addr(slot), ty)?.value;
                 return self.materialize_class(expr, ty, object);
             }
@@ -167,7 +205,10 @@ impl Function<'_, '_, '_, '_> {
                 "aggregate without class",
             )));
         };
-        if storage == NamedStorage::Automatic && self.aggregate_stores(class)? {
+        if !self.aggregate_stores(class)? {
+            return Ok(());
+        }
+        if storage == NamedStorage::Automatic {
             self.emit(I::Addr(slot), ty)?;
         }
         let mut input = Input {

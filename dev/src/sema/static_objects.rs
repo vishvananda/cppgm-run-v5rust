@@ -34,7 +34,7 @@ impl Analyzer<'_> {
             }
             return Ok(None);
         }
-        if let Some(ClassInitialization::Elided(source)) = facts.class_initialization {
+        if let Some(ClassInitialization::FromExpression(source)) = facts.class_initialization {
             return self.static_zero_prvalue(target, source, out);
         }
         Ok(None)

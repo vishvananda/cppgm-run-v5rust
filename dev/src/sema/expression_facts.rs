@@ -105,7 +105,7 @@ pub(crate) enum GlvalueKind {
 pub(crate) enum ClassInitialization {
     Constructed(super::constructor_initialization::ConstructorArguments),
     Aggregate(crate::syntax::storage::List<ast::ExprId>),
-    Elided(ast::ExprId),
+    FromExpression(ast::ExprId),
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
@@ -144,7 +144,7 @@ pub(super) struct ExprFacts {
     pub member_address_scope: Option<super::graph::ScopeId>,
     pub constructor: Option<super::construction::ConstructorId>,
     pub class_initialization: Option<ClassInitialization>,
-    pub elided_copy: Option<super::copy_initialization::CopySelection>,
+    pub class_copy: Option<super::copy_initialization::CopySelection>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FoldStyle {
@@ -196,13 +196,16 @@ impl ExprFacts {
             member_address_scope: None,
             constructor: None,
             class_initialization: None,
-            elided_copy: None,
+            class_copy: None,
         }
     }
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     records: Vec<Option<ExprFacts>>,
+    // Only nonelided class copies own a lowering action. Selection remains
+    // on the source facts, independently of its existing operand conversion.
+    copy_actions: std::collections::HashMap<ast::ExprId, super::copy_initialization::CopyAction>,
     // Parentheses share facts, as in the C++ owner. Chains are flattened at publication.
     aliases: Vec<Option<ast::ExprId>>,
     // Only differing-class glvalue conditionals need a base-subobject route.
@@ -219,6 +222,24 @@ pub(super) struct ExpressionFacts {
     >,
 }
 impl ExpressionFacts {
+    pub(super) fn copy_action(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::copy_initialization::CopyAction> {
+        self.copy_actions.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_copy_action(
+        &mut self,
+        id: ast::ExprId,
+        action: Option<super::copy_initialization::CopyAction>,
+    ) {
+        let id = self.root(id);
+        if let Some(action) = action {
+            self.copy_actions.insert(id, action);
+        } else {
+            self.copy_actions.remove(&id);
+        }
+    }
     pub(super) fn conditional_paths(
         &self,
         id: ast::ExprId,

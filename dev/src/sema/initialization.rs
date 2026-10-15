@@ -343,12 +343,11 @@ impl Analyzer<'_> {
             self.ensure_typed(id, scope)?;
             if self.graph.class_of(self.graph.expression_facts.get(id)?.ty) == Some(class) {
                 *next += 1;
-                self.elide_class_copy(
+                self.record_class_copy(
                     id,
                     target,
                     scope,
-                    false,
-                    false,
+                    super::copy_initialization::CopyUse::Value { in_place: false },
                     self.tree.expressions.get(id).location,
                 )?;
             } else if self.graph.aggregate_class(class) {

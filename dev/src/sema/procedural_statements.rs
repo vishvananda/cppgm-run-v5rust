@@ -125,7 +125,13 @@ impl Analyzer<'_> {
             }
         } else {
             self.convert_scalar(id, result, false)?;
-            self.elide_class_copy(id, result, scope, false, true, location)
+            self.record_class_copy(
+                id,
+                result,
+                scope,
+                super::copy_initialization::CopyUse::Value { in_place: true },
+                location,
+            )
         }
     }
     pub(super) fn semantic_jump(&mut self, id: ast::StmtId) -> Result<(), Error> {
