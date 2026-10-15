@@ -37,6 +37,7 @@ pub(crate) enum CopyAction {
 pub(super) enum CopyUse {
     Object { direct: bool },
     Value { in_place: bool },
+    Return { implicit_move: bool },
 }
 #[derive(Clone, Copy)]
 pub(super) enum ClassPassing {
@@ -52,6 +53,29 @@ pub(super) struct ImplicitCopies {
     pub(super) passing: Option<ClassPassing>,
 }
 impl super::graph::Graph {
+    pub(crate) fn lower_copy_form(
+        &self,
+        function: EntityId,
+    ) -> Result<Option<super::lowering::CopyForm>, Error> {
+        let entity = self.entity(function);
+        let Some(kind) = entity.copy_kind.or(entity.assignment_kind) else {
+            return Ok(None);
+        };
+        let class = entity
+            .home
+            .and_then(|home| self.scope(home).owner)
+            .ok_or(Error::Invariant("copy form without class owner"))?;
+        Ok(Some(super::lowering::CopyForm {
+            class,
+            moving: kind == RefKind::Rvalue,
+            assignment: entity.assignment_kind.is_some(),
+            locality: if self.lower_entity_unit_local(class) {
+                super::lowering::Locality::Unit
+            } else {
+                super::lowering::Locality::External
+            },
+        }))
+    }
     pub(crate) fn lower_copy_constructor(&self, function: EntityId) -> bool {
         self.entity(function).copy_kind.is_some()
     }
@@ -109,6 +133,13 @@ impl super::graph::Graph {
 struct Candidate {
     selection: CopySelection,
     deleted: bool,
+}
+
+#[derive(Clone, Copy)]
+enum CopyResolution {
+    Selected(Candidate),
+    NoViable { offered: bool },
+    Ambiguous,
 }
 
 #[derive(Default)]
@@ -233,7 +264,10 @@ impl Analyzer<'_> {
         }
         let facts = self.graph.expression_facts.get(id)?;
         let direct = matches!(usage, CopyUse::Object { direct: true });
-        let in_place = matches!(usage, CopyUse::Value { in_place: true });
+        let in_place = matches!(
+            usage,
+            CopyUse::Value { in_place: true } | CopyUse::Return { .. }
+        );
         if facts.functions.is_some()
             || !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(from)
                 if from == class || self.graph.is_base_of(class, from))
@@ -258,7 +292,16 @@ impl Analyzer<'_> {
                         .kind,
                     ast::ExprKind::Conditional { .. }
                 ));
-        let selected = self.select_copy_sequence(class, facts, Some(scope), direct, location)?;
+        let selected = if matches!(
+            usage,
+            CopyUse::Return {
+                implicit_move: true
+            }
+        ) {
+            self.select_return_copy(class, facts, scope, location)?
+        } else {
+            self.select_copy_sequence(class, facts, Some(scope), direct, location)?
+        };
         let special = match selected.origin {
             CopyOrigin::Implicit { .. } => true,
             CopyOrigin::Declared(binding) => self
@@ -394,28 +437,57 @@ impl Analyzer<'_> {
         direct: bool,
         location: SourceOffset,
     ) -> Result<CopySelection, Error> {
+        let resolution = self.resolve_class_copy(class, facts, direct)?;
+        self.check_copy_selection(resolution, access_scope, location)
+    }
+
+    fn select_return_copy(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<CopySelection, Error> {
+        // 12.8p32: probe without changing the named operand's source category.
+        // Deletion/access are checked only after choosing which pass to keep.
+        let mut view = facts;
+        view.category = V::Xvalue;
+        let resolution = self.resolve_class_copy(class, view, false)?;
+        if let CopyResolution::Selected(candidate) = resolution
+            && let TypeKind::Reference {
+                element,
+                kind: RefKind::Rvalue,
+            } = self
+                .graph
+                .types
+                .get(candidate.selection.binding.target)
+                .kind
+            && self.bare_type(element)? == self.bare_type(facts.ty)?
+        {
+            return self.check_copy_selection(resolution, Some(scope), location);
+        }
+        self.select_copy_sequence(class, facts, Some(scope), false, location)
+    }
+
+    fn resolve_class_copy(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        direct: bool,
+    ) -> Result<CopyResolution, Error> {
         let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected = self.select_class_copy(
-            class,
-            facts,
-            access_scope,
-            direct,
-            location,
-            &mut scratch.candidates,
-        );
+        let selected = self.rank_class_copy(class, facts, direct, &mut scratch.candidates);
         scratch.candidates.clear();
         self.copy_scratch = scratch;
         selected
     }
-    fn select_class_copy(
+    fn rank_class_copy(
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
-        access_scope: Option<ScopeId>,
         direct: bool,
-        location: SourceOffset,
         candidates: &mut Vec<Candidate>,
-    ) -> Result<CopySelection, Error> {
+    ) -> Result<CopyResolution, Error> {
         // A standard reference binding from an unrelated source cannot select
         // an implicit copy or move member (13.3.3.1p4). Reject that sequence
         // before demanding the destination's subobject copy properties.
@@ -509,24 +581,42 @@ impl Analyzer<'_> {
                 best = index;
             }
         }
-        let chosen = candidates.get(best).copied().ok_or_else(|| {
-            Error::at(
-                location,
-                if offered {
-                    "no viable function for the call"
-                } else {
-                    "no constructor for the initialization"
-                },
-            )
-        })?;
+        let Some(chosen) = candidates.get(best).copied() else {
+            return Ok(CopyResolution::NoViable { offered });
+        };
         for (index, candidate) in candidates.iter().enumerate() {
             if index != best
                 && self.compare_sequences(chosen.selection.binding, candidate.selection.binding)?
                     != Ordering::Greater
             {
-                return Err(Error::at(location, "ambiguous call to overloaded function"));
+                return Ok(CopyResolution::Ambiguous);
             }
         }
+        Ok(CopyResolution::Selected(chosen))
+    }
+
+    fn check_copy_selection(
+        &mut self,
+        resolution: CopyResolution,
+        access_scope: Option<ScopeId>,
+        location: SourceOffset,
+    ) -> Result<CopySelection, Error> {
+        let chosen = match resolution {
+            CopyResolution::Selected(chosen) => chosen,
+            CopyResolution::NoViable { offered } => {
+                return Err(Error::at(
+                    location,
+                    if offered {
+                        "no viable function for the call"
+                    } else {
+                        "no constructor for the initialization"
+                    },
+                ));
+            }
+            CopyResolution::Ambiguous => {
+                return Err(Error::at(location, "ambiguous call to overloaded function"));
+            }
+        };
         if chosen.deleted {
             return Err(Error::at(location, "use of a deleted function"));
         }
@@ -616,6 +706,103 @@ mod tests {
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
             assert_eq!(graph.lower_direct_class_parameter(class).unwrap(), direct);
+        }
+    }
+
+    #[test]
+    fn return_move_selection_preserves_source_facts_and_demands_only_the_kept_pass() {
+        use crate::{
+            sema::{
+                expression_facts::ValueCategory,
+                types::{RefKind, TypeKind},
+            },
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(
+            br"
+            struct A{int n;A();A(const A&);A(A&&);};
+            struct B{int n;B();B(B&);B(const B&&);B(volatile B&&);};
+            struct Unused{A a;};
+            A moved(A a){return ((a));}
+            A repeated(A a){return a;}
+            A referenced(A&& a){return a;}
+            B fallback(B b){return b;}
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"return-move-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let declarations_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declarations_count);
+        let mut kept_move = None;
+        for (name, expected) in [
+            (b"moved".as_slice(), RefKind::Rvalue),
+            (b"repeated", RefKind::Rvalue),
+            (b"referenced", RefKind::Lvalue),
+            (b"fallback", RefKind::Lvalue),
+        ] {
+            let name = cursor.intern_name(name).unwrap();
+            let function = graph
+                .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+                .entity;
+            let definition = graph.entity(function).function_definition.unwrap();
+            let ast::DeclKind::Function { body, .. } = tree.declarations.get(definition).kind
+            else {
+                panic!("function definition");
+            };
+            let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+                panic!("parsed function body");
+            };
+            let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+                panic!("compound body");
+            };
+            let ast::StmtKind::Return(Some(operand)) =
+                tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+            else {
+                panic!("return operand");
+            };
+            let facts = graph.expression_facts.get(operand).unwrap();
+            assert_eq!(facts.category, ValueCategory::Lvalue);
+            let conversion = facts.conversion.unwrap();
+            assert_eq!(conversion.target, facts.ty);
+            assert!(!conversion.temporary);
+            let selected = facts.class_copy.unwrap();
+            assert!(
+                matches!(graph.types.get(selected.binding.target).kind, TypeKind::Reference { kind, .. } if kind == expected)
+            );
+            let Some(CopyAction::Constructor {
+                constructor,
+                elision: false,
+            }) = graph.lower_class_copy(operand).unwrap()
+            else {
+                panic!("selected return transfer");
+            };
+            if expected == RefKind::Rvalue {
+                assert_eq!(*kept_move.get_or_insert(constructor), constructor);
+            }
+        }
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
+            .entity;
+        assert!(graph.entity(unused).implicit_copies.is_none());
+        let name = cursor.intern_name(b"B").unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        for &binding in &graph.entity(class).declared_constructors {
+            let entity = graph.entity(graph.binding(binding).entity);
+            if entity.copy_kind == Some(RefKind::Rvalue) {
+                assert!(entity.constructor.is_none());
+            }
         }
     }
 }

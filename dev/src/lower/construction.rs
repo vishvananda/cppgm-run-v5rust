@@ -228,6 +228,8 @@ impl Function<'_, '_, '_, '_> {
         self.before_lifetime_call(
             !nothrow
                 || self.lifetime.full_expression
+                    && self.lifetime.temporary_segment.allows_eager_arguments()
+                || self.lifetime.full_expression
                     && self.aggregate_has_members()
                     && self.aggregation.call_scope
                         == super::aggregate_cleanup::CallScope::FullExpression,

@@ -8,35 +8,62 @@ use std::{
     ops::Range,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct FamilyId(u32);
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum FamilyKind {
+    Entries,
+    Constructors,
+    Assignments,
+}
 struct Definition {
     bytes: Range<usize>,
     header: Option<SymbolId>,
+    entry: Option<(FamilyId, u8)>,
+    form: Option<(FamilyId, u8)>,
 }
 #[derive(Default)]
 pub(crate) struct Definitions {
     bytes: Vec<u8>,
     spans: Vec<Definition>,
     held: Vec<Definition>,
-    external: HashMap<NameId, FamilyId>,
-    families: Vec<[Option<usize>; 2]>,
+    external: HashMap<(FamilyKind, NameId), FamilyId>,
+    next_family: u32,
 }
 impl Definitions {
     pub(crate) fn is_empty(&self) -> bool {
         self.spans.is_empty() && self.held.is_empty()
     }
     pub(super) fn family(&mut self, object: Option<NameId>) -> Result<FamilyId, Error> {
+        self.make_family(FamilyKind::Entries, object)
+    }
+    pub(super) fn form_family(
+        &mut self,
+        object: Option<NameId>,
+        assignment: bool,
+    ) -> Result<FamilyId, Error> {
+        self.make_family(
+            if assignment {
+                FamilyKind::Assignments
+            } else {
+                FamilyKind::Constructors
+            },
+            object,
+        )
+    }
+    fn make_family(&mut self, kind: FamilyKind, object: Option<NameId>) -> Result<FamilyId, Error> {
         if let Some(object) = object
-            && let Some(&id) = self.external.get(&object)
+            && let Some(&id) = self.external.get(&(kind, object))
         {
             return Ok(id);
         }
-        let id =
-            FamilyId(u32::try_from(self.families.len()).map_err(|_| crate::lowir::Error::Limit)?);
-        self.families.push([None, None]);
+        let id = FamilyId(self.next_family);
+        self.next_family = self
+            .next_family
+            .checked_add(1)
+            .ok_or(crate::lowir::Error::Limit)?;
         if let Some(object) = object {
-            self.external.insert(object, id);
+            self.external.insert((kind, object), id);
         }
         Ok(id)
     }
@@ -47,26 +74,37 @@ impl Definitions {
     ) -> Result<(), Error> {
         let start = self.bytes.len();
         program.stream_last_definition(&mut self.bytes)?;
-        let position = self.spans.len();
         self.spans.push(Definition {
             bytes: start..self.bytes.len(),
             header: None,
+            entry: entry.map(|(family, variant)| {
+                (
+                    family,
+                    u8::from(variant == super::construction::Variant::Complete),
+                )
+            }),
+            form: None,
         });
-        if let Some((family, variant)) = entry {
-            let rank = usize::from(variant == super::construction::Variant::Complete);
-            let positions = &mut self.families[family.0 as usize];
-            positions[rank] = Some(position);
-            if let [Some(base), Some(complete)] = *positions
-                && base > complete
-            {
-                self.spans.swap(base, complete);
-                *positions = [Some(complete), Some(base)];
-            }
-        }
+        Ok(())
+    }
+    pub(super) fn note_form(&mut self, family: FamilyId, moving: bool) -> Result<(), Error> {
+        self.spans
+            .last_mut()
+            .ok_or(crate::sema::Error::Invariant(
+                "copy form without streamed definition",
+            ))?
+            .form = Some((family, u8::from(moving)));
         Ok(())
     }
     pub(crate) fn write(&self, program: &Program, output: &mut impl Write) -> io::Result<()> {
-        for span in self.spans.iter().chain(&self.held) {
+        let spans: Vec<_> = self.spans.iter().chain(&self.held).collect();
+        let mut order: Vec<_> = (0..spans.len()).collect();
+        // Copy before move, then base before complete within each form. A
+        // family permutes only its occupied positions; other definitions stay.
+        Self::order_families(&spans, &mut order, false);
+        Self::order_families(&spans, &mut order, true);
+        for index in order {
+            let span = spans[index];
             if let Some(symbol) = span.header {
                 let function = program
                     .function(program.symbol(symbol))
@@ -77,12 +115,47 @@ impl Definitions {
         }
         Ok(())
     }
+    fn order_families(spans: &[&Definition], order: &mut [usize], entries: bool) {
+        let mut placed: Vec<_> = order
+            .iter()
+            .enumerate()
+            .filter_map(|(position, &index)| {
+                let family = if entries {
+                    spans[index].entry
+                } else {
+                    spans[index].form
+                };
+                family.map(|(family, rank)| (family, position, rank, index))
+            })
+            .collect();
+        placed.sort_unstable_by_key(|&(family, position, _, _)| (family, position));
+        let mut first = 0;
+        let mut slots = Vec::new();
+        while first < placed.len() {
+            let mut last = first + 1;
+            while last < placed.len() && placed[last].0 == placed[first].0 {
+                last += 1;
+            }
+            let family = &mut placed[first..last];
+            if family.windows(2).any(|pair| pair[0].2 > pair[1].2) {
+                slots.clear();
+                slots.extend(family.iter().map(|&(_, position, _, _)| position));
+                family.sort_unstable_by_key(|&(_, position, rank, _)| (rank, position));
+                for (&position, &(_, _, _, index)) in slots.iter().zip(family.iter()) {
+                    order[position] = index;
+                }
+            }
+            first = last;
+        }
+    }
     pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
         let start = self.bytes.len();
         let symbol = program.stream_last_body(&mut self.bytes)?;
         self.held.push(Definition {
             bytes: start..self.bytes.len(),
             header: Some(symbol),
+            entry: None,
+            form: None,
         });
         Ok(())
     }

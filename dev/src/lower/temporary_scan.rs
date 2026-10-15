@@ -166,7 +166,16 @@ impl Function<'_, '_, '_, '_> {
         if !summary.made && self.lifetime.cleanups.is_empty() {
             return Ok(false);
         }
-        let throwing = self.expression_throws(root)?;
+        // class_return supplies a hidden context: once its initialization
+        // conversion makes temporaries, call_may_throw brackets even a
+        // nonthrowing transfer (cleanup_lowering.cpp).
+        let hidden_copy = matches!(usage, ExpressionUse::ClassResult)
+            && summary.made
+            && matches!(
+                self.graph.lower_class_copy(root)?,
+                Some(crate::sema::lowering::CopyAction::Constructor { .. })
+            );
+        let throwing = hidden_copy || self.expression_throws(root)?;
         if (summary.made || !self.lifetime.cleanups.is_empty())
             && (throwing || summary.call_result.present() || summary.caller_destroyed)
         {
@@ -245,6 +254,14 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_class_copy(id)?
             {
                 let function = self.graph.lower_constructor_function(constructor)?;
+                // A recorded nonelided class transfer is an initialization
+                // conversion in C++ creates_temporaries, even for a named
+                // return operand. Its result is counted before scanning the
+                // source operands; result storage itself is not registered
+                // as a caller-owned temporary.
+                let class = self.graph.lower_constructor(constructor).class;
+                summary.made |=
+                    self.temporary_type_destroyed(self.graph.lower_entity_type(class)?)?;
                 let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)?
                 else {
                     return Err(crate::sema::Error::Invariant("copy temporary signature").into());

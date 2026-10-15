@@ -4,7 +4,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{ExprFacts, ValueCategory as V},
-    graph::ScopeId,
+    graph::{BindingKind, ScopeId, ScopeKind},
     types::{Scalar, TypeId, TypeKind},
 };
 use crate::{
@@ -138,10 +138,52 @@ impl Analyzer<'_> {
                 id,
                 result,
                 scope,
-                super::copy_initialization::CopyUse::Value { in_place: true },
+                super::copy_initialization::CopyUse::Return {
+                    implicit_move: self.graph.class_of(result).is_some()
+                        && self.names_automatic_object(id)?,
+                },
                 location,
             )
         }
+    }
+    fn names_automatic_object(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let root = self.graph.expression_facts.root(id);
+        let ast::ExprKind::Id(name) = self.tree.expressions.get(root).kind else {
+            return Ok(false);
+        };
+        let Some(binding) = self.graph.resolved_name(name) else {
+            return Ok(false);
+        };
+        let binding = self.graph.binding(binding);
+        let entity = self.graph.entity(binding.entity);
+        let Some(ty) = entity.ty else {
+            return Ok(false);
+        };
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            || self.graph.types.get(ty).cv.0 & 2 != 0
+        {
+            return Ok(false);
+        }
+        let function = self
+            .body_context
+            .as_ref()
+            .ok_or(Error::Invariant("return eligibility without body context"))?
+            .entity;
+        let Some(function_scope) = self.graph.entity(function).scope else {
+            return Err(Error::Invariant(
+                "return eligibility without function scope",
+            ));
+        };
+        let Some(home) = entity.home else {
+            return Ok(false);
+        };
+        if !self.graph.encloses(function_scope, home) {
+            return Ok(false);
+        }
+        Ok(binding.kind == BindingKind::Parameter
+            || binding.kind == BindingKind::Variable
+                && self.graph.scope(home).kind == ScopeKind::Block
+                && entity.variable.is_some_and(|variable| variable.automatic))
     }
     pub(super) fn semantic_jump(&mut self, id: ast::StmtId) -> Result<(), Error> {
         let body = self

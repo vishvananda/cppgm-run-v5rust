@@ -140,6 +140,13 @@ pub(crate) struct FunctionFacts {
     pub qualifiers: crate::abi::graph::Qualifiers,
 }
 #[derive(Clone, Copy)]
+pub(crate) struct CopyForm {
+    pub class: EntityId,
+    pub moving: bool,
+    pub assignment: bool,
+    pub locality: Locality,
+}
+#[derive(Clone, Copy)]
 pub(crate) struct BitField {
     pub operation: TypeId,
     pub signed: bool,

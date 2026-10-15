@@ -111,6 +111,7 @@ pub(super) struct Symbols<'a, 'source> {
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
     entry_families:
         HashMap<crate::sema::lowering::ConstructorId, super::definition_order::FamilyId>,
+    copy_families: HashMap<(EntityId, bool), super::definition_order::FamilyId>,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
     callees: HashMap<EntityId, Value>,
@@ -159,6 +160,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             entries: HashMap::new(),
             entry_objects: HashMap::new(),
             entry_families: HashMap::new(),
+            copy_families: HashMap::new(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
             callees: HashMap::new(),
@@ -1816,7 +1818,35 @@ impl<'a, 'source> Symbols<'a, 'source> {
             // source definition. Release its body now, defer only its header.
             output.defer_definition(program)
         } else {
-            output.stream(program, family)
+            output.stream(program, family)?;
+            if let Some(entity) = entry.entity(self.graph)
+                && let Some(form) = self.graph.lower_copy_form(entity)?
+            {
+                let key = (form.class, form.assignment);
+                let family = if let Some(&family) = self.copy_families.get(&key) {
+                    family
+                } else {
+                    let ty = self.graph.lower_entity_type(form.class)?;
+                    let object = if form.locality == crate::sema::lowering::Locality::Unit {
+                        None
+                    } else {
+                        let node = self.abi_type(ty)?;
+                        let mut bytes = Vec::new();
+                        abi::encoder::Encoder::encode(
+                            &self.abi,
+                            abi::encoder::Target::Type(node),
+                            &mut bytes,
+                            self.budget,
+                        )?;
+                        Some(program.names.intern_bytes(&bytes)?)
+                    };
+                    let family = output.form_family(object, form.assignment)?;
+                    self.copy_families.insert(key, family);
+                    family
+                };
+                output.note_form(family, form.moving)?;
+            }
+            Ok(())
         }
     }
     fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
