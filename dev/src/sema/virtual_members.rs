@@ -29,6 +29,10 @@ pub(super) struct Virtuals {
     pure_counts: HashMap<EntityId, u32>,
     classes: HashMap<EntityId, ClassVirtuals>,
     slots: HashMap<EntityId, SlotId>,
+    deallocators: HashMap<EntityId, EntityId>,
+    assignment_targets: HashSet<EntityId>,
+    implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
+    layouts: HashMap<EntityId, Vec<Option<VirtualEntry>>>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -43,9 +47,16 @@ impl Polymorphism {
     }
 }
 /// The ABI slot identity survives overrides without copying inherited tables.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct SlotId(u32);
 impl SlotId {
+    pub(crate) fn deleting(self) -> Result<Self, Error> {
+        Ok(Self(
+            self.0
+                .checked_add(1)
+                .ok_or(Error::Limit("virtual slot limit"))?,
+        ))
+    }
     pub(crate) fn byte_offset(self) -> u64 {
         u64::from(self.0) * 8
     }
@@ -281,6 +292,7 @@ impl Analyzer<'_> {
             if special == Some(MemberKind::Destructor) {
                 self.graph.virtuals.destructors.insert(class, function);
             } else {
+                self.note_virtual_assignment_target(key, info.ty)?;
                 self.graph.virtuals.signatures.insert((key, signature));
                 self.graph
                     .virtuals
@@ -358,6 +370,99 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    fn note_virtual_assignment_target(&mut self, key: ValueKey, ty: TypeId) -> Result<(), Error> {
+        if key != super::assignment::key()? {
+            return Ok(());
+        }
+        let TypeKind::Function {
+            parameters,
+            variadic: false,
+            cv: super::types::Cv(0),
+            reference: None,
+            ..
+        } = &self.graph.types.get(ty).kind
+        else {
+            return Ok(());
+        };
+        if let [parameter] = parameters.as_slice()
+            && let TypeKind::Reference { element, .. } = self.graph.types.get(*parameter).kind
+            && let TypeKind::Class(class) = self.graph.types.get(element).kind
+        {
+            self.graph.virtuals.assignment_targets.insert(class);
+        }
+        Ok(())
+    }
+
+    pub(super) fn complete_virtual_assignments(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if !self.graph.virtuals.assignment_targets.contains(&class) {
+            return Ok(());
+        }
+        // The inherited virtual parameter names this class. Its implicit
+        // candidates and selected subobject actions are now actually needed.
+        self.prepare_copy_properties(class)?;
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("assignment scope"))?;
+        let key = super::assignment::key()?;
+        let functions: Vec<_> = self
+            .graph
+            .functions_at(scope, key)
+            .map(|binding| self.graph.binding(binding).entity)
+            .filter(|&function| {
+                self.graph.entity(function).assignment_origin == super::assignment::Origin::Implicit
+            })
+            .collect();
+        for function in functions {
+            let ty = self.graph.lower_entity_type(function)?;
+            let signature = self.graph.types.declaration_signature(ty)?;
+            let mut next = self
+                .graph
+                .entity(class)
+                .bases
+                .first()
+                .map(|base| base.class);
+            while let Some(base) = next {
+                if let Some(&found) = self
+                    .graph
+                    .virtuals
+                    .declarations
+                    .get(&(base, key, signature))
+                {
+                    self.check_virtual_override(function, found, class, location)?;
+                    self.check_override_nonthrowing(function, found, None, location)?;
+                    self.note_exception_override(function, found, None, location);
+                    self.graph.virtuals.functions.insert(
+                        function,
+                        VirtualFunction {
+                            is_virtual: true,
+                            overridden: Some(found),
+                            ..VirtualFunction::default()
+                        },
+                    );
+                    self.graph
+                        .virtuals
+                        .declarations
+                        .insert((class, key, signature), function);
+                    self.graph
+                        .virtuals
+                        .implicit_assignments
+                        .entry(class)
+                        .or_default()
+                        .push(function);
+                    break;
+                }
+                next = self.graph.entity(base).bases.first().map(|base| base.class);
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn complete_virtual_members(&mut self, class: EntityId) -> Result<(), Error> {
         // The PA13 table has one primary chain. Counts are inherited once;
         // replacing a pure entry changes the count, without copying slot arrays.
@@ -374,8 +479,10 @@ impl Analyzer<'_> {
             .entity(class)
             .scope
             .ok_or(Error::Invariant("virtual class without scope"))?;
-        for &binding in &self.graph.scope(scope).bindings {
-            let function = self.graph.binding(binding).entity;
+        for index in 0..self.graph.virtual_member_count(class)? {
+            let Some(function) = self.graph.virtual_member_at(class, index)? else {
+                continue;
+            };
             if self.graph.entity(function).home != Some(scope) {
                 continue;
             }
@@ -456,9 +563,10 @@ impl Analyzer<'_> {
         let mut entries = Vec::new();
         let mut key = None;
         let mut seen = HashSet::new();
-        for index in 0..self.graph.scope(scope).bindings.len() {
-            let binding = self.graph.scope(scope).bindings[index];
-            let function = self.graph.binding(binding).entity;
+        for index in 0..self.graph.virtual_member_count(class)? {
+            let Some(function) = self.graph.virtual_member_at(class, index)? else {
+                continue;
+            };
             if self.graph.entity(function).home != Some(scope) || !seen.insert(function) {
                 continue;
             }
@@ -695,6 +803,122 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    pub(super) fn virtual_table_boundaries(
+        &mut self,
+        class: EntityId,
+        seen: &mut HashSet<EntityId>,
+        work: &mut Vec<EntityId>,
+    ) -> Result<(), Error> {
+        if !self.graph.lower_polymorphic(class) || !seen.insert(class) {
+            return Ok(());
+        }
+        if self
+            .graph
+            .lower_virtual_class(class)?
+            .key
+            .is_some_and(|key| !self.graph.entity(key).defined)
+        {
+            return Ok(());
+        }
+        self.class_layout(class, SourceOffset(0))?;
+        self.prepare_destruction(class)?;
+        self.graph.demand_virtual_slots(class)?;
+        for entry in self.graph.lower_virtual_slots(class)? {
+            let entry = entry.ok_or(Error::Invariant("unfilled virtual slot"))?;
+            if !self.graph.lower_virtual_pure(entry.function) {
+                work.push(entry.function);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn complete_virtual_deallocation(
+        &mut self,
+        class: EntityId,
+        destructor: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let entity = self.graph.entity(destructor);
+        let defaulted = matches!(
+            entity.special_definition,
+            Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+        );
+        if entity.availability == super::graph::FunctionAvailability::Deleted
+            || (!entity.defined && !defaulted)
+        {
+            return Ok(());
+        }
+        self.lookup_location = location;
+        let home = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("virtual deallocation scope"))?;
+        let key = super::allocation::key(Keyword::Delete, false);
+        let found = self.qualified_result(home, key, super::lookup::Filter::Ordinary)?;
+        let (found, naming) = if found.binding.is_some() {
+            (found, Some(class))
+        } else {
+            (
+                self.qualified_result(self.graph.global, key, super::lookup::Filter::Ordinary)?,
+                None,
+            )
+        };
+        let selected = self.usual_deallocation(found.functions.as_slice())?;
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("destructor scope"))?;
+        let failure = if found
+            .binding
+            .is_none_or(|id| self.graph.binding(id).kind != super::graph::BindingKind::Function)
+        {
+            Some(Error::at(
+                location,
+                "no deallocation function for a virtual destructor",
+            ))
+        } else if let Some(binding) = selected {
+            if self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .availability
+                == super::graph::FunctionAvailability::Deleted
+            {
+                Some(Error::at(location, "use of a deleted function"))
+            } else if let Some(naming) = naming {
+                self.check_named_member_access(binding, naming, naming, scope, location)
+                    .err()
+            } else {
+                None
+            }
+        } else {
+            Some(Error::at(
+                location,
+                "no usual deallocation function for a virtual destructor",
+            ))
+        };
+        if let Some(error) = failure {
+            if !defaulted {
+                return Err(error);
+            }
+            self.graph.entity_mut(destructor).availability =
+                super::graph::FunctionAvailability::Deleted;
+            self.graph
+                .entity_mut(class)
+                .destruction
+                .as_mut()
+                .ok_or(Error::Invariant("destructor properties"))?
+                .deleted = true;
+        } else if let Some(binding) = selected {
+            self.graph
+                .virtuals
+                .deallocators
+                .insert(class, self.graph.binding(binding).entity);
+        }
+        Ok(())
+    }
+
     pub(super) fn complete_virtual_destructor(
         &mut self,
         class: EntityId,
@@ -708,13 +932,31 @@ impl Analyzer<'_> {
                     return Err(Error::at(location, "overriding a final virtual function"));
                 }
                 if implicit {
-                    self.graph.virtuals.destructors.insert(class, found);
+                    self.graph
+                        .entity_mut(class)
+                        .destruction
+                        .as_mut()
+                        .ok_or(Error::Invariant("implicit virtual destructor properties"))?
+                        .trivial = false;
+                    let binding = self
+                        .destructor_callable(class)?
+                        .ok_or(Error::Invariant("implicit virtual destructor callable"))?;
+                    let function = self.graph.binding(binding).entity;
+                    self.graph.virtuals.destructors.insert(class, function);
+                    self.graph.virtuals.functions.insert(
+                        function,
+                        VirtualFunction {
+                            is_virtual: true,
+                            overridden: Some(found),
+                            ..VirtualFunction::default()
+                        },
+                    );
                     self.note_implicit_destructor_override(class, base, location);
                 }
-                self.check_completed_destructor_override(class, base, location)?;
             }
         }
-        if self.graph.virtuals.destructor(class).is_some() {
+        if let Some(destructor) = self.graph.virtuals.destructor(class) {
+            self.complete_virtual_deallocation(class, destructor, location)?;
             self.graph
                 .entity_mut(class)
                 .destruction
@@ -722,11 +964,102 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("virtual destructor without properties"))?
                 .trivial = false;
         }
+        for index in 0..self.graph.entity(class).bases.len() {
+            let base = self.graph.entity(class).bases[index].class;
+            if self.graph.virtuals.destructor(base).is_some() {
+                self.check_completed_destructor_override(class, base, location)?;
+            }
+        }
         Ok(())
     }
 }
 
 impl super::graph::Graph {
+    fn demand_virtual_slots(&mut self, root: EntityId) -> Result<(), Error> {
+        let mut chain = Vec::new();
+        let mut next = Some(root);
+        while let Some(class) = next {
+            if self.virtuals.layouts.contains_key(&class) {
+                break;
+            }
+            chain.push(class);
+            next = self.lower_virtual_class(class)?.primary;
+        }
+        let mut work = next
+            .and_then(|base| self.virtuals.layouts.get(&base))
+            .cloned()
+            .unwrap_or_default();
+        for class in chain.into_iter().rev() {
+            let facts = self.lower_virtual_class(class)?;
+            work.resize(
+                usize::try_from(facts.size).map_err(|_| Error::Limit("virtual slot limit"))?,
+                None,
+            );
+            for entry in &facts.entries {
+                work[entry.slot.index()?] = Some(*entry);
+            }
+            // Like analyzer_virtual.cpp::virtual_slots, retain the demanded
+            // chain's layouts only where this unit can emit their tables.
+            if class == root || facts.key.is_none_or(|key| self.lower_function_defined(key)) {
+                self.virtuals.layouts.insert(class, work.clone());
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn lower_virtual_slots(
+        &self,
+        class: EntityId,
+    ) -> Result<&[Option<VirtualEntry>], Error> {
+        self.virtuals
+            .layouts
+            .get(&class)
+            .map(Vec::as_slice)
+            .ok_or(Error::Invariant("undemanded virtual slot layout"))
+    }
+    fn virtual_member_count(&self, class: EntityId) -> Result<usize, Error> {
+        let scope = self
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("virtual class scope"))?;
+        Ok(self.scope(scope).bindings.len()
+            + 1
+            + self
+                .virtuals
+                .implicit_assignments
+                .get(&class)
+                .map_or(0, Vec::len))
+    }
+    fn virtual_member_at(&self, class: EntityId, index: usize) -> Result<Option<EntityId>, Error> {
+        let scope = self
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("virtual class scope"))?;
+        let declared = self.scope(scope).bindings.len();
+        if index < declared {
+            return Ok(Some(self.binding(self.scope(scope).bindings[index]).entity));
+        }
+        if index == declared {
+            return Ok(self
+                .entity(class)
+                .implicit_destructor
+                .map(|binding| self.binding(binding).entity));
+        }
+        Ok(self
+            .virtuals
+            .implicit_assignments
+            .get(&class)
+            .and_then(|functions| functions.get(index - declared - 1))
+            .copied())
+    }
+    pub(crate) fn lower_virtual_deallocator(&self, class: EntityId) -> Result<EntityId, Error> {
+        self.virtuals
+            .deallocators
+            .get(&class)
+            .copied()
+            .ok_or(Error::Invariant(
+                "virtual destructor without deallocation fact",
+            ))
+    }
     pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
         self.entity(class).polymorphism.is_dynamic()
     }
@@ -791,6 +1124,68 @@ mod tests {
     };
 
     #[test]
+    fn implicit_virtual_assignment_owns_selected_actions_without_output_demand() {
+        let source = SourceBuffer::new(b"struct B;struct A{virtual A&operator=(const B&){return *this;}virtual ~A(){}};struct B:A{int n;};struct Unused{int m;};".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"implicit-virtual-assignment").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"A".as_slice(), b"B", b"Unused"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let expressions = tree.expressions.mark();
+        let syntax = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let classes: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                graph
+                    .binding(
+                        graph
+                            .own(graph.global, name, super::super::lookup::Filter::Elaborated)
+                            .unwrap(),
+                    )
+                    .entity
+            })
+            .collect();
+        let [base, derived, unused] = classes.as_slice() else {
+            panic!("class inventory");
+        };
+        let functions = &graph.virtuals.implicit_assignments[derived];
+        assert_eq!(functions.len(), 1);
+        let assignment = functions[0];
+        let overridden = graph.virtuals.function(assignment).overridden.unwrap();
+        assert_eq!(
+            graph.lower_function(overridden).unwrap().object,
+            Some(*base)
+        );
+        assert_eq!(
+            graph.lower_virtual_slot(assignment),
+            graph.lower_virtual_slot(overridden)
+        );
+        let actions = &graph.lower_assignment(assignment).unwrap().actions;
+        assert_eq!(actions.len(), 2);
+        assert!(actions[0].function.is_some());
+        assert!(matches!(
+            graph.entity(*unused).copy_preparation,
+            super::super::copy_properties::Preparation::Pending
+        ));
+        assert!(graph.root_demands.as_slice().is_empty());
+        for class in classes {
+            assert!(!matches!(
+                graph.entity(class).layout,
+                super::super::layout::LayoutState::Value { .. }
+            ));
+        }
+        assert_eq!(expressions, tree.expressions.mark());
+        assert_eq!(syntax, tree.declarations.mark());
+    }
+
+    #[test]
     fn override_facts_share_entities_without_demanding_layouts_or_bodies() {
         let source = SourceBuffer::new(b"struct A{virtual A*f()const &;virtual void g()=0;virtual ~A()=0;};struct B:A{B*f()const & override;void g()override;};struct Unused{virtual void h();};".to_vec()).unwrap();
         let mut unit =
@@ -835,9 +1230,37 @@ mod tests {
         assert!(!graph.virtuals.function(bg).pure);
         assert_eq!(graph.virtuals.pure_counts.get(&a), Some(&2));
         assert!(!graph.virtuals.pure_counts.contains_key(&b));
-        assert_eq!(graph.virtuals.functions.len(), 6);
-        assert_eq!(graph.virtuals.destructor(b), graph.virtuals.destructor(a));
-        assert!(graph.entity(b).implicit_destructor.is_none());
+        assert_eq!(graph.virtuals.functions.len(), 7);
+        let base_destructor = graph.virtuals.destructor(a).unwrap();
+        let derived_destructor = graph.virtuals.destructor(b).unwrap();
+        assert_ne!(base_destructor, derived_destructor);
+        assert_eq!(
+            graph.virtuals.function(derived_destructor).overridden,
+            Some(base_destructor)
+        );
+        assert_eq!(
+            graph.lower_virtual_slot(base_destructor),
+            graph.lower_virtual_slot(derived_destructor)
+        );
+        let table = graph.lower_virtual_class(b).unwrap();
+        assert_eq!(table.size, 4);
+        assert!(
+            table
+                .entries
+                .iter()
+                .filter(|entry| !matches!(entry.kind, SlotKind::Function))
+                .all(|entry| entry.function == derived_destructor)
+        );
+        assert_eq!(
+            table
+                .entries
+                .iter()
+                .filter(|entry| !matches!(entry.kind, SlotKind::Function))
+                .count(),
+            2
+        );
+        assert!(graph.entity(b).implicit_destructor.is_some());
+        assert!(graph.lower_virtual_deallocator(b).is_ok());
         assert!(graph.root_demands.as_slice().is_empty());
         for id in [a, b, unused] {
             assert!(!matches!(

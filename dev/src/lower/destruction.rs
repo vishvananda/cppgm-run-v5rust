@@ -20,6 +20,7 @@ pub(super) struct Subobject {
 #[derive(Default)]
 pub(super) struct Destruction {
     actions: Vec<Subobject>,
+    deallocate: bool,
     pub class: Option<EntityId>,
     pub cleanup: Option<BlockId>,
     pub epilogue: Option<BlockId>,
@@ -29,7 +30,44 @@ pub(super) struct Destruction {
     pub selector: i64,
 }
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn begin_destructor(&mut self, entity: EntityId) -> Result<(), Error> {
+    pub(super) fn destructor_prologue(
+        &mut self,
+        entity: EntityId,
+        deleting: bool,
+        calls_complete: bool,
+    ) -> Result<(), Error> {
+        self.begin_destructor(entity, deleting, calls_complete)?;
+        let class = self
+            .graph
+            .lower_function(entity)?
+            .object
+            .ok_or(crate::sema::Error::Invariant("destructor class"))?;
+        let source = self.graph.lower_entity_type(class)?;
+        if calls_complete {
+            let object = self.object_pointer(source)?.value;
+            self.symbols.demand_entry(Entry::DestructorDeleting(entity));
+            self.symbols.demand_entry(Entry::Function(entity));
+            let callee = self
+                .symbols
+                .function_symbol(self.builder.program(), entity)?;
+            let arguments = self.builder.arguments(&[object])?;
+            self.effect(I::Call(crate::lowir::model::Call {
+                result: Type::Void,
+                callee: Value::Symbol(callee),
+                arguments,
+                signature: None,
+                copy_elision: false,
+            }))
+        } else {
+            self.store_vptr(class, source)
+        }
+    }
+    pub(super) fn begin_destructor(
+        &mut self,
+        entity: EntityId,
+        deleting: bool,
+        calls_complete: bool,
+    ) -> Result<(), Error> {
         if self.symbols.destructor_inert(entity)? {
             return Ok(());
         }
@@ -89,12 +127,16 @@ impl Function<'_, '_, '_, '_> {
                 });
             }
         }
-        if self.destruction.actions.is_empty() {
+        if calls_complete {
+            self.destruction.actions.clear();
+        }
+        self.destruction.deallocate = deleting;
+        if self.destruction.actions.is_empty() && !deleting {
             return Ok(());
         }
         let cleanup = self.new_block("destructor_cleanup")?;
         self.destruction.cleanup = Some(cleanup);
-        if self.destruction.actions.len() > 8 {
+        if self.destruction.actions.len() + usize::from(deleting) > 8 {
             let progress = self.generated_slot("destructor_progress", Type::I64)?;
             let zero = self.builder.integer(0)?;
             self.effect(I::Store(
@@ -106,16 +148,38 @@ impl Function<'_, '_, '_, '_> {
             self.destruction.progress = Some(progress);
         }
         self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))?;
-        if self
-            .lifetime
-            .body
-            .map(|body| self.body_unwinds(body, &mut false))
-            .transpose()?
-            .unwrap_or(false)
+        if !calls_complete
+            && self
+                .lifetime
+                .body
+                .map(|body| self.body_unwinds(body, &mut false))
+                .transpose()?
+                .unwrap_or(false)
         {
             self.destruction.body_target = Some(self.new_block("destructor_cleanup_entry")?);
         }
         Ok(())
+    }
+    fn destructor_action(&mut self, index: usize, unwinding: bool) -> Result<(), Error> {
+        if let Some(&action) = self.destruction.actions.get(index) {
+            return self.destroy_subobject(action, unwinding);
+        }
+        if !self.destruction.deallocate || index != self.destruction.actions.len() {
+            return Err(
+                crate::sema::Error::Invariant("destructor action outside its recipe").into(),
+            );
+        }
+        let class = self
+            .destruction
+            .class
+            .ok_or(crate::sema::Error::Invariant("deleting class"))?;
+        let source = self.graph.lower_entity_type(class)?;
+        let function = self.graph.lower_virtual_deallocator(class)?;
+        let size = self
+            .builder
+            .integer(u128::from(super::types::layout(self.graph, source)?.0))?;
+        let object = self.object_pointer(source)?.value;
+        self.deallocate_storage(function, object, size, None, false)
     }
     pub(super) fn destroy_subobject(
         &mut self,
@@ -204,8 +268,9 @@ impl Function<'_, '_, '_, '_> {
             }
         } else {
             let entry = if !action.member
-                && self.graph.lower_function(destructor)?.emission
+                && (self.graph.lower_function(destructor)?.emission
                     == crate::sema::lowering::Emission::Always
+                    || self.graph.lower_virtual_slot(destructor).is_some())
             {
                 Entry::DestructorBase(destructor)
             } else {
@@ -375,10 +440,10 @@ impl Function<'_, '_, '_, '_> {
             self.place(epilogue)?;
         }
         let end = self.new_block("destructor_end")?;
-        let count = self.destruction.actions.len();
+        let count = self.destruction.actions.len() + usize::from(self.destruction.deallocate);
         for index in 0..count {
             if index + 1 == count {
-                self.destroy_subobject(self.destruction.actions[index], false)?;
+                self.destructor_action(index, false)?;
                 break;
             }
             if let Some(progress) = self.destruction.progress {
@@ -392,18 +457,18 @@ impl Function<'_, '_, '_, '_> {
                     progress,
                 ))?;
                 self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))?;
-                self.destroy_subobject(self.destruction.actions[index], false)?;
+                self.destructor_action(index, false)?;
                 self.effect(I::Runtime(R::EhEnd))?;
             } else {
                 let suffix = self.new_block("destructor_suffix_cleanup")?;
                 let next = self.new_block("destructor_suffix_next")?;
                 self.effect(I::Runtime(R::EhCleanup(Some(suffix))))?;
-                self.destroy_subobject(self.destruction.actions[index], false)?;
+                self.destructor_action(index, false)?;
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(next)?;
                 self.place(suffix)?;
                 for k in index + 1..count {
-                    self.destroy_subobject(self.destruction.actions[k], true)?;
+                    self.destructor_action(k, true)?;
                 }
                 self.destruction_resume()?;
                 self.place(next)?;
@@ -440,7 +505,7 @@ impl Function<'_, '_, '_, '_> {
             self.terminated = true;
             for index in 0..count {
                 self.place(chain[index])?;
-                self.destroy_subobject(self.destruction.actions[index], true)?;
+                self.destructor_action(index, true)?;
                 if let Some(&next) = chain.get(index + 1) {
                     self.jump(next)?;
                 } else if body_entry.is_some() {
@@ -451,7 +516,7 @@ impl Function<'_, '_, '_, '_> {
             }
         } else {
             for index in 0..count {
-                self.destroy_subobject(self.destruction.actions[index], true)?;
+                self.destructor_action(index, true)?;
             }
             if body_entry.is_some() {
                 self.continue_destructor_unwind()?;

@@ -43,6 +43,43 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
+        if let TypeView::Class(class) = self.graph.lower_type(use_.target)?
+            && !use_.incomplete
+            && self.graph.lower_virtual_destructor(class)
+        {
+            let destructor = self
+                .symbols
+                .class_destructor(use_.target)?
+                .ok_or(crate::sema::Error::Invariant("virtual deletion destructor"))?;
+            let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;
+            self.symbols.vtable_symbol(self.builder.program(), class)?;
+            self.begin_lifetime_call(throws)?;
+            self.before_lifetime_call(throws)?;
+            let slot = self
+                .graph
+                .lower_virtual_slot(destructor)
+                .ok_or(crate::sema::Error::Invariant("virtual deletion slot"))?
+                .deleting()?;
+            let callee = self.virtual_callee(object.value, slot, source)?;
+            let signature = self
+                .symbols
+                .virtual_signature(self.builder.program(), destructor)?;
+            let arguments = self.builder.arguments(&[object.value])?;
+            self.effect(I::Call(Call {
+                result: Type::Void,
+                callee,
+                arguments,
+                signature: Some(signature),
+                copy_elision: false,
+            }))?;
+            let none = self.zero(source)?;
+            self.finish_lifetime_call(none, throws)?;
+            if let Some(end) = end {
+                self.jump(end)?;
+                self.place(end)?;
+            }
+            return self.zero(source);
+        }
         let bytes = if use_.incomplete {
             0
         } else {

@@ -196,7 +196,9 @@ impl Analyzer<'_> {
             facts
         };
         if let Some(target) = facts.destructor {
-            return self.destructor_call(id, arguments, target);
+            let mut result = self.destructor_call(id, arguments, target)?;
+            result.dispatch = facts.dispatch;
+            return Ok(result);
         }
         if self.graph.class_of(facts.ty).is_some() {
             return self.callable_object_call(id, facts, scope);

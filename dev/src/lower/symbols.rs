@@ -115,6 +115,7 @@ pub(super) struct Symbols<'a, 'source> {
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
     entry_families:
         HashMap<crate::sema::lowering::ConstructorId, super::definition_order::FamilyId>,
+    destructor_families: HashMap<EntityId, super::definition_order::FamilyId>,
     copy_families: HashMap<(EntityId, bool), super::definition_order::FamilyId>,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
@@ -165,6 +166,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             entries: HashMap::new(),
             entry_objects: HashMap::new(),
             entry_families: HashMap::new(),
+            destructor_families: HashMap::new(),
             copy_families: HashMap::new(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
@@ -1032,6 +1034,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.types.insert(ty, id);
         Ok(id)
     }
+    pub(super) fn demand_destruction(&mut self, entity: EntityId) {
+        if self.graph.lower_virtual_slot(entity).is_some() {
+            self.demand_entry(super::construction::Entry::DestructorBase(entity));
+            self.demand_entry(super::construction::Entry::DestructorDeleting(entity));
+        }
+        self.demand(entity);
+    }
     pub(super) fn demand(&mut self, entity: EntityId) {
         let entity = self.graph.lower_function_entity(entity);
         let entry = if let Some(id) = self.graph.lower_construction(entity) {
@@ -1740,6 +1749,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let (entity, variant) = match entry {
             Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
             Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
+            Entry::DestructorDeleting(entity) => (Some(entity), Variant::Deleting),
             Entry::Function(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
@@ -1764,6 +1774,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         if variant == Variant::Base {
             name.push_str("__base_entry");
+        } else if variant == Variant::Deleting {
+            name.push_str("__deleting_entry");
         }
         let metadata = self.entry_metadata(program, entry, &name)?;
         let object = if facts.internal
@@ -1792,6 +1804,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut metadata = self.entry_metadata(program, entry, &name)?;
         let facts = entry.facts(self.graph)?;
         if facts.internal
+            && !matches!(entry, super::construction::Entry::DestructorDeleting(_))
             && (matches!(facts.name, FunctionName::Destructor(_))
                 || entry
                     .entity(self.graph)
@@ -1814,6 +1827,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let (entity, variant) = match entry {
             Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
             Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
+            Entry::DestructorDeleting(entity) => (Some(entity), Variant::Deleting),
             Entry::Function(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
@@ -1856,7 +1870,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 32
             } else {
                 0
-            } | if variant == Variant::Base || facts.internal {
+            } | if variant == Variant::Base || facts.internal && variant != Variant::Deleting
+            {
                 4
             } else {
                 0
@@ -1887,7 +1902,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 FunctionName::Destructor(_)
             )
         {
-            if self.entries.contains_key(&Entry::DestructorBase(entity)) {
+            if self
+                .entries
+                .get(&Entry::DestructorBase(entity))
+                .is_some_and(|&base| program.function_defined(base))
+            {
                 return Ok(());
             }
             let facts = self.graph.lower_function(entity)?;
@@ -1938,6 +1957,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         output: &mut super::definition_order::Definitions,
         entry: super::construction::Entry,
     ) -> Result<(), Error> {
+        let destructor = if matches!(entry.facts(self.graph)?.name, FunctionName::Destructor(_)) {
+            entry.entity(self.graph)
+        } else {
+            None
+        };
         let family = if let super::construction::Entry::Constructor(id, variant) = entry {
             let family = if let Some(&family) = self.entry_families.get(&id) {
                 family
@@ -1962,6 +1986,41 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 family
             };
             Some((family, variant))
+        } else if let Some(entity) = destructor {
+            let family = if let Some(&family) = self.destructor_families.get(&entity) {
+                family
+            } else {
+                let facts = entry.facts(self.graph)?;
+                let object = if facts.internal {
+                    None
+                } else {
+                    let encoding =
+                        self.encode_function(&facts, super::construction::Variant::Base)?;
+                    let mut bytes = Vec::new();
+                    abi::encoder::Encoder::encode(
+                        &self.abi,
+                        abi::encoder::Target::Entity(encoding),
+                        &mut bytes,
+                        self.budget,
+                    )?;
+                    Some(program.names.intern_bytes(&bytes)?)
+                };
+                let family = output.family(object)?;
+                self.destructor_families.insert(entity, family);
+                family
+            };
+            Some((
+                family,
+                match entry {
+                    super::construction::Entry::DestructorBase(_) => {
+                        super::construction::Variant::Base
+                    }
+                    super::construction::Entry::DestructorDeleting(_) => {
+                        super::construction::Variant::Deleting
+                    }
+                    _ => super::construction::Variant::Complete,
+                },
+            ))
         } else {
             None
         };
@@ -2039,6 +2098,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         (FunctionName::Destructor(_), super::construction::Variant::Base) => {
                             abi::vocabulary::Terminal::DestructorBase
                         }
+                        (FunctionName::Destructor(_), super::construction::Variant::Deleting) => {
+                            abi::vocabulary::Terminal::DestructorDeleting
+                        }
                         (FunctionName::Destructor(_), _) => {
                             abi::vocabulary::Terminal::DestructorComplete
                         }
@@ -2099,13 +2161,38 @@ impl<'a, 'source> Symbols<'a, 'source> {
 }
 
 impl Symbols<'_, '_> {
+    pub(super) fn deleting_inlines_body(&mut self, entity: EntityId) -> Result<bool, Error> {
+        if !self.graph.lower_destructor_body_inert(entity, self.tree)? {
+            return Ok(false);
+        }
+        let class =
+            self.graph
+                .lower_function(entity)?
+                .object
+                .ok_or(crate::sema::Error::Invariant(
+                    "deleting entry without class",
+                ))?;
+        for &member in self.graph.lower_class_member_entities(class) {
+            if self
+                .class_destructor(self.graph.lower_entity_type(member)?)?
+                .is_some()
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
     pub(super) fn destructor_inert(&mut self, entity: EntityId) -> Result<bool, Error> {
         self.check_stack()?;
         if let Some(&inert) = self.inert_destructors.get(&entity) {
             return Ok(inert);
         }
         let graph = self.graph;
-        let mut inert = graph.lower_destructor_body_inert(entity, self.tree)?;
+        let mut inert = graph.lower_destructor_body_inert(entity, self.tree)?
+            && graph
+                .lower_function(entity)?
+                .object
+                .is_none_or(|class| !graph.lower_polymorphic(class));
         if inert && let Some(class) = graph.lower_function(entity)?.object {
             for base in graph.lower_class_bases(class) {
                 if let Some(child) = graph.lower_destructor_entity(base) {

@@ -594,6 +594,17 @@ impl Function<'_, '_, '_, '_> {
         below: Option<BlockId>,
         unwinding: bool,
     ) -> Result<(), Error> {
+        // Automatic storage owns the entry family; temporaries, members and
+        // delete[] demand only the complete entry their direct calls name.
+        if let Some(variable) = cleanup.variable
+            && let Some(destructor) = self.symbols.class_destructor(cleanup.ty)?
+            && self
+                .symbols
+                .class_destructor(self.graph.lower_entity_type(variable)?)?
+                == Some(destructor)
+        {
+            self.symbols.demand_destruction(destructor);
+        }
         let terminate = unwinding
             && !matches!(cleanup.place, CleanupPlace::Deallocation { .. })
             && self.destructor_throws(cleanup.ty)?;

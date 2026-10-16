@@ -47,7 +47,7 @@ pub(super) struct Deletion {
     pub sized_array_delete: bool,
 }
 
-fn key(keyword: Keyword, array: bool) -> ValueKey {
+pub(super) fn key(keyword: Keyword, array: bool) -> ValueKey {
     ValueKey::Special(SpecialName::Operator {
         token: SimpleToken::keyword(keyword),
         array,
@@ -237,7 +237,10 @@ impl Analyzer<'_> {
         self.new_expression_facts(void, ValueCategory::Prvalue)
     }
 
-    fn usual_deallocation(&mut self, functions: &[BindingId]) -> Result<Option<BindingId>, Error> {
+    pub(super) fn usual_deallocation(
+        &mut self,
+        functions: &[BindingId],
+    ) -> Result<Option<BindingId>, Error> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let pointer = self.graph.types.pointer(void)?;
         let size = self

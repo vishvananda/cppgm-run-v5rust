@@ -207,37 +207,30 @@ pub(crate) fn lower_unit(
                 if matches!(facts.name, sema::lowering::FunctionName::Destructor(_)) {
                     if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
                     {
-                        let base = construction::Entry::DestructorBase(entity);
-                        emitted_entries.insert(base);
-                        function::lower(
-                            &mut output.program,
-                            &mut symbols,
-                            graph,
-                            tree,
-                            base,
-                            graph.lower_function_body(entity),
-                            budget,
-                        )?;
-                        symbols.stream_definition(
-                            &mut output.program,
-                            &mut output.definitions,
-                            base,
-                        )?;
-                        let entry = construction::Entry::Function(entity);
-                        function::lower(
-                            &mut output.program,
-                            &mut symbols,
-                            graph,
-                            tree,
-                            entry,
-                            graph.lower_function_body(entity),
-                            budget,
-                        )?;
-                        symbols.stream_definition(
-                            &mut output.program,
-                            &mut output.definitions,
-                            entry,
-                        )?;
+                        let variants = [
+                            Some(construction::Entry::DestructorBase(entity)),
+                            graph
+                                .lower_virtual_slot(entity)
+                                .map(|_| construction::Entry::DestructorDeleting(entity)),
+                            Some(construction::Entry::Function(entity)),
+                        ];
+                        for entry in variants.into_iter().flatten() {
+                            emitted_entries.insert(entry);
+                            function::lower(
+                                &mut output.program,
+                                &mut symbols,
+                                graph,
+                                tree,
+                                entry,
+                                graph.lower_function_body(entity),
+                                budget,
+                            )?;
+                            symbols.stream_definition(
+                                &mut output.program,
+                                &mut output.definitions,
+                                entry,
+                            )?;
+                        }
                     }
                     continue;
                 }
@@ -354,7 +347,8 @@ fn emit_pending<'a>(
             continue;
         }
         let body = if let construction::Entry::Function(entity)
-        | construction::Entry::DestructorBase(entity) = entry
+        | construction::Entry::DestructorBase(entity)
+        | construction::Entry::DestructorDeleting(entity) = entry
         {
             if matches!(entry, construction::Entry::Function(_)) && !emitted.insert(entity) {
                 continue;

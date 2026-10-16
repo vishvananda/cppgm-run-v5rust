@@ -27,7 +27,7 @@ impl Function<'_, '_, '_, '_> {
             object,
         ))
     }
-    fn virtual_callee(
+    pub(super) fn virtual_callee(
         &mut self,
         object: Value,
         slot: SlotId,

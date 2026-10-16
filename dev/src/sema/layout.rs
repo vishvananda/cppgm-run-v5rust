@@ -98,6 +98,7 @@ impl Analyzer<'_> {
                 constructors.push(*id);
             }
         }
+        let mut seen_tables = std::collections::HashSet::new();
         let mut seen_constructors = std::collections::HashSet::new();
         let mut seen = std::collections::HashSet::new();
         while !work.is_empty() || !constructors.is_empty() {
@@ -105,6 +106,8 @@ impl Analyzer<'_> {
                 if !seen_constructors.insert(constructor) {
                     continue;
                 }
+                let class = self.graph.constructors.get(constructor).class;
+                self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
                 let plan = self.graph.constructors.get(constructor);
                 if let Some(binding) = plan.binding {
                     work.push(self.graph.binding(binding).entity);
@@ -146,6 +149,20 @@ impl Analyzer<'_> {
             }
             if let Some(class) = self.graph.lower_function(entity)?.object {
                 self.class_layout(class, SourceOffset(0))?;
+                if self.graph.lower_polymorphic(class)
+                    && self.graph.lower_virtual_class(class)?.key == Some(entity)
+                {
+                    self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
+                }
+                if self
+                    .graph
+                    .entity(entity)
+                    .member_function
+                    .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
+                {
+                    self.prepare_destruction(class)?;
+                    self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
+                }
             }
             let ty = self.graph.lower_entity_type(entity)?;
             if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind

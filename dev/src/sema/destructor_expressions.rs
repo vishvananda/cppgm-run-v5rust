@@ -134,6 +134,18 @@ impl Analyzer<'_> {
         };
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
         facts.destructor = Some(target);
+        if let DestructorTarget::Class(binding) = target {
+            facts.dispatch = if !qualified
+                && self
+                    .graph
+                    .lower_virtual_slot(self.graph.binding(binding).entity)
+                    .is_some()
+            {
+                super::expression_facts::Dispatch::Virtual
+            } else {
+                super::expression_facts::Dispatch::Direct
+            };
+        }
         facts.object = Some(object);
         facts.member_naming = naming;
         if let (Some(object), Some(naming)) = (object_class, naming)

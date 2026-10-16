@@ -235,7 +235,15 @@ pub(super) fn lower<'a>(
     {
         function.find_returned_local(body.compound, result)?;
     }
-    if facts.nothrow {
+    let deleting = matches!(entry, super::construction::Entry::DestructorDeleting(_));
+    let calls_complete = if deleting {
+        !function.symbols.deleting_inlines_body(
+            entity.ok_or(crate::sema::Error::Invariant("deleting entity"))?,
+        )?
+    } else {
+        false
+    };
+    if facts.nothrow && !calls_complete {
         let raises = body
             .map(|body| function.statement_throws(body.compound))
             .transpose()?
@@ -280,9 +288,9 @@ pub(super) fn lower<'a>(
         )
     });
     if let Some(entity) = destructor {
-        function.begin_destructor(entity)?;
+        function.destructor_prologue(entity, deleting, calls_complete)?;
     }
-    if let Some(body) = body {
+    if let Some(body) = body.filter(|_| !calls_complete) {
         if body.handlers.is_some() {
             return Err(Error::Missing("exception lowering"));
         }

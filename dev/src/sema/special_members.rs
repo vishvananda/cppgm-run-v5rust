@@ -270,6 +270,11 @@ impl Analyzer<'_> {
                     super::function_demands::DefinitionEmission::Demanded;
             } else if self.semantic() && self.template_depth == 0 {
                 self.defaulted_constructor_definition(function, class, kind, location)?;
+                if kind == MemberKind::Destructor
+                    && self.graph.lower_virtual_slot(function).is_some()
+                {
+                    self.complete_virtual_deallocation(class, function, location)?;
+                }
                 if self.lowering()
                     && self.graph.entity(function).inline
                         != super::specifiers::InlinePreference::Inline
@@ -325,6 +330,11 @@ impl Analyzer<'_> {
                 template_depth: self.template_depth,
             };
             if self.class_depth == 0 {
+                if kind == MemberKind::Destructor
+                    && self.graph.lower_virtual_slot(function).is_some()
+                {
+                    self.complete_virtual_deallocation(class, function, location)?;
+                }
                 self.function_body(deferred)?;
             } else {
                 self.deferred

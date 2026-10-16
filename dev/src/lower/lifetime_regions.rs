@@ -347,6 +347,14 @@ impl Function<'_, '_, '_, '_> {
             })
         {
             self.builder.insert_marker(position, R::EhTry(entry))?;
+        } else if self.lifetime.full_expression
+            && self.lifetime.region_start.is_pending()
+            && let Some(position) = self
+                .lifetime
+                .expression_start
+                .filter(|&position| self.builder.same_block(position))
+        {
+            self.builder.insert_marker(position, R::EhTry(entry))?;
         } else {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }

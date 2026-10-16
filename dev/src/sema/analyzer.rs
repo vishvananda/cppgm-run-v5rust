@@ -564,6 +564,9 @@ impl<'tree> Analyzer<'tree> {
                 super::function_demands::DefinitionEmission::Always
             };
         self.graph.entity_mut(entity).constexpr = specs.constexpr;
+        if self.class_depth != 0 || specs.constexpr {
+            self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
+        }
         self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
         self.virtual_declaration(binding, &info, specs, location)?;
         self.settle_declaration_access(Some(binding))?;

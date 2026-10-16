@@ -80,7 +80,11 @@ impl Definitions {
             entry: entry.map(|(family, variant)| {
                 (
                     family,
-                    u8::from(variant == super::construction::Variant::Complete),
+                    match variant {
+                        super::construction::Variant::Base => 0,
+                        super::construction::Variant::Deleting => 1,
+                        super::construction::Variant::Complete => 2,
+                    },
                 )
             }),
             form: None,

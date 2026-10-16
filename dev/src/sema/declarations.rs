@@ -1555,6 +1555,7 @@ impl Analyzer<'_> {
             self.classify_class_copies(entity)?;
             self.complete_destructor(entity)?;
             self.complete_virtual_destructor(entity, node.location)?;
+            self.complete_virtual_assignments(entity, node.location)?;
             self.complete_virtual_members(entity)?;
             self.complete_virtual_layout(entity)?;
         }

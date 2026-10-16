@@ -23,7 +23,6 @@ pub(super) struct Tables {
     names: HashMap<EntityId, SymbolId>,
     signatures: HashMap<EntityId, SignatureId>,
     pure_virtual: Option<SymbolId>,
-    layouts: HashMap<EntityId, Vec<Option<crate::sema::lowering::VirtualEntry>>>,
 }
 #[derive(Clone, Copy)]
 enum ClassObject {
@@ -204,7 +203,7 @@ impl Symbols<'_, '_> {
             metadata.binding = Some(Binding::Strong);
         }
         let typeinfo = self.typeinfo_symbol(program, class)?;
-        let slots = self.virtual_layout(class)?;
+        let slots = self.graph.lower_virtual_slots(class)?;
         let mut items = Vec::with_capacity(slots.len() + 2);
         items.push(integer(Type::I64, 0));
         items.push(address(typeinfo, 0));
@@ -212,55 +211,25 @@ impl Symbols<'_, '_> {
             let slot = slot.ok_or(crate::sema::Error::Invariant("unfilled virtual slot"))?;
             let target = if self.graph.lower_virtual_pure(slot.function) {
                 self.pure_virtual_symbol(program, slot.function)?
-            } else {
-                if !matches!(slot.kind, SlotKind::Function) {
-                    return Err(Error::Missing("virtual destructor ABI entries"));
-                }
+            } else if matches!(slot.kind, SlotKind::Function) {
                 self.demand(slot.function);
                 self.function_symbol(program, slot.function)?
+            } else {
+                self.demand_entry(Entry::DestructorDeleting(slot.function));
+                self.demand_entry(Entry::Function(slot.function));
+                self.entry_symbol(
+                    program,
+                    if matches!(slot.kind, SlotKind::DeletingDestructor) {
+                        Entry::DestructorDeleting(slot.function)
+                    } else {
+                        Entry::Function(slot.function)
+                    },
+                )?
             };
             items.push(address(target, 0));
         }
         define(program, symbol, metadata, items)?;
         Ok(symbol)
-    }
-    fn virtual_layout(
-        &mut self,
-        root: EntityId,
-    ) -> Result<Vec<Option<crate::sema::lowering::VirtualEntry>>, Error> {
-        let mut chain = Vec::new();
-        let mut next = Some(root);
-        while let Some(class) = next {
-            if self.vtables.layouts.contains_key(&class) {
-                break;
-            }
-            chain.push(class);
-            next = self.graph.lower_virtual_class(class)?.primary;
-        }
-        let mut work = next
-            .and_then(|base| self.vtables.layouts.get(&base))
-            .cloned()
-            .unwrap_or_default();
-        for class in chain.into_iter().rev() {
-            let facts = self.graph.lower_virtual_class(class)?;
-            work.resize(
-                usize::try_from(facts.size).map_err(|_| crate::lowir::Error::Limit)?,
-                None,
-            );
-            for entry in &facts.entries {
-                work[entry.slot.index()?] = Some(*entry);
-            }
-            // Like analyzer_virtual.cpp::virtual_slots, retain the demanded
-            // chain's layouts only where this unit can emit their tables.
-            if class == root
-                || facts
-                    .key
-                    .is_none_or(|key| self.graph.lower_function_defined(key))
-            {
-                self.vtables.layouts.insert(class, work.clone());
-            }
-        }
-        Ok(work)
     }
     fn rtti_vtable(&mut self, program: &mut Program, kind: usize) -> Result<SymbolId, Error> {
         let (name, object, role) = match kind {
@@ -467,6 +436,7 @@ impl Symbols<'_, '_> {
                 location: None,
             },
         )?;
+        program.publish_runtime_declaration(symbol);
         self.vtables.pure_virtual = Some(symbol);
         Ok(symbol)
     }
@@ -475,7 +445,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         entry: Entry,
     ) -> Result<(), Error> {
-        if let Some(entity) = entry.entity(self.graph)
+        if let Entry::Function(entity) = entry
             && let Some(class) = self.graph.lower_virtual_key_owner(entity)
         {
             self.vtable_symbol(program, class)?;
@@ -503,6 +473,17 @@ pub(crate) fn assert_table_demand(
         1
     );
     assert!(graph.lower_class_layout(unused).is_err());
+    assert!(graph.lower_virtual_slots(unused).is_err());
+    let slots = graph.lower_virtual_slots(b).unwrap();
+    assert_eq!(slots.len(), 2);
+    assert_eq!(
+        slots[0].unwrap().function,
+        graph.lower_virtual_class(a).unwrap().entries[0].function
+    );
+    assert_eq!(
+        slots[1].unwrap().function,
+        graph.lower_virtual_class(b).unwrap().entries[0].function
+    );
     let mut program = Program::default();
     let mut table = super::SymbolTable::default();
     let mut symbols = Symbols::new(
