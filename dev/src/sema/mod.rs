@@ -15,6 +15,7 @@ mod call_lookup;
 mod callable_objects;
 mod class_casts;
 mod class_conditionals;
+mod class_templates;
 mod constant_addresses;
 mod constant_mutations;
 mod constant_pointer_operations;

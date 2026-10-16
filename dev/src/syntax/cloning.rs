@@ -123,7 +123,7 @@ impl<'a> Cloner<'a> {
     fn specifiers(&mut self, list: List<Specifier>) -> Result<List<Specifier>, ParseError> {
         self.list(list, |tree| &mut tree.specs, Self::specifier)
     }
-    fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
+    pub(crate) fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.types.get(id);
         node.specifiers = self.specifiers(node.specifiers)?;

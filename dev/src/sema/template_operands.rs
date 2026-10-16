@@ -455,6 +455,11 @@ impl Analyzer<'_> {
                         types.push(member.qualifier);
                     }
                 }
+                TypeKind::Class(entity) => {
+                    if let Some(instance) = self.graph.class_templates.instance(*entity) {
+                        types.extend(&instance.arguments);
+                    }
+                }
                 TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => types.push(*ty),
                 TypeKind::Array {
                     element, operand, ..

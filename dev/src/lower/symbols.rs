@@ -1017,12 +1017,25 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     } else {
                         0
                     };
-                    Node::Name {
-                        parent,
-                        terminal,
-                        internal: false,
-                        occurrence,
-                    }
+                    let name = self.abi.intern(
+                        Node::Name {
+                            parent,
+                            terminal,
+                            internal: false,
+                            occurrence,
+                        },
+                        &[],
+                    )?;
+                    let id = if let Some(arguments) = self.graph.lower_class_arguments(entity) {
+                        let mut nodes = Vec::with_capacity(arguments.len());
+                        for argument in arguments {
+                            nodes.push(self.abi_type(argument)?);
+                        }
+                        self.abi.intern(Node::Template(name), &nodes)?
+                    } else {
+                        name
+                    };
+                    return self.finish_abi_type(ty, id);
                 }
                 TypeView::Function {
                     result,
@@ -1047,7 +1060,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
             }
         };
-        let mut id = self.abi.intern(node, &[]).map_err(Error::from)?;
+        let id = self.abi.intern(node, &[]).map_err(Error::from)?;
+        self.finish_abi_type(ty, id)
+    }
+    fn finish_abi_type(&mut self, ty: TypeId, mut id: NodeId) -> Result<NodeId, Error> {
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
             let mut cv = Qualifiers::default();
             if self.graph.lower_cv(ty) & 1 != 0 {

@@ -712,13 +712,19 @@ impl Graph {
     }
     pub(super) fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
-        // Only a function type introduces the shared component DAG worklist.
+        // Function components and class-template arguments share a DAG worklist.
         loop {
             ty = self.types.canonical_view(ty);
             match self.types.get(ty).kind {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => ty = element,
+                TypeKind::Class(entity) if self.class_templates.instance(entity).is_some() => {
+                    if self.lower_entity_unit_local(entity) {
+                        return true;
+                    }
+                    break;
+                }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     return self.lower_entity_unit_local(entity);
                 }
@@ -747,6 +753,11 @@ impl Graph {
                     if self.lower_entity_unit_local(*entity) =>
                 {
                     return true;
+                }
+                TypeKind::Class(entity) => {
+                    if let Some(instance) = self.class_templates.instance(*entity) {
+                        work.extend(&instance.arguments);
+                    }
                 }
                 _ => {}
             }
@@ -1376,6 +1387,19 @@ impl Graph {
         };
         Ok(body.handlers.is_none()
             && matches!(tree.statements.get(body.compound).kind, ast::StmtKind::Compound(items) if tree.stmt_lists.get(items).is_empty()))
+    }
+    pub(crate) fn lower_class_arguments(&self, entity: EntityId) -> Option<Vec<TypeId>> {
+        if let Some(instance) = self.class_templates.instance(entity) {
+            Some(instance.arguments.clone())
+        } else {
+            self.entity(entity).template_head.map(|head| {
+                self.templates
+                    .parameters(head)
+                    .iter()
+                    .filter_map(|&parameter| self.entity(parameter).ty)
+                    .collect()
+            })
+        }
     }
     pub(crate) fn lower_nominal_name(
         &self,

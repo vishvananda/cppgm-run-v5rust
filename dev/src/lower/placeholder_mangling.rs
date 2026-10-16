@@ -84,6 +84,16 @@ impl Symbols<'_, '_> {
                 TypeView::Pointer(element) | TypeView::Reference { element, .. } => {
                     self.unmangled_placeholder(element)?
                 }
+                TypeView::Class(class) if self.graph.lower_dependent_type(ty) => {
+                    let mut found = false;
+                    for argument in self.graph.lower_class_arguments(class).unwrap_or_default() {
+                        if self.unmangled_placeholder(argument)? {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found
+                }
                 TypeView::Function {
                     result, parameters, ..
                 } => {

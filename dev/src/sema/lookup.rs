@@ -417,10 +417,10 @@ impl Analyzer<'_> {
             let component = self.tree.name_lists.get(name.components)[index];
             if let NameKind::Decltype(operand) = component.kind {
                 let ty = self.decltype_type(operand, scope)?;
-                if matches!(
-                    self.graph.types.get(ty).kind,
-                    TypeKind::TemplateParameter { .. }
-                ) {
+                if self.graph.dependent_type(ty)
+                    && !matches!(self.graph.types.get(ty).kind, TypeKind::Class(class)
+                        if self.graph.entity(class).scope.is_some())
+                {
                     prefix = Some(Prefix::Dependent(ty));
                     continue;
                 }
@@ -435,9 +435,6 @@ impl Analyzer<'_> {
                 }
                 prefix = Some(Prefix::Scope(self.type_qualifier(ty, component.location)?));
                 continue;
-            }
-            if component.arguments.is_some() {
-                return Err(Error::Missing("template specialization lookup"));
             }
             let NameKind::Identifier(key) = component.kind else {
                 return Err(Error::at(
@@ -461,7 +458,7 @@ impl Analyzer<'_> {
                 ),
                 other => other,
             })?;
-            let binding_id = found.ok_or_else(|| {
+            let mut binding_id = found.ok_or_else(|| {
                 Error::at(
                     component.location,
                     "undeclared name in a nested-name-specifier",
@@ -483,14 +480,23 @@ impl Analyzer<'_> {
                     component.location,
                 )?;
             }
+            if component.arguments.is_some() {
+                binding_id = self
+                    .class_template_id(binding_id, component, scope)?
+                    .ok_or_else(|| {
+                        Error::at(
+                            component.location,
+                            "a template-id in a nested-name-specifier that names no class template",
+                        )
+                    })?;
+            }
             let binding = self.graph.binding(binding_id);
             prefix = Some(
                 if matches!(binding.kind, BindingKind::Type | BindingKind::Alias)
                     && let Some(ty) = binding.ty
-                    && matches!(
-                        self.graph.types.get(ty).kind,
-                        TypeKind::TemplateParameter { .. }
-                    )
+                    && self.graph.dependent_type(ty)
+                    && !matches!(self.graph.types.get(ty).kind, TypeKind::Class(class)
+                        if self.graph.entity(class).template_head.is_some())
                 {
                     Prefix::Dependent(ty)
                 } else {
@@ -646,13 +652,6 @@ impl Analyzer<'_> {
         {
             found = builtin;
         }
-        if specialize && last.arguments.is_some() {
-            if self.semantic() {
-                self.explicit_function_specializations(last, &mut found, scope, false)?;
-            } else if found.functions.as_slice().is_empty() {
-                return Err(Error::Missing("template specialization lookup"));
-            }
-        }
         if let Some(binding) = found.binding {
             if let Some(search) = prefix
                 && let Some(naming) = self.graph.scope(search).owner
@@ -680,6 +679,26 @@ impl Analyzer<'_> {
                     self.check_declaration_direct_access(binding, scope, node.location)?;
                 }
             }
+        }
+        if specialize && last.arguments.is_some() {
+            if found.functions.as_slice().is_empty()
+                && let Some(binding) = found.binding
+            {
+                found.binding = Some(self.class_template_id(binding, last, scope)?.ok_or_else(
+                    || {
+                        Error::at(
+                            node.location,
+                            "a template-id that names no class or variable template",
+                        )
+                    },
+                )?);
+            } else if self.semantic() {
+                self.explicit_function_specializations(last, &mut found, scope, false)?;
+            } else if found.functions.as_slice().is_empty() {
+                return Err(Error::Missing("template specialization lookup"));
+            }
+        }
+        if let Some(binding) = found.binding {
             super::record(&mut self.graph.resolved_names, name.index(), binding);
         }
         found.qualifier = prefix;

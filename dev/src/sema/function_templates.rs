@@ -300,6 +300,11 @@ impl Analyzer<'_> {
             {
                 self.substitute_operand(ty, entity, environment)?
             }
+            TypeKind::Class(entity) if self.graph.class_templates.instance(entity).is_some() => {
+                self.substitute_class_type(entity, environment)?
+                    .map(|entity| self.graph.types.intern(TypeKind::Class(entity), cv))
+                    .transpose()?
+            }
             TypeKind::Pointer(element) => {
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);
@@ -653,6 +658,30 @@ impl Analyzer<'_> {
             self.graph.types.get(pattern).kind.clone(),
             self.graph.types.get(actual).kind.clone(),
         ) {
+            (TypeKind::Class(p), TypeKind::Class(a)) => {
+                match (
+                    self.graph.class_templates.instance(p),
+                    self.graph.class_templates.instance(a),
+                ) {
+                    (Some(p), Some(a))
+                        if p.primary == a.primary && p.arguments.len() == a.arguments.len() =>
+                    {
+                        let pairs: Vec<_> = p
+                            .arguments
+                            .iter()
+                            .copied()
+                            .zip(a.arguments.iter().copied())
+                            .collect();
+                        for (p, a) in pairs {
+                            if !self.deduce_signature_type(p, a, depth, arguments, false)? {
+                                return Ok(false);
+                            }
+                        }
+                        Ok(true)
+                    }
+                    _ => Ok(pattern == actual),
+                }
+            }
             (TypeKind::Pointer(p), TypeKind::Pointer(a)) => {
                 self.deduce_signature_type(p, a, depth, arguments, extra_cv)
             }
@@ -764,6 +793,11 @@ impl Analyzer<'_> {
                 return true;
             }
             match &self.graph.types.get(ty).kind {
+                TypeKind::Class(entity) => {
+                    if let Some(instance) = self.graph.class_templates.instance(*entity) {
+                        work.extend(&instance.arguments);
+                    }
+                }
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => work.push(*element),
@@ -1289,6 +1323,11 @@ impl Analyzer<'_> {
                         || self.graph.dependent_members.get(*entity).is_some() =>
                 {
                     return true;
+                }
+                TypeKind::Class(entity) => {
+                    if let Some(instance) = self.graph.class_templates.instance(*entity) {
+                        work.extend(&instance.arguments);
+                    }
                 }
                 TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => work.push(*ty),
                 TypeKind::Array {

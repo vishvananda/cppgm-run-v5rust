@@ -254,7 +254,13 @@ impl super::graph::Graph {
             }
             match &self.types.get(ty).kind {
                 TypeKind::TemplateParameter { .. } => return true,
-                TypeKind::Class(entity) if self.entity(*entity).template_head.is_some() => {
+                TypeKind::Class(entity)
+                    if self.entity(*entity).template_head.is_some()
+                        || self
+                            .class_templates
+                            .instance(*entity)
+                            .is_some_and(|instance| instance.dependent) =>
+                {
                     return true;
                 }
                 TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {

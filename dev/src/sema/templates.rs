@@ -50,6 +50,7 @@ impl ParameterInfo {
 pub(super) struct DefaultArgument {
     pub syntax: ast::TypeId,
     pub scope: ScopeId,
+    pub limit: usize,
 }
 struct Head {
     depth: u32,
@@ -357,7 +358,11 @@ impl Analyzer<'_> {
             }
             parameters.push(entity);
             shapes.push(shape);
-            defaults.push(default.map(|syntax| DefaultArgument { syntax, scope }));
+            defaults.push(default.map(|syntax| DefaultArgument {
+                syntax,
+                scope,
+                limit: self.graph.binding_limit(),
+            }));
         }
         self.graph.templates.add_head(
             Head {

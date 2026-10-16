@@ -222,6 +222,7 @@ pub(crate) struct Graph {
     pub(super) base_paths: super::inheritance::BasePaths,
     pub(super) dependent_members: super::dependent_members::Members,
     pub(super) template_operands: super::template_operands::Operands,
+    pub(super) class_templates: super::class_templates::ClassTemplates,
     pub(super) templates: super::templates::Templates,
     pub(super) function_templates: super::function_templates::FunctionTemplates,
     scopes: Vec<Scope>,
@@ -381,6 +382,7 @@ impl Graph {
             base_paths: super::inheritance::BasePaths::default(),
             dependent_members: super::dependent_members::Members::default(),
             template_operands: super::template_operands::Operands::default(),
+            class_templates: super::class_templates::ClassTemplates::default(),
             templates: super::templates::Templates::default(),
             function_templates: super::function_templates::FunctionTemplates::default(),
             scopes: vec![Scope {
