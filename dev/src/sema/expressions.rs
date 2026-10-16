@@ -10,7 +10,7 @@ use super::{
 use crate::syntax::ast::{self, ExprKind, InitializerKind, NameKind};
 impl Analyzer<'_> {
     pub(super) fn expression(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
-        if self.semantic() {
+        if self.semantic() && self.template_depth == 0 {
             self.typed_expression(id, scope)?;
             self.check_resolved_function(id)?;
             if self.template_depth == 0 && self.body_context.is_some() {
@@ -21,6 +21,9 @@ impl Analyzer<'_> {
                 )?;
             }
             return Ok(());
+        }
+        if self.semantic() {
+            self.validate_fixed_expression(id, scope)?;
         }
         let base = self.expression_work.len();
         self.expression_work.push((id, false));

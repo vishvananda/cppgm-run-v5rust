@@ -1145,6 +1145,8 @@ impl Analyzer<'_> {
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
         if self.semantic() && self.template_depth == 0 {
             self.expression(expr, scope)?;
+        } else if self.semantic() {
+            self.validate_fixed_expression(expr, scope)?;
         }
         let value = self.constant_value(expr, scope, self.template_depth == 0)?;
         let Some(value) = value else {

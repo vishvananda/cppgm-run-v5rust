@@ -700,14 +700,18 @@ impl Analyzer<'_> {
                     self.note_local_initializer(home)?;
                 }
 
-                ty = self.initialize_variable(binding, initializer, info.lookup, location)?;
-                if member || definition {
-                    self.check_object_type(ty, member, location)?;
+                if self.template_depth == 0 {
+                    ty = self.initialize_variable(binding, initializer, info.lookup, location)?;
+                    if member || definition {
+                        self.check_object_type(ty, member, location)?;
+                    }
+                } else {
+                    self.initializer_names(initializer, info.lookup, ty)?;
                 }
             } else {
                 self.initializer_names(initializer, info.lookup, ty)?;
             }
-            if !member {
+            if !member && self.template_depth == 0 {
                 self.record_declared_constant(entity, initializer, &info, location)?;
             }
         } else if self.semantic() && definition {

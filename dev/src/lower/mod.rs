@@ -299,6 +299,13 @@ pub(crate) fn lower_unit(
             | ast::DeclKind::Using { .. }
             | ast::DeclKind::StaticAssert { .. }
             | ast::DeclKind::Class(_) => {}
+            // A primary template has no emitted definition. Specializations
+            // are ordinary demand entries, separate from this syntax walk.
+            ast::DeclKind::Template { parameters, .. }
+                if !tree
+                    .template_parameters
+                    .get(parameters.parameters)
+                    .is_empty() => {}
             _ => return Err(Error::Missing("class and template declaration lowering")),
         }
     }

@@ -6,6 +6,7 @@ use super::{
     analyzer::Analyzer,
     graph::{Binding, BindingKind, ScopeId, ScopeKind},
     lookup::Filter,
+    procedural_statements::Control,
 };
 use crate::{
     lex::vocabulary::Keyword,
@@ -68,7 +69,7 @@ impl Analyzer<'_> {
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(list) => self.compound(list, scope, false),
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
-            StmtKind::Return(operand) if self.semantic() => {
+            StmtKind::Return(operand) if self.semantic() && self.template_depth == 0 => {
                 self.semantic_return(id, operand, scope)
             }
             StmtKind::Expression(operand)
@@ -114,7 +115,11 @@ impl Analyzer<'_> {
                 self.control_substatement(
                     body,
                     block,
-                    switch,
+                    if Self::is_switch(keyword) {
+                        Control::Switch(switch)
+                    } else {
+                        Control::Loop
+                    },
                     self.tree.statements.get(id).location,
                 )
             }
@@ -123,11 +128,11 @@ impl Analyzer<'_> {
                 self.control_substatement(
                     body,
                     block,
-                    None,
+                    Control::Loop,
                     self.tree.statements.get(id).location,
                 )?;
                 self.expression(condition, block)?;
-                if self.semantic() {
+                if self.semantic() && self.template_depth == 0 {
                     self.convert_bool(condition)?;
                 }
                 Ok(())
@@ -152,7 +157,12 @@ impl Analyzer<'_> {
                 if let Some(iteration) = iteration {
                     self.expression(iteration, block)?;
                 }
-                self.control_substatement(body, block, None, self.tree.statements.get(id).location)
+                self.control_substatement(
+                    body,
+                    block,
+                    Control::Loop,
+                    self.tree.statements.get(id).location,
+                )
             }
             StmtKind::RangeFor {
                 specifiers,

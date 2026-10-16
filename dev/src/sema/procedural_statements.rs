@@ -19,10 +19,15 @@ pub(super) struct BodyContext {
     pub transfers: super::jumps::Transfers,
 }
 pub(super) struct SwitchContext {
-    ty: TypeId,
+    ty: Option<TypeId>,
     values: Vec<u64>,
     has_default: bool,
     initialized: u32,
+}
+#[derive(Clone, Copy)]
+pub(super) enum Control {
+    Loop,
+    Switch(Option<TypeId>),
 }
 impl BodyContext {
     pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
@@ -241,6 +246,9 @@ impl Analyzer<'_> {
                 "case label bypasses a variable's initialization",
             ));
         }
+        let Some(ty) = ty else {
+            return self.expression(value, scope);
+        };
         self.typed_expression(value, scope)?;
         self.check_resolved_function(value)?;
         let constant = self
@@ -275,7 +283,7 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::StmtId,
         scope: ScopeId,
-        switch: Option<TypeId>,
+        control: Control,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         if !self.semantic() {
@@ -285,7 +293,7 @@ impl Analyzer<'_> {
             .body_context
             .as_mut()
             .ok_or(Error::Invariant("loop without body"))?;
-        if let Some(ty) = switch {
+        if let Control::Switch(ty) = control {
             body.switches.push(SwitchContext {
                 ty,
                 values: Vec::new(),
@@ -300,7 +308,7 @@ impl Analyzer<'_> {
             .body_context
             .as_mut()
             .ok_or(Error::Invariant("loop context disappeared"))?;
-        if switch.is_some() {
+        if matches!(control, Control::Switch(_)) {
             let mut context = body
                 .switches
                 .pop()
@@ -325,7 +333,7 @@ impl Analyzer<'_> {
         condition: Condition,
         switch: bool,
     ) -> Result<Option<TypeId>, Error> {
-        if !self.semantic() {
+        if !self.semantic() || self.template_depth != 0 {
             return Ok(None);
         }
         let (facts, expr, location) = match condition {

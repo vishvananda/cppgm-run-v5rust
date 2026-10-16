@@ -39,6 +39,7 @@ mod exceptions;
 mod expression_facts;
 mod expression_keys;
 mod expressions;
+mod fixed_expressions;
 mod floating_intrinsics;
 mod friendships;
 mod function_demands;
