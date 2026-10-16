@@ -93,6 +93,7 @@ impl Analyzer<'_> {
         let mut facts =
             self.new_expression_facts(target, super::expression_facts::ValueCategory::Prvalue)?;
         facts.query_value = Some(size);
+        facts.query_kind = self.query_kind(ty);
         Ok(facts)
     }
 
@@ -124,6 +125,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<super::expression_facts::ExprFacts, Error> {
+        let type_operand = ty.is_some();
         let mut ty = if let Some(ty) = ty {
             self.type_syntax(ty, scope)?
         } else {
@@ -136,6 +138,11 @@ impl Analyzer<'_> {
             self.unevaluated -= 1;
             let facts = result?;
             facts.ty
+        };
+        let query_kind = if type_operand {
+            self.query_kind(ty)
+        } else {
+            super::expression_facts::QueryKind::Ordinary
         };
         if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
             ty = element;
@@ -154,7 +161,17 @@ impl Analyzer<'_> {
         let mut facts =
             self.new_expression_facts(ty, super::expression_facts::ValueCategory::Prvalue)?;
         facts.query_value = Some(alignment);
+        facts.query_kind = query_kind;
         Ok(facts)
+    }
+    fn query_kind(&self, ty: TypeId) -> super::expression_facts::QueryKind {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity)
+            if self.graph.class_templates.instance(entity).is_some())
+        {
+            super::expression_facts::QueryKind::Specialization
+        } else {
+            super::expression_facts::QueryKind::Ordinary
+        }
     }
     pub(super) fn binding_expression_type(&self, binding: BindingId) -> Result<TypeId, Error> {
         let binding = self.graph.binding(binding);

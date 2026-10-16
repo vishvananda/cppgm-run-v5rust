@@ -377,7 +377,7 @@ impl Function<'_, '_, '_, '_> {
             self.apply_conversion(
                 left,
                 a,
-                if context == Context::Additive && self.is_size_query(right) {
+                if context == Context::Additive && self.is_size_query(right)? {
                     Context::BesideSize
                 } else {
                     context
@@ -387,7 +387,7 @@ impl Function<'_, '_, '_, '_> {
         let b = self.apply_conversion(
             right,
             b,
-            if context == Context::Additive && self.is_size_query(left) {
+            if context == Context::Additive && self.is_size_query(left)? {
                 Context::BesideSize
             } else {
                 context
@@ -448,18 +448,23 @@ impl Function<'_, '_, '_, '_> {
             source,
         )
     }
-    fn is_size_query(&self, mut id: ast::ExprId) -> bool {
+    fn is_size_query(&self, mut id: ast::ExprId) -> Result<bool, Error> {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
             id = inner;
         }
-        matches!(
-            self.tree.expressions.get(id).kind,
-            ExprKind::Sizeof { .. }
-                | ExprKind::TypeTrait {
-                    keyword: Keyword::Alignof,
-                    ..
-                }
-        )
+        Ok(!self
+            .graph
+            .lower_expression(id)?
+            .query_kind
+            .is_specialization()
+            && matches!(
+                self.tree.expressions.get(id).kind,
+                ExprKind::Sizeof { .. }
+                    | ExprKind::TypeTrait {
+                        keyword: Keyword::Alignof,
+                        ..
+                    }
+            ))
     }
     fn unary_expression(
         &mut self,

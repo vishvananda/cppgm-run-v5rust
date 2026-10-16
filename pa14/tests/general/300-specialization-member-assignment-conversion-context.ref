@@ -1,0 +1,144 @@
+global @cell_longint___shared : i64 [binding=weak, object=_ZN4cellIlE6sharedE] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<24x8>
+  slot $nested : obj<8x8>
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+  slot $land__4 : i64
+  slot $land__5 : i64
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $nested
+    %t3 = addr $object
+    %t4 = index i8 %t3, 0
+    %t5 = index i8 [projection=field] %t4, 8
+    store typed i64 5, %t5
+    %t6 = convert sext i64 i32 6
+    %t7 = addr $object
+    %t8 = index i8 %t7, 0
+    %t9 = index i8 [projection=field] %t8, 0
+    store typed i64 %t6, %t9
+    %t10 = convert sext i64 i32 7
+    %t11 = addr $object
+    %t12 = index i8 [projection=field] %t11, 16
+    store typed i64 %t10, %t12
+    %t13 = convert sext i64 i32 8
+    store typed i64 %t13, @cell_longint___shared
+    %t14 = convert sext i64 i32 9
+    %t15 = addr $nested
+    %t16 = index i8 [projection=field] %t15, 0
+    store typed i64 %t14, %t16
+    %t17 = convert sext i64 i32 10
+    %t18 = addr $object
+    %t19 = index i8 %t18, 0
+    %t20 = index i8 [projection=field] %t19, 8
+    store typed i64 %t17, %t20
+    %t21 = addr $object
+    %t22 = index i8 %t21, 0
+    call void @cell_longint___assign(%t22)
+    %t23 = addr $object
+    %t24 = index i8 %t23, 0
+    %t25 = index i8 [projection=field] %t24, 8
+    %t26 = load typed i64 %t25
+    %t27 = cmp eq i64 %t26, 2
+    branch %t27, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t28 = addr $object
+    %t29 = index i8 %t28, 0
+    %t30 = index i8 [projection=field] %t29, 0
+    %t31 = load typed i64 %t30
+    %t32 = cmp eq i64 %t31, 3
+    %t33 = cmp ne i64 %t32, 0
+    store typed i64 %t33, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t34 = load typed i64 $land__2
+    branch %t34, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t35 = load typed i64 @cell_longint___shared
+    %t36 = cmp eq i64 %t35, 4
+    %t37 = cmp ne i64 %t36, 0
+    store typed i64 %t37, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t38 = load typed i64 $land__3
+    branch %t38, ^land_rhs_10, ^land_short_11
+
+  block ^land_rhs_10:
+    %t39 = addr $object
+    %t40 = index i8 [projection=field] %t39, 16
+    %t41 = load typed i64 %t40
+    %t42 = cmp eq i64 %t41, 7
+    %t43 = cmp ne i64 %t42, 0
+    store typed i64 %t43, $land__4
+    jump ^land_end_12
+
+  block ^land_short_11:
+    store typed i64 0, $land__4
+    jump ^land_end_12
+
+  block ^land_end_12:
+    %t44 = load typed i64 $land__4
+    branch %t44, ^land_rhs_13, ^land_short_14
+
+  block ^land_rhs_13:
+    %t45 = addr $nested
+    %t46 = index i8 [projection=field] %t45, 0
+    %t47 = load typed i64 %t46
+    %t48 = cmp eq i64 %t47, 9
+    %t49 = cmp ne i64 %t48, 0
+    store typed i64 %t49, $land__5
+    jump ^land_end_15
+
+  block ^land_short_14:
+    store typed i64 0, $land__5
+    jump ^land_end_15
+
+  block ^land_end_15:
+    %t50 = load typed i64 $land__5
+    branch %t50, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t51 = load typed i32 $cond__1
+    return i32 %t51
+}
+function @cell_longint___assign(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN4cellIlE6assignEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 8
+    store typed i64 2, %t2
+    %t3 = convert sext i64 i32 3
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
+    store typed i64 %t3, %t6
+    %t7 = convert sext i64 i32 4
+    store typed i64 %t7, @cell_longint___shared
+    return void
+}

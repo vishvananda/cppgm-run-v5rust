@@ -421,6 +421,9 @@ impl Analyzer<'_> {
                     }
                 }
             } else if let Some(expr) = enumerator.value {
+                if self.semantic() {
+                    self.integral_constant_operand(expr, lookup, info.underlying)?;
+                }
                 let mut value = self
                     .constant_value(expr, lookup, true)?
                     .ok_or(Error::Invariant("enumerator constant"))?;

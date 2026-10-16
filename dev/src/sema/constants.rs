@@ -1145,6 +1145,29 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    // analyzer_constexpr.cpp::integral_constant_operand: type before evaluating
+    // so queries consume their recorded operand types, calls and conversions.
+    pub(super) fn integral_constant_operand(
+        &mut self,
+        expr: ast::ExprId,
+        scope: ScopeId,
+        target: Option<TypeId>,
+    ) -> Result<(), Error> {
+        let facts = self.typed_expression(expr, scope)?;
+        self.check_resolved_function(expr)?;
+        if self.graph.class_of(facts.ty).is_some() {
+            if let Some(target) = target {
+                self.convert_scalar(expr, target, false)?;
+            } else {
+                self.convert_unique_class_operand(
+                    expr,
+                    super::conversion_functions::ConversionTarget::Integral,
+                    scope,
+                )?;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
         if self.semantic() && self.template_depth == 0 {
             self.expression(expr, scope)?;

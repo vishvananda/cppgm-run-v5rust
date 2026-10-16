@@ -398,9 +398,12 @@ impl Function<'_, '_, '_, '_> {
             let context = if !matches!(
                 self.tree.expressions.get(right).kind,
                 ExprKind::Braced { .. }
-            ) && self
+            ) && (self
                 .graph
                 .lower_union_assignment(self.without_parentheses(left))?
+                || self
+                    .graph
+                    .lower_specialization_assignment(self.without_parentheses(left))?)
             {
                 Context::Initialization
             } else {

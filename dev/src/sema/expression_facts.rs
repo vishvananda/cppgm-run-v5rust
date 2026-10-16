@@ -121,6 +121,16 @@ pub(crate) enum ClassInitialization {
     FromExpression(ast::ExprId),
 }
 #[derive(Clone, Copy, Debug)]
+pub(crate) enum QueryKind {
+    Ordinary,
+    Specialization,
+}
+impl QueryKind {
+    pub(crate) fn is_specialization(self) -> bool {
+        matches!(self, Self::Specialization)
+    }
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
@@ -134,6 +144,7 @@ pub(super) struct ExprFacts {
     // Query constants retain their value without replacing the source query's
     // sizeof-expression presentation. Constant reads do not type its operand again.
     pub query_value: Option<u64>,
+    pub query_kind: QueryKind,
     pub reference_cast: Option<TypeId>,
     pub functional_call: bool,
     pub intrinsic: Option<super::floating_intrinsics::FloatingIntrinsic>,
@@ -190,6 +201,7 @@ impl ExprFacts {
             folded: None,
             fold_style: FoldStyle::Literal,
             query_value: None,
+            query_kind: QueryKind::Ordinary,
             reference_cast: None,
             functional_call: false,
             intrinsic: None,

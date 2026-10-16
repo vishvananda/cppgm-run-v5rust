@@ -185,6 +185,7 @@ pub(crate) struct Expression {
     pub target: Option<TypeId>,
     pub folded: Option<u64>,
     pub query: Option<u64>,
+    pub query_kind: super::expression_facts::QueryKind,
     pub is_place: bool,
     pub glvalue: GlvalueKind,
     pub null_pointer: bool,
@@ -1276,6 +1277,19 @@ impl Graph {
     pub(crate) fn lower_class_specialization(&self, class: EntityId) -> bool {
         self.class_templates.instance(class).is_some()
     }
+    pub(crate) fn lower_specialization_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let Some(member) = self.expression_facts.get(id)?.member else {
+            return Ok(false);
+        };
+        let member = self.entity(self.binding(member).entity);
+        Ok(
+            member.data_member == Some(super::graph::DataMemberKind::Instance)
+                && member
+                    .home
+                    .and_then(|scope| self.scope(scope).owner)
+                    .is_some_and(|owner| self.lower_class_specialization(owner)),
+        )
+    }
     pub(crate) fn lower_abi_scope(
         &self,
         id: ScopeId,
@@ -1384,6 +1398,7 @@ impl Graph {
             target: facts.conversion.map(|c| c.result),
             folded: facts.folded,
             query: facts.query_value,
+            query_kind: facts.query_kind,
             is_place: facts.category != super::expression_facts::ValueCategory::Prvalue,
             null_pointer: facts
                 .conversion
