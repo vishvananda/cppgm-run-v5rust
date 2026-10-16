@@ -103,6 +103,10 @@ impl Analyzer<'_> {
         // Prepare only those named roots' ordinary class ABI boundaries.
         if !*explicit_roots {
             work.extend(self.graph.lower_explicit_functions());
+            for index in 0..self.graph.lower_explicit_classes().len() {
+                let class = self.graph.lower_explicit_classes()[index];
+                self.virtual_table_boundaries(class, seen_tables, &mut work)?;
+            }
             *explicit_roots = true;
         }
         for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {

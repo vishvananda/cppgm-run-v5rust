@@ -807,7 +807,7 @@ impl Analyzer<'_> {
         seen: &mut HashSet<EntityId>,
         work: &mut Vec<EntityId>,
     ) -> Result<(), Error> {
-        if !self.graph.lower_polymorphic(class) || !seen.insert(class) {
+        if !self.graph.lower_polymorphic(class) || seen.contains(&class) {
             return Ok(());
         }
         if self
@@ -818,6 +818,7 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
+        seen.insert(class);
         self.class_layout(class, SourceOffset(0))?;
         self.prepare_destruction(class)?;
         self.graph.demand_virtual_slots(class)?;

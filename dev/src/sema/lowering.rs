@@ -506,6 +506,12 @@ impl Graph {
             .definitions()
             .iter()
             .map(|definition| self.binding(definition.binding).entity)
+            .filter(|&entity| {
+                self.entity(entity).availability != super::graph::FunctionAvailability::Deleted
+            })
+    }
+    pub(crate) fn lower_explicit_classes(&self) -> &[EntityId] {
+        self.function_templates.instantiations.classes()
     }
     pub(crate) fn lower_explicit_function_root(&self, entity: EntityId) -> bool {
         self.function_templates.instantiations.defined(entity) && self.entity(entity).defined
@@ -999,7 +1005,11 @@ impl Graph {
             initializer: entity.static_initializer,
             in_class_initializer: entity.member_initializer,
             reference_temporary: entity.reference_temporary,
-            definition: entity.variable_definition,
+            definition: if self.class_instantiation_suppressed(id) {
+                None
+            } else {
+                entity.variable_definition
+            },
             emission: if self.variable_instances.instance(id) {
                 Emission::Demanded
             } else {
@@ -1014,6 +1024,9 @@ impl Graph {
         &self,
         entity: EntityId,
     ) -> Option<super::variable_instances::Definition> {
+        if self.class_instantiation_suppressed(entity) {
+            return None;
+        }
         self.variable_instances.initializer(entity)
     }
     pub(crate) fn lower_arithmetic_types(

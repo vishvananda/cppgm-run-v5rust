@@ -63,6 +63,21 @@ impl Variables {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn explicit_class_variable(&mut self, entity: EntityId) -> Result<(), Error> {
+        let variables = &self.graph.variable_instances;
+        if !variables
+            .links
+            .get(&entity)
+            .is_some_and(|source| variables.patterns.contains_key(source))
+        {
+            return Ok(());
+        }
+        self.instantiate_variable(entity)?;
+        if self.graph.variable_instances.seen.insert(entity) {
+            self.graph.variable_instances.demands.push(entity);
+        }
+        Ok(())
+    }
     pub(super) fn compatible_variable_type(
         &mut self,
         old: TypeId,

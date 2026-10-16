@@ -29,6 +29,11 @@ pub(super) struct Definitions {
     members: HashMap<EntityId, Pattern>,
     sources: HashMap<EntityId, EntityId>,
 }
+impl Definitions {
+    pub(super) fn source(&self, entity: EntityId) -> Option<EntityId> {
+        self.sources.get(&entity).copied()
+    }
+}
 impl Analyzer<'_> {
     pub(super) fn record_class_pattern(
         &mut self,

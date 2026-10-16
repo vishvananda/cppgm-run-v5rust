@@ -25,8 +25,30 @@ pub(super) struct LayoutAttributes {
     packed: bool,
     standard: Option<SourceOffset>,
     pub no_inline: bool,
+    pub instantiation: super::explicit_instantiations::MemberPolicy,
 }
 impl Analyzer<'_> {
+    pub(super) fn note_instantiation_policy(
+        &mut self,
+        entity: EntityId,
+        declarator: ast::DeclaratorId,
+        mut policy: super::explicit_instantiations::MemberPolicy,
+    ) {
+        let mut current = Some(declarator);
+        while let Some(id) = current {
+            let node = self.tree.declarators.get(id);
+            for attribute in self.tree.attributes.get(node.attributes) {
+                policy.excluded |=
+                    attribute.kind == ast::AttributeKind::ExcludeFromExplicitInstantiation;
+                policy.always_inline |= attribute.kind == ast::AttributeKind::AlwaysInline;
+            }
+            current = node.nested;
+        }
+        self.graph
+            .function_templates
+            .instantiations
+            .note_policy(entity, policy);
+    }
     pub(super) fn layout_attributes(
         &mut self,
         list: List<ast::Attribute>,
@@ -40,7 +62,14 @@ impl Analyzer<'_> {
             if (attribute.site == ast::AttributeSite::Class) != class_site {
                 continue;
             }
-            if self.template_depth != 0 && attribute.kind != ast::AttributeKind::NoInline {
+            if self.template_depth != 0
+                && !matches!(
+                    attribute.kind,
+                    ast::AttributeKind::NoInline
+                        | ast::AttributeKind::AlwaysInline
+                        | ast::AttributeKind::ExcludeFromExplicitInstantiation
+                )
+            {
                 continue;
             }
             match attribute.kind {
@@ -82,6 +111,10 @@ impl Analyzer<'_> {
                 }
                 ast::AttributeKind::Packed => result.packed = true,
                 ast::AttributeKind::NoInline => result.no_inline = true,
+                ast::AttributeKind::AlwaysInline => result.instantiation.always_inline = true,
+                ast::AttributeKind::ExcludeFromExplicitInstantiation => {
+                    result.instantiation.excluded = true;
+                }
                 _ => (),
             }
         }
@@ -101,6 +134,8 @@ impl Analyzer<'_> {
             attributes.alignment = attributes.alignment.max(own.alignment);
             attributes.packed |= own.packed;
             attributes.no_inline |= own.no_inline;
+            attributes.instantiation.excluded |= own.instantiation.excluded;
+            attributes.instantiation.always_inline |= own.instantiation.always_inline;
             attributes.standard = attributes.standard.or(own.standard);
             part = node.nested;
         }
@@ -120,6 +155,10 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("attributes without declaration"))?;
         let binding = self.graph.binding(binding);
         if binding.kind == BindingKind::Function {
+            self.graph
+                .function_templates
+                .instantiations
+                .note_policy(binding.entity, attributes.instantiation);
             self.graph
                 .note_no_inline(binding.entity, attributes.no_inline)?;
         }

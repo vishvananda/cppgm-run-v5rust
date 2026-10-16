@@ -35,6 +35,16 @@ pub(super) struct Bodies {
     seen: HashSet<EntityId>,
 }
 impl Bodies {
+    pub(super) fn source(&self, entity: EntityId) -> Option<EntityId> {
+        self.member_links.get(&entity).copied()
+    }
+    pub(super) fn defined_member(&self, entity: EntityId) -> bool {
+        self.members.contains_key(&entity)
+            || self
+                .member_links
+                .get(&entity)
+                .is_some_and(|source| self.member_definitions.contains_key(source))
+    }
     pub(super) fn pending_member(&self, entity: EntityId) -> bool {
         self.member(entity) && !self.states.contains_key(&entity)
     }
@@ -125,12 +135,29 @@ pub(crate) fn analyze_unit(
             }
             break;
         };
-        if graph
-            .function_templates
-            .instantiations
-            .suppressed(entity, graph.entity(entity).inline)
-        {
+        if graph.function_instantiation_suppressed(entity) {
             continue;
+        }
+        if graph.function_templates.instantiations.defined(entity)
+            && graph.function_templates.bodies.pending_member(entity)
+            && matches!(
+                graph.entity(entity).special_definition,
+                Some(SpecialDefinition::Defaulted { .. })
+            )
+        {
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            analyzer.set_semantics(true);
+            if lowering {
+                analyzer.set_lowering();
+            }
+            analyzer.stack_base = base;
+            analyzer.required_instantiation(
+                analyzer.graph.instantiation_levels.get(entity)?,
+                crate::support::source::SourceOffset(0),
+                analyzer.graph.binding_limit(),
+                |analyzer| analyzer.prepare_explicit_defaulted(entity),
+            )?;
+            graph = analyzer.finish_analysis(false)?;
         }
         if graph
             .function_templates
@@ -304,6 +331,35 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     }
 }
 impl Analyzer<'_> {
+    fn prepare_explicit_defaulted(&mut self, entity: EntityId) -> Result<(), Error> {
+        let Some(member) = self.graph.entity(entity).member_function else {
+            return Ok(());
+        };
+        let binding = self.graph.function_origin(entity)?;
+        let ty = self.graph.lower_entity_type(entity)?;
+        if member.kind == super::graph::MemberKind::Constructor
+            && self.graph.types.function_parameter_count(ty)? == 0
+            && matches!(
+                self.graph.entity(entity).special_definition,
+                Some(SpecialDefinition::Defaulted { first: true, .. })
+            )
+        {
+            // The frozen explicit-member root bypasses instantiate_definition
+            // for an in-class defaulted default constructor. Only an ordinary
+            // initialization use demands its subobject/exception plan. Preserve
+            // an existing plan; an otherwise unused root has a declaration body.
+            if self.graph.entity(entity).constructor.is_none() {
+                self.constructor_declaration_plan(binding, member.class)?;
+            }
+            return Ok(());
+        }
+        self.defaulted_constructor_definition(
+            entity,
+            member.class,
+            member.kind,
+            crate::support::source::SourceOffset(0),
+        )
+    }
     fn prepare_member_definition(&mut self, entity: EntityId) -> Result<(), Error> {
         let source = *self
             .graph
@@ -754,7 +810,7 @@ mod tests {
         let definition = instantiations.definitions()[0];
         let entity = graph.binding(definition.binding).entity;
         assert!(instantiations.defined(entity));
-        assert!(!instantiations.suppressed(entity, graph.entity(entity).inline));
+        assert!(!graph.function_instantiation_suppressed(entity));
         assert!(graph.function_templates.bodies.body(entity).is_some());
         let suppressed: Vec<_> = graph
             .function_templates
@@ -762,7 +818,7 @@ mod tests {
             .demands
             .iter()
             .copied()
-            .filter(|&id| instantiations.suppressed(id, graph.entity(id).inline))
+            .filter(|&id| graph.function_instantiation_suppressed(id))
             .collect();
         assert_eq!(suppressed.len(), 1);
         assert!(

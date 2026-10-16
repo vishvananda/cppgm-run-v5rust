@@ -12,6 +12,12 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct MemberPolicy {
+    pub excluded: bool,
+    pub always_inline: bool,
+}
+
 #[derive(Clone, Copy)]
 enum State {
     Declaration,
@@ -27,21 +33,58 @@ pub(super) struct Definition {
 pub(super) struct Instantiations {
     states: HashMap<EntityId, State>,
     definitions: Vec<Definition>,
+    classes: Vec<EntityId>,
+    policies: HashMap<EntityId, MemberPolicy>,
 }
 impl Instantiations {
+    pub(super) fn note_policy(&mut self, entity: EntityId, policy: MemberPolicy) {
+        if policy.excluded || policy.always_inline {
+            let old = self.policies.entry(entity).or_default();
+            old.excluded |= policy.excluded;
+            old.always_inline |= policy.always_inline;
+        }
+    }
+    pub(super) fn policy(&self, entity: EntityId) -> MemberPolicy {
+        self.policies.get(&entity).copied().unwrap_or_default()
+    }
+    pub(super) fn declared(&self, entity: EntityId) -> bool {
+        matches!(self.states.get(&entity), Some(State::Declaration))
+    }
+    pub(super) fn classes(&self) -> &[EntityId] {
+        &self.classes
+    }
+    pub(super) fn record_class(
+        &mut self,
+        entity: EntityId,
+        is_extern: bool,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.record_state(entity, is_extern, location)
+    }
+    pub(super) fn demand_class(&mut self, entity: EntityId) {
+        self.classes.push(entity);
+    }
     pub(super) fn definitions(&self) -> &[Definition] {
         &self.definitions
     }
     pub(super) fn defined(&self, entity: EntityId) -> bool {
         matches!(self.states.get(&entity), Some(State::Definition))
     }
-    pub(super) fn suppressed(&self, entity: EntityId, inline: InlinePreference) -> bool {
-        inline != InlinePreference::Inline
-            && matches!(self.states.get(&entity), Some(State::Declaration))
-    }
-    fn record(
+    pub(super) fn record(
         &mut self,
         binding: BindingId,
+        entity: EntityId,
+        is_extern: bool,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.record_state(entity, is_extern, location)?;
+        if !is_extern {
+            self.definitions.push(Definition { binding, location });
+        }
+        Ok(())
+    }
+    fn record_state(
+        &mut self,
         entity: EntityId,
         is_extern: bool,
         location: SourceOffset,
@@ -64,9 +107,6 @@ impl Instantiations {
                 State::Definition
             },
         );
-        if !is_extern {
-            self.definitions.push(Definition { binding, location });
-        }
         Ok(())
     }
 }
@@ -87,8 +127,8 @@ impl Analyzer<'_> {
                 "an explicit instantiation must declare a single entity",
             ));
         }
-        if matches!(inner.kind, ast::DeclKind::Class(_)) {
-            return Err(Error::Missing("explicit class template instantiation"));
+        if let ast::DeclKind::Class(specifier) = inner.kind {
+            return self.explicit_class_instantiation(specifier, is_extern, scope, inner.location);
         }
         if matches!(inner.kind, ast::DeclKind::SpecialMember { .. }) {
             return Err(Error::Missing("explicit member function instantiation"));

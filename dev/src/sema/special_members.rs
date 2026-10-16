@@ -139,6 +139,11 @@ impl Analyzer<'_> {
             ))?;
         self.graph
             .note_no_inline(self.graph.binding(binding).entity, attributes.no_inline)?;
+        self.note_instantiation_policy(
+            self.graph.binding(binding).entity,
+            declarator,
+            attributes.instantiation,
+        );
         if body.is_some()
             || initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default))
         {

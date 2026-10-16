@@ -789,8 +789,17 @@ impl Analyzer<'_> {
             return self.scalar_constructor_facts(class, Some(binding));
         }
         // A user-provided declaration alone has no subobject plan to demand.
+        self.constructor_declaration_plan(binding, class)
+    }
+
+    pub(super) fn constructor_declaration_plan(
+        &mut self,
+        binding: BindingId,
+        class: EntityId,
+    ) -> Result<ConstructorId, Error> {
         let (object_pointer, presentation_type, signature) =
             self.constructor_types(class, Some(binding))?;
+        let entity = self.graph.binding(binding).entity;
         self.publish_constructor(Constructor {
             class,
             binding: Some(binding),

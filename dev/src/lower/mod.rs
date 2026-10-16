@@ -364,22 +364,30 @@ fn emit_pending<'a>(
 ) -> Result<(), Error> {
     exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
     aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
-    let mut explicit = false;
+    let mut explicit = 0;
     loop {
         globals::emit_instance_variables(output, symbols, (graph, tree))?;
         let Some(entry) = symbols.pending.next() else {
-            if explicit {
+            if explicit == 2 {
                 break;
             }
-            explicit = true;
-            for &entity in graph.lower_demanded_variables() {
-                symbols.variable_symbol(output.program, entity)?;
-            }
-            for entity in graph.lower_explicit_functions() {
-                if graph.lower_function_defined(entity) {
-                    symbols.demand_entry(construction::Entry::Function(entity));
+            if explicit == 0 {
+                for entity in graph.lower_explicit_functions() {
+                    if graph.lower_function_defined(entity) {
+                        symbols.demand(entity);
+                    }
+                }
+                for &class in graph.lower_explicit_classes() {
+                    if graph.lower_polymorphic(class) {
+                        symbols.vtable_symbol(output.program, class)?;
+                    }
+                }
+            } else {
+                for &entity in graph.lower_demanded_variables() {
+                    symbols.variable_symbol(output.program, entity)?;
                 }
             }
+            explicit += 1;
             continue;
         };
         if !entries.insert(entry) {
