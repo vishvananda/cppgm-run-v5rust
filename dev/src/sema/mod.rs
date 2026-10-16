@@ -111,6 +111,7 @@ mod types;
 mod user_conversions;
 mod value_arguments;
 mod variable_instances;
+mod variable_specializations;
 mod variable_templates;
 mod virtual_exceptions;
 mod virtual_members;

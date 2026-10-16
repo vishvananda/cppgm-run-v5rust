@@ -274,7 +274,7 @@ pub(crate) struct Graph {
     pub(super) constructors: super::construction::Constructors,
     pub(super) inherited_constructors: super::inherited_constructors::InheritedConstructors,
     pub(super) member_initializers: super::member_initializers::Initializers,
-    pub(super) variable_instances: super::variable_instances::Variables,
+    pub(super) variable_instances: Box<super::variable_instances::Variables>,
     pub(super) root_demands: super::function_demands::DemandList,
     pub(super) declaration_storage: Vec<Option<BindingId>>,
     pub(super) overloads: super::function_resolution::FunctionSets,
@@ -404,7 +404,7 @@ impl Graph {
         Self {
             virtuals: super::virtual_members::Virtuals::default(),
             member_initializers: super::member_initializers::Initializers::default(),
-            variable_instances: super::variable_instances::Variables::default(),
+            variable_instances: Box::default(),
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
             dependent_members: super::dependent_members::Members::default(),

@@ -88,7 +88,7 @@ impl Analyzer<'_> {
                 "sizeof of an incomplete or function type",
             ));
         }
-        let (size, _) = self.type_size(ty, location)?;
+        let (size, _) = self.semantic_type_size(ty, location)?;
         let target = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
         let mut facts =
             self.new_expression_facts(target, super::expression_facts::ValueCategory::Prvalue)?;
@@ -156,7 +156,7 @@ impl Analyzer<'_> {
                 "alignof of an incomplete or function type",
             ));
         }
-        let (_, alignment) = self.type_size(ty, location)?;
+        let (_, alignment) = self.semantic_type_size(ty, location)?;
         let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
         let mut facts =
             self.new_expression_facts(ty, super::expression_facts::ValueCategory::Prvalue)?;
@@ -303,6 +303,23 @@ impl Analyzer<'_> {
                 .enumeration
                 .is_some_and(|info| info.underlying.is_some()),
             _ => true,
+        })
+    }
+    // layout.cpp diagnoses a dependent size in ordinary semantic analysis;
+    // the constant evaluator retains its distinct non-constant result.
+    fn semantic_type_size(
+        &mut self,
+        ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<(u64, u64), Error> {
+        self.type_size(ty, location).map_err(|error| match error {
+            Error::NonConstant {
+                location,
+                message: "size of a dependent type",
+            } if self.template_depth == 0 => {
+                Error::at(location, "size of a dependent type is not supported here")
+            }
+            error => error,
         })
     }
     pub(super) fn type_size(

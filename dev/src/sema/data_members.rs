@@ -56,8 +56,13 @@ impl Analyzer<'_> {
         facts: &mut super::expression_facts::ExprFacts,
         entity: super::graph::EntityId,
     ) {
+        let specialization =
+            self.template_depth == 0 && self.graph.variable_instances.templates.contains(entity);
         let entity = self.graph.entity(entity);
-        if entity.data_member != Some(DataMemberKind::Static)
+        if specialization && entity.ty.is_some_and(|ty| self.scoped_enum(ty)) {
+            return;
+        }
+        if (entity.data_member != Some(DataMemberKind::Static) && !specialization)
             || entity.ty.is_some_and(|ty| {
                 matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             })

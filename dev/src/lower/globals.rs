@@ -53,6 +53,7 @@ pub(super) fn lower_declaration<'a>(
         let entity = graph.lower_declared(declarator.declarator)?;
         if graph.lower_is_variable(entity)
             && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
+            && graph.lower_variable_arguments(entity).is_none()
         {
             // This syntactic emission rule also covers an ordinary static
             // member of an explicitly specialized class. Its semantic

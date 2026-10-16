@@ -53,6 +53,10 @@ impl Analyzer<'_> {
         if last.arguments.is_none() {
             return Ok(false);
         }
+        if self.specializing() {
+            self.explicit_variable_template(specs, init, scope, info, last)?;
+            return Ok(true);
+        }
         if self.template_depth == 0 {
             return Err(Error::at(
                 node.location,
@@ -102,10 +106,22 @@ impl Analyzer<'_> {
         entity.defined = init.initializer.is_some();
         entity.constexpr = specs.constexpr;
         entity.variable_definition = init.initializer.map(|_| init.declarator);
-        self.retain_variable_template_pattern(partial, init, info, scope, node.location);
-        self.graph
-            .variable_instances
-            .record_partial(primary, arguments, partial, init.declarator);
+        self.retain_variable_template_pattern(
+            partial,
+            init,
+            info,
+            scope,
+            node.location,
+            self.holds_auto(info.ty).then_some((info.ty, specs.auto_cv)),
+        );
+        let index_key = self.partial_index_key(primary_head, &arguments);
+        self.graph.variable_instances.record_partial(
+            primary,
+            arguments,
+            partial,
+            init.declarator,
+            index_key,
+        );
         if let Some(initializer) = init.initializer {
             self.initializer_names(initializer, scope, ty)?;
         }
@@ -119,6 +135,7 @@ impl Analyzer<'_> {
         info: &DeclaratorInfo,
         scope: ScopeId,
         location: SourceOffset,
+        automatic: Option<(super::types::TypeId, Cv)>,
     ) -> Result<(), Error> {
         let Some(head) = self.active_template_head(scope) else {
             return Ok(());
@@ -134,7 +151,7 @@ impl Analyzer<'_> {
         };
         if primary {
             self.merge_template_head(entity, head, location)?;
-            self.retain_variable_template_pattern(entity, init, info, scope, location);
+            self.retain_variable_template_pattern(entity, init, info, scope, location, automatic);
         }
         Ok(())
     }

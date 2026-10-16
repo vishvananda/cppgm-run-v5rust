@@ -288,8 +288,6 @@ impl Analyzer<'_> {
         let owner = self.graph.entity(entity).home.ok_or(Error::Invariant(
             "member template specialization without owner",
         ))?;
-        let own = self.graph.templates.parameter_scope(head);
-        let frame = self.outside_frames(owner, owner, self.graph.scope(own).parent, bridge)?;
         let arguments = self
             .graph
             .function_templates
@@ -297,7 +295,18 @@ impl Analyzer<'_> {
             .get(&entity)
             .ok_or(Error::Invariant("member template body without arguments"))?
             .clone();
-        self.bound_member_frame(own, &arguments, frame, bridge)
+        self.outside_template_frame(owner, head, &arguments, bridge)
+    }
+    pub(super) fn outside_template_frame(
+        &mut self,
+        owner: ScopeId,
+        head: HeadId,
+        arguments: &[TypeId],
+        bridge: ScopeId,
+    ) -> Result<ScopeId, Error> {
+        let own = self.graph.templates.parameter_scope(head);
+        let frame = self.outside_frames(owner, owner, self.graph.scope(own).parent, bridge)?;
+        self.bound_member_frame(own, arguments, frame, bridge)
     }
 
     fn outside_frames(

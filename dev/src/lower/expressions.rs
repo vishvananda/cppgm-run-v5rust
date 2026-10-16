@@ -94,7 +94,9 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Literal(_) => integral && self.graph.lower_literal_call(id)?.is_none(),
             ExprKind::Keyword(Keyword::True | Keyword::False) => true,
             ExprKind::Id(name) if integral && facts.folded.is_some() => {
-                self.graph.lower_static_member(self.graph.lower_name(name)?)
+                let entity = self.graph.lower_name(name)?;
+                self.graph.lower_static_member(entity)
+                    || self.graph.lower_variable_arguments(entity).is_some()
             }
             ExprKind::Member { .. } if integral && facts.folded.is_some() => self
                 .graph

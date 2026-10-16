@@ -628,6 +628,9 @@ impl Analyzer<'_> {
         {
             return Err(not_constant(location, "a value-dependent constant"));
         }
+        if !skipping && binding.kind == BindingKind::Variable {
+            self.use_instance_variable(binding.entity)?;
+        }
         if let ConstantState::Value(value) = self.graph.entity(binding.entity).constant {
             return Ok(value);
         }

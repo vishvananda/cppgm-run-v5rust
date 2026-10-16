@@ -214,7 +214,7 @@ impl Analyzer<'_> {
         }
     }
 
-    fn dependent_class_scope(&self, mut scope: ScopeId) -> bool {
+    pub(super) fn dependent_class_scope(&self, mut scope: ScopeId) -> bool {
         loop {
             let node = self.graph.scope(scope);
             if node.kind == ScopeKind::Class

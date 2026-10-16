@@ -188,6 +188,9 @@ impl Analyzer<'_> {
             return Ok(());
         };
         if found.functions.as_slice().is_empty() {
+            if found.binding.is_none() {
+                return Err(Error::at(component.location, "undeclared name"));
+            }
             return Err(Error::Missing(
                 "class or alias template specialization lookup",
             ));
@@ -669,7 +672,7 @@ impl Analyzer<'_> {
         Ok(Some(binding))
     }
 
-    fn deduce_signature_type(
+    pub(super) fn deduce_signature_type(
         &mut self,
         pattern: TypeId,
         actual: TypeId,
@@ -772,10 +775,32 @@ impl Analyzer<'_> {
                 TypeKind::Array {
                     element: a,
                     bound: ab,
-                    ..
+                    operand: actual_operand,
                 },
-            ) => Ok((operand.is_some() || pb == ab)
-                && self.deduce_signature_type(p, a, depth, arguments, extra_cv)?),
+            ) => {
+                if let Some(operand) = operand {
+                    if actual_operand.is_none()
+                        && ab != 0
+                        && let Some(index) = self.named_bound_parameter(operand, depth)
+                        && let Some(slot) = arguments.get_mut(index)
+                    {
+                        let ty = self.graph.types.scalar(Scalar::Basic(
+                            crate::types::FundamentalType::UnsignedLongInt,
+                        ))?;
+                        let value = self
+                            .graph
+                            .types
+                            .intern(TypeKind::Value { ty, bits: ab }, Cv::default())?;
+                        if slot.is_some_and(|known| !self.same_template_value(known, value)) {
+                            return Ok(false);
+                        }
+                        slot.get_or_insert(value);
+                    }
+                } else if pb != ab {
+                    return Ok(false);
+                }
+                self.deduce_signature_type(p, a, depth, arguments, extra_cv)
+            }
             (
                 TypeKind::Function {
                     result: p,
@@ -801,6 +826,9 @@ impl Analyzer<'_> {
                     }
                 }
                 self.deduce_signature_type(p, a, depth, arguments, false)
+            }
+            (TypeKind::Value { .. }, TypeKind::Value { .. }) => {
+                Ok(self.same_template_value(pattern, actual))
             }
             _ => Ok(pattern == actual),
         }
@@ -1359,22 +1387,7 @@ impl Analyzer<'_> {
         let Some(to_head) = self.function_template_head(second)? else {
             return Ok(false);
         };
-        let count = self.graph.templates.parameters(from_head).len();
-        while self.graph.function_templates.unique_types.len() < count {
-            let entity =
-                self.graph
-                    .add_entity(None, None, crate::lex::vocabulary::Keyword::Struct)?;
-            let ty = self
-                .graph
-                .types
-                .intern(TypeKind::Class(entity), Cv::default())?;
-            self.graph.function_templates.unique_types.push(ty);
-        }
-        let unique: Vec<_> = self.graph.function_templates.unique_types[..count]
-            .iter()
-            .copied()
-            .map(Some)
-            .collect();
+        let unique = self.unique_partial_arguments(from_head)?;
         let mut environment = Substitution::new(self.graph.templates.depth(from_head), &unique);
         let from = self
             .graph
@@ -1415,6 +1428,27 @@ impl Analyzer<'_> {
         } else {
             self.order_function_types(from, to, depth, &mut arguments, &mut environment)
         }
+    }
+
+    pub(super) fn unique_template_types(
+        &mut self,
+        count: usize,
+    ) -> Result<Vec<Option<TypeId>>, Error> {
+        while self.graph.function_templates.unique_types.len() < count {
+            let entity =
+                self.graph
+                    .add_entity(None, None, crate::lex::vocabulary::Keyword::Struct)?;
+            let ty = self
+                .graph
+                .types
+                .intern(TypeKind::Class(entity), Cv::default())?;
+            self.graph.function_templates.unique_types.push(ty);
+        }
+        Ok(self.graph.function_templates.unique_types[..count]
+            .iter()
+            .copied()
+            .map(Some)
+            .collect())
     }
 
     fn order_function_types(

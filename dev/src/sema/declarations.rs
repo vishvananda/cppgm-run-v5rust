@@ -712,7 +712,9 @@ impl Analyzer<'_> {
             }
             return Ok(());
         }
+        let automatic = self.holds_auto(info.ty).then_some((info.ty, specs.auto_cv));
         self.deduce_declared_object(&mut info, specs, init, home, location, deduced)?;
+        let automatic = automatic.filter(|_| self.graph.dependent_type(info.ty));
         let mut ty = info.ty;
         if matches!(
             self.graph.types.get(ty).kind,
@@ -816,7 +818,7 @@ impl Analyzer<'_> {
         let member =
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-        self.declare_variable_template(binding, init, &info, scope, location)?;
+        self.declare_variable_template(binding, init, &info, scope, location, automatic)?;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
         if let Some(initializer) = init.initializer {
             if self.semantic() {

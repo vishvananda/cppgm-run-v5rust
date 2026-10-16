@@ -849,17 +849,19 @@ impl Analyzer<'_> {
             if found.functions.as_slice().is_empty()
                 && let Some(binding) = found.binding
             {
-                if self.variable_template_primary(binding).is_some() {
-                    return Err(Error::Missing("variable template specialization demand"));
-                }
-                found.binding = Some(self.class_template_id(binding, last, scope)?.ok_or_else(
-                    || {
-                        Error::at(
-                            node.location,
-                            "a template-id that names no class or variable template",
-                        )
+                found.binding = Some(
+                    if let Some(variable) = self.variable_template_binding(binding, last, scope)? {
+                        variable
+                    } else {
+                        self.class_template_id(binding, last, scope)?
+                            .ok_or_else(|| {
+                                Error::at(
+                                    node.location,
+                                    "a template-id that names no class or variable template",
+                                )
+                            })?
                     },
-                )?);
+                );
             } else if self.semantic() {
                 self.explicit_function_specializations(last, &mut found, scope, false)?;
             } else if found.functions.as_slice().is_empty() {

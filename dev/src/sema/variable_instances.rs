@@ -18,14 +18,17 @@ use crate::{
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
-struct Pattern {
-    declarator: ast::DeclaratorId,
-    initializer: Option<ast::Initializer>,
-    ty: TypeId,
-    head: Option<HeadId>,
-    scope: ScopeId,
-    location: SourceOffset,
-    limit: usize,
+pub(super) struct Pattern {
+    pub declarator: ast::DeclaratorId,
+    pub initializer: Option<ast::Initializer>,
+    pub ty: TypeId,
+    pub head: Option<HeadId>,
+    pub scope: ScopeId,
+    pub location: SourceOffset,
+    pub limit: usize,
+    pub auto_cv: super::types::Cv,
+    pub auto_type: Option<TypeId>,
+    pub qualified: bool,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Definition {
@@ -38,6 +41,8 @@ enum State {
 }
 #[derive(Default)]
 pub(super) struct Variables {
+    pub(super) templates: super::variable_specializations::Specializations,
+    pub(super) partial_lists: super::partial_specializations::PartialLists,
     patterns: HashMap<EntityId, Pattern>,
     // Declaration order is independent of any specialization's later demand.
     partials: HashMap<EntityId, Vec<(Vec<TypeId>, EntityId)>>,
@@ -50,6 +55,37 @@ pub(super) struct Variables {
     next: usize,
 }
 impl Variables {
+    pub(super) fn pattern(&self, entity: EntityId) -> Option<Pattern> {
+        self.patterns.get(&entity).copied()
+    }
+    pub(super) fn member_source(&self, entity: EntityId) -> Option<EntityId> {
+        self.links.get(&entity).copied()
+    }
+    pub(super) fn partials(&self, primary: EntityId) -> &[(Vec<TypeId>, EntityId)] {
+        self.partials.get(&primary).map_or(&[], Vec::as_slice)
+    }
+    pub(super) fn begin(&mut self, entity: EntityId) {
+        self.states.insert(entity, State::InProgress);
+    }
+    pub(super) fn started(&self, entity: EntityId) -> bool {
+        self.states.contains_key(&entity)
+    }
+    pub(super) fn finish(
+        &mut self,
+        entity: EntityId,
+        result: Result<Definition, Error>,
+    ) -> Result<(), Error> {
+        match result {
+            Ok(definition) => {
+                self.states.insert(entity, State::Complete(definition));
+            }
+            Err(error) => {
+                self.states.remove(&entity);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
     pub(super) fn defer_declaration(&mut self, declarator: ast::DeclaratorId) {
         self.deferred_declarations.insert(declarator);
     }
@@ -63,11 +99,11 @@ impl Variables {
         arguments: Vec<TypeId>,
         partial: EntityId,
         declarator: ast::DeclaratorId,
+        key: Option<super::partial_specializations::PartialIndex>,
     ) {
-        self.partials
-            .entry(primary)
-            .or_default()
-            .push((arguments, partial));
+        let partials = self.partials.entry(primary).or_default();
+        self.partial_lists.add(primary, key, partials.len());
+        partials.push((arguments, partial));
         super::record(&mut self.partial_declarations, declarator.index(), partial);
     }
     pub(super) fn partial_declaration(&self, declarator: ast::DeclaratorId) -> Option<EntityId> {
@@ -80,7 +116,7 @@ impl Variables {
         self.links.insert(target, source);
     }
     pub(super) fn instance(&self, entity: EntityId) -> bool {
-        self.links.contains_key(&entity)
+        self.links.contains_key(&entity) || self.templates.contains(entity)
     }
     pub(super) fn demands(&self) -> &[EntityId] {
         &self.demands
@@ -142,6 +178,7 @@ impl Analyzer<'_> {
         info: &DeclaratorInfo,
         scope: ScopeId,
         location: SourceOffset,
+        automatic: Option<(TypeId, super::types::Cv)>,
     ) {
         // A later declaration without an initializer keeps the definition's
         // parameter names, lookup scope and definition point.
@@ -160,6 +197,9 @@ impl Analyzer<'_> {
                 scope: info.lookup,
                 location,
                 limit: self.graph.binding_limit(),
+                auto_cv: automatic.map_or(super::types::Cv::default(), |(_, cv)| cv),
+                auto_type: automatic.map(|(ty, _)| ty),
+                qualified: info.home.is_some(),
             },
         );
     }
@@ -228,12 +268,43 @@ impl Analyzer<'_> {
                 scope: info.lookup,
                 location,
                 limit: self.graph.binding_limit(),
+                auto_cv: super::types::Cv::default(),
+                auto_type: None,
+                qualified: info.home.is_some(),
             },
         );
     }
     pub(super) fn use_instance_variable(&mut self, entity: EntityId) -> Result<(), Error> {
-        if self.template_depth != 0 || !self.graph.variable_instances.instance(entity) {
+        if self.template_depth != 0 && !self.graph.variable_instances.templates.concrete(entity)
+            || !self.graph.variable_instances.instance(entity)
+        {
             return Ok(());
+        }
+        if self.graph.variable_instances.templates.contains(entity) {
+            if self.graph.variable_instances.templates.concrete(entity)
+                && (self.template_depth == 0 && self.unevaluated == 0
+                    || self.graph.entity(entity).ty.is_some_and(|ty| {
+                        self.integral_kind(ty).is_some() && self.graph.lower_cv(ty) & 1 != 0
+                            || matches!(
+                                self.graph.types.get(ty).kind,
+                                TypeKind::Array {
+                                    bound: 0,
+                                    operand: None,
+                                    ..
+                                }
+                            )
+                    }))
+            {
+                self.instantiate_variable(entity)?;
+            }
+            if self
+                .graph
+                .entity(entity)
+                .home
+                .is_none_or(|home| self.graph.scope(home).kind != super::graph::ScopeKind::Class)
+            {
+                return Ok(());
+            }
         }
         let ty = self
             .graph
@@ -397,6 +468,9 @@ impl Analyzer<'_> {
     fn instantiate_variable(&mut self, entity: EntityId) -> Result<(), Error> {
         if self.graph.variable_instances.states.contains_key(&entity) {
             return Ok(());
+        }
+        if self.graph.variable_instances.templates.contains(entity) {
+            return self.instantiate_variable_specialization(entity);
         }
         let Some(source) = self.graph.variable_instances.links.get(&entity).copied() else {
             return Ok(());

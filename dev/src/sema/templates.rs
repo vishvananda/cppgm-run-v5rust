@@ -77,6 +77,7 @@ pub(super) struct Templates {
     heads: Vec<Head>,
     shapes: HashMap<Vec<(ParameterShape, Option<TypeId>)>, ShapeId>,
     positions: HashMap<Position, EntityId>,
+    synthesized_values: Vec<TypeId>,
 }
 impl Templates {
     pub(super) fn parameter_scope(&self, id: HeadId) -> ScopeId {
@@ -127,6 +128,58 @@ impl Templates {
     }
 }
 impl Analyzer<'_> {
+    /// Ordering's unique value placeholders are positional and remain dependent.
+    /// Their descriptor records the argument kind; a substitution frame retains
+    /// the target parameter's own declared value type.
+    pub(super) fn unique_partial_arguments(
+        &mut self,
+        head: HeadId,
+    ) -> Result<Vec<Option<TypeId>>, Error> {
+        let count = self.graph.templates.parameters(head).len();
+        let mut arguments = self.unique_template_types(count)?;
+        for (index, argument) in arguments.iter_mut().enumerate() {
+            let parameter = self.graph.templates.parameters(head)[index];
+            let info = self
+                .graph
+                .entity(parameter)
+                .template_parameter
+                .ok_or(Error::Invariant("ordering without parameter"))?;
+            if info.value_type.is_none() {
+                continue;
+            }
+            while self.graph.templates.synthesized_values.len() <= index {
+                // The frozen parameter record stores the low 16 bits.
+                let index =
+                    u16::try_from(self.graph.templates.synthesized_values.len() & 0xffff)
+                        .map_err(|_| Error::Invariant("truncated synthesized parameter index"))?;
+                let entity = self.graph.add_entity(None, None, Keyword::Int)?;
+                self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                    position: Position {
+                        depth: 0x7fff,
+                        index,
+                        shape: ParameterShape {
+                            non_type: true,
+                            pack: false,
+                            inner: None,
+                        },
+                    },
+                    inner: None,
+                    value_type: info.value_type,
+                });
+                let ty = self.graph.types.intern(
+                    TypeKind::TemplateParameter {
+                        entity,
+                        template: false,
+                    },
+                    Cv::default(),
+                )?;
+                self.graph.entity_mut(entity).ty = Some(ty);
+                self.graph.templates.synthesized_values.push(ty);
+            }
+            *argument = Some(self.graph.templates.synthesized_values[index]);
+        }
+        Ok(arguments)
+    }
     pub(super) fn supported_fixed_template_head(&self, head: HeadId) -> Result<(), Error> {
         for &parameter in self.graph.templates.parameters(head) {
             if !self

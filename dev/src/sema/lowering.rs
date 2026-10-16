@@ -572,6 +572,29 @@ impl Graph {
             None
         }
     }
+    pub(crate) fn lower_function_type_qualifiers(
+        &self,
+        ty: TypeId,
+    ) -> crate::abi::graph::Qualifiers {
+        let mut qualifiers = crate::abi::graph::Qualifiers::default();
+        if let TypeKind::Function { cv, reference, .. } = self.types.get(ty).kind {
+            use crate::abi::graph::Qualifiers as Q;
+            if cv.0 & 1 != 0 {
+                qualifiers = qualifiers.union(Q::CONST);
+            }
+            if cv.0 & 2 != 0 {
+                qualifiers = qualifiers.union(Q::VOLATILE);
+            }
+            if let Some(reference) = reference {
+                qualifiers = qualifiers.union(if reference == super::types::RefKind::Lvalue {
+                    Q::LVALUE
+                } else {
+                    Q::RVALUE
+                });
+            }
+        }
+        qualifiers
+    }
     pub(crate) fn lower_type_parameter_name(&self, ty: TypeId) -> Option<NameId> {
         if let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind {
             self.entity(entity).name
@@ -1074,6 +1097,9 @@ impl Graph {
     pub(crate) fn lower_demanded_variables(&self) -> &[EntityId] {
         self.variable_instances.demands()
     }
+    pub(crate) fn lower_variable_arguments(&self, entity: EntityId) -> Option<&[TypeId]> {
+        self.variable_instances.templates.arguments(entity)
+    }
     pub(crate) fn lower_instance_initializer(
         &self,
         entity: EntityId,
@@ -1191,25 +1217,11 @@ impl Graph {
             .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
             .and_then(|home| self.scope(home).owner)
             .filter(|_| !function.is_static);
-        let mut qualifiers = crate::abi::graph::Qualifiers::default();
-        if let Some(ty) = entity.ty
-            && let TypeKind::Function { cv, reference, .. } = self.types.get(ty).kind
-        {
-            use crate::abi::graph::Qualifiers as Q;
-            if cv.0 & 1 != 0 {
-                qualifiers = qualifiers.union(Q::CONST);
-            }
-            if cv.0 & 2 != 0 {
-                qualifiers = qualifiers.union(Q::VOLATILE);
-            }
-            if let Some(reference) = reference {
-                qualifiers = qualifiers.union(if reference == super::types::RefKind::Lvalue {
-                    Q::LVALUE
-                } else {
-                    Q::RVALUE
-                });
-            }
-        }
+        let qualifiers = entity
+            .ty
+            .map_or(crate::abi::graph::Qualifiers::default(), |ty| {
+                self.lower_function_type_qualifiers(ty)
+            });
         Ok(FunctionFacts {
             template_instance: self.function_templates.primary(id).map(|_| id),
             object,

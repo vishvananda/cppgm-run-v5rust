@@ -971,6 +971,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     substitutable: true,
                 }
             }
+        } else if let Some((owner, member)) = self.graph.lower_member_pointer_type(ty) {
+            Node::MemberPointer {
+                owner: self.abi_type(owner)?,
+                member: self.abi_type(member)?,
+            }
         } else if let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
             Node::Name {
                 parent: Some(self.abi_type(qualifier)?),
@@ -1104,7 +1109,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     let node = Node::FunctionType {
                         result,
                         owner: None,
-                        qualifiers: Qualifiers::default(),
+                        qualifiers: self.graph.lower_function_type_qualifiers(ty),
                         variadic,
                     };
                     let id = self.abi.intern(node, &args)?;
@@ -1329,34 +1334,35 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .name
             .map(|_| self.variable_abi_name(entity))
             .transpose()?;
-        let object = if facts.name.is_none()
-            && self.graph.lower_first_named_member(facts.ty).is_none()
-        {
-            None
-        } else if facts.name.is_some()
-            && (facts.c_linkage
-                || self.graph.lower_presentation_scope(facts.home).0.is_none() && !facts.internal)
-        {
-            Some(
-                program
-                    .names
-                    .intern_bytes(self.cursor.name(facts.named()?))?,
-            )
-        } else {
-            let name = if let Some(name) = named_identity {
-                name
+        let object =
+            if facts.name.is_none() && self.graph.lower_first_named_member(facts.ty).is_none() {
+                None
+            } else if facts.name.is_some()
+                && (facts.c_linkage
+                    || self.graph.lower_presentation_scope(facts.home).0.is_none()
+                        && !facts.internal
+                        && self.graph.lower_variable_arguments(entity).is_none())
+            {
+                Some(
+                    program
+                        .names
+                        .intern_bytes(self.cursor.name(facts.named()?))?,
+                )
             } else {
-                self.variable_abi_name(entity)?
+                let name = if let Some(name) = named_identity {
+                    name
+                } else {
+                    self.variable_abi_name(entity)?
+                };
+                let mut bytes = Vec::new();
+                abi::encoder::Encoder::encode(
+                    &self.abi,
+                    abi::encoder::Target::Entity(name),
+                    &mut bytes,
+                    self.budget,
+                )?;
+                Some(program.names.intern_bytes(&bytes)?)
             };
-            let mut bytes = Vec::new();
-            abi::encoder::Encoder::encode(
-                &self.abi,
-                abi::encoder::Target::Entity(name),
-                &mut bytes,
-                self.budget,
-            )?;
-            Some(program.names.intern_bytes(&bytes)?)
-        };
         let local_object = if facts.locality == crate::sema::lowering::Locality::Unit
             && (facts.c_linkage
                 || object.is_some_and(|object| self.table.objects.contains_key(&object)))
@@ -1466,7 +1472,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 "anonymous object without named member",
             ))?;
         let terminal = self.abi.string(self.cursor.name(identifier))?;
-        let name = self.abi.intern(
+        let mut name = self.abi.intern(
             Node::Name {
                 parent,
                 terminal,
@@ -1477,6 +1483,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             &[],
         )?;
+        if let Some(arguments) = self.graph.lower_variable_arguments(entity) {
+            let mut nodes = Vec::with_capacity(arguments.len());
+            for &argument in arguments {
+                nodes.push(self.abi_type(argument)?);
+            }
+            name = self.abi.intern(Node::Template(name), &nodes)?;
+        }
         self.variable_names.insert(entity, name);
         Ok(name)
     }
@@ -1789,7 +1802,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             binding: Some(if facts.locality == crate::sema::lowering::Locality::Unit {
                 crate::lowir::vocabulary::Binding::Internal
-            } else if facts.emission == crate::sema::lowering::Emission::Demanded {
+            } else if facts.emission == crate::sema::lowering::Emission::Demanded
+                || self.graph.lower_variable_arguments(entity).is_some()
+            {
                 crate::lowir::vocabulary::Binding::Weak
             } else {
                 crate::lowir::vocabulary::Binding::Strong

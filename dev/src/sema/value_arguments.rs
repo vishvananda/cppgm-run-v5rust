@@ -318,38 +318,69 @@ impl Analyzer<'_> {
     }
 
     fn bound_operand_names(&self, operand: TypeId, depth: u32, index: usize) -> bool {
+        self.named_bound_parameter(operand, depth) == Some(index)
+    }
+    pub(super) fn named_bound_parameter(&self, operand: TypeId, depth: u32) -> Option<usize> {
         let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(operand).kind else {
-            return false;
+            return None;
         };
-        let Some(pattern) = self.graph.template_operands.pattern(entity) else {
-            return false;
-        };
+        let pattern = self.graph.template_operands.pattern(entity)?;
         let mut expression = pattern.expression;
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
             expression = inner;
         }
-        matches!(
-            self.tree.expressions.get(expression).kind,
-            ast::ExprKind::Id(_)
-        ) && self
-            .graph
+        let ast::ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
+            return None;
+        };
+        let name = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(name.components);
+        if name.global || components.len() != 1 || components[0].arguments.is_some() {
+            return None;
+        }
+        self.graph
             .template_operands
             .words(entity)
-            .is_some_and(|words| {
-                words.iter().any(|word| {
+            .and_then(|words| {
+                words.iter().find_map(|word| {
                     let super::expression_keys::KeyWord::Type(ty) = word else {
-                        return false;
+                        return None;
                     };
                     let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(*ty).kind
                     else {
-                        return false;
+                        return None;
                     };
                     self.graph
                         .entity(entity)
                         .template_parameter
-                        .is_some_and(|info| info.index(depth) == Some(index))
+                        .filter(|info| info.value_type.is_some())
+                        .and_then(|info| info.index(depth))
                 })
             })
+    }
+    pub(super) fn same_template_value(&self, first: TypeId, second: TypeId) -> bool {
+        if first == second {
+            return true;
+        }
+        let (
+            TypeKind::Value {
+                ty: from,
+                bits: first,
+            },
+            TypeKind::Value {
+                ty: to,
+                bits: second,
+            },
+        ) = (
+            &self.graph.types.get(first).kind,
+            &self.graph.types.get(second).kind,
+        )
+        else {
+            return false;
+        };
+        match (self.integral_kind(*from), self.integral_kind(*to)) {
+            (Some(from), Some(to)) => to.represents(*first, from) && to.convert(*first) == *second,
+            _ => false,
+        }
     }
     fn bound_names_value(&self, root: TypeId, depth: u32, index: usize) -> bool {
         let mut work = vec![(root, 0u8)];
