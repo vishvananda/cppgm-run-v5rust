@@ -378,6 +378,11 @@ impl Analyzer<'_> {
                     TypeKind::Reference { .. }
                         | TypeKind::Function { .. }
                         | TypeKind::Scalar(Scalar::Void)
+                        | TypeKind::Array {
+                            bound: 0,
+                            operand: None,
+                            ..
+                        }
                 ) || !self.exception_dependent_type(element)
                     && matches!(self.graph.types.get(element).kind, TypeKind::Class(class)
                         if self.graph.entity(class).complete

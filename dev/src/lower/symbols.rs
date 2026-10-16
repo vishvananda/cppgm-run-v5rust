@@ -1322,7 +1322,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.globals.push(entity);
         Ok(symbol)
     }
-    fn variable_abi_name(&mut self, entity: EntityId) -> Result<NodeId, Error> {
+    pub(super) fn variable_abi_name(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         if let Some(&name) = self.variable_names.get(&entity) {
             return Ok(name);
         }

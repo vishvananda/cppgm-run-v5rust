@@ -647,8 +647,14 @@ impl<'a> Encoder<'a> {
         if global {
             self.put(b"gs");
         }
-        self.put(b"sr");
         let levels = self.graph.items(id);
+        if root.is_none() && levels.is_empty() {
+            if !global {
+                return Err(Error::diagnostic("empty ABI unresolved qualifier"));
+            }
+            return Ok(());
+        }
+        self.put(b"sr");
         if let Some(root) = root {
             if !levels.is_empty() {
                 self.put(b"N");

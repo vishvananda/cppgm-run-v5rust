@@ -158,7 +158,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         key: &mut ExpressionKey,
     ) -> Result<(), Error> {
-        let node = self.tree.names.get(name);
+        let node = *self.tree.names.get(name);
         let Some(last) = self.tree.name_lists.get(node.components).last().copied() else {
             return Err(Error::Invariant("empty name in structural key"));
         };
@@ -166,13 +166,18 @@ impl Analyzer<'_> {
             key.words.push(KeyWord::Absent);
             return Ok(());
         }
-        let binding = self.lookup(name, scope, Filter::Ordinary)?;
+        let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+        let binding = found
+            .binding
+            .ok_or_else(|| Error::at(node.location, "undeclared name"))?;
         let binding = self.graph.binding(binding);
         if let Some(member) = self.graph.dependent_members.get(binding.entity) {
             self.key_type(member.qualifier, key)?;
         } else if binding.kind == BindingKind::Function {
             key.words.push(KeyWord::Node(KeyNode::Function));
-            if last.arguments.is_none() && self.graph.entity(binding.entity).template_head.is_none()
+            if found.functions.as_slice().len() <= 1
+                && last.arguments.is_none()
+                && self.graph.entity(binding.entity).template_head.is_none()
             {
                 key.words.push(KeyWord::Entity(binding.entity));
             } else {

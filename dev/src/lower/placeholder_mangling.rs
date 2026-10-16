@@ -4,7 +4,7 @@ use super::{Error, Node, NodeId, Symbols};
 use crate::{
     abi::vocabulary::Operation as O,
     lex::{pp_lexer::Punctuator as P, vocabulary::Keyword},
-    sema::lowering::{KeyNode as N, KeyWord as W, TypeId, TypeView},
+    sema::lowering::{EntityId, KeyNode as N, KeyWord as W, TypeId, TypeView},
 };
 
 struct Words<'a> {
@@ -426,9 +426,7 @@ impl Symbols<'_, '_> {
         let count = words.count()?;
         let global = words.flag()?;
         if count != 1 || global {
-            return self
-                .qualified_operand_name(words, count, global)
-                .map(|node| (node, None));
+            return self.qualified_operand_name(words, count, global);
         }
         let (node, cast) = match words.next()? {
             W::Parameter { index, level } => {
@@ -460,6 +458,7 @@ impl Symbols<'_, '_> {
                     None,
                 )
             }
+            W::Entity(entity) => return self.operand_entity(*entity),
             _ => return Err(missing()),
         };
         let arguments = self.operand_arguments(words)?;
@@ -470,8 +469,8 @@ impl Symbols<'_, '_> {
         words: &mut Words<'_>,
         count: usize,
         global: bool,
-    ) -> Result<NodeId, Error> {
-        if count < 2 {
+    ) -> Result<(NodeId, Option<NodeId>), Error> {
+        if count == 0 {
             return Err(missing());
         }
         let mut root = None;
@@ -501,9 +500,28 @@ impl Symbols<'_, '_> {
                 return Err(missing());
             }
         }
-        // The semantic key supplies the dependent qualifier's resolution.
-        // Its written components above retain alias spelling and nesting.
-        words.ty()?;
+        // The resolution distinguishes a dependent qualifier, a single
+        // function, an overload set, and a named entity. Written levels alone
+        // cannot decide which ABI production the frozen reader uses.
+        match words.next()? {
+            W::Type(_) => (),
+            W::Node(N::Function) => match words.next()? {
+                W::Entity(entity) => {
+                    let encoding = self.function_encoding(*entity)?;
+                    let node = self.abi.intern(Node::EntityReference(encoding), &[])?;
+                    return Ok((node, None));
+                }
+                W::Absent => (),
+                _ => return Err(missing()),
+            },
+            W::Entity(entity) => {
+                if !arguments.is_empty() {
+                    return Err(missing());
+                }
+                return self.operand_entity(*entity);
+            }
+            _ => return Err(missing()),
+        }
         let owner = self
             .abi
             .intern(Node::UnresolvedPrefix { root, global }, &levels)?;
@@ -516,6 +534,30 @@ impl Symbols<'_, '_> {
                 },
                 &arguments,
             )
+            .map(|node| (node, None))
+            .map_err(Error::from)
+    }
+    fn operand_entity(&mut self, entity: EntityId) -> Result<(NodeId, Option<NodeId>), Error> {
+        if let Some(ty) = self.graph.lower_operand_type_name(entity) {
+            let ty = self.abi_type(ty)?;
+            return Ok((ty, Some(ty)));
+        }
+        let node = if self.graph.lower_is_variable(entity) {
+            if self.graph.lower_instance_member(entity) {
+                return Err(missing());
+            }
+            Node::EntityReference(self.variable_abi_name(entity)?)
+        } else if let Some((ty, bits)) = self.graph.lower_operand_constant(entity) {
+            Node::Literal {
+                ty: self.abi_type(ty)?,
+                bits,
+            }
+        } else {
+            return Err(missing());
+        };
+        self.abi
+            .intern(node, &[])
+            .map(|node| (node, None))
             .map_err(Error::from)
     }
     fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {

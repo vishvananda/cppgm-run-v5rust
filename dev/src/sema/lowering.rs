@@ -22,6 +22,7 @@ pub(crate) use super::{
     graph::{EntityId, ScopeId},
     types::{Scalar, TypeId},
 };
+use crate::lex::vocabulary::Keyword;
 use crate::{lex::identifiers::NameId, syntax::ast};
 pub(crate) struct ConstructorView<'a> {
     pub object_pointer: TypeId,
@@ -549,6 +550,23 @@ impl Graph {
     }
     pub(crate) fn lower_operand_function(&self, entity: EntityId) -> bool {
         self.entity(entity).function.is_some()
+    }
+    pub(crate) fn lower_operand_type_name(&self, entity: EntityId) -> Option<TypeId> {
+        let node = self.entity(entity);
+        matches!(
+            node.key,
+            Keyword::Typedef | Keyword::Class | Keyword::Struct | Keyword::Union
+        )
+        .then_some(node.ty)
+        .or_else(|| node.enumeration.is_some().then_some(node.ty))
+        .flatten()
+    }
+    pub(crate) fn lower_operand_constant(&self, entity: EntityId) -> Option<(TypeId, u64)> {
+        let node = self.entity(entity);
+        let super::constants::ConstantState::Value(value) = node.constant else {
+            return None;
+        };
+        Some((node.ty.unwrap_or(value.ty), value.bits))
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
@@ -1617,6 +1635,9 @@ impl Graph {
     }
     pub(crate) fn lower_static_member(&self, entity: EntityId) -> bool {
         self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
+    }
+    pub(crate) fn lower_instance_member(&self, entity: EntityId) -> bool {
+        self.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance)
     }
     pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> Result<bool, Error> {
         Ok(!self.destructor_trivial(entity)?)

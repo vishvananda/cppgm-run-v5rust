@@ -35,19 +35,21 @@ pub(super) struct Pattern {
 struct Key {
     entity: EntityId,
     context: Option<EntityId>,
+    query: Query,
     depth: u32,
     arguments: Vec<TypeId>,
 }
 #[derive(Clone, Copy)]
 enum State {
     InProgress,
-    Complete(TypeId),
+    Complete(Evaluation),
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Query {
     Type,
     Bound,
 }
+#[derive(Clone, Copy)]
 enum Evaluation {
     Type(TypeId),
     Bound(u64),
@@ -224,20 +226,35 @@ impl Analyzer<'_> {
         {
             return Ok(Some(ty));
         }
+        match self.cached_operand(entity, environment, arguments, Query::Type)? {
+            Some(Evaluation::Type(result)) => self
+                .graph
+                .types
+                .qualify(result, self.graph.types.get(ty).cv)
+                .map(Some),
+            None => Ok(None),
+            Some(Evaluation::Bound(_)) => {
+                Err(Error::Invariant("operand type query returned a bound"))
+            }
+        }
+    }
+
+    fn cached_operand(
+        &mut self,
+        entity: EntityId,
+        environment: &mut Substitution<'_>,
+        arguments: Vec<TypeId>,
+        query: Query,
+    ) -> Result<Option<Evaluation>, Error> {
         let key = Key {
             entity,
             context: environment.context,
+            query,
             depth: environment.depth,
             arguments,
         };
         match self.graph.template_operands.substitutions.get(&key) {
-            Some(State::Complete(result)) => {
-                return self
-                    .graph
-                    .types
-                    .qualify(*result, self.graph.types.get(ty).cv)
-                    .map(Some);
-            }
+            Some(State::Complete(result)) => return Ok(Some(*result)),
             Some(State::InProgress) => return Ok(None),
             None => (),
         }
@@ -245,17 +262,11 @@ impl Analyzer<'_> {
             .template_operands
             .substitutions
             .insert(key, State::InProgress);
-        let result = self
-            .evaluate_operand(entity, environment, Query::Type)
-            .and_then(|result| match result {
-                Evaluation::Type(ty) => Ok(ty),
-                Evaluation::Bound(_) => {
-                    Err(Error::Invariant("operand type query returned a bound"))
-                }
-            });
+        let result = self.evaluate_operand(entity, environment, query);
         let key = Key {
             entity,
             context: environment.context,
+            query,
             depth: environment.depth,
             arguments: environment
                 .arguments
@@ -270,10 +281,7 @@ impl Analyzer<'_> {
                     .template_operands
                     .substitutions
                     .insert(key, State::Complete(result));
-                self.graph
-                    .types
-                    .qualify(result, self.graph.types.get(ty).cv)
-                    .map(Some)
+                Ok(Some(result))
             }
             Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
                 // Failed lookups may name a class completed later. Keep only
@@ -296,11 +304,16 @@ impl Analyzer<'_> {
         let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(operand).kind else {
             return Err(Error::Invariant("array bound without operand placeholder"));
         };
-        match self.evaluate_operand(entity, environment, Query::Bound) {
-            Ok(Evaluation::Bound(bound)) => Ok(Some(bound)),
-            Ok(Evaluation::Type(_)) => Err(Error::Invariant("bound query returned a type")),
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => Ok(None),
-            Err(error) => Err(error),
+        let arguments = environment
+            .arguments
+            .iter()
+            .copied()
+            .collect::<Option<Vec<_>>>()
+            .ok_or(Error::Invariant("bound query without concrete arguments"))?;
+        match self.cached_operand(entity, environment, arguments, Query::Bound)? {
+            Some(Evaluation::Bound(bound)) => Ok(Some(bound)),
+            Some(Evaluation::Type(_)) => Err(Error::Invariant("bound query returned a type")),
+            None => Ok(None),
         }
     }
 
@@ -555,6 +568,59 @@ mod tests {
             }
         }
         assert!(graph.template_operands.substitutions.is_empty());
+    }
+
+    #[test]
+    fn successful_bound_queries_reuse_copies_and_keep_type_queries_separate() {
+        let source =
+            SourceBuffer::new(b"template<class T>int f(int(&)[sizeof(T)]);".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"bound-cache").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let entity = *analyzer
+            .graph
+            .template_operands
+            .patterns
+            .keys()
+            .next()
+            .unwrap();
+        let ty = analyzer.graph.entity(entity).ty.unwrap();
+        let int = analyzer
+            .graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let args = [Some(int)];
+        let mut environment = Substitution::new(0, &args);
+        assert_eq!(
+            analyzer
+                .substitute_array_bound(ty, &mut environment)
+                .unwrap(),
+            Some(4)
+        );
+        let count = analyzer.tree.expressions.mark();
+        for _ in 0..4 {
+            assert_eq!(
+                analyzer
+                    .substitute_array_bound(ty, &mut environment)
+                    .unwrap(),
+                Some(4)
+            );
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), count);
+        let result = analyzer
+            .substitute_operand(ty, entity, &mut environment)
+            .unwrap()
+            .unwrap();
+        assert_eq!(analyzer.integral_kind(result).unwrap().bits, 64);
+        assert_eq!(analyzer.graph.template_operands.substitutions.len(), 2);
+        assert!(analyzer.tree.expressions.mark() > count);
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 
     #[test]

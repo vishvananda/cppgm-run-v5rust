@@ -601,6 +601,9 @@ impl Analyzer<'_> {
             self.lookup(name, scope, Filter::Ordinary)?
         };
         let binding = self.graph.binding(found);
+        if self.template_depth != 0 && self.graph.dependent_members.get(binding.entity).is_some() {
+            return Err(not_constant(location, "a value-dependent constant"));
+        }
         if self.semantic() && !skipping && binding.kind == BindingKind::Variable
             && binding.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Reference { element, .. } if self.integral_kind(element).is_some()))
         {
