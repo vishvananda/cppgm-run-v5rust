@@ -31,6 +31,7 @@ mod declarations;
 mod declarators;
 mod default_arguments;
 mod dependence;
+mod dependent_members;
 mod destruction;
 mod destructor_expressions;
 mod dump;

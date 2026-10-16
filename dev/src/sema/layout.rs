@@ -67,6 +67,9 @@ impl Analyzer<'_> {
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
         use super::function_demands::Demand;
         let mut work = std::mem::take(&mut self.graph.boundary_roots);
+        // Explicit definitions are emitted even without a calling expression.
+        // Prepare only those named roots' ordinary class ABI boundaries.
+        work.extend(self.graph.lower_explicit_functions());
         let mut destruction_edges = std::collections::HashMap::<EntityId, Vec<EntityId>>::new();
         for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
             if let Some(owner) = owner {

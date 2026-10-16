@@ -196,14 +196,41 @@ impl Analyzer<'_> {
         let parameter_scope =
             self.graph
                 .add_scope(ScopeKind::TemplateParameters, scope, Some(scope), None)?;
-        let head = self.template_parameters(parameters, parameter_scope, true)?;
-        let saved = self.template_head.replace(head);
-        self.template_depth += 1;
-        let result = self.declaration(declaration, parameter_scope);
-        self.template_depth -= 1;
-        self.template_head = saved;
+        let specs = match self.tree.declarations.get(declaration).kind {
+            ast::DeclKind::Simple { specifiers, .. }
+            | ast::DeclKind::Function { specifiers, .. } => Some(specifiers),
+            _ => None,
+        };
+        let saved_friend = self.namespace_friend_class;
+        if self.graph.scope(home).kind == ScopeKind::Class
+            && self
+                .graph
+                .scope(home)
+                .owner
+                .is_some_and(|entity| self.graph.entity(entity).template_head.is_none())
+            && specs.is_some_and(|specs| {
+                self.tree
+                    .specs
+                    .get(specs)
+                    .iter()
+                    .any(|spec| matches!(spec.kind, ast::SpecifierKind::Keyword(Keyword::Friend)))
+            })
+        {
+            self.namespace_friend_class = Some(home);
+        }
+        let result = (|| {
+            let head = self.template_parameters(parameters, parameter_scope, true)?;
+            let saved = self.template_head.replace(head);
+            self.template_depth += 1;
+            let result = self.declaration(declaration, parameter_scope);
+            self.template_depth -= 1;
+            self.template_head = saved;
+            result
+        })();
+        self.namespace_friend_class = saved_friend;
         result
     }
+
     fn template_parameters(
         &mut self,
         syntax: ast::TemplateParameterClause,

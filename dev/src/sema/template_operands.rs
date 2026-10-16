@@ -22,6 +22,7 @@ use std::{
 pub(super) struct Pattern {
     pub expression: ast::ExprId,
     pub scope: ScopeId,
+    pub key_dependent: bool,
     home: ScopeId,
     next: Option<EntityId>,
     limit: usize,
@@ -33,6 +34,7 @@ pub(super) struct Pattern {
 #[derive(PartialEq, Eq, Hash)]
 struct Key {
     entity: EntityId,
+    context: Option<EntityId>,
     depth: u32,
     arguments: Vec<TypeId>,
 }
@@ -80,12 +82,16 @@ impl Analyzer<'_> {
         self.expression(expression, scope)?;
         let key = self.operand_key(expression, scope)?;
         // Non-dependent operands in semantic mode have their ordinary type.
-        if fixed && key.as_ref().is_some_and(|key| !key.dependent) {
+        if fixed
+            && key.as_ref().is_some_and(|key| !key.dependent)
+            && !self.type_dependent_expression(expression, scope)?
+        {
             let saved = std::mem::replace(&mut self.template_depth, 0);
             let result = self.decltype_type(expression, scope);
             self.template_depth = saved;
             return result;
         }
+        let key_dependent = key.as_ref().is_some_and(|key| key.dependent);
         let words = key.map(|key| key.words);
         let parameters = words
             .as_deref()
@@ -100,6 +106,15 @@ impl Analyzer<'_> {
                 .scope(home)
                 .parent
                 .ok_or(Error::Invariant("operand without home"))?;
+        }
+        if self.namespace_friend_class == Some(home) {
+            while self.graph.scope(home).kind != ScopeKind::Namespace {
+                home = self
+                    .graph
+                    .scope(home)
+                    .parent
+                    .ok_or(Error::Invariant("friend without namespace"))?;
+            }
         }
         let fingerprint = words.as_ref().map(|words| {
             self.graph
@@ -147,6 +162,7 @@ impl Analyzer<'_> {
             Pattern {
                 expression,
                 scope,
+                key_dependent,
                 home,
                 next: head,
                 limit: self.graph.binding_limit(),
@@ -210,6 +226,7 @@ impl Analyzer<'_> {
         }
         let key = Key {
             entity,
+            context: environment.context,
             depth: environment.depth,
             arguments,
         };
@@ -238,6 +255,7 @@ impl Analyzer<'_> {
             });
         let key = Key {
             entity,
+            context: environment.context,
             depth: environment.depth,
             arguments: environment
                 .arguments
@@ -302,12 +320,23 @@ impl Analyzer<'_> {
         let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
             .expression(pattern.expression)
             .map_err(|e| super::template_bodies::copy_error(&e))?;
+        let access = environment
+            .context
+            .map(|entity| self.substitution_scope(entity))
+            .transpose()?;
+        let saved_access = std::mem::replace(
+            &mut self.declaration_access.substitution,
+            access.map(|point| (scope, point)),
+        );
+        let saved_function = self.declaration_access.function.take();
+        let saved_access_class = self.declaration_access.class.take();
         let saved_body = self.body_context.take();
         let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
         let saved_depth = std::mem::replace(&mut self.template_depth, 0);
         let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 1);
         let saved_default = self.default_argument_scope.take();
         let saved_head = self.template_head.take();
+        let saved_friend = self.namespace_friend_class.take();
         let saved_class = std::mem::replace(&mut self.class_depth, 0);
         let saved_initializing = self.initializing.take();
         let saved_base = self.base_object.take();
@@ -316,12 +345,16 @@ impl Analyzer<'_> {
             Query::Type => self.decltype_type(copy, scope).map(Evaluation::Type),
             Query::Bound => self.array_bound(copy, scope).map(Evaluation::Bound),
         };
+        self.declaration_access.substitution = saved_access;
+        self.declaration_access.function = saved_function;
+        self.declaration_access.class = saved_access_class;
         self.body_context = saved_body;
         self.graph.lookup_limit = saved_limit;
         self.template_depth = saved_depth;
         self.unevaluated = saved_unevaluated;
         self.default_argument_scope = saved_default;
         self.template_head = saved_head;
+        self.namespace_friend_class = saved_friend;
         self.class_depth = saved_class;
         self.initializing = saved_initializing;
         self.base_object = saved_base;
@@ -417,6 +450,9 @@ impl Analyzer<'_> {
                 TypeKind::TemplateParameter { entity, .. } => {
                     if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
                         mask |= pattern.parameters?;
+                    }
+                    if let Some(member) = self.graph.dependent_members.get(*entity) {
+                        types.push(member.qualifier);
                     }
                 }
                 TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => types.push(*ty),

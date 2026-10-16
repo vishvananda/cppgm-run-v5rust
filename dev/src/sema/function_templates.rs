@@ -58,6 +58,7 @@ pub(super) struct Substitution<'a> {
     pub(super) depth: u32,
     pub(super) arguments: &'a [Option<TypeId>],
     memo: HashMap<TypeId, Option<TypeId>>,
+    pub(super) context: Option<EntityId>,
 }
 impl<'a> Substitution<'a> {
     pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
@@ -65,6 +66,7 @@ impl<'a> Substitution<'a> {
             depth,
             arguments,
             memo: HashMap::new(),
+            context: None,
         }
     }
 }
@@ -112,6 +114,7 @@ impl Analyzer<'_> {
             .map(Some)
             .collect();
         let mut environment = Substitution::new(self.graph.templates.depth(head), &arguments);
+        environment.context = Some(self.graph.binding(primary).entity);
         let TypeKind::Function {
             result,
             parameters,
@@ -282,6 +285,16 @@ impl Analyzer<'_> {
         }
         let kind = self.graph.types.get(ty).kind.clone();
         let result = match kind {
+            TypeKind::TemplateParameter { entity, .. }
+                if self.graph.dependent_members.get(entity).is_some() =>
+            {
+                let member = self
+                    .graph
+                    .dependent_members
+                    .get(entity)
+                    .ok_or(Error::Invariant("lost dependent member"))?;
+                self.substitute_member_type(ty, member, environment)?
+            }
             TypeKind::TemplateParameter { entity, .. }
                 if self.graph.template_operands.pattern(entity).is_some() =>
             {
@@ -456,6 +469,14 @@ impl Analyzer<'_> {
         primary: BindingId,
         arguments: &mut [Option<TypeId>],
     ) -> Result<Option<BindingId>, Error> {
+        self.complete_signature_in(primary, arguments, true)
+    }
+    fn complete_signature_in(
+        &mut self,
+        primary: BindingId,
+        arguments: &mut [Option<TypeId>],
+        check_access: bool,
+    ) -> Result<Option<BindingId>, Error> {
         let primary = self
             .graph
             .function_origin(self.graph.binding(primary).entity)?;
@@ -478,6 +499,7 @@ impl Analyzer<'_> {
             } else {
                 let pattern = self.type_syntax(default.syntax, default.scope)?;
                 let mut environment = Substitution::new(depth, &arguments[..index]);
+                environment.context = check_access.then_some(self.graph.binding(primary).entity);
                 let Some(ty) = self.substitute_signature_type(pattern, &mut environment)? else {
                     return Ok(None);
                 };
@@ -508,6 +530,7 @@ impl Analyzer<'_> {
             .signatures
             .insert(key, SignatureState::InProgress);
         let mut environment = Substitution::new(depth, arguments);
+        environment.context = check_access.then_some(self.graph.binding(primary).entity);
         let leading = !self
             .graph
             .function_templates
@@ -596,9 +619,10 @@ impl Analyzer<'_> {
         let pattern = self.graph.types.canonical_function(pattern)?;
         let actual = self.graph.types.canonical_function(actual)?;
         if let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(pattern).kind
-            && self.graph.template_operands.pattern(entity).is_some()
+            && (self.graph.template_operands.pattern(entity).is_some()
+                || self.graph.dependent_members.get(entity).is_some())
         {
-            return Ok(true); // A decltype operand is a non-deduced context.
+            return Ok(true); // Dependent operands and qualified members are non-deduced.
         }
         let pcv = self.type_cv(pattern).0;
         let acv = self.type_cv(actual).0;
@@ -805,6 +829,7 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("template call without function type"));
             };
             let mut environment = Substitution::new(depth, &given);
+            environment.context = Some(self.graph.binding(binding).entity);
             if self
                 .substitute_signature_type(result, &mut environment)?
                 .is_none()
@@ -815,6 +840,7 @@ impl Analyzer<'_> {
         for (index, &argument) in args.iter().enumerate().take(count) {
             let pattern = self.graph.types.function_parameter(ty, index)?;
             let mut environment = Substitution::new(depth, &given);
+            environment.context = Some(self.graph.binding(binding).entity);
             let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
                 return Ok(None);
             };
@@ -900,6 +926,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("template target without type"))?;
         let depth = self.graph.templates.depth(head);
         let mut environment = Substitution::new(depth, &arguments);
+        environment.context = Some(self.graph.binding(binding).entity);
         let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
             return Ok(None);
         };
@@ -1007,7 +1034,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
-        let Some(binding) = self.complete_signature(primary, &mut arguments)? else {
+        let Some(binding) = self.complete_signature_in(primary, &mut arguments, false)? else {
             return Ok(None);
         };
         Ok((self.graph.binding(binding).ty == Some(declared)).then_some(binding))
@@ -1258,7 +1285,8 @@ impl Analyzer<'_> {
             }
             match &self.graph.types.get(ty).kind {
                 TypeKind::TemplateParameter { entity, .. }
-                    if self.graph.template_operands.pattern(*entity).is_some() =>
+                    if self.graph.template_operands.pattern(*entity).is_some()
+                        || self.graph.dependent_members.get(*entity).is_some() =>
                 {
                     return true;
                 }

@@ -127,7 +127,7 @@ impl Analyzer<'_> {
                 special: key.special(),
                 allocation: None,
             });
-            return self.graph.add_hidden_function_in(
+            return self.graph.add_hidden_binding_in(
                 home,
                 super::graph::Binding {
                     kind: super::graph::BindingKind::Function,
@@ -290,6 +290,11 @@ impl Analyzer<'_> {
     // Settlement checks an out-of-class signature in its selected member's
     // lexical class context, including enclosing classes and their grants.
     fn access_scopes(&self, scope: ScopeId) -> impl Iterator<Item = ScopeId> + '_ {
+        let scope = self
+            .declaration_access
+            .substitution
+            .filter(|&(root, _)| self.graph.encloses(root, scope))
+            .map_or(scope, |(_, point)| point);
         self.declaration_access
             .class
             .or_else(|| {

@@ -5,7 +5,7 @@ use super::{
     analyzer::Analyzer,
     function_names::ValueKey,
     graph::{BindingId, BindingKind, ScopeId, ScopeKind},
-    types::TypeKind,
+    types::{TypeId, TypeKind},
 };
 use crate::{
     lex::identifiers::NameId,
@@ -18,6 +18,14 @@ pub(super) enum Filter {
     Prefix,
     Namespace,
     Elaborated,
+}
+
+// A dependent qualifier has no scope until substitution. Never manufacture a
+// class scope for its placeholder or search its members speculatively.
+#[derive(Clone, Copy)]
+enum Prefix {
+    Scope(ScopeId),
+    Dependent(TypeId),
 }
 
 #[derive(Default)]
@@ -385,10 +393,23 @@ impl Analyzer<'_> {
         count: usize,
         access: bool,
     ) -> Result<Option<ScopeId>, Error> {
+        match self.name_prefix(name, scope, count, access)? {
+            Some(Prefix::Scope(scope)) => Ok(Some(scope)),
+            Some(Prefix::Dependent(_)) => Err(Error::Missing("dependent qualified name lookup")),
+            None => Ok(None),
+        }
+    }
+    fn name_prefix(
+        &mut self,
+        name: Name,
+        scope: ScopeId,
+        count: usize,
+        access: bool,
+    ) -> Result<Option<Prefix>, Error> {
         let name = *self.tree.names.get(name);
         self.lookup_location = name.location;
         let component_count = self.tree.name_lists.get(name.components).len();
-        let mut prefix = name.global.then_some(self.graph.global);
+        let mut prefix = name.global.then_some(Prefix::Scope(self.graph.global));
         if count > component_count {
             return Err(Error::Invariant("name prefix outside components"));
         }
@@ -396,6 +417,13 @@ impl Analyzer<'_> {
             let component = self.tree.name_lists.get(name.components)[index];
             if let NameKind::Decltype(operand) = component.kind {
                 let ty = self.decltype_type(operand, scope)?;
+                if matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::TemplateParameter { .. }
+                ) {
+                    prefix = Some(Prefix::Dependent(ty));
+                    continue;
+                }
                 if !matches!(
                     self.graph.types.get(ty).kind,
                     TypeKind::Class(_) | TypeKind::Enum(_)
@@ -405,7 +433,7 @@ impl Analyzer<'_> {
                         "decltype in a nested-name-specifier must name a class or enumeration",
                     ));
                 }
-                prefix = Some(self.type_qualifier(ty, component.location)?);
+                prefix = Some(Prefix::Scope(self.type_qualifier(ty, component.location)?));
                 continue;
             }
             if component.arguments.is_some() {
@@ -418,10 +446,10 @@ impl Analyzer<'_> {
                 ));
             };
             self.lookup_location = component.location;
-            let found = if let Some(prefix) = prefix {
-                self.qualified(prefix, key, Filter::Prefix)
-            } else {
-                self.unqualified(scope, key, Filter::Prefix)
+            let found = match prefix {
+                Some(Prefix::Scope(prefix)) => self.qualified(prefix, key, Filter::Prefix),
+                Some(Prefix::Dependent(ty)) => self.dependent_member_binding(ty, key).map(Some),
+                None => self.unqualified(scope, key, Filter::Prefix),
             }
             .map_err(|error| match error {
                 Error::Diagnostic {
@@ -442,7 +470,7 @@ impl Analyzer<'_> {
             if access && self.semantic() && self.template_depth == 0 && prefix.is_none() {
                 self.check_declaration_direct_access(binding_id, scope, component.location)?;
             }
-            if let Some(search) = prefix
+            if let Some(Prefix::Scope(search)) = prefix
                 && let Some(naming) = self.graph.scope(search).owner
                 && self.graph.scope(search).kind == ScopeKind::Class
                 && self.graph.binding_scope(binding_id) != search
@@ -455,7 +483,20 @@ impl Analyzer<'_> {
                     component.location,
                 )?;
             }
-            prefix = Some(self.binding_qualifier(binding_id, component.location)?);
+            let binding = self.graph.binding(binding_id);
+            prefix = Some(
+                if matches!(binding.kind, BindingKind::Type | BindingKind::Alias)
+                    && let Some(ty) = binding.ty
+                    && matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::TemplateParameter { .. }
+                    )
+                {
+                    Prefix::Dependent(ty)
+                } else {
+                    Prefix::Scope(self.binding_qualifier(binding_id, component.location)?)
+                },
+            );
         }
         Ok(prefix)
     }
@@ -564,7 +605,32 @@ impl Analyzer<'_> {
             return self.conversion_name_lookup(name, target, scope);
         }
         let key = Self::expression_name(last.kind)?;
-        let prefix = self.prefix(name, scope)?;
+        let count = self
+            .tree
+            .name_lists
+            .get(node.components)
+            .len()
+            .saturating_sub(1);
+        let prefix = match self.name_prefix(name, scope, count, false)? {
+            Some(Prefix::Dependent(qualifier)) => {
+                if last.arguments.is_some() {
+                    return Err(Error::Missing("dependent member template specialization"));
+                }
+                let binding = if filter == Filter::Namespace {
+                    None
+                } else if let Some(name) = key.identifier() {
+                    Some(self.dependent_member_binding(qualifier, name)?)
+                } else {
+                    return Err(Error::Missing("dependent special member name"));
+                };
+                return Ok(LookupResult {
+                    binding,
+                    ..LookupResult::default()
+                });
+            }
+            Some(Prefix::Scope(scope)) => Some(scope),
+            None => None,
+        };
         self.prepare_assignment_lookup(prefix.unwrap_or(scope), key, prefix.is_none())?;
         self.lookup_location = node.location;
         let mut found = if let Some(prefix) = prefix {

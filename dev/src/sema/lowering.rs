@@ -521,6 +521,20 @@ impl Graph {
         let pattern = self.template_operands.pattern(entity)?;
         Some((pattern.expression, self.template_operands.words(entity)?))
     }
+    pub(crate) fn lower_dependent_member(&self, ty: TypeId) -> Option<(TypeId, NameId)> {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        let member = self.dependent_members.get(entity)?;
+        Some((member.qualifier, member.name))
+    }
+    pub(crate) fn lower_operand_key_dependent(&self, ty: TypeId) -> Option<bool> {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        let pattern = self.template_operands.pattern(entity)?;
+        Some(pattern.key_dependent && self.template_operands.words(entity).is_some())
+    }
     pub(crate) fn lower_array_operand(&self, ty: TypeId) -> Option<TypeId> {
         let TypeKind::Array { operand, .. } = self.types.get(ty).kind else {
             return None;
@@ -1506,10 +1520,11 @@ impl Graph {
         let Some(id) = self.entity(entity).bit_field else {
             return Ok(None);
         };
+        let (operation, signed) = self.bit_fields.semantics(id)?;
         let storage = self.bit_fields.storage(id)?;
         Ok(Some(BitField {
-            operation: self.bit_fields.operation(id),
-            signed: self.bit_fields.signed(id),
+            operation,
+            signed,
             width: self.bit_fields.width(id),
             bit: storage.bit,
             offset: storage.offset,

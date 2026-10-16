@@ -769,6 +769,14 @@ impl Analyzer<'_> {
                 let entity = self.graph.entity(binding.entity);
                 let node = self.tree.names.get(name);
                 if !node.typename_keyword
+                    && self.graph.dependent_members.get(binding.entity).is_some()
+                {
+                    return Err(Error::at(
+                        node.location,
+                        "a dependent qualified name needs typename to name a type",
+                    ));
+                }
+                if !node.typename_keyword
                     && binding.kind == super::graph::BindingKind::Type
                     && result.qualifier.is_some_and(|qualifier| {
                         self.graph.binding_scope(found) == qualifier

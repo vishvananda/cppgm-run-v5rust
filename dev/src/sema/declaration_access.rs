@@ -29,6 +29,7 @@ pub(super) struct DeclarationAccess {
     pending: Vec<Pending>,
     pub function: Option<EntityId>,
     pub class: Option<ScopeId>,
+    pub substitution: Option<(ScopeId, ScopeId)>,
 }
 impl Analyzer<'_> {
     pub(super) fn declaration_specifiers(

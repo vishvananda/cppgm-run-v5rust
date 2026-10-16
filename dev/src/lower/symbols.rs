@@ -106,6 +106,8 @@ pub(super) struct Symbols<'a, 'source> {
     cursor: &'a Cursor<'source>,
     abi: abi::graph::Graph,
     types: HashMap<TypeId, NodeId>,
+    placeholders: HashMap<TypeId, Option<NodeId>>,
+    unmangled: HashMap<TypeId, bool>,
     scopes: HashMap<ScopeId, Option<NodeId>>,
     budget: StackBudget,
     stack_base: usize,
@@ -159,6 +161,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             cursor,
             abi: abi::graph::Graph::default(),
             types: HashMap::new(),
+            placeholders: HashMap::new(),
+            unmangled: HashMap::new(),
             scopes: HashMap::new(),
             budget,
             pending: Vec::new(),
@@ -929,8 +933,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 index,
                 substitutable: true,
             }
-        } else if let Some((operand, words)) = self.graph.lower_template_operand(ty) {
-            let expression = self.placeholder_expression(words)?;
+        } else if let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
+            Node::Name {
+                parent: Some(self.abi_type(qualifier)?),
+                terminal: self.abi.string(self.cursor.name(name))?,
+                internal: false,
+                occurrence: 0,
+            }
+        } else if let Some((operand, _)) = self.graph.lower_template_operand(ty) {
+            let expression = self
+                .placeholder_node(ty)?
+                .ok_or(Error::Missing("unmangled dependent ABI type"))?;
             let kind = self.tree.expressions.get(operand).kind;
             Node::Decltype {
                 expression,
@@ -2181,10 +2194,30 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )));
         };
         let mut args = Vec::with_capacity(parameters.len());
-        for &parameter in parameters {
+        for (index, &parameter) in parameters.iter().enumerate() {
+            let parameter = if facts.template_instance.is_some()
+                && self.unmangled_placeholder(parameter)?
+            {
+                let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+                    return Err(Error::Missing("specialization without function type"));
+                };
+                *parameters
+                    .get(index)
+                    .ok_or(Error::Missing("specialization parameter count"))?
+            } else {
+                parameter
+            };
             args.push(self.abi_type(parameter)?);
         }
         let result = if facts.template_instance.is_some() {
+            let result = if self.unmangled_placeholder(result)? {
+                let TypeView::Function { result, .. } = self.graph.lower_type(facts.ty)? else {
+                    return Err(Error::Missing("specialization without function type"));
+                };
+                result
+            } else {
+                result
+            };
             Some(self.abi_type(result)?)
         } else {
             None

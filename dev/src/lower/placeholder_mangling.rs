@@ -40,6 +40,68 @@ fn missing() -> Error {
     Error::Missing("dependent ABI expression form")
 }
 impl Symbols<'_, '_> {
+    pub(super) fn placeholder_node(&mut self, ty: TypeId) -> Result<Option<NodeId>, Error> {
+        if let Some(&node) = self.placeholders.get(&ty) {
+            return Ok(node);
+        }
+        if self.graph.lower_operand_key_dependent(ty) != Some(true) {
+            self.placeholders.insert(ty, None);
+            return Ok(None);
+        }
+        self.placeholders.insert(ty, None);
+        let (_, words) = self.graph.lower_template_operand(ty).ok_or_else(missing)?;
+        let node = match self.placeholder_expression(words) {
+            Ok(node) => Some(node),
+            // The frozen reader's unsupported production is ABI_NONE. Only
+            // that result selects its concrete-specialization ABI fallback.
+            Err(Error::Missing("dependent ABI expression form")) => None,
+            Err(error) => {
+                self.placeholders.remove(&ty);
+                return Err(error);
+            }
+        };
+        self.placeholders.insert(ty, node);
+        Ok(node)
+    }
+
+    pub(super) fn unmangled_placeholder(&mut self, ty: TypeId) -> Result<bool, Error> {
+        self.check_stack()?;
+        if let Some(&known) = self.unmangled.get(&ty) {
+            return Ok(known);
+        }
+        let result = if self.graph.lower_operand_key_dependent(ty).is_some() {
+            self.placeholder_node(ty)?.is_none()
+        } else {
+            match self.graph.lower_type(ty)? {
+                TypeView::Array { element, .. } => {
+                    let bound = if let Some(operand) = self.graph.lower_array_operand(ty) {
+                        self.placeholder_node(operand)?.is_none()
+                    } else {
+                        false
+                    };
+                    bound || self.unmangled_placeholder(element)?
+                }
+                TypeView::Pointer(element) | TypeView::Reference { element, .. } => {
+                    self.unmangled_placeholder(element)?
+                }
+                TypeView::Function {
+                    result, parameters, ..
+                } => {
+                    let mut found = false;
+                    for &parameter in parameters {
+                        if self.unmangled_placeholder(parameter)? {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found || self.unmangled_placeholder(result)?
+                }
+                _ => false,
+            }
+        };
+        self.unmangled.insert(ty, result);
+        Ok(result)
+    }
     pub(super) fn placeholder_expression(&mut self, words: &[W]) -> Result<NodeId, Error> {
         let mut reader = Words { words, at: 0 };
         let result = self.operand_expression(&mut reader, 0)?;
@@ -348,8 +410,15 @@ impl Symbols<'_, '_> {
     }
 
     fn operand_name(&mut self, words: &mut Words<'_>) -> Result<(NodeId, Option<NodeId>), Error> {
-        if !matches!(words.next()?, W::Node(N::Name)) || words.count()? != 1 || words.flag()? {
+        if !matches!(words.next()?, W::Node(N::Name)) {
             return Err(missing());
+        }
+        let count = words.count()?;
+        let global = words.flag()?;
+        if count != 1 || global {
+            return self
+                .qualified_operand_name(words, count, global)
+                .map(|node| (node, None));
         }
         let (node, cast) = match words.next()? {
             W::Parameter { index, level } => {
@@ -385,6 +454,59 @@ impl Symbols<'_, '_> {
         };
         let arguments = self.operand_arguments(words)?;
         Ok((self.abi.intern(node, &arguments)?, cast))
+    }
+    fn qualified_operand_name(
+        &mut self,
+        words: &mut Words<'_>,
+        count: usize,
+        global: bool,
+    ) -> Result<NodeId, Error> {
+        if count < 2 {
+            return Err(missing());
+        }
+        let mut root = None;
+        let mut levels = Vec::new();
+        let mut terminal = None;
+        let mut arguments = Vec::new();
+        for index in 0..count {
+            let word = words.next()?;
+            let name = match word {
+                W::Type(ty) if index == 0 && !global => {
+                    root = Some(self.abi_type(*ty)?);
+                    None
+                }
+                W::Entity(entity) if index == 0 && !global => self.graph.lower_local_name(*entity),
+                W::Identifier(name) => Some(*name),
+                _ => return Err(missing()),
+            };
+            arguments = self.operand_arguments(words)?;
+            if let Some(name) = name {
+                let name = self.abi.string(self.cursor.name(name))?;
+                if index + 1 == count {
+                    terminal = Some(name);
+                } else {
+                    levels.push(self.abi.intern(Node::UnresolvedName(name), &arguments)?);
+                }
+            } else if !arguments.is_empty() {
+                return Err(missing());
+            }
+        }
+        // The semantic key supplies the dependent qualifier's resolution.
+        // Its written components above retain alias spelling and nesting.
+        words.ty()?;
+        let owner = self
+            .abi
+            .intern(Node::UnresolvedPrefix { root, global }, &levels)?;
+        self.abi
+            .intern(
+                Node::ScopedMember {
+                    owner,
+                    member: terminal.ok_or_else(missing)?,
+                    close_qualifier: false,
+                },
+                &arguments,
+            )
+            .map_err(Error::from)
     }
     fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {
         let mut arguments = Vec::new();

@@ -21,10 +21,17 @@ pub(super) struct Storage {
     pub split: u8,
     pub shared: bool,
 }
+#[derive(Clone, Copy)]
+pub(super) enum FieldSemantics {
+    Dependent,
+    Integral {
+        operation: super::types::TypeId,
+        signed: bool,
+    },
+}
 struct Field {
     width: u64,
-    operation: super::types::TypeId,
-    signed: bool,
+    semantics: FieldSemantics,
     storage: Option<Storage>,
 }
 #[derive(Default)]
@@ -35,25 +42,23 @@ impl BitFields {
     pub(super) fn add(
         &mut self,
         width: u64,
-        operation: super::types::TypeId,
-        signed: bool,
+        semantics: FieldSemantics,
     ) -> Result<BitFieldId, Error> {
         let id = BitFieldId(
             u32::try_from(self.fields.len()).map_err(|_| Error::Limit("too many bit-fields"))?,
         );
         self.fields.push(Field {
             width,
-            operation,
-            signed,
+            semantics,
             storage: None,
         });
         Ok(id)
     }
-    pub(super) fn operation(&self, id: BitFieldId) -> super::types::TypeId {
-        self.fields[id.0 as usize].operation
-    }
-    pub(super) fn signed(&self, id: BitFieldId) -> bool {
-        self.fields[id.0 as usize].signed
+    pub(super) fn semantics(&self, id: BitFieldId) -> Result<(super::types::TypeId, bool), Error> {
+        match self.fields[id.0 as usize].semantics {
+            FieldSemantics::Integral { operation, signed } => Ok((operation, signed)),
+            FieldSemantics::Dependent => Err(Error::Missing("dependent bit-field layout")),
+        }
     }
     pub(super) fn width(&self, id: BitFieldId) -> u64 {
         self.fields[id.0 as usize].width
@@ -231,6 +236,14 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("bit-field without type"))?;
+        if self.template_depth != 0 && self.exception_dependent_type(ty) {
+            let id = self
+                .graph
+                .bit_fields
+                .add(width, FieldSemantics::Dependent)?;
+            self.graph.entity_mut(entity).bit_field = Some(id);
+            return Ok(());
+        }
         let kind = self
             .graph
             .integral_kind(ty)
@@ -259,7 +272,10 @@ impl Analyzer<'_> {
                 ))?;
             }
         }
-        let id = self.graph.bit_fields.add(width, operation, signed)?;
+        let id = self
+            .graph
+            .bit_fields
+            .add(width, FieldSemantics::Integral { operation, signed })?;
         self.graph.entity_mut(entity).bit_field = Some(id);
         Ok(())
     }

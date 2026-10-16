@@ -533,6 +533,11 @@ impl Analyzer<'_> {
                 Error::at(self.tree.expressions.get(expr).location, "undeclared name")
             })?;
             let binding = self.graph.binding(found);
+            if self.template_depth != 0
+                && self.graph.dependent_members.get(binding.entity).is_some()
+            {
+                return self.dependent_operand(operand, scope, false);
+            }
             let ty = match binding.kind {
                 BindingKind::Variable => self.graph.entity(binding.entity).ty,
                 BindingKind::Enumerator => {

@@ -640,6 +640,29 @@ impl<'a> Encoder<'a> {
     }
     // Expressions are never dictionary entries. Their type operands use the
     // same dictionary as the enclosing name, in source operand order.
+    fn unresolved_prefix(&mut self, id: NodeId) -> Result<(), Error> {
+        let Node::UnresolvedPrefix { root, global } = self.graph.get(id) else {
+            return Err(Error::diagnostic("invalid unresolved prefix"));
+        };
+        if global {
+            self.put(b"gs");
+        }
+        self.put(b"sr");
+        let levels = self.graph.items(id);
+        if let Some(root) = root {
+            if !levels.is_empty() {
+                self.put(b"N");
+            }
+            self.encode_type(root)?;
+        }
+        for &level in levels {
+            self.expression(level)?;
+        }
+        if root.is_none() || !levels.is_empty() {
+            self.put(b"E");
+        }
+        Ok(())
+    }
     fn expression(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
@@ -744,8 +767,12 @@ impl<'a> Encoder<'a> {
                 member,
                 close_qualifier,
             } => {
-                self.put(b"sr");
-                self.encode_type(owner)?;
+                if matches!(self.graph.get(owner), Node::UnresolvedPrefix { .. }) {
+                    self.unresolved_prefix(owner)?;
+                } else {
+                    self.put(b"sr");
+                    self.encode_type(owner)?;
+                }
                 if close_qualifier {
                     self.put(b"E");
                 }

@@ -166,6 +166,10 @@ pub enum Node {
     UnresolvedName(NodeId),
     VendorExpression(NodeId),
     SizeofType(NodeId),
+    UnresolvedPrefix {
+        root: Option<NodeId>,
+        global: bool,
+    },
     ScopedMember {
         owner: NodeId,
         member: NodeId,

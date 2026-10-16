@@ -269,6 +269,15 @@ impl Analyzer<'_> {
         {
             self.template_argument_names(arguments, scope, last.location)?;
         }
+        if self.template_depth != 0
+            && self
+                .graph
+                .dependent_members
+                .get(self.graph.binding(binding).entity)
+                .is_some()
+        {
+            return Ok(None);
+        }
         let kind = self.graph.binding(binding).kind;
         if matches!(kind, BindingKind::Namespace | BindingKind::NamespaceAlias) {
             return Err(Error::at(node.location, "namespace name used as a value"));

@@ -220,6 +220,7 @@ pub(crate) struct Graph {
     pub(super) types: Types,
     pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: super::inheritance::BasePaths,
+    pub(super) dependent_members: super::dependent_members::Members,
     pub(super) template_operands: super::template_operands::Operands,
     pub(super) templates: super::templates::Templates,
     pub(super) function_templates: super::function_templates::FunctionTemplates,
@@ -378,6 +379,7 @@ impl Graph {
             virtuals: super::virtual_members::Virtuals::default(),
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
+            dependent_members: super::dependent_members::Members::default(),
             template_operands: super::template_operands::Operands::default(),
             templates: super::templates::Templates::default(),
             function_templates: super::function_templates::FunctionTemplates::default(),
@@ -638,11 +640,11 @@ impl Graph {
         origin: BindingId,
         binding: Binding,
     ) -> Result<BindingId, Error> {
-        let id = self.add_hidden_function_in(self.binding_scope(origin), binding)?;
+        let id = self.add_hidden_binding_in(self.binding_scope(origin), binding)?;
         self.binding_access[id.0 as usize] = self.binding_access(origin);
         Ok(id)
     }
-    pub(super) fn add_hidden_function_in(
+    pub(super) fn add_hidden_binding_in(
         &mut self,
         home: ScopeId,
         binding: Binding,

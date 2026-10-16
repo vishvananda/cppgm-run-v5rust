@@ -168,7 +168,9 @@ impl Analyzer<'_> {
         }
         let binding = self.lookup(name, scope, Filter::Ordinary)?;
         let binding = self.graph.binding(binding);
-        if binding.kind == BindingKind::Function {
+        if let Some(member) = self.graph.dependent_members.get(binding.entity) {
+            self.key_type(member.qualifier, key)?;
+        } else if binding.kind == BindingKind::Function {
             key.words.push(KeyWord::Node(KeyNode::Function));
             if last.arguments.is_none() && self.graph.entity(binding.entity).template_head.is_none()
             {
