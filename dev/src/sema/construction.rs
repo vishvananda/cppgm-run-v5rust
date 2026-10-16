@@ -42,6 +42,11 @@ pub(super) enum Triviality {
     Trivial,
     Nontrivial,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CopyTransfer {
+    Call,
+    Storage,
+}
 #[derive(Clone, Copy)]
 pub(crate) struct MemberConstruction {
     pub member: EntityId,
@@ -70,6 +75,7 @@ pub(super) struct Constructor {
     pub subobjects: Vec<MemberConstruction>,
     pub delegation: Option<Delegation>,
     pub copy: Option<Vec<super::copy_construction::SubobjectCopy>>,
+    pub(super) copy_transfer: CopyTransfer,
     pub(super) triviality: Triviality,
 }
 impl Constructor {
@@ -595,20 +601,7 @@ impl Analyzer<'_> {
             .filter_map(|base| base.constructor)
             .chain(subobjects.iter().map(|child| child.constructor))
         {
-            let child = self.graph.constructors.get(id);
-            if let Some(binding) = child.binding
-                && self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .constructor_exceptions
-                    == ConstructorExceptionSource::Declared
-            {
-                // Even a trivial subobject constructor contributes its declared
-                // specification to the enclosing implicit/defaulted plan.
-                nothrow &= !self.function_may_throw(self.graph.binding(binding).entity)?;
-            } else {
-                nothrow &= child.nothrow;
-            }
+            nothrow &= self.subobject_constructor_nothrow(id)?;
         }
         if let (Some(source), Some(binding)) = (inherited, binding) {
             let function = self.graph.binding(source).entity;
@@ -658,9 +651,27 @@ impl Analyzer<'_> {
             subobjects,
             delegation: None,
             copy: None,
+            copy_transfer: CopyTransfer::Call,
             triviality: Triviality::Trivial,
         };
         self.publish_constructor(record)
+    }
+
+    fn subobject_constructor_nothrow(&mut self, id: ConstructorId) -> Result<bool, Error> {
+        let child = self.graph.constructors.get(id);
+        if let Some(binding) = child.binding
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .constructor_exceptions
+                == ConstructorExceptionSource::Declared
+        {
+            // A trivial subobject still contributes its declared specification.
+            return self
+                .function_may_throw(self.graph.binding(binding).entity)
+                .map(|throws| !throws);
+        }
+        Ok(child.nothrow)
     }
 
     pub(super) fn constructor_types(
@@ -741,8 +752,13 @@ impl Analyzer<'_> {
 
     pub(super) fn store_constructor(
         &mut self,
-        record: Constructor,
+        mut record: Constructor,
     ) -> Result<ConstructorId, Error> {
+        record.copy_transfer = if self.graph.constructor_copies_storage(&record) {
+            CopyTransfer::Storage
+        } else {
+            CopyTransfer::Call
+        };
         let function = record
             .binding
             .map(|binding| self.graph.binding(binding).entity);
@@ -825,6 +841,7 @@ impl Analyzer<'_> {
             subobjects: Vec::new(),
             delegation: None,
             copy: None,
+            copy_transfer: CopyTransfer::Call,
             triviality: Triviality::Trivial,
         })
     }

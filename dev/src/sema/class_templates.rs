@@ -314,7 +314,15 @@ impl Analyzer<'_> {
         }
         let depth = self.graph.templates.depth(head);
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
-            let pattern = self.type_syntax(default.syntax, default.scope)?;
+            // Copied member template heads share syntax, but their enclosing
+            // argument frames differ. Pattern facts belong to this formation.
+            let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+                .ty(default.syntax)
+                .map_err(|error| super::template_bodies::copy_error(&error))?;
+            let saved = self.graph.lookup_limit.replace(default.limit);
+            let result = self.type_syntax(copy, default.scope);
+            self.graph.lookup_limit = saved;
+            let pattern = result?;
             let given: Vec<_> = arguments.iter().copied().map(Some).collect();
             let mut environment = Substitution::new(depth, &given);
             return self
@@ -519,6 +527,49 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn copied_member_defaults_keep_shared_syntax_free_of_enclosing_facts() {
+        let source = SourceBuffer::new(
+            b"struct S{static char g(int);};struct L{static long g(int);};\
+              template<class T>struct A{\
+                template<class U,class V=decltype(T::g(U()))>struct B{V value;};\
+                template<class U>B<U>f(U){return B<U>();}};\
+              int main(){A<S>a;A<L>b;return sizeof(a.f(1))+sizeof(b.f(1))-9;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-defaults").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::template_bodies::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mut scopes = std::collections::HashSet::new();
+        let mut shared = std::collections::HashSet::new();
+        for instance in graph.class_templates.instances.values() {
+            let Some(head) = graph.entity(instance.primary).template_head else {
+                continue;
+            };
+            if graph.templates.parameters(head).len() != 2 {
+                continue;
+            }
+            let default = graph.templates.default_argument(head, 1).unwrap();
+            assert!(graph.type_fact(default.syntax).is_none());
+            assert!(default.bound.is_none());
+            scopes.insert(default.scope);
+            shared.insert(default.syntax);
+        }
+        assert!(scopes.len() >= 3);
+        assert_eq!(shared.len(), 1);
+    }
 
     #[test]
     fn semantic_type_arguments_and_elaborated_names_reuse_undemanded_shells() {

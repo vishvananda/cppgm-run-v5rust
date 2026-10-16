@@ -333,6 +333,18 @@ impl Function<'_, '_, '_, '_> {
                 );
             }
             let source = self.initializer_expression(initializer)?;
+            if let Some(crate::sema::lowering::CopyAction::Constructor {
+                constructor,
+                elision,
+                ..
+            }) = self.graph.lower_class_copy(source)?
+                && self.graph.lower_expression(source)?.is_place
+            {
+                // allocation_copy_ in the frozen call_special: an allocated
+                // glvalue copy calls its selected constructor, even when that
+                // constructor can otherwise transfer storage directly.
+                return self.call_constructor_from_expression(constructor, object, source, elision);
+            }
             return self.materialize_class(source, use_.target, object);
         }
         // The frozen allocation_initializer starts with an ordinary Place;

@@ -35,6 +35,7 @@ pub(super) struct Bodies {
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
     semantic_uses: HashSet<EntityId>,
+    deferred_synthesis: HashSet<EntityId>,
 }
 impl Bodies {
     fn template_pattern(&self, mut entity: EntityId) -> Option<Pattern> {
@@ -74,7 +75,13 @@ impl Bodies {
     }
     pub(super) fn semantic_demand(&mut self, entity: EntityId) {
         self.semantic_uses.insert(entity);
-        self.demand(entity);
+        if self.deferred_synthesis.remove(&entity) {
+            // A lifetime/root request was already visited without a semantic
+            // use. This first use is the event that resumes its definition.
+            self.demands.push(entity);
+        } else {
+            self.demand(entity);
+        }
     }
     pub(super) fn body(&self, entity: EntityId) -> Option<ast::BodyId> {
         match self.states.get(&entity) {
@@ -87,6 +94,34 @@ impl Bodies {
     }
 }
 impl Graph {
+    fn defer_emission_synthesis(&mut self, entity: EntityId) -> bool {
+        if self.outside_defaulted_member(entity).is_none()
+            || self
+                .function_templates
+                .bodies
+                .semantic_uses
+                .contains(&entity)
+        {
+            return false;
+        }
+        self.function_templates
+            .bodies
+            .deferred_synthesis
+            .insert(entity);
+        true
+    }
+    fn outside_defaulted_member(&self, entity: EntityId) -> Option<SpecialDefinition> {
+        let source = self.function_templates.bodies.source(entity)?;
+        match self.entity(source).special_definition {
+            Some(
+                special @ SpecialDefinition::Defaulted {
+                    first: false,
+                    body: None,
+                },
+            ) => Some(special),
+            _ => None,
+        }
+    }
     /// Definition availability at the original lowering demand boundary.
     pub(crate) fn lower_synthesized_at_emission(&self, entity: EntityId) -> bool {
         self.function_templates.bodies.synthesized(entity)
@@ -164,6 +199,11 @@ pub(crate) fn analyze_unit(
             break;
         };
         if graph.function_instantiation_suppressed(entity) {
+            continue;
+        }
+        if !lowering && graph.defer_emission_synthesis(entity) {
+            // Explicit class member roots and implicit lifetimes are emission
+            // demands. Only a semantic odr-use needs this definition now.
             continue;
         }
         if graph.function_templates.instantiations.defined(entity)
@@ -363,14 +403,7 @@ impl Analyzer<'_> {
         if self.graph.function_templates.bodies.synthesized(entity) {
             return Ok(true);
         }
-        let source = self.graph.function_templates.bodies.source(entity);
-        let Some(
-            special @ SpecialDefinition::Defaulted {
-                first: false,
-                body: None,
-            },
-        ) = source.and_then(|source| self.graph.entity(source).special_definition)
-        else {
+        let Some(special) = self.graph.outside_defaulted_member(entity) else {
             return Ok(false);
         };
         let member = self.graph.entity(entity).member_function;
@@ -393,7 +426,17 @@ impl Analyzer<'_> {
                         member.class,
                         member.kind,
                         crate::support::source::SourceOffset(0),
-                    )
+                    )?;
+                    if member.kind == super::graph::MemberKind::Destructor
+                        && analyzer.graph.lower_virtual_slot(entity).is_some()
+                    {
+                        analyzer.complete_virtual_deallocation(
+                            member.class,
+                            entity,
+                            crate::support::source::SourceOffset(0),
+                        )?;
+                    }
+                    Ok(())
                 } else {
                     let binding = analyzer.graph.function_origin(entity)?;
                     analyzer.prepare_default_assignment(binding)?;
@@ -684,6 +727,78 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn a_late_semantic_use_resumes_an_emission_only_destructor() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{virtual~A();static void operator delete(void*)=delete;};\
+              template<class T>A<T>::~A()=default;void lifetime(A<int>a){}\
+              template<class T>void destroy(T&a){a.~T();}void use(A<int>&a){destroy(a);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"late-destructor").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let result = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::InstantiationDiagnostic {
+                message: "use of a deleted function",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn explicit_synthesized_roots_wait_for_emission_or_a_semantic_use() {
+        for (lowering, use_code, rejected) in [
+            (false, "", false),
+            (false, "void f(A<D>&a){a.~A();}", true),
+            (true, "", true),
+        ] {
+            let mut text = b"struct D{~D()=delete;};\
+                template<class T>struct A{T n;~A();};\
+                template<class T>A<T>::~A()=default;template struct A<D>;"
+                .to_vec();
+            text.extend_from_slice(use_code.as_bytes());
+            let source = SourceBuffer::new(text).unwrap();
+            let mut unit = SyntaxUnit::new(
+                Preprocessor::with_name(&source, b"explicit-synthesized-root").unwrap(),
+            );
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let result = analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                lowering,
+            );
+            if rejected {
+                assert!(result.is_err());
+            } else {
+                let graph = result.unwrap();
+                assert!(
+                    !graph
+                        .function_templates
+                        .instantiations
+                        .definitions()
+                        .is_empty()
+                );
+                assert!(graph.function_templates.bodies.states.is_empty());
+            }
+        }
+    }
 
     #[test]
     fn synthesized_copy_fills_the_selected_plan_once_without_copying_syntax() {

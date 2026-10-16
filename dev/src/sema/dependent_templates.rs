@@ -143,7 +143,9 @@ impl Analyzer<'_> {
             "complete template qualifier without scope",
         ))?;
         let found = self.qualified_declaration_result(scope, name.name.into(), Filter::Ordinary)?;
-        let Some(binding) = found.binding.filter(|_| !found.ambiguous) else {
+        // substitute_template_name consumes LookupResult::binding even when
+        // lookup records ambiguity. Preserve the frozen owner's selection.
+        let Some(binding) = found.binding else {
             return Ok(None);
         };
         self.class_template_primary(binding)

@@ -35,7 +35,14 @@ impl super::graph::Graph {
     /// when every selected subobject copy is trivial. Synthesis has already
     /// published these facts; lowering performs no definition demand.
     pub(crate) fn lower_constructor_copies_storage(&self, id: ConstructorId) -> bool {
-        let plan = self.constructors.get(id);
+        self.constructors.get(id).copy_transfer == super::construction::CopyTransfer::Storage
+    }
+    // Publish this per-plan fact once with the selected copy actions, rather
+    // than walking all subobjects again at every copy's lowering use.
+    pub(super) fn constructor_copies_storage(
+        &self,
+        plan: &super::construction::Constructor,
+    ) -> bool {
         let Some(actions) = plan.copy.as_ref() else {
             return false;
         };
@@ -285,6 +292,7 @@ impl Analyzer<'_> {
             subobjects: Vec::new(),
             delegation: None,
             copy: Some(actions),
+            copy_transfer: super::construction::CopyTransfer::Call,
             triviality: if facts.trivial {
                 Triviality::Trivial
             } else {

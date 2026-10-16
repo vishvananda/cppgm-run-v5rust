@@ -157,10 +157,15 @@ impl Function<'_, '_, '_, '_> {
                         .lower_expression(source)?
                         .reference_cast
                         .is_some()
-                    && matches!(
-                        self.graph.lower_class_copy(source)?,
-                        Some(crate::sema::lowering::CopyAction::Storage { .. })
-                    )
+                    && match self.graph.lower_class_copy(source)? {
+                        Some(crate::sema::lowering::CopyAction::Storage { .. }) => true,
+                        Some(crate::sema::lowering::CopyAction::Constructor {
+                            constructor,
+                            written_move: false,
+                            ..
+                        }) => self.graph.lower_constructor_copies_storage(constructor),
+                        _ => false,
+                    }
                     && let TypeView::Class(class) = self.graph.lower_type(ty)?
                     && !self.graph.lower_class_empty(class)?
                 {

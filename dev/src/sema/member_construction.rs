@@ -233,6 +233,7 @@ impl Analyzer<'_> {
             self.constructor_types(class, None)?;
         self.publish_constructor(Constructor {
             copy: None,
+            copy_transfer: super::construction::CopyTransfer::Call,
             class,
             binding: None,
             object_pointer,

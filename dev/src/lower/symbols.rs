@@ -2020,7 +2020,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             } else {
                 crate::lowir::vocabulary::Binding::Strong
             }),
-            flags: if facts.emission == crate::sema::lowering::Emission::Demanded {
+            flags: if entity.map_or(
+                facts.emission == crate::sema::lowering::Emission::Demanded,
+                |entity| self.graph.lower_inline_hint(entity),
+            ) {
                 16
             } else {
                 0
