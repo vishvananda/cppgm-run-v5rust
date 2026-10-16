@@ -180,7 +180,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("class initialization without class"));
         };
-        if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(
                 location,
                 "initialization of an incomplete class object",

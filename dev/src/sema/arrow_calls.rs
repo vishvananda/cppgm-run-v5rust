@@ -34,6 +34,7 @@ impl Analyzer<'_> {
             if calls.len() == 64 {
                 return Err(Error::at(location, "operator-> chain too long"));
             }
+            self.complete_class(class)?;
             let home = self
                 .graph
                 .entity(class)

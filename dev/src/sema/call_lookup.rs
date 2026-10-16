@@ -114,7 +114,7 @@ impl Analyzer<'_> {
         result
     }
     fn associated_query(
-        &self,
+        &mut self,
         name: ValueKey,
         found: &mut LookupResult,
         scratch: &mut AssociationScratch,
@@ -153,6 +153,17 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     let identity = *entity;
+                    if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
+                        self.complete_class(identity)?;
+                        if let Some(instance) = self.graph.class_templates.instance(identity) {
+                            types.extend(
+                                instance
+                                    .arguments
+                                    .iter()
+                                    .map(|&argument| (argument, depth + 1)),
+                            );
+                        }
+                    }
                     let entity = self.graph.entity(identity);
                     if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_))
                         && seen_classes.insert(identity)

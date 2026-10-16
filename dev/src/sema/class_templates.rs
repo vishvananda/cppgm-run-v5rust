@@ -29,6 +29,7 @@ pub(super) struct Instance {
 }
 #[derive(Default)]
 pub(super) struct ClassTemplates {
+    pub(super) definitions: super::instance_definitions::Definitions,
     specializations: HashMap<Key, EntityId>,
     instances: HashMap<EntityId, Instance>,
     defaults: HashMap<Key, BindingId>,
@@ -53,7 +54,14 @@ impl Analyzer<'_> {
         {
             return Err(Error::Missing("alias template specialization"));
         }
-        let primary = binding.entity;
+        let primary = if binding.kind == BindingKind::Type {
+            self.graph
+                .class_templates
+                .instance(binding.entity)
+                .map_or(binding.entity, |instance| instance.primary)
+        } else {
+            binding.entity
+        };
         let Some(head) = self.graph.entity(primary).template_head else {
             return Ok(None);
         };
@@ -228,36 +236,12 @@ impl Analyzer<'_> {
         let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
             .ty(default.syntax)
             .map_err(|error| super::template_bodies::copy_error(&error))?;
-        let saved_function = self.declaration_access.function.take();
-        let saved_access_class = self.declaration_access.class.take();
-        let saved_access = self.declaration_access.substitution.take();
-        let saved_body = self.body_context.take();
-        let saved_limit = self.graph.lookup_limit.replace(default.limit);
-        let saved_depth = std::mem::replace(&mut self.template_depth, 0);
-        let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
-        let saved_default = self.default_argument_scope.take();
-        let saved_head = self.template_head.take();
-        let saved_friend = self.namespace_friend_class.take();
-        let saved_class = std::mem::replace(&mut self.class_depth, 0);
-        let saved_initializing = self.initializing.take();
-        let saved_base = self.base_object.take();
-        let saved_member = self.member_initializer_class.take();
-        let result = self.type_syntax(copy, frame);
-        self.declaration_access.function = saved_function;
-        self.declaration_access.class = saved_access_class;
-        self.declaration_access.substitution = saved_access;
-        self.body_context = saved_body;
-        self.graph.lookup_limit = saved_limit;
-        self.template_depth = saved_depth;
-        self.unevaluated = saved_unevaluated;
-        self.default_argument_scope = saved_default;
-        self.template_head = saved_head;
-        self.namespace_friend_class = saved_friend;
-        self.class_depth = saved_class;
-        self.initializing = saved_initializing;
-        self.base_object = saved_base;
-        self.member_initializer_class = saved_member;
-        result.map_err(Error::required_instantiation)
+        self.required_instantiation(
+            self.instantiation_depth,
+            self.tree.types.get(default.syntax).location,
+            default.limit,
+            |analyzer| analyzer.type_syntax(copy, frame),
+        )
     }
 
     pub(super) fn class_specialization(
@@ -297,6 +281,9 @@ impl Analyzer<'_> {
             enclosing = node.parent;
         }
         let entity = self.graph.add_entity(None, name, class_key)?;
+        self.graph
+            .instantiation_levels
+            .record(entity, self.instantiation_depth);
         let ty = self
             .graph
             .types

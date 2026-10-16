@@ -507,7 +507,7 @@ impl Analyzer<'_> {
         Ok(prefix)
     }
     pub(super) fn binding_qualifier(
-        &self,
+        &mut self,
         binding: BindingId,
         location: crate::support::source::SourceOffset,
     ) -> Result<ScopeId, Error> {
@@ -531,12 +531,13 @@ impl Analyzer<'_> {
         }
     }
     fn type_qualifier(
-        &self,
+        &mut self,
         ty: super::types::TypeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<ScopeId, Error> {
         match self.graph.types.get(ty).kind {
             TypeKind::Class(class) => {
+                self.complete_class(class)?;
                 self.graph.entity(class).scope.ok_or_else(|| {
                     Error::at(location, "incomplete class in a nested-name-specifier")
                 })

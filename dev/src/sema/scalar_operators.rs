@@ -38,7 +38,7 @@ impl Analyzer<'_> {
             None
         }
     }
-    fn complete_pointer(&self, ty: TypeId, id: ast::ExprId) -> Result<(), Error> {
+    fn complete_pointer(&mut self, ty: TypeId, id: ast::ExprId) -> Result<(), Error> {
         let element = self
             .object_pointer(ty)
             .ok_or(Error::Invariant("nonobject pointer"))?;
@@ -49,7 +49,7 @@ impl Analyzer<'_> {
             return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete type"));
         }
         if let Some(class) = self.graph.class_of(element)
-            && !self.graph.entity(class).complete
+            && !self.complete_class(class)?
         {
             return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete class"));
         }

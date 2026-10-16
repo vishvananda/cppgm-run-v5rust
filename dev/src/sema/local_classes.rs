@@ -212,7 +212,12 @@ impl Graph {
         Ok(self.lower_type_unit_local(result))
     }
 
-    pub(crate) fn lower_class_no_linkage(&self, mut class: EntityId) -> bool {
+    pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> bool {
+        self.entity(class).ty.is_some_and(|ty| {
+            self.lower_type_entity_locality(ty, Self::lower_entity_scope_no_linkage)
+        })
+    }
+    pub(super) fn lower_entity_scope_no_linkage(&self, mut class: EntityId) -> bool {
         loop {
             let entity = self.entity(class);
             let Some(home) = entity.home else {

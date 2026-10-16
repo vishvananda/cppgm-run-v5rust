@@ -25,11 +25,18 @@ enum State {
 #[derive(Default)]
 pub(super) struct Bodies {
     patterns: HashMap<EntityId, Pattern>,
+    members: HashMap<EntityId, (DeferredBody, usize)>,
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
 }
 impl Bodies {
+    pub(super) fn pending_member(&self, entity: EntityId) -> bool {
+        self.members.contains_key(&entity) && !self.states.contains_key(&entity)
+    }
+    pub(super) fn member(&self, entity: EntityId) -> bool {
+        self.members.contains_key(&entity)
+    }
     pub(super) fn demand(&mut self, entity: EntityId) {
         if self.seen.insert(entity) {
             self.demands.push(entity);
@@ -96,6 +103,16 @@ pub(crate) fn analyze_unit(
             next += 1;
             entity
         } else {
+            if lowering {
+                let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+                analyzer.set_lowering();
+                analyzer.stack_base = base;
+                analyzer.finish_lowering_boundaries()?;
+                graph = analyzer.finish_analysis(false)?;
+                if next < graph.function_templates.bodies.demands.len() {
+                    continue;
+                }
+            }
             break;
         };
         if graph
@@ -103,6 +120,52 @@ pub(crate) fn analyze_unit(
             .instantiations
             .suppressed(entity, graph.entity(entity).inline)
         {
+            continue;
+        }
+        if let Some(&(pattern, limit)) = graph.function_templates.bodies.members.get(&entity) {
+            if graph.function_templates.bodies.states.contains_key(&entity) {
+                continue;
+            }
+            graph
+                .function_templates
+                .bodies
+                .states
+                .insert(entity, State::InProgress);
+            let mut cloner = Cloner::new(tree, budget, base);
+            let parameters = cloner
+                .parameters(pattern.parameters)
+                .map_err(|error| copy_error(&error))?;
+            let body = cloner
+                .body(pattern.body)
+                .map_err(|error| copy_error(&error))?;
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            analyzer.set_semantics(true);
+            if lowering {
+                analyzer.set_lowering();
+            }
+            analyzer.stack_base = base;
+            let location = match analyzer.tree.bodies.get(body) {
+                ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
+                ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
+            };
+            analyzer.required_instantiation(
+                analyzer.graph.instantiation_levels.get(entity)?,
+                location,
+                limit,
+                |analyzer| {
+                    analyzer.function_body(DeferredBody {
+                        parameters,
+                        body,
+                        ..pattern
+                    })
+                },
+            )?;
+            graph = analyzer.finish_analysis(false)?;
+            graph
+                .function_templates
+                .bodies
+                .states
+                .insert(entity, State::Complete(body));
             continue;
         }
         let primary = graph
@@ -162,21 +225,24 @@ pub(crate) fn analyze_unit(
             analyzer.set_lowering();
         }
         analyzer.stack_base = base;
-        analyzer.instantiate_body(entity, primary, pattern, parameters, body, exception)?;
+        let location = match analyzer.tree.bodies.get(body) {
+            ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
+            ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
+        };
+        analyzer.instantiation_context(
+            analyzer.graph.instantiation_levels.get(entity)?,
+            location,
+            pattern.limit,
+            |analyzer| {
+                analyzer.instantiate_body(entity, primary, pattern, parameters, body, exception)
+            },
+        )?;
         graph = analyzer.finish_analysis(false)?;
         graph
             .function_templates
             .bodies
             .states
             .insert(entity, State::Complete(body));
-    }
-    // Boundary work from every session stays on the unit and is visited once,
-    // after the worklist has installed all demanded body facts.
-    if lowering {
-        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
-        analyzer.set_lowering();
-        analyzer.stack_base = base;
-        return analyzer.finish_analysis(true);
     }
     Ok(graph)
 }
@@ -189,6 +255,37 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn defer_instance_member(&mut self, body: DeferredBody) -> bool {
+        if body.template_depth == 0
+            && !self
+                .graph
+                .function_templates
+                .bodies
+                .states
+                .contains_key(&body.entity)
+            && self
+                .graph
+                .entity(body.entity)
+                .home
+                .is_some_and(|scope| self.graph.within_class_instance(scope))
+        {
+            let limit = self
+                .graph
+                .lookup_limit
+                .unwrap_or_else(|| self.graph.binding_limit());
+            self.graph
+                .function_templates
+                .bodies
+                .members
+                .insert(body.entity, (body, limit));
+            self.graph
+                .instantiation_levels
+                .record(body.entity, self.instantiation_depth);
+            return true;
+        }
+        false
+    }
+
     fn instantiate_body(
         &mut self,
         entity: EntityId,
@@ -322,6 +419,88 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn class_member_bodies_copy_only_on_demand_with_distinct_facts() {
+        let source = SourceBuffer::new(
+            b"template<class U>struct Box{U value;U get(){return value;}void bad(){U::missing;}};\
+            int main(){Box<int> a;Box<char> b;a.value=2;b.value=3;return a.get()+a.get()+b.get();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-body-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let original_bodies = tree.bodies.mark();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let bodies = &graph.function_templates.bodies;
+        assert_eq!(bodies.members.len(), 4);
+        assert_eq!(bodies.demands.len(), 2);
+        assert_eq!(bodies.states.len(), 2);
+        assert_eq!(tree.bodies.mark(), original_bodies + 2);
+        let mut seen = HashSet::new();
+        for (&entity, &(pattern, _)) in &bodies.members {
+            if let Some(body) = bodies.body(entity) {
+                assert_ne!(pattern.body, body);
+                assert!(seen.insert(body));
+                assert!(graph.entity(entity).scope.is_some());
+                assert!(graph.entity(entity).template_head.is_none());
+            } else {
+                assert!(graph.entity(entity).scope.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn vtable_body_demand_resumes_only_new_boundaries_and_body_dependencies() {
+        let source = SourceBuffer::new(b"template<class T>int helper(T){return sizeof(T);}\
+            template<class T>struct Box{virtual int get(){return helper(T());}virtual int extra(){return helper(T());}};\
+            template<class T>struct Unused{virtual int bad(){return T::missing;}};\
+            int main(){Box<int>b;Box<int>*p=&b;return p->get();}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-member-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(graph.function_templates.bodies.members.len(), 2);
+        assert_eq!(graph.function_templates.bodies.states.len(), 3);
+        for &member in graph.function_templates.bodies.members.keys() {
+            assert!(graph.function_templates.bodies.body(member).is_some());
+        }
+        let before = (tree.expressions.mark(), tree.bodies.mark());
+        let mut analyzer =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert_eq!(
+            before,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.bodies.mark()
+            )
+        );
+        assert_eq!(analyzer.graph.function_templates.bodies.states.len(), 3);
+        assert!(analyzer.graph.boundary_roots.is_empty());
+    }
 
     #[test]
     fn explicit_definitions_share_signatures_but_not_body_or_emission_demand() {

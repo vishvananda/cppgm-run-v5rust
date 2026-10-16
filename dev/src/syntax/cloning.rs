@@ -19,10 +19,20 @@ pub(crate) struct Cloner<'a> {
     tree: &'a mut Tree,
     budget: StackBudget,
     base: usize,
+    retain_bodies: bool,
 }
 impl<'a> Cloner<'a> {
     pub(crate) fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
-        Self { tree, budget, base }
+        Self {
+            tree,
+            budget,
+            base,
+            retain_bodies: false,
+        }
+    }
+    pub(crate) fn class_definition(&mut self, id: ClassId) -> Result<ClassId, ParseError> {
+        self.retain_bodies = true;
+        self.class(id)
     }
     fn check_stack(&self) -> Result<(), ParseError> {
         let marker = 0u8;
@@ -198,6 +208,9 @@ impl<'a> Cloner<'a> {
         Ok(node)
     }
     pub(crate) fn body(&mut self, id: BodyId) -> Result<BodyId, ParseError> {
+        if self.retain_bodies {
+            return Ok(id);
+        }
         let Body::Parsed(mut node) = *self.tree.bodies.get(id) else {
             return Err(ParseError::Invariant("unparsed instantiation body"));
         };

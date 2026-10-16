@@ -27,6 +27,21 @@ pub(super) enum StorageDemand {
     AnonymousUnion(EntityId),
     CallBoundary(super::types::TypeId),
 }
+/// Incremental unit-tail reachability. A vtable can demand a template member
+/// body; resume only its suspended boundary and newly published edges after
+/// that body is analyzed, without rewalking previously completed functions.
+#[derive(Default)]
+pub(super) struct Boundaries {
+    root_count: usize,
+    explicit_roots: bool,
+    seen_tables: std::collections::HashSet<EntityId>,
+    seen_constructors: std::collections::HashSet<super::construction::ConstructorId>,
+    seen: std::collections::HashSet<EntityId>,
+    signatures: std::collections::HashSet<super::types::TypeId>,
+    destruction_edges: std::collections::HashMap<EntityId, Vec<EntityId>>,
+    constructor_edges: std::collections::HashMap<EntityId, Vec<super::construction::ConstructorId>>,
+    layouts: std::collections::HashMap<EntityId, Vec<(StorageDemand, SourceOffset)>>,
+}
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
@@ -65,12 +80,31 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
+        let mut state = std::mem::take(&mut self.graph.boundaries);
+        let result = self.advance_lowering_boundaries(&mut state);
+        self.graph.boundaries = state;
+        result
+    }
+    fn advance_lowering_boundaries(&mut self, state: &mut Boundaries) -> Result<(), Error> {
         use super::function_demands::Demand;
+        let Boundaries {
+            root_count,
+            explicit_roots,
+            seen_tables,
+            seen_constructors,
+            seen,
+            signatures,
+            destruction_edges,
+            constructor_edges,
+            layouts,
+        } = state;
         let mut work = std::mem::take(&mut self.graph.boundary_roots);
         // Explicit definitions are emitted even without a calling expression.
         // Prepare only those named roots' ordinary class ABI boundaries.
-        work.extend(self.graph.lower_explicit_functions());
-        let mut destruction_edges = std::collections::HashMap::<EntityId, Vec<EntityId>>::new();
+        if !*explicit_roots {
+            work.extend(self.graph.lower_explicit_functions());
+            *explicit_roots = true;
+        }
         for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
             if let Some(owner) = owner {
                 destruction_edges.entry(owner).or_default().push(destructor);
@@ -78,14 +112,12 @@ impl Analyzer<'_> {
                 work.push(destructor);
             }
         }
-        for demand in self.graph.root_demands.as_slice() {
+        for demand in &self.graph.root_demands.as_slice()[*root_count..] {
             if let Demand::Function { binding, .. } = demand {
                 work.push(self.graph.binding(*binding).entity);
             }
         }
         let mut constructors = Vec::new();
-        let mut constructor_edges =
-            std::collections::HashMap::<EntityId, Vec<super::construction::ConstructorId>>::new();
         for (owner, constructor) in std::mem::take(&mut self.graph.constructor_boundaries) {
             if let Some(owner) = owner {
                 constructor_edges
@@ -96,21 +128,19 @@ impl Analyzer<'_> {
                 constructors.push(constructor);
             }
         }
-        for demand in self.graph.root_demands.as_slice() {
+        for demand in &self.graph.root_demands.as_slice()[*root_count..] {
             if let Demand::Constructor(id) = demand {
                 constructors.push(*id);
             }
         }
-        let mut seen_tables = std::collections::HashSet::new();
-        let mut seen_constructors = std::collections::HashSet::new();
-        let mut seen = std::collections::HashSet::new();
+        *root_count = self.graph.root_demands.as_slice().len();
         while !work.is_empty() || !constructors.is_empty() {
             if let Some(constructor) = constructors.pop() {
                 if !seen_constructors.insert(constructor) {
                     continue;
                 }
                 let class = self.graph.constructors.get(constructor).class;
-                self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
+                self.virtual_table_boundaries(class, seen_tables, &mut work)?;
                 let plan = self.graph.constructors.get(constructor);
                 if let Some(binding) = plan.binding {
                     work.push(self.graph.binding(binding).entity);
@@ -129,8 +159,21 @@ impl Analyzer<'_> {
             let entity = work
                 .pop()
                 .ok_or(Error::Invariant("missing boundary demand"))?;
-            if !seen.insert(entity) {
+            if seen.contains(&entity) {
                 continue;
+            }
+            if self.graph.function_templates.bodies.pending_member(entity) {
+                self.demand_instance_member(entity);
+                self.graph.boundary_roots.push(entity);
+                continue;
+            }
+            seen.insert(entity);
+            if let Some(requests) = layouts.remove(&entity) {
+                self.graph.storage_layouts.extend(
+                    requests
+                        .into_iter()
+                        .map(|(demand, location)| (None, demand, location)),
+                );
             }
             self.assignment_boundaries(entity, &mut work, &mut constructors)?;
             if let Some(constructor) = self.graph.entity(entity).constructor {
@@ -155,7 +198,7 @@ impl Analyzer<'_> {
                 if self.graph.lower_polymorphic(class)
                     && self.graph.lower_virtual_class(class)?.key == Some(entity)
                 {
-                    self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
+                    self.virtual_table_boundaries(class, seen_tables, &mut work)?;
                 }
                 if self
                     .graph
@@ -164,7 +207,7 @@ impl Analyzer<'_> {
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
                 {
                     self.prepare_destruction(class)?;
-                    self.virtual_table_boundaries(class, &mut seen_tables, &mut work)?;
+                    self.virtual_table_boundaries(class, seen_tables, &mut work)?;
                 }
             }
             let ty = self.graph.lower_entity_type(entity)?;
@@ -222,7 +265,6 @@ impl Analyzer<'_> {
                 }
             }
         }
-        let mut signatures = std::collections::HashSet::new();
         for (owner, demand, location) in std::mem::take(&mut self.graph.storage_layouts) {
             if owner.is_none_or(|owner| seen.contains(&owner)) {
                 match demand {
@@ -246,6 +288,8 @@ impl Analyzer<'_> {
                         }
                     }
                 }
+            } else if let Some(owner) = owner {
+                layouts.entry(owner).or_default().push((demand, location));
             }
         }
         Ok(())
@@ -299,7 +343,7 @@ impl Analyzer<'_> {
         result
     }
     fn start_layout(&mut self, entity: EntityId, location: SourceOffset) -> Result<bool, Error> {
-        if !self.graph.entity(entity).complete {
+        if !self.complete_class(entity)? {
             return Err(Error::at(location, "size of an incomplete class"));
         }
         match self.graph.entity(entity).layout {

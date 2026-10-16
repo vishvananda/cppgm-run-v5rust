@@ -280,19 +280,22 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn require_function_definition_types(
-        &self,
+        &mut self,
         ty: super::types::TypeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let TypeKind::Function {
-            result, parameters, ..
-        } = &self.graph.types.get(ty).kind
-        else {
+        let count = self.graph.types.function_parameter_count(ty)?;
+        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("definition without function type"));
         };
-        for &ty in parameters.iter().chain(std::iter::once(result)) {
+        for index in 0..=count {
+            let ty = if index == count {
+                result
+            } else {
+                self.graph.types.function_parameter(ty, index)?
+            };
             if let TypeKind::Class(class) = self.graph.types.get(ty).kind
-                && !self.graph.entity(class).complete
+                && !self.complete_class(class)?
             {
                 return Err(Error::at(
                     location,

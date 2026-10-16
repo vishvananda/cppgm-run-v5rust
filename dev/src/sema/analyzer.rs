@@ -39,6 +39,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
+    pub(super) instantiation_depth: u32,
     pub(super) c_language: bool,
     pub(super) linkage_specification: Option<super::linkage::Specification>,
     pub(super) template_head: Option<super::templates::HeadId>,
@@ -179,6 +180,7 @@ impl<'tree> Analyzer<'tree> {
             member_initializer_class: None,
             base_object: None,
             template_depth: 0,
+            instantiation_depth: 0,
             c_language: false,
             linkage_specification: None,
             template_head: None,
@@ -611,6 +613,9 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        if self.defer_instance_member(body) {
+            return Ok(());
+        }
         if self.lowering()
             && body.template_depth == 0
             && self.graph.entity(body.entity).definition_emission

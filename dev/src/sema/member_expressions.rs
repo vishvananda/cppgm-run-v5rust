@@ -159,6 +159,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Err(Error::at(location, "member access on a non-class"));
         };
+        self.complete_class(class)?;
         let class_scope = self.graph.entity(class).scope;
         if class_scope.is_none()
             || !self.graph.entity(class).complete

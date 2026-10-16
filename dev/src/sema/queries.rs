@@ -143,7 +143,7 @@ impl Analyzer<'_> {
         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
             ty = element;
         }
-        if !self.query_complete(ty) {
+        if !self.query_complete(ty)? {
             return Err(Error::at(
                 location,
                 "alignof of an incomplete or function type",
@@ -246,7 +246,7 @@ impl Analyzer<'_> {
                 ty = element;
             }
         }
-        if self.evaluating_noexcept && !self.query_complete(ty) {
+        if self.evaluating_noexcept && !self.query_complete(ty)? {
             return Err(Error::at(
                 location,
                 if alignment {
@@ -262,7 +262,7 @@ impl Analyzer<'_> {
             ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
         })
     }
-    pub(super) fn query_complete(&self, mut ty: TypeId) -> bool {
+    pub(super) fn query_complete(&mut self, mut ty: TypeId) -> Result<bool, Error> {
         while let TypeKind::Array {
             element,
             bound,
@@ -270,23 +270,23 @@ impl Analyzer<'_> {
         } = self.graph.types.get(ty).kind
         {
             if operand.is_some() {
-                return false;
+                return Ok(false);
             }
             if bound == 0 {
-                return false;
+                return Ok(false);
             }
             ty = element;
         }
-        match self.graph.types.get(ty).kind {
+        Ok(match self.graph.types.get(ty).kind {
             TypeKind::Scalar(Scalar::Void) | TypeKind::Function { .. } => false,
-            TypeKind::Class(entity) => self.graph.entity(entity).complete,
+            TypeKind::Class(entity) => self.complete_class(entity)?,
             TypeKind::Enum(entity) => self
                 .graph
                 .entity(entity)
                 .enumeration
                 .is_some_and(|info| info.underlying.is_some()),
             _ => true,
-        }
+        })
     }
     pub(super) fn type_size(
         &mut self,
@@ -351,7 +351,7 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "size of a function type"));
             }
             TypeKind::Class(entity) => {
-                if !self.graph.entity(entity).complete {
+                if !self.complete_class(entity)? {
                     return Err(Error::at(location, "size of an incomplete class"));
                 }
                 let (size, align) = self.class_layout(entity, location)?;

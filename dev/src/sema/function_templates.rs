@@ -568,6 +568,9 @@ impl Analyzer<'_> {
         };
         let origin = self.graph.binding(primary);
         let entity = self.graph.add_entity(Some(ty), origin.name, origin.key)?;
+        self.graph
+            .instantiation_levels
+            .record(entity, self.instantiation_depth);
         let old = self.graph.entity(origin.entity);
         let properties = (
             old.function,

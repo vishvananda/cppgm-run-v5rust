@@ -330,6 +330,12 @@ impl Analyzer<'_> {
         if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
             ty = element;
         }
+        // new_facts requires a class-template object's definition, including
+        // an object designated through a reference parameter. Pointer shells
+        // and decltype's uncalled function result remain independent demands.
+        if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
+            self.complete_class(class)?;
+        }
         let category = if binding.kind == BindingKind::Enumerator {
             V::Prvalue
         } else {

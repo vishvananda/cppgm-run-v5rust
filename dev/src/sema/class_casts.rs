@@ -23,7 +23,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("class prvalue without class"));
         };
-        if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(
                 self.tree.expressions.get(id).location,
                 "initialization of an incomplete class object",
@@ -146,7 +146,7 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("class cast without class"));
         };
         let location = self.tree.expressions.get(id).location;
-        if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(location, "a cast to an incomplete class type"));
         }
         self.check_abstract_object(target, location)?;

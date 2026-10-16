@@ -236,6 +236,8 @@ pub(crate) struct Graph {
     pub(super) block_linkages: super::linkage::BlockLinkages,
     pub(super) conversion_sets: HashMap<EntityId, Vec<BindingId>>,
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
+    pub(super) boundaries: super::layout::Boundaries,
+    pub(super) instantiation_levels: super::template_context::Levels,
     pub(super) storage_layouts: Vec<(
         Option<super::graph::EntityId>,
         super::layout::StorageDemand,
@@ -415,6 +417,8 @@ impl Graph {
             block_linkages: super::linkage::BlockLinkages::default(),
             conversion_sets: HashMap::new(),
             boundary_roots: Vec::new(),
+            boundaries: super::layout::Boundaries::default(),
+            instantiation_levels: super::template_context::Levels::default(),
             storage_layouts: Vec::new(),
             constructor_boundaries: Vec::new(),
             storage_destructions: Vec::new(),

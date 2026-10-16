@@ -113,7 +113,7 @@ impl Analyzer<'_> {
                 scratch.candidates.clear();
             }
             if let Some(class) = class
-                && self.graph.entity(class).complete
+                && self.complete_class(class)?
                 && !(reference == Some(RefKind::Lvalue) && self.type_cv(object).0 & 1 == 0)
             {
                 self.converting_constructor_candidates(

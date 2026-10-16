@@ -181,7 +181,11 @@ impl Analyzer<'_> {
             element = inner;
         }
         let class = self.graph.class_of(element);
-        let incomplete = class.is_some_and(|class| !self.graph.entity(class).complete);
+        let incomplete = if let Some(class) = class {
+            !self.complete_class(class)?
+        } else {
+            false
+        };
         let class = class.filter(|_| !incomplete);
         if let Some(class) = class {
             self.class_parameter_destruction(element, scope, location)?;
@@ -316,7 +320,9 @@ impl Analyzer<'_> {
             ));
         }
         let class = self.graph.class_of(element);
-        if class.is_some_and(|class| !self.graph.entity(class).complete) {
+        if let Some(class) = class
+            && !self.complete_class(class)?
+        {
             return Err(Error::at(
                 location,
                 "a new-expression allocates an incomplete class type",

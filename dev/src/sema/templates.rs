@@ -68,6 +68,9 @@ pub(super) struct Templates {
     positions: HashMap<Position, EntityId>,
 }
 impl Templates {
+    pub(super) fn parameter_scope(&self, id: HeadId) -> ScopeId {
+        self.head(id).scope
+    }
     pub(super) fn parameters(&self, id: HeadId) -> &[EntityId] {
         &self.head(id).parameters
     }

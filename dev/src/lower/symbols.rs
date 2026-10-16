@@ -2,6 +2,8 @@
 use super::Error;
 #[path = "placeholder_mangling.rs"]
 mod placeholder_mangling;
+#[path = "specialization_labels.rs"]
+mod specialization_labels;
 #[path = "vtables.rs"]
 mod vtables;
 use crate::{
@@ -138,6 +140,7 @@ pub(super) struct Symbols<'a, 'source> {
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
     empty_list_constructions: HashMap<EntityId, bool>,
     class_parameters: super::class_parameters::Classes,
+    class_labels: specialization_labels::Labels,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<EntityId, bool>,
     anonymous_names: super::anonymous_names::Names,
@@ -190,6 +193,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             class_storage: HashMap::new(),
             empty_list_constructions: HashMap::new(),
             class_parameters: super::class_parameters::Classes::default(),
+            class_labels: specialization_labels::Labels::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
             anonymous_names: super::anonymous_names::Names::default(),
@@ -511,10 +515,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.cursor.spellings.get(literal.data)
     }
     fn presentation_scope_label(
-        &self,
+        &mut self,
         scope: ScopeId,
         name: Option<crate::lex::identifiers::NameId>,
     ) -> Result<String, Error> {
+        if let Some(class) = self.graph.lower_scope_class(scope) {
+            return self.specialized_class_label(class);
+        }
         if let Some((class, _, _)) = self.graph.lower_anonymous_scope(scope) {
             return self.class_label(self.graph.lower_class_spelling(class)?);
         }
@@ -817,6 +824,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
     fn scope(&mut self, scope: ScopeId) -> Result<Option<NodeId>, Error> {
         self.check_stack()?;
         if let Some(&id) = self.scopes.get(&scope) {
+            return Ok(id);
+        }
+        if let Some(class) = self.graph.lower_scope_class(scope) {
+            let id = Some(self.abi_type(self.graph.lower_entity_type(class)?)?);
+            self.scopes.insert(scope, id);
             return Ok(id);
         }
         if let Some(function) = self.graph.lower_local_scope(scope) {

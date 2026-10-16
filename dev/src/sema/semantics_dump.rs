@@ -451,7 +451,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             if let Some(name) = node.name {
                 parts.push(name);
             }
-            scope = node.parent;
+            scope = if node.kind == ScopeKind::Class {
+                node.owner.and_then(|owner| self.graph.entity(owner).home)
+            } else {
+                node.parent
+            };
         }
         for name in parts.into_iter().rev() {
             self.name(Some(name))?;

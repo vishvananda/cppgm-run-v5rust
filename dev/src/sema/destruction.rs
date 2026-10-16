@@ -354,6 +354,7 @@ impl Analyzer<'_> {
                         && !self.graph.destructor_trivial(child)?
                         && self.lowering()
                     {
+                        self.demand_instance_member(self.graph.binding(binding).entity);
                         self.graph
                             .storage_destructions
                             .push((Some(parent), self.graph.binding(binding).entity));

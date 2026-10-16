@@ -253,6 +253,9 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or_else(|| Error::at(base.location, "name does not denote a type"))?
             };
+            if self.template_depth != 0 && self.graph.dependent_type(ty) {
+                continue;
+            }
             let Some(parent) = self.graph.class_of(ty) else {
                 if matches!(
                     self.graph.types.get(ty).kind,
@@ -262,7 +265,7 @@ impl Analyzer<'_> {
                 }
                 return Err(Error::at(base.location, "base is not a class"));
             };
-            if !self.graph.entity(parent).complete {
+            if !self.complete_class(parent)? {
                 return Err(Error::at(base.location, "base class is incomplete"));
             }
             if self.graph.entity(parent).derivation == Derivation::Final {

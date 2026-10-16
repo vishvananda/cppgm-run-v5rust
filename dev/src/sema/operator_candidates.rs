@@ -57,7 +57,7 @@ impl Analyzer<'_> {
             seen,
         } = lookup;
         if let Some(class) = self.graph.class_of(left.ty)
-            && self.graph.entity(class).complete
+            && self.complete_class(class)?
             && let Some(home) = self.graph.entity(class).scope
         {
             self.prepare_assignment_lookup(home, key, false)?;

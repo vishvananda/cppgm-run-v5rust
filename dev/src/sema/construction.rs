@@ -357,7 +357,7 @@ impl Analyzer<'_> {
             self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
             return Ok(id);
         }
-        if !self.graph.entity(class).complete {
+        if !self.complete_class(class)? {
             return Err(Error::Invariant("constructor of an incomplete class"));
         }
         if self.graph.entity(class).template_head.is_some() {
@@ -901,6 +901,9 @@ impl Analyzer<'_> {
         }
         self.check_direct_member_access(destructor, scope, location)?;
         let nontrivial = !self.graph.destructor_trivial(class)?;
+        if nontrivial && self.unevaluated == 0 && self.template_depth == 0 {
+            self.demand_instance_member(self.graph.binding(destructor).entity);
+        }
         if nontrivial && self.lowering() {
             // Destruction is an output demand at the lifetime site, not an
             // analysis-time emission root. Its body's storage boundaries must
@@ -952,6 +955,12 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         self.check_special_use_access(binding, class, scope, location)?;
+        if self.unevaluated == 0
+            && self.template_depth == 0
+            && !self.graph.destructor_trivial(class)?
+        {
+            self.demand_instance_member(self.graph.binding(binding).entity);
+        }
         self.check_abstract_object(ty, location)
     }
 

@@ -49,6 +49,11 @@ impl DemandList {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn demand_instance_member(&mut self, entity: EntityId) {
+        if self.graph.function_templates.bodies.member(entity) {
+            self.graph.function_templates.bodies.demand(entity);
+        }
+    }
     pub(super) fn demand_function(&mut self, binding: BindingId, call: bool) {
         if self.unevaluated != 0 || self.template_depth != 0 {
             return;
@@ -57,6 +62,14 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn record_demand(&mut self, demand: Demand) {
+        let function = match demand {
+            Demand::Function { binding, .. } => Some(binding),
+            Demand::Constructor(id) => self.graph.constructors.get(id).binding,
+        };
+        if let Some(binding) = function {
+            let entity = self.graph.binding(binding).entity;
+            self.demand_instance_member(entity);
+        }
         // Ordinary definitions contribute roots. Inline/constexpr functions retain
         // their dependencies until that member itself is demanded for output.
         let owner = self

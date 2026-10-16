@@ -844,7 +844,7 @@ impl Analyzer<'_> {
         }
     }
     fn check_object_type(
-        &self,
+        &mut self,
         mut ty: TypeId,
         member: bool,
         location: SourceOffset,
@@ -862,7 +862,7 @@ impl Analyzer<'_> {
         }
         if let TypeKind::Class(entity) = self.graph.types.get(ty).kind
             && self.template_depth == 0
-            && !self.graph.entity(entity).complete
+            && !self.complete_class(entity)?
         {
             return Err(Error::at(location, "variable of incomplete type"));
         }
@@ -1525,7 +1525,9 @@ impl Analyzer<'_> {
         } else {
             print
         };
-        self.define_class(node, entity, parent, print)
+        let ty = self.define_class(node, entity, parent, print)?;
+        self.record_class_pattern(entity, id, parent);
+        Ok(ty)
     }
     fn define_class(
         &mut self,
@@ -1551,9 +1553,27 @@ impl Analyzer<'_> {
                 key: node.key,
             },
         )?;
+        if self.defer_class_member(entity, node, parent)? {
+            return Ok(ty);
+        }
+        self.class_body(node, entity, parent, Some(home))
+    }
+    pub(super) fn class_body(
+        &mut self,
+        node: ast::ClassSyntax,
+        entity: EntityId,
+        parent: ScopeId,
+        print: Option<ScopeId>,
+    ) -> Result<TypeId, Error> {
+        let name = self.graph.entity(entity).name;
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("class without type"))?;
         let class = self
             .graph
-            .add_scope(ScopeKind::Class, parent, Some(home), name)?;
+            .add_scope(ScopeKind::Class, parent, print, name)?;
         self.graph.entity_mut(entity).scope = Some(class);
         self.graph.scope_mut(class).owner = Some(entity);
         self.class_layout_attributes(entity, node.attributes, parent, false)?;

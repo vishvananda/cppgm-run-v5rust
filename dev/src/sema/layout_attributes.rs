@@ -141,7 +141,7 @@ impl Analyzer<'_> {
         if let Some(location) = attributes.standard
             && attributes.alignment != 0
             && !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-            && self.query_complete(ty)
+            && self.query_complete(ty)?
             && attributes.alignment < self.type_size(ty, location)?.1
         {
             return Err(Error::at(

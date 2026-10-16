@@ -123,6 +123,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(qualifier).kind else {
             return Ok(None);
         };
+        self.complete_class(class)?;
         // A class being defined exposes its members so far. Never memoize a
         // failed lookup: completing that class can make a later trial succeed.
         let Some(scope) = self.graph.entity(class).scope else {

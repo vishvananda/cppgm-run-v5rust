@@ -529,6 +529,20 @@ impl Graph {
         let member = self.dependent_members.get(entity)?;
         Some((member.qualifier, member.name))
     }
+    pub(crate) fn lower_member_pointer_type(&self, ty: TypeId) -> Option<(TypeId, TypeId)> {
+        if let TypeKind::MemberPointer { owner, element } = self.types.get(ty).kind {
+            Some((owner, element))
+        } else {
+            None
+        }
+    }
+    pub(crate) fn lower_type_parameter_name(&self, ty: TypeId) -> Option<NameId> {
+        if let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind {
+            self.entity(entity).name
+        } else {
+            None
+        }
+    }
     pub(crate) fn lower_operand_key_dependent(&self, ty: TypeId) -> Option<bool> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
             return None;
@@ -728,7 +742,20 @@ impl Graph {
             .function
             .map(|binding| self.binding(binding).entity))
     }
-    pub(super) fn lower_type_unit_local(&self, mut ty: TypeId) -> bool {
+    pub(super) fn lower_entity_unit_local(&self, entity: EntityId) -> bool {
+        self.entity(entity).ty.map_or_else(
+            || self.lower_entity_scope_unit_local(entity),
+            |ty| self.lower_type_unit_local(ty),
+        )
+    }
+    pub(super) fn lower_type_unit_local(&self, ty: TypeId) -> bool {
+        self.lower_type_entity_locality(ty, Self::lower_entity_scope_unit_local)
+    }
+    pub(super) fn lower_type_entity_locality(
+        &self,
+        mut ty: TypeId,
+        is_local: fn(&Self, EntityId) -> bool,
+    ) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Function components and class-template arguments share a DAG worklist.
         loop {
@@ -737,14 +764,19 @@ impl Graph {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => ty = element,
-                TypeKind::Class(entity) if self.class_templates.instance(entity).is_some() => {
-                    if self.lower_entity_unit_local(entity) {
+                TypeKind::Class(entity) | TypeKind::Enum(entity)
+                    if self.class_templates.instance(entity).is_some()
+                        || self.entity(entity).home.is_some_and(|home| {
+                            self.scope(home).kind == super::graph::ScopeKind::Class
+                        }) =>
+                {
+                    if is_local(self, entity) {
                         return true;
                     }
                     break;
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
-                    return self.lower_entity_unit_local(entity);
+                    return is_local(self, entity);
                 }
                 TypeKind::Function { .. } => break,
                 _ => return false,
@@ -767,14 +799,19 @@ impl Graph {
                     work.push(*result);
                     work.extend(parameters);
                 }
-                TypeKind::Class(entity) | TypeKind::Enum(entity)
-                    if self.lower_entity_unit_local(*entity) =>
-                {
+                TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity) => {
                     return true;
                 }
-                TypeKind::Class(entity) => {
+                TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     if let Some(instance) = self.class_templates.instance(*entity) {
                         work.extend(&instance.arguments);
+                    }
+                    if let Some(owner) = self.entity(*entity).home
+                        && self.scope(owner).kind == super::graph::ScopeKind::Class
+                        && let Some(class) = self.scope(owner).owner
+                        && let Some(ty) = self.entity(class).ty
+                    {
+                        work.push(ty);
                     }
                 }
                 _ => {}
@@ -782,7 +819,7 @@ impl Graph {
         }
         false
     }
-    pub(super) fn lower_entity_unit_local(&self, mut entity: EntityId) -> bool {
+    pub(super) fn lower_entity_scope_unit_local(&self, mut entity: EntityId) -> bool {
         use super::graph::ScopeKind;
         loop {
             let node = self.entity(entity);
@@ -807,9 +844,11 @@ impl Graph {
     ) -> (Option<ScopeId>, Option<NameId>) {
         let scope = self.scope(id);
         match scope.kind {
-            super::graph::ScopeKind::Namespace | super::graph::ScopeKind::Class => {
-                (scope.parent, scope.name)
-            }
+            super::graph::ScopeKind::Namespace => (scope.parent, scope.name),
+            super::graph::ScopeKind::Class => (
+                scope.owner.and_then(|class| self.entity(class).home),
+                scope.name,
+            ),
             _ => (None, None),
         }
     }
@@ -1198,6 +1237,14 @@ impl Graph {
             definition: entity.function_definition,
             builtin: entity.builtin,
         })
+    }
+    pub(crate) fn lower_scope_class(&self, scope: ScopeId) -> Option<EntityId> {
+        (self.scope(scope).kind == super::graph::ScopeKind::Class)
+            .then_some(self.scope(scope).owner)
+            .flatten()
+    }
+    pub(crate) fn lower_class_specialization(&self, class: EntityId) -> bool {
+        self.class_templates.instance(class).is_some()
     }
     pub(crate) fn lower_abi_scope(
         &self,
