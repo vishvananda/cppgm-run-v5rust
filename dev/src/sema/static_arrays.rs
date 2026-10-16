@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Item {
+    Table(EntityId),
     Scalar(TypeId, Value),
     Zero(u64),
     BitUnit(u8, u64),
@@ -140,7 +141,7 @@ impl Analyzer<'_> {
         );
         Ok(())
     }
-    fn static_array_element(
+    pub(super) fn static_array_element(
         &mut self,
         target: TypeId,
         expr: Option<ast::ExprId>,

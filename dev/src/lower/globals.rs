@@ -189,6 +189,16 @@ fn define_storage(
     }
     let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
     let mut dynamic = constructed;
+    // A failed attempt can already have referred to tables or addresses.
+    // Replay only its recorded symbolic demand, before publishing storage.
+    let table_image = graph.lower_static_construction(entity);
+    let _ = data::items(
+        program,
+        symbols,
+        graph,
+        tree,
+        graph.lower_static_construction_demands(entity),
+    )?;
     let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() && facts.initializer.is_some() {
             GlobalInit::Address(
@@ -203,25 +213,26 @@ fn define_storage(
             GlobalInit::Zero
         }
     } else if array {
-        GlobalInit::Data(
-            if (initializer.is_some() || facts.name.is_none())
-                && let Some(image) = graph.lower_array_image(entity)
-            {
-                dynamic = false;
-                data::items(program, symbols, graph, tree, image)?
-            } else {
-                dynamic |= initializer.is_some();
-                if !constructed && let Some(prefix) = graph.lower_array_image_prefix(entity) {
-                    // The C++ constant attempt demands addresses before publishing
-                    // the object's zero image, even when a later member is dynamic.
-                    let _ = data::items(program, symbols, graph, tree, prefix)?;
-                }
-                vec![crate::lowir::model::DataItem::Zero(
-                    i64::try_from(types::layout(graph, facts.ty)?.0)
-                        .map_err(|_| crate::lowir::Error::Limit)?,
-                )]
-            },
-        )
+        GlobalInit::Data(if let Some(image) = table_image {
+            dynamic = false;
+            data::items(program, symbols, graph, tree, image)?
+        } else if (initializer.is_some() || facts.name.is_none())
+            && let Some(image) = graph.lower_array_image(entity)
+        {
+            dynamic = false;
+            data::items(program, symbols, graph, tree, image)?
+        } else {
+            dynamic |= initializer.is_some();
+            if !constructed && let Some(prefix) = graph.lower_array_image_prefix(entity) {
+                // The C++ constant attempt demands addresses before publishing
+                // the object's zero image, even when a later member is dynamic.
+                let _ = data::items(program, symbols, graph, tree, prefix)?;
+            }
+            vec![crate::lowir::model::DataItem::Zero(
+                i64::try_from(types::layout(graph, facts.ty)?.0)
+                    .map_err(|_| crate::lowir::Error::Limit)?,
+            )]
+        })
     } else if initializer.is_none() {
         GlobalInit::Zero
     } else {
@@ -274,9 +285,9 @@ fn define_storage(
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         symbols.data.define_reference(entity);
     }
-    if !dynamic {
+    if !dynamic && (table_image.is_none() || graph.lower_evaluated_construction(entity)) {
         if constructed
-            && facts.name.is_none()
+            && (facts.name.is_none() || graph.lower_evaluated_construction(entity))
             && let Some(constructor) = graph.lower_construction(entity)
         {
             symbols.demand_entry(super::construction::Entry::Constructor(

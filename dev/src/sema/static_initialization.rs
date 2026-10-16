@@ -30,17 +30,20 @@ impl Analyzer<'_> {
         // earlier declaration-time binding was unavailable. Preserve request
         // order: a preceding dynamic initializer cannot see a later retry.
         for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
-            if self.graph.constant_addresses.value(entity).is_none() {
-                self.record_address_initializer(entity, initializer, scope)?;
+            if let Some(initializer) = initializer {
+                if self.graph.constant_addresses.value(entity).is_none() {
+                    self.record_address_initializer(entity, initializer, scope)?;
+                }
+                self.record_static_initializer(entity, initializer, scope)?;
             }
-            self.record_static_initializer(entity, initializer, scope)?;
+            self.record_static_construction(entity, initializer, scope)?;
         }
         Ok(())
     }
     pub(super) fn request_static_initializer(
         &mut self,
         entity: EntityId,
-        initializer: ast::Initializer,
+        initializer: Option<ast::Initializer>,
         scope: ScopeId,
         home: ScopeId,
     ) -> Result<(), Error> {
@@ -273,7 +276,7 @@ impl Analyzer<'_> {
             _ => Ok(None),
         }
     }
-    fn static_conversion(
+    pub(super) fn static_conversion(
         &self,
         value: Value,
         source: TypeId,

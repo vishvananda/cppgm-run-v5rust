@@ -105,6 +105,11 @@ pub(super) fn items(
     let mut out = Vec::with_capacity(image.len());
     for &item in image {
         out.push(match item {
+            StaticItem::Table(class) => DataItem::Address(
+                crate::lowir::vocabulary::Type::Ptr,
+                symbols.vtable_symbol(program, class)?,
+                16,
+            ),
             StaticItem::BitUnit(bytes, bits) => DataItem::Constant(
                 match bytes {
                     1 => crate::lowir::vocabulary::Type::U8,

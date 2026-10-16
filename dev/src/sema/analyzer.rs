@@ -52,7 +52,8 @@ pub(crate) struct Analyzer<'tree> {
     mode: AnalysisMode,
     pub(super) initializing: Option<super::graph::EntityId>,
     pub(super) parenthesized_elements: std::collections::HashSet<ast::ExprId>,
-    pub(super) static_initializers: Vec<(super::graph::EntityId, ast::Initializer, ScopeId)>,
+    pub(super) static_initializers:
+        Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
     pub(super) default_argument_scope: Option<ScopeId>,
     pub(super) unevaluated: u32,

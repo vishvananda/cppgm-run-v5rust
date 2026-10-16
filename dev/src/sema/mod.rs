@@ -78,6 +78,7 @@ mod special_members;
 mod specifiers;
 mod statements;
 mod static_arrays;
+mod static_construction;
 mod static_initialization;
 mod static_objects;
 mod template_exceptions;

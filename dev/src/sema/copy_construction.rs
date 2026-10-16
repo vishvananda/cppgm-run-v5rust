@@ -233,6 +233,7 @@ impl Analyzer<'_> {
             deleted: facts.deleted,
             const_default: true,
             members: Vec::new(),
+            written_members: Vec::new(),
             bases: Vec::new(),
             subobjects: Vec::new(),
             delegation: None,

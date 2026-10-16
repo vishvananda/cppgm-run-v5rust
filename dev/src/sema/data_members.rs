@@ -24,7 +24,7 @@ impl Analyzer<'_> {
                 .entity(entity)
                 .home
                 .ok_or(Error::Invariant("static member without class scope"))?;
-            self.request_static_initializer(entity, initializer, home, home)?;
+            self.request_static_initializer(entity, Some(initializer), home, home)?;
         }
         Ok(())
     }

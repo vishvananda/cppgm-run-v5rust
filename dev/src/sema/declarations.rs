@@ -709,12 +709,12 @@ impl Analyzer<'_> {
             }
             if !member {
                 self.record_declared_constant(entity, initializer, &info, location)?;
-                if self.lowering() && definition {
-                    self.request_static_initializer(entity, initializer, info.lookup, home)?;
-                }
             }
         } else if self.semantic() && definition {
             self.default_initialize_declaration(binding, location)?;
+        }
+        if self.lowering() && definition && !member {
+            self.request_static_initializer(entity, init.initializer, info.lookup, home)?;
         }
         if self.semantic()
             && self.template_depth == 0

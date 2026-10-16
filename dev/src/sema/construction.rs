@@ -65,6 +65,7 @@ pub(super) struct Constructor {
     pub(super) deleted: bool,
     pub(super) const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
+    pub written_members: Vec<bool>,
     pub bases: Vec<BaseInitialization>,
     pub subobjects: Vec<MemberConstruction>,
     pub delegation: Option<Delegation>,
@@ -649,6 +650,7 @@ impl Analyzer<'_> {
                         Some(SpecialDefinition::Defaulted { first: false, .. })
                     )
                 }),
+            written_members: vec![false; plans.len()],
             members: plans,
             bases,
             subobjects,
@@ -800,6 +802,7 @@ impl Analyzer<'_> {
                 == super::graph::FunctionAvailability::Deleted,
             const_default: true,
             members: Vec::new(),
+            written_members: Vec::new(),
             bases: Vec::new(),
             subobjects: Vec::new(),
             delegation: None,
@@ -1034,9 +1037,11 @@ impl Analyzer<'_> {
         }
         let super::member_construction::MemberActions {
             members: plans,
+            written_members,
             subobjects,
         } = self.written_member_plans(class, &written, scope, location)?;
         self.graph.constructors.records[id.0 as usize].members = plans;
+        self.graph.constructors.records[id.0 as usize].written_members = written_members;
         self.graph.constructors.records[id.0 as usize].bases = bases;
         self.graph.constructors.records[id.0 as usize].subobjects = subobjects;
         self.check_subobject_destruction(class, scope, location)?;

@@ -14,6 +14,7 @@ type Written<'a> = HashMap<EntityId, &'a ast::MemInitializer>;
 type Designations<'a> = HashMap<EntityId, Option<&'a ast::MemInitializer>>;
 pub(super) struct MemberActions {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
+    pub written_members: Vec<bool>,
     pub subobjects: Vec<MemberConstruction>,
 }
 
@@ -195,6 +196,10 @@ impl Analyzer<'_> {
             plans.push((member, source));
         }
         Ok(MemberActions {
+            written_members: plans
+                .iter()
+                .map(|(member, _)| written.contains_key(member))
+                .collect(),
             members: plans,
             subobjects,
         })
@@ -209,6 +214,7 @@ impl Analyzer<'_> {
     ) -> Result<ConstructorId, Error> {
         let MemberActions {
             members,
+            written_members,
             subobjects,
         } = self.member_actions(class, written, scope, location, known)?;
         let mut nothrow = true;
@@ -233,6 +239,7 @@ impl Analyzer<'_> {
             deleted: false,
             const_default: false,
             members,
+            written_members,
             bases: Vec::new(),
             subobjects,
             delegation: None,

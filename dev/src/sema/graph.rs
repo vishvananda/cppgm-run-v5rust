@@ -233,6 +233,7 @@ pub(crate) struct Graph {
     pub(super) constant_addresses: super::constant_addresses::Addresses,
     pub(super) initializer_constructors: super::constructor_initialization::InitializerConstructors,
     pub(super) array_images: super::static_arrays::Images,
+    pub(super) static_constructions: super::static_construction::Images,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
@@ -394,6 +395,7 @@ impl Graph {
             initializer_constructors:
                 super::constructor_initialization::InitializerConstructors::default(),
             array_images: super::static_arrays::Images::default(),
+            static_constructions: super::static_construction::Images::default(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
             expression_scopes: Vec::new(),
