@@ -199,6 +199,7 @@ impl Analyzer<'_> {
             .collect();
         self.graph.lookup_limit = limit;
         Ok(Some(LookupResult {
+            injected_template: false,
             binding: Some(binding),
             functions,
             qualifier: None,

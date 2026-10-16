@@ -34,6 +34,9 @@ impl Analyzer<'_> {
         };
         let qualified = node.global || components.len() > 1;
         let object_class = self.graph.class_of(object.ty);
+        if let Some(class) = object_class {
+            self.complete_class(class)?;
+        }
         let complete = object_class.filter(|&class| {
             self.graph.entity(class).complete && self.graph.entity(class).scope.is_some()
         });
@@ -54,14 +57,16 @@ impl Analyzer<'_> {
             .and(naming)
             .and_then(|class| self.graph.entity(class).scope)
         {
-            self.qualified(home, key, Filter::Elaborated)?
+            self.qualified_declaration_result(home, key.into(), Filter::Elaborated)?
+                .binding
         } else {
             None
         };
-        let binding = if let Some(binding) = found {
+        let mut binding = if let Some(binding) = found {
             Some(binding)
         } else {
-            self.unqualified(scope, key, Filter::Elaborated)?
+            self.unqualified_declaration_result(scope, key.into(), Filter::Elaborated)?
+                .binding
         }
         .filter(|&binding| {
             matches!(
@@ -74,7 +79,14 @@ impl Analyzer<'_> {
             "the destructor name does not name a type",
         ))?;
         if last.arguments.is_some() {
-            return Err(Error::Missing("destructor template-id specialization"));
+            binding = self
+                .class_template_id(binding, last, scope)?
+                .ok_or_else(|| {
+                    Error::at(
+                        location,
+                        "the destructor name's template-id names no class template",
+                    )
+                })?;
         }
         let named_type = self
             .graph
@@ -208,5 +220,75 @@ impl Analyzer<'_> {
             self.demand_function(binding, true);
         }
         Ok(facts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Analyzer, DestructorTarget};
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::lookup::Filter,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    #[test]
+    fn destructor_designators_complete_one_class_and_reuse_its_selected_member() {
+        let source = SourceBuffer::new(b"template<class T>struct A{T n;~A(){}void unused(){typename T::missing x;}};void f(const A<int>*p){p->~A<int>();p->~A();}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"template-destructor").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let mut selected = None;
+        for &statement in tree.stmt_lists.get(statements) {
+            let ast::StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+                panic!("statement");
+            };
+            let ast::ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+                panic!("call");
+            };
+            let facts = graph.expression_facts.get(callee).unwrap();
+            let Some(DestructorTarget::Class(binding)) = facts.destructor else {
+                panic!("class destructor");
+            };
+            let object = facts.object.unwrap();
+            let class = graph.class_of(object.ty).unwrap();
+            assert!(graph.entity(class).complete);
+            assert_eq!(graph.types.get(object.ty).cv, super::Cv::CONST);
+            assert_eq!(graph.entity(class).declared_destructor, Some(binding));
+            assert_eq!(graph.call_binding(call).unwrap(), binding);
+            assert_eq!(facts.member_naming, Some(class));
+            if let Some(previous) = selected {
+                assert_eq!(binding, previous);
+            }
+            selected = Some(binding);
+            let unused = cursor.intern_name(b"unused").unwrap();
+            let unused = graph
+                .binding(
+                    graph
+                        .own(graph.entity(class).scope.unwrap(), unused, Filter::Ordinary)
+                        .unwrap(),
+                )
+                .entity;
+            assert!(graph.function_templates.bodies.pending_member(unused));
+            assert!(graph.function_templates.bodies.body(unused).is_none());
+        }
     }
 }

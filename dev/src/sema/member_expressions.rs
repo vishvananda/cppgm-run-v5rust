@@ -357,11 +357,6 @@ impl Analyzer<'_> {
         let mut prefix = node.global.then_some(self.graph.global);
         for index in 0..component_count - 1 {
             let component = self.tree.name_lists.get(node.components)[index];
-            if component.arguments.is_some() {
-                return Err(Error::Missing(
-                    "template specialization in a member qualifier",
-                ));
-            }
             let NameKind::Identifier(key) = component.kind else {
                 return Err(Error::at(
                     node.location,
@@ -370,15 +365,39 @@ impl Analyzer<'_> {
             };
             self.lookup_location = node.location;
             let found = if let Some(prefix) = prefix {
-                self.qualified(prefix, key, Filter::Prefix)?
-            } else if let Some(binding) = self.qualified(class_scope, key, Filter::Prefix)? {
-                self.check_named_member_access(binding, class, class, scope, node.location)?;
-                Some(binding)
+                self.qualified_declaration_result(prefix, key.into(), Filter::Prefix)?
+                    .binding
             } else {
-                self.unqualified(scope, key, Filter::Prefix)?
+                let found =
+                    self.qualified_declaration_result(class_scope, key.into(), Filter::Prefix)?;
+                if let Some(binding) = found.binding {
+                    if !found.ambiguous {
+                        self.check_named_member_access(
+                            binding,
+                            class,
+                            class,
+                            scope,
+                            node.location,
+                        )?;
+                    }
+                    Some(binding)
+                } else {
+                    self.unqualified_declaration_result(scope, key.into(), Filter::Prefix)?
+                        .binding
+                }
             };
-            let binding = found
+            let mut binding = found
                 .ok_or_else(|| Error::at(node.location, "undeclared name in a member access"))?;
+            if component.arguments.is_some() {
+                binding = self
+                    .class_template_id(binding, component, scope)?
+                    .ok_or_else(|| {
+                        Error::at(
+                            component.location,
+                            "a template-id in a nested-name-specifier that names no class template",
+                        )
+                    })?;
+            }
             prefix = Some(self.binding_qualifier(binding, node.location)?);
         }
         if !prefix

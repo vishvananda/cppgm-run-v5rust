@@ -72,8 +72,29 @@ pub(super) struct LookupResult {
     // overwrite the named-type caller's class context.
     pub qualifier: Option<ScopeId>,
     pub ambiguous: bool,
+    pub injected_template: bool,
+}
+
+// Query-local base results retain only a representative scope, never copies
+// of the overload set. Ambiguity remains a fact until the use checks it.
+#[derive(Clone, Copy, Default)]
+struct BaseLookup {
+    scope: Option<ScopeId>,
+    ambiguous: bool,
+    injected_template: bool,
 }
 impl LookupResult {
+    fn checked_template_id(
+        self,
+        template_id: bool,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Self, Error> {
+        if template_id && self.injected_template {
+            Ok(self)
+        } else {
+            self.checked(location)
+        }
+    }
     fn checked(self, location: crate::support::source::SourceOffset) -> Result<Self, Error> {
         if self.ambiguous {
             Err(Error::at(location, "ambiguous name"))
@@ -99,6 +120,7 @@ impl Analyzer<'_> {
                         && self.graph.entity(a.entity).scope == self.graph.entity(b.entity).scope)
                 {
                     first.ambiguous = true;
+                    first.injected_template = false;
                 }
             } else {
                 first.binding = Some(second_id);
@@ -128,6 +150,7 @@ impl Analyzer<'_> {
             functions,
             qualifier: None,
             ambiguous: false,
+            injected_template: false,
         }
     }
     pub(super) fn class_lookup(
@@ -136,7 +159,8 @@ impl Analyzer<'_> {
         key: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
-        self.class_lookup_in(scope, key, filter, false)
+        self.class_lookup_in(scope, key, filter, false)?
+            .checked(self.lookup_location)
     }
     fn class_lookup_in(
         &self,
@@ -152,8 +176,8 @@ impl Analyzer<'_> {
         // A result names its representative declaring scope. Its overload set
         // is collected only once, after the graph walk, rather than copied at
         // every inherited level. Query memos store absence or this compact fact.
-        let mut memo = HashMap::<ScopeId, Option<ScopeId>>::new();
-        let mut work = vec![(scope, 0usize, None)];
+        let mut memo = HashMap::<ScopeId, BaseLookup>::new();
+        let mut work = vec![(scope, 0usize, BaseLookup::default())];
         while let Some((current, next, result)) = work.last_mut() {
             let owner = self
                 .graph
@@ -178,51 +202,78 @@ impl Analyzer<'_> {
                 let found = if let Some(&cached) = memo.get(&base) {
                     cached
                 } else {
-                    let own = self.graph.own_key(base, key, filter).map(|_| base);
-                    if own.is_none() && !self.graph.entity(edge.class).bases.is_empty() {
-                        work.push((base, 0, None));
+                    let own = BaseLookup {
+                        scope: self.graph.own_key(base, key, filter).map(|_| base),
+                        ..BaseLookup::default()
+                    };
+                    if own.scope.is_none() && !self.graph.entity(edge.class).bases.is_empty() {
+                        work.push((base, 0, BaseLookup::default()));
                         continue;
                     }
                     memo.insert(base, own);
                     own
                 };
-                // Nonvirtual branches merge equal declaration/type sets. Unlike
-                // namespaces, different functions in different bases are ambiguous.
-                if let (Some(a), Some(b)) = (*result, found) {
-                    let a = self.graph.binding(
-                        self.graph
-                            .own_key(a, key, filter)
-                            .ok_or(Error::Invariant("base representative without name"))?,
-                    );
-                    let b = self.graph.binding(
-                        self.graph
-                            .own_key(b, key, filter)
-                            .ok_or(Error::Invariant("base representative without name"))?,
-                    );
-                    if a.entity != b.entity
-                        && !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
-                            && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
-                            && a.ty == b.ty)
-                    {
-                        return Err(Error::at(self.lookup_location, "ambiguous name"));
-                    }
-                } else if result.is_none() {
-                    *result = found;
-                }
+                self.merge_base_lookup(result, found, key, filter)?;
                 *next += 1;
             } else {
                 let (current, _, found) = work
                     .pop()
                     .ok_or(Error::Invariant("missing class lookup frame"))?;
                 if current == scope {
-                    return Ok(found.map_or_else(LookupResult::default, |found| {
+                    let mut result = found.scope.map_or_else(LookupResult::default, |found| {
                         self.own_lookup(found, key, filter)
-                    }));
+                    });
+                    result.ambiguous = found.ambiguous;
+                    result.injected_template = found.injected_template;
+                    return Ok(result);
                 }
                 memo.insert(current, found);
             }
         }
         Err(Error::Invariant("class lookup without result"))
+    }
+    fn merge_base_lookup(
+        &self,
+        result: &mut BaseLookup,
+        found: BaseLookup,
+        key: ValueKey,
+        filter: Filter,
+    ) -> Result<(), Error> {
+        // Match merge_base's order: identical entities propagate a subtree's
+        // ambiguity; equal designated types converge only before ambiguity.
+        let (Some(a), Some(b)) = (result.scope, found.scope) else {
+            if result.scope.is_none() {
+                *result = found;
+            }
+            return Ok(());
+        };
+        let a_id = self
+            .graph
+            .own_key(a, key, filter)
+            .ok_or(Error::Invariant("base representative without name"))?;
+        let b_id = self
+            .graph
+            .own_key(b, key, filter)
+            .ok_or(Error::Invariant("base representative without name"))?;
+        let a = self.graph.binding(a_id);
+        let b = self.graph.binding(b_id);
+        if a.entity == b.entity {
+            if found.ambiguous {
+                result.injected_template =
+                    (!result.ambiguous || result.injected_template) && found.injected_template;
+            }
+            result.ambiguous |= found.ambiguous;
+        } else if !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
+            && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
+            && a.ty == b.ty
+            && !result.ambiguous
+            && !found.ambiguous)
+        {
+            result.injected_template = (!result.ambiguous || result.injected_template)
+                && self.graph.same_template_injected_names(a_id, b_id);
+            result.ambiguous = true;
+        }
+        Ok(())
     }
     fn inline_set(
         &self,
@@ -278,8 +329,11 @@ impl Analyzer<'_> {
         scope: ScopeId,
         key: ValueKey,
         filter: Filter,
+        template_id: bool,
     ) -> Result<LookupResult, Error> {
-        let mut found = self.qualified_result(scope, key, filter)?;
+        let mut found = self
+            .qualified_declaration_result(scope, key, filter)?
+            .checked_template_id(template_id, self.lookup_location)?;
         if found.binding.is_none()
             && filter != Filter::Namespace
             && let Some(class) = self.graph.scope(scope).owner
@@ -306,7 +360,7 @@ impl Analyzer<'_> {
         filter: Filter,
     ) -> Result<LookupResult, Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
-            return self.class_lookup(scope, name, filter);
+            return self.class_lookup_in(scope, name, filter, false);
         }
         let mut visited = HashSet::new();
         let mut level = vec![scope];
@@ -362,6 +416,15 @@ impl Analyzer<'_> {
         name: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        self.unqualified_declaration_result(scope, name, filter)?
+            .checked(self.lookup_location)
+    }
+    pub(super) fn unqualified_declaration_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
         let mut visited = HashSet::new();
         let mut pending = Vec::new();
         let mut current = Some(scope);
@@ -398,7 +461,7 @@ impl Analyzer<'_> {
                 }
             }
             if result.binding.is_some() {
-                return result.checked(self.lookup_location);
+                return Ok(result);
             }
             current = self.graph.scope(scope).parent;
         }
@@ -501,10 +564,23 @@ impl Analyzer<'_> {
             self.lookup_location = component.location;
             let found = match prefix {
                 Some(Prefix::Scope(prefix)) => self
-                    .qualified_name_result(prefix, key.into(), Filter::Prefix)
+                    .qualified_name_result(
+                        prefix,
+                        key.into(),
+                        Filter::Prefix,
+                        component.arguments.is_some(),
+                    )
                     .map(|found| found.binding),
                 Some(Prefix::Dependent(ty)) => self.dependent_member_binding(ty, key).map(Some),
-                None => self.unqualified(scope, key, Filter::Prefix),
+                None => self
+                    .unqualified_declaration_result(scope, key.into(), Filter::Prefix)
+                    .and_then(|found| {
+                        found.checked_template_id(
+                            component.arguments.is_some(),
+                            self.lookup_location,
+                        )
+                    })
+                    .map(|found| found.binding),
             }
             .map_err(|error| match error {
                 Error::Diagnostic {
@@ -699,9 +775,10 @@ impl Analyzer<'_> {
         self.prepare_assignment_lookup(prefix.unwrap_or(scope), key, prefix.is_none())?;
         self.lookup_location = node.location;
         let mut found = if let Some(prefix) = prefix {
-            self.qualified_name_result(prefix, key, filter)?
+            self.qualified_name_result(prefix, key, filter, last.arguments.is_some())?
         } else {
-            self.unqualified_result(scope, key, filter)?
+            self.unqualified_declaration_result(scope, key, filter)?
+                .checked_template_id(last.arguments.is_some(), self.lookup_location)?
         };
         if filter == Filter::Ordinary
             && found.binding.is_none()
@@ -774,6 +851,63 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn injected_template_ambiguity_keeps_a_canonical_representative_and_lazy_bodies() {
+        let source = SourceBuffer::new(b"template<class T>struct B{void unused(){typename T::missing x;}};struct D:B<int>,B<char>{};struct E:D,B<long>{};struct X{using B=::B<int>;};struct Y{using B=::B<char>;};struct Z:X,Y{};struct M:D,X{};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"injected-lookup").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let key = cursor.intern_name(b"B").unwrap();
+        let names = [b"D", b"E", b"Z", b"M"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.set_lowering();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let primary = analyzer
+            .graph
+            .binding(analyzer.graph.own(global, key, Filter::Prefix).unwrap())
+            .entity;
+        let mut representative = None;
+        for (index, name) in names.into_iter().enumerate() {
+            let class = analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let result = analyzer
+                .qualified_declaration_result(scope, key.into(), Filter::Prefix)
+                .unwrap();
+            assert!(result.ambiguous);
+            assert_eq!(result.injected_template, index < 2);
+            assert!(analyzer.qualified(scope, key, Filter::Prefix).is_err());
+            let binding = result.binding.unwrap();
+            if index < 2 {
+                let entity = analyzer.graph.binding(binding).entity;
+                assert_eq!(
+                    analyzer.graph.binding_scope(binding),
+                    analyzer.graph.entity(entity).scope.unwrap()
+                );
+                assert_eq!(
+                    analyzer
+                        .graph
+                        .class_templates
+                        .instance(entity)
+                        .unwrap()
+                        .primary,
+                    primary
+                );
+                if let Some(previous) = representative {
+                    assert_eq!(binding, previous);
+                }
+                representative = Some(binding);
+            }
+        }
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn decltype_qualifier_keeps_original_call_facts_without_emission_or_layout_demand() {

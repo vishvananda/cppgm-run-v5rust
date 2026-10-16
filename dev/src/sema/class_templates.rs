@@ -40,6 +40,24 @@ impl ClassTemplates {
         self.instances.get(&entity)
     }
 }
+impl super::graph::Graph {
+    pub(super) fn same_template_injected_names(&self, a: BindingId, b: BindingId) -> bool {
+        let primary = |id: BindingId| {
+            let binding = self.binding(id);
+            if binding.kind != BindingKind::Type {
+                return None;
+            }
+            let class = self.entity(binding.entity);
+            if class.scope != Some(self.binding_scope(id)) {
+                return None;
+            }
+            self.class_templates
+                .instance(binding.entity)
+                .map(|instance| instance.primary)
+        };
+        primary(a).is_some_and(|a| Some(a) == primary(b))
+    }
+}
 impl Analyzer<'_> {
     pub(super) fn class_template_id(
         &mut self,
