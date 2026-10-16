@@ -124,7 +124,22 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
                         }
                     }
                     Demand::Function { binding, call } => {
-                        let entity = graph.entity(graph.binding(binding).entity);
+                        let function = graph.binding(binding).entity;
+                        let entity = graph.entity(function);
+                        // C++ marks inheriting constructors implicit. Only a
+                        // parameterless implicit definition appears in this view.
+                        if graph.inherited_constructors.source(function).is_some() {
+                            if entity.ty.is_some_and(|ty| {
+                                matches!(&graph.types.get(ty).kind,
+                                    super::types::TypeKind::Function { parameters, .. }
+                                        if parameters.is_empty())
+                            }) && let Some(id) = entity.constructor
+                                && seen_constructors.insert(id)
+                            {
+                                constructors.push_back(Demand::Constructor(id));
+                            }
+                            continue;
+                        }
                         if entity.assignment_origin != super::assignment::Origin::Implicit
                             && (entity.definition_emission == DefinitionEmission::Demanded
                                 || call

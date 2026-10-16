@@ -23,7 +23,7 @@ pub(super) enum Filter {
 // A dependent qualifier has no scope until substitution. Never manufacture a
 // class scope for its placeholder or search its members speculatively.
 #[derive(Clone, Copy)]
-enum Prefix {
+pub(super) enum Prefix {
     Scope(ScopeId),
     Dependent(TypeId),
 }
@@ -136,6 +136,15 @@ impl Analyzer<'_> {
         key: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        self.class_lookup_in(scope, key, filter, false)
+    }
+    fn class_lookup_in(
+        &self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+        unqualified: bool,
+    ) -> Result<LookupResult, Error> {
         let own = self.own_lookup(scope, key, filter);
         if own.binding.is_some() || self.graph.scope(scope).kind != ScopeKind::Class {
             return Ok(own);
@@ -152,6 +161,15 @@ impl Analyzer<'_> {
                 .owner
                 .ok_or(Error::Invariant("class lookup without owner"))?;
             if let Some(edge) = self.graph.entity(owner).bases.get(*next) {
+                // Only direct dependent bases of the queried class are skipped;
+                // a fixed base's members use ordinary qualified base lookup.
+                if unqualified
+                    && *current == scope
+                    && edge.dependency == crate::syntax::ast::BaseDependency::Dependent
+                {
+                    *next += 1;
+                    continue;
+                }
                 let base = self
                     .graph
                     .entity(edge.class)
@@ -253,6 +271,32 @@ impl Analyzer<'_> {
         self.qualified_declaration_result(scope, name, filter)?
             .checked(self.lookup_location)
     }
+    // Source-name lookup, unlike raw declaration-set lookup, can find an
+    // unknown specialization through the current instantiation (14.6.2.1p5).
+    fn qualified_name_result(
+        &mut self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        let mut found = self.qualified_result(scope, key, filter)?;
+        if found.binding.is_none()
+            && filter != Filter::Namespace
+            && let Some(class) = self.graph.scope(scope).owner
+            && self.graph.scope(scope).kind == ScopeKind::Class
+            && self.graph.entity(class).base_dependency
+                == crate::syntax::ast::BaseDependency::Dependent
+            && let Some(name) = key.identifier()
+        {
+            let ty = self
+                .graph
+                .entity(class)
+                .ty
+                .ok_or(Error::Invariant("class without type"))?;
+            found.binding = Some(self.dependent_member_binding(ty, name)?);
+        }
+        Ok(found)
+    }
     // C++ class_specifier consumes the representative even when namespace
     // lookup marks it ambiguous. Ordinary name uses diagnose that fact.
     pub(super) fn qualified_declaration_result(
@@ -334,7 +378,7 @@ impl Analyzer<'_> {
             } else {
                 outside = bridged;
             }
-            let mut result = self.class_lookup(scope, name, filter)?;
+            let mut result = self.class_lookup_in(scope, name, filter, true)?;
             let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
             while let Some(nominated) = frontier.pop() {
                 if !visited.insert(nominated) {
@@ -411,7 +455,7 @@ impl Analyzer<'_> {
             None => Ok(None),
         }
     }
-    fn name_prefix(
+    pub(super) fn name_prefix(
         &mut self,
         name: Name,
         scope: ScopeId,
@@ -456,7 +500,9 @@ impl Analyzer<'_> {
             };
             self.lookup_location = component.location;
             let found = match prefix {
-                Some(Prefix::Scope(prefix)) => self.qualified(prefix, key, Filter::Prefix),
+                Some(Prefix::Scope(prefix)) => self
+                    .qualified_name_result(prefix, key.into(), Filter::Prefix)
+                    .map(|found| found.binding),
                 Some(Prefix::Dependent(ty)) => self.dependent_member_binding(ty, key).map(Some),
                 None => self.unqualified(scope, key, Filter::Prefix),
             }
@@ -653,7 +699,7 @@ impl Analyzer<'_> {
         self.prepare_assignment_lookup(prefix.unwrap_or(scope), key, prefix.is_none())?;
         self.lookup_location = node.location;
         let mut found = if let Some(prefix) = prefix {
-            self.qualified_result(prefix, key, filter)?
+            self.qualified_name_result(prefix, key, filter)?
         } else {
             self.unqualified_result(scope, key, filter)?
         };

@@ -4,7 +4,7 @@ use super::{
     analyzer::Analyzer,
     function_names::{Definition, ValueKey},
     graph::{Binding, BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
-    lookup::Filter,
+    lookup::{Filter, Prefix},
     specifiers::{DeclarationRole, Specifiers},
     types::{Cv, Scalar, TypeId, TypeKind},
 };
@@ -265,7 +265,7 @@ impl Analyzer<'_> {
             self.graph.add_edge(scope, target, false);
             return Ok(());
         }
-        let name = self.tree.names.get(target);
+        let name = *self.tree.names.get(target);
         if !name.global && self.tree.name_lists.get(name.components).len() == 1 {
             return Err(Error::at(
                 location,
@@ -284,16 +284,48 @@ impl Analyzer<'_> {
                 "a using-declaration cannot name a template-id",
             ));
         }
-        if let Some(last) = self.tree.name_lists.get(name.components).last()
-            && let ast::NameKind::Conversion(ty) = last.kind
-        {
+        let components = self.tree.name_lists.get(name.components);
+        let last = *components
+            .last()
+            .ok_or(Error::Invariant("empty using name"))?;
+        if matches!(
+            last.kind,
+            ast::NameKind::Destructor(_)
+                | ast::NameKind::DestructorDecltype(_)
+                | ast::NameKind::Decltype(_)
+        ) {
+            return Err(Error::at(
+                location,
+                "a using-declaration cannot name a destructor",
+            ));
+        }
+        let count = components.len().saturating_sub(1);
+        let names_owner = count != 0
+            && matches!((components[count - 1].kind, last.kind),
+                (ast::NameKind::Identifier(a), ast::NameKind::Identifier(b)) if a == b)
+            && self.graph.scope(self.declaration_scope(scope)).kind == ScopeKind::Class;
+        let prefix = match self.name_prefix(target, scope, count, false)? {
+            Some(Prefix::Scope(prefix)) => prefix,
+            Some(Prefix::Dependent(qualifier)) => {
+                if let ast::NameKind::Identifier(name) = last.kind
+                    && !names_owner
+                {
+                    let home = self.declaration_scope(scope);
+                    if self.graph.own(home, name, Filter::Ordinary).is_none() {
+                        let binding = self.dependent_member_binding(qualifier, name)?;
+                        self.graph
+                            .add_binding(home, None, self.graph.binding(binding))?;
+                    }
+                }
+                return Ok(());
+            }
+            None => return Err(Error::Invariant("qualified using without prefix")),
+        };
+        if let ast::NameKind::Conversion(ty) = last.kind {
             return self.using_conversion(target, ty, scope, location);
         }
         let target_key = self.value_name(target)?;
         self.lookup_location = name.location;
-        let prefix = self
-            .prefix(target, scope)?
-            .ok_or(Error::Invariant("qualified using without prefix"))?;
         if self.note_inherited_constructors(scope, prefix, target_key, target)? {
             return Ok(());
         }
@@ -338,7 +370,14 @@ impl Analyzer<'_> {
                 "a using-declaration cannot name a namespace",
             ));
         }
-        if let Some(existing) = self.graph.value_binding(scope, target_key)
+        let existing = if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
+            binding
+                .name
+                .and_then(|name| self.graph.own(scope, name, Filter::Prefix))
+        } else {
+            self.graph.value_binding(scope, target_key)
+        };
+        if let Some(existing) = existing
             && self.graph.binding(existing).entity != binding.entity
         {
             return Err(Error::at(
@@ -950,6 +989,18 @@ impl Analyzer<'_> {
         } else {
             self.graph.redeclared_value(home, name)
         };
+        // A dependent using's type placeholder can denote a function set in
+        // an instance. An own function joins or hides that set there.
+        if kind == BindingKind::Function
+            && existing.is_some_and(|id| {
+                self.graph
+                    .dependent_members
+                    .get(self.graph.binding(id).entity)
+                    .is_some()
+            })
+        {
+            existing = None;
+        }
         if kind == BindingKind::Function
             && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
         {

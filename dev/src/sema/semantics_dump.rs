@@ -860,7 +860,18 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             return Ok(());
         }
-        if self.graph.constructors.get(id).binding.is_some() {
+        if self
+            .graph
+            .constructors
+            .get(id)
+            .binding
+            .is_some_and(|binding| {
+                self.graph
+                    .inherited_constructors
+                    .source(self.graph.binding(binding).entity)
+                    .is_none()
+            })
+        {
             return Ok(());
         }
         self.line("call-expression prvalue void", depth + 1)?;

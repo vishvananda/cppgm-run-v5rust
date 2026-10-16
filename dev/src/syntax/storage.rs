@@ -125,6 +125,9 @@ impl<T: Copy> Lists<T> {
     pub(crate) fn get(&self, list: List<T>) -> &[T] {
         &self.data[list.begin as usize..list.end as usize]
     }
+    pub(crate) fn replace(&mut self, list: List<T>, index: usize, value: T) {
+        self.data[list.begin as usize..list.end as usize][index] = value;
+    }
     pub(crate) fn mark(&self) -> ListMark {
         ListMark(self.data.len(), self.scratch.len())
     }

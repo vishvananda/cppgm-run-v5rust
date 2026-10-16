@@ -760,6 +760,7 @@ impl Analyzer<'_> {
                 let entity = self.graph.entity(binding.entity);
                 let node = self.tree.names.get(name);
                 if !node.typename_keyword
+                    && (node.global || self.tree.name_lists.get(node.components).len() > 1)
                     && self.graph.dependent_members.get(binding.entity).is_some()
                 {
                     return Err(Error::at(

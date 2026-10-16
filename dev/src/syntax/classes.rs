@@ -401,6 +401,7 @@ impl Parser<'_> {
                 self.record_parameter_base(class, identifier, pack)?;
             }
             self.tree.bases.push(Base {
+                dependency: super::ast::BaseDependency::Fixed,
                 location,
                 name,
                 access,

@@ -23,6 +23,7 @@ pub(super) struct BaseClass {
     pub class: EntityId,
     pub access: Access,
     pub offset: Option<u64>,
+    pub dependency: ast::BaseDependency,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,6 +255,15 @@ impl Analyzer<'_> {
                     .ok_or_else(|| Error::at(base.location, "name does not denote a type"))?
             };
             if self.template_depth != 0 && self.graph.dependent_type(ty) {
+                self.graph.entity_mut(class).base_dependency = ast::BaseDependency::Dependent;
+                self.tree.bases.replace(
+                    node.bases,
+                    syntax_index,
+                    ast::Base {
+                        dependency: ast::BaseDependency::Dependent,
+                        ..syntax_item
+                    },
+                );
                 continue;
             }
             let Some(parent) = self.graph.class_of(ty) else {
@@ -305,6 +315,7 @@ impl Analyzer<'_> {
                 class: parent,
                 access,
                 offset: None,
+                dependency: base.dependency,
             });
             seen.insert(parent);
         }
@@ -384,5 +395,91 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn copied_bases_keep_provenance_and_imports_keep_canonical_entities() {
+        let source = SourceBuffer::new(
+            b"struct Fixed{typedef long fixed;};\
+              template<class T>struct Base{typedef T type;int idle(){return T::bad;}};\
+              template<class T>struct Derived:Base<T>,Fixed{\
+                using typename Base<T>::type;type value;};Derived<int> d;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"base-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let name = cursor.intern_name(b"Derived").unwrap();
+        let primary = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        assert_eq!(
+            graph.entity(primary).base_dependency,
+            ast::BaseDependency::Dependent
+        );
+        assert_eq!(graph.entity(primary).bases.len(), 1);
+        let object = cursor.intern_name(b"d").unwrap();
+        let ty = graph
+            .binding(graph.own(graph.global, object, Filter::Ordinary).unwrap())
+            .ty
+            .unwrap();
+        let class = graph.class_of(ty).unwrap();
+        let bases = &graph.entity(class).bases;
+        assert_eq!(bases.len(), 2);
+        assert_eq!(bases[0].dependency, ast::BaseDependency::Dependent);
+        assert_eq!(bases[1].dependency, ast::BaseDependency::Fixed);
+        assert_eq!(
+            graph.entity(class).base_dependency,
+            ast::BaseDependency::Fixed
+        );
+        let home = graph.entity(class).scope.unwrap();
+        let base_home = graph.entity(bases[0].class).scope.unwrap();
+        let name = cursor.intern_name(b"type").unwrap();
+        let imported = graph.own(home, name, Filter::Prefix).unwrap();
+        let original = graph.own(base_home, name, Filter::Prefix).unwrap();
+        assert_eq!(
+            graph.binding(imported).entity,
+            graph.binding(original).entity
+        );
+        assert_eq!(graph.binding(imported).ty, graph.binding(original).ty);
+        let idle = cursor.intern_name(b"idle").unwrap();
+        let idle = graph.own(base_home, idle, Filter::Ordinary).unwrap();
+        assert!(
+            graph
+                .function_templates
+                .bodies
+                .body(graph.binding(idle).entity)
+                .is_none()
+        );
+        assert!(graph.root_demands.as_slice().is_empty());
+        let ast::DeclKind::Template { declaration, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[2])
+            .kind
+        else {
+            panic!("template");
+        };
+        let ast::DeclKind::Class(specifier) = tree.declarations.get(declaration).kind else {
+            panic!("class declaration");
+        };
+        let ast::SpecifierKind::Class(pattern) = specifier.kind else {
+            panic!("class");
+        };
+        let syntax_bases = tree.bases.get(tree.classes.get(pattern).bases);
+        assert_eq!(syntax_bases[0].dependency, ast::BaseDependency::Dependent);
+        assert_eq!(syntax_bases[1].dependency, ast::BaseDependency::Fixed);
     }
 }

@@ -308,6 +308,11 @@ pub(crate) enum Body {
     Deferred,
     Parsed(FunctionBody),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BaseDependency {
+    Fixed,
+    Dependent,
+}
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Base {
     pub location: SourceOffset,
@@ -316,6 +321,8 @@ pub(crate) struct Base {
     pub is_virtual: bool,
     pub virtual_first: bool,
     pub pack: bool,
+    // Definition-time provenance retained when copying a template instance.
+    pub dependency: BaseDependency,
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClassSyntax {
