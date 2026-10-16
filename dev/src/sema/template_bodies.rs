@@ -39,6 +39,9 @@ pub(super) struct Bodies {
     emission_definitions: HashSet<EntityId>,
 }
 impl Bodies {
+    pub(super) fn started(&self, entity: EntityId) -> bool {
+        self.states.contains_key(&entity)
+    }
     fn template_pattern(&self, mut entity: EntityId) -> Option<Pattern> {
         loop {
             if let Some(&pattern) = self.patterns.get(&entity) {
@@ -196,6 +199,9 @@ pub(crate) fn analyze_unit(
             }
             break;
         };
+        if graph.function_templates.specializations.contains(entity) {
+            continue;
+        }
         if graph.function_instantiation_suppressed(entity) {
             continue;
         }

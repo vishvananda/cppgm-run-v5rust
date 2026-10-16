@@ -515,7 +515,17 @@ impl Graph {
         self.function_templates.instantiations.classes()
     }
     pub(crate) fn lower_explicit_function_root(&self, entity: EntityId) -> bool {
-        self.function_templates.instantiations.defined(entity) && self.entity(entity).defined
+        self.entity(entity).defined
+            && if self.function_templates.specializations.contains(entity) {
+                (self
+                    .function_templates
+                    .specializations
+                    .instantiation_root(entity)
+                    || self.function_templates.instantiations.defined(entity))
+                    && self.entity(entity).inline != super::specifiers::InlinePreference::Inline
+            } else {
+                self.function_templates.instantiations.defined(entity)
+            }
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id)

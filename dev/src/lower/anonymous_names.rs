@@ -117,6 +117,12 @@ impl Deferred {
                             .map(|&id| (id, false)),
                     );
                 }
+                DeclKind::Template {
+                    parameters,
+                    declaration,
+                } if parameters.parameters.is_empty() => {
+                    self.work.push((declaration, member));
+                }
                 DeclKind::Class(specifier) => {
                     if let SpecifierKind::Class(class) = specifier.kind {
                         self.work.extend(
@@ -204,6 +210,12 @@ impl Declarations {
                             .rev()
                             .map(|&id| (id, false)),
                     );
+                }
+                DeclKind::Template {
+                    parameters,
+                    declaration,
+                } if parameters.parameters.is_empty() => {
+                    self.work.push((declaration, false));
                 }
                 _ => return Ok(Some(id)),
             }

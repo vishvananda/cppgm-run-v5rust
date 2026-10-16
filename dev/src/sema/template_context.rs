@@ -37,6 +37,7 @@ struct Context {
     base: Option<EntityId>,
     member: Option<EntityId>,
     template_depth: usize,
+    specialization_levels: u32,
     instantiation_depth: u32,
     class_depth: usize,
     unevaluated: u32,
@@ -64,6 +65,10 @@ impl Context {
         swap(&mut self.base, &mut analyzer.base_object);
         swap(&mut self.member, &mut analyzer.member_initializer_class);
         swap(&mut self.template_depth, &mut analyzer.template_depth);
+        swap(
+            &mut self.specialization_levels,
+            &mut analyzer.specialization_levels,
+        );
         swap(
             &mut self.instantiation_depth,
             &mut analyzer.instantiation_depth,

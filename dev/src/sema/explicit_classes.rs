@@ -205,7 +205,8 @@ impl Graph {
         let record = self.entity(entity);
         let store = &self.function_templates.instantiations;
         let policy = self.instance_member_policy(entity);
-        if record.inline == super::specifiers::InlinePreference::Inline
+        if self.function_templates.specializations.contains(entity)
+            || record.inline == super::specifiers::InlinePreference::Inline
             || store.defined(entity)
             || policy.excluded
             || policy.always_inline

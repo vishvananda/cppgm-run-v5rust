@@ -202,7 +202,7 @@ impl Analyzer<'_> {
             ));
         }
         if parameters.parameters.is_empty() {
-            return Err(Error::Missing("explicit template specialization"));
+            return self.explicit_specialization(declaration, scope, location);
         }
         let home = self.declaration_scope(scope);
         if !matches!(

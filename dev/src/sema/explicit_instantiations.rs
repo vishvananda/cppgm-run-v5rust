@@ -219,6 +219,18 @@ impl Analyzer<'_> {
         if self.semantic() {
             self.check_operator_declaration(binding, inner.location)?;
         }
+        if self
+            .graph
+            .function_templates
+            .specializations
+            .contains(entity)
+        {
+            self.graph
+                .function_templates
+                .specializations
+                .note_instantiation(entity, is_extern);
+            return Ok(());
+        }
         self.graph.function_templates.instantiations.record(
             binding,
             entity,

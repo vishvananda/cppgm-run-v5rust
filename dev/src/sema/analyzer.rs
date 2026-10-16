@@ -39,6 +39,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
+    pub(super) specialization_levels: u32,
     pub(super) instantiation_depth: u32,
     pub(super) incomplete_class_observations: u64,
     pub(super) dependent_uses: std::cell::Cell<u64>,
@@ -185,6 +186,7 @@ impl<'tree> Analyzer<'tree> {
             member_initializer_class: None,
             base_object: None,
             template_depth: 0,
+            specialization_levels: 0,
             instantiation_depth: 0,
             incomplete_class_observations: 0,
             dependent_uses: std::cell::Cell::new(0),
@@ -586,12 +588,19 @@ impl<'tree> Analyzer<'tree> {
         )?;
         self.graph.note_no_inline(entity, attributes.no_inline)?;
         self.note_instantiation_policy(entity, declarator, attributes.instantiation);
-        self.graph.entity_mut(entity).definition_emission =
-            if self.class_depth != 0 || specs.constexpr {
-                super::function_demands::DefinitionEmission::Demanded
-            } else {
-                super::function_demands::DefinitionEmission::Always
-            };
+        self.graph.entity_mut(entity).definition_emission = if self.class_depth != 0
+            || specs.constexpr
+            || self
+                .graph
+                .function_templates
+                .specializations
+                .contains(entity)
+                && self.graph.entity(entity).inline == super::specifiers::InlinePreference::Inline
+        {
+            super::function_demands::DefinitionEmission::Demanded
+        } else {
+            super::function_demands::DefinitionEmission::Always
+        };
         self.graph.entity_mut(entity).constexpr = specs.constexpr;
         if self.class_depth != 0 || specs.constexpr {
             self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;

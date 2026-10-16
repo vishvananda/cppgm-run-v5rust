@@ -25,6 +25,7 @@ struct SpecializationKey {
 
 #[derive(Default)]
 pub(super) struct FunctionTemplates {
+    pub(super) specializations: super::explicit_specializations::Specializations,
     signatures: HashMap<SpecializationKey, BindingId>,
     active_signatures: HashSet<(SpecializationKey, usize)>,
     primaries: HashMap<EntityId, BindingId>,
@@ -1281,6 +1282,11 @@ impl Analyzer<'_> {
     pub(super) fn demand_specialization_body(&mut self, binding: BindingId) {
         if self.unevaluated == 0
             && self.template_depth == 0
+            && !self
+                .graph
+                .function_templates
+                .specializations
+                .contains(self.graph.binding(binding).entity)
             && let Some(primary) = self
                 .graph
                 .function_templates

@@ -460,6 +460,11 @@ impl Analyzer<'_> {
         definition: Definition,
     ) -> Result<BindingId, Error> {
         self.function_specifier_type(specs, info, scope)?;
+        if self.specialization_levels != 0
+            && specs.friendship != super::specifiers::Friendship::Friend
+        {
+            return self.explicit_function_specialization(info, specs, scope, location, definition);
+        }
         if specs.friendship == super::specifiers::Friendship::Friend
             && (self.function_template_id(info).is_some()
                 || info.home.is_some() && self.templated_class_scope(scope))
@@ -836,7 +841,11 @@ impl Analyzer<'_> {
             );
             return Ok(());
         }
-        let key = self.declaration_key(&info)?;
+        let key = if let Some(component) = self.function_template_id(&info) {
+            Self::expression_name(component.kind)?
+        } else {
+            self.declaration_key(&info)?
+        };
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         if self.graph.entity(entity).template_head.is_none()
