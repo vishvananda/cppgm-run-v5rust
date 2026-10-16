@@ -922,95 +922,102 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&id) = self.types.get(&ty) {
             return Ok(id);
         }
-        let node = match self.graph.lower_type(ty)? {
-            TypeView::Scalar(scalar) => Node::Builtin(match scalar {
-                Scalar::Void => B::Void,
-                Scalar::Bool => B::Bool,
-                Scalar::SignedChar => B::SignedChar,
-                Scalar::UnsignedChar => B::UnsignedChar,
-                Scalar::Short => B::Short,
-                Scalar::UnsignedShort => B::UnsignedShort,
-                Scalar::Nullptr => B::Nullptr,
-                Scalar::Basic(f) => match f {
-                    F::Char => B::Char,
-                    F::Char16T => B::Char16,
-                    F::Char32T => B::Char32,
-                    F::WcharT => B::Wchar,
-                    F::Int => B::Int,
-                    F::UnsignedInt => B::UnsignedInt,
-                    F::LongInt => B::Long,
-                    F::UnsignedLongInt => B::UnsignedLong,
-                    F::LongLongInt => B::LongLong,
-                    F::UnsignedLongLongInt => B::UnsignedLongLong,
-                    F::Float => B::Float,
-                    F::Double => B::Double,
-                    F::LongDouble => B::LongDouble,
-                },
-            }),
-            TypeView::Pointer(element) => Node::Modified {
-                modifier: Modifier::Pointer,
-                operand: self.abi_type(element)?,
-            },
-            TypeView::Array { element, bound } => Node::Modified {
-                modifier: if bound == 0 {
-                    Modifier::UnknownArray
-                } else {
-                    Modifier::Array(bound)
-                },
-                operand: self.abi_type(element)?,
-            },
-            TypeView::Reference { element, rvalue } => Node::Modified {
-                modifier: if rvalue {
-                    Modifier::RvalueReference
-                } else {
-                    Modifier::LvalueReference
-                },
-                operand: self.abi_type(element)?,
-            },
-            TypeView::Enum(_) | TypeView::Class(_) => {
-                let (entity, home, name) = self.graph.lower_nominal_name(ty)?;
-                let parent = self.scope(home)?;
-                let terminal = if let Some(name) = name {
-                    self.abi.string(self.cursor.name(name))?
-                } else {
-                    self.anonymous_names
-                        .terminal(self.graph, &mut self.abi, entity)?
-                };
-                let occurrence = if let TypeView::Class(class) = self.graph.lower_type(ty)?
-                    && let Some((function, declared)) = self.graph.lower_local_type(class)
-                {
-                    self.local_discriminator(class, function, name, declared)?
-                } else {
-                    0
-                };
-                Node::Name {
-                    parent,
-                    terminal,
-                    internal: false,
-                    occurrence,
-                }
+        let node = if let Some(index) = self.graph.lower_template_parameter(ty) {
+            Node::TemplateParam {
+                index,
+                substitutable: true,
             }
-            TypeView::Function {
-                result,
-                parameters,
-                variadic,
-            } => {
-                let result = self.abi_type(result)?;
-                let mut args = Vec::with_capacity(parameters.len());
-                for &parameter in parameters {
-                    args.push(self.abi_type(parameter)?);
+        } else {
+            match self.graph.lower_type(ty)? {
+                TypeView::Scalar(scalar) => Node::Builtin(match scalar {
+                    Scalar::Void => B::Void,
+                    Scalar::Bool => B::Bool,
+                    Scalar::SignedChar => B::SignedChar,
+                    Scalar::UnsignedChar => B::UnsignedChar,
+                    Scalar::Short => B::Short,
+                    Scalar::UnsignedShort => B::UnsignedShort,
+                    Scalar::Nullptr => B::Nullptr,
+                    Scalar::Basic(f) => match f {
+                        F::Char => B::Char,
+                        F::Char16T => B::Char16,
+                        F::Char32T => B::Char32,
+                        F::WcharT => B::Wchar,
+                        F::Int => B::Int,
+                        F::UnsignedInt => B::UnsignedInt,
+                        F::LongInt => B::Long,
+                        F::UnsignedLongInt => B::UnsignedLong,
+                        F::LongLongInt => B::LongLong,
+                        F::UnsignedLongLongInt => B::UnsignedLongLong,
+                        F::Float => B::Float,
+                        F::Double => B::Double,
+                        F::LongDouble => B::LongDouble,
+                    },
+                }),
+                TypeView::Pointer(element) => Node::Modified {
+                    modifier: Modifier::Pointer,
+                    operand: self.abi_type(element)?,
+                },
+                TypeView::Array { element, bound } => Node::Modified {
+                    modifier: if bound == 0 {
+                        Modifier::UnknownArray
+                    } else {
+                        Modifier::Array(bound)
+                    },
+                    operand: self.abi_type(element)?,
+                },
+                TypeView::Reference { element, rvalue } => Node::Modified {
+                    modifier: if rvalue {
+                        Modifier::RvalueReference
+                    } else {
+                        Modifier::LvalueReference
+                    },
+                    operand: self.abi_type(element)?,
+                },
+                TypeView::Enum(_) | TypeView::Class(_) => {
+                    let (entity, home, name) = self.graph.lower_nominal_name(ty)?;
+                    let parent = self.scope(home)?;
+                    let terminal = if let Some(name) = name {
+                        self.abi.string(self.cursor.name(name))?
+                    } else {
+                        self.anonymous_names
+                            .terminal(self.graph, &mut self.abi, entity)?
+                    };
+                    let occurrence = if let TypeView::Class(class) = self.graph.lower_type(ty)?
+                        && let Some((function, declared)) = self.graph.lower_local_type(class)
+                    {
+                        self.local_discriminator(class, function, name, declared)?
+                    } else {
+                        0
+                    };
+                    Node::Name {
+                        parent,
+                        terminal,
+                        internal: false,
+                        occurrence,
+                    }
                 }
-                let node = Node::FunctionType {
+                TypeView::Function {
                     result,
-                    owner: None,
-                    qualifiers: Qualifiers::default(),
+                    parameters,
                     variadic,
-                };
-                let id = self.abi.intern(node, &args)?;
-                self.types.insert(ty, id);
-                return Ok(id);
+                } => {
+                    let result = self.abi_type(result)?;
+                    let mut args = Vec::with_capacity(parameters.len());
+                    for &parameter in parameters {
+                        args.push(self.abi_type(parameter)?);
+                    }
+                    let node = Node::FunctionType {
+                        result,
+                        owner: None,
+                        qualifiers: Qualifiers::default(),
+                        variadic,
+                    };
+                    let id = self.abi.intern(node, &args)?;
+                    self.types.insert(ty, id);
+                    return Ok(id);
+                }
+                TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
             }
-            TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
         };
         let mut id = self.abi.intern(node, &[]).map_err(Error::from)?;
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
@@ -1643,7 +1650,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let mut metadata = Metadata {
             binding: Some(binding),
-            flags: if facts.emission == crate::sema::lowering::Emission::Demanded {
+            flags: if self.graph.lower_inline_hint(entity) {
                 16
             } else {
                 0
@@ -2130,11 +2137,23 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &[],
             )
             .map_err(Error::from)?;
+        let mut name = name;
+        let signature = if let Some(instance) = facts.template_instance {
+            let (pattern, arguments) = self.graph.lower_template_signature(instance)?;
+            let mut nodes = Vec::with_capacity(arguments.len());
+            for &argument in arguments {
+                nodes.push(self.abi_type(argument)?);
+            }
+            name = self.abi.intern(Node::Template(name), &nodes)?;
+            pattern
+        } else {
+            facts.ty
+        };
         let TypeView::Function {
+            result,
             parameters,
             variadic,
-            ..
-        } = self.graph.lower_type(facts.ty)?
+        } = self.graph.lower_type(signature)?
         else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "function without function type",
@@ -2144,12 +2163,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
         for &parameter in parameters {
             args.push(self.abi_type(parameter)?);
         }
+        let result = if facts.template_instance.is_some() {
+            Some(self.abi_type(result)?)
+        } else {
+            None
+        };
         let function = self
             .abi
             .intern(
                 Node::Function {
                     name,
-                    result: None,
+                    result,
                     qualifiers: facts.qualifiers,
                     variadic,
                 },

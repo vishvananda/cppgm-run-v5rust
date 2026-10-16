@@ -219,7 +219,7 @@ impl Analyzer<'_> {
                 && self.graph.entity(variable).data_member
                     != Some(super::graph::DataMemberKind::Instance)
             {
-                self.constructor_boundaries.push((
+                self.graph.constructor_boundaries.push((
                     self.body_context.as_ref().map(|body| body.entity),
                     constructor,
                 ));
@@ -905,7 +905,7 @@ impl Analyzer<'_> {
             // Destruction is an output demand at the lifetime site, not an
             // analysis-time emission root. Its body's storage boundaries must
             // nevertheless be ready when that owner is reached by lowering.
-            self.storage_destructions.push((
+            self.graph.storage_destructions.push((
                 self.body_context.as_ref().map(|body| body.entity),
                 self.graph.binding(destructor).entity,
             ));

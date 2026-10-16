@@ -314,7 +314,7 @@ impl Analyzer<'_> {
                 "use of a deleted function",
             ));
         }
-        self.check_specialization_body(binding)?;
+        self.demand_specialization_body(binding);
         let ty = self
             .graph
             .binding(binding)

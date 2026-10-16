@@ -146,7 +146,7 @@ impl Analyzer<'_> {
         let mut declared = None;
         let mut templates = false;
         for index in 0..count {
-            let binding = self.conversion_sets[&class][index];
+            let binding = self.graph.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.template_head.is_some() {
                 templates = true;
@@ -229,7 +229,7 @@ impl Analyzer<'_> {
         let count = self.visible_conversion_functions(class)?.len();
         let mut found = None;
         for index in 0..count {
-            let binding = self.conversion_sets[&class][index];
+            let binding = self.graph.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
                 continue;
@@ -315,7 +315,7 @@ impl Analyzer<'_> {
         if !self.graph.entity(class).complete {
             return Err(Error::Missing("conversion set of an incomplete class"));
         }
-        if !self.conversion_sets.contains_key(&class) {
+        if !self.graph.conversion_sets.contains_key(&class) {
             let mut out = Vec::new();
             let mut hiding = HashMap::<(TypeId, bool), u32>::new();
             let mut seen = HashMap::<EntityId, u8>::new();
@@ -369,9 +369,9 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            self.conversion_sets.insert(class, out);
+            self.graph.conversion_sets.insert(class, out);
         }
-        Ok(&self.conversion_sets[&class])
+        Ok(&self.graph.conversion_sets[&class])
     }
 
     pub(super) fn conversion_function_sequence(
@@ -444,7 +444,7 @@ impl Analyzer<'_> {
         };
         let count = self.visible_conversion_functions(class)?.len();
         for index in 0..count {
-            let binding = self.conversion_sets[&class][index];
+            let binding = self.graph.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             let explicit = entity.explicitness == Explicitness::Explicit;
             if entity.template_head.is_some() || explicit && !direct {
@@ -560,7 +560,7 @@ impl Analyzer<'_> {
         } else {
             Some(self.checked_base_path(class, owner, scope, location, true, false)?)
         };
-        self.check_specialization_body(binding)?;
+        self.demand_specialization_body(binding);
         self.demand_function(binding, true);
         Ok(path)
     }

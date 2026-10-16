@@ -71,6 +71,9 @@ pub(super) fn definition_body(
     tree: &ast::Tree,
     entity: EntityId,
 ) -> Result<Option<ast::BodyId>, Error> {
+    if let Some(body) = graph.lower_function_body(entity) {
+        return Ok(Some(body));
+    }
     Ok(
         match graph
             .lower_function(entity)?

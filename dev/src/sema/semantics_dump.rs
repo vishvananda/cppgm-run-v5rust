@@ -118,6 +118,13 @@ impl Graph {
                         .special_definition
                     {
                         printer.function_definition(binding, Some(body), depth)?;
+                    } else if let Some(body) = printer
+                        .graph
+                        .function_templates
+                        .bodies
+                        .body(printer.graph.binding(binding).entity)
+                    {
+                        printer.function_definition(binding, Some(body), depth)?;
                     } else if let Some(declaration) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)

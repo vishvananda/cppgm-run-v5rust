@@ -242,11 +242,12 @@ impl Analyzer<'_> {
             && self.graph.entity(class).anonymous_class.is_some()
             && self.graph.entity(class).local_type_ordinal.is_none()
         {
-            self.local_types = self
+            self.graph.local_types = self
+                .graph
                 .local_types
                 .checked_add(1)
                 .ok_or(Error::Limit("unnamed class ordinal limit"))?;
-            self.graph.entity_mut(class).local_type_ordinal = Some(self.local_types);
+            self.graph.entity_mut(class).local_type_ordinal = Some(self.graph.local_types);
         }
         Ok(())
     }

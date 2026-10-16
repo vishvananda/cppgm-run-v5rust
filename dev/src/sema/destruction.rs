@@ -354,7 +354,8 @@ impl Analyzer<'_> {
                         && !self.graph.destructor_trivial(child)?
                         && self.lowering()
                     {
-                        self.storage_destructions
+                        self.graph
+                            .storage_destructions
                             .push((Some(parent), self.graph.binding(binding).entity));
                     }
                     work.push(child);
@@ -436,8 +437,8 @@ mod tests {
             analyzer.graph.entity(inline_only).layout,
             super::super::layout::LayoutState::NotStarted
         ));
-        assert!(analyzer.storage_layouts.is_empty());
-        assert!(analyzer.boundary_roots.is_empty());
+        assert!(analyzer.graph.storage_layouts.is_empty());
+        assert!(analyzer.graph.boundary_roots.is_empty());
         assert!(super::super::function_demands::trailing(&analyzer.graph).is_empty());
         assert_eq!(tree.expressions.mark(), expressions);
     }

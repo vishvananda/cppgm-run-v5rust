@@ -36,6 +36,9 @@ pub(super) struct ParameterInfo {
     inner: Option<HeadId>,
 }
 impl ParameterInfo {
+    pub(super) fn abi_index(self) -> Option<u32> {
+        (self.position.depth == 0).then_some(u32::from(self.position.index))
+    }
     pub(super) fn index(self, depth: u32) -> Option<usize> {
         (self.position.depth == depth).then_some(usize::from(self.position.index))
     }

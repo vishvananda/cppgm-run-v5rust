@@ -34,15 +34,12 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) stack_base: usize,
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredMember>,
-    pub(super) anonymous_enums: u32,
-    pub(super) local_types: u32,
     pub(super) class_depth: usize,
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
     pub(super) c_language: bool,
     pub(super) linkage_specification: Option<super::linkage::Specification>,
-    pub(super) block_linkages: super::linkage::BlockLinkages,
     pub(super) template_head: Option<super::templates::HeadId>,
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
@@ -63,8 +60,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
     pub(super) operator_lookup: super::operator_candidates::OperatorLookup,
     pub(super) association_scratch: super::call_lookup::AssociationScratch,
-    pub(super) conversion_sets:
-        std::collections::HashMap<super::graph::EntityId, Vec<super::graph::BindingId>>,
     pub(super) user_conversion_scratch: super::user_conversions::UserScratch,
     pub(super) call_scratch: super::procedural_calls::CallScratch,
     pub(super) copy_scratch: super::copy_initialization::CopyScratch,
@@ -75,17 +70,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
     pub(super) bit_layout: super::bit_layout::BitLayout,
-    pub(super) boundary_roots: Vec<super::graph::EntityId>,
-    pub(super) storage_layouts: Vec<(
-        Option<super::graph::EntityId>,
-        super::layout::StorageDemand,
-        SourceOffset,
-    )>,
-    pub(super) constructor_boundaries: Vec<(
-        Option<super::graph::EntityId>,
-        super::construction::ConstructorId,
-    )>,
-    pub(super) storage_destructions: Vec<(Option<super::graph::EntityId>, super::graph::EntityId)>,
     pub(super) exception_work: Vec<(ast::ExprId, super::exception_operands::OperandStep)>,
     pub(super) throw_work: Vec<(ast::ExprId, u16)>,
     pub(super) deduced_initializer: Option<ast::ExprId>,
@@ -101,6 +85,7 @@ pub(super) struct DeferredBody {
     pub parent: ScopeId,
     pub print: ScopeId,
     pub template_depth: usize,
+    pub definition_head: Option<super::templates::HeadId>,
 }
 #[derive(Clone, Copy)]
 pub(super) enum DeferredMember {
@@ -113,23 +98,34 @@ impl<'tree> Analyzer<'tree> {
         cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
     ) -> Result<Self, Error> {
+        Self::with_graph(tree, cursor, stack_budget, None)
+    }
+    pub(super) fn with_graph(
+        tree: &'tree Tree,
+        cursor: &'tree mut Cursor<'_>,
+        stack_budget: StackBudget,
+        previous: Option<Graph>,
+    ) -> Result<Self, Error> {
+        let fresh = previous.is_none();
+        let mut graph = previous.unwrap_or_else(Graph::new);
         let name = cursor
             .intern_name(b"nullptr_t")
             .map_err(|_| Error::Limit("semantic identifier limit"))?;
-        let mut graph = Graph::new();
-        let ty = graph.types.scalar(Scalar::Nullptr)?;
-        let entity = graph.add_entity(Some(ty), Some(name), Keyword::Typedef)?;
-        graph.add_binding(
-            graph.global,
-            None,
-            Binding {
-                kind: BindingKind::Alias,
-                name: Some(name),
-                entity,
-                ty: Some(ty),
-                key: Keyword::Typedef,
-            },
-        )?;
+        if fresh {
+            let ty = graph.types.scalar(Scalar::Nullptr)?;
+            let entity = graph.add_entity(Some(ty), Some(name), Keyword::Typedef)?;
+            graph.add_binding(
+                graph.global,
+                None,
+                Binding {
+                    kind: BindingKind::Alias,
+                    name: Some(name),
+                    entity,
+                    ty: Some(ty),
+                    key: Keyword::Typedef,
+                },
+            )?;
+        }
         let builtin_names = super::builtin_calls::BuiltinNames {
             abort: cursor
                 .intern_name(b"__builtin_abort")
@@ -174,15 +170,12 @@ impl<'tree> Analyzer<'tree> {
             stack_base: 0,
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
-            anonymous_enums: 0,
-            local_types: 0,
             class_depth: 0,
             member_initializer_class: None,
             base_object: None,
             template_depth: 0,
             c_language: false,
             linkage_specification: None,
-            block_linkages: super::linkage::BlockLinkages::default(),
             template_head: None,
             constant_spine: Vec::new(),
             constant_discard_work: Vec::new(),
@@ -200,7 +193,6 @@ impl<'tree> Analyzer<'tree> {
             operator_scratch: super::operator_resolution::OperatorScratch::default(),
             operator_lookup: super::operator_candidates::OperatorLookup::default(),
             association_scratch: super::call_lookup::AssociationScratch::default(),
-            conversion_sets: std::collections::HashMap::new(),
             user_conversion_scratch: super::user_conversions::UserScratch::default(),
             call_scratch: super::procedural_calls::CallScratch::default(),
             copy_scratch: super::copy_initialization::CopyScratch::default(),
@@ -213,14 +205,12 @@ impl<'tree> Analyzer<'tree> {
             evaluating_noexcept: false,
             layout_work: Vec::new(),
             bit_layout: super::bit_layout::BitLayout::default(),
-            boundary_roots: Vec::new(),
-            storage_layouts: Vec::new(),
-            constructor_boundaries: Vec::new(),
-            storage_destructions: Vec::new(),
             exception_work: Vec::new(),
             throw_work: Vec::new(),
         };
-        analyzer.predeclare_allocations()?;
+        if fresh {
+            analyzer.predeclare_allocations()?;
+        }
         Ok(analyzer)
     }
     pub(crate) fn set_semantics(&mut self, enabled: bool) {
@@ -239,16 +229,26 @@ impl<'tree> Analyzer<'tree> {
     pub(super) fn semantic(&self) -> bool {
         self.mode != AnalysisMode::Types
     }
-    pub(crate) fn analyze(mut self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
+    pub(crate) fn analyze(self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
+        self.analyze_declarations(declarations, true)
+    }
+    pub(super) fn analyze_declarations(
+        mut self,
+        declarations: List<ast::DeclId>,
+        boundaries: bool,
+    ) -> Result<Graph, Error> {
         let marker = 0u8;
         self.stack_base = std::ptr::from_ref(&marker).addr();
         self.declarations(declarations, self.graph.global)?;
+        self.finish_analysis(boundaries)
+    }
+    pub(super) fn finish_analysis(mut self, boundaries: bool) -> Result<Graph, Error> {
         self.finish_unit_exceptions()?;
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
         }
         self.finish_static_initializers()?;
-        if self.lowering() {
+        if boundaries && self.lowering() {
             self.finish_lowering_boundaries()?;
         }
         Ok(self.graph)
@@ -581,11 +581,6 @@ impl<'tree> Analyzer<'tree> {
             return Err(Error::at(location, "redefinition of a function"));
         }
         self.graph.entity_mut(entity).defined = true;
-        if self.graph.function_templates.body_demanded(entity) {
-            return Err(Error::Missing(
-                "demanded function template body instantiation",
-            ));
-        }
         let parameters = info
             .parameters
             .ok_or(Error::Invariant("function definition without parameters"))?;
@@ -596,6 +591,7 @@ impl<'tree> Analyzer<'tree> {
             parameters,
             body,
             template_depth: self.template_depth,
+            definition_head: self.template_head,
             parent: info.lookup,
             print: if info.home.is_some() { home } else { scope },
         };
@@ -613,7 +609,15 @@ impl<'tree> Analyzer<'tree> {
                 == super::function_demands::DefinitionEmission::Always
             && self.graph.entity(body.entity).inline != super::specifiers::InlinePreference::Inline
         {
-            self.boundary_roots.push(body.entity);
+            self.graph.boundary_roots.push(body.entity);
+        }
+        if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_some() {
+            self.graph.function_templates.record_pattern(
+                body,
+                body.definition_head
+                    .ok_or(Error::Invariant("template body without definition head"))?,
+                self.graph.binding_limit(),
+            );
         }
         let saved = self.template_depth;
         let saved_class_depth = self.class_depth;
@@ -655,7 +659,15 @@ impl<'tree> Analyzer<'tree> {
             .take(count)
             .enumerate()
         {
-            let ty = self.graph.types.function_parameter(body.ty, index)?;
+            let mut ty = self.graph.types.function_parameter(body.ty, index)?;
+            if self.graph.function_templates.primary(body.entity).is_some() {
+                // The canonical signature discards top-level cv. Parameter
+                // objects keep the definition's declared type, substituted in
+                // its immutable argument frame (an array/function adjusts).
+                let specs = self.specifiers(parameter.specifiers, scope, false)?;
+                let info = self.declarator(parameter.declarator, specs.ty, scope)?;
+                ty = self.graph.types.parameter_object(info.ty)?;
+            }
             let name = self.declarator_name(parameter.declarator)?;
             if let Some(name) = name
                 && self

@@ -427,7 +427,7 @@ mod tests {
         }
         assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
-        assert!(analyzer.storage_layouts.is_empty());
+        assert!(analyzer.graph.storage_layouts.is_empty());
         assert_eq!(syntax_mark, tree.expressions.mark());
     }
 

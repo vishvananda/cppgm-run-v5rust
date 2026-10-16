@@ -349,7 +349,7 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        self.check_specialization_body(binding)?;
+        self.demand_specialization_body(binding);
         self.operator_conversions(
             id,
             operands,

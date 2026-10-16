@@ -887,7 +887,7 @@ impl Analyzer<'_> {
                 }
             }
             if self.lowering() && !first {
-                self.boundary_roots.push(entity);
+                self.graph.boundary_roots.push(entity);
             }
         }
         self.graph.entity_mut(entity).defined |= deleted || defaulted;

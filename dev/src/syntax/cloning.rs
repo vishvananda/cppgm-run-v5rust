@@ -1,0 +1,590 @@
+// Translated from syntax/ast_clone.cpp::SyntaxCloner. See NOTICE.
+//! Copy demanded syntax into the unit's slabs. Every fact-bearing node gets
+//! a fresh ID; source bytes, spellings and interned identifier IDs stay shared.
+use super::{
+    ParseError,
+    ast::{
+        Attribute, Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind,
+        DeclaratorId, Enumerator, ExceptionDeclaration, ExprId, ExprKind, Handler, InitDeclarator,
+        Initializer, InitializerKind, MemInitializer, Name, NameComponent, NameKind, Parameter,
+        ParameterClause, Pointer, Qualifier, QualifierKind, Specifier, SpecifierKind,
+        StatementReading, StmtId, StmtKind, Suffix, TemplateArgument, TemplateArgumentKind, Tree,
+        TypeId,
+    },
+    storage::{List, Lists},
+};
+use crate::support::stack::StackBudget;
+
+pub(crate) struct Cloner<'a> {
+    tree: &'a mut Tree,
+    budget: StackBudget,
+    base: usize,
+}
+impl<'a> Cloner<'a> {
+    pub(crate) fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
+        Self { tree, budget, base }
+    }
+    fn check_stack(&self) -> Result<(), ParseError> {
+        let marker = 0u8;
+        if self
+            .budget
+            .exceeded(self.base, std::ptr::from_ref(&marker).addr())
+        {
+            return Err(ParseError::Limit("constructs nested too deeply"));
+        }
+        Ok(())
+    }
+    fn list<T: Copy>(
+        &mut self,
+        list: List<T>,
+        store: fn(&mut Tree) -> &mut Lists<T>,
+        each: fn(&mut Self, T) -> Result<T, ParseError>,
+    ) -> Result<List<T>, ParseError> {
+        let count = store(self.tree).get(list).len();
+        let start = store(self.tree).begin();
+        for index in 0..count {
+            let item = store(self.tree).get(list)[index];
+            let item = each(self, item)?;
+            store(self.tree).push(item);
+        }
+        store(self.tree).finish(start)
+    }
+    fn optional<T>(
+        &mut self,
+        value: Option<T>,
+        each: fn(&mut Self, T) -> Result<T, ParseError>,
+    ) -> Result<Option<T>, ParseError> {
+        value.map(|value| each(self, value)).transpose()
+    }
+    fn expressions(&mut self, list: List<ExprId>) -> Result<List<ExprId>, ParseError> {
+        self.list(list, |tree| &mut tree.expr_lists, Self::expression)
+    }
+    fn name(&mut self, id: Name) -> Result<Name, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.names.get(id);
+        node.components = self.list(
+            node.components,
+            |tree| &mut tree.name_lists,
+            Self::component,
+        )?;
+        self.tree.names.add(node)
+    }
+    fn component(&mut self, mut node: NameComponent) -> Result<NameComponent, ParseError> {
+        node.kind = match node.kind {
+            NameKind::Decltype(id) => NameKind::Decltype(self.expression(id)?),
+            NameKind::DestructorDecltype(id) => NameKind::DestructorDecltype(self.expression(id)?),
+            NameKind::Conversion(id) => NameKind::Conversion(self.ty(id)?),
+            other => other,
+        };
+        if let Some(arguments) = node.arguments {
+            node.arguments = Some(self.list(
+                arguments,
+                |tree| &mut tree.template_arguments,
+                Self::argument,
+            )?);
+        }
+        Ok(node)
+    }
+    fn argument(&mut self, mut node: TemplateArgument) -> Result<TemplateArgument, ParseError> {
+        node.kind = match node.kind {
+            TemplateArgumentKind::Type(id) => TemplateArgumentKind::Type(self.ty(id)?),
+            TemplateArgumentKind::Expression(id) => {
+                TemplateArgumentKind::Expression(self.expression(id)?)
+            }
+        };
+        Ok(node)
+    }
+    fn attribute(&mut self, mut node: Attribute) -> Result<Attribute, ParseError> {
+        node.expression = self.optional(node.expression, Self::expression)?;
+        node.ty = self.optional(node.ty, Self::ty)?;
+        Ok(node)
+    }
+    fn attributes(&mut self, list: List<Attribute>) -> Result<List<Attribute>, ParseError> {
+        self.list(list, |tree| &mut tree.attributes, Self::attribute)
+    }
+    fn specifier(&mut self, mut node: Specifier) -> Result<Specifier, ParseError> {
+        node.kind = match node.kind {
+            SpecifierKind::Named(id) => SpecifierKind::Named(self.name(id)?),
+            SpecifierKind::Class(id) => SpecifierKind::Class(self.class(id)?),
+            SpecifierKind::Enum(id) => SpecifierKind::Enum(self.declaration(id)?),
+            SpecifierKind::Elaborated { key, name } => SpecifierKind::Elaborated {
+                key,
+                name: self.name(name)?,
+            },
+            SpecifierKind::Decltype(id) => SpecifierKind::Decltype(self.expression(id)?),
+            SpecifierKind::Vector { extended, operand } => SpecifierKind::Vector {
+                extended,
+                operand: self.expression(operand)?,
+            },
+            other @ SpecifierKind::Keyword(_) => other,
+        };
+        Ok(node)
+    }
+    fn specifiers(&mut self, list: List<Specifier>) -> Result<List<Specifier>, ParseError> {
+        self.list(list, |tree| &mut tree.specs, Self::specifier)
+    }
+    fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.types.get(id);
+        node.specifiers = self.specifiers(node.specifiers)?;
+        node.declarator = self.optional(node.declarator, Self::declarator)?;
+        self.tree.types.add(node)
+    }
+    fn declarator(&mut self, id: DeclaratorId) -> Result<DeclaratorId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.declarators.get(id);
+        node.name = self.optional(node.name, Self::name)?;
+        node.nested = self.optional(node.nested, Self::declarator)?;
+        node.attributes = self.attributes(node.attributes)?;
+        node.pointers = self.list(node.pointers, |tree| &mut tree.pointers, Self::pointer)?;
+        node.suffixes = self.list(node.suffixes, |tree| &mut tree.suffixes, Self::suffix)?;
+        self.tree.declarators.add(node)
+    }
+    fn pointer(&mut self, mut node: Pointer) -> Result<Pointer, ParseError> {
+        node.class_name = self.optional(node.class_name, Self::name)?;
+        Ok(node)
+    }
+    fn suffix(&mut self, node: Suffix) -> Result<Suffix, ParseError> {
+        Ok(match node {
+            Suffix::Array(id) => Suffix::Array(self.optional(id, Self::expression)?),
+            Suffix::Function {
+                parameters,
+                qualifiers,
+            } => Suffix::Function {
+                parameters: self.parameters(parameters)?,
+                qualifiers: self.list(qualifiers, |tree| &mut tree.qualifiers, Self::qualifier)?,
+            },
+        })
+    }
+    fn qualifier(&mut self, mut node: Qualifier) -> Result<Qualifier, ParseError> {
+        node.kind = match node.kind {
+            QualifierKind::Noexcept(id) => {
+                QualifierKind::Noexcept(self.optional(id, Self::expression)?)
+            }
+            QualifierKind::Throw(ids) => {
+                QualifierKind::Throw(self.list(ids, |tree| &mut tree.type_lists, Self::ty)?)
+            }
+            QualifierKind::Trailing(id) => QualifierKind::Trailing(self.ty(id)?),
+            other => other,
+        };
+        Ok(node)
+    }
+    pub(crate) fn parameters(
+        &mut self,
+        mut node: ParameterClause,
+    ) -> Result<ParameterClause, ParseError> {
+        node.parameters = self.list(
+            node.parameters,
+            |tree| &mut tree.parameters,
+            Self::parameter,
+        )?;
+        Ok(node)
+    }
+    fn parameter(&mut self, mut node: Parameter) -> Result<Parameter, ParseError> {
+        node.specifiers = self.specifiers(node.specifiers)?;
+        node.declarator = self.optional(node.declarator, Self::declarator)?;
+        node.default = self.optional(node.default, Self::initializer)?;
+        Ok(node)
+    }
+    fn initializer(&mut self, mut node: Initializer) -> Result<Initializer, ParseError> {
+        node.kind = match node.kind {
+            InitializerKind::Assign(id) => InitializerKind::Assign(self.expression(id)?),
+            InitializerKind::Braced(id) => InitializerKind::Braced(self.expression(id)?),
+            InitializerKind::Parenthesized(ids) => {
+                InitializerKind::Parenthesized(self.expressions(ids)?)
+            }
+            other => other,
+        };
+        Ok(node)
+    }
+    pub(crate) fn body(&mut self, id: BodyId) -> Result<BodyId, ParseError> {
+        let Body::Parsed(mut node) = *self.tree.bodies.get(id) else {
+            return Err(ParseError::Invariant("unparsed instantiation body"));
+        };
+        node.compound = self.statement(node.compound)?;
+        node.initializers = self.list(
+            node.initializers,
+            |tree| &mut tree.mem_initializers,
+            Self::mem_initializer,
+        )?;
+        if let Some(handlers) = node.handlers {
+            node.handlers = Some(self.list(handlers, |tree| &mut tree.handlers, Self::handler)?);
+        }
+        self.tree.bodies.add(Body::Parsed(node))
+    }
+    fn mem_initializer(&mut self, mut node: MemInitializer) -> Result<MemInitializer, ParseError> {
+        node.name = self.name(node.name)?;
+        node.initializer = self.initializer(node.initializer)?;
+        Ok(node)
+    }
+    fn handler(&mut self, mut node: Handler) -> Result<Handler, ParseError> {
+        if let ExceptionDeclaration::Typed {
+            specifiers,
+            declarator,
+        } = node.exception
+        {
+            node.exception = ExceptionDeclaration::Typed {
+                specifiers: self.specifiers(specifiers)?,
+                declarator: self.optional(declarator, Self::declarator)?,
+            };
+        }
+        node.body = self.statement(node.body)?;
+        Ok(node)
+    }
+    pub(crate) fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.expressions.get(id);
+        node.kind = match node.kind {
+            ExprKind::Paren(id) => ExprKind::Paren(self.expression(id)?),
+            ExprKind::PackExpansion(id) => ExprKind::PackExpansion(self.expression(id)?),
+            ExprKind::Id(id) => ExprKind::Id(self.name(id)?),
+            ExprKind::Unary { op, operand } => ExprKind::Unary {
+                op,
+                operand: self.expression(operand)?,
+            },
+            ExprKind::Postfix { op, operand } => ExprKind::Postfix {
+                op,
+                operand: self.expression(operand)?,
+            },
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment,
+            } => ExprKind::Binary {
+                op,
+                left: self.expression(left)?,
+                right: self.expression(right)?,
+                assignment,
+            },
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => ExprKind::Conditional {
+                condition: self.expression(condition)?,
+                then_expr: self.expression(then_expr)?,
+                else_expr: self.expression(else_expr)?,
+            },
+            ExprKind::Call { callee, arguments } => ExprKind::Call {
+                callee: self.expression(callee)?,
+                arguments: self.expressions(arguments)?,
+            },
+            ExprKind::Subscript { base, index } => ExprKind::Subscript {
+                base: self.expression(base)?,
+                index: self.expression(index)?,
+            },
+            ExprKind::Member { base, op, member } => ExprKind::Member {
+                base: self.expression(base)?,
+                op,
+                member: self.name(member)?,
+            },
+            ExprKind::Braced {
+                elements,
+                trailing_comma,
+            } => ExprKind::Braced {
+                elements: self.expressions(elements)?,
+                trailing_comma,
+            },
+            ExprKind::FunctionalCast {
+                specifiers,
+                arguments,
+                braced,
+            } => ExprKind::FunctionalCast {
+                specifiers: self.specifiers(specifiers)?,
+                arguments: self.expressions(arguments)?,
+                braced: self.optional(braced, Self::expression)?,
+            },
+            ExprKind::Cast {
+                keyword,
+                ty,
+                operand,
+            } => ExprKind::Cast {
+                keyword,
+                ty: self.ty(ty)?,
+                operand: self.expression(operand)?,
+            },
+            ExprKind::Sizeof {
+                ty,
+                operand,
+                parenthesized,
+            } => ExprKind::Sizeof {
+                ty: self.optional(ty, Self::ty)?,
+                operand: self.optional(operand, Self::expression)?,
+                parenthesized,
+            },
+            ExprKind::TypeTrait {
+                keyword,
+                ty,
+                operand,
+            } => ExprKind::TypeTrait {
+                keyword,
+                ty: self.optional(ty, Self::ty)?,
+                operand: self.optional(operand, Self::expression)?,
+            },
+            ExprKind::New {
+                global,
+                placement,
+                parenthesized_type,
+                ty,
+                initializer,
+            } => ExprKind::New {
+                global,
+                placement: self.optional(placement, Self::expressions)?,
+                parenthesized_type,
+                ty: self.ty(ty)?,
+                initializer: self.optional(initializer, Self::initializer)?,
+            },
+            ExprKind::Delete {
+                global,
+                array,
+                operand,
+            } => ExprKind::Delete {
+                global,
+                array,
+                operand: self.expression(operand)?,
+            },
+            ExprKind::Throw(id) => ExprKind::Throw(self.optional(id, Self::expression)?),
+            ExprKind::Lambda(_) => {
+                return Err(ParseError::NotImplemented("lambda template body copying"));
+            }
+            other @ (ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::SizeofPack(_)) => {
+                other
+            }
+        };
+        self.tree.expressions.add(node)
+    }
+    fn condition(&mut self, node: Condition) -> Result<Condition, ParseError> {
+        Ok(match node {
+            Condition::Expression(id) => Condition::Expression(self.expression(id)?),
+            Condition::Declaration {
+                specifiers,
+                declarator,
+                initializer,
+            } => Condition::Declaration {
+                specifiers: self.specifiers(specifiers)?,
+                declarator: self.declarator(declarator)?,
+                initializer: self.initializer(initializer)?,
+            },
+        })
+    }
+    fn statement(&mut self, id: StmtId) -> Result<StmtId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.statements.get(id);
+        node.kind = match node.kind {
+            StmtKind::Ambiguous {
+                name,
+                component,
+                readings,
+            } => StmtKind::Ambiguous {
+                name: self.name(name)?,
+                component,
+                readings: self.list(
+                    readings,
+                    |tree| &mut tree.statement_readings,
+                    Self::reading,
+                )?,
+            },
+            StmtKind::Compound(ids) => {
+                StmtKind::Compound(self.list(ids, |tree| &mut tree.stmt_lists, Self::statement)?)
+            }
+            StmtKind::Expression(id) => StmtKind::Expression(self.optional(id, Self::expression)?),
+            StmtKind::Return(id) => StmtKind::Return(self.optional(id, Self::expression)?),
+            StmtKind::Throw(id) => StmtKind::Throw(self.optional(id, Self::expression)?),
+            StmtKind::Declaration(id) => StmtKind::Declaration(self.declaration(id)?),
+            StmtKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => StmtKind::If {
+                condition: self.condition(condition)?,
+                then_branch: self.statement(then_branch)?,
+                else_branch: self.optional(else_branch, Self::statement)?,
+            },
+            StmtKind::ConditionalLoop {
+                keyword,
+                condition,
+                body,
+            } => StmtKind::ConditionalLoop {
+                keyword,
+                condition: self.condition(condition)?,
+                body: self.statement(body)?,
+            },
+            StmtKind::Do { body, condition } => StmtKind::Do {
+                body: self.statement(body)?,
+                condition: self.expression(condition)?,
+            },
+            StmtKind::For {
+                declaration,
+                init,
+                condition,
+                iteration,
+                body,
+            } => StmtKind::For {
+                declaration: self.optional(declaration, Self::declaration)?,
+                init: self.optional(init, Self::expression)?,
+                condition: self.optional(condition, Self::condition)?,
+                iteration: self.optional(iteration, Self::expression)?,
+                body: self.statement(body)?,
+            },
+            StmtKind::RangeFor {
+                specifiers,
+                declarator,
+                range,
+                body,
+            } => StmtKind::RangeFor {
+                specifiers: self.specifiers(specifiers)?,
+                declarator: self.declarator(declarator)?,
+                range: self.expression(range)?,
+                body: self.statement(body)?,
+            },
+            StmtKind::Label { name, body } => StmtKind::Label {
+                name,
+                body: self.statement(body)?,
+            },
+            StmtKind::Case { value, body } => StmtKind::Case {
+                value: self.expression(value)?,
+                body: self.statement(body)?,
+            },
+            StmtKind::Default(id) => StmtKind::Default(self.statement(id)?),
+            StmtKind::Try { body, handlers } => StmtKind::Try {
+                body: self.statement(body)?,
+                handlers: self.list(handlers, |tree| &mut tree.handlers, Self::handler)?,
+            },
+            other @ (StmtKind::Break | StmtKind::Continue | StmtKind::Goto(_)) => other,
+        };
+        self.tree.statements.add(node)
+    }
+    fn reading(&mut self, mut node: StatementReading) -> Result<StatementReading, ParseError> {
+        node.statement = self.statement(node.statement)?;
+        Ok(node)
+    }
+    fn init_declarator(&mut self, mut node: InitDeclarator) -> Result<InitDeclarator, ParseError> {
+        node.declarator = self.declarator(node.declarator)?;
+        node.initializer = self.optional(node.initializer, Self::initializer)?;
+        Ok(node)
+    }
+    fn enumerator(&mut self, mut node: Enumerator) -> Result<Enumerator, ParseError> {
+        node.value = self.optional(node.value, Self::expression)?;
+        Ok(node)
+    }
+    fn base(&mut self, mut node: Base) -> Result<Base, ParseError> {
+        node.name = self.name(node.name)?;
+        Ok(node)
+    }
+    fn bit_field(&mut self, mut node: BitField) -> Result<BitField, ParseError> {
+        node.declarator = self.optional(node.declarator, Self::declarator)?;
+        node.width = self.expression(node.width)?;
+        Ok(node)
+    }
+    fn class(&mut self, id: ClassId) -> Result<ClassId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.classes.get(id);
+        node.name = self.optional(node.name, Self::name)?;
+        node.attributes = self.attributes(node.attributes)?;
+        node.bases = self.list(node.bases, |tree| &mut tree.bases, Self::base)?;
+        node.members = self.list(node.members, |tree| &mut tree.decl_lists, Self::declaration)?;
+        self.tree.classes.add(node)
+    }
+    fn declaration(&mut self, id: DeclId) -> Result<DeclId, ParseError> {
+        self.check_stack()?;
+        let mut node = *self.tree.declarations.get(id);
+        node.attributes = self.attributes(node.attributes)?;
+        node.kind = match node.kind {
+            DeclKind::Simple {
+                specifiers,
+                declarators,
+            } => DeclKind::Simple {
+                specifiers: self.specifiers(specifiers)?,
+                declarators: self.list(
+                    declarators,
+                    |tree| &mut tree.init_declarators,
+                    Self::init_declarator,
+                )?,
+            },
+            DeclKind::Function {
+                specifiers,
+                declarator,
+                body,
+            } => DeclKind::Function {
+                specifiers: self.specifiers(specifiers)?,
+                declarator: self.declarator(declarator)?,
+                body: self.body(body)?,
+            },
+            DeclKind::Class(specifier) => DeclKind::Class(self.specifier(specifier)?),
+            DeclKind::SpecialMember {
+                specifiers,
+                name,
+                declarator,
+                initializer,
+                body,
+            } => DeclKind::SpecialMember {
+                specifiers: self.specifiers(specifiers)?,
+                name: self.name(name)?,
+                declarator: self.declarator(declarator)?,
+                initializer: self.optional(initializer, Self::initializer)?,
+                body: self.optional(body, Self::body)?,
+            },
+            DeclKind::BitField {
+                specifiers,
+                declarators,
+            } => DeclKind::BitField {
+                specifiers: self.specifiers(specifiers)?,
+                declarators: self.list(
+                    declarators,
+                    |tree| &mut tree.bit_fields,
+                    Self::bit_field,
+                )?,
+            },
+            DeclKind::Using {
+                directive,
+                typename_keyword,
+                target,
+            } => DeclKind::Using {
+                directive,
+                typename_keyword,
+                target: self.name(target)?,
+            },
+            DeclKind::Alias { name, ty } => DeclKind::Alias {
+                name,
+                ty: self.ty(ty)?,
+            },
+            DeclKind::Enum {
+                scope,
+                name,
+                key,
+                underlying,
+                enumerators,
+                has_body,
+                trailing_comma,
+            } => DeclKind::Enum {
+                scope,
+                name: self.optional(name, Self::name)?,
+                key,
+                underlying: self.optional(underlying, Self::ty)?,
+                enumerators: self.list(
+                    enumerators,
+                    |tree| &mut tree.enumerators,
+                    Self::enumerator,
+                )?,
+                has_body,
+                trailing_comma,
+            },
+            DeclKind::StaticAssert { condition, message } => DeclKind::StaticAssert {
+                condition: self.expression(condition)?,
+                message,
+            },
+            other @ (DeclKind::Empty | DeclKind::Access(_)) => other,
+            DeclKind::Template { .. }
+            | DeclKind::ExplicitInstantiation { .. }
+            | DeclKind::Namespace { .. }
+            | DeclKind::NamespaceAlias { .. }
+            | DeclKind::Linkage { .. } => {
+                return Err(ParseError::NotImplemented(
+                    "nested template declaration copying",
+                ));
+            }
+        };
+        self.tree.declarations.add(node)
+    }
+}

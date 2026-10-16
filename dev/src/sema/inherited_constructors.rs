@@ -304,7 +304,8 @@ impl Analyzer<'_> {
         }
         self.check_subobject_destruction(class, owner, SourceOffset(0))?;
         self.prepare_destruction(class)?;
-        self.constructor_boundaries
+        self.graph
+            .constructor_boundaries
             .push((self.body_context.as_ref().map(|body| body.entity), id));
         Ok(())
     }

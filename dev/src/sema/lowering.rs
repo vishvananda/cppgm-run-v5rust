@@ -141,6 +141,7 @@ pub(crate) struct Allocation {
     pub array: bool,
 }
 pub(crate) struct FunctionFacts {
+    pub template_instance: Option<EntityId>,
     pub name: FunctionName,
     pub label: Option<ast::Name>,
     pub home: ScopeId,
@@ -453,6 +454,7 @@ impl Graph {
         }
         let class = self.entity(plan.class);
         Ok(FunctionFacts {
+            template_instance: None,
             name: FunctionName::Constructor(self.lower_class_spelling(plan.class)?),
             label: None,
             home: class
@@ -498,7 +500,48 @@ impl Graph {
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id) || self.entity(id).assignment.is_some()
     }
+    pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        let info = self.entity(entity).template_parameter?;
+        info.abi_index()
+    }
+    pub(crate) fn lower_template_signature(
+        &self,
+        entity: EntityId,
+    ) -> Result<(TypeId, &[TypeId]), Error> {
+        let primary = self
+            .function_templates
+            .primary(entity)
+            .ok_or(Error::Invariant("template ABI without primary"))?;
+        let ty = self
+            .binding(primary)
+            .ty
+            .ok_or(Error::Invariant("template ABI without signature"))?;
+        let arguments = self
+            .function_templates
+            .arguments
+            .get(&entity)
+            .ok_or(Error::Invariant("template ABI without arguments"))?;
+        Ok((ty, arguments))
+    }
+    pub(crate) fn lower_inline_hint(&self, entity: EntityId) -> bool {
+        // Ordinary demand-only entries include implicitly inline synthesized
+        // members. A template specialization also has weak emission when its
+        // primary has no inline specifier, so it retains that separate fact.
+        if self.function_templates.primary(entity).is_some() {
+            self.entity(entity).inline == super::specifiers::InlinePreference::Inline
+        } else {
+            self.entity(entity).definition_emission
+                == super::function_demands::DefinitionEmission::Demanded
+                || self.entity(entity).inline == super::specifiers::InlinePreference::Inline
+        }
+    }
     pub(crate) fn lower_function_body(&self, id: EntityId) -> Option<ast::BodyId> {
+        if let Some(body) = self.function_templates.bodies.body(id) {
+            return Some(body);
+        }
         match self.entity(id).special_definition {
             Some(super::special_members::SpecialDefinition::Body(body)) => Some(body),
             _ => None,
@@ -928,6 +971,16 @@ impl Graph {
     pub(crate) fn lower_function(&self, id: EntityId) -> Result<FunctionFacts, Error> {
         let id = self.lower_function_entity(id);
         let entity = self.entity(id);
+        if self.function_templates.primary(id).is_some()
+            && matches!(
+                entity.exceptions,
+                super::exceptions::ExceptionState::Template(_)
+            )
+        {
+            return Err(Error::Missing(
+                "signature-demanded template exception specification",
+            ));
+        }
         let function = entity
             .function
             .ok_or(Error::Invariant("lowering non-function"))?;
@@ -956,6 +1009,7 @@ impl Graph {
             }
         }
         Ok(FunctionFacts {
+            template_instance: self.function_templates.primary(id).map(|_| id),
             object,
             qualifiers,
             name: match function.special {

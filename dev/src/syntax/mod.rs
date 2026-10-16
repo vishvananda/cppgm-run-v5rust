@@ -3,6 +3,7 @@ mod angles;
 pub(crate) mod ast;
 mod attributes;
 mod classes;
+pub(crate) mod cloning;
 mod conflicts;
 pub(crate) mod cursor;
 mod declarations;
@@ -115,11 +116,11 @@ impl<'a> SyntaxUnit<'a> {
     }
     pub(crate) fn semantic_inputs(
         &mut self,
-    ) -> Result<(&ast::Tree, &mut cursor::Cursor<'a>, List<DeclId>), ParseError> {
+    ) -> Result<(&mut ast::Tree, &mut cursor::Cursor<'a>, List<DeclId>), ParseError> {
         let declarations = self
             .declarations
             .ok_or(ParseError::Invariant("missing parsed translation unit"))?;
-        Ok((&self.parser.tree, &mut self.parser.cursor, declarations))
+        Ok((&mut self.parser.tree, &mut self.parser.cursor, declarations))
     }
     pub(crate) fn print(
         &self,

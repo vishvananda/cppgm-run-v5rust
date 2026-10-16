@@ -31,6 +31,8 @@ enum SignatureState {
 pub(super) struct FunctionTemplates {
     signatures: HashMap<SpecializationKey, SignatureState>,
     primaries: HashMap<EntityId, BindingId>,
+    pub(super) bodies: super::template_bodies::Bodies,
+    pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
     explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
     unique_types: Vec<TypeId>,
@@ -40,6 +42,7 @@ impl FunctionTemplates {
     pub(super) fn requires_target(&self, binding: BindingId) -> bool {
         self.explicit.contains_key(&binding)
     }
+    #[cfg(test)]
     pub(super) fn body_demanded(&self, primary: EntityId) -> bool {
         self.demanded_bodies.contains(&primary)
     }
@@ -62,6 +65,64 @@ impl<'a> Substitution<'a> {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn specialization_object_signature(
+        &mut self,
+        entity: EntityId,
+        pattern: TypeId,
+    ) -> Result<TypeId, Error> {
+        let primary = self
+            .graph
+            .function_templates
+            .primary(entity)
+            .ok_or(Error::Invariant("prototype without function template"))?;
+        let head = self
+            .function_template_head(primary)?
+            .ok_or(Error::Invariant("prototype without template head"))?;
+        let arguments: Vec<_> = self
+            .graph
+            .function_templates
+            .arguments
+            .get(&entity)
+            .ok_or(Error::Invariant("prototype without template arguments"))?
+            .iter()
+            .copied()
+            .map(Some)
+            .collect();
+        let mut environment = Substitution::new(self.graph.templates.depth(head), &arguments);
+        let TypeKind::Function {
+            result,
+            parameters,
+            variadic,
+            cv,
+            reference,
+        } = self.graph.types.get(pattern).kind.clone()
+        else {
+            return Err(Error::Invariant("prototype without function type"));
+        };
+        let result = self
+            .substitute_signature_type(result, &mut environment)?
+            .ok_or(Error::Missing("dependent exception prototype result"))?;
+        let mut objects = Vec::with_capacity(parameters.len());
+        for parameter in parameters {
+            let parameter = self
+                .substitute_signature_type(parameter, &mut environment)?
+                .ok_or(Error::Missing("dependent exception prototype parameter"))?;
+            // Prototype objects keep declared cv; canonical call signatures
+            // erase it. Arrays and functions still adjust to pointer objects.
+            objects.push(self.graph.types.parameter_object(parameter)?);
+        }
+        self.graph.types.intern(
+            TypeKind::Function {
+                result,
+                parameters: objects,
+                variadic,
+                cv,
+                reference,
+            },
+            Cv::default(),
+        )
+    }
+
     fn function_template_head(&self, binding: BindingId) -> Result<Option<HeadId>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
         let Some(head) = entity.template_head else {
@@ -395,12 +456,16 @@ impl Analyzer<'_> {
             old.home,
             old.scope,
         );
+        let old_inline = old.inline;
+        let exceptions = old.exceptions.clone();
         let specialized = self.graph.entity_mut(entity);
         specialized.function = properties.0;
         specialized.availability = properties.1;
         specialized.constexpr = properties.2;
         specialized.home = properties.3;
         specialized.scope = properties.4;
+        specialized.inline = old_inline;
+        specialized.exceptions = exceptions;
         specialized.definition_emission = DefinitionEmission::Demanded;
         let binding = self.graph.add_hidden_function(
             primary,
@@ -416,6 +481,10 @@ impl Analyzer<'_> {
             .function_templates
             .primaries
             .insert(entity, primary);
+        self.graph
+            .function_templates
+            .arguments
+            .insert(entity, key.arguments.clone());
         self.graph
             .function_templates
             .signatures
@@ -883,7 +952,7 @@ impl Analyzer<'_> {
         Ok(selected)
     }
 
-    pub(super) fn check_specialization_body(&mut self, binding: BindingId) -> Result<(), Error> {
+    pub(super) fn demand_specialization_body(&mut self, binding: BindingId) {
         if self.unevaluated == 0
             && self.template_depth == 0
             && let Some(primary) = self
@@ -896,13 +965,11 @@ impl Analyzer<'_> {
                 .function_templates
                 .demanded_bodies
                 .insert(primary);
-            if self.graph.entity(primary).defined {
-                return Err(Error::Missing(
-                    "demanded function template body instantiation",
-                ));
-            }
+            self.graph
+                .function_templates
+                .bodies
+                .demand(self.graph.binding(binding).entity);
         }
-        Ok(())
     }
 
     pub(super) fn function_has_default(&self, entity: EntityId, index: usize) -> bool {

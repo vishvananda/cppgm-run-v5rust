@@ -327,7 +327,8 @@ impl Analyzer<'_> {
         language: Language,
     ) {
         let space = self.enclosing_namespace(scope);
-        self.block_linkages
+        self.graph
+            .block_linkages
             .records
             .entry((space, name))
             .or_default()
@@ -347,12 +348,13 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let count = self
+            .graph
             .block_linkages
             .records
             .get(&(space, name))
             .map_or(0, Vec::len);
         for index in (0..count).rev() {
-            let record = self.block_linkages.records[&(space, name)][index];
+            let record = self.graph.block_linkages.records[&(space, name)][index];
             if record.kind != kind {
                 return Err(Error::at(
                     location,

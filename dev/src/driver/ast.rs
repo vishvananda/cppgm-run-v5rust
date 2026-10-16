@@ -113,14 +113,14 @@ pub fn emit_unit(
         let (tree, cursor, declarations) = unit
             .semantic_inputs()
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
-        let analysis =
-            crate::sema::Analyzer::new(tree, cursor, stack_budget).and_then(|mut analyzer| {
-                analyzer.set_semantics(matches!(mode, EmitMode::Semantics | EmitMode::LowIr));
-                if mode == EmitMode::LowIr {
-                    analyzer.set_lowering();
-                }
-                analyzer.analyze(declarations)
-            });
+        let analysis = crate::sema::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            stack_budget,
+            matches!(mode, EmitMode::Semantics | EmitMode::LowIr),
+            mode == EmitMode::LowIr,
+        );
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }
             | crate::sema::Error::NonConstant { location, message } => {

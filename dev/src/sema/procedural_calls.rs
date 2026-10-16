@@ -483,7 +483,7 @@ impl Analyzer<'_> {
             }
         }
         if self.lowering() && self.unevaluated == 0 {
-            self.storage_layouts.push((
+            self.graph.storage_layouts.push((
                 self.body_context.as_ref().map(|body| body.entity),
                 super::layout::StorageDemand::CallBoundary(function),
                 self.tree.expressions.get(id).location,

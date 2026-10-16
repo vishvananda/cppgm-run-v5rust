@@ -52,12 +52,13 @@ impl Analyzer<'_> {
         if let Some(name) = name {
             self.graph.entity_mut(entity).name = Some(name);
         } else {
-            self.anonymous_enums = self
+            self.graph.anonymous_enums = self
+                .graph
                 .anonymous_enums
                 .checked_add(1)
                 .ok_or(Error::Limit("anonymous enumeration count"))?;
             self.graph.entity_mut(entity).enumeration = Some(EnumInfo {
-                anonymous_ordinal: Some(self.anonymous_enums),
+                anonymous_ordinal: Some(self.graph.anonymous_enums),
                 ..info
             });
         }

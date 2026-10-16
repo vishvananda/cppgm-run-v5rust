@@ -32,7 +32,7 @@ pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
 }
 impl Analyzer<'_> {
     pub(super) fn request_union_storage(&mut self, entity: EntityId, location: SourceOffset) {
-        self.storage_layouts.push((
+        self.graph.storage_layouts.push((
             self.body_context.as_ref().map(|body| body.entity),
             StorageDemand::AnonymousUnion(entity),
             location,
@@ -57,7 +57,7 @@ impl Analyzer<'_> {
             object = element;
         }
         if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
-            self.storage_layouts.push((
+            self.graph.storage_layouts.push((
                 self.body_context.as_ref().map(|body| body.entity),
                 StorageDemand::Object(ty),
                 location,
@@ -66,9 +66,9 @@ impl Analyzer<'_> {
     }
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
         use super::function_demands::Demand;
-        let mut work = std::mem::take(&mut self.boundary_roots);
+        let mut work = std::mem::take(&mut self.graph.boundary_roots);
         let mut destruction_edges = std::collections::HashMap::<EntityId, Vec<EntityId>>::new();
-        for (owner, destructor) in std::mem::take(&mut self.storage_destructions) {
+        for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
             if let Some(owner) = owner {
                 destruction_edges.entry(owner).or_default().push(destructor);
             } else {
@@ -83,7 +83,7 @@ impl Analyzer<'_> {
         let mut constructors = Vec::new();
         let mut constructor_edges =
             std::collections::HashMap::<EntityId, Vec<super::construction::ConstructorId>>::new();
-        for (owner, constructor) in std::mem::take(&mut self.constructor_boundaries) {
+        for (owner, constructor) in std::mem::take(&mut self.graph.constructor_boundaries) {
             if let Some(owner) = owner {
                 constructor_edges
                     .entry(owner)
@@ -210,7 +210,7 @@ impl Analyzer<'_> {
             }
             // Destruction preparation can publish containment edges while this
             // demand closure is running. Activate only edges of reached owners.
-            for (owner, destructor) in std::mem::take(&mut self.storage_destructions) {
+            for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
                 if let Some(owner) = owner.filter(|owner| !seen.contains(owner)) {
                     destruction_edges.entry(owner).or_default().push(destructor);
                 } else {
@@ -219,7 +219,7 @@ impl Analyzer<'_> {
             }
         }
         let mut signatures = std::collections::HashSet::new();
-        for (owner, demand, location) in std::mem::take(&mut self.storage_layouts) {
+        for (owner, demand, location) in std::mem::take(&mut self.graph.storage_layouts) {
             if owner.is_none_or(|owner| seen.contains(&owner)) {
                 match demand {
                     StorageDemand::Object(ty) => {

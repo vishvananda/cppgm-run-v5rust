@@ -279,7 +279,7 @@ impl Analyzer<'_> {
                     && self.graph.entity(function).inline
                         != super::specifiers::InlinePreference::Inline
                 {
-                    self.boundary_roots.push(function);
+                    self.graph.boundary_roots.push(function);
                 }
             }
         }
@@ -328,6 +328,7 @@ impl Analyzer<'_> {
                 parent: info.lookup,
                 print: info.home.unwrap_or(scope),
                 template_depth: self.template_depth,
+                definition_head: self.template_head,
             };
             if self.class_depth == 0 {
                 if kind == MemberKind::Destructor
