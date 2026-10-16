@@ -21,6 +21,12 @@ struct Key {
     arguments: Vec<TypeId>,
 }
 
+#[derive(Clone, Copy)]
+enum DefaultUse {
+    Required,
+    Signature,
+}
+
 pub(super) struct Instance {
     pub primary: EntityId,
     pub arguments: Vec<TypeId>,
@@ -29,6 +35,7 @@ pub(super) struct Instance {
 }
 #[derive(Default)]
 pub(super) struct ClassTemplates {
+    pub(super) dependent_names: super::dependent_templates::Names,
     pub(super) definitions: super::instance_definitions::Definitions,
     pub(super) enumerations: super::enum_instances::Enumerations,
     specializations: HashMap<Key, EntityId>,
@@ -39,6 +46,11 @@ pub(super) struct ClassTemplates {
 impl ClassTemplates {
     pub(super) fn instance(&self, entity: EntityId) -> Option<&Instance> {
         self.instances.get(&entity)
+    }
+    pub(super) fn binding(&self, entity: EntityId) -> Result<BindingId, Error> {
+        self.instance(entity)
+            .map(|instance| instance.binding)
+            .ok_or(Error::Invariant("class shell lost its instance"))
     }
 }
 impl super::graph::Graph {
@@ -113,65 +125,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Option<BindingId>, Error> {
         self.check_stack()?;
-        let binding = self.graph.binding(found);
-        if binding.kind == BindingKind::Alias
-            && self.graph.entity(binding.entity).template_head.is_some()
-        {
-            return Err(Error::Missing("alias template specialization"));
-        }
-        let primary = if binding.kind == BindingKind::Type {
-            self.graph
-                .class_templates
-                .instance(binding.entity)
-                .map_or(binding.entity, |instance| instance.primary)
-        } else {
-            binding.entity
-        };
-        let Some(head) = self.graph.entity(primary).template_head else {
+        let Some(primary) = self.class_template_primary(found)? else {
             return Ok(None);
         };
-        if binding.kind != BindingKind::Type {
-            return Ok(None);
-        }
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("class template without head"))?;
         self.supported_class_head(head)?;
-        let syntax = component
-            .arguments
-            .ok_or(Error::Invariant("template-id without arguments"))?;
-        let mut arguments = Vec::new();
-        for index in 0..self.tree.template_arguments.get(syntax).len() {
-            let argument = self.tree.template_arguments.get(syntax)[index];
-            if argument.pack {
-                return Err(Error::Missing("class template argument expansion"));
-            }
-            let ty = self
-                .template_type_argument(argument, scope, component.location)?
-                .ok_or(Error::Missing("non-type class template arguments"))?;
-            arguments.push(self.graph.types.canonical_function(ty)?);
-        }
+        let arguments = self.class_template_arguments(component, scope)?;
         let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count {
-            return Err(Error::at(component.location, "too many template arguments"));
-        }
-        let omitted = arguments.len() < count;
-        let key = Key { primary, arguments };
-        let result =
-            if omitted && let Some(&binding) = self.graph.class_templates.defaults.get(&key) {
-                binding
-            } else {
-                let mut full = key.arguments.clone();
-                self.class_template_defaults(head, &mut full, component.location)?;
-                let entity = self.class_specialization(primary, full)?;
-                let binding = self
-                    .graph
-                    .class_templates
-                    .instance(entity)
-                    .ok_or(Error::Invariant("class shell lost its instance"))?
-                    .binding;
-                if omitted {
-                    self.graph.class_templates.defaults.insert(key, binding);
-                }
-                binding
-            };
+        let result = self.class_template_with_defaults(primary, arguments, component.location)?;
         // Only the template's own arguments in its definition denote the
         // current instantiation. Elsewhere the same list denotes a shell.
         let instance = self
@@ -206,6 +171,82 @@ impl Analyzer<'_> {
             return Ok(Some(found));
         }
         Ok(Some(result))
+    }
+
+    pub(super) fn class_template_primary(
+        &self,
+        found: BindingId,
+    ) -> Result<Option<EntityId>, Error> {
+        let binding = self.graph.binding(found);
+        if binding.kind == BindingKind::Alias
+            && self.graph.entity(binding.entity).template_head.is_some()
+        {
+            return Err(Error::Missing("alias template specialization"));
+        }
+        let primary = if binding.kind == BindingKind::Type {
+            self.graph
+                .class_templates
+                .instance(binding.entity)
+                .map_or(binding.entity, |instance| instance.primary)
+        } else {
+            binding.entity
+        };
+        Ok((binding.kind == BindingKind::Type
+            && self.graph.entity(primary).template_head.is_some())
+        .then_some(primary))
+    }
+
+    pub(super) fn class_template_arguments(
+        &mut self,
+        component: ast::NameComponent,
+        scope: ScopeId,
+    ) -> Result<Vec<TypeId>, Error> {
+        let syntax = component
+            .arguments
+            .ok_or(Error::Invariant("template-id without arguments"))?;
+        let mut arguments = Vec::new();
+        for index in 0..self.tree.template_arguments.get(syntax).len() {
+            let argument = self.tree.template_arguments.get(syntax)[index];
+            if argument.pack {
+                return Err(Error::Missing("class template argument expansion"));
+            }
+            let ty = self
+                .template_type_argument(argument, scope, component.location)?
+                .ok_or(Error::Missing("non-type class template arguments"))?;
+            arguments.push(self.graph.types.canonical_function(ty)?);
+        }
+        Ok(arguments)
+    }
+
+    pub(super) fn class_template_with_defaults(
+        &mut self,
+        primary: EntityId,
+        arguments: Vec<TypeId>,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("specialization without template head"))?;
+        self.supported_class_head(head)?;
+        let count = self.graph.templates.parameters(head).len();
+        if arguments.len() > count {
+            return Err(Error::at(location, "too many template arguments"));
+        }
+        let omitted = arguments.len() < count;
+        let key = Key { primary, arguments };
+        if omitted && let Some(&binding) = self.graph.class_templates.defaults.get(&key) {
+            return Ok(binding);
+        }
+        let mut full = key.arguments.clone();
+        self.class_template_defaults(head, &mut full, location)?;
+        let entity = self.class_specialization(primary, full)?;
+        let binding = self.graph.class_templates.binding(entity)?;
+        if omitted {
+            self.graph.class_templates.defaults.insert(key, binding);
+        }
+        Ok(binding)
     }
 
     fn supported_class_head(&self, head: HeadId) -> Result<(), Error> {
@@ -257,6 +298,16 @@ impl Analyzer<'_> {
         head: HeadId,
         arguments: &[TypeId],
     ) -> Result<TypeId, Error> {
+        self.class_default_type_in(default, head, arguments, DefaultUse::Required)
+    }
+
+    fn class_default_type_in(
+        &mut self,
+        default: super::templates::DefaultArgument,
+        head: HeadId,
+        arguments: &[TypeId],
+        usage: DefaultUse,
+    ) -> Result<TypeId, Error> {
         self.check_stack()?;
         let depth = self.graph.templates.depth(head);
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
@@ -303,12 +354,55 @@ impl Analyzer<'_> {
         let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
             .ty(default.syntax)
             .map_err(|error| super::template_bodies::copy_error(&error))?;
-        self.required_instantiation(
+        let result = self.instantiation_context(
             self.instantiation_depth,
             self.tree.types.get(default.syntax).location,
             default.limit,
             |analyzer| analyzer.type_syntax(copy, frame),
-        )
+        );
+        match usage {
+            DefaultUse::Required => result.map_err(Error::required_instantiation),
+            DefaultUse::Signature => result,
+        }
+    }
+
+    pub(super) fn substitute_class_template_defaults(
+        &mut self,
+        primary: EntityId,
+        mut arguments: Vec<TypeId>,
+    ) -> Result<Option<EntityId>, Error> {
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("substituted template without head"))?;
+        self.supported_class_head(head)?;
+        let count = self.graph.templates.parameters(head).len();
+        if arguments.len() > count {
+            return Ok(None);
+        }
+        for index in arguments.len()..count {
+            let Some(default) = self.graph.templates.default_argument(head, index) else {
+                return Ok(None);
+            };
+            let key = (head, index, arguments.clone());
+            let ty = if let Some(&ty) = self.graph.class_templates.argument_defaults.get(&key) {
+                ty
+            } else {
+                let result =
+                    self.class_default_type_in(default, head, &arguments, DefaultUse::Signature);
+                let ty = match result {
+                    Ok(ty) => ty,
+                    Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+                    Err(error) => return Err(error),
+                };
+                let ty = self.graph.types.canonical_function(ty)?;
+                self.graph.class_templates.argument_defaults.insert(key, ty);
+                ty
+            };
+            arguments.push(ty);
+        }
+        self.class_specialization(primary, arguments).map(Some)
     }
 
     pub(super) fn class_specialization(
@@ -327,10 +421,16 @@ impl Analyzer<'_> {
             template.key,
             template.home.unwrap_or(self.graph.global),
         );
-        let mut dependent = key
-            .arguments
-            .iter()
-            .any(|&ty| self.graph.dependent_type(ty));
+        let mut dependent = self
+            .graph
+            .class_templates
+            .dependent_names
+            .get(primary)
+            .is_some()
+            || key
+                .arguments
+                .iter()
+                .any(|&ty| self.graph.dependent_type(ty));
         let mut enclosing = Some(home);
         while let Some(scope) = enclosing {
             let node = self.graph.scope(scope);
@@ -394,6 +494,9 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("substitution without class instance"))?;
         let primary = instance.primary;
         let patterns = instance.arguments.clone();
+        if let Some(name) = self.graph.class_templates.dependent_names.get(primary) {
+            return self.substitute_dependent_template(name, patterns, environment);
+        }
         let mut arguments = Vec::with_capacity(patterns.len());
         for pattern in patterns {
             let Some(ty) = self.substitute_signature_type(pattern, environment)? else {

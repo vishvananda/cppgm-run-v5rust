@@ -570,6 +570,18 @@ impl Analyzer<'_> {
                 ));
             };
             self.lookup_location = component.location;
+            if let Some(Prefix::Dependent(qualifier)) = prefix
+                && component.arguments.is_some()
+            {
+                let binding = self.dependent_template_id(qualifier, component, scope)?;
+                let ty = self
+                    .graph
+                    .binding(binding)
+                    .ty
+                    .ok_or(Error::Invariant("dependent specialization without type"))?;
+                prefix = Some(Prefix::Dependent(ty));
+                continue;
+            }
             let found = match prefix {
                 Some(Prefix::Scope(prefix)) => self
                     .qualified_name_result(
@@ -769,11 +781,10 @@ impl Analyzer<'_> {
             .saturating_sub(1);
         let prefix = match self.name_prefix(name, scope, count, true)? {
             Some(Prefix::Dependent(qualifier)) => {
-                if last.arguments.is_some() {
-                    return Err(Error::Missing("dependent member template specialization"));
-                }
                 let binding = if filter == Filter::Namespace {
                     None
+                } else if last.arguments.is_some() && node.typename_keyword {
+                    Some(self.dependent_template_id(qualifier, last, scope)?)
                 } else if let Some(name) = key.identifier() {
                     Some(self.dependent_member_binding(qualifier, name)?)
                 } else {

@@ -1277,6 +1277,11 @@ impl Graph {
     pub(crate) fn lower_class_specialization(&self, class: EntityId) -> bool {
         self.class_templates.instance(class).is_some()
     }
+    pub(crate) fn lower_dependent_template(&self, class: EntityId) -> Option<(TypeId, NameId)> {
+        let primary = self.class_templates.instance(class)?.primary;
+        let name = self.class_templates.dependent_names.get(primary)?;
+        Some((name.qualifier, name.name))
+    }
     pub(crate) fn lower_specialization_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
         let Some(member) = self.expression_facts.get(id)?.member else {
             return Ok(false);

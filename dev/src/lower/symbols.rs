@@ -1020,7 +1020,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 },
                 TypeView::Enum(_) | TypeView::Class(_) => {
                     let (entity, home, name) = self.graph.lower_nominal_name(ty)?;
-                    let parent = self.scope(home)?;
+                    let parent =
+                        if let Some((qualifier, _)) = self.graph.lower_dependent_template(entity) {
+                            Some(self.abi_type(qualifier)?)
+                        } else {
+                            self.scope(home)?
+                        };
                     let terminal = if let Some(name) = name {
                         self.abi.string(self.cursor.name(name))?
                     } else {

@@ -101,10 +101,10 @@ impl Analyzer<'_> {
         // The oracle's logical Annex B limit is separate from the native
         // byte-budget guard. A pre-existing shell retains its formation level.
         if formation_depth >= 1024 {
-            return Err(Error::at(
-                location,
-                "template instantiation nested too deeply",
-            ));
+            return Err(
+                Error::at(location, "template instantiation nested too deeply")
+                    .required_instantiation(),
+            );
         }
         let mut saved = Context::default();
         saved.swap(self);
@@ -157,7 +157,7 @@ mod tests {
             });
         assert!(matches!(
             result,
-            Err(Error::Diagnostic {
+            Err(Error::InstantiationDiagnostic {
                 message: "template instantiation nested too deeply",
                 ..
             })
