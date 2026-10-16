@@ -664,8 +664,43 @@ impl<'a> Encoder<'a> {
                     self.expression(*item)?;
                 }
             }
-            Node::Call => {
-                self.put(b"cl");
+            Node::Call | Node::ParenthesizedCall => {
+                self.put(if matches!(self.graph.get(id), Node::ParenthesizedCall) {
+                    b"cp"
+                } else {
+                    b"cl"
+                });
+                for item in self.graph.items(id) {
+                    self.expression(*item)?;
+                }
+                self.put(b"E");
+            }
+            Node::PrefixStep { increment } => {
+                self.put(if increment { b"pp_" } else { b"mm_" });
+                for item in self.graph.items(id) {
+                    self.expression(*item)?;
+                }
+            }
+            Node::BracedList(ty) => {
+                if let Some(ty) = ty {
+                    self.put(b"tl");
+                    self.encode_type(ty)?;
+                } else {
+                    self.put(b"il");
+                }
+                for item in self.graph.items(id) {
+                    self.expression(*item)?;
+                }
+                self.put(b"E");
+            }
+            Node::AlignofType(ty) => {
+                self.put(b"at");
+                self.encode_type(ty)?;
+            }
+            Node::ConversionList(ty) => {
+                self.put(b"cv");
+                self.encode_type(ty)?;
+                self.put(b"_");
                 for item in self.graph.items(id) {
                     self.expression(*item)?;
                 }

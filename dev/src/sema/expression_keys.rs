@@ -20,8 +20,8 @@ use crate::{
     },
 };
 
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum KeyWord {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum KeyWord {
     Node(KeyNode),
     Count(usize),
     Flag(bool),
@@ -32,12 +32,14 @@ pub(super) enum KeyWord {
     Parameter(usize),
     Identifier(NameId),
     FreeName(NameId),
+    DependentCallee(EntityId, NameId),
+    ResolvedFunction(EntityId),
     Constant(TypeId, u64),
     Spelling(Vec<u8>),
     Absent,
 }
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum KeyNode {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum KeyNode {
     Id,
     Name,
     Arguments,
@@ -74,9 +76,18 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Option<Vec<KeyWord>>, Error> {
+        self.operand_key(operand, scope)
+            .map(|key| key.map(|key| key.words))
+    }
+
+    pub(super) fn operand_key(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<ExpressionKey>, Error> {
         let mut key = ExpressionKey::default();
         self.key_expression(operand, scope, &mut key)
-            .map(|known| known.then_some(key.words))
+            .map(|known| known.then_some(key))
     }
 
     pub(super) fn key_type(&mut self, ty: TypeId, key: &mut ExpressionKey) -> Result<(), Error> {
@@ -156,8 +167,12 @@ impl Analyzer<'_> {
                     KeyWord::Node(KeyNode::Call),
                     KeyWord::Count(self.tree.expr_lists.get(arguments).len()),
                 ]);
-                return Ok(self.key_expression(callee, scope, key)?
-                    && self.key_arguments(arguments, scope, key)?);
+                let start = key.words.len();
+                if !self.key_expression(callee, scope, key)? {
+                    return Ok(false);
+                }
+                self.key_call_resolution(callee, arguments, scope, start, key)?;
+                return self.key_arguments(arguments, scope, key);
             }
             ExprKind::Subscript { base, index } => {
                 key.words.push(KeyWord::Node(KeyNode::Subscript));

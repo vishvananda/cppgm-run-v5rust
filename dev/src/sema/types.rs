@@ -100,10 +100,15 @@ pub(super) struct Types {
     fingerprints: RandomState,
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
+    declarations: Vec<Option<TypeId>>,
+    operand_representatives: HashMap<EntityId, EntityId>,
     signatures: Vec<Option<TypeId>>,
     parameter_entities: HashMap<EntityId, EntityId>,
 }
 impl Types {
+    pub(super) fn record_operand_representative(&mut self, entity: EntityId, earlier: EntityId) {
+        self.operand_representatives.insert(entity, earlier);
+    }
     pub(super) fn record_parameter_entity(&mut self, named: EntityId, canonical: EntityId) {
         self.parameter_entities.insert(named, canonical);
     }
@@ -145,6 +150,7 @@ impl Types {
         self.records.push(ty);
         self.collisions.push(head);
         self.canonical.push(None);
+        self.declarations.push(None);
         self.signatures.push(None);
         self.index.insert(fingerprint, id);
         Ok(id)
@@ -281,17 +287,37 @@ impl Types {
         Ok(signature)
     }
     pub(super) fn canonical_function(&mut self, id: TypeId) -> Result<TypeId, Error> {
-        self.canonical_type(id)
+        self.canonical_type(id, false)
+    }
+    pub(super) fn declared_type(&mut self, id: TypeId) -> Result<TypeId, Error> {
+        if self.operand_representatives.is_empty() {
+            return self.canonical_function(id);
+        }
+        self.canonical_type(id, true)
+    }
+    fn completed_type(&self, id: TypeId, declaration: bool) -> Option<TypeId> {
+        if declaration {
+            self.declarations[id.0 as usize]
+        } else {
+            self.canonical[id.0 as usize]
+        }
+    }
+    fn complete_type(&mut self, id: TypeId, result: TypeId, declaration: bool) {
+        if declaration {
+            self.declarations[id.0 as usize] = Some(result);
+        } else {
+            self.canonical[id.0 as usize] = Some(result);
+        }
     }
     // Types refer only to older types: canonicalization is a memoized DAG walk.
     // Explicit frames also keep long pointer chains off the native stack.
-    fn canonical_type(&mut self, root: TypeId) -> Result<TypeId, Error> {
-        if let Some(canonical) = self.canonical[root.0 as usize] {
+    fn canonical_type(&mut self, root: TypeId, declaration: bool) -> Result<TypeId, Error> {
+        if let Some(canonical) = self.completed_type(root, declaration) {
             return Ok(canonical);
         }
         let mut work = vec![(root, false)];
         while let Some((id, finish)) = work.pop() {
-            if self.canonical[id.0 as usize].is_some() {
+            if self.completed_type(id, declaration).is_some() {
                 continue;
             }
             if !finish {
@@ -320,17 +346,19 @@ impl Types {
             }
             let node = self.get(id).clone();
             let kind = match node.kind {
-                TypeKind::Pointer(element) => TypeKind::Pointer(self.canonical_child(element)?),
+                TypeKind::Pointer(element) => {
+                    TypeKind::Pointer(self.canonical_child(element, declaration)?)
+                }
                 TypeKind::MemberPointer { owner, element } => TypeKind::MemberPointer {
-                    owner: self.canonical_child(owner)?,
-                    element: self.canonical_child(element)?,
+                    owner: self.canonical_child(owner, declaration)?,
+                    element: self.canonical_child(element, declaration)?,
                 },
                 TypeKind::Reference { element, kind } => TypeKind::Reference {
-                    element: self.canonical_child(element)?,
+                    element: self.canonical_child(element, declaration)?,
                     kind,
                 },
                 TypeKind::Array { element, bound } => TypeKind::Array {
-                    element: self.canonical_child(element)?,
+                    element: self.canonical_child(element, declaration)?,
                     bound,
                 },
                 TypeKind::Function {
@@ -343,36 +371,45 @@ impl Types {
                     let parameters = parameters
                         .into_iter()
                         .map(|p| {
-                            let canonical = self.canonical_child(p)?;
+                            let canonical = self.canonical_child(p, declaration)?;
                             self.parameter(canonical)
                         })
                         .collect::<Result<_, _>>()?;
                     TypeKind::Function {
-                        result: self.canonical_child(result)?,
+                        result: self.canonical_child(result, declaration)?,
                         parameters,
                         variadic,
                         cv,
                         reference,
                     }
                 }
-                TypeKind::TemplateParameter { entity, template } => TypeKind::TemplateParameter {
-                    entity: self
+                TypeKind::TemplateParameter { entity, template } => {
+                    let entity = self
                         .parameter_entities
                         .get(&entity)
                         .copied()
-                        .unwrap_or(entity),
-                    template,
-                },
+                        .unwrap_or(entity);
+                    let entity = if declaration {
+                        self.operand_representatives
+                            .get(&entity)
+                            .copied()
+                            .unwrap_or(entity)
+                    } else {
+                        entity
+                    };
+                    TypeKind::TemplateParameter { entity, template }
+                }
                 other => other,
             };
             let canonical = self.intern(kind, node.cv)?;
-            self.canonical[id.0 as usize] = Some(canonical);
-            self.canonical[canonical.0 as usize] = Some(canonical);
+            self.complete_type(id, canonical, declaration);
+            self.complete_type(canonical, canonical, declaration);
         }
-        self.canonical_child(root)
+        self.canonical_child(root, declaration)
     }
-    fn canonical_child(&self, id: TypeId) -> Result<TypeId, Error> {
-        self.canonical[id.0 as usize].ok_or(Error::Invariant("uncompleted canonical type"))
+    fn canonical_child(&self, id: TypeId, declaration: bool) -> Result<TypeId, Error> {
+        self.completed_type(id, declaration)
+            .ok_or(Error::Invariant("uncompleted canonical type"))
     }
     pub(super) fn complete_array(&self, first: TypeId, second: TypeId) -> Option<TypeId> {
         if first == second {

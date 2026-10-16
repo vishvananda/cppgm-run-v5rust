@@ -549,9 +549,6 @@ impl Analyzer<'_> {
             .last()
             .copied()
             .ok_or(Error::Invariant("empty semantic name"))?;
-        if last.arguments.is_some() && !self.semantic() {
-            return Err(Error::Missing("template specialization lookup"));
-        }
         // Types-mode lookup_name accepts identifiers only; semantics has the
         // separate operator_function_lookup path in the frozen owner.
         if !self.semantic() && !matches!(last.kind, NameKind::Identifier(_)) {
@@ -584,7 +581,11 @@ impl Analyzer<'_> {
             found = builtin;
         }
         if specialize && last.arguments.is_some() {
-            self.explicit_function_specializations(last, &mut found, scope, false)?;
+            if self.semantic() {
+                self.explicit_function_specializations(last, &mut found, scope, false)?;
+            } else if found.functions.as_slice().is_empty() {
+                return Err(Error::Missing("template specialization lookup"));
+            }
         }
         if let Some(binding) = found.binding {
             if let Some(search) = prefix

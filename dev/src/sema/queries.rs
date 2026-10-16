@@ -414,6 +414,15 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
+        let mut bare = operand;
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(bare).kind {
+            bare = inner;
+        }
+        if self.template_depth != 0
+            && !matches!(self.tree.expressions.get(bare).kind, ExprKind::Id(_))
+        {
+            return self.dependent_operand(operand, scope, self.semantic());
+        }
         if self.semantic() {
             let mut inner = operand;
             while let ExprKind::Paren(expr) = self.tree.expressions.get(inner).kind {
@@ -513,6 +522,9 @@ impl Analyzer<'_> {
                 }
             }
             .ok_or(Error::Invariant("decltype binding without type"))?;
+            if self.template_depth != 0 && self.exception_dependent_type(ty) {
+                return self.dependent_operand(operand, scope, false);
+            }
             return if parenthesized {
                 self.graph.types.reference(ty, RefKind::Lvalue)
             } else {

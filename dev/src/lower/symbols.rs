@@ -1,5 +1,7 @@
 // Translated from lower/symbol_lowering.cpp's procedural symbol and ABI construction. See NOTICE.
 use super::Error;
+#[path = "placeholder_mangling.rs"]
+mod placeholder_mangling;
 #[path = "vtables.rs"]
 mod vtables;
 use crate::{
@@ -926,6 +928,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Node::TemplateParam {
                 index,
                 substitutable: true,
+            }
+        } else if let Some((operand, words)) = self.graph.lower_template_operand(ty) {
+            let expression = self.placeholder_expression(words)?;
+            let kind = self.tree.expressions.get(operand).kind;
+            Node::Decltype {
+                expression,
+                id_expression: matches!(kind, ast::ExprKind::Id(_) | ast::ExprKind::Member { .. }),
             }
         } else {
             match self.graph.lower_type(ty)? {

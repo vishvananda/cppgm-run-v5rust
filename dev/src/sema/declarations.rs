@@ -1164,8 +1164,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("function without type"))?;
         match (head, self.graph.entity(binding.entity).template_head) {
             (Some(a), Some(b)) => Ok(self.same_template_shape(a, b)
-                && self.graph.types.canonical_function(old)?
-                    == self.graph.types.canonical_function(ty)?),
+                && self.graph.types.declared_type(old)? == self.graph.types.declared_type(ty)?),
             (None, None) => self.same_function_parameters(old, ty),
             _ => Ok(false),
         }
@@ -1215,8 +1214,8 @@ impl Analyzer<'_> {
         new: TypeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let a = self.graph.types.canonical_function(old)?;
-        let b = self.graph.types.canonical_function(new)?;
+        let a = self.graph.types.declared_type(old)?;
+        let b = self.graph.types.declared_type(new)?;
         if a == b {
             return Ok(());
         }

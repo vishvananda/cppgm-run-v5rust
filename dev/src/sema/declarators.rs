@@ -382,10 +382,15 @@ impl Analyzer<'_> {
             && let Some(name) = name
         {
             self.graph.scope_mut(prototype).name = Some(name);
-            self.graph
-                .scope_mut(environment.declaring)
-                .children
-                .push(prototype);
+            let print = if self.template_depth != 0 {
+                self.graph
+                    .scope(prototype)
+                    .parent
+                    .unwrap_or(environment.declaring)
+            } else {
+                environment.declaring
+            };
+            self.graph.scope_mut(print).children.push(prototype);
         }
         // A suffix view is a query result, not the original declarator's fact.
         if root_suffix_skip == 0
@@ -586,6 +591,15 @@ impl Analyzer<'_> {
                         let parameter =
                             self.tree.parameters.get(clause.parameters)[parameter_index];
                         self.prototype_parameter(parameter, ty, prototype, true)?;
+                        if let Some(name) = self.declarator_name(parameter.declarator)?
+                            && let Some(binding) =
+                                self.graph
+                                    .own(prototype, name, super::lookup::Filter::Ordinary)
+                        {
+                            let entity = self.graph.binding(binding).entity;
+                            self.graph
+                                .record_prototype_parameter(entity, parameter_index);
+                        }
                     }
                     ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
                     trailing_prototype = Some(prototype);

@@ -30,6 +30,7 @@ mod declaration_access;
 mod declarations;
 mod declarators;
 mod default_arguments;
+mod dependence;
 mod destruction;
 mod destructor_expressions;
 mod dump;
@@ -89,6 +90,7 @@ mod template_defaults;
 mod template_exceptions;
 pub(crate) use template_bodies::analyze_unit;
 mod template_names;
+mod template_operands;
 mod templates;
 mod throw_queries;
 mod types;
@@ -106,11 +108,23 @@ pub(crate) enum Error {
         location: SourceOffset,
         message: &'static str,
     },
+    InstantiationDiagnostic {
+        location: SourceOffset,
+        message: &'static str,
+    },
     Missing(&'static str),
     Limit(&'static str),
     Invariant(&'static str),
 }
 impl Error {
+    pub(super) fn required_instantiation(self) -> Self {
+        match self {
+            Self::Diagnostic { location, message } | Self::NonConstant { location, message } => {
+                Self::InstantiationDiagnostic { location, message }
+            }
+            other => other,
+        }
+    }
     pub(super) fn at(location: SourceOffset, message: &'static str) -> Self {
         Self::Diagnostic { location, message }
     }

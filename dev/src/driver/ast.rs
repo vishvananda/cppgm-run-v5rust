@@ -123,7 +123,8 @@ pub fn emit_unit(
         );
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }
-            | crate::sema::Error::NonConstant { location, message } => {
+            | crate::sema::Error::NonConstant { location, message }
+            | crate::sema::Error::InstantiationDiagnostic { location, message } => {
                 match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
                     Err(error) => AstToolError::Initialization(error),
@@ -166,7 +167,8 @@ pub fn emit_unit(
                 }
                 crate::lower::Error::Semantic(
                     crate::sema::Error::Diagnostic { location, message }
-                    | crate::sema::Error::NonConstant { location, message },
+                    | crate::sema::Error::NonConstant { location, message }
+                    | crate::sema::Error::InstantiationDiagnostic { location, message },
                 ) => match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
                     Err(error) => AstToolError::Initialization(error),

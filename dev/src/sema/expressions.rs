@@ -215,6 +215,7 @@ impl Analyzer<'_> {
             .name_lists
             .get(node.components)
             .last()
+            .copied()
             .ok_or(Error::Invariant("empty expression name"))?;
         if !matches!(last.kind, NameKind::Identifier(_)) {
             return Ok(None);
@@ -262,6 +263,12 @@ impl Analyzer<'_> {
             }
             Err(error) => return Err(error),
         };
+        if !self.semantic()
+            && self.graph.binding(binding).kind == BindingKind::Function
+            && let Some(arguments) = last.arguments
+        {
+            self.template_argument_names(arguments, scope, last.location)?;
+        }
         let kind = self.graph.binding(binding).kind;
         if matches!(kind, BindingKind::Namespace | BindingKind::NamespaceAlias) {
             return Err(Error::at(node.location, "namespace name used as a value"));

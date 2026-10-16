@@ -16,7 +16,6 @@ use crate::{
         storage::List,
     },
 };
-use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TemplateException {
@@ -294,35 +293,8 @@ impl Analyzer<'_> {
             .map(Option::flatten)
     }
 
-    pub(super) fn exception_dependent_type(&self, root: TypeId) -> bool {
-        let mut work = vec![root];
-        let mut visited = HashSet::new();
-        while let Some(ty) = work.pop() {
-            if !visited.insert(ty) {
-                continue;
-            }
-            match &self.graph.types.get(ty).kind {
-                TypeKind::TemplateParameter { .. } => return true,
-                TypeKind::Class(entity) if self.graph.entity(*entity).template_head.is_some() => {
-                    return true;
-                }
-                TypeKind::Pointer(element)
-                | TypeKind::Reference { element, .. }
-                | TypeKind::Array { element, .. } => work.push(*element),
-                TypeKind::MemberPointer { owner, element } => {
-                    work.push(*owner);
-                    work.push(*element);
-                }
-                TypeKind::Function {
-                    result, parameters, ..
-                } => {
-                    work.push(*result);
-                    work.extend(parameters.iter().copied());
-                }
-                _ => (),
-            }
-        }
-        false
+    pub(super) fn exception_dependent_type(&self, ty: TypeId) -> bool {
+        self.graph.dependent_type(ty)
     }
 
     fn own_name_probe(

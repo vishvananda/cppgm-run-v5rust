@@ -7,6 +7,7 @@ pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;
 pub(crate) use super::expression_facts::ClassInitialization;
+pub(crate) use super::expression_keys::{KeyNode, KeyWord};
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::literal_calls::TextCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
@@ -509,6 +510,25 @@ impl Graph {
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id) || self.entity(id).assignment.is_some()
+    }
+    pub(crate) fn lower_template_operand(
+        &self,
+        ty: TypeId,
+    ) -> Option<(ast::ExprId, &[super::expression_keys::KeyWord])> {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        let pattern = self.template_operands.pattern(entity)?;
+        Some((pattern.expression, self.template_operands.words(entity)?))
+    }
+    pub(crate) fn lower_dependent_type(&self, ty: TypeId) -> bool {
+        self.dependent_type(ty)
+    }
+    pub(crate) fn lower_templated_class(&self, class: EntityId) -> bool {
+        self.entity(class).template_head.is_some()
+    }
+    pub(crate) fn lower_operand_function(&self, entity: EntityId) -> bool {
+        self.entity(entity).function.is_some()
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

@@ -220,6 +220,7 @@ pub(crate) struct Graph {
     pub(super) types: Types,
     pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: super::inheritance::BasePaths,
+    pub(super) template_operands: super::template_operands::Operands,
     pub(super) templates: super::templates::Templates,
     pub(super) function_templates: super::function_templates::FunctionTemplates,
     scopes: Vec<Scope>,
@@ -377,6 +378,7 @@ impl Graph {
             virtuals: super::virtual_members::Virtuals::default(),
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
+            template_operands: super::template_operands::Operands::default(),
             templates: super::templates::Templates::default(),
             function_templates: super::function_templates::FunctionTemplates::default(),
             scopes: vec![Scope {
@@ -815,7 +817,7 @@ impl Graph {
         head: Option<super::templates::HeadId>,
     ) -> Result<FunctionSignature, Error> {
         let ty = if head.is_some() {
-            self.types.canonical_function(ty)?
+            self.types.declared_type(ty)?
         } else {
             self.types.declaration_signature(ty)?
         };

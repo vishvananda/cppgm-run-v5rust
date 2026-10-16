@@ -22,6 +22,7 @@ pub(super) enum AnalysisMode {
 }
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
     pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
     pub(super) deferred_exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
@@ -154,6 +155,9 @@ impl<'tree> Analyzer<'tree> {
             floating: super::floating_intrinsics::names(cursor)?,
         };
         let mut analyzer = Self {
+            decltype_name: cursor
+                .intern_name(b"decltype(...)")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
             override_name: cursor
                 .intern_name(b"override")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,

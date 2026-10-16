@@ -148,6 +148,13 @@ pub enum Node {
     FunctionParam(u32),
     Operation(Operation),
     Call,
+    ConversionList(NodeId),
+    BracedList(Option<NodeId>),
+    ParenthesizedCall,
+    PrefixStep {
+        increment: bool,
+    },
+    AlignofType(NodeId),
     Cast {
         operation: Operation,
         ty: NodeId,

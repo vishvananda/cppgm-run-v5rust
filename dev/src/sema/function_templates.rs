@@ -52,13 +52,13 @@ impl FunctionTemplates {
         self.primaries.get(&entity).copied()
     }
 }
-struct Substitution<'a> {
-    depth: u32,
-    arguments: &'a [Option<TypeId>],
+pub(super) struct Substitution<'a> {
+    pub(super) depth: u32,
+    pub(super) arguments: &'a [Option<TypeId>],
     memo: HashMap<TypeId, Option<TypeId>>,
 }
 impl<'a> Substitution<'a> {
-    fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
+    pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
         Self {
             depth,
             arguments,
@@ -240,7 +240,7 @@ impl Analyzer<'_> {
         self.graph.entity(entity).template_parameter?.index(depth)
     }
 
-    fn substitute_signature_type(
+    pub(super) fn substitute_signature_type(
         &mut self,
         ty: TypeId,
         environment: &mut Substitution<'_>,
@@ -261,6 +261,11 @@ impl Analyzer<'_> {
         }
         let kind = self.graph.types.get(ty).kind.clone();
         let result = match kind {
+            TypeKind::TemplateParameter { entity, .. }
+                if self.graph.template_operands.pattern(entity).is_some() =>
+            {
+                self.substitute_operand(ty, entity, environment)?
+            }
             TypeKind::Pointer(element) => {
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);
@@ -402,7 +407,7 @@ impl Analyzer<'_> {
                 ty
             } else {
                 let pattern = self.type_syntax(default.syntax, default.scope)?;
-                let mut environment = Substitution::new(depth, arguments);
+                let mut environment = Substitution::new(depth, &arguments[..index]);
                 let Some(ty) = self.substitute_signature_type(pattern, &mut environment)? else {
                     return Ok(None);
                 };
@@ -510,6 +515,11 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let pattern = self.graph.types.canonical_function(pattern)?;
         let actual = self.graph.types.canonical_function(actual)?;
+        if let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(pattern).kind
+            && self.graph.template_operands.pattern(entity).is_some()
+        {
+            return Ok(true); // A decltype operand is a non-deduced context.
+        }
         let pcv = self.type_cv(pattern).0;
         let acv = self.type_cv(actual).0;
         let parameter = if matches!(self.graph.types.get(pattern).kind, TypeKind::Auto) {
@@ -1048,9 +1058,6 @@ impl Analyzer<'_> {
             .binding(first)
             .ty
             .ok_or(Error::Invariant("ordering without type"))?;
-        let Some(from) = self.substitute_signature_type(from, &mut environment)? else {
-            return Ok(false);
-        };
         let to = self
             .graph
             .binding(second)
@@ -1063,6 +1070,9 @@ impl Analyzer<'_> {
             let b_count = self.graph.types.function_parameter_count(to)?;
             for index in 0..count.min(a_count).min(b_count) {
                 let a = self.graph.types.function_parameter(from, index)?;
+                let Some(a) = self.substitute_signature_type(a, &mut environment)? else {
+                    return Ok(false);
+                };
                 let p = self.graph.types.function_parameter(to, index)?;
                 let a = match self.graph.types.get(a).kind {
                     TypeKind::Reference { element, .. } => element,
@@ -1080,8 +1090,85 @@ impl Analyzer<'_> {
             }
             Ok(true)
         } else {
-            self.deduce_signature_type(to, from, depth, &mut arguments, false)
+            self.order_function_types(from, to, depth, &mut arguments, &mut environment)
         }
+    }
+
+    fn order_function_types(
+        &mut self,
+        from: TypeId,
+        to: TypeId,
+        depth: u32,
+        arguments: &mut [Option<TypeId>],
+        environment: &mut Substitution<'_>,
+    ) -> Result<bool, Error> {
+        let TypeKind::Function {
+            result: from_result,
+            parameters: from_parameters,
+            variadic,
+            cv,
+            reference,
+        } = self.graph.types.get(from).kind.clone()
+        else {
+            return Err(Error::Invariant("ordering nonfunction"));
+        };
+        let TypeKind::Function {
+            result: to_result,
+            parameters: to_parameters,
+            variadic: to_variadic,
+            cv: to_cv,
+            reference: to_reference,
+        } = self.graph.types.get(to).kind.clone()
+        else {
+            return Err(Error::Invariant("ordering nonfunction"));
+        };
+        if from_parameters.len() != to_parameters.len()
+            || variadic != to_variadic
+            || cv != to_cv
+            || reference != to_reference
+        {
+            return Ok(false);
+        }
+        for (from, to) in from_parameters.into_iter().zip(to_parameters) {
+            let Some(from) = self.substitute_signature_type(from, environment)? else {
+                return Ok(false);
+            };
+            if !self.deduce_signature_type(to, from, depth, arguments, false)? {
+                return Ok(false);
+            }
+        }
+        if self.names_operand(from_result) || self.names_operand(to_result) {
+            return Ok(true);
+        }
+        let Some(from) = self.substitute_signature_type(from_result, environment)? else {
+            return Ok(false);
+        };
+        self.deduce_signature_type(to_result, from, depth, arguments, false)
+    }
+
+    fn names_operand(&self, root: TypeId) -> bool {
+        let mut work = vec![root];
+        while let Some(ty) = work.pop() {
+            match &self.graph.types.get(ty).kind {
+                TypeKind::TemplateParameter { entity, .. }
+                    if self.graph.template_operands.pattern(*entity).is_some() =>
+                {
+                    return true;
+                }
+                TypeKind::Pointer(ty)
+                | TypeKind::Reference { element: ty, .. }
+                | TypeKind::Array { element: ty, .. } => work.push(*ty),
+                TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
+                TypeKind::Function {
+                    result, parameters, ..
+                } => {
+                    work.push(*result);
+                    work.extend(parameters);
+                }
+                _ => (),
+            }
+        }
+        false
     }
 
     fn template_reference_order(

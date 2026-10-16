@@ -88,7 +88,7 @@ impl Analyzer<'_> {
                     .argument_defaults
                     .states
                     .remove(&key);
-                return Err(error);
+                return Err(error.required_instantiation());
             }
             self.graph
                 .function_templates
@@ -245,7 +245,7 @@ mod tests {
         let declaration = analyzer.tree.decl_lists.get(declarations)[1];
         assert!(matches!(
             analyzer.declaration(declaration, global),
-            Err(Error::Diagnostic { .. })
+            Err(Error::InstantiationDiagnostic { .. })
         ));
         assert_eq!(analyzer.graph.lookup_limit, saved_limit);
         assert_eq!(analyzer.template_head, head);
