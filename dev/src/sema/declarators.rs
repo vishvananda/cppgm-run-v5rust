@@ -326,6 +326,7 @@ impl Analyzer<'_> {
                         if let Some(message) = failure {
                             return Err(Error::at(node.location, message));
                         }
+                        self.check_abstract_object(ty, node.location)?;
                         let bound = bound
                             .map(|bound| self.array_bound(bound, after))
                             .transpose()?
@@ -577,10 +578,9 @@ impl Analyzer<'_> {
                     ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
                     trailing_prototype = Some(prototype);
                 }
-                ast::QualifierKind::Noexcept(_) | ast::QualifierKind::Throw(_) => (),
-                ast::QualifierKind::Virt(_) => {
-                    return Err(Error::Missing("virtual override checks"));
-                }
+                ast::QualifierKind::Noexcept(_)
+                | ast::QualifierKind::Throw(_)
+                | ast::QualifierKind::Virt(_) => (),
             }
         }
         if self.holds_auto(ty) {

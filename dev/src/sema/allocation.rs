@@ -319,6 +319,7 @@ impl Analyzer<'_> {
                 "a new-expression allocates an incomplete class type",
             ));
         }
+        self.check_abstract_object(element, location)?;
         if let (Some(count), Some(value)) = (count, constant) {
             let (bytes, _) = self.type_size(target, location)?;
             if bytes != 0 && value > i64::MAX.cast_unsigned() / bytes {

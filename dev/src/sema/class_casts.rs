@@ -19,6 +19,7 @@ impl Analyzer<'_> {
         initializer: ast::Initializer,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        self.check_abstract_object(target, self.tree.expressions.get(id).location)?;
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("class prvalue without class"));
         };
@@ -146,6 +147,7 @@ impl Analyzer<'_> {
         if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
             return Err(Error::at(location, "a cast to an incomplete class type"));
         }
+        self.check_abstract_object(target, location)?;
         let selected = self.initialize_class_arguments(
             target,
             ClassInput {

@@ -471,21 +471,14 @@ impl Analyzer<'_> {
         let info = self.placeholder_declarator(Some(init.declarator), specs, scope)?;
         self.declare_analyzed_init(specs, init, scope, deduced, info)
     }
-    pub(super) fn declare_analyzed_init(
-        &mut self,
+    fn check_typedef_declarator(
+        &self,
         specs: Specifiers,
+        info: &super::declarators::DeclaratorInfo,
         init: ast::InitDeclarator,
-        scope: ScopeId,
-        deduced: &mut Option<TypeId>,
-        mut info: super::declarators::DeclaratorInfo,
+        home: ScopeId,
+        special_member: bool,
     ) -> Result<(), Error> {
-        let member = self.declared_member(&info, scope)?;
-        let home = info.home.unwrap_or(self.declaration_scope(scope));
-        self.check_mutable_declarator(
-            specs,
-            &info,
-            self.tree.declarators.get(init.declarator).location,
-        )?;
         let class_name = self.graph.scope(home).kind == ScopeKind::Class
             && self.graph.scope(home).owner.is_some_and(|class| {
                 info.name.is_some() && info.name == self.graph.entity(class).name
@@ -493,12 +486,16 @@ impl Analyzer<'_> {
         if specs.role == DeclarationRole::Typedef
             && (info.home.is_some()
                 || init.initializer.is_some()
+                || self.has_virt_specifier(info)
                 || specs.constexpr
-                || member.is_some()
+                || special_member
                 || class_name
-                || self.conversion_declarator(&info))
+                || self.conversion_declarator(info))
         {
-            let message = if info.home.is_some() || init.initializer.is_some() {
+            let message = if info.home.is_some()
+                || init.initializer.is_some()
+                || self.has_virt_specifier(info)
+            {
                 "invalid typedef declarator"
             } else if specs.constexpr {
                 "constexpr in a typedef declaration"
@@ -510,6 +507,25 @@ impl Analyzer<'_> {
                 message,
             ));
         }
+        Ok(())
+    }
+    pub(super) fn declare_analyzed_init(
+        &mut self,
+        specs: Specifiers,
+        init: ast::InitDeclarator,
+        scope: ScopeId,
+        deduced: &mut Option<TypeId>,
+        mut info: super::declarators::DeclaratorInfo,
+    ) -> Result<(), Error> {
+        let member = self.declared_member(&info, scope)?;
+        let home = info.home.unwrap_or(self.declaration_scope(scope));
+        self.check_virtual_object_declaration(specs, &info, init)?;
+        self.check_mutable_declarator(
+            specs,
+            &info,
+            self.tree.declarators.get(init.declarator).location,
+        )?;
+        self.check_typedef_declarator(specs, &info, init, home, member.is_some())?;
         if self.conversion_declarator(&info) {
             return Err(Error::at(
                 self.declarator_location(init.declarator)?,
@@ -670,6 +686,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("object without type"))?;
             let object = self.initial_object_type(object, init.initializer);
             self.check_object_type(object, member, location)?;
+            self.check_abstract_object(object, location)?;
         }
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
@@ -1537,6 +1554,8 @@ impl Analyzer<'_> {
         if self.semantic() && self.template_depth == 0 {
             self.classify_class_copies(entity)?;
             self.complete_destructor(entity)?;
+            self.complete_virtual_destructor(entity, node.location)?;
+            self.complete_virtual_members(entity)?;
         }
         if self.template_depth == 0 && self.graph.entity(entity).storage_attributes.alignment != 0 {
             self.class_layout(entity, node.location)?;

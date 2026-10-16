@@ -588,6 +588,8 @@ impl Analyzer<'_> {
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
+        self.virtual_declaration(binding, &info, specs, location)?;
+        self.pure_specifier(entity, init.initializer, &info, specs, scope, location)?;
         self.settle_declaration_access(Some(binding))?;
         if defaulted {
             self.default_assignment(&info, key, home, location)?;

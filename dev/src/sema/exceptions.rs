@@ -55,6 +55,23 @@ pub(super) struct PendingSpecification {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn pending_virtual_noexcept(&self, function: EntityId) -> bool {
+        matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
+            if matches!(self.specifications[id.0 as usize].qualifier, Some(Qualifier { kind: QualifierKind::Noexcept(Some(_)), .. })))
+    }
+
+    pub(super) fn virtual_nothrow(&mut self, function: EntityId) -> Result<bool, Error> {
+        if let ExceptionState::Pending(id) = self.graph.entity(function).exceptions
+            && matches!(self.specifications[id.0 as usize].qualifier, Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty())
+        {
+            // A nonempty dynamic set allows exceptions even before its names
+            // are resolved in the complete-class context.
+            return Ok(false);
+        }
+        self.function_may_throw(function)
+            .map(|may_throw| !may_throw)
+    }
+
     pub(super) fn function_may_throw(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(false);
@@ -598,7 +615,7 @@ impl Analyzer<'_> {
         for id in pending {
             self.resolve_specification(id)?;
         }
-        Ok(())
+        self.check_exception_overrides(false)
     }
     pub(super) fn finish_unit_exceptions(&mut self) -> Result<(), Error> {
         for index in 0..self.specifications.len() {
@@ -606,7 +623,7 @@ impl Analyzer<'_> {
                 u32::try_from(index).map_err(|_| Error::Limit("exception specification limit"))?,
             ))?;
         }
-        Ok(())
+        self.check_exception_overrides(true)
     }
 }
 

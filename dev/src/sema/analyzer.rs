@@ -22,6 +22,9 @@ pub(super) enum AnalysisMode {
 }
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) override_name: crate::lex::identifiers::NameId,
+    pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
+    pub(super) deferred_exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
     pub(super) declaration_access: super::declaration_access::DeclarationAccess,
     pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
     pub(super) tree: &'tree Tree,
@@ -152,6 +155,11 @@ impl<'tree> Analyzer<'tree> {
             floating: super::floating_intrinsics::names(cursor)?,
         };
         let mut analyzer = Self {
+            override_name: cursor
+                .intern_name(b"override")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            exception_overrides: Vec::new(),
+            deferred_exception_overrides: Vec::new(),
             declaration_access: super::declaration_access::DeclarationAccess::default(),
             literal_bytes: &cursor.spellings,
             deduced_initializer: None,
@@ -356,7 +364,9 @@ impl<'tree> Analyzer<'tree> {
                         "a class or enumeration defined in an alias template",
                     ));
                 }
-                let alias_type = self.declarator(node.declarator, specs.ty, scope)?.ty;
+                let info = self.declarator(node.declarator, specs.ty, scope)?;
+                self.check_virtual_alias(&info, specs, location)?;
+                let alias_type = info.ty;
                 super::record(&mut self.graph.type_facts, ty.index(), alias_type);
                 if exceptions {
                     return Err(Error::at(
@@ -552,6 +562,7 @@ impl<'tree> Analyzer<'tree> {
             };
         self.graph.entity_mut(entity).constexpr = specs.constexpr;
         self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
+        self.virtual_declaration(binding, &info, specs, location)?;
         self.settle_declaration_access(Some(binding))?;
         if self.graph.entity(entity).defined {
             return Err(Error::at(location, "redefinition of a function"));

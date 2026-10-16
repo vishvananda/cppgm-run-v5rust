@@ -936,7 +936,7 @@ impl Analyzer<'_> {
             self.prepare_destruction(class)?;
         }
         let Some(binding) = self.destructor_callable(class)? else {
-            return Ok(());
+            return self.check_abstract_object(ty, location);
         };
         self.prepare_destruction(class)?;
         if self
@@ -947,7 +947,8 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        self.check_special_use_access(binding, class, scope, location)
+        self.check_special_use_access(binding, class, scope, location)?;
+        self.check_abstract_object(ty, location)
     }
 
     pub(super) fn written_constructor_plan(

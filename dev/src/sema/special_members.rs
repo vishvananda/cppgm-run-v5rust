@@ -237,6 +237,8 @@ impl Analyzer<'_> {
                     super::exceptions::DestructorSpecification::Implicit
                 };
         }
+        self.virtual_declaration(binding, info, specs, location)?;
+        self.pure_specifier(function, initializer, info, specs, scope, location)?;
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default)) {
             self.default_special_member(function, class, kind, info, location)?;
             let old = self.graph.entity(function).special_definition;

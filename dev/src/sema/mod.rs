@@ -85,6 +85,8 @@ mod templates;
 mod throw_queries;
 mod types;
 mod user_conversions;
+mod virtual_exceptions;
+mod virtual_members;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]
 pub(crate) enum Error {

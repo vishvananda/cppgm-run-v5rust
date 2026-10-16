@@ -259,13 +259,6 @@ pub(crate) struct Parameter {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Qualifier {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The owning syntax location is retained for later semantic diagnostics"
-        )
-    )]
     pub location: SourceOffset,
     pub kind: QualifierKind,
 }

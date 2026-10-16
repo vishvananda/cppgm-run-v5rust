@@ -205,6 +205,7 @@ struct FunctionPosition {
     visible: Option<usize>,
 }
 pub(crate) struct Graph {
+    pub(super) virtuals: super::virtual_members::Virtuals,
     pub(super) local_classes: super::local_classes::LocalClasses,
     pub(super) bit_fields: super::bit_fields::BitFields,
     pub(super) types: Types,
@@ -348,6 +349,7 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            virtuals: super::virtual_members::Virtuals::default(),
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
             templates: super::templates::Templates::default(),
