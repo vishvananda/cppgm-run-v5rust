@@ -128,6 +128,9 @@ pub(super) struct Symbols<'a, 'source> {
     callees: HashMap<EntityId, Value>,
     table: &'a mut SymbolTable,
     pub globals: Vec<EntityId>,
+    // Syntax can require declaration-only storage even when semantic
+    // redeclaration bookkeeping retains a definition flag.
+    declaration_only_globals: std::collections::HashSet<EntityId>,
     variable_requests: HashMap<EntityId, super::definition_demands::RequestId>,
     pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
@@ -151,6 +154,12 @@ pub(super) struct Symbols<'a, 'source> {
     persistent_finalizers: Vec<super::shutdown::Finalizer>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
+    pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
+        self.declaration_only_globals.insert(entity);
+    }
+    pub(super) fn declaration_only_global(&self, entity: EntityId) -> bool {
+        self.declaration_only_globals.contains(&entity)
+    }
     pub(super) fn new(
         graph: &'a Graph,
         tree: &'a ast::Tree,
@@ -184,6 +193,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             callees: HashMap::new(),
             table,
             globals: Vec::new(),
+            declaration_only_globals: std::collections::HashSet::new(),
             variable_requests: HashMap::new(),
             instance_variables: std::collections::VecDeque::new(),
             objects: HashMap::new(),

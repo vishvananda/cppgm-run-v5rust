@@ -144,7 +144,7 @@ pub(crate) fn lower_unit(
     let mut declarations = anonymous_names::Declarations::new(tree, declarations);
     let mut emitted = std::collections::HashSet::new();
     let mut emitted_entries = std::collections::HashSet::new();
-    while let Some(id) = declarations.next(tree, graph, &mut symbols)? {
+    while let Some((id, explicit_specialization)) = declarations.next(tree, graph, &mut symbols)? {
         globals::lower_anonymous_declaration(
             &mut globals::GlobalOutput {
                 program: &mut output.program,
@@ -299,6 +299,7 @@ pub(crate) fn lower_unit(
                     graph,
                     tree,
                     declarators,
+                    explicit_specialization,
                     budget,
                 )?;
             }

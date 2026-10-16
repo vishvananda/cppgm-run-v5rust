@@ -46,6 +46,7 @@ pub(super) fn lower_declaration<'a>(
     graph: &'a Graph,
     tree: &'a ast::Tree,
     declarators: crate::syntax::storage::List<ast::InitDeclarator>,
+    explicit_specialization: bool,
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
     for declarator in tree.init_declarators.get(declarators) {
@@ -53,6 +54,16 @@ pub(super) fn lower_declaration<'a>(
         if graph.lower_is_variable(entity)
             && graph.lower_variable(entity)?.definition == Some(declarator.declarator)
         {
+            // This syntactic emission rule also covers an ordinary static
+            // member of an explicitly specialized class. Its semantic
+            // redeclaration state remains independent of storage emission.
+            if explicit_specialization
+                && graph.lower_static_member(entity)
+                && declarator.initializer.is_none()
+            {
+                symbols.note_declaration_only_global(entity);
+                continue;
+            }
             let initializer = declarator
                 .initializer
                 .or(graph.lower_variable(entity)?.in_class_initializer);
@@ -471,7 +482,7 @@ pub(super) fn finish(
             continue;
         }
         let facts = graph.lower_variable(entity)?;
-        if facts.definition.is_some() {
+        if facts.definition.is_some() && !symbols.declaration_only_global(entity) {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "referenced global definition was not emitted",
             )));

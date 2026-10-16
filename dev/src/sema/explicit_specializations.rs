@@ -71,6 +71,10 @@ impl Analyzer<'_> {
         definition: Definition,
     ) -> Result<BindingId, Error> {
         self.specialization_mode = SpecializationMode::Ordinary;
+        // C++ passes deletion separately from a body/defaulted definition.
+        // A copied member may still carry its primary's defined flag after
+        // an explicit declaration; deleting it does not define another body.
+        let defines_body = matches!(definition, Definition::Body | Definition::Defaulted);
         let member = self.declared_instance_member(info)?;
         let of_template = member.is_none();
         let binding = if let Some(member) = member {
@@ -103,7 +107,7 @@ impl Analyzer<'_> {
             .contains(entity);
         if of_template
             && if explicit {
-                definition.defines() && self.graph.entity(entity).defined
+                defines_body && self.graph.entity(entity).defined
             } else {
                 self.graph.function_templates.bodies.started(entity)
             }
@@ -113,7 +117,7 @@ impl Analyzer<'_> {
                 "an explicit specialization after the specialization's instantiation or definition",
             ));
         }
-        if definition.defines() && self.graph.entity(entity).defined && explicit {
+        if defines_body && self.graph.entity(entity).defined && explicit {
             return Err(Error::at(location, "redefinition of a function"));
         }
         if self.semantic() {
@@ -248,6 +252,9 @@ impl Analyzer<'_> {
             return Ok(binding);
         }
         let key = self.declaration_key(info)?;
+        // Implicit assignment declarations are materialized by their owning
+        // class, just as for an ordinary qualified operator lookup.
+        self.prepare_assignment_lookup(home, key, false)?;
         let mut next = 0;
         while let Some(binding) = self.graph.next_function(home, key, &mut next) {
             let candidate = self.graph.binding(binding);

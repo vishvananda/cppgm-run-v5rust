@@ -193,7 +193,7 @@ impl Declarations {
         tree: &crate::syntax::ast::Tree,
         graph: &Graph,
         symbols: &mut super::symbols::Symbols<'_, '_>,
-    ) -> Result<Option<crate::syntax::ast::DeclId>, Error> {
+    ) -> Result<Option<(crate::syntax::ast::DeclId, bool)>, Error> {
         use crate::syntax::ast::DeclKind;
         while let Some((id, finish)) = self.work.pop() {
             if finish {
@@ -215,9 +215,15 @@ impl Declarations {
                     parameters,
                     declaration,
                 } if parameters.parameters.is_empty() => {
+                    if matches!(
+                        tree.declarations.get(declaration).kind,
+                        DeclKind::Simple { .. }
+                    ) {
+                        return Ok(Some((declaration, true)));
+                    }
                     self.work.push((declaration, false));
                 }
-                _ => return Ok(Some(id)),
+                _ => return Ok(Some((id, false))),
             }
         }
         Ok(None)

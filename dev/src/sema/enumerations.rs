@@ -236,22 +236,7 @@ impl Analyzer<'_> {
             .get(&identifier)
             .and_then(|entry| entry.tag);
         let entity = if let Some(existing) = existing {
-            let binding = self.graph.binding(existing);
-            let entity = binding.entity;
-            let info = self.graph.entity(entity).enumeration.ok_or_else(|| {
-                Error::at(
-                    location,
-                    "enumeration name redeclared as a different kind of type",
-                )
-            })?;
-            if info.scoped != scoped
-                || !info.fixed
-                || expected.is_none()
-                || info.underlying != expected
-            {
-                return Err(Error::at(location, "enumeration redeclared differently"));
-            }
-            entity
+            self.redeclared_enum(existing, scoped, expected, location)?
         } else {
             if prefix.is_some() {
                 return Err(Error::at(
@@ -354,6 +339,36 @@ impl Analyzer<'_> {
         }
         Ok(ty)
     }
+
+    // analyzer_classes.cpp::redeclared_enum: agreement is on canonical
+    // underlying identity, including renamed dependent template parameters.
+    fn redeclared_enum(
+        &mut self,
+        binding: BindingId,
+        scoped: bool,
+        expected: Option<TypeId>,
+        location: SourceOffset,
+    ) -> Result<EntityId, Error> {
+        let entity = self.graph.binding(binding).entity;
+        let info = self.graph.entity(entity).enumeration.ok_or_else(|| {
+            Error::at(
+                location,
+                "enumeration name redeclared as a different kind of type",
+            )
+        })?;
+        let underlying_matches = match (info.underlying, expected) {
+            (Some(previous), Some(expected)) => {
+                self.graph.types.canonical_function(previous)?
+                    == self.graph.types.canonical_function(expected)?
+            }
+            _ => false,
+        };
+        if info.scoped != scoped || !info.fixed || !underlying_matches {
+            return Err(Error::at(location, "enumeration redeclared differently"));
+        }
+        Ok(entity)
+    }
+
     fn new_enum(
         &mut self,
         name: Option<crate::lex::identifiers::NameId>,

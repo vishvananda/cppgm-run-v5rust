@@ -1230,16 +1230,19 @@ impl Analyzer<'_> {
                 .tree
                 .template_arguments
                 .get(component.arguments.unwrap_or_default())[index];
-            let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
-                return Err(Error::Missing("non-type function template arguments"));
-            };
             if argument.pack {
                 return Err(Error::Missing("function template argument expansion"));
             }
-            let ty = self.type_syntax(ty, scope)?;
+            let ty = self
+                .template_type_argument(argument, scope, component.location)?
+                .ok_or(Error::Missing("non-type function template arguments"))?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
-        let key = Self::expression_name(component.kind)?;
+        let key = if component.arguments.is_none() {
+            self.declaration_key(info)?
+        } else {
+            Self::expression_name(component.kind)?
+        };
         self.lookup_location = location;
         let found = if let Some(home) = info.home {
             self.qualified_result(home, key, super::lookup::Filter::Ordinary)?

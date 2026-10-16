@@ -317,7 +317,13 @@ impl<'tree> Analyzer<'tree> {
         let mark = self.begin_declaration_access(scope, enabled);
         let result = self.declaration_in(id, scope);
         self.finish_declaration_access(mark);
-        result
+        result.map_err(|error| match error {
+            Error::Limit("constructs nested too deeply") => Error::at(
+                self.tree.declarations.get(id).location,
+                "constructs nested too deeply",
+            ),
+            other => other,
+        })
     }
     fn declaration_in(&mut self, id: ast::DeclId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
