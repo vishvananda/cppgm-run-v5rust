@@ -484,12 +484,33 @@ impl Analyzer<'_> {
                 inner = expr;
             }
             if !matches!(self.tree.expressions.get(inner).kind, ExprKind::Id(_)) {
+                // Only the final call of a decltype operand leaves its class
+                // result incomplete; argument calls and comma prefixes do not.
+                let mut tail = inner;
+                loop {
+                    tail = match self.tree.expressions.get(tail).kind {
+                        ExprKind::Paren(inner) => inner,
+                        ExprKind::Binary { op, right, .. }
+                            if op.token.as_punctuator() == Some(P::Comma) =>
+                        {
+                            right
+                        }
+                        _ => break,
+                    };
+                }
+                let saved_call = self.decltype_call;
+                self.decltype_call = matches!(
+                    self.tree.expressions.get(tail).kind,
+                    ExprKind::Call { .. } | ExprKind::TypeTrait { .. }
+                )
+                .then_some(tail);
                 self.unevaluated += 1;
                 let result = self.typed_expression(operand, scope).and_then(|facts| {
                     self.check_resolved_function(operand)?;
                     Ok(facts)
                 });
                 self.unevaluated -= 1;
+                self.decltype_call = saved_call;
                 let facts = result?;
                 let mut tail = self.graph.expression_facts.root(operand);
                 while let ExprKind::Binary { op, right, .. } = self.tree.expressions.get(tail).kind

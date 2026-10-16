@@ -314,7 +314,7 @@ impl Function<'_, '_, '_, '_> {
         written: crate::sema::lowering::ConstructorArguments,
     ) -> Result<bool, Error> {
         let plan = self.graph.lower_constructor(id);
-        if plan.copy.is_none() || !self.graph.lower_constructor_trivial(id) {
+        if !self.graph.lower_constructor_copies_storage(id) {
             return Ok(false);
         }
         let single = match written {

@@ -739,6 +739,7 @@ mod tests {
             if let Some(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                ..
             }) = step.copy.map(|copy| copy.action)
             {
                 assert_eq!(*shared_copy.get_or_insert(constructor), constructor);

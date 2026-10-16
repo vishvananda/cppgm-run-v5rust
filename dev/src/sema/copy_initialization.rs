@@ -32,6 +32,7 @@ pub(crate) enum CopyAction {
     Constructor {
         constructor: super::construction::ConstructorId,
         elision: bool,
+        written_move: bool,
     },
 }
 #[derive(Clone, Copy)]
@@ -388,6 +389,7 @@ impl Analyzer<'_> {
             return Ok(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                written_move: false,
             });
         }
         let properties = self.selected_copy_properties(class, selected)?;
@@ -407,6 +409,7 @@ impl Analyzer<'_> {
             return Ok(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                written_move,
             });
         }
         // A written defaulted declaration is odr-used even for a byte transfer.
@@ -1002,6 +1005,7 @@ mod tests {
             let Some(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                ..
             }) = graph.lower_class_copy(argument).unwrap()
             else {
                 panic!("base copy action");
@@ -1175,6 +1179,7 @@ mod tests {
             let Some(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                ..
             }) = graph.lower_class_copy(operand).unwrap()
             else {
                 panic!("selected return transfer");

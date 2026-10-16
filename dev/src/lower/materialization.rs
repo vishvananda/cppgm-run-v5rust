@@ -499,7 +499,17 @@ impl Function<'_, '_, '_, '_> {
             Some(CopyAction::Constructor {
                 constructor,
                 elision,
+                written_move,
             }) => {
+                if !written_move
+                    && self.delegate_copy_storage(
+                        constructor,
+                        object,
+                        crate::sema::lowering::ConstructorArguments::Single(id),
+                    )?
+                {
+                    return Ok(true);
+                }
                 self.call_constructor_from_expression(constructor, object, id, elision)?;
                 return Ok(true);
             }

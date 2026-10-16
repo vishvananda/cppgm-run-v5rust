@@ -27,7 +27,7 @@ pub(super) enum Preparation {
     Active,
     Ready,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CopyPropertiesId(u32);
 #[derive(Clone, Copy)]
 pub(super) struct CopySummary {

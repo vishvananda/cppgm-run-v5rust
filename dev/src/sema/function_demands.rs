@@ -68,7 +68,9 @@ impl Analyzer<'_> {
         };
         if let Some(binding) = function {
             let entity = self.graph.binding(binding).entity;
-            self.demand_instance_member(entity);
+            if self.graph.function_templates.bodies.member(entity) {
+                self.graph.function_templates.bodies.semantic_demand(entity);
+            }
         }
         // Ordinary definitions contribute roots. Inline/constexpr functions retain
         // their dependencies until that member itself is demanded for output.
@@ -141,6 +143,7 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
                             continue;
                         }
                         if entity.assignment_origin != super::assignment::Origin::Implicit
+                            && !graph.function_templates.bodies.synthesized(function)
                             && (entity.definition_emission == DefinitionEmission::Demanded
                                 || call
                                     && !entity.defined

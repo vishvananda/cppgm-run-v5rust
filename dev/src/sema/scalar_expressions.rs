@@ -31,6 +31,16 @@ impl Analyzer<'_> {
             self.dependent_uses.set(uses);
         }
         let mut facts = result?;
+        // new_facts completes a class-template object's definition, except
+        // the designated final call in decltype (5.2.2p11). A pointer or a
+        // function designation still needs only its declared type.
+        if self.decltype_call != Some(id)
+            && !matches!(self.tree.expressions.get(id).kind, ExprKind::Paren(_))
+            && let TypeKind::Class(class) = self.graph.types.get(facts.ty).kind
+            && self.graph.class_templates.instance(class).is_some()
+        {
+            self.complete_class(class)?;
+        }
         facts.dependence.note(self.dependent_uses.get() != uses);
         self.graph.expression_facts.set(id, facts);
         Ok(facts)

@@ -22,6 +22,7 @@ struct Pattern {
 enum State {
     InProgress,
     Unavailable,
+    Synthesized,
     Complete(ast::BodyId),
 }
 #[derive(Default)]
@@ -33,6 +34,7 @@ pub(super) struct Bodies {
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
+    semantic_uses: HashSet<EntityId>,
 }
 impl Bodies {
     fn template_pattern(&self, mut entity: EntityId) -> Option<Pattern> {
@@ -70,11 +72,29 @@ impl Bodies {
             self.demands.push(entity);
         }
     }
+    pub(super) fn semantic_demand(&mut self, entity: EntityId) {
+        self.semantic_uses.insert(entity);
+        self.demand(entity);
+    }
     pub(super) fn body(&self, entity: EntityId) -> Option<ast::BodyId> {
         match self.states.get(&entity) {
             Some(State::Complete(body)) => Some(*body),
             _ => None,
         }
+    }
+    pub(super) fn synthesized(&self, entity: EntityId) -> bool {
+        matches!(self.states.get(&entity), Some(State::Synthesized))
+    }
+}
+impl Graph {
+    /// Definition availability at the original lowering demand boundary.
+    pub(crate) fn lower_synthesized_at_emission(&self, entity: EntityId) -> bool {
+        self.function_templates.bodies.synthesized(entity)
+            && !self
+                .function_templates
+                .bodies
+                .semantic_uses
+                .contains(&entity)
     }
 }
 impl super::function_templates::FunctionTemplates {
@@ -185,8 +205,14 @@ pub(crate) fn analyze_unit(
                 analyzer.set_lowering();
             }
             analyzer.stack_base = base;
-            analyzer.prepare_member_definition(entity)?;
+            let synthesized = analyzer.instantiate_defaulted_member(entity)?;
+            if !synthesized {
+                analyzer.prepare_member_definition(entity)?;
+            }
             graph = analyzer.finish_analysis(false)?;
+            if synthesized {
+                continue;
+            }
         }
         if let Some(&(pattern, limit)) = graph.function_templates.bodies.members.get(&entity) {
             if graph.function_templates.bodies.states.contains_key(&entity) {
@@ -248,7 +274,7 @@ pub(crate) fn analyze_unit(
         }
         if matches!(
             graph.function_templates.bodies.states.get(&entity),
-            Some(State::Unavailable)
+            Some(State::Unavailable | State::Synthesized)
         ) {
             continue;
         }
@@ -333,6 +359,64 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     }
 }
 impl Analyzer<'_> {
+    fn instantiate_defaulted_member(&mut self, entity: EntityId) -> Result<bool, Error> {
+        if self.graph.function_templates.bodies.synthesized(entity) {
+            return Ok(true);
+        }
+        let source = self.graph.function_templates.bodies.source(entity);
+        let Some(
+            special @ SpecialDefinition::Defaulted {
+                first: false,
+                body: None,
+            },
+        ) = source.and_then(|source| self.graph.entity(source).special_definition)
+        else {
+            return Ok(false);
+        };
+        let member = self.graph.entity(entity).member_function;
+        self.graph
+            .function_templates
+            .bodies
+            .states
+            .insert(entity, State::InProgress);
+        let target = self.graph.entity_mut(entity);
+        target.defined = true;
+        target.special_definition = Some(special);
+        self.required_instantiation(
+            self.graph.instantiation_levels.get(entity)?,
+            crate::support::source::SourceOffset(0),
+            self.graph.binding_limit(),
+            |analyzer| {
+                if let Some(member) = member {
+                    analyzer.defaulted_constructor_definition(
+                        entity,
+                        member.class,
+                        member.kind,
+                        crate::support::source::SourceOffset(0),
+                    )
+                } else {
+                    let binding = analyzer.graph.function_origin(entity)?;
+                    analyzer.prepare_default_assignment(binding)?;
+                    if analyzer.graph.entity(entity).availability
+                        == super::graph::FunctionAvailability::Deleted
+                    {
+                        return Err(Error::at(
+                            crate::support::source::SourceOffset(0),
+                            "an explicitly defaulted function is defined as deleted",
+                        ));
+                    }
+                    Ok(())
+                }
+            },
+        )?;
+        self.graph
+            .function_templates
+            .bodies
+            .states
+            .insert(entity, State::Synthesized);
+        Ok(true)
+    }
+
     fn prepare_explicit_defaulted(&mut self, entity: EntityId) -> Result<(), Error> {
         let Some(member) = self.graph.entity(entity).member_function else {
             return Ok(());
@@ -600,6 +684,83 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn synthesized_copy_fills_the_selected_plan_once_without_copying_syntax() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{T& ref;A(T&v):ref(v){}A(const A&);};\
+              template<class X>A<X>::A(const A&)=default;\
+              int main(){int n=1;A<int>a(n);A<int>b(a);return sizeof(A<long>);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"synthesized").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let entity = *analyzer
+            .graph
+            .function_templates
+            .bodies
+            .demands
+            .iter()
+            .find(|&&entity| analyzer.graph.entity(entity).copy_kind.is_some())
+            .unwrap();
+        let plan = analyzer.graph.entity(entity).constructor.unwrap();
+        assert!(analyzer.graph.constructors.get(plan).copy.is_none());
+        let syntax = (
+            analyzer.tree.expressions.mark(),
+            analyzer.tree.declarations.mark(),
+        );
+        assert!(analyzer.instantiate_defaulted_member(entity).unwrap());
+        assert_eq!(analyzer.graph.entity(entity).constructor, Some(plan));
+        assert!(analyzer.graph.constructors.get(plan).copy.is_some());
+        assert!(!analyzer.graph.lower_constructor_trivial(plan));
+        assert!(analyzer.graph.lower_constructor_copies_storage(plan));
+        let properties = analyzer.graph.entity(entity).copy_properties;
+        assert!(analyzer.instantiate_defaulted_member(entity).unwrap());
+        assert_eq!(analyzer.graph.entity(entity).constructor, Some(plan));
+        assert_eq!(analyzer.graph.entity(entity).copy_properties, properties);
+        assert_eq!(
+            syntax,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.declarations.mark()
+            )
+        );
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .bodies
+                .body(entity)
+                .is_none()
+        );
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .bodies
+                .member_links
+                .keys()
+                .any(|&other| {
+                    other != entity
+                        && analyzer.graph.entity(other).copy_kind.is_some()
+                        && analyzer.graph.entity(other).constructor.is_none()
+                        && analyzer
+                            .graph
+                            .function_templates
+                            .bodies
+                            .pending_member(other)
+                })
+        );
+    }
 
     #[test]
     fn member_templates_share_heads_and_patterns_but_own_demanded_facts() {

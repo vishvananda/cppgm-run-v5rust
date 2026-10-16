@@ -2357,7 +2357,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
 
 impl Symbols<'_, '_> {
     pub(super) fn deleting_inlines_body(&mut self, entity: EntityId) -> Result<bool, Error> {
-        if !self.graph.lower_destructor_body_inert(entity, self.tree)? {
+        if !self.destructor_body_inert(entity)? {
             return Ok(false);
         }
         let class =
@@ -2383,7 +2383,7 @@ impl Symbols<'_, '_> {
             return Ok(inert);
         }
         let graph = self.graph;
-        let mut inert = graph.lower_destructor_body_inert(entity, self.tree)?
+        let mut inert = self.destructor_body_inert(entity)?
             && graph
                 .lower_function(entity)?
                 .object
@@ -2408,6 +2408,25 @@ impl Symbols<'_, '_> {
         }
         self.inert_destructors.insert(entity, inert);
         Ok(inert)
+    }
+    fn destructor_body_inert(&self, entity: EntityId) -> Result<bool, Error> {
+        use super::construction::Entry;
+        // The C++ inertness query can precede instantiate_definition. Keep
+        // that availability boundary even though Rust prepares all semantic
+        // plans before lowering. Demand makes the synthesized body visible;
+        // an already memoized inertness result retains its original meaning.
+        if self.graph.lower_synthesized_at_emission(entity)
+            && ![
+                Entry::Function(entity),
+                Entry::DestructorBase(entity),
+                Entry::DestructorDeleting(entity),
+            ]
+            .iter()
+            .any(|entry| self.seen.contains(entry))
+        {
+            return Ok(false);
+        }
+        Ok(self.graph.lower_destructor_body_inert(entity, self.tree)?)
     }
 }
 

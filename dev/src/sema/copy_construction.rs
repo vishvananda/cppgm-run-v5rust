@@ -29,6 +29,41 @@ pub(crate) struct SubobjectCopy {
     pub ty: TypeId,
     pub constructor: Option<ConstructorId>,
 }
+impl super::graph::Graph {
+    /// `object_lowering.cpp::copies_storage`: an instantiated out-of-class
+    /// defaulted copy stays nontrivial for ABI passing, but transfers storage
+    /// when every selected subobject copy is trivial. Synthesis has already
+    /// published these facts; lowering performs no definition demand.
+    pub(crate) fn lower_constructor_copies_storage(&self, id: ConstructorId) -> bool {
+        let plan = self.constructors.get(id);
+        let Some(actions) = plan.copy.as_ref() else {
+            return false;
+        };
+        if !plan.nontrivial() {
+            return true;
+        }
+        plan.binding
+            .and_then(|binding| {
+                self.function_templates
+                    .bodies
+                    .source(self.binding(binding).entity)
+            })
+            .is_some_and(|source| {
+                matches!(
+                    self.entity(source).special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted {
+                        first: false,
+                        body: None,
+                    })
+                )
+            })
+            && actions.iter().all(|action| {
+                action
+                    .constructor
+                    .is_none_or(|id| !self.constructors.get(id).nontrivial())
+            })
+    }
+}
 impl Analyzer<'_> {
     pub(super) fn build_implicit_copy_plan(
         &mut self,
@@ -256,10 +291,9 @@ impl Analyzer<'_> {
                 Triviality::Nontrivial
             },
         };
-        let id = self.graph.constructors.add(record)?;
-        self.graph
-            .entity_mut(self.graph.binding(binding).entity)
-            .constructor = Some(id);
+        // A declaration plan may already be selected by an earlier use. Keep
+        // that identity when the unit-tail template definition supplies facts.
+        let id = self.store_constructor(record)?;
         self.graph.copy_properties.get_mut(properties).plan = ConstructorState::Ready(id);
         Ok(id)
     }

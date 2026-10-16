@@ -523,6 +523,7 @@ mod tests {
             let Some(CopyAction::Constructor {
                 constructor,
                 elision: false,
+                ..
             }) = graph.lower_class_copy(left).unwrap()
             else {
                 panic!("selected branch copy")

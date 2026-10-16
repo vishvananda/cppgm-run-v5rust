@@ -131,7 +131,13 @@ impl Analyzer<'_> {
             }
             match binding.kind {
                 BindingKind::Function => {
-                    let special = self.graph.entity(entity).special_definition;
+                    let special = self.graph.entity(entity).special_definition.or_else(|| {
+                        self.graph
+                            .function_templates
+                            .bodies
+                            .source(entity)
+                            .and_then(|source| self.graph.entity(source).special_definition)
+                    });
                     if !(self.graph.function_templates.bodies.defined_member(entity)
                         || self.graph.function_templates.bodies.member(entity)
                             && matches!(

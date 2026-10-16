@@ -868,6 +868,7 @@ impl Analyzer<'_> {
                     super::function_demands::DefinitionEmission::Demanded;
             }
             if self.semantic()
+                && self.template_depth == 0
                 && self
                     .graph
                     .entity(
@@ -893,7 +894,7 @@ impl Analyzer<'_> {
                     ));
                 }
             }
-            if self.lowering() && !first {
+            if self.lowering() && self.template_depth == 0 && !first {
                 self.graph.boundary_roots.push(entity);
             }
         }

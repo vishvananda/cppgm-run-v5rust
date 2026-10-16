@@ -736,6 +736,13 @@ impl Analyzer<'_> {
         } else {
             Triviality::Trivial
         };
+        self.store_constructor(record)
+    }
+
+    pub(super) fn store_constructor(
+        &mut self,
+        record: Constructor,
+    ) -> Result<ConstructorId, Error> {
         let function = record
             .binding
             .map(|binding| self.graph.binding(binding).entity);

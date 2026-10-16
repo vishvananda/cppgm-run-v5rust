@@ -140,6 +140,14 @@ impl Analyzer<'_> {
         *root_count = self.graph.root_demands.as_slice().len();
         while !work.is_empty() || !constructors.is_empty() {
             if let Some(constructor) = constructors.pop() {
+                if let Some(binding) = self.graph.constructors.get(constructor).binding {
+                    let entity = self.graph.binding(binding).entity;
+                    if self.graph.function_templates.bodies.pending_member(entity) {
+                        self.demand_instance_member(entity);
+                        self.graph.boundary_roots.push(entity);
+                        continue;
+                    }
+                }
                 if !seen_constructors.insert(constructor) {
                     continue;
                 }

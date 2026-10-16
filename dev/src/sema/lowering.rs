@@ -518,7 +518,15 @@ impl Graph {
         self.function_templates.instantiations.defined(entity) && self.entity(entity).defined
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
-        self.lower_implicit_destructor(id) || self.entity(id).assignment.is_some()
+        self.lower_implicit_destructor(id)
+            || self.entity(id).assignment.is_some()
+            || self.entity(id).member_function.is_some_and(|member| {
+                member.kind == super::graph::MemberKind::Destructor
+                    && matches!(
+                        self.entity(id).special_definition,
+                        Some(super::special_members::SpecialDefinition::Defaulted { .. })
+                    )
+            })
     }
     pub(crate) fn lower_template_operand(
         &self,
