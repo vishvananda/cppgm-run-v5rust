@@ -28,6 +28,11 @@ struct Instance {
     explicit: bool,
     location: SourceOffset,
 }
+#[derive(Clone, Copy)]
+struct Declaration {
+    ty: TypeId,
+    constexpr: bool,
+}
 #[derive(Default)]
 pub(super) struct Specializations {
     keys: HashMap<Key, EntityId>,
@@ -40,8 +45,14 @@ impl Specializations {
     pub(super) fn concrete(&self, entity: EntityId) -> bool {
         self.instances.get(&entity).is_some_and(|i| !i.dependent)
     }
+    pub(super) fn explicit(&self, entity: EntityId) -> bool {
+        self.instances.get(&entity).is_some_and(|i| i.explicit)
+    }
     pub(super) fn arguments(&self, entity: EntityId) -> Option<&[TypeId]> {
         self.instances.get(&entity).map(|i| i.arguments.as_slice())
+    }
+    pub(super) fn location(&self, entity: EntityId) -> Option<SourceOffset> {
+        self.instances.get(&entity).map(|i| i.location)
     }
 }
 impl Analyzer<'_> {
@@ -68,12 +79,12 @@ impl Analyzer<'_> {
         }
         Ok(Some(binding))
     }
-    pub(super) fn variable_specialization(
+    fn variable_specialization(
         &mut self,
         primary: EntityId,
         arguments: Vec<TypeId>,
         location: SourceOffset,
-        declared: Option<TypeId>,
+        declared: Option<Declaration>,
     ) -> Result<BindingId, Error> {
         self.check_stack()?;
         let key = Key { primary, arguments };
@@ -119,8 +130,8 @@ impl Analyzer<'_> {
             .pattern(source)
             .and_then(|p| p.auto_type)
             .unwrap_or(pattern_ty);
-        let ty = if let Some(ty) = declared {
-            ty
+        let ty = if let Some(declaration) = declared {
+            declaration.ty
         } else {
             self.substitute_signature_type(pattern_ty, &mut environment)?
                 .ok_or(Error::at(
@@ -136,7 +147,9 @@ impl Analyzer<'_> {
             template.data_member,
             template.key,
         );
-        let constexpr = self.graph.entity(source).constexpr;
+        // A shell keeps its first declaration's type and constexpr fact, even
+        // when a subsequent explicit declaration supplies the definition.
+        let constexpr = declared.map_or(self.graph.entity(source).constexpr, |d| d.constexpr);
         let entity = self.graph.add_entity(Some(ty), name, key_word)?;
         let node = self.graph.entity_mut(entity);
         node.home = home;
@@ -347,24 +360,13 @@ impl Analyzer<'_> {
         location: SourceOffset,
         auto_cv: super::types::Cv,
     ) -> Result<(), Error> {
+        self.deduce_variable_specialization_type(binding, initializer, scope, location, auto_cv)?;
         let entity = self.graph.binding(binding).entity;
         let ty = self
             .graph
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("variable instance without type"))?;
-        let ty = if self.holds_auto(ty) {
-            let mut known = None;
-            let ty =
-                self.deduce_object_type(ty, auto_cv, initializer, scope, location, &mut known)?;
-            if self.graph.entity(entity).constexpr {
-                self.graph.types.qualify(ty, super::types::Cv::CONST)?
-            } else {
-                ty
-            }
-        } else {
-            ty
-        };
         let ty = self.complete_initializer_array(ty, initializer)?;
         self.graph.complete_variable_type(binding, ty)?;
         self.graph.entity_mut(entity).defined = true;
@@ -383,6 +385,35 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("variable instance without home"))?;
             self.request_static_initializer(entity, initializer, scope, home)?;
             self.request_storage_layout(entity, location)?;
+        }
+        Ok(())
+    }
+    // Auto deduction belongs to the declaration, including in types mode;
+    // initializer checking and storage demand are separate semantic facts.
+    fn deduce_variable_specialization_type(
+        &mut self,
+        binding: BindingId,
+        initializer: Option<ast::Initializer>,
+        scope: ScopeId,
+        location: SourceOffset,
+        auto_cv: super::types::Cv,
+    ) -> Result<(), Error> {
+        let entity = self.graph.binding(binding).entity;
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("variable instance without type"))?;
+        if self.holds_auto(ty) {
+            let mut known = None;
+            let ty =
+                self.deduce_object_type(ty, auto_cv, initializer, scope, location, &mut known)?;
+            let ty = if self.graph.entity(entity).constexpr {
+                self.graph.types.qualify(ty, super::types::Cv::CONST)?
+            } else {
+                ty
+            };
+            self.graph.complete_variable_type(binding, ty)?;
         }
         Ok(())
     }
@@ -419,8 +450,23 @@ impl Analyzer<'_> {
         } else {
             info.ty
         };
-        let binding = self.variable_specialization(primary, arguments, location, Some(ty))?;
+        let binding = self.variable_specialization(
+            primary,
+            arguments,
+            location,
+            Some(Declaration {
+                ty,
+                constexpr: specs.constexpr,
+            }),
+        )?;
         let entity = self.graph.binding(binding).entity;
+        self.deduce_variable_specialization_type(
+            binding,
+            init.initializer,
+            scope,
+            location,
+            specs.auto_cv,
+        )?;
         let member = self
             .graph
             .entity(primary)
@@ -443,7 +489,6 @@ impl Analyzer<'_> {
         if declared && init.initializer.is_none() {
             return Ok(());
         }
-        self.graph.entity_mut(entity).constexpr = specs.constexpr;
         self.graph
             .variable_instances
             .templates
@@ -452,7 +497,10 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("lost variable specialization"))?
             .explicit = true;
         self.graph.variable_instances.begin(entity);
-        if self.semantic() && (init.initializer.is_some() || !member) {
+        // The frozen explicit-specialization path initializes only a supplied
+        // initializer. An omitted initializer still defines a namespace object,
+        // but does not demand default construction or destruction checks.
+        if self.semantic() && init.initializer.is_some() {
             self.initialize_variable_specialization(
                 binding,
                 init.initializer,
@@ -481,6 +529,85 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn fixed_variable_types_do_not_demand_initializers_in_semantics_mode() {
+        let source = SourceBuffer::new(
+            b"template<class T>int make(){return T::missing;}\
+              template<class T>int v=make<T>();int main(){return v<int>;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"variable-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let graph = &analyzer.graph;
+        assert_eq!(graph.variable_instances.templates.instances.len(), 1);
+        let (&entity, _) = graph
+            .variable_instances
+            .templates
+            .instances
+            .iter()
+            .next()
+            .unwrap();
+        assert!(!graph.variable_instances.started(entity));
+        assert!(!graph.entity(entity).defined);
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert!(graph.variable_instances.demands().is_empty());
+    }
+
+    #[test]
+    fn explicit_auto_type_is_available_without_semantic_initializer_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>int v=2;template<>auto v<int> =3L;\
+              using X=decltype(v<int>);using Y=decltype(v<int>);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"explicit-auto").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let graph = &analyzer.graph;
+        assert_eq!(graph.variable_instances.templates.instances.len(), 1);
+        let (&entity, _) = graph
+            .variable_instances
+            .templates
+            .instances
+            .iter()
+            .next()
+            .unwrap();
+        let ty = graph.entity(entity).ty.unwrap();
+        assert_eq!(
+            graph.types.get(ty).kind,
+            super::super::types::TypeKind::Scalar(super::super::types::Scalar::Basic(
+                crate::types::FundamentalType::LongInt,
+            ))
+        );
+        for name in [b"X", b"Y"] {
+            let name = cursor.intern_name(name).unwrap();
+            let alias = graph
+                .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            assert_eq!(graph.binding(alias).ty, Some(ty));
+        }
+        assert!(graph.variable_instances.demands().is_empty());
+        assert!(graph.entity(entity).static_initializer.is_none());
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn shells_defaults_and_definition_facts_have_independent_identity() {

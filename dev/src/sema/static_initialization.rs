@@ -38,7 +38,7 @@ impl Analyzer<'_> {
             }
             self.record_static_construction(entity, initializer, scope)?;
         }
-        Ok(())
+        self.finish_variable_storage_layouts()
     }
     pub(super) fn request_static_initializer(
         &mut self,

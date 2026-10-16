@@ -460,6 +460,7 @@ impl Analyzer<'_> {
                         if entity.ty.is_some_and(|ty| {
                             matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
                         }) {
+                            self.instantiate_variable_value(binding.entity)?;
                             let mut place = self
                                 .graph
                                 .constant_addresses
@@ -617,6 +618,7 @@ impl Analyzer<'_> {
                     if self.graph.entity(entity).ty.is_some_and(|ty| {
                         matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
                     }) {
+                        self.instantiate_variable_value(entity)?;
                         let mut value =
                             self.graph.constant_addresses.value(entity).ok_or_else(|| {
                                 nonconstant(
@@ -715,7 +717,7 @@ impl Analyzer<'_> {
         Ok(place)
     }
     pub(super) fn read_constant_address(
-        &self,
+        &mut self,
         place: Address,
         location: SourceOffset,
     ) -> Result<Address, Error> {
@@ -723,6 +725,7 @@ impl Analyzer<'_> {
             return Err(nonconstant(location, "a read of a volatile glvalue"));
         }
         if let Root::Variable(entity) = place.root {
+            self.instantiate_variable_value(entity)?;
             if !self.graph.entity(entity).constexpr
                 && self.graph.constant_addresses.value(entity).is_none()
                 && !self.graph.constant_addresses.evaluating(entity)
@@ -835,6 +838,7 @@ impl Analyzer<'_> {
         }
         match place.root {
             Root::Variable(entity) => {
+                self.instantiate_variable_value(entity)?;
                 if !self.graph.entity(entity).constexpr
                     && matches!(
                         self.graph.entity(entity).constant,

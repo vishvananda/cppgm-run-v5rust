@@ -132,6 +132,9 @@ pub(super) struct Symbols<'a, 'source> {
     // redeclaration bookkeeping retains a definition flag.
     declaration_only_globals: std::collections::HashSet<EntityId>,
     variable_requests: HashMap<EntityId, super::definition_demands::RequestId>,
+    variable_owner: Option<EntityId>,
+    active_variables: std::collections::HashSet<EntityId>,
+    variable_dependencies: std::collections::HashSet<(EntityId, EntityId)>,
     pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
@@ -195,6 +198,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             globals: Vec::new(),
             declaration_only_globals: std::collections::HashSet::new(),
             variable_requests: HashMap::new(),
+            variable_owner: None,
+            active_variables: std::collections::HashSet::new(),
+            variable_dependencies: std::collections::HashSet::new(),
             instance_variables: std::collections::VecDeque::new(),
             objects: HashMap::new(),
             data: super::data::Objects::default(),
@@ -1312,8 +1318,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         entity: EntityId,
     ) -> Result<SymbolId, Error> {
-        if let Some(Value::Symbol(symbol)) = self.callees.get(&entity) {
-            return Ok(*symbol);
+        if let Some(&Value::Symbol(symbol)) = self.callees.get(&entity) {
+            self.request_variable_dependency(program, entity, symbol);
+            return Ok(symbol);
         }
         let facts = self.graph.lower_variable(entity)?;
         let mut components = vec![if let Some(name) = facts.name {
@@ -1386,8 +1393,45 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.instance_variables.push_back(entity);
             let request = self.pending.variable();
             self.variable_requests.insert(entity, request);
+            if let Some(owner) = self.variable_owner {
+                self.variable_dependencies.insert((owner, entity));
+            }
         }
         Ok(symbol)
+    }
+    // C++ variable_symbol defines an initializer's dependencies immediately,
+    // including a symbol an earlier expression already made pending. Promote
+    // that dependency into the current definition's isolated queue once; active
+    // definitions keep cyclic address initializers from reentering themselves.
+    fn request_variable_dependency(
+        &mut self,
+        program: &Program,
+        entity: EntityId,
+        symbol: SymbolId,
+    ) {
+        if let Some(owner) = self.variable_owner
+            && self.variable_requests.contains_key(&entity)
+            && !self.active_variables.contains(&entity)
+            && program
+                .global(program.symbol(symbol))
+                .is_none_or(|g| matches!(g.init, crate::lowir::model::GlobalInit::Declaration))
+            && self.variable_dependencies.insert((owner, entity))
+        {
+            // Its old reservation has no children until definition begins.
+            // Fill a reservation under this owner so initializer-demanded
+            // functions also precede the caller's later requests.
+            let request = self.pending.variable();
+            self.variable_requests.insert(entity, request);
+            self.instance_variables.push_back(entity);
+        }
+    }
+    pub(super) fn begin_variable_definition(&mut self, entity: EntityId) -> Option<EntityId> {
+        self.active_variables.insert(entity);
+        self.variable_owner.replace(entity)
+    }
+    pub(super) fn end_variable_definition(&mut self, entity: EntityId, previous: Option<EntityId>) {
+        self.active_variables.remove(&entity);
+        self.variable_owner = previous;
     }
     pub(super) fn variable_request(
         &self,

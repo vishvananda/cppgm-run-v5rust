@@ -92,6 +92,7 @@ pub(super) fn define_variable<'a>(
 ) -> Result<(), Error> {
     symbols.check_stack()?;
     let pending = std::mem::take(&mut symbols.instance_variables);
+    let previous_variable = symbols.begin_variable_definition(entity);
     let request = symbols.variable_request(entity);
     let owner = symbols.pending.replace_owner(request);
     let result = define_variable_contents(
@@ -104,6 +105,7 @@ pub(super) fn define_variable<'a>(
         budget,
     );
     symbols.pending.replace_owner(owner);
+    symbols.end_variable_definition(entity, previous_variable);
     let nested = std::mem::replace(&mut symbols.instance_variables, pending);
     symbols.instance_variables.extend(nested);
     result
@@ -249,7 +251,9 @@ fn define_storage<'a>(
     }
     let constructed = matches!(graph.lower_type(object)?, TypeView::Class(_))
         && (initializer.is_some() && graph.lower_constructor_arguments(entity).is_some()
-            || initializer.is_none() && !graph.lower_trivial_default_construction(entity)?);
+            || initializer.is_none()
+                && !graph.lower_omitted_variable_initialization(entity)
+                && !graph.lower_trivial_default_construction(entity)?);
     let array = matches!(
         graph.lower_type(facts.ty)?,
         TypeView::Array { .. } | TypeView::Class(_)

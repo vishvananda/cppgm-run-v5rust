@@ -1100,6 +1100,9 @@ impl Graph {
     pub(crate) fn lower_variable_arguments(&self, entity: EntityId) -> Option<&[TypeId]> {
         self.variable_instances.templates.arguments(entity)
     }
+    pub(crate) fn lower_omitted_variable_initialization(&self, entity: EntityId) -> bool {
+        self.variable_instances.omitted_initialization(entity)
+    }
     pub(crate) fn lower_instance_initializer(
         &self,
         entity: EntityId,

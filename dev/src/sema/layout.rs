@@ -67,16 +67,26 @@ impl Analyzer<'_> {
         ty: super::types::TypeId,
         location: SourceOffset,
     ) {
+        self.request_object_layout_for(
+            ty,
+            location,
+            self.body_context.as_ref().map(|body| body.entity),
+        );
+    }
+    pub(super) fn request_object_layout_for(
+        &mut self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+        owner: Option<EntityId>,
+    ) {
         let mut object = ty;
         while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
             object = element;
         }
         if matches!(self.graph.types.get(object).kind, TypeKind::Class(_)) {
-            self.graph.storage_layouts.push((
-                self.body_context.as_ref().map(|body| body.entity),
-                StorageDemand::Object(ty),
-                location,
-            ));
+            self.graph
+                .storage_layouts
+                .push((owner, StorageDemand::Object(ty), location));
         }
     }
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {

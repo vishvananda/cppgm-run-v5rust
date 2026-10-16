@@ -52,6 +52,11 @@ pub(super) struct Variables {
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
+    layout_uses: Vec<(EntityId, Option<EntityId>)>,
+    layout_seen: HashSet<(EntityId, Option<EntityId>)>,
+    next_layout: usize,
+    initializer_uses: HashMap<EntityId, Vec<EntityId>>,
+    initializer_seen: HashSet<(EntityId, EntityId)>,
     next: usize,
 }
 impl Variables {
@@ -125,6 +130,25 @@ impl Variables {
         match self.states.get(&entity) {
             Some(State::Complete(initializer)) => Some(*initializer),
             _ => None,
+        }
+    }
+    pub(super) fn omitted_initialization(&self, entity: EntityId) -> bool {
+        self.templates.explicit(entity)
+            && self
+                .initializer(entity)
+                .is_some_and(|d| d.initializer.is_none())
+    }
+    fn request_layout_use(&mut self, entity: EntityId, owner: Option<EntityId>) {
+        if self.layout_seen.insert((entity, owner)) {
+            self.layout_uses.push((entity, owner));
+        }
+    }
+    fn record_initializer_use(&mut self, source: EntityId, target: EntityId) {
+        if self.initializer_seen.insert((source, target)) {
+            self.initializer_uses
+                .entry(source)
+                .or_default()
+                .push(target);
         }
     }
 }
@@ -282,7 +306,7 @@ impl Analyzer<'_> {
         }
         if self.graph.variable_instances.templates.contains(entity) {
             if self.graph.variable_instances.templates.concrete(entity)
-                && (self.template_depth == 0 && self.unevaluated == 0
+                && (self.lowering() && self.template_depth == 0 && self.unevaluated == 0
                     || self.graph.entity(entity).ty.is_some_and(|ty| {
                         self.integral_kind(ty).is_some() && self.graph.lower_cv(ty) & 1 != 0
                             || matches!(
@@ -303,6 +327,7 @@ impl Analyzer<'_> {
                 .home
                 .is_none_or(|home| self.graph.scope(home).kind != super::graph::ScopeKind::Class)
             {
+                self.record_variable_storage_use(entity);
                 return Ok(());
             }
         }
@@ -324,11 +349,103 @@ impl Analyzer<'_> {
         {
             self.instantiate_variable(entity)?;
         }
+        self.record_variable_storage_use(entity);
         if self.unevaluated == 0
             && self.template_arguments == 0
             && self.graph.variable_instances.seen.insert(entity)
         {
             self.graph.variable_instances.demands.push(entity);
+        }
+        Ok(())
+    }
+    fn record_variable_storage_use(&mut self, entity: EntityId) {
+        if !self.lowering()
+            || self.template_depth != 0
+            || self.unevaluated != 0
+            || self.template_arguments != 0
+        {
+            return;
+        }
+        let owner = self.body_context.as_ref().map(|body| body.entity);
+        if let Some(initializing) = self.initializing {
+            self.graph
+                .variable_instances
+                .record_initializer_use(initializing, entity);
+            // A template initializer is not a storage root. Its final static
+            // image (or dynamic dependencies) is followed only if it is used.
+            if !self.graph.variable_instances.instance(initializing)
+                && self.graph.entity(initializing).template_head.is_none()
+                && self.graph.entity(initializing).data_member
+                    != Some(super::graph::DataMemberKind::Instance)
+            {
+                self.graph
+                    .variable_instances
+                    .request_layout_use(initializing, owner);
+            }
+        } else if owner.is_some()
+            && !(matches!(self.graph.entity(entity).constant, ConstantState::Value(_))
+                && self
+                    .graph
+                    .entity(entity)
+                    .ty
+                    .is_some_and(|ty| self.integral_kind(ty).is_some() && !self.scoped_enum(ty)))
+        {
+            self.graph
+                .variable_instances
+                .request_layout_use(entity, owner);
+        }
+    }
+    // Process only newly demanded storage after static images are ready. This
+    // graph is keyed by object and demanding function: an unused inline body
+    // cannot consume another function's layout demand. Constant results prune
+    // incidental initializer uses that never become emitted addresses.
+    pub(super) fn finish_variable_storage_layouts(&mut self) -> Result<(), Error> {
+        use super::{static_arrays::Item, static_initialization::Value};
+        while let Some(&(entity, owner)) = self
+            .graph
+            .variable_instances
+            .layout_uses
+            .get(self.graph.variable_instances.next_layout)
+        {
+            self.graph.variable_instances.next_layout += 1;
+            if self.graph.variable_instances.omitted_initialization(entity) {
+                let location = self
+                    .graph
+                    .variable_instances
+                    .templates
+                    .location(entity)
+                    .ok_or(Error::Invariant("specialization storage without location"))?;
+                let ty = self.graph.lower_entity_type(entity)?;
+                self.request_object_layout_for(ty, location, owner);
+            }
+            if let Some(value) = self.graph.entity(entity).static_initializer {
+                if let Value::Address(target, _) = value {
+                    self.graph
+                        .variable_instances
+                        .request_layout_use(target, owner);
+                }
+            } else if let Some(image) = self.graph.array_images.get(entity) {
+                let variables = &mut self.graph.variable_instances;
+                for item in image {
+                    if let Item::Scalar(_, Value::Address(target, _)) = item {
+                        variables.request_layout_use(*target, owner);
+                    }
+                }
+            } else {
+                // Dynamic initialization still evaluates its recorded operands.
+                let count = self
+                    .graph
+                    .variable_instances
+                    .initializer_uses
+                    .get(&entity)
+                    .map_or(0, Vec::len);
+                for index in 0..count {
+                    let target = self.graph.variable_instances.initializer_uses[&entity][index];
+                    self.graph
+                        .variable_instances
+                        .request_layout_use(target, owner);
+                }
+            }
         }
         Ok(())
     }
@@ -340,6 +457,21 @@ impl Analyzer<'_> {
             .get(self.graph.variable_instances.next)
         {
             self.graph.variable_instances.next += 1;
+            self.instantiate_variable(entity)?;
+        }
+        Ok(())
+    }
+    // constant_evaluator.cpp::variable_value: naming a fixed-type variable in
+    // semantics mode needs no initializer; reading its constant value does.
+    pub(super) fn instantiate_variable_value(&mut self, entity: EntityId) -> Result<(), Error> {
+        let node = self.graph.entity(entity);
+        if self.graph.variable_instances.instance(entity)
+            && (node.constexpr
+                || node.ty.is_some_and(|ty| {
+                    self.graph.lower_cv(ty) & 1 != 0
+                        || matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+                }))
+        {
             self.instantiate_variable(entity)?;
         }
         Ok(())
