@@ -43,6 +43,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) c_language: bool,
     pub(super) linkage_specification: Option<super::linkage::Specification>,
     pub(super) template_head: Option<super::templates::HeadId>,
+    pub(super) template_owner: Option<super::graph::EntityId>,
     pub(super) namespace_friend_class: Option<ScopeId>,
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
@@ -184,6 +185,7 @@ impl<'tree> Analyzer<'tree> {
             c_language: false,
             linkage_specification: None,
             template_head: None,
+            template_owner: None,
             namespace_friend_class: None,
             constant_spine: Vec::new(),
             constant_discard_work: Vec::new(),
@@ -613,6 +615,12 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_none() {
+            self.graph
+                .function_templates
+                .bodies
+                .record_member_definition(body, self.graph.binding_limit());
+        }
         if self.defer_instance_member(body) {
             return Ok(());
         }

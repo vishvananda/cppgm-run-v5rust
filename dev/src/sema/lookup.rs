@@ -130,7 +130,7 @@ impl Analyzer<'_> {
             ambiguous: false,
         }
     }
-    fn class_lookup(
+    pub(super) fn class_lookup(
         &self,
         scope: ScopeId,
         key: ValueKey,
@@ -321,7 +321,19 @@ impl Analyzer<'_> {
         let mut visited = HashSet::new();
         let mut pending = Vec::new();
         let mut current = Some(scope);
+        let mut bridged = false;
+        let mut outside = false;
         while let Some(scope) = current {
+            let node = self.graph.scope(scope);
+            if node.kind == ScopeKind::TemplateParameters {
+                if outside {
+                    current = node.parent;
+                    continue;
+                }
+                bridged |= node.template_bridge;
+            } else {
+                outside = bridged;
+            }
             let mut result = self.class_lookup(scope, name, filter)?;
             let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
             while let Some(nominated) = frontier.pop() {

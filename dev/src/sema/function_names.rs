@@ -521,7 +521,7 @@ impl Analyzer<'_> {
                 "static on a member function's declaration outside its class",
             ));
         }
-        let head = self.active_template_head(scope);
+        let head = self.member_template_head(scope, Some(home));
         if head.is_some() {
             if self.graph.scope(home).kind == ScopeKind::Class
                 && specs.virtuality == Virtuality::Virtual

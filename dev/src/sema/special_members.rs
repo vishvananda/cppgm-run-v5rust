@@ -267,6 +267,8 @@ impl Analyzer<'_> {
                     super::construction::ConstructorExceptionSource::SubobjectPlan;
             }
             if first {
+                self.graph.entity_mut(function).inline =
+                    super::specifiers::InlinePreference::Inline;
                 self.graph.entity_mut(function).definition_emission =
                     super::function_demands::DefinitionEmission::Demanded;
             } else if self.semantic() && self.template_depth == 0 {
@@ -457,7 +459,7 @@ impl Analyzer<'_> {
                 "static on a member function's declaration outside its class",
             ));
         }
-        let head = self.active_template_head(scope);
+        let head = self.member_template_head(scope, Some(owner));
         if head.is_some() && specs.virtuality == Virtuality::Virtual {
             return Err(Error::at(location, "a virtual member function template"));
         }

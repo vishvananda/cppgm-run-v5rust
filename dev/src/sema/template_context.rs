@@ -30,6 +30,7 @@ struct Context {
     access: DeclarationAccess,
     body: Option<BodyContext>,
     head: Option<HeadId>,
+    owner: Option<EntityId>,
     default_scope: Option<ScopeId>,
     friend: Option<ScopeId>,
     initializing: Option<EntityId>,
@@ -52,6 +53,7 @@ impl Context {
         swap(&mut self.access, &mut analyzer.declaration_access);
         swap(&mut self.body, &mut analyzer.body_context);
         swap(&mut self.head, &mut analyzer.template_head);
+        swap(&mut self.owner, &mut analyzer.template_owner);
         swap(
             &mut self.default_scope,
             &mut analyzer.default_argument_scope,

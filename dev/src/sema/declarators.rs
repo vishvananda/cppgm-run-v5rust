@@ -23,6 +23,7 @@ pub(super) struct DeclaratorEnvironment {
     pub home: Option<ScopeId>,
     pub lookup: ScopeId,
     pub declaring: ScopeId,
+    pub print: ScopeId,
     pub declaration_location: Option<crate::support::source::SourceOffset>,
 }
 pub(super) struct DeclaratorInfo {
@@ -130,11 +131,7 @@ impl Analyzer<'_> {
             if let Some(named) = node.name {
                 home = self.prefix(named, scope)?;
                 after = if let Some(home) = home {
-                    if self.active_template_head(scope).is_some() {
-                        self.qualified_template_scope(scope, home)?
-                    } else {
-                        home
-                    }
+                    self.member_lookup_bridge(scope, home)?
                 } else {
                     scope
                 };
@@ -150,6 +147,7 @@ impl Analyzer<'_> {
             home,
             lookup: after,
             declaring: self.declaration_scope(scope),
+            print: scope,
             declaration_location: None,
         })
     }
@@ -192,6 +190,7 @@ impl Analyzer<'_> {
             home,
             lookup: after,
             declaring,
+            print,
             declaration_location,
             auto_operators,
             placeholder_function,
@@ -359,14 +358,6 @@ impl Analyzer<'_> {
             && let Some(name) = name
         {
             self.graph.scope_mut(prototype).name = Some(name);
-            let print = if self.template_depth != 0 {
-                self.graph
-                    .scope(prototype)
-                    .parent
-                    .unwrap_or(environment.declaring)
-            } else {
-                environment.declaring
-            };
             self.graph.scope_mut(print).children.push(prototype);
         }
         // A suffix view is a query result, not the original declarator's fact.
@@ -796,6 +787,12 @@ impl Analyzer<'_> {
                 }
                 if binding.kind == super::graph::BindingKind::Type
                     && entity.template_head.is_some()
+                    && self
+                        .tree
+                        .name_lists
+                        .get(node.components)
+                        .last()
+                        .is_some_and(|last| last.arguments.is_none())
                     && !entity.scope.is_some_and(|home| {
                         entity.name.is_some_and(|name| {
                             self.graph

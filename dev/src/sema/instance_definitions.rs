@@ -27,6 +27,7 @@ pub(super) struct Definitions {
     patterns: HashMap<EntityId, Pattern>,
     states: HashMap<EntityId, State>,
     members: HashMap<EntityId, Pattern>,
+    sources: HashMap<EntityId, EntityId>,
 }
 impl Analyzer<'_> {
     pub(super) fn record_class_pattern(
@@ -35,18 +36,68 @@ impl Analyzer<'_> {
         syntax: ast::ClassId,
         parent: ScopeId,
     ) {
-        if self.graph.entity(entity).template_head.is_some()
-            && let Some(head) = self.template_head
-        {
+        if self.template_depth != 0 {
+            let head = if self.graph.entity(entity).template_head.is_some()
+                || self.graph.scope(parent).kind == ScopeKind::TemplateParameters
+            {
+                self.template_head
+            } else {
+                None
+            };
             self.graph.class_templates.definitions.patterns.insert(
                 entity,
                 Pattern {
                     syntax,
-                    head: Some(head),
+                    head,
                     parent,
                     limit: self.graph.binding_limit(),
                 },
             );
+        }
+    }
+
+    pub(super) fn record_member_class_source(
+        &mut self,
+        entity: EntityId,
+        name: Option<crate::lex::identifiers::NameId>,
+        home: ScopeId,
+    ) {
+        let Some(name) = name else { return };
+        if self.template_depth != 0 || !self.graph.within_class_instance(home) {
+            return;
+        }
+        let Some(owner) = self.graph.scope(home).owner else {
+            return;
+        };
+        let source = self
+            .graph
+            .class_templates
+            .instance(owner)
+            .map(|instance| instance.primary)
+            .or_else(|| {
+                self.graph
+                    .class_templates
+                    .definitions
+                    .sources
+                    .get(&owner)
+                    .copied()
+            });
+        let Some(scope) = source.and_then(|source| self.graph.entity(source).scope) else {
+            return;
+        };
+        if let Some(binding) = self
+            .graph
+            .own(scope, name, super::lookup::Filter::Elaborated)
+        {
+            let source = self.graph.binding(binding).entity;
+            self.graph
+                .class_templates
+                .definitions
+                .sources
+                .insert(entity, source);
+            self.graph
+                .instantiation_levels
+                .record(entity, self.instantiation_depth);
         }
     }
 
@@ -118,6 +169,16 @@ impl Analyzer<'_> {
                 return Ok(false);
             };
             (pattern, instance.arguments.clone())
+        } else if let Some(pattern) = self
+            .graph
+            .class_templates
+            .definitions
+            .sources
+            .get(&entity)
+            .and_then(|source| self.graph.class_templates.definitions.patterns.get(source))
+            .copied()
+        {
+            (pattern, Vec::new())
         } else if let Some(&pattern) = self.graph.class_templates.definitions.members.get(&entity) {
             (pattern, Vec::new())
         } else {
@@ -133,12 +194,29 @@ impl Analyzer<'_> {
             self.tree.classes.get(pattern.syntax).location,
             pattern.limit,
             |analyzer| {
-                let frame = analyzer.class_definition_frame(pattern, &arguments)?;
+                let frame = if analyzer
+                    .graph
+                    .class_templates
+                    .definitions
+                    .sources
+                    .contains_key(&entity)
+                {
+                    let owner = analyzer
+                        .graph
+                        .entity(entity)
+                        .home
+                        .ok_or(Error::Invariant("member class without owner"))?;
+                    analyzer.outside_class_frame(owner, pattern.head, pattern.parent)?
+                } else {
+                    analyzer.class_definition_frame(pattern, &arguments)?
+                };
                 let copy = Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
                     .class_definition(pattern.syntax)
                     .map_err(|error| super::template_bodies::copy_error(&error))?;
                 let node = *analyzer.tree.classes.get(copy);
-                analyzer.class_body(node, entity, frame, None).map(|_| ())
+                analyzer.class_body(node, entity, frame, None)?;
+                analyzer.link_member_patterns(pattern.syntax, copy);
+                Ok(())
             },
         );
         if result.is_ok() {

@@ -612,7 +612,9 @@ impl Graph {
         // Ordinary demand-only entries include implicitly inline synthesized
         // members. A template specialization also has weak emission when its
         // primary has no inline specifier, so it retains that separate fact.
-        if self.function_templates.primary(entity).is_some() {
+        if self.function_templates.primary(entity).is_some()
+            || self.function_templates.bodies.member(entity)
+        {
             self.entity(entity).inline == super::specifiers::InlinePreference::Inline
         } else {
             self.entity(entity).definition_emission

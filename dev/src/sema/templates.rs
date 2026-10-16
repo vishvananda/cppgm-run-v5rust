@@ -31,7 +31,6 @@ struct Position {
 }
 #[derive(Clone, Copy)]
 pub(super) struct ParameterInfo {
-    scope: ScopeId,
     position: Position,
     inner: Option<HeadId>,
 }
@@ -41,6 +40,10 @@ impl ParameterInfo {
     }
     pub(super) fn index(self, depth: u32) -> Option<usize> {
         (self.position.depth == depth).then_some(usize::from(self.position.index))
+    }
+    pub(super) fn ordinal(self) -> Option<usize> {
+        self.ordinary_type()
+            .then_some(usize::from(self.position.index))
     }
     pub(super) fn ordinary_type(self) -> bool {
         !self.position.shape.pack && self.inner.is_none()
@@ -151,6 +154,9 @@ impl Analyzer<'_> {
                     "a template parameter redeclared within its scope",
                 ));
             }
+            if current.template_bridge {
+                return Ok(());
+            }
             let Some(parent) = current.parent else {
                 return Ok(());
             };
@@ -226,7 +232,12 @@ impl Analyzer<'_> {
             let head = self.template_parameters(parameters, parameter_scope, true)?;
             let saved = self.template_head.replace(head);
             self.template_depth += 1;
-            let result = self.declaration(declaration, parameter_scope);
+            let saved_owner = self.template_owner;
+            let result = (|| {
+                self.template_owner = self.qualifying_template(declaration, parameter_scope)?;
+                self.declaration(declaration, parameter_scope)
+            })();
+            self.template_owner = saved_owner;
             self.template_depth -= 1;
             self.template_head = saved;
             result
@@ -330,11 +341,8 @@ impl Analyzer<'_> {
                 self.graph.templates.positions.insert(position, canonical);
                 canonical
             };
-            self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
-                scope,
-                position,
-                inner,
-            });
+            self.graph.entity_mut(entity).template_parameter =
+                Some(ParameterInfo { position, inner });
             self.graph.entity_mut(canonical).template_parameter =
                 self.graph.entity(entity).template_parameter;
             self.graph.types.record_parameter_entity(entity, canonical);
@@ -419,9 +427,7 @@ impl Analyzer<'_> {
         existed: bool,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let current = self
-            .template_head
-            .filter(|&id| self.graph.templates.head(id).scope == scope);
+        let current = self.member_template_head(scope, self.graph.entity(entity).home);
         let earlier = self.graph.entity(entity).template_head;
         let Some(head) = current else {
             if earlier.is_some() {
@@ -615,36 +621,5 @@ impl Analyzer<'_> {
             self.graph.entity_mut(entity).template_head = Some(head);
         }
         Ok(())
-    }
-    pub(super) fn qualified_template_scope(
-        &mut self,
-        scope: ScopeId,
-        home: ScopeId,
-    ) -> Result<ScopeId, Error> {
-        let head = self
-            .active_template_head(scope)
-            .ok_or(Error::Invariant("qualified template without head"))?;
-        let bridge = self
-            .graph
-            .add_scope(ScopeKind::TemplateParameters, home, None, None)?;
-        let count = self.graph.templates.head(head).parameters.len();
-        for index in 0..count {
-            let entity = self.graph.templates.head(head).parameters[index];
-            if let Some(name) = self.graph.entity(entity).name {
-                let original = self
-                    .graph
-                    .entity(entity)
-                    .template_parameter
-                    .ok_or(Error::Invariant("head without parameter"))?
-                    .scope;
-                let binding = self
-                    .graph
-                    .own(original, name, Filter::Ordinary)
-                    .ok_or(Error::Invariant("parameter without binding"))?;
-                self.graph
-                    .add_binding(bridge, None, self.graph.binding(binding))?;
-            }
-        }
-        Ok(bridge)
     }
 }

@@ -4,6 +4,7 @@ use super::{
     Analyzer, Error, Graph,
     analyzer::DeferredBody,
     graph::{Binding, BindingKind, EntityId, ScopeKind},
+    special_members::SpecialDefinition,
 };
 use crate::{
     support::stack::StackBudget,
@@ -20,22 +21,31 @@ struct Pattern {
 #[derive(Clone, Copy)]
 enum State {
     InProgress,
+    Unavailable,
     Complete(ast::BodyId),
 }
 #[derive(Default)]
 pub(super) struct Bodies {
     patterns: HashMap<EntityId, Pattern>,
     members: HashMap<EntityId, (DeferredBody, usize)>,
+    member_links: HashMap<EntityId, EntityId>,
+    member_definitions: HashMap<EntityId, (DeferredBody, usize)>,
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
 }
 impl Bodies {
     pub(super) fn pending_member(&self, entity: EntityId) -> bool {
-        self.members.contains_key(&entity) && !self.states.contains_key(&entity)
+        self.member(entity) && !self.states.contains_key(&entity)
     }
     pub(super) fn member(&self, entity: EntityId) -> bool {
-        self.members.contains_key(&entity)
+        self.members.contains_key(&entity) || self.member_links.contains_key(&entity)
+    }
+    pub(super) fn link_member(&mut self, source: EntityId, target: EntityId) {
+        self.member_links.insert(target, source);
+    }
+    pub(super) fn record_member_definition(&mut self, body: DeferredBody, limit: usize) {
+        self.member_definitions.insert(body.entity, (body, limit));
     }
     pub(super) fn demand(&mut self, entity: EntityId) {
         if self.seen.insert(entity) {
@@ -122,6 +132,27 @@ pub(crate) fn analyze_unit(
         {
             continue;
         }
+        if graph
+            .function_templates
+            .bodies
+            .member_links
+            .contains_key(&entity)
+            && !graph
+                .function_templates
+                .bodies
+                .members
+                .contains_key(&entity)
+            && !graph.function_templates.bodies.states.contains_key(&entity)
+        {
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            analyzer.set_semantics(true);
+            if lowering {
+                analyzer.set_lowering();
+            }
+            analyzer.stack_base = base;
+            analyzer.prepare_member_definition(entity)?;
+            graph = analyzer.finish_analysis(false)?;
+        }
         if let Some(&(pattern, limit)) = graph.function_templates.bodies.members.get(&entity) {
             if graph.function_templates.bodies.states.contains_key(&entity) {
                 continue;
@@ -144,6 +175,18 @@ pub(crate) fn analyze_unit(
                 analyzer.set_lowering();
             }
             analyzer.stack_base = base;
+            let special = analyzer.graph.entity(entity).special_definition;
+            analyzer.graph.entity_mut(entity).special_definition = match special {
+                Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
+                Some(SpecialDefinition::Defaulted {
+                    first,
+                    body: Some(_),
+                }) => Some(SpecialDefinition::Defaulted {
+                    first,
+                    body: Some(body),
+                }),
+                other => other,
+            };
             let location = match analyzer.tree.bodies.get(body) {
                 ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
                 ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
@@ -166,6 +209,12 @@ pub(crate) fn analyze_unit(
                 .bodies
                 .states
                 .insert(entity, State::Complete(body));
+            continue;
+        }
+        if matches!(
+            graph.function_templates.bodies.states.get(&entity),
+            Some(State::Unavailable)
+        ) {
             continue;
         }
         let primary = graph
@@ -255,6 +304,63 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     }
 }
 impl Analyzer<'_> {
+    fn prepare_member_definition(&mut self, entity: EntityId) -> Result<(), Error> {
+        let source = *self
+            .graph
+            .function_templates
+            .bodies
+            .member_links
+            .get(&entity)
+            .ok_or(Error::Invariant("member demand without pattern link"))?;
+        let Some(&(pattern, limit)) = self
+            .graph
+            .function_templates
+            .bodies
+            .member_definitions
+            .get(&source)
+        else {
+            self.graph
+                .function_templates
+                .bodies
+                .states
+                .insert(entity, State::Unavailable);
+            return Ok(());
+        };
+        let parent = self.outside_member_frame(entity, pattern)?;
+        let owner = self
+            .graph
+            .entity(entity)
+            .home
+            .ok_or(Error::Invariant("member without owner"))?;
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("member without type"))?;
+        let definition = DeferredBody {
+            entity,
+            ty,
+            parent,
+            print: owner,
+            template_depth: 0,
+            definition_head: None,
+            ..pattern
+        };
+        let from = self.graph.entity(source);
+        let (special, syntax) = (from.special_definition, from.function_definition);
+        let target = self.graph.entity_mut(entity);
+        target.defined = true;
+        target.special_definition = special;
+        target.function_definition = syntax;
+        target.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        self.graph
+            .function_templates
+            .bodies
+            .members
+            .insert(entity, (definition, limit));
+        Ok(())
+    }
+
     pub(super) fn defer_instance_member(&mut self, body: DeferredBody) -> bool {
         if body.template_depth == 0
             && !self
@@ -419,6 +525,54 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn outside_members_share_pattern_links_but_own_only_demanded_copies() {
+        let source = SourceBuffer::new(
+            b"template<class Original>struct Owner{int get();int bad();};\
+              template<class Renamed>int Owner<Renamed>::get(){return sizeof(Renamed);}\
+              template<class U>int Owner<U>::bad(){return U::missing;}\
+              int main(){Owner<int>a;Owner<char>b;return a.get()+a.get()+b.get();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"outside-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let bodies = &graph.function_templates.bodies;
+        assert_eq!(bodies.member_links.len(), 4);
+        assert_eq!(bodies.member_definitions.len(), 2);
+        assert_eq!(bodies.members.len(), 2);
+        assert_eq!(bodies.states.len(), 2);
+        let mut copies = HashSet::new();
+        for (&entity, &(definition, _)) in &bodies.members {
+            let source = bodies.member_links[&entity];
+            let original = bodies.member_definitions[&source].0;
+            let copy = bodies.body(entity).unwrap();
+            assert!(copies.insert(copy));
+            assert_ne!(copy, original.body);
+            assert!(definition.definition_head.is_none());
+            assert_eq!(definition.template_depth, 0);
+            assert_eq!(
+                graph.scope(definition.parent).kind,
+                ScopeKind::TemplateParameters
+            );
+            assert!(
+                graph.entity(entity).inline
+                    == super::super::specifiers::InlinePreference::Unspecified
+            );
+        }
+    }
 
     #[test]
     fn class_member_bodies_copy_only_on_demand_with_distinct_facts() {

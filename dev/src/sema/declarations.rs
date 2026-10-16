@@ -1328,6 +1328,7 @@ impl Analyzer<'_> {
             .intern(TypeKind::Class(entity), Cv::default())?;
         self.graph.entity_mut(entity).ty = Some(ty);
         self.record_local_class(entity, home)?;
+        self.record_member_class_source(entity, name, home);
         Ok(entity)
     }
     pub(super) fn elaborated_class_entity(
@@ -1521,7 +1522,7 @@ impl Analyzer<'_> {
         self.class_template_head(entity, scope, existing.is_some(), qualified_name.location)?;
         let print = prefix.unwrap_or(scope);
         let parent = if prefix.is_some() && self.active_template_head(scope).is_some() {
-            self.qualified_template_scope(scope, home)?
+            self.member_lookup_bridge(scope, home)?
         } else {
             print
         };

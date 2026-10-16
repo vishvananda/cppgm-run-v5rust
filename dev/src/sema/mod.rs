@@ -69,6 +69,7 @@ mod lookup;
 pub(crate) mod lowering;
 mod member_construction;
 mod member_expressions;
+mod member_patterns;
 mod name_keys;
 mod operator_candidates;
 mod operator_resolution;

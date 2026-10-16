@@ -118,23 +118,29 @@ impl Analyzer<'_> {
             .class_templates
             .instance(self.graph.binding(result).entity)
             .ok_or(Error::Invariant("template-id without instance"))?;
-        let own = instance.arguments.len() == count
-            && instance
-                .arguments
-                .iter()
-                .zip(self.graph.templates.parameters(head))
-                .all(|(&ty, &parameter)| {
-                    self.graph
-                        .entity(parameter)
-                        .ty
-                        .is_some_and(|pattern| self.graph.types.canonical_view(pattern) == ty)
-                });
-        if own
-            && self
+        let arguments = instance.arguments.clone();
+        let mut own = arguments.len() == count;
+        for (index, &argument) in arguments.iter().enumerate().take(count) {
+            let parameter = self.graph.templates.parameters(head)[index];
+            let pattern = self
                 .graph
-                .entity(primary)
-                .scope
-                .is_some_and(|class| self.graph.encloses(class, scope))
+                .entity(parameter)
+                .ty
+                .ok_or(Error::Invariant("class parameter without type"))?;
+            own &= self.graph.types.canonical_function(pattern)? == argument;
+        }
+        if own
+            && self.graph.entity(primary).scope.is_some_and(|class| {
+                self.graph.encloses(class, scope)
+                    || self.template_owner.is_some_and(|owner| {
+                        owner == primary
+                            || self
+                                .graph
+                                .entity(owner)
+                                .home
+                                .is_some_and(|home| self.graph.encloses(class, home))
+                    })
+            })
         {
             return Ok(Some(found));
         }
