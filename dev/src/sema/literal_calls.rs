@@ -46,6 +46,7 @@ impl Analyzer<'_> {
                         TypeKind::Array {
                             element,
                             bound: u64::from(elements),
+                            operand: None,
                         },
                         Cv::default(),
                     )?,
@@ -94,6 +95,7 @@ impl Analyzer<'_> {
                     TypeKind::Array {
                         element: unit,
                         bound: u64::from(elements),
+                        operand: None,
                     },
                     Cv::default(),
                 )?;

@@ -314,32 +314,9 @@ impl Analyzer<'_> {
                 let suffix = &syntax_item;
                 match *suffix {
                     ast::Suffix::Array(bound) => {
-                        if self.holds_auto(ty) {
-                            return Err(Error::at(node.location, "array of auto"));
-                        }
                         parameters = None;
                         function_qualifiers = None;
-                        let failure = match self.graph.types.get(ty).kind {
-                            TypeKind::Reference { .. } => Some("array of references"),
-                            TypeKind::Function { .. } => Some("array of functions"),
-                            TypeKind::Scalar(Scalar::Void) => Some("array of void"),
-                            TypeKind::Array { bound: 0, .. } => {
-                                Some("array of arrays of unknown bound")
-                            }
-                            _ => None,
-                        };
-                        if let Some(message) = failure {
-                            return Err(Error::at(node.location, message));
-                        }
-                        self.check_abstract_object(ty, node.location)?;
-                        let bound = bound
-                            .map(|bound| self.array_bound(bound, after))
-                            .transpose()?
-                            .unwrap_or(0);
-                        ty = self
-                            .graph
-                            .types
-                            .intern(TypeKind::Array { element: ty, bound }, Cv::default())?;
+                        ty = self.array_suffix(ty, bound, after, node.location)?;
                     }
                     ast::Suffix::Function {
                         parameters: clause,
@@ -407,6 +384,52 @@ impl Analyzer<'_> {
             qualifiers: function_qualifiers,
             syntax_name,
         })
+    }
+
+    fn array_suffix(
+        &mut self,
+        ty: TypeId,
+        bound: Option<ast::ExprId>,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<TypeId, Error> {
+        if self.holds_auto(ty) {
+            return Err(Error::at(location, "array of auto"));
+        }
+        let failure = match self.graph.types.get(ty).kind {
+            TypeKind::Reference { .. } => Some("array of references"),
+            TypeKind::Function { .. } => Some("array of functions"),
+            TypeKind::Scalar(Scalar::Void) => Some("array of void"),
+            TypeKind::Array {
+                bound: 0,
+                operand: None,
+                ..
+            } => Some("array of arrays of unknown bound"),
+            _ => None,
+        };
+        if let Some(message) = failure {
+            return Err(Error::at(location, message));
+        }
+        self.check_abstract_object(ty, location)?;
+        let count = bound
+            .map(|bound| self.array_bound(bound, scope))
+            .transpose()?
+            .unwrap_or(0);
+        let operand = if count == 0 && self.template_depth != 0 {
+            bound
+                .map(|expression| self.dependent_operand(expression, scope, false))
+                .transpose()?
+        } else {
+            None
+        };
+        self.graph.types.intern(
+            TypeKind::Array {
+                element: ty,
+                bound: count,
+                operand,
+            },
+            Cv::default(),
+        )
     }
 
     fn exception_derivation(

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 pub(super) fn class_elements(graph: &Graph, mut ty: TypeId) -> Option<(EntityId, u64)> {
     let mut count = 1u64;
-    while let TypeKind::Array { element, bound } = graph.types.get(ty).kind {
+    while let TypeKind::Array { element, bound, .. } = graph.types.get(ty).kind {
         count = count.wrapping_mul(bound);
         ty = element;
     }

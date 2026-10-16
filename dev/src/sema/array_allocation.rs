@@ -69,6 +69,7 @@ impl Analyzer<'_> {
                         TypeKind::Array {
                             element: target,
                             bound: 0,
+                            operand: None,
                         },
                         super::types::Cv::default(),
                     )?;
@@ -334,7 +335,7 @@ mod tests {
         assert_eq!(original.ty, original.conversion.unwrap().target);
         let prefix = array.prefix.unwrap();
         assert!(
-            matches!(graph.types.get(prefix).kind, TypeKind::Array{element,bound:2} if element==use_.target)
+            matches!(graph.types.get(prefix).kind, TypeKind::Array{element,bound:2, operand: None } if element==use_.target)
         );
         assert!(matches!(
             graph.types.get(use_.target).kind,

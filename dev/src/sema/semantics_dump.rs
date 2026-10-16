@@ -896,7 +896,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         initializer: ast::Initializer,
         depth: usize,
     ) -> io::Result<bool> {
-        let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind else {
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(ty).kind else {
             return Ok(false);
         };
         let (ast::InitializerKind::Assign(mut id) | ast::InitializerKind::Braced(mut id)) =

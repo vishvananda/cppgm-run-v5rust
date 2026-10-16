@@ -65,7 +65,10 @@ pub(super) enum TypeKind {
     },
     Array {
         element: TypeId,
+        // Zero means unknown; a retained operand instead makes the bound
+        // dependent. Concrete bounds never retain an operand.
         bound: u64,
+        operand: Option<TypeId>,
     },
     Function {
         result: TypeId,
@@ -191,8 +194,13 @@ impl Types {
         // Cv on an array belongs to its element; use explicit frames so an
         // arbitrarily long alias chain cannot exhaust the native stack.
         let mut bounds = Vec::new();
-        while let TypeKind::Array { element, bound } = self.get(id).kind {
-            bounds.push(bound);
+        while let TypeKind::Array {
+            element,
+            bound,
+            operand,
+        } = self.get(id).kind
+        {
+            bounds.push((bound, operand));
             id = element;
         }
         if !matches!(self.get(id).kind, TypeKind::Reference { .. }) {
@@ -203,8 +211,15 @@ impl Types {
                 id = self.intern(kind, cv)?;
             }
         }
-        for bound in bounds.into_iter().rev() {
-            id = self.intern(TypeKind::Array { element: id, bound }, Cv::default())?;
+        for (bound, operand) in bounds.into_iter().rev() {
+            id = self.intern(
+                TypeKind::Array {
+                    element: id,
+                    bound,
+                    operand,
+                },
+                Cv::default(),
+            )?;
         }
         Ok(id)
     }
@@ -323,9 +338,15 @@ impl Types {
             if !finish {
                 work.push((id, true));
                 match &self.get(id).kind {
-                    TypeKind::Pointer(element)
-                    | TypeKind::Reference { element, .. }
-                    | TypeKind::Array { element, .. } => work.push((*element, false)),
+                    TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                        work.push((*element, false));
+                    }
+                    TypeKind::Array {
+                        element, operand, ..
+                    } => {
+                        work.push((*element, false));
+                        work.extend(operand.map(|operand| (operand, false)));
+                    }
                     TypeKind::MemberPointer { owner, element } => {
                         work.push((*owner, false));
                         work.push((*element, false));
@@ -357,9 +378,16 @@ impl Types {
                     element: self.canonical_child(element, declaration)?,
                     kind,
                 },
-                TypeKind::Array { element, bound } => TypeKind::Array {
+                TypeKind::Array {
+                    element,
+                    bound,
+                    operand,
+                } => TypeKind::Array {
                     element: self.canonical_child(element, declaration)?,
                     bound,
+                    operand: operand
+                        .map(|operand| self.canonical_child(operand, declaration))
+                        .transpose()?,
                 },
                 TypeKind::Function {
                     result,
@@ -419,10 +447,12 @@ impl Types {
             TypeKind::Array {
                 element: a,
                 bound: x,
+                operand: None,
             },
             TypeKind::Array {
                 element: b,
                 bound: y,
+                operand: None,
             },
         ) = (&self.get(first).kind, &self.get(second).kind)
             && a == b

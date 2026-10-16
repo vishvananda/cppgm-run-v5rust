@@ -127,7 +127,7 @@ impl Analyzer<'_> {
         }
         let key = (ty, depth);
         let mut count = 1_u64;
-        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+        while let TypeKind::Array { element, bound, .. } = self.graph.types.get(ty).kind {
             count = count.saturating_mul(bound.max(1));
             if count > VALUE_BUDGET {
                 return Ok(VALUE_BUDGET + 1);
@@ -172,7 +172,7 @@ impl Analyzer<'_> {
         out: &mut Placements,
     ) -> Result<bool, Error> {
         self.check_stack()?;
-        if let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+        if let TypeKind::Array { element, bound, .. } = self.graph.types.get(ty).kind {
             // An absent array initializer is not an evaluated value-initialization.
             let arguments = if initializer.is_none() && value_initialized {
                 super::call_arguments::Arguments::Empty
@@ -731,7 +731,7 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            TypeKind::Array { element, bound } => {
+            TypeKind::Array { element, bound, .. } => {
                 let size = self.type_size(element, SourceOffset(0))?.0;
                 for index in 0..bound {
                     let at = index

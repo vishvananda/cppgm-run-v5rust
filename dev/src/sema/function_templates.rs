@@ -336,23 +336,45 @@ impl Analyzer<'_> {
                     )
                 }
             }
-            TypeKind::Array { element, bound } => {
+            TypeKind::Array {
+                element,
+                mut bound,
+                mut operand,
+            } => {
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);
                 };
+                if let Some(pattern) = operand
+                    && environment.arguments.iter().all(|argument| {
+                        argument.is_some_and(|ty| !self.exception_dependent_type(ty))
+                    })
+                {
+                    let Some(count) = self.substitute_array_bound(pattern, environment)? else {
+                        return Ok(None);
+                    };
+                    bound = count;
+                    operand = None;
+                }
                 if matches!(
                     self.graph.types.get(element).kind,
                     TypeKind::Reference { .. }
                         | TypeKind::Function { .. }
                         | TypeKind::Scalar(Scalar::Void)
-                ) {
+                ) || !self.exception_dependent_type(element)
+                    && matches!(self.graph.types.get(element).kind, TypeKind::Class(class)
+                        if self.graph.entity(class).complete
+                            && self.graph.virtuals.abstract_class(class))
+                {
                     None
                 } else {
-                    Some(
-                        self.graph
-                            .types
-                            .intern(TypeKind::Array { element, bound }, cv)?,
-                    )
+                    Some(self.graph.types.intern(
+                        TypeKind::Array {
+                            element,
+                            bound,
+                            operand,
+                        },
+                        cv,
+                    )?)
                 }
             }
             TypeKind::Function { .. } => {
@@ -635,12 +657,15 @@ impl Analyzer<'_> {
                 TypeKind::Array {
                     element: p,
                     bound: pb,
+                    operand,
                 },
                 TypeKind::Array {
                     element: a,
                     bound: ab,
+                    ..
                 },
-            ) => Ok(pb == ab && self.deduce_signature_type(p, a, depth, arguments, extra_cv)?),
+            ) => Ok((operand.is_some() || pb == ab)
+                && self.deduce_signature_type(p, a, depth, arguments, extra_cv)?),
             (
                 TypeKind::Function {
                     result: p,
@@ -1237,9 +1262,15 @@ impl Analyzer<'_> {
                 {
                     return true;
                 }
-                TypeKind::Pointer(ty)
-                | TypeKind::Reference { element: ty, .. }
-                | TypeKind::Array { element: ty, .. } => work.push(*ty),
+                TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => work.push(*ty),
+                TypeKind::Array {
+                    element, operand, ..
+                } => {
+                    if operand.is_some() {
+                        return true;
+                    }
+                    work.push(*element);
+                }
                 TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
                 TypeKind::Function {
                     result, parameters, ..

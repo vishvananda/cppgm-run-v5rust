@@ -398,7 +398,7 @@ impl Graph {
                     })?;
                     tasks.push(Task::Type(*element));
                 }
-                TypeKind::Array { element, bound } => {
+                TypeKind::Array { element, bound, .. } => {
                     write!(output, "array of {bound} ")?;
                     tasks.push(Task::Type(*element));
                 }

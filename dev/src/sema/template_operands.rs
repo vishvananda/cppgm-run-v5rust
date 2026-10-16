@@ -41,6 +41,15 @@ enum State {
     InProgress,
     Complete(TypeId),
 }
+#[derive(Clone, Copy)]
+enum Query {
+    Type,
+    Bound,
+}
+enum Evaluation {
+    Type(TypeId),
+    Bound(u64),
+}
 #[derive(Default)]
 pub(super) struct Operands {
     index: HashMap<u64, EntityId>,
@@ -219,7 +228,14 @@ impl Analyzer<'_> {
             .template_operands
             .substitutions
             .insert(key, State::InProgress);
-        let result = self.substitute_operand_inner(entity, environment);
+        let result = self
+            .evaluate_operand(entity, environment, Query::Type)
+            .and_then(|result| match result {
+                Evaluation::Type(ty) => Ok(ty),
+                Evaluation::Bound(_) => {
+                    Err(Error::Invariant("operand type query returned a bound"))
+                }
+            });
         let key = Key {
             entity,
             depth: environment.depth,
@@ -254,11 +270,28 @@ impl Analyzer<'_> {
         }
     }
 
-    fn substitute_operand_inner(
+    pub(super) fn substitute_array_bound(
+        &mut self,
+        operand: TypeId,
+        environment: &mut Substitution<'_>,
+    ) -> Result<Option<u64>, Error> {
+        let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(operand).kind else {
+            return Err(Error::Invariant("array bound without operand placeholder"));
+        };
+        match self.evaluate_operand(entity, environment, Query::Bound) {
+            Ok(Evaluation::Bound(bound)) => Ok(Some(bound)),
+            Ok(Evaluation::Type(_)) => Err(Error::Invariant("bound query returned a type")),
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn evaluate_operand(
         &mut self,
         entity: EntityId,
         environment: &mut Substitution<'_>,
-    ) -> Result<TypeId, Error> {
+        query: Query,
+    ) -> Result<Evaluation, Error> {
         self.check_stack()?;
         let pattern = self
             .graph
@@ -279,7 +312,10 @@ impl Analyzer<'_> {
         let saved_initializing = self.initializing.take();
         let saved_base = self.base_object.take();
         let saved_member = self.member_initializer_class.take();
-        let result = self.decltype_type(copy, scope);
+        let result = match query {
+            Query::Type => self.decltype_type(copy, scope).map(Evaluation::Type),
+            Query::Bound => self.array_bound(copy, scope).map(Evaluation::Bound),
+        };
         self.body_context = saved_body;
         self.graph.lookup_limit = saved_limit;
         self.template_depth = saved_depth;
@@ -383,9 +419,13 @@ impl Analyzer<'_> {
                         mask |= pattern.parameters?;
                     }
                 }
-                TypeKind::Pointer(ty)
-                | TypeKind::Reference { element: ty, .. }
-                | TypeKind::Array { element: ty, .. } => types.push(*ty),
+                TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => types.push(*ty),
+                TypeKind::Array {
+                    element, operand, ..
+                } => {
+                    types.push(*element);
+                    types.extend(operand);
+                }
                 TypeKind::MemberPointer { owner, element } => types.extend([*owner, *element]),
                 TypeKind::Function {
                     result, parameters, ..
@@ -409,6 +449,72 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn array_bounds_keep_identity_through_canonicalization_and_cv() {
+        let source = SourceBuffer::new(
+            b"template<class T>int f(const T(&)[sizeof(T)]);\
+              template<class U>int f(const U(&)[sizeof(U)]);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"array-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(graph.template_operands.patterns.len(), 1);
+        let operand = graph
+            .template_operands
+            .patterns
+            .keys()
+            .next()
+            .copied()
+            .unwrap();
+        let operand = graph.entity(operand).ty.unwrap();
+        let int = graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let array = graph
+            .types
+            .intern(
+                TypeKind::Array {
+                    element: int,
+                    bound: 0,
+                    operand: Some(operand),
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        let unknown = graph
+            .types
+            .intern(
+                TypeKind::Array {
+                    element: int,
+                    bound: 0,
+                    operand: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        assert_ne!(array, unknown);
+        assert_eq!(graph.types.complete_array(array, unknown), None);
+        let qualified = graph.types.qualify(array, Cv::CONST).unwrap();
+        for ty in [array, qualified] {
+            assert!(graph.dependent_type(ty));
+            for canonical in [
+                graph.types.canonical_function(ty).unwrap(),
+                graph.types.declared_type(ty).unwrap(),
+            ] {
+                assert!(
+                    matches!(graph.types.get(canonical).kind, TypeKind::Array { bound: 0, operand: Some(id), .. } if id == operand)
+                );
+            }
+        }
+        assert!(graph.template_operands.substitutions.is_empty());
+    }
 
     #[test]
     fn renamed_parameter_types_keep_nested_operand_positions() {
@@ -516,6 +622,12 @@ mod tests {
         assert_eq!(
             analyzer
                 .substitute_operand(ty, entity, &mut environment)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            analyzer
+                .substitute_array_bound(ty, &mut environment)
                 .unwrap(),
             None
         );

@@ -195,7 +195,8 @@ impl Analyzer<'_> {
                     }
                     let mut object = element;
                     let mut bounded = true;
-                    while let TypeKind::Array { element, bound } = self.graph.types.get(object).kind
+                    while let TypeKind::Array { element, bound, .. } =
+                        self.graph.types.get(object).kind
                     {
                         bounded &= bound != 0;
                         object = element;

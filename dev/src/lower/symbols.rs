@@ -967,7 +967,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     operand: self.abi_type(element)?,
                 },
                 TypeView::Array { element, bound } => Node::Modified {
-                    modifier: if bound == 0 {
+                    modifier: if let Some(operand) = self.graph.lower_array_operand(ty) {
+                        let (_, words) = self
+                            .graph
+                            .lower_template_operand(operand)
+                            .ok_or(Error::Missing("dependent array bound ABI operand"))?;
+                        Modifier::ExpressionArray(self.placeholder_expression(words)?)
+                    } else if bound == 0 {
                         Modifier::UnknownArray
                     } else {
                         Modifier::Array(bound)

@@ -34,6 +34,11 @@ pub(super) struct Virtuals {
     implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
     layouts: HashMap<EntityId, Vec<Option<VirtualEntry>>>,
 }
+impl Virtuals {
+    pub(super) fn abstract_class(&self, class: EntityId) -> bool {
+        self.pure_counts.get(&class).copied().unwrap_or(0) != 0
+    }
+}
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Polymorphism {
@@ -319,14 +324,7 @@ impl Analyzer<'_> {
         }
         if let TypeKind::Class(class) = self.graph.types.get(ty).kind
             && self.graph.entity(class).complete
-            && self
-                .graph
-                .virtuals
-                .pure_counts
-                .get(&class)
-                .copied()
-                .unwrap_or(0)
-                != 0
+            && self.graph.virtuals.abstract_class(class)
         {
             return Err(Error::at(location, "an object of an abstract class type"));
         }

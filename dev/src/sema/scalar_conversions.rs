@@ -19,19 +19,28 @@ impl Analyzer<'_> {
     }
     pub(super) fn bare_type(&mut self, mut ty: TypeId) -> Result<TypeId, Error> {
         let mut bounds = Vec::new();
-        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
-            bounds.push(bound);
+        while let TypeKind::Array {
+            element,
+            bound,
+            operand,
+        } = self.graph.types.get(ty).kind
+        {
+            bounds.push((bound, operand));
             ty = element;
         }
         if self.graph.types.get(ty).cv.0 != 0 {
             let kind = self.graph.types.get(ty).kind.clone();
             ty = self.graph.types.intern(kind, Cv::default())?;
         }
-        for bound in bounds.into_iter().rev() {
-            ty = self
-                .graph
-                .types
-                .intern(TypeKind::Array { element: ty, bound }, Cv::default())?;
+        for (bound, operand) in bounds.into_iter().rev() {
+            ty = self.graph.types.intern(
+                TypeKind::Array {
+                    element: ty,
+                    bound,
+                    operand,
+                },
+                Cv::default(),
+            )?;
         }
         Ok(ty)
     }
@@ -225,10 +234,12 @@ impl Analyzer<'_> {
             TypeKind::Array {
                 element: ae,
                 bound: ab,
+                ..
             },
             TypeKind::Array {
                 element: be,
                 bound: bb,
+                ..
             },
         ) = (&self.graph.types.get(a).kind, &self.graph.types.get(b).kind)
         {

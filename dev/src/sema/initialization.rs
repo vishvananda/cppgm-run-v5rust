@@ -65,7 +65,11 @@ impl Analyzer<'_> {
     ) -> TypeId {
         // A list may complete its outer bound; its element must already be complete.
         if self.semantic()
-            && let TypeKind::Array { element, bound: 0 } = self.graph.types.get(target).kind
+            && let TypeKind::Array {
+                element,
+                bound: 0,
+                operand: None,
+            } = self.graph.types.get(target).kind
             && initializer.is_some_and(|init| {
                 matches!(init.kind,
                 InitializerKind::Assign(id) | InitializerKind::Braced(id)
@@ -255,7 +259,7 @@ impl Analyzer<'_> {
             };
             return self.publish_list(id, object, V::Prvalue);
         }
-        if let TypeKind::Array { element, bound } = self.graph.types.get(target).kind {
+        if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {
             if values.len() == 1
                 && self.character_element(element)
                 && self.string_literal(values[0])
@@ -266,6 +270,7 @@ impl Analyzer<'_> {
                 let TypeKind::Array {
                     element: literal,
                     bound: length,
+                    ..
                 } = self.graph.types.get(source).kind
                 else {
                     return Err(Error::Invariant("string without array type"));
@@ -322,7 +327,7 @@ impl Analyzer<'_> {
         let ExprKind::Braced { elements, .. } = node.kind else {
             return Err(Error::Invariant("array initialization without list"));
         };
-        let TypeKind::Array { element, bound } = self.graph.types.get(target).kind else {
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("array initialization without array"));
         };
         let argument_buffer =
@@ -369,7 +374,7 @@ impl Analyzer<'_> {
         if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. }) {
             *next += 1;
             self.list_initialize(id, target, scope)?;
-        } else if let TypeKind::Array { element, bound } = self.graph.types.get(target).kind {
+        } else if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {
             if self.string_literal(id) {
                 *next += 1;
                 self.ensure_typed(id, scope)?;
@@ -464,9 +469,14 @@ impl Analyzer<'_> {
         let TypeKind::Array { element, .. } = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("completing nonarray bound"));
         };
-        self.graph
-            .types
-            .intern(TypeKind::Array { element, bound }, Cv::default())
+        self.graph.types.intern(
+            TypeKind::Array {
+                element,
+                bound,
+                operand: None,
+            },
+            Cv::default(),
+        )
     }
     pub(super) fn string_literal(&self, mut id: ast::ExprId) -> bool {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(id).kind {
@@ -507,13 +517,14 @@ impl Analyzer<'_> {
         target: TypeId,
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
-        let TypeKind::Array { element, bound } = self.graph.types.get(target).kind else {
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("character initialization without array"));
         };
         let source = self.graph.expression_facts.get(id)?.ty;
         let TypeKind::Array {
             element: literal,
             bound: length,
+            ..
         } = self.graph.types.get(source).kind
         else {
             return Err(Error::at(location, "array initialized from an expression"));

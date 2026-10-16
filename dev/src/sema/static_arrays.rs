@@ -241,7 +241,7 @@ impl Analyzer<'_> {
             out.push(Item::Scalar(target, value));
             return Ok(true);
         }
-        if let TypeKind::Array { element, bound } = self.graph.types.get(target).kind {
+        if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {
             if let Some(expr) = expr {
                 let root = self.graph.expression_facts.root(expr);
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind {
@@ -318,7 +318,7 @@ impl Analyzer<'_> {
         out: &mut Vec<Item>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
-        let TypeKind::Array { element, bound } = self.graph.types.get(target).kind else {
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("array image list without array"));
         };
         for _ in 0..bound {
@@ -571,7 +571,7 @@ impl Analyzer<'_> {
         expr: ast::ExprId,
         out: &mut Vec<Item>,
     ) -> Result<bool, Error> {
-        let TypeKind::Array { element, bound } = self.graph.types.get(target).kind else {
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind else {
             return Ok(false);
         };
         let mut root = self.graph.expression_facts.root(expr);

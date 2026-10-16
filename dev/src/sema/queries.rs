@@ -193,6 +193,15 @@ impl Analyzer<'_> {
             }
         }
         if matches!(self.tree.expressions.get(inner).kind, ExprKind::Call { .. }) {
+            // The frozen constant evaluator does not type a call in a
+            // template definition. Its retained bound will type the copied
+            // call, including required defaults, on concrete substitution.
+            if self.template_depth != 0 {
+                return Err(Error::NonConstant {
+                    location: self.tree.expressions.get(inner).location,
+                    message: "not an integral constant expression",
+                });
+            }
             return self.query_call_type(inner, scope);
         }
         if self.evaluating_noexcept {
@@ -222,6 +231,16 @@ impl Analyzer<'_> {
         } else {
             ty
         };
+        if self.template_depth != 0 && self.exception_dependent_type(ty) {
+            return Err(Error::NonConstant {
+                location,
+                message: if alignment {
+                    "a value-dependent alignof"
+                } else {
+                    "a value-dependent sizeof"
+                },
+            });
+        }
         if alignment {
             while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                 ty = element;
@@ -244,7 +263,15 @@ impl Analyzer<'_> {
         })
     }
     pub(super) fn query_complete(&self, mut ty: TypeId) -> bool {
-        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+        while let TypeKind::Array {
+            element,
+            bound,
+            operand,
+        } = self.graph.types.get(ty).kind
+        {
+            if operand.is_some() {
+                return false;
+            }
             if bound == 0 {
                 return false;
             }
@@ -267,7 +294,18 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(u64, u64), Error> {
         let mut count = Some(1u64);
-        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+        while let TypeKind::Array {
+            element,
+            bound,
+            operand,
+        } = self.graph.types.get(ty).kind
+        {
+            if operand.is_some() {
+                return Err(Error::NonConstant {
+                    location,
+                    message: "size of a dependent type",
+                });
+            }
             if bound == 0 {
                 return Err(Error::at(location, "size of an array of unknown bound"));
             }

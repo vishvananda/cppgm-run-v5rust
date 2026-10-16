@@ -257,9 +257,15 @@ impl super::graph::Graph {
                 TypeKind::Class(entity) if self.entity(*entity).template_head.is_some() => {
                     return true;
                 }
-                TypeKind::Pointer(element)
-                | TypeKind::Reference { element, .. }
-                | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                    work.push(*element);
+                }
+                TypeKind::Array {
+                    element, operand, ..
+                } => {
+                    work.push(*element);
+                    work.extend(operand);
+                }
                 TypeKind::MemberPointer { owner, element } => {
                     work.push(*owner);
                     work.push(*element);

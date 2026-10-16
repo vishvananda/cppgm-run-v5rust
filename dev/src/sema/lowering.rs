@@ -521,6 +521,12 @@ impl Graph {
         let pattern = self.template_operands.pattern(entity)?;
         Some((pattern.expression, self.template_operands.words(entity)?))
     }
+    pub(crate) fn lower_array_operand(&self, ty: TypeId) -> Option<TypeId> {
+        let TypeKind::Array { operand, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        operand
+    }
     pub(crate) fn lower_dependent_type(&self, ty: TypeId) -> bool {
         self.dependent_type(ty)
     }
@@ -1199,7 +1205,7 @@ impl Graph {
         Ok(match &self.types.get(self.types.canonical_view(id)).kind {
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
-            TypeKind::Array { element, bound } => TypeView::Array {
+            TypeKind::Array { element, bound, .. } => TypeView::Array {
                 element: *element,
                 bound: *bound,
             },

@@ -414,7 +414,7 @@ impl Analyzer<'_> {
         let mut found = None;
         for _ in 0..256 {
             let offset = place.offset.wrapping_sub(base);
-            if let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
+            if let TypeKind::Array { element, bound, .. } = self.graph.types.get(ty).kind {
                 let bytes = self.address_element_size(element, location)?;
                 let count = integral::signed(bound);
                 if bytes == 0 || offset < 0 || offset >= bytes.wrapping_mul(count) {

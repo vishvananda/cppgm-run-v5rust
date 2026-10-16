@@ -777,7 +777,12 @@ impl Analyzer<'_> {
         ty: TypeId,
         initializer: Option<ast::Initializer>,
     ) -> Result<TypeId, Error> {
-        let TypeKind::Array { element, bound: 0 } = self.graph.types.get(ty).kind else {
+        let TypeKind::Array {
+            element,
+            bound: 0,
+            operand: None,
+        } = self.graph.types.get(ty).kind
+        else {
             return Ok(ty);
         };
         let Some(initializer) = initializer else {
@@ -815,9 +820,14 @@ impl Analyzer<'_> {
         if bound == 0 {
             return Ok(ty);
         }
-        self.graph
-            .types
-            .intern(TypeKind::Array { element, bound }, Cv::default())
+        self.graph.types.intern(
+            TypeKind::Array {
+                element,
+                bound,
+                operand: None,
+            },
+            Cv::default(),
+        )
     }
     fn integral_element(&self, ty: TypeId) -> bool {
         match self.graph.types.get(ty).kind {
@@ -839,13 +849,19 @@ impl Analyzer<'_> {
         member: bool,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        while let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
-            if bound == 0 && !member {
+        while let TypeKind::Array {
+            element,
+            bound,
+            operand,
+        } = self.graph.types.get(ty).kind
+        {
+            if bound == 0 && operand.is_none() && !member {
                 return Err(Error::at(location, "variable of incomplete type"));
             }
             ty = element;
         }
         if let TypeKind::Class(entity) = self.graph.types.get(ty).kind
+            && self.template_depth == 0
             && !self.graph.entity(entity).complete
         {
             return Err(Error::at(location, "variable of incomplete type"));

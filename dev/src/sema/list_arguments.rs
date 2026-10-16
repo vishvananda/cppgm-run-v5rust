@@ -70,7 +70,7 @@ impl Analyzer<'_> {
         let values = argument_buffer.as_slice();
         match self.graph.types.get(target).kind {
             TypeKind::Scalar(Scalar::Void) => return Ok(None),
-            TypeKind::Array { element, bound } => {
+            TypeKind::Array { element, bound, .. } => {
                 if bound == 0
                     || u64::try_from(values.len()).map_err(|_| Error::Limit("list size"))? > bound
                 {
@@ -216,7 +216,7 @@ impl Analyzer<'_> {
             .get(*next)
             .ok_or(Error::Invariant("list ranking without element"))?;
         let array = match self.graph.types.get(target).kind {
-            TypeKind::Array { element, bound } => Some((element, bound)),
+            TypeKind::Array { element, bound, .. } => Some((element, bound)),
             _ => None,
         };
         if let ExprKind::Braced { elements: own, .. } = self.tree.expressions.get(id).kind {
@@ -380,6 +380,7 @@ mod tests {
                 TypeKind::Array {
                     element: element_ty,
                     bound: 2,
+                    operand: None,
                 },
                 Cv::default(),
             )

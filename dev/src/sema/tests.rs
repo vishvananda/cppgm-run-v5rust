@@ -1697,6 +1697,7 @@ fn canonical_types_preserve_source_parameters_and_adjust_nested_functions() {
             TypeKind::Array {
                 element: int,
                 bound: 3,
+                operand: None,
             },
             Cv::default(),
         )
@@ -1739,7 +1740,7 @@ fn canonical_types_preserve_source_parameters_and_adjust_nested_functions() {
     assert_eq!(types.qualify(left, Cv::CONST).unwrap(), left);
     let qualified_array = types.qualify(array, Cv::CONST).unwrap();
     assert!(
-        matches!(types.get(qualified_array).kind, TypeKind::Array { element, bound: 3 } if element == const_int)
+        matches!(types.get(qualified_array).kind, TypeKind::Array { element, bound: 3, operand: None } if element == const_int)
     );
     let mut arrays = int;
     for _ in 0..10_000 {
@@ -1748,6 +1749,7 @@ fn canonical_types_preserve_source_parameters_and_adjust_nested_functions() {
                 TypeKind::Array {
                     element: arrays,
                     bound: 1,
+                    operand: None,
                 },
                 Cv::default(),
             )
@@ -1755,7 +1757,12 @@ fn canonical_types_preserve_source_parameters_and_adjust_nested_functions() {
     }
     let mut qualified = types.qualify(arrays, Cv::CONST).unwrap();
     for _ in 0..10_000 {
-        let TypeKind::Array { element, bound: 1 } = types.get(qualified).kind else {
+        let TypeKind::Array {
+            element,
+            bound: 1,
+            operand: None,
+        } = types.get(qualified).kind
+        else {
             panic!("array chain");
         };
         qualified = element;
@@ -2599,11 +2606,17 @@ fn array_initialization_completes_identity_and_retains_source_operand_conversion
     let TypeKind::Array {
         element: row,
         bound: 2,
+        operand: None,
     } = graph.types.get(ty).kind
     else {
         panic!("deduced bound expected");
     };
-    let TypeKind::Array { element, bound: 2 } = graph.types.get(row).kind else {
+    let TypeKind::Array {
+        element,
+        bound: 2,
+        operand: None,
+    } = graph.types.get(row).kind
+    else {
         panic!("row bound expected");
     };
     let initializer = declaration.initializer.unwrap();
