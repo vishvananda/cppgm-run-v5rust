@@ -304,7 +304,7 @@ impl Analyzer<'_> {
             && matches!((components[count - 1].kind, last.kind),
                 (ast::NameKind::Identifier(a), ast::NameKind::Identifier(b)) if a == b)
             && self.graph.scope(self.declaration_scope(scope)).kind == ScopeKind::Class;
-        let prefix = match self.name_prefix(target, scope, count, false)? {
+        let prefix = match self.name_prefix(target, scope, count, true)? {
             Some(Prefix::Scope(prefix)) => prefix,
             Some(Prefix::Dependent(qualifier)) => {
                 if let ast::NameKind::Identifier(name) = last.kind

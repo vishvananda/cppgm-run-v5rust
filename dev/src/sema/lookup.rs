@@ -604,7 +604,11 @@ impl Analyzer<'_> {
             if let Some(Prefix::Scope(search)) = prefix
                 && let Some(naming) = self.graph.scope(search).owner
                 && self.graph.scope(search).kind == ScopeKind::Class
-                && self.graph.binding_scope(binding_id) != search
+                && if access {
+                    self.semantic() && self.template_depth == 0
+                } else {
+                    self.graph.binding_scope(binding_id) != search
+                }
             {
                 self.check_declaration_member_access(
                     binding_id,
@@ -752,7 +756,7 @@ impl Analyzer<'_> {
             .get(node.components)
             .len()
             .saturating_sub(1);
-        let prefix = match self.name_prefix(name, scope, count, false)? {
+        let prefix = match self.name_prefix(name, scope, count, true)? {
             Some(Prefix::Dependent(qualifier)) => {
                 if last.arguments.is_some() {
                     return Err(Error::Missing("dependent member template specialization"));
