@@ -235,6 +235,17 @@ impl Analyzer<'_> {
         }
         let binding = match self.lookup(name, scope, Filter::Ordinary) {
             Ok(binding) => binding,
+            // type_qualifier has already resolved a typed dependent root.
+            // Definition-time name checking does not select its members;
+            // their retained argument syntax still needs its name checks.
+            Err(Error::Missing("dependent qualified name lookup")) if self.template_depth != 0 => {
+                for component in self.tree.name_lists.get(node.components) {
+                    if let Some(arguments) = component.arguments {
+                        self.template_argument_names(arguments, scope, component.location)?;
+                    }
+                }
+                return Ok(None);
+            }
             Err(Error::Diagnostic {
                 message: "undeclared name",
                 ..

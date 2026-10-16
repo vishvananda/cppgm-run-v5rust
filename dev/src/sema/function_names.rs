@@ -26,6 +26,74 @@ pub(super) enum SpecialName {
     // Shared lookup category; each declaration's identity remains MemberKey.
     Conversion,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn declaration_index_separates_template_shapes_and_keeps_default_patterns() {
+        let source = SourceBuffer::new(
+            b"int f(int);template<class T>int f(int);\
+              template<class T>long f(int);template<class T,class U>int f(int);\
+              template<class Renamed>int f(int);\
+              template<class T>int g(T,int=2);template<class U>int g(U,int);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"template-index").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let g = cursor.intern_name(b"g").unwrap();
+        let expression_count = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        let functions: Vec<_> = graph.functions_at(graph.global, f.into()).collect();
+        assert_eq!(functions.len(), 4);
+        let entities: std::collections::HashSet<_> = functions
+            .iter()
+            .map(|&binding| graph.binding(binding).entity)
+            .collect();
+        assert_eq!(entities.len(), 4);
+        for (index, &binding) in functions.iter().enumerate() {
+            let function = graph.binding(binding);
+            let head = graph.entity(function.entity).template_head;
+            assert_eq!(head.is_none(), index == 0);
+            if let Some(head) = head {
+                assert_eq!(
+                    graph.templates.parameters(head).len(),
+                    if index == 3 { 2 } else { 1 }
+                );
+            }
+            assert_eq!(
+                graph
+                    .namespace_function(graph.global, f.into(), function.ty.unwrap(), head)
+                    .unwrap(),
+                Some(binding)
+            );
+            assert!(!graph.function_templates.body_demanded(function.entity));
+        }
+        let defaults: Vec<_> = graph.functions_at(graph.global, g.into()).collect();
+        assert_eq!(defaults.len(), 1);
+        let function = graph.entity(graph.binding(defaults[0]).entity);
+        let latest = function.function_parameters.unwrap();
+        assert!(tree.parameters.get(latest.parameters)[1].default.is_none());
+        let default = function.defaults[1].unwrap().expression;
+        assert!(graph.expression_facts.get(default).is_err());
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert_eq!(expression_count, tree.expressions.mark());
+        assert_eq!(declaration_count, tree.declarations.mark());
+    }
+}
 impl SpecialName {
     pub(super) fn allocation(self) -> bool {
         matches!(self, Self::Operator { token, .. } if matches!(token.as_keyword(), Some(Keyword::New | Keyword::Delete)))
@@ -76,6 +144,67 @@ impl Definition {
     }
 }
 impl Analyzer<'_> {
+    // analyzer_declarations.cpp::redeclare_function: agreement precedes the
+    // template-head/default merge and publication of the new declaration.
+    pub(super) fn agree_function_redeclaration(
+        &mut self,
+        entity: super::graph::EntityId,
+        ty: super::types::TypeId,
+        context: super::declarations::ValueScope,
+        specs: Specifiers,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let old = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("function without type"))?;
+        let previous = self.graph.entity(entity).template_head;
+        if match (context.head, previous) {
+            (Some(a), Some(b)) => !self.same_template_shape(a, b),
+            (None, None) => false,
+            _ => true,
+        } {
+            return Err(Error::Invariant("mismatched function declaration index"));
+        }
+        self.check_function_type_agreement(old, ty, location)?;
+        if context.definition == Definition::Deleted {
+            return Err(Error::at(
+                location,
+                "deleted definition of a function declared before",
+            ));
+        }
+        if context.definition.defines() && self.graph.entity(entity).defined {
+            return Err(Error::at(location, "redefinition of a function"));
+        }
+        if specs.is_static
+            && self.graph.scope(context.home).kind == ScopeKind::Namespace
+            && self
+                .graph
+                .entity(entity)
+                .function
+                .is_some_and(|props| !props.internal_linkage)
+        {
+            return Err(Error::at(
+                location,
+                "a static declaration of a function declared with external linkage",
+            ));
+        }
+        if self.graph.scope(context.home).kind == ScopeKind::Namespace
+            && !context.qualified
+            && self.graph.entity(entity).builtin.is_none()
+            && let Some(properties) = self.graph.entity(entity).function
+        {
+            self.agree_language(properties.language, location)?;
+        }
+        if self.graph.entity(entity).constexpr != specs.constexpr {
+            return Err(Error::at(
+                location,
+                "declarations of a function that disagree on constexpr",
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn require_function_definition_types(
         &self,
         ty: super::types::TypeId,
@@ -267,7 +396,7 @@ impl Analyzer<'_> {
                 return Err(Error::Missing("qualified friend templates"));
             }
             let candidate = if self.graph.scope(home).kind == ScopeKind::Namespace {
-                self.graph.namespace_function(home, key, info.ty)?
+                self.graph.namespace_function(home, key, info.ty, None)?
             } else {
                 let mut next = 0;
                 let mut candidate = None;
@@ -320,26 +449,25 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "a destructor declared as a template"));
             }
         }
-        self.check_member_function_redeclaration(info, home, location)?;
+        self.check_member_function_redeclaration(info, home, head, location)?;
         if info.home.is_some() {
-            let mut next = 0;
-            let mut matching = false;
-            while let Some(candidate) = self.graph.next_function(home, key, &mut next) {
-                if self.graph.scope(home).kind == ScopeKind::Class
-                    && self.graph.entity(self.graph.binding(candidate).entity).home != Some(home)
-                {
-                    continue;
+            let matching = if self.graph.scope(home).kind == ScopeKind::Namespace {
+                self.graph
+                    .namespace_function(home, key, info.ty, head)?
+                    .is_some()
+            } else {
+                let mut next = 0;
+                let mut matching = false;
+                while let Some(candidate) = self.graph.next_function(home, key, &mut next) {
+                    if self.graph.entity(self.graph.binding(candidate).entity).home == Some(home)
+                        && self.same_declared_function(candidate, info.ty, head)?
+                    {
+                        matching = true;
+                        break;
+                    }
                 }
-                let old = self
-                    .graph
-                    .binding(candidate)
-                    .ty
-                    .ok_or(Error::Invariant("function declaration without type"))?;
-                if self.same_function_parameters(old, info.ty)? {
-                    matching = true;
-                    break;
-                }
-            }
+                matching
+            };
             if !matching {
                 return Err(Error::at(
                     location,
@@ -367,6 +495,7 @@ impl Analyzer<'_> {
                     info.home.unwrap_or(scope)
                 },
                 head,
+                parameters: info.parameters,
                 definition,
                 declarator_location: location,
             },
@@ -433,6 +562,11 @@ impl Analyzer<'_> {
             && let Some(clause) = info.parameters
         {
             self.record_function_defaults(entity, clause, info.lookup, info.ty)?;
+        } else if self.semantic()
+            && self.template_depth != 0
+            && let Some(clause) = info.parameters
+        {
+            self.record_template_function_defaults(entity, clause, info.lookup, info.ty)?;
         }
         Ok(binding)
     }

@@ -799,11 +799,7 @@ impl Analyzer<'_> {
             .primary(entity)
             .map_or(entity, |binding| self.graph.binding(binding).entity);
         let primary = self.graph.entity(primary);
-        primary.template_head.is_some()
-            && primary
-                .function_parameters
-                .and_then(|clause| self.tree.parameters.get(clause.parameters).get(index))
-                .is_some_and(|parameter| parameter.default.is_some())
+        primary.template_head.is_some() && primary.defaults.get(index).is_some_and(Option::is_some)
     }
 
     pub(super) fn check_template_call_defaults(
@@ -821,17 +817,10 @@ impl Analyzer<'_> {
         if primary.template_head.is_none() {
             return Ok(());
         }
-        if let Some(clause) = primary.function_parameters {
-            let parameters = self.tree.parameters.get(clause.parameters);
-            if count < parameters.len()
-                && parameters[count..]
-                    .iter()
-                    .all(|parameter| parameter.default.is_some())
-            {
-                return Err(Error::Missing(
-                    "demanded function template default argument instantiation",
-                ));
-            }
+        if count < primary.defaults.len() && primary.defaults[count..].iter().all(Option::is_some) {
+            return Err(Error::Missing(
+                "demanded function template default argument instantiation",
+            ));
         }
         Ok(())
     }

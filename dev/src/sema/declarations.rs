@@ -22,6 +22,7 @@ pub(super) struct ValueScope {
     pub home: ScopeId,
     pub print: ScopeId,
     pub head: Option<super::templates::HeadId>,
+    pub parameters: Option<ast::ParameterClause>,
     pub definition: Definition,
     pub declarator_location: SourceOffset,
 }
@@ -382,14 +383,15 @@ impl Analyzer<'_> {
         while let Some(existing) = self.graph.next_function(scope, key, &mut next) {
             let earlier = self.graph.binding(existing);
             if earlier.entity != binding.entity
-                && self.same_function_parameters(
-                    earlier
-                        .ty
-                        .ok_or(Error::Invariant("function using without type"))?,
+                && self.same_declared_function(
+                    existing,
                     binding
                         .ty
                         .ok_or(Error::Invariant("function using without type"))?,
+                    self.graph.entity(binding.entity).template_head,
                 )?
+                && (self.graph.entity(earlier.entity).template_head.is_none()
+                    || self.graph.entity(earlier.entity).home == Some(scope))
             {
                 if self.graph.scope(scope).kind == ScopeKind::Class
                     && self.graph.entity(earlier.entity).home == Some(scope)
@@ -654,6 +656,7 @@ impl Analyzer<'_> {
                 home,
                 print: info.home.unwrap_or(scope),
                 head: self.active_template_head(scope),
+                parameters: None,
                 definition: Definition::Declaration,
                 declarator_location: self.tree.declarators.get(init.declarator).location,
             },
@@ -850,6 +853,7 @@ impl Analyzer<'_> {
         &mut self,
         info: &super::declarators::DeclaratorInfo,
         home: ScopeId,
+        head: Option<super::templates::HeadId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
@@ -864,8 +868,9 @@ impl Analyzer<'_> {
                     .binding(binding)
                     .ty
                     .ok_or(Error::Invariant("function without type"))?;
-                if self.graph.types.canonical_function(old)?
-                    == self.graph.types.canonical_function(info.ty)?
+                if self.same_declared_function(binding, info.ty, head)?
+                    && self.graph.types.canonical_function(old)?
+                        == self.graph.types.canonical_function(info.ty)?
                 {
                     return Err(Error::at(
                         location,
@@ -890,7 +895,8 @@ impl Analyzer<'_> {
             home,
             print,
             head,
-            definition,
+            parameters,
+            definition: _,
             declarator_location,
         } = context;
         if let Some(name) = name.identifier() {
@@ -928,7 +934,7 @@ impl Analyzer<'_> {
         if kind == BindingKind::Function
             && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
         {
-            existing = self.match_declared_function(home, name, ty, location)?;
+            existing = self.match_declared_function(home, name, ty, head, location)?;
         }
         if kind == BindingKind::Variable
             && existing.is_none()
@@ -973,50 +979,13 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("value entity without type"))?;
                 if kind == BindingKind::Function {
-                    let previous = self.graph.entity(binding.entity).template_head;
-                    if match (head, previous) {
-                        (Some(a), Some(b)) => !self.same_template_shape(a, b),
-                        (None, None) => false,
-                        _ => true,
-                    } {
-                        return Err(Error::Missing("ordinary/template function overload sets"));
-                    }
-                    self.check_function_type_agreement(old, ty, location)?;
-                    if definition == Definition::Deleted {
-                        return Err(Error::at(
-                            location,
-                            "deleted definition of a function declared before",
-                        ));
-                    }
-                    if definition.defines() && self.graph.entity(binding.entity).defined {
-                        return Err(Error::at(location, "redefinition of a function"));
-                    }
-                    if specs.is_static
-                        && self.graph.scope(home).kind == ScopeKind::Namespace
-                        && self
-                            .graph
-                            .entity(binding.entity)
-                            .function
-                            .is_some_and(|props| !props.internal_linkage)
-                    {
-                        return Err(Error::at(
-                            location,
-                            "a static declaration of a function declared with external linkage",
-                        ));
-                    }
-                    if self.graph.scope(home).kind == ScopeKind::Namespace
-                        && !qualified
-                        && self.graph.entity(binding.entity).builtin.is_none()
-                        && let Some(properties) = self.graph.entity(binding.entity).function
-                    {
-                        self.agree_language(properties.language, location)?;
-                    }
-                    if self.graph.entity(binding.entity).constexpr != specs.constexpr {
-                        return Err(Error::at(
-                            location,
-                            "declarations of a function that disagree on constexpr",
-                        ));
-                    }
+                    self.agree_function_redeclaration(
+                        binding.entity,
+                        ty,
+                        context,
+                        specs,
+                        location,
+                    )?;
                 } else if let Some(completed) = self.graph.types.complete_array(old, ty) {
                     self.agree_variable_linkage(binding.entity, specs, home, qualified, location)?;
                     self.graph.entity_mut(binding.entity).ty = Some(completed);
@@ -1076,6 +1045,20 @@ impl Analyzer<'_> {
         if kind == BindingKind::Function
             && let Some(head) = head
         {
+            if existing.is_some()
+                && parameters.is_some_and(|clause| {
+                    self.tree
+                        .parameters
+                        .get(clause.parameters)
+                        .iter()
+                        .any(|parameter| parameter.default.is_some())
+                })
+            {
+                return Err(Error::at(
+                    location,
+                    "a default argument added by a later declaration of a function template",
+                ));
+            }
             self.merge_template_head(entity, head, location)?;
         }
         let ty = if kind == BindingKind::Variable
@@ -1117,10 +1100,11 @@ impl Analyzer<'_> {
         home: ScopeId,
         name: ValueKey,
         ty: TypeId,
+        head: Option<super::templates::HeadId>,
         location: SourceOffset,
     ) -> Result<Option<BindingId>, Error> {
         if self.graph.scope(home).kind == ScopeKind::Namespace {
-            let candidate = self.graph.namespace_function(home, name, ty)?;
+            let candidate = self.graph.namespace_function(home, name, ty, head)?;
             if let Some(candidate) = candidate
                 && self.graph.entity(self.graph.binding(candidate).entity).home != Some(home)
             {
@@ -1137,7 +1121,16 @@ impl Analyzer<'_> {
             let old = binding
                 .ty
                 .ok_or(Error::Invariant("function without type"))?;
-            if self.same_function_parameters(old, ty)? {
+            let matches = self.same_declared_function(candidate, ty, head)?
+                || head.is_some_and(|head| {
+                    self.graph.entity(binding.entity).home != Some(home)
+                        && self
+                            .graph
+                            .entity(binding.entity)
+                            .template_head
+                            .is_some_and(|old| self.same_template_shape(head, old))
+                }) && self.same_function_parameters(old, ty)?;
+            if matches {
                 if self.graph.entity(binding.entity).home != Some(home) {
                     if self.graph.scope(home).kind != ScopeKind::Class {
                         return Err(Error::at(
@@ -1153,6 +1146,24 @@ impl Analyzer<'_> {
             }
         }
         Ok(None)
+    }
+    pub(super) fn same_declared_function(
+        &mut self,
+        previous: BindingId,
+        ty: TypeId,
+        head: Option<super::templates::HeadId>,
+    ) -> Result<bool, Error> {
+        let binding = self.graph.binding(previous);
+        let old = binding
+            .ty
+            .ok_or(Error::Invariant("function without type"))?;
+        match (head, self.graph.entity(binding.entity).template_head) {
+            (Some(a), Some(b)) => Ok(self.same_template_shape(a, b)
+                && self.graph.types.canonical_function(old)?
+                    == self.graph.types.canonical_function(ty)?),
+            (None, None) => self.same_function_parameters(old, ty),
+            _ => Ok(false),
+        }
     }
     pub(super) fn internal_namespace(&self, mut scope: ScopeId) -> bool {
         loop {

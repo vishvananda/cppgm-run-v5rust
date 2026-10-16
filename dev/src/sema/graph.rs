@@ -205,6 +205,14 @@ struct FunctionPosition {
     declared: usize,
     visible: Option<usize>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct FunctionSignature {
+    scope: ScopeId,
+    name: super::function_names::ValueKey,
+    ty: TypeId,
+    shape: Option<super::templates::ShapeId>,
+}
+
 pub(crate) struct Graph {
     pub(super) virtuals: super::virtual_members::Virtuals,
     pub(super) local_classes: super::local_classes::LocalClasses,
@@ -260,7 +268,7 @@ pub(crate) struct Graph {
     function_positions:
         HashMap<(ScopeId, super::function_names::ValueKey, EntityId), FunctionPosition>,
     visible_function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
-    namespace_signatures: HashMap<(ScopeId, super::function_names::ValueKey, TypeId), BindingId>,
+    namespace_signatures: HashMap<FunctionSignature, BindingId>,
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
@@ -735,13 +743,16 @@ impl Graph {
         }
         self.function_positions
             .insert(position_key, FunctionPosition { declared, visible });
-        if self.scope(scope).kind == ScopeKind::Namespace {
+        if self.scope(scope).kind == ScopeKind::Namespace
+            && (self.entity(entity).template_head.is_none()
+                || self.entity(entity).home == Some(scope))
+        {
             let ty = self
                 .binding(binding)
                 .ty
                 .ok_or(Error::Invariant("function index without type"))?;
-            let signature = self.types.declaration_signature(ty)?;
-            let signature_key = (scope, key, signature);
+            let head = self.entity(entity).template_head;
+            let signature_key = self.function_signature(scope, key, ty, head)?;
             if self
                 .namespace_signatures
                 .get(&signature_key)
@@ -757,13 +768,33 @@ impl Graph {
         scope: ScopeId,
         key: super::function_names::ValueKey,
         ty: TypeId,
+        head: Option<super::templates::HeadId>,
     ) -> Result<Option<BindingId>, Error> {
-        let signature = self.types.declaration_signature(ty)?;
+        let signature = self.function_signature(scope, key, ty, head)?;
         Ok(self
             .namespace_signatures
-            .get(&(scope, key, signature))
+            .get(&signature)
             .copied()
             .filter(|&id| self.binding_visible_at_limit(id)))
+    }
+    fn function_signature(
+        &mut self,
+        scope: ScopeId,
+        name: super::function_names::ValueKey,
+        ty: TypeId,
+        head: Option<super::templates::HeadId>,
+    ) -> Result<FunctionSignature, Error> {
+        let ty = if head.is_some() {
+            self.types.canonical_function(ty)?
+        } else {
+            self.types.declaration_signature(ty)?
+        };
+        Ok(FunctionSignature {
+            scope,
+            name,
+            ty,
+            shape: head.map(|head| self.templates.shape(head)),
+        })
     }
     // A derived declaration hides an imported base function without changing
     // its entity, original binding or printed declaration. Only this class's
