@@ -17,12 +17,13 @@ use crate::{
     },
 };
 #[derive(Clone, Copy)]
-pub(super) struct ValueScope {
+pub(super) struct ValueScope<'info> {
     pub qualified: bool,
     pub home: ScopeId,
     pub print: ScopeId,
     pub head: Option<super::templates::HeadId>,
-    pub parameters: Option<ast::ParameterClause>,
+    // Borrowed only while declaring a value; the limit predates publication.
+    pub function: Option<(&'info super::declarators::DeclaratorInfo, usize)>,
     pub definition: Definition,
     pub declarator_location: SourceOffset,
 }
@@ -656,7 +657,7 @@ impl Analyzer<'_> {
                 home,
                 print: info.home.unwrap_or(scope),
                 head: self.active_template_head(scope),
-                parameters: None,
+                function: None,
                 definition: Definition::Declaration,
                 declarator_location: self.tree.declarators.get(init.declarator).location,
             },
@@ -885,7 +886,7 @@ impl Analyzer<'_> {
         &mut self,
         name: ValueKey,
         ty: TypeId,
-        context: ValueScope,
+        context: ValueScope<'_>,
         kind: BindingKind,
         location: SourceOffset,
         specs: Specifiers,
@@ -895,7 +896,7 @@ impl Analyzer<'_> {
             home,
             print,
             head,
-            parameters,
+            function,
             definition: _,
             declarator_location,
         } = context;
@@ -1046,13 +1047,15 @@ impl Analyzer<'_> {
             && let Some(head) = head
         {
             if existing.is_some()
-                && parameters.is_some_and(|clause| {
-                    self.tree
-                        .parameters
-                        .get(clause.parameters)
-                        .iter()
-                        .any(|parameter| parameter.default.is_some())
-                })
+                && function
+                    .and_then(|(info, _)| info.parameters)
+                    .is_some_and(|clause| {
+                        self.tree
+                            .parameters
+                            .get(clause.parameters)
+                            .iter()
+                            .any(|parameter| parameter.default.is_some())
+                    })
             {
                 return Err(Error::at(
                     location,

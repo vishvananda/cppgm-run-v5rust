@@ -93,6 +93,72 @@ mod tests {
         assert_eq!(expression_count, tree.expressions.mark());
         assert_eq!(declaration_count, tree.declarations.mark());
     }
+
+    #[test]
+    fn incompatible_template_redeclaration_preserves_published_declaration() {
+        for specification in ["noexcept", "noexcept(sizeof(T)==4)"] {
+            let source = SourceBuffer::new(
+                format!(
+                    "template<class T=int>int f(T,int=1){specification};\
+                     template<class U=int>int f(U,int=2){};",
+                    if specification == "noexcept" {
+                        ""
+                    } else {
+                        "noexcept(sizeof(U)==8)"
+                    }
+                )
+                .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"template-agreement").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let f = cursor.intern_name(b"f").unwrap();
+            let expressions = tree.expressions.mark();
+            let syntax_declarations = tree.declarations.mark();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let declarations = tree.decl_lists.get(declarations);
+            let global = analyzer.graph.global;
+            analyzer.declaration(declarations[0], global).unwrap();
+            let binding = analyzer
+                .graph
+                .functions_at(global, f.into())
+                .next()
+                .unwrap();
+            let entity = analyzer.graph.binding(binding).entity;
+            let head = analyzer.graph.entity(entity).template_head;
+            let default = analyzer.graph.entity(entity).defaults[1]
+                .unwrap()
+                .expression;
+            assert!(matches!(
+                analyzer.declaration(declarations[1], global),
+                Err(Error::Diagnostic {
+                    message: "redeclaration with an incompatible exception-specification",
+                    ..
+                })
+            ));
+            let functions: Vec<_> = analyzer.graph.functions_at(global, f.into()).collect();
+            assert_eq!(functions, [binding]);
+            assert_eq!(analyzer.graph.entity(entity).template_head, head);
+            assert_eq!(
+                analyzer.graph.entity(entity).defaults[1]
+                    .unwrap()
+                    .expression,
+                default
+            );
+            assert!(analyzer.graph.lookup_limit.is_none());
+            assert_eq!(analyzer.template_depth, 0);
+            assert!(analyzer.template_head.is_none());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert!(analyzer.graph.expression_facts.get(default).is_err());
+            assert_eq!(tree.expressions.mark(), expressions);
+            assert_eq!(tree.declarations.mark(), syntax_declarations);
+        }
+    }
 }
 impl SpecialName {
     pub(super) fn allocation(self) -> bool {
@@ -150,7 +216,7 @@ impl Analyzer<'_> {
         &mut self,
         entity: super::graph::EntityId,
         ty: super::types::TypeId,
-        context: super::declarations::ValueScope,
+        context: super::declarations::ValueScope<'_>,
         specs: Specifiers,
         location: SourceOffset,
     ) -> Result<(), Error> {
@@ -202,6 +268,14 @@ impl Analyzer<'_> {
                 location,
                 "declarations of a function that disagree on constexpr",
             ));
+        }
+        if context.head.is_some() {
+            let (info, limit) = context.function.ok_or(Error::Invariant(
+                "template redeclaration without declarator",
+            ))?;
+            // Compatibility belongs to redeclaration agreement, before a
+            // later declaration can add defaults or merge its template head.
+            self.record_function_exceptions(entity, info, info.lookup, location, limit)?;
         }
         Ok(())
     }
@@ -483,6 +557,7 @@ impl Analyzer<'_> {
         }
         self.check_callable_qualifiers(info, key, specs, home, location)?;
         self.check_member_overload(info.ty, key, specs, home, location)?;
+        let exception_limit = self.graph.binding_limit();
         let binding = self.declare_value(
             key,
             info.ty,
@@ -495,7 +570,7 @@ impl Analyzer<'_> {
                     info.home.unwrap_or(scope)
                 },
                 head,
-                parameters: info.parameters,
+                function: Some((info, exception_limit)),
                 definition,
                 declarator_location: location,
             },
@@ -503,6 +578,12 @@ impl Analyzer<'_> {
             location,
             specs,
         )?;
+        let entity = self.graph.binding(binding).entity;
+        if head.is_some() && self.graph.function_origin(entity)? == binding {
+            // Redeclarations already checked their specification in agreement.
+            // A first declaration records it once, before default name checks.
+            self.record_function_exceptions(entity, info, info.lookup, location, exception_limit)?;
+        }
         self.record_callable_label(binding, info, key)?;
         if self.semantic() {
             self.check_operator_declaration(binding, location)?;
@@ -721,7 +802,9 @@ impl Analyzer<'_> {
         }
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-        self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
+        if self.graph.entity(entity).template_head.is_none() {
+            self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
+        }
         self.virtual_declaration(binding, &info, specs, location)?;
         self.pure_specifier(entity, init.initializer, &info, specs, scope, location)?;
         self.settle_declaration_access(Some(binding))?;
