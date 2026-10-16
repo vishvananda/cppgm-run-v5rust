@@ -25,8 +25,29 @@ enum State {
 #[derive(Default)]
 pub(super) struct Defaults {
     states: HashMap<(EntityId, usize), State>,
+    members: HashMap<EntityId, (ScopeId, usize)>,
 }
 impl Analyzer<'_> {
+    pub(super) fn defer_instance_defaults(&mut self, entity: EntityId) -> bool {
+        let Some(home) = self.graph.entity(entity).home else {
+            return false;
+        };
+        if self.template_depth != 0 || !self.graph.within_class_instance(home) {
+            return false;
+        }
+        let limit = self
+            .graph
+            .lookup_limit
+            .unwrap_or_else(|| self.graph.binding_limit());
+        self.graph
+            .function_templates
+            .argument_defaults
+            .members
+            .entry(entity)
+            .or_insert((home, limit));
+        true
+    }
+
     pub(super) fn instantiate_call_defaults(
         &mut self,
         binding: BindingId,
@@ -34,7 +55,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
         let Some(primary) = self.graph.function_templates.primary(entity) else {
-            return Ok(());
+            return self.instantiate_member_defaults(entity, supplied);
         };
         let primary = self.graph.binding(primary).entity;
         let ty = self
@@ -99,6 +120,76 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    fn instantiate_member_defaults(
+        &mut self,
+        entity: EntityId,
+        supplied: usize,
+    ) -> Result<(), Error> {
+        let Some(&(scope, limit)) = self
+            .graph
+            .function_templates
+            .argument_defaults
+            .members
+            .get(&entity)
+        else {
+            return Ok(());
+        };
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("member default without function type"))?;
+        for index in supplied..self.graph.entity(entity).defaults.len() {
+            let Some(default) = self.graph.entity(entity).defaults[index] else {
+                continue;
+            };
+            let key = (entity, index);
+            let location = self.tree.expressions.get(default.expression).location;
+            match self
+                .graph
+                .function_templates
+                .argument_defaults
+                .states
+                .get(&key)
+            {
+                Some(State::Complete) => continue,
+                Some(State::InProgress) => {
+                    return Err(Error::at(
+                        location,
+                        "template instantiation nested too deeply",
+                    ));
+                }
+                None => (),
+            }
+            self.graph
+                .function_templates
+                .argument_defaults
+                .states
+                .insert(key, State::InProgress);
+            let target = self.graph.types.function_parameter(ty, index)?;
+            let result = self.required_instantiation(
+                self.instantiation_depth,
+                location,
+                limit,
+                |analyzer| analyzer.form_default(default.expression, target, scope, limit),
+            );
+            if let Err(error) = result {
+                self.graph
+                    .function_templates
+                    .argument_defaults
+                    .states
+                    .remove(&key);
+                return Err(error);
+            }
+            self.graph
+                .function_templates
+                .argument_defaults
+                .states
+                .insert(key, State::Complete);
+        }
+        Ok(())
+    }
+
     fn instantiate_default(
         &mut self,
         entity: EntityId,
@@ -113,10 +204,28 @@ impl Analyzer<'_> {
             .map_err(|error| super::template_bodies::copy_error(&error))?;
         let frame = self.template_body_frame(entity, pattern.head, pattern.scope)?;
         let target = self.graph.types.function_parameter(ty, index)?;
+        self.form_default(copy, target, frame, pattern.limit)?;
+        let count = self.graph.types.function_parameter_count(ty)?;
+        self.graph.entity_mut(entity).defaults.resize(count, None);
+        self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
+            expression: copy,
+            template: None,
+            ..default
+        });
+        Ok(())
+    }
+
+    fn form_default(
+        &mut self,
+        copy: ast::ExprId,
+        target: super::types::TypeId,
+        frame: ScopeId,
+        limit: usize,
+    ) -> Result<(), Error> {
         // The default belongs to its declaring scope, with no caller locals or
         // implicit object. Instantiation is evaluated even inside sizeof/noexcept.
         let saved_body = self.body_context.take();
-        let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
+        let saved_limit = self.graph.lookup_limit.replace(limit);
         let saved_scope = self.default_argument_scope.replace(frame);
         let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
         let saved_depth = std::mem::replace(&mut self.template_depth, 0);
@@ -153,15 +262,7 @@ impl Analyzer<'_> {
         self.initializing = saved_initializing;
         self.base_object = saved_base;
         self.dependent_uses.set(saved_uses);
-        result?;
-        let count = self.graph.types.function_parameter_count(ty)?;
-        self.graph.entity_mut(entity).defaults.resize(count, None);
-        self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
-            expression: copy,
-            template: None,
-            ..default
-        });
-        Ok(())
+        result
     }
 }
 
@@ -173,6 +274,61 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn member_defaults_keep_class_copies_and_only_selected_defaults_get_facts() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{A(int x=sizeof(T),int y=T::bad){}\
+              int g(int x=T::bad,int y=sizeof(T)){return x+y;}};\
+              int main(){A<int>a(1,2);A<char>b(1,2);return a.g(2)+a.g(3)+b.g(2);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-default-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let original = tree.expressions.mark();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let defaults = &graph.function_templates.argument_defaults;
+        assert_eq!(defaults.states.len(), 2);
+        let mut expressions = std::collections::HashSet::new();
+        for (&(entity, index), state) in &defaults.states {
+            assert_eq!(index, 1);
+            assert!(matches!(state, State::Complete));
+            let function = graph.entity(entity);
+            assert!(
+                graph
+                    .expression_facts
+                    .get(function.defaults[0].unwrap().expression)
+                    .is_err()
+            );
+            let expression = function.defaults[index].unwrap().expression;
+            assert!(expression.index() >= original);
+            assert!(expressions.insert(expression));
+            assert!(graph.expression_facts.get(expression).is_ok());
+            assert!(defaults.members.contains_key(&entity));
+        }
+        for &entity in defaults.members.keys() {
+            let function = graph.entity(entity);
+            if function
+                .member_function
+                .is_some_and(|member| member.kind == super::super::graph::MemberKind::Constructor)
+            {
+                for default in function.defaults.iter().flatten() {
+                    assert!(graph.expression_facts.get(default.expression).is_err());
+                }
+            }
+        }
+    }
 
     #[test]
     fn default_copies_belong_to_instances_and_only_demanded_parameters_get_facts() {

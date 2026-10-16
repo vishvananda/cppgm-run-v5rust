@@ -179,6 +179,9 @@ impl Analyzer<'_> {
                 self.graph.boundary_roots.push(entity);
                 continue;
             }
+            if self.graph.function_templates.primary(entity).is_some() {
+                self.resolve_specialization_exception(entity)?;
+            }
             seen.insert(entity);
             if let Some(requests) = layouts.remove(&entity) {
                 self.graph.storage_layouts.extend(

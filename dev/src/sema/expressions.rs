@@ -341,6 +341,12 @@ impl Analyzer<'_> {
         scope: ScopeId,
         mut ty: TypeId,
     ) -> Result<(), Error> {
+        // analyzer_declarations.cpp::IsClassObjectType includes references to
+        // class objects: their name walk must not synthesize constructors for
+        // unrelated temporaries in the reference's initializer.
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
             ty = element;
         }

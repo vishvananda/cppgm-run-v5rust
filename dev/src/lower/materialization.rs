@@ -341,6 +341,22 @@ impl Function<'_, '_, '_, '_> {
             self.tree.expressions.get(root).kind,
             ExprKind::Conditional { .. }
         );
+        // An inert call result extended by a local reference opens at the
+        // segment's start, before taking the temporary's address.
+        if owner.is_some()
+            && destructor.is_none()
+            && call_result
+            && !persistent
+            && self.lifetime.region_start.is_pending()
+            && !self.lifetime.region
+            && !self.lifetime.cleanups.is_empty()
+            && self.lifetime.full_expression
+            && !self.lifetime.tracking.active
+            && self.element_temporaries.depth == 0
+            && self.lifetime.guarded_operands == 0
+        {
+            self.open_temporary_region_at(self.lifetime.expression_start)?;
+        }
         let opens =
             (destructor.is_some()
                 || !branched
@@ -414,6 +430,8 @@ impl Function<'_, '_, '_, '_> {
             self.persistent_alive(ty, slot)?;
         } else if destructor.is_some() && owner.is_none() && !self.terminated {
             self.temporary_alive(ty, object)?;
+        } else if destructor.is_none() && !persistent && !self.terminated {
+            self.finish_inert_temporary(owner.is_some())?;
         }
         if destructor.is_some()
             && !persistent

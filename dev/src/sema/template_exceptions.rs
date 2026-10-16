@@ -5,7 +5,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, ScopeId, ScopeKind},
+    graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::Filter,
     types::{TypeId, TypeKind},
 };
@@ -13,6 +13,7 @@ use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     syntax::{
         ast::{self, ExprKind, NameKind, SpecifierKind},
+        cloning::Cloner,
         storage::List,
     },
 };
@@ -25,6 +26,7 @@ pub(super) struct TemplateException {
     pub ty: TypeId,
     pub limit: usize,
 }
+
 #[derive(Clone, Copy)]
 enum OwnProbe {
     Expression(ast::ExprId),
@@ -33,6 +35,75 @@ enum OwnProbe {
     Specifiers(List<ast::Specifier>, bool),
 }
 impl Analyzer<'_> {
+    pub(super) fn resolve_specialization_exception(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        use super::exceptions::{ExceptionSet, ExceptionState};
+        let ExceptionState::Template(specification) = self.graph.entity(entity).exceptions else {
+            return Ok(());
+        };
+        // Like C++ noexcept_pending, recursive queries see the conservative
+        // throwing value while this specialization's operand is evaluated.
+        self.graph.entity_mut(entity).exceptions = ExceptionState::Evaluating;
+        let result = self.instantiation_context(
+            self.graph.instantiation_levels.get(entity)?,
+            self.tree.expressions.get(specification.operand).location,
+            specification.limit,
+            |analyzer| {
+                let operand =
+                    Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
+                        .expression(specification.operand)
+                        .map_err(|error| super::template_bodies::copy_error(&error))?;
+                let prototype_type =
+                    analyzer.specialization_object_signature(entity, specification.ty)?;
+                let primary = analyzer
+                    .graph
+                    .function_templates
+                    .primary(entity)
+                    .ok_or(Error::Invariant("exception without function template"))?;
+                let head = analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(primary).entity)
+                    .template_head
+                    .ok_or(Error::Invariant("exception pattern without head"))?;
+                let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
+                let prototype = analyzer.exception_prototype(TemplateException {
+                    operand,
+                    scope: parent,
+                    ty: prototype_type,
+                    ..specification
+                })?;
+                let saved = analyzer.evaluating_noexcept;
+                analyzer.evaluating_noexcept = true;
+                let result = (|| {
+                    let ty = analyzer.exception_operand_type(operand, prototype)?;
+                    analyzer.exception_bool(ty, analyzer.tree.expressions.get(operand).location)?;
+                    analyzer.constant_value(operand, prototype, true)
+                })();
+                analyzer.evaluating_noexcept = saved;
+                let value = result?.ok_or(Error::Invariant(
+                    "constant exception specification without value",
+                ))?;
+                Ok(if value.bits == 0 {
+                    ExceptionSet::All
+                } else {
+                    ExceptionSet::None
+                })
+            },
+        );
+        match result {
+            Ok(value) => {
+                self.graph.entity_mut(entity).exceptions = ExceptionState::Value(value);
+                Ok(())
+            }
+            Err(error) => {
+                self.graph.entity_mut(entity).exceptions = ExceptionState::Template(specification);
+                Err(error)
+            }
+        }
+    }
+
     pub(super) fn check_template_exception(
         &mut self,
         pattern: TemplateException,
@@ -433,5 +504,70 @@ impl Analyzer<'_> {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn specification_queries_memoize_without_instantiating_bodies() {
+        let source = SourceBuffer::new(
+            b"template<class T>int f(const T x)noexcept(sizeof(x)==4){return T::bad;}\
+              int main(){return noexcept(f(1))+noexcept(f('x'));}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"specialization-exception-demand").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let instances: Vec<_> = analyzer
+            .graph
+            .function_templates
+            .arguments
+            .keys()
+            .copied()
+            .collect();
+        assert_eq!(instances.len(), 2);
+        for instance in instances {
+            let primary = analyzer.graph.function_templates.primary(instance).unwrap();
+            let primary = analyzer.graph.binding(primary).entity;
+            assert!(!analyzer.graph.function_templates.body_demanded(primary));
+            let super::super::exceptions::ExceptionState::Template(pattern) =
+                analyzer.graph.entity(primary).exceptions
+            else {
+                panic!("primary exception pattern was overwritten");
+            };
+            assert!(
+                analyzer
+                    .graph
+                    .expression_facts
+                    .get(pattern.operand)
+                    .is_err()
+            );
+            assert!(matches!(
+                analyzer.graph.entity(instance).exceptions,
+                super::super::exceptions::ExceptionState::Value(_)
+            ));
+            analyzer.resolve_specialization_exception(instance).unwrap();
+            analyzer.resolve_specialization_exception(instance).unwrap();
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
     }
 }

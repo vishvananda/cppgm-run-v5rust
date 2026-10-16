@@ -182,7 +182,7 @@ impl Analyzer<'_> {
         for &primary in set {
             let member = self.member_function_owner(primary).is_some();
             let args = &operands[usize::from(member)..];
-            let Some(binding) = self.deduce_function_call(primary, args, postfix)? else {
+            let Some(binding) = self.deduce_function_call(primary, args, postfix, None)? else {
                 continue;
             };
             let ty = self

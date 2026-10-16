@@ -761,22 +761,28 @@ impl Function<'_, '_, '_, '_> {
             .enumerate()
         {
             self.builder.block(name)?;
-            if index != 0
+            let reopened = index != 0
                 && self.lifetime.full_expression
                 && !self.lifetime.region
                 && self.lifetime.regions_opened != opened
                 && !self.lifetime.tracking.active
                 && (!self.lifetime.temporary_segment.allows_eager_arguments()
                     || self.expression_throws(expression)?
-                    || self.expression_temporaries(expression)?.made)
-            {
+                    || self.expression_temporaries(expression)?.made);
+            if reopened {
                 let position = self.builder.position()?;
                 self.open_temporary_region_at(Some(position))?;
             }
             let first = self.lifetime.cleanups.len();
             self.lifetime.guarded_operands += u32::from(!local);
-            let value = self.operand(expression, Context::Operand)?;
+            let outer_choice = self.lifetime.choice_region;
+            if reopened {
+                self.lifetime.choice_region = super::lifetime::ChoiceRegion::Reopened;
+            }
+            let value = self.operand(expression, Context::Operand);
+            self.lifetime.choice_region = outer_choice;
             self.lifetime.guarded_operands -= u32::from(!local);
+            let value = value?;
             let value = self.fit(value, source)?;
             self.effect(I::Store(
                 types::memory(self.graph, source)?,

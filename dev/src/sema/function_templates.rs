@@ -799,6 +799,10 @@ impl Analyzer<'_> {
         depth: u32,
         arguments: &mut [Option<TypeId>],
     ) -> Result<bool, Error> {
+        let reference = matches!(
+            self.graph.types.get(pattern).kind,
+            TypeKind::Reference { .. }
+        );
         if let TypeKind::Reference { element, kind } = self.graph.types.get(pattern).kind {
             if kind == RefKind::Rvalue
                 && self.type_cv(element).0 == 0
@@ -813,7 +817,77 @@ impl Analyzer<'_> {
             pattern = self.bare_type(pattern)?;
             actual = self.decayed_type(actual)?;
         }
-        self.deduce_signature_type(pattern, actual, depth, arguments, true)
+        if self.deduce_signature_type(pattern, actual, depth, arguments, true)? {
+            return Ok(true);
+        }
+        if !reference
+            && let (TypeKind::Pointer(p), TypeKind::Pointer(a)) = (
+                self.graph.types.get(pattern).kind.clone(),
+                self.graph.types.get(actual).kind.clone(),
+            )
+            && self.deduce_from_base(p, a, depth, arguments)?
+        {
+            return Ok(true);
+        }
+        self.deduce_from_base(pattern, actual, depth, arguments)
+    }
+
+    // function_templates.cpp::deduce_from_base: deduction ignores base access
+    // and subobject ambiguity; the selected call's conversion checks those.
+    // Each base identity is tried once, and matching branches stop there.
+    fn deduce_from_base(
+        &mut self,
+        pattern: TypeId,
+        actual: TypeId,
+        depth: u32,
+        arguments: &mut [Option<TypeId>],
+    ) -> Result<bool, Error> {
+        let Some(class) = self.graph.class_of(actual) else {
+            return Ok(false);
+        };
+        if self.graph.class_of(pattern).is_none()
+            || !self.graph.dependent_type(pattern)
+            || !self.complete_class(class)?
+        {
+            return Ok(false);
+        }
+        let pattern = self.bare_type(pattern)?;
+        let mut work = vec![class];
+        let mut seen = HashSet::new();
+        let mut trial = arguments.to_vec();
+        let mut found: Option<Vec<Option<TypeId>>> = None;
+        let mut unique = true;
+        while let Some(current) = work.pop() {
+            for index in 0..self.graph.entity(current).bases.len() {
+                let base = self.graph.entity(current).bases[index].class;
+                if !seen.insert(base) {
+                    continue;
+                }
+                let ty = self
+                    .graph
+                    .entity(base)
+                    .ty
+                    .ok_or(Error::Invariant("base class without type"))?;
+                trial.copy_from_slice(arguments);
+                if self.deduce_signature_type(pattern, ty, depth, &mut trial, false)? {
+                    if let Some(previous) = &mut found {
+                        unique &= *previous == trial;
+                        previous.copy_from_slice(&trial);
+                    } else {
+                        found = Some(trial.clone());
+                    }
+                } else {
+                    work.push(base);
+                }
+            }
+        }
+        if let Some(found) = found
+            && unique
+        {
+            arguments.copy_from_slice(&found);
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn signature_arguments(&self, binding: BindingId, head: HeadId) -> Vec<Option<TypeId>> {
@@ -860,6 +934,7 @@ impl Analyzer<'_> {
         binding: BindingId,
         args: &[ast::ExprId],
         implicit_postfix: bool,
+        prefix: Option<super::expression_facts::ExprFacts>,
     ) -> Result<Option<BindingId>, Error> {
         if self
             .graph
@@ -876,6 +951,7 @@ impl Analyzer<'_> {
             .binding(binding)
             .ty
             .ok_or(Error::Invariant("template call without type"))?;
+        let ty = self.graph.types.canonical_function(ty)?;
         let count = self.graph.types.function_parameter_count(ty)?;
         let TypeKind::Function { variadic, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("template is no function"));
@@ -883,7 +959,8 @@ impl Analyzer<'_> {
         // Postfix operator syntax supplies its final int argument implicitly.
         // Deduce only from the written operand; the operator owner validates
         // that final parameter after forming the specialization.
-        let supplied = args.len() + usize::from(implicit_postfix);
+        let offset = usize::from(prefix.is_some());
+        let supplied = args.len() + offset + usize::from(implicit_postfix);
         if supplied > count && !variadic
             || (supplied..count)
                 .any(|index| !self.function_has_default(self.graph.binding(binding).entity, index))
@@ -913,7 +990,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
-        for (index, &argument) in args.iter().enumerate().take(count) {
+        for index in 0..(args.len() + offset).min(count) {
             let pattern = self.graph.types.function_parameter(ty, index)?;
             let mut environment = Substitution::new(depth, &given);
             environment.context = Some(self.graph.binding(binding).entity);
@@ -923,7 +1000,11 @@ impl Analyzer<'_> {
             if !self.needs_deduction(pattern, depth) {
                 continue;
             }
-            let facts = self.graph.expression_facts.get(argument)?;
+            let facts = if index < offset {
+                prefix.ok_or(Error::Invariant("missing implicit call argument"))?
+            } else {
+                self.graph.expression_facts.get(args[index - offset])?
+            };
             if let Some(set) = facts.functions {
                 self.deduce_overloaded_argument(pattern, set, depth, &mut arguments)?;
             } else if !self.deduce_call_argument(

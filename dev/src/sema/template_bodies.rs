@@ -36,6 +36,7 @@ pub(super) struct Bodies {
     seen: HashSet<EntityId>,
     semantic_uses: HashSet<EntityId>,
     deferred_synthesis: HashSet<EntityId>,
+    emission_definitions: HashSet<EntityId>,
 }
 impl Bodies {
     fn template_pattern(&self, mut entity: EntityId) -> Option<Pattern> {
@@ -123,13 +124,10 @@ impl Graph {
         }
     }
     /// Definition availability at the original lowering demand boundary.
-    pub(crate) fn lower_synthesized_at_emission(&self, entity: EntityId) -> bool {
-        self.function_templates.bodies.synthesized(entity)
-            && !self
-                .function_templates
-                .bodies
-                .semantic_uses
-                .contains(&entity)
+    pub(crate) fn lower_definition_at_emission(&self, entity: EntityId) -> bool {
+        let bodies = &self.function_templates.bodies;
+        (bodies.synthesized(entity) || bodies.emission_definitions.contains(&entity))
+            && !bodies.semantic_uses.contains(&entity)
     }
 }
 impl super::function_templates::FunctionTemplates {
@@ -351,18 +349,6 @@ pub(crate) fn analyze_unit(
         let body = cloner
             .body(pattern.body.body)
             .map_err(|error| copy_error(&error))?;
-        let exception = if let super::exceptions::ExceptionState::Template(specification) =
-            graph.entity(entity).exceptions
-        {
-            Some((
-                specification,
-                cloner
-                    .expression(specification.operand)
-                    .map_err(|error| copy_error(&error))?,
-            ))
-        } else {
-            None
-        };
         let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
         analyzer.set_semantics(true);
         if lowering {
@@ -377,9 +363,7 @@ pub(crate) fn analyze_unit(
             analyzer.graph.instantiation_levels.get(entity)?,
             location,
             pattern.limit,
-            |analyzer| {
-                analyzer.instantiate_body(entity, primary, pattern, parameters, body, exception)
-            },
+            |analyzer| analyzer.instantiate_body(entity, primary, pattern, parameters, body),
         )?;
         graph = analyzer.finish_analysis(false)?;
         graph
@@ -560,6 +544,15 @@ impl Analyzer<'_> {
             .bodies
             .members
             .insert(entity, (definition, limit));
+        // This member had no body in its class's copied declaration. Preparing
+        // its outside definition early must not expose it to lowering's
+        // pre-demand inertness query. Inline copied bodies already live in
+        // `members` and never enter this preparation path.
+        self.graph
+            .function_templates
+            .bodies
+            .emission_definitions
+            .insert(entity);
         Ok(())
     }
 
@@ -597,7 +590,6 @@ impl Analyzer<'_> {
         pattern: Pattern,
         parameters: ast::ParameterClause,
         body: ast::BodyId,
-        exception: Option<(super::template_exceptions::TemplateException, ast::ExprId)>,
     ) -> Result<(), Error> {
         let definition = pattern.body;
         let frame = if definition.entity == primary {
@@ -615,41 +607,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).defined = true;
         self.graph.entity_mut(entity).function_parameters = Some(parameters);
         self.graph.lookup_limit = Some(pattern.limit);
-        if let Some((specification, operand)) = exception {
-            let prototype_type = self.specialization_object_signature(entity, specification.ty)?;
-            let parent = self.template_body_frame(
-                entity,
-                self.graph
-                    .entity(primary)
-                    .template_head
-                    .ok_or(Error::Invariant("exception pattern without head"))?,
-                specification.scope,
-            )?;
-            let prototype =
-                self.exception_prototype(super::template_exceptions::TemplateException {
-                    operand,
-                    scope: parent,
-                    ty: prototype_type,
-                    ..specification
-                })?;
-            let saved = self.evaluating_noexcept;
-            self.evaluating_noexcept = true;
-            let result = (|| {
-                let ty = self.exception_operand_type(operand, prototype)?;
-                self.exception_bool(ty, self.tree.expressions.get(operand).location)?;
-                self.constant_value(operand, prototype, true)
-            })();
-            self.evaluating_noexcept = saved;
-            let value = result?.ok_or(Error::Invariant(
-                "constant exception specification without value",
-            ))?;
-            self.graph.entity_mut(entity).exceptions =
-                super::exceptions::ExceptionState::Value(if value.bits == 0 {
-                    super::exceptions::ExceptionSet::All
-                } else {
-                    super::exceptions::ExceptionSet::None
-                });
-        }
+        self.resolve_specialization_exception(entity)?;
         let result = self.function_body(DeferredBody {
             entity,
             ty,
@@ -756,6 +714,53 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn outside_body_availability_is_separate_from_prepared_syntax() {
+        for (declaration, use_code, at_emission) in [
+            ("~A(){}", "A<int>a;", false),
+            ("~A();", "A<int>a;", true),
+            ("~A();", "A<int>a;a.~A();", false),
+        ] {
+            let text = format!(
+                "template<class T>struct A{{{declaration}}};\
+                 int main(){{{use_code}return 0;}}{}",
+                if declaration == "~A();" {
+                    "template<class T>A<T>::~A(){}"
+                } else {
+                    ""
+                }
+            );
+            let source = SourceBuffer::new(text.into_bytes()).unwrap();
+            let mut unit = SyntaxUnit::new(
+                Preprocessor::with_name(&source, b"outside-body-availability").unwrap(),
+            );
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let graph = analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                true,
+            )
+            .unwrap();
+            let bodies = &graph.function_templates.bodies;
+            let entity = *bodies
+                .member_links
+                .keys()
+                .find(|&&entity| {
+                    graph.entity(entity).member_function.is_some_and(|member| {
+                        member.kind == super::super::graph::MemberKind::Destructor
+                    })
+                })
+                .unwrap();
+            assert!(bodies.body(entity).is_some());
+            assert!(graph.lower_function_body(entity).is_some());
+            assert_eq!(graph.lower_definition_at_emission(entity), at_emission);
+        }
     }
 
     #[test]

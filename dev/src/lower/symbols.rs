@@ -2416,9 +2416,9 @@ impl Symbols<'_, '_> {
         use super::construction::Entry;
         // The C++ inertness query can precede instantiate_definition. Keep
         // that availability boundary even though Rust prepares all semantic
-        // plans before lowering. Demand makes the synthesized body visible;
+        // plans before lowering. Demand makes an outside or synthesized body visible;
         // an already memoized inertness result retains its original meaning.
-        if self.graph.lower_synthesized_at_emission(entity)
+        if self.graph.lower_definition_at_emission(entity)
             && ![
                 Entry::Function(entity),
                 Entry::DestructorBase(entity),

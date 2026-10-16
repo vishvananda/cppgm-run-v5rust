@@ -1134,8 +1134,8 @@ impl Graph {
                 super::exceptions::ExceptionState::Template(_)
             )
         {
-            return Err(Error::Missing(
-                "signature-demanded template exception specification",
+            return Err(Error::Invariant(
+                "unresolved specialization exception at lowering boundary",
             ));
         }
         let function = entity

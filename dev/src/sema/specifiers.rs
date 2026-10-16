@@ -69,6 +69,35 @@ pub(super) struct Specifiers {
     pub thread_storage: ThreadStorage,
 }
 impl Analyzer<'_> {
+    // analyzer_declarations.cpp::declare_declarator: function-only specifiers
+    // are checked before mutable and typedef restrictions, in source order.
+    pub(super) fn check_function_specifiers(
+        &self,
+        specs: Specifiers,
+        info: &super::declarators::DeclaratorInfo,
+        init: crate::syntax::ast::InitDeclarator,
+    ) -> Result<(), Error> {
+        let function = specs.role != DeclarationRole::Typedef
+            && matches!(
+                self.graph.types.get(info.ty).kind,
+                super::types::TypeKind::Function { .. }
+            );
+        let location = self.declarator_location(init.declarator)?;
+        if specs.virtuality == Virtuality::Virtual && !function {
+            return Err(Error::at(
+                location,
+                "virtual in a declaration that declares no function",
+            ));
+        }
+        if specs.explicitness == Explicitness::Explicit && !function {
+            return Err(Error::at(
+                location,
+                "explicit in a declaration that declares no function",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn specifiers(
         &mut self,
         list: List<Specifier>,
@@ -130,14 +159,9 @@ impl Analyzer<'_> {
                     Keyword::ThreadLocal => thread_storage = ThreadStorage::ThreadLocal,
                     Keyword::Inline => inline = InlinePreference::Inline,
                     Keyword::Register => (),
-                    Keyword::Explicit if special => explicitness = Explicitness::Explicit,
+                    Keyword::Explicit => explicitness = Explicitness::Explicit,
                     Keyword::Auto => auto_type = true,
                     Keyword::Friend => friendship = Friendship::Friend,
-                    Keyword::Explicit => {
-                        return Err(Error::Missing(
-                            "deduced types and extended declaration specifiers",
-                        ));
-                    }
                     _ => fundamental.push(key),
                 }
             }

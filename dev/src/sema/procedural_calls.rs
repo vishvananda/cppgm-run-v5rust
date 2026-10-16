@@ -794,16 +794,7 @@ impl Analyzer<'_> {
             if !set.includes(&self.graph, primary) {
                 continue;
             }
-            if prefix.is_some()
-                && self
-                    .graph
-                    .entity(self.graph.binding(primary).entity)
-                    .template_head
-                    .is_some()
-            {
-                return Err(Error::Missing("allocation function template deduction"));
-            }
-            let Some(binding) = self.deduce_function_call(primary, args, false)? else {
+            let Some(binding) = self.deduce_function_call(primary, args, false, prefix)? else {
                 continue;
             };
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -1092,10 +1083,20 @@ impl Analyzer<'_> {
         scope: ScopeId,
         scratch: &CallScratch,
     ) -> Result<(), Error> {
+        self.apply_written_call_arguments(selected, args, scope, scratch)?;
+        self.instantiate_call_defaults(selected.binding, args.len())
+    }
+    fn apply_written_call_arguments(
+        &mut self,
+        selected: CallSelection,
+        args: &[ast::ExprId],
+        scope: ScopeId,
+        scratch: &CallScratch,
+    ) -> Result<(), Error> {
         let CallSelection {
-            binding,
             first,
             object_count,
+            ..
         } = selected;
         for (index, &arg) in args.iter().enumerate() {
             if let Some(sequence) = scratch.sequences[first + object_count + index] {
@@ -1116,7 +1117,7 @@ impl Analyzer<'_> {
                 self.ellipsis_argument(arg)?;
             }
         }
-        self.instantiate_call_defaults(binding, args.len())
+        Ok(())
     }
     pub(super) fn apply_argument_sequence(
         &mut self,
@@ -1161,7 +1162,9 @@ impl Analyzer<'_> {
         scratch: &CallScratch,
     ) -> Result<(), Error> {
         selected.object_count += 1;
-        self.apply_call_arguments(selected, args, scope, scratch)
+        // A new-expression converts its written placement operands. The
+        // frozen allocation path neither forms nor emits omitted defaults.
+        self.apply_written_call_arguments(selected, args, scope, scratch)
     }
     fn compare_candidates(
         &mut self,

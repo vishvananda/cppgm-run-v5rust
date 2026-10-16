@@ -639,7 +639,7 @@ impl Analyzer<'_> {
         }
         let member = self.declared_member(&info, scope)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
-        self.check_virtual_object_declaration(specs, &info, init)?;
+        self.check_function_specifiers(specs, &info, init)?;
         self.check_mutable_declarator(
             specs,
             &info,

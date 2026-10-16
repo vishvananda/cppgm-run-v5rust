@@ -55,6 +55,39 @@ pub(super) fn key(keyword: Keyword, array: bool) -> ValueKey {
 }
 
 impl Analyzer<'_> {
+    fn initialize_allocated_class(
+        &mut self,
+        target: TypeId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<(ConstructorId, ConstructorArguments)>, Error> {
+        let constructor = self.initialize_class_object(target, initializer, scope, location)?;
+        if constructor.is_some() || !self.lowering() {
+            return Ok(constructor);
+        }
+        let Some(source) = self.single_initializer(initializer) else {
+            return Ok(None);
+        };
+        let facts = self.graph.expression_facts.get(source)?;
+        let Some(selected) = facts.class_copy else {
+            return Ok(None);
+        };
+        if facts.category == ValueCategory::Prvalue {
+            return Ok(None);
+        }
+        let class = self
+            .graph
+            .class_of(target)
+            .ok_or(Error::Invariant("allocated copy without class"))?;
+        // allocation_copy_ makes the selected glvalue copy callable even when
+        // ordinary local initialization can transfer storage directly. Publish
+        // that plan here, before lowering borrows the immutable semantic graph.
+        let constructor = self.copy_constructor_plan(class, selected, location)?;
+        self.demand_constructor_use(constructor);
+        Ok(Some((constructor, ConstructorArguments::Single(source))))
+    }
+
     pub(super) fn allocation_may_throw(
         &mut self,
         id: ast::ExprId,
@@ -388,6 +421,7 @@ impl Analyzer<'_> {
         let function = selected?;
         self.record_argument_base_paths(args, scope)?;
         self.check_class_argument_slice(function, args, 1, scope)?;
+        self.demand_specialization_body(function);
         self.demand_function(function, true);
         let array = if let Some(count) = count {
             Some(self.initialize_array_allocation(
@@ -405,7 +439,7 @@ impl Analyzer<'_> {
             self.array_allocation_constructor(array, constant, element, scope, location)?
         } else if let Some(initializer) = initializer {
             if class.is_some() {
-                self.initialize_class_object(target, initializer, scope, location)?
+                self.initialize_allocated_class(target, initializer, scope, location)?
             } else {
                 self.object_initializer(initializer, scope, target, location)?;
                 None

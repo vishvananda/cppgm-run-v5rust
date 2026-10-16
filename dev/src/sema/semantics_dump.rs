@@ -1243,6 +1243,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let conversion = facts
             .conversion
             .ok_or_else(|| io::Error::other("conversion view without facts"))?;
+        // record_copy presents its outer standard constructor conversion, not
+        // the derived-to-base binding used for the constructor's argument.
+        // Keep that retained binding available to lowering.
+        if self.graph.expression_facts.copy_action(id).is_some()
+            && matches!(
+                self.graph.types.get(conversion.target).kind,
+                TypeKind::Class(_)
+            )
+        {
+            return Ok(false);
+        }
         if conversion.second == C::DerivedToBase
             || conversion.temporary
                 && (conversion.second != C::None
@@ -1409,7 +1420,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
-            ExprKind::New { .. } => "expression",
+            ExprKind::New { .. } | ExprKind::Delete { .. } => "expression",
             ExprKind::Call { .. } => {
                 if facts.functional_call || facts.intrinsic.is_some() {
                     "cast-expression"

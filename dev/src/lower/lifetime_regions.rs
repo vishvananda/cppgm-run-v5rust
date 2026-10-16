@@ -14,6 +14,48 @@ use crate::{
     sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
+    // cleanup_lowering.cpp::temporary_done's ordinary object path. A completed
+    // inert temporary ends its construction segment, even though it adds no
+    // cleanup action. A local reference forces its own completion boundary.
+    pub(super) fn finish_inert_temporary(&mut self, force: bool) -> Result<(), Error> {
+        if force
+            && self.lifetime.full_expression
+            && self.has_tracked_region()
+            && self.element_temporaries.depth == 0
+        {
+            self.close_lifetime_region()?;
+            let position = self.builder.position()?;
+            return self.tracked_region(Some(position));
+        }
+        if !self.lifetime.full_expression
+            || !self.lifetime.region
+            || self.lifetime.guarded_operands != 0
+            || self.lifetime.choice_region == super::lifetime::ChoiceRegion::Reopened
+            || self.lifetime.tracking.active
+            || self.element_temporaries.depth != 0
+            || !force
+                && self
+                    .lifetime
+                    .cleanups
+                    .iter()
+                    .skip(self.lifetime.temporary_segment.floor())
+                    .any(|cleanup| {
+                        matches!(cleanup.place, super::lifetime::CleanupPlace::Temporary(_))
+                    })
+        {
+            return Ok(());
+        }
+        self.close_lifetime_region()?;
+        if !self.lifetime.cleanups.is_empty() && !self.static_initializer {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        if !self.lifetime.region {
+            self.lifetime.temporary_split = Some(self.builder.position()?);
+        }
+        Ok(())
+    }
+
     pub(super) fn has_tracked_region(&self) -> bool {
         self.lifetime.tracking.active
             && !self.lifetime.tracking.construction.active()

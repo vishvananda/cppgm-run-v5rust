@@ -79,27 +79,8 @@ impl Function<'_, '_, '_, '_> {
         let place = self.original_scalar_place(self.without_parentheses(id));
         self.empty_value_zeroing = saved;
         let place = place?;
-        if !facts.is_place
-            && self.symbols.class_destructor(facts.ty)?.is_none()
-            && self.lifetime.full_expression
-            && self.lifetime.region
-            && self.lifetime.guarded_operands == 0
-            && !self.lifetime.tracking.active
-            && !self
-                .lifetime
-                .cleanups
-                .iter()
-                .skip(self.lifetime.temporary_segment.floor())
-                .any(|cleanup| matches!(cleanup.place, super::lifetime::CleanupPlace::Temporary(_)))
-        {
-            self.close_lifetime_region()?;
-            self.before_lifetime_call(false)?;
-            // temporary_done leaves a split in this block when no object is
-            // alive yet. A later result temporary reopens at its next event,
-            // even when that event is a nonthrowing destructor.
-            if !self.lifetime.region {
-                self.lifetime.temporary_split = Some(self.builder.position()?);
-            }
+        if !facts.is_place && self.symbols.class_destructor(facts.ty)?.is_none() {
+            self.finish_inert_temporary(false)?;
         }
         self.storage_address(place, facts.ty)
     }

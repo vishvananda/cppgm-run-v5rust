@@ -184,7 +184,10 @@ impl Analyzer<'_> {
             ty,
             template_depth: self.template_depth,
         };
-        if self.class_depth != 0
+        if self.defer_instance_defaults(entity) {
+            // Defaults copied with a class specialization remain untyped until
+            // a selected call needs them (14.7.1p1), independently of its body.
+        } else if self.class_depth != 0
             && self
                 .graph
                 .entity(entity)

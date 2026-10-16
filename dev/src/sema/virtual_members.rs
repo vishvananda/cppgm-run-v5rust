@@ -347,27 +347,6 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn check_virtual_object_declaration(
-        &self,
-        specs: Specifiers,
-        info: &DeclaratorInfo,
-        init: ast::InitDeclarator,
-    ) -> Result<(), Error> {
-        let function = specs.role != super::specifiers::DeclarationRole::Typedef
-            && matches!(
-                self.graph.types.get(info.ty).kind,
-                TypeKind::Function { .. }
-            );
-        let location = self.declarator_location(init.declarator)?;
-        if specs.virtuality == Virtuality::Virtual && !function {
-            return Err(Error::at(
-                location,
-                "virtual in a declaration that declares no function",
-            ));
-        }
-        Ok(())
-    }
-
     fn note_virtual_assignment_target(&mut self, key: ValueKey, ty: TypeId) -> Result<(), Error> {
         if key != super::assignment::key()? {
             return Ok(());

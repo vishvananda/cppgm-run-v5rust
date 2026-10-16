@@ -497,7 +497,8 @@ impl Analyzer<'_> {
                 self.check_narrowing(argument, parameter, scope)?;
             }
         }
-        Ok(())
+        let binding = self.graph.function_origin(function)?;
+        self.instantiate_call_defaults(binding, args.len())
     }
 
     pub(super) fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {

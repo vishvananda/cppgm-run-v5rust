@@ -143,6 +143,12 @@ pub(super) enum CallRegion {
     Enclosing,
     Transient,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ChoiceRegion {
+    #[default]
+    Ordinary,
+    Reopened,
+}
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
@@ -181,6 +187,7 @@ pub(super) struct Lifetime {
     pub temporary_work: Vec<ast::ExprId>,
     pub temporary_queries: HashMap<ast::ExprId, super::temporary_scan::TemporarySummary>,
     pub guarded_operands: u32,
+    pub choice_region: ChoiceRegion,
     pub tracking: super::tracked_lifetimes::Tracking,
 }
 #[derive(Clone, Copy)]

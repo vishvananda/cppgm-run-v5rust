@@ -82,9 +82,7 @@ impl Analyzer<'_> {
                 ExceptionState::Template(_)
             )
         {
-            return Err(Error::Missing(
-                "signature-demanded template exception specification",
-            ));
+            self.resolve_specialization_exception(entity)?;
         }
         if let ExceptionState::Pending(id) = self.graph.entity(entity).exceptions {
             self.resolve_specification(id)?;
