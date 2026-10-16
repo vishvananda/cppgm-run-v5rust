@@ -214,6 +214,9 @@ impl<'a> Preprocessor<'a> {
     pub(crate) fn name_spelling(&self, name: NameId) -> &[u8] {
         self.names.bytes(name)
     }
+    pub(crate) fn identifiers(&self) -> &Identifiers {
+        &self.names
+    }
     pub(crate) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, PreprocessError> {
         self.names.intern(spelling).map_err(PreprocessError::Limit)
     }

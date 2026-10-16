@@ -412,6 +412,28 @@ impl Analyzer<'_> {
         self.merge_template_head(entity, head, location)?;
         self.check_template_defaults(earlier.unwrap_or(head), location)
     }
+    pub(super) fn check_friend_template_defaults(&self, scope: ScopeId) -> Result<(), Error> {
+        let Some(head) = self.active_template_head(scope) else {
+            return Ok(());
+        };
+        for parameter in self
+            .tree
+            .template_parameters
+            .get(self.graph.templates.head(head).syntax.parameters)
+        {
+            let defaulted = match parameter.kind {
+                ast::TemplateParameterKind::Type { default, .. } => default.is_some(),
+                ast::TemplateParameterKind::NonType { default, .. } => default.is_some(),
+            };
+            if defaulted {
+                return Err(Error::at(
+                    parameter.location,
+                    "a default template argument in a friend class template declaration",
+                ));
+            }
+        }
+        Ok(())
+    }
     fn check_template_defaults(&self, head: HeadId, location: SourceOffset) -> Result<(), Error> {
         let head = self.graph.templates.head(head);
         let mut defaulted = false;

@@ -22,6 +22,7 @@ pub(super) struct AssociationScratch {
     seen_namespaces: HashSet<ScopeId>,
     seen_functions: HashSet<EntityId>,
 }
+
 impl AssociationScratch {
     fn clear(&mut self) {
         self.types.clear();
@@ -74,7 +75,38 @@ impl Analyzer<'_> {
         found: &mut LookupResult,
     ) -> Result<(), Error> {
         let mut scratch = std::mem::take(&mut self.association_scratch);
-        let result = self.associated_query(name, arguments, found, &mut scratch);
+        let result = (|| {
+            for &argument in arguments {
+                if matches!(
+                    self.tree.expressions.get(argument).kind,
+                    ast::ExprKind::Braced { .. }
+                ) {
+                    continue;
+                }
+                let facts = self.graph.expression_facts.get(argument)?;
+                if (facts.functions.is_none() || self.ordinary_function_operand(facts).is_some())
+                    && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Scalar(_))
+                {
+                    scratch.types.push((facts.ty, 0));
+                }
+            }
+            self.associated_query(name, found, &mut scratch)
+        })();
+        scratch.clear();
+        self.association_scratch = scratch;
+        result
+    }
+    /// Name-only template checks supply types directly, without manufacturing
+    /// expression facts, selecting an overload or demanding a function body.
+    pub(super) fn associated_type_functions(
+        &mut self,
+        name: ValueKey,
+        arguments: &[TypeId],
+        found: &mut LookupResult,
+    ) -> Result<(), Error> {
+        let mut scratch = std::mem::take(&mut self.association_scratch);
+        scratch.types.extend(arguments.iter().map(|&ty| (ty, 0)));
+        let result = self.associated_query(name, found, &mut scratch);
         scratch.clear();
         self.association_scratch = scratch;
         result
@@ -82,7 +114,6 @@ impl Analyzer<'_> {
     fn associated_query(
         &self,
         name: ValueKey,
-        arguments: &[ast::ExprId],
         found: &mut LookupResult,
         scratch: &mut AssociationScratch,
     ) -> Result<(), Error> {
@@ -96,20 +127,6 @@ impl Analyzer<'_> {
             seen_namespaces,
             seen_functions,
         } = scratch;
-        for &argument in arguments {
-            if matches!(
-                self.tree.expressions.get(argument).kind,
-                ast::ExprKind::Braced { .. }
-            ) {
-                continue;
-            }
-            let facts = self.graph.expression_facts.get(argument)?;
-            if (facts.functions.is_none() || self.ordinary_function_operand(facts).is_some())
-                && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Scalar(_))
-            {
-                types.push((facts.ty, 0u32));
-            }
-        }
         // The same type may be reached with more association depth remaining.
         // Revisit only for a shorter path; every successful revisit decreases
         // its depth, bounded by the inherited 64-level type budget.
@@ -224,5 +241,79 @@ impl Analyzer<'_> {
             scope = parent;
         }
         scope
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::analyzer::Analyzer,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    #[test]
+    fn template_adl_probes_release_scratch_without_publishing_facts_or_demand() {
+        let source = SourceBuffer::new(
+            b"namespace N{struct A{};void first(A);void second(A);}\
+              template<class T>void unused(N::A a,T t){first(a);second(a);missing(t);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"template-adl-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expression_count = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let ast::DeclKind::Template { declaration, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[1])
+            .kind
+        else {
+            unreachable!()
+        };
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
+            unreachable!()
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            unreachable!()
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            unreachable!()
+        };
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        for &statement in tree.stmt_lists.get(statements) {
+            let ast::StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+                unreachable!()
+            };
+            assert!(analyzer.graph.expression_facts.get(call).is_err());
+            let ast::ExprKind::Call { callee, arguments } = tree.expressions.get(call).kind else {
+                unreachable!()
+            };
+            for &expression in tree
+                .expr_lists
+                .get(arguments)
+                .iter()
+                .chain(std::iter::once(&callee))
+            {
+                assert!(analyzer.graph.expression_facts.get(expression).is_err());
+            }
+        }
+        let scratch = &analyzer.association_scratch;
+        assert!(scratch.types.is_empty() && scratch.seen_types.is_empty());
+        assert!(scratch.classes.is_empty() && scratch.seen_classes.is_empty());
+        assert!(scratch.namespaces.is_empty() && scratch.seen_namespaces.is_empty());
+        assert!(scratch.enclosing.is_empty() && scratch.seen_functions.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert_eq!(tree.expressions.mark(), expression_count);
+        assert_eq!(tree.declarations.mark(), declaration_count);
     }
 }

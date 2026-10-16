@@ -693,6 +693,16 @@ impl Analyzer<'_> {
     ) -> Result<TypeId, Error> {
         match spec.kind {
             SpecifierKind::Named(name) => {
+                let node = self.tree.names.get(name);
+                if node.typename_keyword
+                    && !node.global
+                    && self.tree.name_lists.get(node.components).len() == 1
+                {
+                    return Err(Error::at(
+                        node.location,
+                        "typename applied to an unqualified name",
+                    ));
+                }
                 let result = self.lookup_result(name, scope, super::lookup::Filter::Ordinary)?;
                 let found = result.binding.ok_or_else(|| {
                     Error::at(self.tree.names.get(name).location, "undeclared name")

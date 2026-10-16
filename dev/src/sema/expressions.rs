@@ -70,8 +70,12 @@ impl Analyzer<'_> {
                 self.expression_work
                     .extend(arguments.iter().rev().map(|&id| (id, unevaluated)));
                 if let ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
-                    if let Some(binding) =
-                        self.check_expression_name(name, scope, !arguments.is_empty(), true)?
+                    let callee =
+                        self.check_expression_name(name, scope, !arguments.is_empty(), true)?;
+                    if callee.is_none() && self.template_depth != 0 && !arguments.is_empty() {
+                        self.check_unbound_callee(name, arguments, scope)?;
+                    }
+                    if let Some(binding) = callee
                         && arguments.is_empty()
                         && !unevaluated
                     {
@@ -211,6 +215,23 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("empty expression name"))?;
         if !matches!(last.kind, NameKind::Identifier(_)) {
             return Ok(None);
+        }
+        if self.template_depth != 0
+            && !node.global
+            && self.tree.name_lists.get(node.components).len() == 1
+            && let Some(arguments) = last.arguments
+            && let NameKind::Identifier(identifier) = last.kind
+        {
+            let found = self.unqualified(scope, identifier, Filter::Ordinary)?;
+            if found.is_none() && allow_undeclared
+                || found.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
+            {
+                self.template_argument_names(arguments, scope, last.location)?;
+                return Ok(found);
+            }
+            if found.is_none() {
+                return Err(Error::at(node.location, "undeclared name"));
+            }
         }
         let binding = match self.lookup(name, scope, Filter::Ordinary) {
             Ok(binding) => binding,

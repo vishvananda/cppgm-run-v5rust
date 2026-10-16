@@ -234,13 +234,18 @@ impl Analyzer<'_> {
             }
             let name = self.tree.names.get(base.name);
             let components = self.tree.name_lists.get(name.components);
+            let mut access_binding = None;
             let ty = if !name.global
                 && components.len() == 1
                 && let ast::NameKind::Decltype(operand) = components[0].kind
             {
                 self.decltype_type(operand, scope)?
             } else {
-                let binding = self.lookup(base.name, scope, Filter::Elaborated)?;
+                let found = self.lookup_result(base.name, scope, Filter::Elaborated)?;
+                let binding = found
+                    .binding
+                    .ok_or_else(|| Error::at(name.location, "undeclared name"))?;
+                access_binding = found.qualifier.map(|qualifier| (binding, qualifier));
                 self.graph
                     .binding(binding)
                     .ty
@@ -263,6 +268,17 @@ impl Analyzer<'_> {
                     base.location,
                     "a final class used as a base class",
                 ));
+            }
+            // Fixed template bases are checked where the pattern is defined.
+            // The ordinary lookup suppresses template access checks; enqueue
+            // this one explicitly so the complete base list supplies context.
+            if self.semantic()
+                && self.template_depth != 0
+                && let Some((binding, qualifier)) = access_binding
+                && self.graph.scope(qualifier).kind == super::graph::ScopeKind::Class
+                && let Some(naming) = self.graph.scope(qualifier).owner
+            {
+                self.check_declaration_member_access(binding, naming, None, scope, base.location)?;
             }
             if self.graph.entity(parent).key == Keyword::Union || node.key == Keyword::Union {
                 return Err(Error::at(base.location, "unions have no base classes"));

@@ -87,6 +87,10 @@ impl Analyzer<'_> {
             .last()
             .ok_or(Error::Invariant("empty friend class name"))?;
         let named = Self::component_name(last.kind)?;
+        if prefix.is_none() {
+            self.check_template_parameter_name(scope, named, self.tree.names.get(name).location)?;
+        }
+        self.check_friend_template_defaults(scope)?;
         let previous = if let Some(prefix) = prefix {
             self.qualified(prefix, named, super::lookup::Filter::Elaborated)?
         } else {
@@ -136,6 +140,14 @@ impl Analyzer<'_> {
             ty
         };
         if let TypeKind::Class(entity) = self.graph.types.get(ty).kind {
+            if self.active_template_head(scope).is_some() {
+                self.class_template_head(
+                    entity,
+                    scope,
+                    previous.is_some(),
+                    self.tree.names.get(name).location,
+                )?;
+            }
             self.graph.friendships.record(class, entity);
         }
         Ok(ty)

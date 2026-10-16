@@ -320,6 +320,9 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let binding = self.graph.binding(target_id);
+        if let Some(name) = binding.name {
+            self.check_template_parameter_name(scope, name, location)?;
+        }
         if matches!(
             binding.kind,
             BindingKind::Namespace | BindingKind::NamespaceAlias
@@ -362,6 +365,9 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let binding = self.graph.binding(target);
+        if let Some(name) = binding.name {
+            self.check_template_parameter_name(scope, name, location)?;
+        }
         if self
             .graph
             .value_binding(scope, key)

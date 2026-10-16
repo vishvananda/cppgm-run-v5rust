@@ -83,6 +83,7 @@ mod static_construction;
 mod static_initialization;
 mod static_objects;
 mod template_exceptions;
+mod template_names;
 mod templates;
 mod throw_queries;
 mod types;
