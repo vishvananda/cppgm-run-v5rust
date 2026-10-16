@@ -15,6 +15,42 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    /// C++ `class_templates.cpp::template_argument`: a parsed id-expression
+    /// can denote a type even when parser lookup could not classify it.
+    /// Keep the dependent-qualifier rule separate from that concrete lookup.
+    pub(super) fn template_type_argument(
+        &mut self,
+        argument: ast::TemplateArgument,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<TypeId>, Error> {
+        let ty = match argument.kind {
+            ast::TemplateArgumentKind::Type(ty) => self.type_syntax(ty, scope)?,
+            ast::TemplateArgumentKind::Expression(expression) => {
+                let ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
+                    return Ok(None);
+                };
+                let found = self.lookup(name, scope, Filter::Ordinary)?;
+                let binding = self.graph.binding(found);
+                let node = self.tree.names.get(name);
+                let components = self.tree.name_lists.get(node.components);
+                let dependent = (node.global || components.len() > 1)
+                    && components.last().is_some_and(|last| !last.template_keyword)
+                    && self.graph.dependent_members.get(binding.entity).is_some();
+                if dependent || !matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
+                    return Ok(None);
+                }
+                binding
+                    .ty
+                    .ok_or(Error::Invariant("template type argument without type"))?
+            }
+        };
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+            return Err(Error::at(location, "auto as a template argument"));
+        }
+        Ok(Some(ty))
+    }
+
     pub(super) fn template_argument_names(
         &mut self,
         arguments: crate::syntax::storage::List<ast::TemplateArgument>,
@@ -27,27 +63,8 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("template argument pack names"));
             }
-            let ty = match argument.kind {
-                ast::TemplateArgumentKind::Type(ty) => self.type_syntax(ty, scope)?,
-                ast::TemplateArgumentKind::Expression(expression) => {
-                    // The parser may not have classified this name as a type.
-                    // Resolve its existing syntax; do not replay a type grammar.
-                    let ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
-                        return Err(Error::Missing("non-type template argument names"));
-                    };
-                    let binding = self.lookup(name, scope, Filter::Ordinary)?;
-                    let binding = self.graph.binding(binding);
-                    if !matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
-                        return Err(Error::Missing("non-type template argument names"));
-                    }
-                    binding
-                        .ty
-                        .ok_or(Error::Invariant("template type argument without type"))?
-                }
-            };
-            if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
-                return Err(Error::at(location, "auto as a template argument"));
-            }
+            self.template_type_argument(*argument, scope, location)?
+                .ok_or(Error::Missing("non-type template argument names"))?;
         }
         Ok(())
     }

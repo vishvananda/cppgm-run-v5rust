@@ -11,7 +11,7 @@ use super::{
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
-use crate::syntax::ast;
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -191,25 +191,25 @@ impl Analyzer<'_> {
                 "class or alias template specialization lookup",
             ));
         }
-        let given = self.explicit_function_arguments(syntax, scope)?;
+        let given = self.explicit_function_arguments(syntax, scope, component.location)?;
         self.specialize_explicit_functions(component, found, &given, call)
     }
     pub(super) fn explicit_function_arguments(
         &mut self,
         syntax: crate::syntax::storage::List<ast::TemplateArgument>,
         scope: ScopeId,
+        location: SourceOffset,
     ) -> Result<Vec<TypeId>, Error> {
         let mut given = Vec::new();
         for syntax_index in 0..self.tree.template_arguments.get(syntax).len() {
             let syntax_item = self.tree.template_arguments.get(syntax)[syntax_index];
             let argument = &syntax_item;
-            let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
-                return Err(Error::Missing("non-type function template arguments"));
-            };
             if argument.pack {
                 return Err(Error::Missing("function template argument expansion"));
             }
-            let ty = self.type_syntax(ty, scope)?;
+            let ty = self
+                .template_type_argument(*argument, scope, location)?
+                .ok_or(Error::Missing("non-type function template arguments"))?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(given)

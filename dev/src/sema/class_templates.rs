@@ -60,6 +60,52 @@ impl super::graph::Graph {
     }
 }
 impl Analyzer<'_> {
+    /// An elaborated class template-id names its specialization, without
+    /// demanding the specialization's definition. Alias templates are excluded
+    /// here even when their result would be a class (7.1.6.3p2).
+    pub(super) fn elaborated_specialization(
+        &mut self,
+        key: crate::lex::vocabulary::Keyword,
+        name: ast::Name,
+        scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        let location = self.tree.names.get(name).location;
+        let found = self
+            .lookup_result_in(name, scope, super::lookup::Filter::Elaborated, false)?
+            .binding
+            .ok_or_else(|| Error::at(location, "undeclared name"))?;
+        let binding = self.graph.binding(found);
+        if binding.kind == BindingKind::Alias
+            && self.graph.entity(binding.entity).template_head.is_some()
+        {
+            return Err(Error::at(
+                location,
+                "an elaborated-type-specifier names an alias template specialization",
+            ));
+        }
+        let component = self
+            .tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .last()
+            .copied()
+            .ok_or(Error::Invariant("empty elaborated template name"))?;
+        let specialized = self
+            .class_template_id(found, component, scope)?
+            .ok_or_else(|| {
+                Error::at(
+                    location,
+                    "a template-id that names no class or variable template",
+                )
+            })?;
+        let entity = self.elaborated_class_entity(specialized, key, location, false)?;
+        super::record(&mut self.graph.resolved_names, name.index(), specialized);
+        self.graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("class specialization without type"))
+    }
+
     pub(super) fn class_template_id(
         &mut self,
         found: BindingId,
@@ -97,13 +143,9 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("class template argument expansion"));
             }
-            let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
-                return Err(Error::Missing("non-type class template arguments"));
-            };
-            let ty = self.type_syntax(ty, scope)?;
-            if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
-                return Err(Error::at(component.location, "auto as a template argument"));
-            }
+            let ty = self
+                .template_type_argument(argument, scope, component.location)?
+                .ok_or(Error::Missing("non-type class template arguments"))?;
             arguments.push(self.graph.types.canonical_function(ty)?);
         }
         let count = self.graph.templates.parameters(head).len();
@@ -371,6 +413,125 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn semantic_type_arguments_and_elaborated_names_reuse_undemanded_shells() {
+        let source = SourceBuffer::new(
+            b"struct Source{typedef int lower;}; Source source;\
+              template<class T,class U=T*>struct Holder{typename T::missing unused;};\
+              using A=Holder<decltype(source)::lower>;\
+              typedef struct Holder<int,int*> B;\
+              struct Holder<decltype(source)::lower>* first;\
+              struct Holder<int>* second;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"type-arguments").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let b = cursor.intern_name(b"B").unwrap();
+        let lookup = |name| {
+            graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .ty
+                .unwrap()
+        };
+        let ty = lookup(a);
+        assert_eq!(ty, lookup(b));
+        let TypeKind::Class(class) = graph.types.get(ty).kind else {
+            panic!("specialization type")
+        };
+        assert!(graph.entity(class).scope.is_none());
+        let instance = graph.class_templates.instance(class).unwrap();
+        assert_eq!(instance.arguments.len(), 2);
+        assert!(!instance.dependent);
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert!(
+            !graph
+                .scope(graph.global)
+                .bindings
+                .contains(&instance.binding)
+        );
+        assert_eq!(
+            graph
+                .class_templates
+                .instances
+                .values()
+                .filter(|instance| !instance.dependent)
+                .count(),
+            1
+        );
+        let ast::DeclKind::Alias { ty, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[3])
+            .kind
+        else {
+            panic!("alias syntax")
+        };
+        let ast::SpecifierKind::Named(name) = tree.specs.get(tree.types.get(ty).specifiers)[0].kind
+        else {
+            panic!("template-id syntax")
+        };
+        let arguments = tree.name_lists.get(tree.names.get(name).components)[0]
+            .arguments
+            .unwrap();
+        let ast::TemplateArgumentKind::Expression(expression) =
+            tree.template_arguments.get(arguments)[0].kind
+        else {
+            panic!("retained expression reading")
+        };
+        let ast::ExprKind::Id(name) = tree.expressions.get(expression).kind else {
+            panic!("retained id-expression")
+        };
+        let binding = graph.resolved_names[name.index()].unwrap();
+        assert!(matches!(graph.binding(binding).kind, BindingKind::Alias));
+    }
+
+    #[test]
+    fn elaborated_friends_grant_only_the_named_specialization_without_definition_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct Friend;\
+              struct Owner{friend struct Friend<int>;};\
+              typedef struct Friend<int> A;typedef struct Friend<char> B;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"friend-specialization").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut entity = |name| {
+            let name = cursor.intern_name(name).unwrap();
+            let binding = graph.binding(
+                graph
+                    .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                    .unwrap(),
+            );
+            let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
+                panic!("class type")
+            };
+            class
+        };
+        let owner = entity(b"Owner");
+        let selected = entity(b"A");
+        let other = entity(b"B");
+        let primary = graph.class_templates.instance(selected).unwrap().primary;
+        assert!(graph.friendships.grants(owner, selected));
+        assert!(!graph.friendships.grants(owner, other));
+        assert!(!graph.friendships.grants(owner, primary));
+        assert!(graph.entity(selected).scope.is_none());
+        assert!(graph.entity(other).scope.is_none());
+    }
 
     #[test]
     fn canonical_shells_are_hidden_and_never_demand_definitions() {

@@ -1520,6 +1520,26 @@ impl Analyzer<'_> {
             return self.elaborated_enum(name, scope);
         }
         let node = *self.tree.names.get(name);
+        if self
+            .tree
+            .name_lists
+            .get(node.components)
+            .last()
+            .is_some_and(|last| last.arguments.is_some())
+        {
+            if lone {
+                if self.active_template_head(scope).is_some() {
+                    return Err(Error::Missing(
+                        "class template partial specialization declaration",
+                    ));
+                }
+                return Err(Error::at(
+                    node.location,
+                    "a class template-id declared outside a class template specialization's declaration",
+                ));
+            }
+            return self.elaborated_specialization(key, name, scope);
+        }
         let prefix = self.prefix(name, scope)?;
         let last = self
             .tree

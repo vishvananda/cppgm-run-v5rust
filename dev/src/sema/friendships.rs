@@ -175,6 +175,28 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<super::types::TypeId, Error> {
         let class = self.friend_owner(scope, self.tree.names.get(name).location)?;
+        if self
+            .tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .last()
+            .is_some_and(|last| last.arguments.is_some())
+        {
+            if self.active_template_head(scope).is_some() {
+                return Err(Error::at(
+                    self.tree.names.get(name).location,
+                    "a friend declaration of a partial specialization",
+                ));
+            }
+            let ty = self.elaborated_specialization(key, name, scope)?;
+            let TypeKind::Class(entity) = self.graph.types.get(ty).kind else {
+                return Err(Error::Invariant(
+                    "elaborated friend specialization is not a class",
+                ));
+            };
+            self.graph.friendships.record(class, entity);
+            return Ok(ty);
+        }
         let mut home = self.declaration_scope(scope);
         while !matches!(
             self.graph.scope(home).kind,

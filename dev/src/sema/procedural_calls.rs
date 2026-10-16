@@ -151,7 +151,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("empty call name"))?;
             let explicit = component
                 .arguments
-                .map(|syntax| self.explicit_function_arguments(syntax, scope))
+                .map(|syntax| self.explicit_function_arguments(syntax, scope, component.location))
                 .transpose()?;
             let uses = if component.arguments.is_some() {
                 callee_uses

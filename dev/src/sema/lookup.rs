@@ -730,7 +730,7 @@ impl Analyzer<'_> {
     ) -> Result<LookupResult, Error> {
         self.lookup_result_in(name, scope, Filter::Ordinary, false)
     }
-    fn lookup_result_in(
+    pub(super) fn lookup_result_in(
         &mut self,
         name: Name,
         scope: ScopeId,
