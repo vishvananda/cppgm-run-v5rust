@@ -93,6 +93,48 @@ impl Variables {
     }
 }
 impl Analyzer<'_> {
+    // template_specializations.cpp::explicit_variable_specialization. A
+    // declaration without an initializer blocks primary-definition demand,
+    // but leaves the same canonical entity available for its own definition.
+    pub(super) fn explicit_member_variable(
+        &mut self,
+        info: &DeclaratorInfo,
+        initialized: bool,
+        location: SourceOffset,
+    ) -> Result<Option<bool>, Error> {
+        if !self.specializing() {
+            return Ok(None);
+        }
+        let Some(home) = info.home else {
+            return Err(Error::at(
+                location,
+                "an explicit specialization of a variable is not supported",
+            ));
+        };
+        if !self.graph.within_class_instance(home) {
+            return Ok(None);
+        }
+        let name = info
+            .name
+            .ok_or(Error::Invariant("static specialization without name"))?;
+        let binding = self
+            .qualified(home, name, super::lookup::Filter::Ordinary)?
+            .ok_or(Error::at(
+                location,
+                "qualified definition does not match a declaration",
+            ))?;
+        let entity = self.graph.binding(binding).entity;
+        self.specialization_mode = super::analyzer::SpecializationMode::Ordinary;
+        if self.graph.variable_instances.states.contains_key(&entity) {
+            return Err(Error::at(
+                location,
+                "an explicit specialization after the member's instantiation",
+            ));
+        }
+        self.graph.variable_instances.links.remove(&entity);
+        Ok(Some(initialized))
+    }
+
     pub(super) fn retain_variable_template_pattern(
         &mut self,
         entity: EntityId,
@@ -454,6 +496,57 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn explicit_member_declaration_blocks_only_its_own_primary_initializer() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{static int n;};\
+              template<class T>int A<T>::n=sizeof(typename T::missing);\
+              int size=sizeof(A<int>)+sizeof(A<char>);\
+              template<>int A<int>::n;template<>int A<int>::n=7;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-initializer").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let ids = analyzer.tree.decl_lists.get(declarations).to_vec();
+        let global = analyzer.graph.global;
+        for &id in &ids[..3] {
+            analyzer.declaration(id, global).unwrap();
+        }
+        assert_eq!(analyzer.graph.variable_instances.links.len(), 2);
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.declaration(ids[3], global).unwrap();
+        assert_eq!(analyzer.graph.variable_instances.links.len(), 1);
+        assert!(analyzer.graph.variable_instances.states.is_empty());
+        let ast::DeclKind::Template { declaration, .. } =
+            analyzer.tree.declarations.get(ids[3]).kind
+        else {
+            panic!("specialization syntax");
+        };
+        let ast::DeclKind::Simple { declarators, .. } =
+            analyzer.tree.declarations.get(declaration).kind
+        else {
+            panic!("static member syntax");
+        };
+        let declarator = analyzer.tree.init_declarators.get(declarators)[0].declarator;
+        let binding = analyzer.graph.declared_bindings[declarator.index()].unwrap();
+        let entity = analyzer.graph.binding(binding).entity;
+        assert!(!analyzer.graph.entity(entity).defined);
+        analyzer.instantiate_variable(entity).unwrap();
+        assert!(!analyzer.graph.entity(entity).defined);
+        analyzer.declaration(ids[4], global).unwrap();
+        assert!(analyzer.graph.entity(entity).defined);
+        assert!(analyzer.graph.entity(entity).variable_definition.is_some());
+        assert!(analyzer.graph.variable_instances.states.is_empty());
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+    }
 
     #[test]
     fn variable_template_partials_preserve_primary_and_definition_ownership() {

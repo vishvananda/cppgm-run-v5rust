@@ -749,12 +749,10 @@ impl Analyzer<'_> {
             home,
             self.tree.declarators.get(init.declarator).location,
         )?;
+        let specialization =
+            self.explicit_member_variable(&info, init.initializer.is_some(), location)?;
         self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
-        let mut specs = specs;
-        specs.is_extern |= self.linkage_specification
-            == Some(super::linkage::Specification::Single)
-            && self.graph.scope(home).kind == ScopeKind::Namespace;
-        self.check_variable_storage(specs, init.initializer.is_some(), home, location)?;
+        let specs = self.variable_storage(specs, home, init.initializer.is_some(), location)?;
         if info.home.is_none()
             && self.graph.scope(home).kind == ScopeKind::Class
             && self
@@ -769,8 +767,10 @@ impl Analyzer<'_> {
                 "redeclaration of a name in the same scope",
             ));
         }
-        let definition = (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
-            && (!specs.is_extern || init.initializer.is_some());
+        let definition = specialization.unwrap_or(
+            (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
+                && (!specs.is_extern || init.initializer.is_some()),
+        );
         let member = self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static;
         let binding = self.declare_value(
             name.into(),

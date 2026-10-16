@@ -168,6 +168,12 @@ impl Analyzer<'_> {
     }
 
     fn instantiate_member_enum(&mut self, entity: EntityId) -> Result<(), Error> {
+        // A qualified own definition may have completed this same enum while
+        // its primary's definition was still unavailable. The definition event
+        // drains the waiter, but must not overwrite the completed enumerators.
+        if self.graph.entity(entity).defined {
+            return Ok(());
+        }
         let instance = *self
             .graph
             .class_templates

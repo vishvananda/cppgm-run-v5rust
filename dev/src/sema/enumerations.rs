@@ -146,8 +146,9 @@ impl Analyzer<'_> {
             })
             .transpose()?;
         if underlying.is_some_and(|ty| {
-            !matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(_))
-                || self.integral_kind(ty).is_none()
+            (!matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(_))
+                || self.integral_kind(ty).is_none())
+                && !(self.template_depth != 0 && self.graph.dependent_type(ty))
         }) {
             return Err(Error::at(
                 location,
@@ -414,7 +415,8 @@ impl Analyzer<'_> {
         let value_scope = values.unwrap_or(lookup);
         self.graph.entity_mut(entity).defined = true;
         let fixed_kind = info.underlying.and_then(|ty| self.integral_kind(ty));
-        let mut previous = None;
+        let dependent = info.fixed && fixed_kind.is_none();
+        let mut previous: Option<Constant> = None;
         let mut values = Vec::new();
         for syntax_index in 0..self.tree.enumerators.get(enumerators).len() {
             let syntax_item = self.tree.enumerators.get(enumerators)[syntax_index];
@@ -424,12 +426,20 @@ impl Analyzer<'_> {
                     self.expression(expr, value_scope)?;
                 }
                 if let Some(previous) = previous {
-                    self.next_enumerator(previous, info, enumerator.location)?
+                    if dependent {
+                        Constant {
+                            bits: previous.bits.wrapping_add(1),
+                            ..previous
+                        }
+                    } else {
+                        self.next_enumerator(previous, info, enumerator.location)?
+                    }
                 } else {
                     Constant {
                         bits: 0,
                         ty: info
                             .underlying
+                            .filter(|_| !dependent)
                             .unwrap_or(self.graph.types.scalar(Scalar::Basic(F::Int))?),
                     }
                 }
@@ -543,9 +553,15 @@ impl Analyzer<'_> {
             underlying: Some(underlying),
             ..info
         });
-        let kind = self
-            .integral_kind(underlying)
-            .ok_or(Error::Invariant("final enum kind"))?;
+        let kind = if dependent {
+            IntegralKind {
+                bits: 32,
+                signed: true,
+            }
+        } else {
+            self.integral_kind(underlying)
+                .ok_or(Error::Invariant("final enum kind"))?
+        };
         for id in values {
             let ConstantState::Value(value) = self.graph.entity(id).constant else {
                 return Err(Error::Invariant("missing enum value"));

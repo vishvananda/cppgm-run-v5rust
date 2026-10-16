@@ -71,23 +71,26 @@ impl Analyzer<'_> {
         definition: Definition,
     ) -> Result<BindingId, Error> {
         self.specialization_mode = SpecializationMode::Ordinary;
-        let levels = self.specialization_levels;
-        if info
-            .home
-            .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
-        {
-            return Err(Error::Missing("explicit member function specialization"));
-        }
-        let binding = self
-            .declared_function_specialization(info, scope, location)?
-            .ok_or_else(|| {
-                Error::at(
-                    location,
-                    "an explicit specialization matches no function template",
-                )
-            })?;
+        let member = self.declared_instance_member(info)?;
+        let of_template = member.is_none();
+        let binding = if let Some(member) = member {
+            self.specialized_member_binding(
+                member,
+                info.home
+                    .ok_or(Error::Invariant("member specialization without owner"))?,
+                location,
+            )?
+        } else {
+            self.declared_function_specialization(info, scope, location)?
+                .ok_or_else(|| {
+                    Error::at(
+                        location,
+                        "an explicit specialization matches no function template",
+                    )
+                })?
+        };
         let entity = self.graph.binding(binding).entity;
-        if levels != 1 {
+        if of_template && self.specialization_levels != self.specialized_enclosing(info.home) + 1 {
             return Err(Error::at(
                 location,
                 "an explicit specialization of a function template with the wrong number of template<>",
@@ -98,15 +101,20 @@ impl Analyzer<'_> {
             .function_templates
             .specializations
             .contains(entity);
-        if if explicit {
-            definition.defines() && self.graph.entity(entity).defined
-        } else {
-            self.graph.function_templates.bodies.started(entity)
-        } {
+        if of_template
+            && if explicit {
+                definition.defines() && self.graph.entity(entity).defined
+            } else {
+                self.graph.function_templates.bodies.started(entity)
+            }
+        {
             return Err(Error::at(
                 location,
                 "an explicit specialization after the specialization's instantiation or definition",
             ));
+        }
+        if definition.defines() && self.graph.entity(entity).defined && explicit {
+            return Err(Error::at(location, "redefinition of a function"));
         }
         if self.semantic() {
             self.resolve_specialization_exception(entity)?;
@@ -130,8 +138,17 @@ impl Analyzer<'_> {
         }
         let function = self.graph.entity_mut(entity);
         if !explicit {
+            if !of_template {
+                // Copied declarations retain the pattern's availability, but
+                // its deferred body is not this specialization's definition.
+                if definition.defines() {
+                    function.defined = false;
+                }
+                function.special_definition = None;
+                function.function_definition = None;
+            }
             function.availability = FunctionAvailability::Callable;
-            if let Some(properties) = function.function.as_mut() {
+            if of_template && let Some(properties) = function.function.as_mut() {
                 properties.no_inline = false;
             }
         }
@@ -157,7 +174,134 @@ impl Analyzer<'_> {
             .specializations
             .entities
             .insert(entity);
+        if self.semantic() {
+            self.check_operator_declaration(binding, location)?;
+        }
         Ok(binding)
+    }
+
+    // template_specializations.cpp::SpecializedEnclosing: count only class
+    // template specializations, walking through copied ordinary member classes.
+    fn specialized_enclosing(&self, mut scope: Option<ScopeId>) -> u32 {
+        let mut count = 0;
+        while let Some(home) = scope {
+            let node = self.graph.scope(home);
+            if node.kind != ScopeKind::Class {
+                break;
+            }
+            let Some(owner) = node.owner else { break };
+            if let Some(instance) = self.graph.class_templates.instance(owner) {
+                count += u32::from(!self.graph.class_templates.definitions.explicit(owner));
+                scope = self.graph.entity(instance.primary).home;
+            } else if self
+                .graph
+                .class_templates
+                .definitions
+                .source(owner)
+                .is_some()
+            {
+                scope = self.graph.entity(owner).home;
+            } else {
+                break;
+            }
+        }
+        count
+    }
+
+    pub(super) fn declared_instance_member(
+        &mut self,
+        info: &DeclaratorInfo,
+    ) -> Result<Option<BindingId>, Error> {
+        let Some(home) = info
+            .home
+            .filter(|&home| self.graph.within_class_instance(home))
+        else {
+            return Ok(None);
+        };
+        if self.function_template_id(info).is_some() {
+            return Ok(None);
+        }
+        let special = self
+            .declared_member(info, home)?
+            .map(|(_, kind)| kind)
+            .or_else(|| {
+                self.conversion_declarator(info)
+                    .then_some(super::graph::MemberKind::Conversion)
+            });
+        if let Some(kind) = special {
+            let class = self
+                .graph
+                .scope(home)
+                .owner
+                .ok_or(Error::Invariant("specialization without class"))?;
+            let signature = self.graph.types.canonical_function(info.ty)?;
+            let binding = if kind == super::graph::MemberKind::Constructor {
+                self.graph.constructor(class, signature)
+            } else {
+                self.graph.member_function(super::graph::MemberKey {
+                    class,
+                    kind,
+                    signature,
+                    shape: None,
+                })
+            };
+            return Ok(binding);
+        }
+        let key = self.declaration_key(info)?;
+        let mut next = 0;
+        while let Some(binding) = self.graph.next_function(home, key, &mut next) {
+            let candidate = self.graph.binding(binding);
+            if self.graph.entity(candidate.entity).home != Some(home)
+                || self.graph.entity(candidate.entity).template_head.is_some()
+                || !self.same_function_parameters(
+                    candidate
+                        .ty
+                        .ok_or(Error::Invariant("member without type"))?,
+                    info.ty,
+                )?
+            {
+                continue;
+            }
+            return Ok(Some(binding));
+        }
+        Ok(None)
+    }
+
+    fn specialized_member_binding(
+        &mut self,
+        binding: BindingId,
+        home: ScopeId,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        let candidate = self.graph.binding(binding);
+        if self.specialization_levels != self.specialized_enclosing(Some(home)) {
+            return Err(Error::at(
+                location,
+                "an explicit specialization of a member with the wrong number of template<>",
+            ));
+        }
+        if !self
+            .graph
+            .function_templates
+            .specializations
+            .contains(candidate.entity)
+            && (!self
+                .graph
+                .function_templates
+                .bodies
+                .member(candidate.entity)
+                || self
+                    .graph
+                    .function_templates
+                    .bodies
+                    .started(candidate.entity))
+        {
+            return Err(Error::at(
+                location,
+                "an explicit specialization after the member's instantiation",
+            ));
+        }
+        self.graph.add_hidden_function(binding, candidate)
     }
 }
 
@@ -169,6 +313,91 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn member_definition_keeps_identity_without_copying_the_primary_body() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{int f(){return sizeof(typename T::missing);}};\
+              int size=sizeof(A<int>);template<>int A<int>::f(){return 4;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"own-member-body").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let ids = analyzer.tree.decl_lists.get(declarations).to_vec();
+        let global = analyzer.graph.global;
+        analyzer.declaration(ids[0], global).unwrap();
+        analyzer.declaration(ids[1], global).unwrap();
+        let bodies = analyzer.tree.bodies.mark();
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.declaration(ids[2], global).unwrap();
+        let &entity = analyzer
+            .graph
+            .function_templates
+            .specializations
+            .entities
+            .iter()
+            .next()
+            .unwrap();
+        assert!(analyzer.graph.function_templates.bodies.member(entity));
+        assert!(!analyzer.graph.function_templates.bodies.started(entity));
+        assert!(analyzer.graph.entity(entity).scope.is_some());
+        assert!(analyzer.graph.entity(entity).function_definition.is_some());
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert!(!analyzer.graph.function_templates.bodies.started(entity));
+    }
+
+    #[test]
+    fn member_forward_keeps_redeclaration_state_without_a_lowerable_primary_body() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{int f(){return 1;}};\
+              template<>int A<int>::f();template<>int A<int>::f(){return 4;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-forward").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let ids = analyzer.tree.decl_lists.get(declarations).to_vec();
+        let global = analyzer.graph.global;
+        analyzer.declaration(ids[0], global).unwrap();
+        analyzer.declaration(ids[1], global).unwrap();
+        let &entity = analyzer
+            .graph
+            .function_templates
+            .specializations
+            .entities
+            .iter()
+            .next()
+            .unwrap();
+        // C++ retains the copied declaration's defined flag for redeclaration
+        // diagnostics, independently of own-body availability and emission.
+        assert!(analyzer.graph.entity(entity).defined);
+        assert!(!analyzer.graph.lower_function_defined(entity));
+        assert!(analyzer.graph.entity(entity).function_definition.is_none());
+        assert!(matches!(
+            analyzer.declaration(ids[2], global),
+            Err(Error::Diagnostic {
+                message: "redefinition of a function",
+                ..
+            })
+        ));
+        assert!(!analyzer.specializing());
+        assert_eq!(analyzer.specialization_levels, 0);
+    }
 
     #[test]
     fn own_definition_keeps_the_signature_key_without_instantiating_the_primary() {

@@ -450,6 +450,24 @@ impl Analyzer<'_> {
             initializer, body, ..
         } = declaration;
         let location = declaration.location;
+        if self.specializing() {
+            let definition = if body.is_some() {
+                super::function_names::Definition::Body
+            } else if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Delete)) {
+                super::function_names::Definition::Deleted
+            } else if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default))
+            {
+                super::function_names::Definition::Defaulted
+            } else {
+                super::function_names::Definition::Declaration
+            };
+            let binding =
+                self.explicit_function_specialization(info, specs, scope, location, definition)?;
+            self.graph
+                .entity_mut(self.graph.binding(binding).entity)
+                .defined |= definition.defines();
+            return Ok(binding);
+        }
         let owner = self
             .graph
             .entity(class)

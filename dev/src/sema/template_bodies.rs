@@ -567,6 +567,11 @@ impl Analyzer<'_> {
             && !self
                 .graph
                 .function_templates
+                .specializations
+                .contains(body.entity)
+            && !self
+                .graph
+                .function_templates
                 .bodies
                 .states
                 .contains_key(&body.entity)

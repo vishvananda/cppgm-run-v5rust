@@ -183,12 +183,45 @@ impl Analyzer<'_> {
                 )?;
                 return Ok((specs, None));
             }
-            let binding = self
-                .declared_function_specialization(&info, scope, inner.location)?
-                .ok_or(Error::at(
-                    inner.location,
-                    "an explicit instantiation matches no function template specialization",
-                ))?;
+            let binding = if let Some(member) = self.declared_instance_member(&info)? {
+                let entity = self.graph.binding(member).entity;
+                let ty = self.graph.types.canonical_function(
+                    self.graph
+                        .binding(member)
+                        .ty
+                        .ok_or(Error::Invariant("member without signature"))?,
+                )?;
+                let declared = self.graph.types.canonical_function(info.ty)?;
+                let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+                    return Err(Error::Invariant("member signature without function"));
+                };
+                if !matches!(self.graph.types.get(declared).kind, TypeKind::Function { result: other, .. } if other == result)
+                {
+                    return Err(Error::at(
+                        inner.location,
+                        "an explicit instantiation's return type differs from the member's",
+                    ));
+                }
+                if !self.graph.function_templates.bodies.member(entity)
+                    && !self
+                        .graph
+                        .function_templates
+                        .specializations
+                        .contains(entity)
+                {
+                    return Err(Error::at(
+                        inner.location,
+                        "an explicit instantiation of a member that is not instantiated",
+                    ));
+                }
+                member
+            } else {
+                self.declared_function_specialization(&info, scope, inner.location)?
+                    .ok_or(Error::at(
+                        inner.location,
+                        "an explicit instantiation matches no function template specialization",
+                    ))?
+            };
             Ok((specs, Some(binding)))
         })();
         self.finish_declaration_access(access);

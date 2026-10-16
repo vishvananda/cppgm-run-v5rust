@@ -500,6 +500,8 @@ impl Graph {
     }
     pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
         self.entity(entity).defined
+            && (!self.function_templates.specializations.contains(entity)
+                || self.entity(entity).function_definition.is_some())
     }
     pub(crate) fn lower_explicit_functions(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.function_templates
@@ -1028,7 +1030,9 @@ impl Graph {
             initializer: entity.static_initializer,
             in_class_initializer: entity.member_initializer,
             reference_temporary: entity.reference_temporary,
-            definition: if self.class_instantiation_suppressed(id) {
+            definition: if self.variable_instances.instance(id)
+                && self.class_instantiation_suppressed(id)
+            {
                 None
             } else {
                 entity.variable_definition

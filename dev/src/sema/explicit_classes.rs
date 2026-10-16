@@ -143,6 +143,14 @@ impl Analyzer<'_> {
             }
             match binding.kind {
                 BindingKind::Function => {
+                    if self
+                        .graph
+                        .function_templates
+                        .specializations
+                        .contains(entity)
+                    {
+                        continue;
+                    }
                     if explicit && !self.graph.function_templates.bodies.member(entity) {
                         self.graph
                             .function_templates

@@ -157,7 +157,12 @@ impl Analyzer<'_> {
             .entity(function)
             .home
             .ok_or(Error::Invariant("function without home"))?;
-        let first = self.graph.function_origin(function)? == binding;
+        let first = self.graph.function_origin(function)? == binding
+            && !self
+                .graph
+                .function_templates
+                .specializations
+                .contains(function);
         if !first
             || self.graph.scope(home).kind != ScopeKind::Class
             || specs.friendship == Friendship::Friend

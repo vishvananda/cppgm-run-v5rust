@@ -142,7 +142,13 @@ impl Analyzer<'_> {
             if let Some(constructor) = constructors.pop() {
                 if let Some(binding) = self.graph.constructors.get(constructor).binding {
                     let entity = self.graph.binding(binding).entity;
-                    if self.graph.function_templates.bodies.pending_member(entity) {
+                    if self.graph.function_templates.bodies.pending_member(entity)
+                        && !self
+                            .graph
+                            .function_templates
+                            .specializations
+                            .contains(entity)
+                    {
                         self.demand_instance_member(entity);
                         self.graph.boundary_roots.push(entity);
                         continue;
@@ -174,7 +180,13 @@ impl Analyzer<'_> {
             if seen.contains(&entity) {
                 continue;
             }
-            if self.graph.function_templates.bodies.pending_member(entity) {
+            if self.graph.function_templates.bodies.pending_member(entity)
+                && !self
+                    .graph
+                    .function_templates
+                    .specializations
+                    .contains(entity)
+            {
                 self.demand_instance_member(entity);
                 self.graph.boundary_roots.push(entity);
                 continue;

@@ -181,7 +181,18 @@ pub(crate) fn lower_unit(
                     )?;
                 }
             }
-            ast::DeclKind::SpecialMember { declarator, .. } => {
+            ast::DeclKind::SpecialMember {
+                declarator,
+                body,
+                initializer,
+                ..
+            } => {
+                if body.is_none()
+                    && !initializer
+                        .is_some_and(|init| matches!(init.kind, ast::InitializerKind::Default))
+                {
+                    continue;
+                }
                 let entity = graph.lower_declared(declarator)?;
                 let facts = graph.lower_function(entity)?;
                 if matches!(facts.name, sema::lowering::FunctionName::Conversion(_)) {

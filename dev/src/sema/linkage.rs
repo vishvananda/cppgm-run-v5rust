@@ -176,13 +176,15 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn check_variable_storage(
+    pub(super) fn variable_storage(
         &self,
-        specs: super::specifiers::Specifiers,
-        initialized: bool,
+        mut specs: super::specifiers::Specifiers,
         home: ScopeId,
+        initialized: bool,
         location: SourceOffset,
-    ) -> Result<(), Error> {
+    ) -> Result<super::specifiers::Specifiers, Error> {
+        specs.is_extern |= self.linkage_specification == Some(Specification::Single)
+            && self.graph.scope(home).kind == ScopeKind::Namespace;
         if specs.is_extern && initialized && self.graph.scope(home).kind == ScopeKind::Block {
             return Err(Error::at(
                 location,
@@ -199,7 +201,7 @@ impl Analyzer<'_> {
                 "a constexpr variable declaration that is not a definition",
             ));
         }
-        Ok(())
+        Ok(specs)
     }
     pub(super) fn agree_variable_linkage(
         &self,
