@@ -142,7 +142,10 @@ impl Analyzer<'_> {
         }
         if entity
             .function
-            .is_some_and(|properties| properties.special.is_some())
+            .and_then(|properties| properties.special)
+            .is_some_and(|name| {
+                !matches!(name, super::function_names::SpecialName::Operator { .. })
+            })
         {
             return Err(Error::Missing(
                 "special member function template signatures",
@@ -659,6 +662,7 @@ impl Analyzer<'_> {
         &mut self,
         binding: BindingId,
         args: &[ast::ExprId],
+        implicit_postfix: bool,
     ) -> Result<Option<BindingId>, Error> {
         if self
             .graph
@@ -679,8 +683,12 @@ impl Analyzer<'_> {
         let TypeKind::Function { variadic, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("template is no function"));
         };
-        if args.len() > count && !variadic
-            || (args.len()..count)
+        // Postfix operator syntax supplies its final int argument implicitly.
+        // Deduce only from the written operand; the operator owner validates
+        // that final parameter after forming the specialization.
+        let supplied = args.len() + usize::from(implicit_postfix);
+        if supplied > count && !variadic
+            || (supplied..count)
                 .any(|index| !self.function_has_default(self.graph.binding(binding).entity, index))
         {
             return Ok(None);

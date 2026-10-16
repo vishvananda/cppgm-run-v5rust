@@ -200,8 +200,11 @@ impl Analyzer<'_> {
             let Some(binding) = binding else {
                 continue;
             };
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() || self.member_function_owner(binding).is_some() {
+            let entity_id = self.graph.binding(binding).entity;
+            let entity = self.graph.entity(entity_id);
+            if self.graph.function_templates.primary(entity_id).is_some()
+                || self.member_function_owner(binding).is_some()
+            {
                 continue;
             }
             let ty = entity

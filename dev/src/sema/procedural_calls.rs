@@ -773,7 +773,7 @@ impl Analyzer<'_> {
             {
                 return Err(Error::Missing("allocation function template deduction"));
             }
-            let Some(binding) = self.deduce_function_call(primary, args)? else {
+            let Some(binding) = self.deduce_function_call(primary, args, false)? else {
                 continue;
             };
             let entity = self.graph.entity(self.graph.binding(binding).entity);

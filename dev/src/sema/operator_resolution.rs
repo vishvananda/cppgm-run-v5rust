@@ -182,7 +182,7 @@ impl Analyzer<'_> {
         for &primary in set {
             let member = self.member_function_owner(primary).is_some();
             let args = &operands[usize::from(member)..];
-            let Some(binding) = self.deduce_function_call(primary, args)? else {
+            let Some(binding) = self.deduce_function_call(primary, args, postfix)? else {
                 continue;
             };
             let ty = self
@@ -480,8 +480,8 @@ impl Analyzer<'_> {
                 (Some(a), None) => {
                     if self
                         .graph
-                        .entity(self.graph.binding(a).entity)
-                        .template_head
+                        .function_templates
+                        .primary(self.graph.binding(a).entity)
                         .is_some()
                     {
                         Ordering::Less
@@ -492,8 +492,8 @@ impl Analyzer<'_> {
                 (None, Some(b)) => {
                     if self
                         .graph
-                        .entity(self.graph.binding(b).entity)
-                        .template_head
+                        .function_templates
+                        .primary(self.graph.binding(b).entity)
                         .is_some()
                     {
                         Ordering::Greater

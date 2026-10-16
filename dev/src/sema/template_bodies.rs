@@ -294,6 +294,51 @@ mod tests {
     };
 
     #[test]
+    fn operator_candidates_demand_only_the_selected_specialization() {
+        for (source, count) in [
+            (
+                "enum E{a,b};template<class T>bool operator==(T,T){return T::missing;}int main(){return a==b;}",
+                0,
+            ),
+            (
+                "struct A{operator int(){return 1;}};template<class T>int operator+(int,T){return T::missing;}int main(){A a;return a+1;}",
+                0,
+            ),
+            (
+                "struct A{int x;};template<class T>int operator++(T& a,int){return a.x++;}int main(){A a={1};return a++;}",
+                1,
+            ),
+            (
+                "struct A{};template<class T>int operator+(T,int x){return x;}int main(){A a;return (a+1)+(a+2);}",
+                1,
+            ),
+        ] {
+            let source = SourceBuffer::new(source.as_bytes().to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"operator-demands").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let graph = analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                true,
+            )
+            .unwrap();
+            let bodies = &graph.function_templates.bodies;
+            assert_eq!(bodies.demands.len(), count);
+            assert_eq!(bodies.states.len(), count);
+            for &entity in &bodies.demands {
+                assert!(bodies.body(entity).is_some());
+                assert!(graph.function_templates.primary(entity).is_some());
+                assert!(graph.entity(entity).template_head.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn exception_prototype_keeps_declared_const_independent_of_call_signature() {
         for qualifier in ["", "const "] {
             let text = format!(
