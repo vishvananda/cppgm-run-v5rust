@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable object int
+  function-declaration function function of () returning int
+  function-definition main function of () returning int
+    compound-statement
+      return-statement
+        literal prvalue int 0
+end translation unit

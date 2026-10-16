@@ -496,36 +496,7 @@ impl<'tree> Analyzer<'tree> {
                 self.name_unnamed_enum(ty, None)
             }
             ast::DeclKind::StaticAssert { condition, message } => {
-                if message.is_some_and(|literal| {
-                    matches!(
-                        literal.kind,
-                        crate::lex::PostTokenKind::String {
-                            suffix: Some(_),
-                            ..
-                        }
-                    )
-                }) {
-                    return Err(Error::at(
-                        location,
-                        "a static_assert message that is not a string literal",
-                    ));
-                }
-                if self.template_depth != 0 {
-                    return self.expression(condition, scope);
-                }
-                let value = self
-                    .constant_value(condition, scope, true)?
-                    .ok_or(Error::Invariant("missing assertion value"))?;
-                if self.scoped_enum(value.ty) {
-                    return Err(Error::at(
-                        self.tree.expressions.get(condition).location,
-                        "a scoped enumeration value does not convert to bool",
-                    ));
-                }
-                if value.bits == 0 {
-                    return Err(Error::at(location, "static assertion failed"));
-                }
-                Ok(())
+                self.static_assertion(condition, message, scope, location)
             }
             ast::DeclKind::Template {
                 parameters,
@@ -541,6 +512,65 @@ impl<'tree> Analyzer<'tree> {
                 declarators,
             } => self.bit_field_declaration(id, specifiers, declarators, scope),
         }
+    }
+    // analyzer.cpp::static_assertion: semantic mode records value typing and
+    // contextual conversion before the evaluator consumes the original nodes.
+    // Types mode retains its integral-only rules; patterns retain only names.
+    fn static_assertion(
+        &mut self,
+        condition: ast::ExprId,
+        message: Option<ast::Literal>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if message.is_some_and(|literal| {
+            matches!(
+                literal.kind,
+                crate::lex::PostTokenKind::String {
+                    suffix: Some(_),
+                    ..
+                }
+            )
+        }) {
+            return Err(Error::at(
+                location,
+                "a static_assert message that is not a string literal",
+            ));
+        }
+        if self.template_depth != 0 {
+            return self.expression(condition, scope);
+        }
+        let truth = if self.semantic() {
+            let facts = self.typed_expression(condition, scope)?;
+            self.check_resolved_function(condition)?;
+            if self.scoped_enum(facts.ty) {
+                return Err(Error::at(
+                    self.tree.expressions.get(condition).location,
+                    "a scoped enumeration value does not convert to bool",
+                ));
+            }
+            self.convert_bool(condition)?;
+            self.in_constant_evaluation(|analyzer| analyzer.constant_truth(condition, scope, false))
+                .map_err(|error| match error {
+                    Error::NonConstant { location, message } => Error::at(location, message),
+                    other => other,
+                })?
+        } else {
+            let value = self
+                .constant_value(condition, scope, true)?
+                .ok_or(Error::Invariant("missing assertion value"))?;
+            if self.scoped_enum(value.ty) {
+                return Err(Error::at(
+                    self.tree.expressions.get(condition).location,
+                    "a scoped enumeration value does not convert to bool",
+                ));
+            }
+            value.bits != 0
+        };
+        if !truth {
+            return Err(Error::at(location, "static assertion failed"));
+        }
+        Ok(())
     }
     fn function_definition(
         &mut self,
@@ -820,5 +850,113 @@ impl<'tree> Analyzer<'tree> {
             self.check_gotos()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn assertion_queries_retain_original_facts_without_body_or_emission_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct Q{static int f()noexcept{T::missing;}\
+                void unused(){static_assert(noexcept(T::bad()),\"\");}};\
+              static_assert(noexcept(Q<int>::f()),\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"assertion-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let assertion = *analyzer.tree.decl_lists.get(declarations).last().unwrap();
+        let ast::DeclKind::StaticAssert { condition, .. } =
+            analyzer.tree.declarations.get(assertion).kind
+        else {
+            panic!("assertion");
+        };
+        let ast::ExprKind::TypeTrait {
+            operand: Some(call),
+            ..
+        } = analyzer.tree.expressions.get(condition).kind
+        else {
+            panic!("query");
+        };
+        let facts = analyzer.graph.expression_facts.get(condition).unwrap();
+        assert_eq!(facts.folded, Some(1));
+        assert_eq!(facts.conversion.unwrap().target, facts.ty);
+        assert!(
+            analyzer
+                .graph
+                .expression_facts
+                .get(call)
+                .unwrap()
+                .call
+                .is_some()
+        );
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.body_context.is_none());
+        assert_eq!(analyzer.unevaluated, 0);
+        assert_eq!(analyzer.template_depth, 0);
+        assert!(analyzer.constant_evaluation.is_none());
+        let marks = (
+            analyzer.tree.expressions.mark(),
+            analyzer.tree.types.mark(),
+            analyzer.tree.declarations.mark(),
+        );
+        for _ in 0..3 {
+            assert!(analyzer.constant_truth(condition, global, false).unwrap());
+        }
+        assert_eq!(
+            marks,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.types.mark(),
+                analyzer.tree.declarations.mark(),
+            )
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn rejected_assertion_restores_unevaluated_and_constant_storage_contexts() {
+        for (source, message) in [
+            (
+                b"static_assert(noexcept(missing()),\"\");".as_slice(),
+                "undeclared function name",
+            ),
+            (
+                b"int x;static_assert(x,\"\");",
+                "a variable is not usable in a constant expression",
+            ),
+        ] {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"assertion-failure").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            assert!(matches!(analyzer.declarations(declarations, global),
+                Err(Error::Diagnostic { message: actual, .. }) if actual == message));
+            assert_eq!(analyzer.unevaluated, 0);
+            assert!(analyzer.body_context.is_none());
+            assert!(analyzer.constant_evaluation.is_none());
+        }
     }
 }

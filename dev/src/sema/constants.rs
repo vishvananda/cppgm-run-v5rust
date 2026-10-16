@@ -962,7 +962,11 @@ impl Analyzer<'_> {
                 if kind.signed && integral::signed(bits) == kind.minimum() && !skipping {
                     return Err(not_constant(
                         location,
-                        "signed overflow in a constant expression",
+                        if self.semantic() {
+                            "a negation that overflows"
+                        } else {
+                            "signed overflow in a constant expression"
+                        },
                     ));
                 }
                 kind.convert(0u64.wrapping_sub(bits))
