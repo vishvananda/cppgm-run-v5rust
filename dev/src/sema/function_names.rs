@@ -588,6 +588,7 @@ impl Analyzer<'_> {
         if head.is_some() && self.graph.function_origin(entity)? == binding {
             // Redeclarations already checked their specification in agreement.
             // A first declaration records it once, before default name checks.
+            self.record_template_result_order(entity, info);
             self.record_function_exceptions(entity, info, info.lookup, location, exception_limit)?;
         }
         self.record_callable_label(binding, info, key)?;

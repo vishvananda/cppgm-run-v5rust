@@ -44,7 +44,7 @@ impl Analyzer<'_> {
                         Err(error) => return Err(error),
                     };
                     if let Some(binding) = found {
-                        if !self.key_binding(binding, key)? {
+                        if !self.key_binding(binding, scope, key)? {
                             return Ok(false);
                         }
                     } else {
@@ -84,14 +84,22 @@ impl Analyzer<'_> {
         Ok(true)
     }
 
-    fn key_binding(&mut self, id: BindingId, key: &mut ExpressionKey) -> Result<bool, Error> {
+    fn key_binding(
+        &mut self,
+        id: BindingId,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
         let binding = self.graph.binding(id);
         if binding.kind == BindingKind::Parameter {
             let Some(ty) = binding.ty else {
                 return Ok(false);
             };
             if let Some(position) = self.graph.prototype_parameter(binding.entity) {
-                key.words.push(KeyWord::Parameter(position));
+                key.words.push(KeyWord::Parameter {
+                    index: position,
+                    level: self.parameter_level(id, scope)?,
+                });
                 self.key_type(ty, key)?;
                 return Ok(true);
             }
@@ -118,6 +126,30 @@ impl Analyzer<'_> {
             key.words.push(KeyWord::Entity(binding.entity));
         }
         Ok(true)
+    }
+
+    fn parameter_level(&self, binding: BindingId, mut scope: ScopeId) -> Result<u32, Error> {
+        let owner = self.graph.binding_scope(binding);
+        let mut level = 0u32;
+        let mut within = false;
+        loop {
+            let node = self.graph.scope(scope);
+            if node.kind == super::graph::ScopeKind::Function && node.owner.is_none() {
+                if node.guarded && !within {
+                    level = level
+                        .checked_add(1)
+                        .ok_or(Error::Limit("function parameter nesting limit"))?;
+                }
+                within = node.guarded;
+            }
+            if scope == owner {
+                return Ok(level);
+            }
+            let Some(parent) = node.parent else {
+                return Ok(level);
+            };
+            scope = parent;
+        }
     }
 
     fn key_resolution(

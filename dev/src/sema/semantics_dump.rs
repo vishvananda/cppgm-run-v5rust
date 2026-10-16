@@ -145,12 +145,13 @@ impl Graph {
                         printer.function_definition(binding, Some(body), depth)?;
                     } else {
                         printer.binding_header(binding, "function-declaration", depth)?;
-                        if let Some(primary) = printer
+                        if printer
                             .graph
                             .function_templates
                             .primary(printer.graph.binding(binding).entity)
+                            .is_some()
                         {
-                            printer.specialization_parameters(binding, primary, depth + 1)?;
+                            printer.specialization_parameters(binding, depth + 1)?;
                         }
                     }
                 }
@@ -161,12 +162,7 @@ impl Graph {
     }
 }
 impl<W: Write + ?Sized> Printer<'_, '_, W> {
-    fn specialization_parameters(
-        &mut self,
-        binding: BindingId,
-        primary: BindingId,
-        depth: usize,
-    ) -> io::Result<()> {
+    fn specialization_parameters(&mut self, binding: BindingId, depth: usize) -> io::Result<()> {
         let ty = self
             .graph
             .binding(binding)
@@ -174,7 +170,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .ok_or_else(|| io::Error::other("specialization without type"))?;
         let clause = self
             .graph
-            .entity(self.graph.binding(primary).entity)
+            .entity(self.graph.binding(binding).entity)
             .function_parameters;
         let count = self
             .graph

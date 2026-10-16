@@ -352,10 +352,13 @@ impl Symbols<'_, '_> {
             return Err(missing());
         }
         let (node, cast) = match words.next()? {
-            W::Parameter(index) => {
+            W::Parameter { index, level } => {
                 words.ty()?;
                 (
-                    Node::FunctionParam(u32::try_from(*index).map_err(|_| missing())?),
+                    Node::FunctionParam {
+                        index: u32::try_from(*index).map_err(|_| missing())?,
+                        level: *level,
+                    },
                     None,
                 )
             }

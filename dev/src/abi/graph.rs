@@ -145,7 +145,10 @@ pub enum Node {
         expression: NodeId,
         id_expression: bool,
     },
-    FunctionParam(u32),
+    FunctionParam {
+        index: u32,
+        level: u32,
+    },
     Operation(Operation),
     Call,
     ConversionList(NodeId),

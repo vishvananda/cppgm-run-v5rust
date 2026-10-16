@@ -25,6 +25,9 @@ pub(super) struct Pattern {
     home: ScopeId,
     next: Option<EntityId>,
     limit: usize,
+    // Known positions below 63, matching the frozen owner's conservative mask.
+    // Unknown keys and higher positions retain ordinary substitution.
+    parameters: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -48,6 +51,9 @@ pub(super) struct Operands {
     substitutions: HashMap<Key, State>,
 }
 impl Operands {
+    pub(super) fn count(&self) -> usize {
+        self.patterns.len()
+    }
     pub(super) fn words(&self, entity: EntityId) -> Option<&[KeyWord]> {
         self.words.get(&entity).map(Vec::as_slice)
     }
@@ -72,6 +78,9 @@ impl Analyzer<'_> {
             return result;
         }
         let words = key.map(|key| key.words);
+        let parameters = words
+            .as_deref()
+            .and_then(|words| self.operand_parameters(words));
         let mut home = scope;
         while matches!(
             self.graph.scope(home).kind,
@@ -132,6 +141,7 @@ impl Analyzer<'_> {
                 home,
                 next: head,
                 limit: self.graph.binding_limit(),
+                parameters,
             },
         );
         if let Some(fingerprint) = fingerprint
@@ -255,7 +265,7 @@ impl Analyzer<'_> {
             .template_operands
             .pattern(entity)
             .ok_or(Error::Invariant("missing operand"))?;
-        let scope = self.operand_scope(pattern.scope, environment)?;
+        let scope = self.operand_scope(pattern.scope, environment, pattern.parameters)?;
         let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
             .expression(pattern.expression)
             .map_err(|e| super::template_bodies::copy_error(&e))?;
@@ -287,6 +297,7 @@ impl Analyzer<'_> {
         &mut self,
         scope: ScopeId,
         environment: &mut Substitution<'_>,
+        parameters: Option<u64>,
     ) -> Result<ScopeId, Error> {
         self.check_stack()?;
         let node = self.graph.scope(scope);
@@ -301,7 +312,7 @@ impl Analyzer<'_> {
         let parent = node
             .parent
             .ok_or(Error::Invariant("operand frame without parent"))?;
-        let parent = self.operand_scope(parent, environment)?;
+        let parent = self.operand_scope(parent, environment, parameters)?;
         let frame = self.graph.add_scope(kind, parent, None, None)?;
         for index in 0..self.graph.scope(scope).bindings.len() {
             let source = self.graph.scope(scope).bindings[index];
@@ -322,8 +333,15 @@ impl Analyzer<'_> {
                     )?;
                 }
             } else if binding.kind == BindingKind::Parameter {
+                let skipped = binding.ty.is_some_and(|ty| self.graph.dependent_type(ty))
+                    && parameters.is_some_and(|mask| {
+                        self.graph
+                            .prototype_parameter(binding.entity)
+                            .is_some_and(|index| index < 63 && mask & (1u64 << index) == 0)
+                    });
                 let ty = binding
                     .ty
+                    .filter(|_| !skipped)
                     .map(|ty| self.substitute_signature_type(ty, environment))
                     .transpose()?
                     .flatten();
@@ -341,6 +359,45 @@ impl Analyzer<'_> {
         }
         Ok(frame)
     }
+
+    fn operand_parameters(&self, words: &[KeyWord]) -> Option<u64> {
+        let mut mask = 0;
+        let mut types = Vec::new();
+        for word in words {
+            match *word {
+                KeyWord::Parameter { index, .. } if index < 63 => mask |= 1u64 << index,
+                KeyWord::Type(ty) => types.push(ty),
+                _ => (),
+            }
+        }
+        // A type may itself name a retained operand. Its named positions also
+        // belong to this key; visit shared type DAG nodes only once.
+        let mut visited = std::collections::HashSet::new();
+        while let Some(ty) = types.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match &self.graph.types.get(ty).kind {
+                TypeKind::TemplateParameter { entity, .. } => {
+                    if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
+                        mask |= pattern.parameters?;
+                    }
+                }
+                TypeKind::Pointer(ty)
+                | TypeKind::Reference { element: ty, .. }
+                | TypeKind::Array { element: ty, .. } => types.push(*ty),
+                TypeKind::MemberPointer { owner, element } => types.extend([*owner, *element]),
+                TypeKind::Function {
+                    result, parameters, ..
+                } => {
+                    types.push(*result);
+                    types.extend(parameters);
+                }
+                _ => (),
+            }
+        }
+        Some(mask)
+    }
 }
 
 #[cfg(test)]
@@ -352,6 +409,37 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn renamed_parameter_types_keep_nested_operand_positions() {
+        let source = SourceBuffer::new(
+            b"template<class T>auto a(T x,decltype(x+1) y)->decltype(y+1);\
+              template<class U>auto a(U value,decltype(value+1) extra)->decltype(extra+1){return value+extra;}\
+              int main(){return a(1,2);}".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"nested-positions").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(graph.template_operands.patterns.len(), 2);
+        assert_eq!(graph.template_operands.substitutions.len(), 2);
+        assert!(
+            graph
+                .template_operands
+                .substitutions
+                .values()
+                .all(|state| { matches!(state, State::Complete(_)) })
+        );
+    }
 
     #[test]
     fn operands_share_identity_but_keep_substitution_facts_separate() {

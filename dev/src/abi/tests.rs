@@ -152,7 +152,9 @@ fn expression_identity_retains_operands_and_id_expression_category() {
         .unwrap();
     assert_eq!(first, same);
     assert_ne!(first, reverse);
-    let param = graph.intern(Node::FunctionParam(0), &[]).unwrap();
+    let param = graph
+        .intern(Node::FunctionParam { index: 0, level: 0 }, &[])
+        .unwrap();
     let one = graph
         .intern(Node::Literal { ty: int, bits: 1 }, &[])
         .unwrap();

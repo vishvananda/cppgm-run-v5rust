@@ -18,9 +18,10 @@ impl CaseReader<'_, '_> {
                 index: self.index_value(line, operands[0])?,
                 substitutable: false,
             },
-            b"function-param" if operands.len() == 1 => {
-                Node::FunctionParam(self.index_value(line, operands[0])?)
-            }
+            b"function-param" if operands.len() == 1 => Node::FunctionParam {
+                index: self.index_value(line, operands[0])?,
+                level: 0,
+            },
             b"literal" if operands.len() == 1 => {
                 let ty = self.graph.intern(Node::Builtin(Builtin::Int), &[])?;
                 // Unlike typed argument values, expression literals carry the

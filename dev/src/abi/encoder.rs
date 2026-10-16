@@ -650,8 +650,14 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"_");
             }
-            Node::FunctionParam(index) => {
-                self.put(b"fp");
+            Node::FunctionParam { index, level } => {
+                if level == 0 {
+                    self.put(b"fp");
+                } else {
+                    self.put(b"fL");
+                    self.number(u64::from(level - 1));
+                    self.put(b"p");
+                }
                 if index != 0 {
                     self.number(u64::from(index - 1));
                 }

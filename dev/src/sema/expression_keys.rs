@@ -29,7 +29,7 @@ pub(crate) enum KeyWord {
     Keyword(Option<Keyword>),
     Type(TypeId),
     Entity(EntityId),
-    Parameter(usize),
+    Parameter { index: usize, level: u32 },
     Identifier(NameId),
     FreeName(NameId),
     DependentCallee(EntityId, NameId),

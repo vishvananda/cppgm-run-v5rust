@@ -512,6 +512,7 @@ impl Analyzer<'_> {
         // Earlier parameter objects are needed only when a later parameter's
         // type may name a value. Ordinary prototypes allocate no semantic scope.
         let mut prototype = None;
+        let mut placed = false;
         let mut types = Vec::new();
         let parameter_count = self.tree.parameters.get(clause.parameters).len();
         for index in 0..parameter_count {
@@ -524,12 +525,28 @@ impl Analyzer<'_> {
                 let created =
                     self.graph
                         .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
+                self.graph.scope_mut(created).guarded = true;
                 for (previous_index, &ty) in types.iter().enumerate() {
                     let previous = self.tree.parameters.get(clause.parameters)[previous_index];
-                    self.declare_parameter_object(previous, ty, created)?;
+                    self.prototype_parameter(previous, ty, created, false, previous_index)?;
                 }
                 prototype = Some(created);
+            } else if let Some(earlier) = prototype {
+                // A placeholder retains the scope before its own parameter.
+                // Publish that parameter in a child frame so substitution
+                // cannot see itself or any later parameter.
+                let current = if placed {
+                    self.graph
+                        .add_scope(super::graph::ScopeKind::Function, earlier, None, None)?
+                } else {
+                    earlier
+                };
+                let previous = self.tree.parameters.get(clause.parameters)[index - 1];
+                self.graph.scope_mut(current).guarded = true;
+                self.prototype_parameter(previous, types[index - 1], current, false, index - 1)?;
+                prototype = Some(current);
             }
+            let made = self.graph.template_operands.count();
             let lookup = prototype.unwrap_or(scope);
             let specs = self.specifiers(parameter.specifiers, lookup, false)?;
             if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
@@ -537,9 +554,7 @@ impl Analyzer<'_> {
             }
             let info = self.declarator(parameter.declarator, specs.ty, lookup)?;
             types.push(info.ty);
-            if let Some(prototype) = prototype {
-                self.declare_parameter_object(*parameter, info.ty, prototype)?;
-            }
+            placed = self.graph.template_operands.count() != made;
         }
         if types.len() == 1
             && !clause.ellipsis
@@ -590,16 +605,7 @@ impl Analyzer<'_> {
                     for (parameter_index, &ty) in types.iter().enumerate() {
                         let parameter =
                             self.tree.parameters.get(clause.parameters)[parameter_index];
-                        self.prototype_parameter(parameter, ty, prototype, true)?;
-                        if let Some(name) = self.declarator_name(parameter.declarator)?
-                            && let Some(binding) =
-                                self.graph
-                                    .own(prototype, name, super::lookup::Filter::Ordinary)
-                        {
-                            let entity = self.graph.binding(binding).entity;
-                            self.graph
-                                .record_prototype_parameter(entity, parameter_index);
-                        }
+                        self.prototype_parameter(parameter, ty, prototype, true, parameter_index)?;
                     }
                     ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
                     trailing_prototype = Some(prototype);
@@ -669,20 +675,13 @@ impl Analyzer<'_> {
                 _ => false,
             })
     }
-    pub(super) fn declare_parameter_object(
-        &mut self,
-        parameter: ast::Parameter,
-        ty: TypeId,
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        self.prototype_parameter(parameter, ty, scope, false)
-    }
     fn prototype_parameter(
         &mut self,
         parameter: ast::Parameter,
         ty: TypeId,
         scope: ScopeId,
         printed: bool,
+        position: usize,
     ) -> Result<(), Error> {
         let name = self.declarator_name(parameter.declarator)?;
         if printed || name.is_some() {
@@ -692,9 +691,13 @@ impl Analyzer<'_> {
                 self.graph.types.parameter_object(ty)?
             };
             let entity = self.graph.add_entity(Some(adjusted), name, Keyword::Int)?;
+            self.graph.record_prototype_parameter(entity, position);
             self.graph.add_binding(
                 scope,
-                printed.then_some(scope),
+                // Prototype parameters must be enumerable for substitution.
+                // Earlier-parameter scopes themselves are not attached to the
+                // printed scope tree; their bindings still belong to them.
+                Some(scope),
                 super::graph::Binding {
                     kind: super::graph::BindingKind::Parameter,
                     name,

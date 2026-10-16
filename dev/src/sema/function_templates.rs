@@ -22,6 +22,7 @@ struct SpecializationKey {
     primary: EntityId,
     arguments: Vec<TypeId>,
 }
+
 #[derive(Clone, Copy)]
 enum SignatureState {
     InProgress,
@@ -39,6 +40,7 @@ pub(super) struct FunctionTemplates {
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
     unique_types: Vec<TypeId>,
     demanded_bodies: HashSet<EntityId>,
+    trailing_results: HashSet<EntityId>,
 }
 impl FunctionTemplates {
     pub(super) fn requires_target(&self, binding: BindingId) -> bool {
@@ -67,6 +69,25 @@ impl<'a> Substitution<'a> {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn record_template_result_order(
+        &mut self,
+        entity: EntityId,
+        info: &super::declarators::DeclaratorInfo,
+    ) {
+        if info.qualifiers.is_some_and(|qualifiers| {
+            self.tree
+                .qualifiers
+                .get(qualifiers)
+                .iter()
+                .any(|qualifier| matches!(qualifier.kind, ast::QualifierKind::Trailing(_)))
+        }) {
+            self.graph
+                .function_templates
+                .trailing_results
+                .insert(entity);
+        }
+    }
+
     pub(super) fn specialization_object_signature(
         &mut self,
         entity: EntityId,
@@ -334,51 +355,78 @@ impl Analyzer<'_> {
                     )
                 }
             }
-            TypeKind::Function {
-                result,
-                parameters,
-                variadic,
-                cv: function_cv,
-                reference,
-            } => {
-                let Some(result) = self.substitute_signature_type(result, environment)? else {
-                    return Ok(None);
-                };
-                if matches!(
-                    self.graph.types.get(result).kind,
-                    TypeKind::Array { .. } | TypeKind::Function { .. }
-                ) {
-                    return Ok(None);
-                }
-                let mut substituted = Vec::with_capacity(parameters.len());
-                for parameter in parameters {
-                    let Some(parameter) = self.substitute_signature_type(parameter, environment)?
-                    else {
-                        return Ok(None);
-                    };
-                    if matches!(
-                        self.graph.types.get(parameter).kind,
-                        TypeKind::Scalar(Scalar::Void)
-                    ) {
-                        return Ok(None);
-                    }
-                    substituted.push(self.graph.types.parameter(parameter)?);
-                }
-                Some(self.graph.types.intern(
-                    TypeKind::Function {
-                        result,
-                        parameters: substituted,
-                        variadic,
-                        cv: function_cv,
-                        reference,
-                    },
-                    cv,
-                )?)
+            TypeKind::Function { .. } => {
+                self.substitute_function_signature(ty, environment, true)?
             }
             _ => Some(ty),
         };
         environment.memo.insert(ty, result);
         Ok(result)
+    }
+
+    fn substitute_function_signature(
+        &mut self,
+        ty: TypeId,
+        environment: &mut Substitution<'_>,
+        leading: bool,
+    ) -> Result<Option<TypeId>, Error> {
+        let TypeKind::Function {
+            result,
+            parameters,
+            variadic,
+            cv,
+            reference,
+        } = self.graph.types.get(ty).kind.clone()
+        else {
+            return Err(Error::Invariant("substituting a nonfunction signature"));
+        };
+        let mut substituted_result = None;
+        if leading {
+            substituted_result = self.substitute_signature_type(result, environment)?;
+            if substituted_result.is_none() {
+                return Ok(None);
+            }
+        }
+        let mut substituted = Vec::with_capacity(parameters.len());
+        for parameter in parameters {
+            let Some(parameter) = self.substitute_signature_type(parameter, environment)? else {
+                return Ok(None);
+            };
+            substituted.push(self.graph.types.parameter(parameter)?);
+        }
+        let Some(result) = (if leading {
+            substituted_result
+        } else {
+            self.substitute_signature_type(result, environment)?
+        }) else {
+            return Ok(None);
+        };
+        // Formation validity follows lexical substitution, as in C++'s
+        // substitute_function; an earlier failed operand already returned.
+        if matches!(
+            self.graph.types.get(result).kind,
+            TypeKind::Array { .. } | TypeKind::Function { .. }
+        ) || substituted.iter().any(|&parameter| {
+            matches!(
+                self.graph.types.get(parameter).kind,
+                TypeKind::Scalar(Scalar::Void)
+            )
+        }) {
+            return Ok(None);
+        }
+        self.graph
+            .types
+            .intern(
+                TypeKind::Function {
+                    result,
+                    parameters: substituted,
+                    variadic,
+                    cv,
+                    reference,
+                },
+                self.graph.types.get(ty).cv,
+            )
+            .map(Some)
     }
 
     fn complete_signature(
@@ -438,7 +486,12 @@ impl Analyzer<'_> {
             .signatures
             .insert(key, SignatureState::InProgress);
         let mut environment = Substitution::new(depth, arguments);
-        let result = self.substitute_signature_type(pattern, &mut environment);
+        let leading = !self
+            .graph
+            .function_templates
+            .trailing_results
+            .contains(&self.graph.binding(primary).entity);
+        let result = self.substitute_function_signature(pattern, &mut environment, leading);
         let key = SpecializationKey {
             primary: self.graph.binding(primary).entity,
             arguments: arguments
@@ -469,6 +522,7 @@ impl Analyzer<'_> {
             old.scope,
         );
         let old_inline = old.inline;
+        let parameters = old.function_parameters;
         let exceptions = old.exceptions.clone();
         let specialized = self.graph.entity_mut(entity);
         specialized.function = properties.0;
@@ -477,6 +531,10 @@ impl Analyzer<'_> {
         specialized.home = properties.3;
         specialized.scope = properties.4;
         specialized.inline = old_inline;
+        // Declaration facts belong to the specialization's formation point.
+        // A later primary redeclaration must not rename its prototype; a
+        // demanded body installs its own copied parameters separately.
+        specialized.function_parameters = parameters;
         specialized.exceptions = exceptions;
         specialized.definition_emission = DefinitionEmission::Demanded;
         let binding = self.graph.add_hidden_function(
@@ -709,6 +767,26 @@ impl Analyzer<'_> {
         }
         let mut arguments = self.signature_arguments(binding, head);
         let given = arguments.clone();
+        // Explicit arguments substitute a leading result before parameter
+        // deduction. A trailing result waits until signature completion.
+        if self.graph.function_templates.requires_target(binding)
+            && !self
+                .graph
+                .function_templates
+                .trailing_results
+                .contains(&self.graph.binding(binding).entity)
+        {
+            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+                return Err(Error::Invariant("template call without function type"));
+            };
+            let mut environment = Substitution::new(depth, &given);
+            if self
+                .substitute_signature_type(result, &mut environment)?
+                .is_none()
+            {
+                return Ok(None);
+            }
+        }
         for (index, &argument) in args.iter().enumerate().take(count) {
             let pattern = self.graph.types.function_parameter(ty, index)?;
             let mut environment = Substitution::new(depth, &given);
@@ -1148,7 +1226,11 @@ impl Analyzer<'_> {
 
     fn names_operand(&self, root: TypeId) -> bool {
         let mut work = vec![root];
+        let mut visited = HashSet::new();
         while let Some(ty) = work.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
             match &self.graph.types.get(ty).kind {
                 TypeKind::TemplateParameter { entity, .. }
                     if self.graph.template_operands.pattern(*entity).is_some() =>
@@ -1262,5 +1344,83 @@ impl Analyzer<'_> {
             return Ok(forward.cmp(&backward));
         }
         self.template_reference_order(a, b, call_count.unwrap_or(0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+        types::FundamentalType,
+    };
+
+    #[test]
+    fn operand_search_handles_shared_function_type_dags() {
+        let source =
+            SourceBuffer::new(b"template<class T>auto f(T x)->decltype(x+1);".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"operand-dag").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let binding = analyzer
+            .graph
+            .functions_at(analyzer.graph.global, name.into())
+            .next()
+            .unwrap();
+        let pattern = analyzer.graph.binding(binding).ty.unwrap();
+        assert!(analyzer.names_operand(pattern));
+        let mut ty = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        // The unfolded tree has 3^48 leaves; the owned DAG has 97 nodes.
+        for _ in 0..48 {
+            ty = analyzer
+                .graph
+                .types
+                .intern(
+                    TypeKind::Function {
+                        result: ty,
+                        parameters: vec![ty, ty],
+                        variadic: false,
+                        cv: Cv::default(),
+                        reference: None,
+                    },
+                    Cv::default(),
+                )
+                .unwrap();
+            ty = analyzer
+                .graph
+                .types
+                .intern(TypeKind::Pointer(ty), Cv::default())
+                .unwrap();
+        }
+        assert!(!analyzer.names_operand(ty));
+        let combined = analyzer
+            .graph
+            .types
+            .intern(
+                TypeKind::Function {
+                    result: pattern,
+                    parameters: vec![ty, ty],
+                    variadic: false,
+                    cv: Cv::default(),
+                    reference: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        assert!(analyzer.names_operand(combined));
     }
 }
