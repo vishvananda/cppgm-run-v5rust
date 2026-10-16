@@ -129,7 +129,14 @@ impl Analyzer<'_> {
                 self.graph.types.get(info.ty).kind,
                 TypeKind::Function { .. }
             ) {
-                return Err(Error::Missing("explicit variable template instantiation"));
+                self.explicit_variable_instantiation(
+                    &info,
+                    specs,
+                    is_extern,
+                    scope,
+                    inner.location,
+                )?;
+                return Ok((specs, None));
             }
             let binding = self
                 .declared_function_specialization(&info, scope, inner.location)?
@@ -137,10 +144,13 @@ impl Analyzer<'_> {
                     inner.location,
                     "an explicit instantiation matches no function template specialization",
                 ))?;
-            Ok((specs, binding))
+            Ok((specs, Some(binding)))
         })();
         self.finish_declaration_access(access);
         let (specs, binding) = result?;
+        let Some(binding) = binding else {
+            return Ok(());
+        };
         if specs.inline == InlinePreference::Inline
             || specs.constexpr
             || specs.is_static

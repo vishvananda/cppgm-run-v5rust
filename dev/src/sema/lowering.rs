@@ -63,6 +63,7 @@ pub(crate) struct VariableFacts {
     pub in_class_initializer: Option<ast::Initializer>,
     pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
     pub definition: Option<ast::DeclaratorId>,
+    pub emission: Emission,
 }
 impl VariableFacts {
     pub(crate) fn named(&self) -> Result<NameId, Error> {
@@ -999,7 +1000,21 @@ impl Graph {
             in_class_initializer: entity.member_initializer,
             reference_temporary: entity.reference_temporary,
             definition: entity.variable_definition,
+            emission: if self.variable_instances.instance(id) {
+                Emission::Demanded
+            } else {
+                Emission::Always
+            },
         })
+    }
+    pub(crate) fn lower_demanded_variables(&self) -> &[EntityId] {
+        self.variable_instances.demands()
+    }
+    pub(crate) fn lower_instance_initializer(
+        &self,
+        entity: EntityId,
+    ) -> Option<super::variable_instances::Definition> {
+        self.variable_instances.initializer(entity)
     }
     pub(crate) fn lower_arithmetic_types(
         &self,

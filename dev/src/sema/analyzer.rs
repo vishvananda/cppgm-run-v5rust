@@ -257,6 +257,9 @@ impl<'tree> Analyzer<'tree> {
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
         }
+        if self.lowering() {
+            self.finish_instance_variables()?;
+        }
         self.finish_static_initializers()?;
         if boundaries && self.lowering() {
             self.finish_lowering_boundaries()?;

@@ -113,7 +113,7 @@ pub(super) struct Symbols<'a, 'source> {
     scopes: HashMap<ScopeId, Option<NodeId>>,
     budget: StackBudget,
     stack_base: usize,
-    pub pending: Vec<super::construction::Entry>,
+    pub pending: super::definition_demands::Demands,
     pub initialization: Option<SymbolId>,
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<super::construction::Entry>,
@@ -128,6 +128,8 @@ pub(super) struct Symbols<'a, 'source> {
     callees: HashMap<EntityId, Value>,
     table: &'a mut SymbolTable,
     pub globals: Vec<EntityId>,
+    variable_requests: HashMap<EntityId, super::definition_demands::RequestId>,
+    pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
     pub data: super::data::Objects,
@@ -168,7 +170,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             unmangled: HashMap::new(),
             scopes: HashMap::new(),
             budget,
-            pending: Vec::new(),
+            pending: super::definition_demands::Demands::default(),
             initialization: None,
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
@@ -182,6 +184,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             callees: HashMap::new(),
             table,
             globals: Vec::new(),
+            variable_requests: HashMap::new(),
+            instance_variables: std::collections::VecDeque::new(),
             objects: HashMap::new(),
             data: super::data::Objects::default(),
             vtables: vtables::Tables::default(),
@@ -235,6 +239,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
         )?;
         finalizer.constructed = Some(flag);
+        finalizer.reference_temporary = true;
         self.persistent_finalizers.push(finalizer);
         Ok(Some(flag))
     }
@@ -1332,7 +1337,84 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.callees.insert(entity, Value::Symbol(symbol));
         self.objects.insert(entity, local_object);
         self.globals.push(entity);
+        if facts.emission == crate::sema::lowering::Emission::Demanded
+            && self.graph.lower_instance_initializer(entity).is_some()
+        {
+            self.instance_variables.push_back(entity);
+            let request = self.pending.variable();
+            self.variable_requests.insert(entity, request);
+        }
         Ok(symbol)
+    }
+    pub(super) fn variable_request(
+        &self,
+        entity: EntityId,
+    ) -> Option<super::definition_demands::RequestId> {
+        self.variable_requests.get(&entity).copied()
+    }
+    pub(super) fn budget(&self) -> StackBudget {
+        self.budget
+    }
+    pub(super) fn instance_constructed(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<SymbolId, Error> {
+        let global = self.variable_symbol(program, entity)?;
+        let base = program.names.get(program.symbol(global).name).to_owned();
+        let flag = self
+            .table
+            .allocate(program, &format!("{base}_constructed"), None, true)?;
+        program.add_global(
+            flag,
+            crate::lowir::model::Global {
+                name: program.symbol(flag).name,
+                ty: Some(crate::lowir::vocabulary::Type::I8),
+                metadata: Metadata {
+                    binding: Some(crate::lowir::vocabulary::Binding::Internal),
+                    ..Metadata::default()
+                },
+                init: crate::lowir::model::GlobalInit::Zero,
+            },
+        )?;
+        Ok(flag)
+    }
+    pub(super) fn instance_guard(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<SymbolId, Error> {
+        let global = self.variable_symbol(program, entity)?;
+        let base = program.names.get(program.symbol(global).name).to_owned();
+        let name = self.variable_abi_name(entity)?;
+        let mut bytes = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::GuardVariable(name),
+            &mut bytes,
+            self.budget,
+        )?;
+        let guard_name = program.names.intern_bytes(&bytes)?;
+        let guard = self.table.allocate(
+            program,
+            &format!("__cppgm_guard__{base}"),
+            Some(guard_name),
+            false,
+        )?;
+        program.add_global(
+            guard,
+            crate::lowir::model::Global {
+                name: program.symbol(guard).name,
+                ty: Some(crate::lowir::vocabulary::Type::I64),
+                metadata: Metadata {
+                    binding: Some(crate::lowir::vocabulary::Binding::Weak),
+                    object: Some(guard_name),
+                    ..Metadata::default()
+                },
+                init: crate::lowir::model::GlobalInit::Zero,
+            },
+        )?;
+        Ok(guard)
     }
     pub(super) fn variable_abi_name(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         if let Some(&name) = self.variable_names.get(&entity) {
@@ -1443,7 +1525,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<(SymbolId, SymbolId), Error> {
         use crate::lowir::{
             model::{Global, GlobalInit},
-            vocabulary::{Binding, Storage, Type},
+            vocabulary::{Binding, Storage},
         };
         let global = self.variable_symbol(program, entity)?;
         let base = program.names.get(program.symbol(global).name).to_owned();
@@ -1454,7 +1536,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             guard,
             Global {
                 name: program.symbol(guard).name,
-                ty: Some(Type::I64),
+                ty: Some(crate::lowir::vocabulary::Type::I64),
                 init: GlobalInit::Zero,
                 metadata: Metadata {
                     binding: Some(Binding::Internal),
@@ -1670,6 +1752,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             binding: Some(if facts.locality == crate::sema::lowering::Locality::Unit {
                 crate::lowir::vocabulary::Binding::Internal
+            } else if facts.emission == crate::sema::lowering::Emission::Demanded {
+                crate::lowir::vocabulary::Binding::Weak
             } else {
                 crate::lowir::vocabulary::Binding::Strong
             }),
@@ -1794,7 +1878,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn demand_entry(&mut self, entry: super::construction::Entry) {
         if self.seen.insert(entry) {
-            self.pending.push(entry);
+            self.pending.function(entry);
         }
     }
     pub(super) fn entry_symbol(

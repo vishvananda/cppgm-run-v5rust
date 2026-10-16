@@ -100,6 +100,7 @@ mod templates;
 mod throw_queries;
 mod types;
 mod user_conversions;
+mod variable_instances;
 mod virtual_exceptions;
 mod virtual_members;
 use crate::support::source::SourceOffset;

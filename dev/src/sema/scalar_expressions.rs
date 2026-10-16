@@ -318,6 +318,7 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("value binding without type"))?;
         if binding.kind == BindingKind::Variable {
+            self.use_instance_variable(binding.entity)?;
             ty = self
                 .graph
                 .entity(binding.entity)

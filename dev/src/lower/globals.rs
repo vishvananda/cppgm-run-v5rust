@@ -78,16 +78,35 @@ pub(super) fn define_variable<'a>(
     location: crate::support::source::SourceOffset,
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
-    let initialization = define(
-        output.program,
+    let pending = std::mem::take(&mut symbols.instance_variables);
+    let request = symbols.variable_request(entity);
+    let owner = symbols.pending.replace_owner(request);
+    let result = define_variable_contents(
+        output,
         symbols,
-        graph,
-        tree,
+        (graph, tree),
         entity,
         initializer,
         location,
-    )?;
+        budget,
+    );
+    symbols.pending.replace_owner(owner);
+    let nested = std::mem::replace(&mut symbols.instance_variables, pending);
+    symbols.instance_variables.extend(nested);
+    result
+}
+fn define_variable_contents<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+    entity: EntityId,
+    initializer: Option<ast::Initializer>,
+    location: crate::support::source::SourceOffset,
+    budget: crate::support::stack::StackBudget,
+) -> Result<(), Error> {
+    let initialization = define(output, symbols, graph, tree, entity, initializer, location)?;
     let mut thread_initialization = None;
+    let mut constructed = None;
     if initialization == Initialization::Dynamic && graph.lower_variable(entity)?.thread_local {
         thread_initialization = Some(super::thread_local::initialize(
             output,
@@ -98,20 +117,37 @@ pub(super) fn define_variable<'a>(
             budget,
         )?);
     } else if initialization == Initialization::Dynamic {
+        let guard = if graph.lower_variable(entity)?.emission
+            == crate::sema::lowering::Emission::Demanded
+        {
+            if symbols
+                .storage_destructor(graph.lower_entity_type(entity)?)?
+                .is_some()
+            {
+                constructed = Some(symbols.instance_constructed(output.program, entity)?);
+            }
+            Some(super::startup::Guard {
+                shared: symbols.instance_guard(output.program, entity)?,
+                constructed,
+            })
+        } else {
+            None
+        };
         output.startup.initialize(
             output.program,
             symbols,
             (graph, tree),
-            entity,
-            initializer,
+            (entity, initializer),
             budget,
+            guard,
         )?;
     }
+    emit_instance_variables(output, symbols, (graph, tree))?;
     symbols.publish_finalizers(output.finalizers);
     {
         let facts = graph.lower_variable(entity)?;
         let global = symbols.variable_symbol(output.program, entity)?;
-        if let Some(finalizer) = super::shutdown::for_type(
+        if let Some(mut finalizer) = super::shutdown::for_type(
             output.program,
             symbols,
             graph,
@@ -119,6 +155,7 @@ pub(super) fn define_variable<'a>(
             facts.ty,
             thread_initialization.map(|(guard, _)| guard),
         )? {
+            finalizer.constructed = constructed;
             output.finalizers.push(finalizer);
         }
     }
@@ -131,30 +168,62 @@ pub(super) fn define_variable<'a>(
     }
     Ok(())
 }
+pub(super) fn emit_instance_variables<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+) -> Result<(), Error> {
+    while let Some(entity) = symbols.instance_variables.pop_front() {
+        let symbol = symbols.variable_symbol(output.program, entity)?;
+        if output
+            .program
+            .global(output.program.symbol(symbol))
+            .is_some()
+        {
+            continue;
+        }
+        let initializer =
+            graph
+                .lower_instance_initializer(entity)
+                .ok_or(crate::sema::Error::Invariant(
+                    "instance storage without definition",
+                ))?;
+        define_variable(
+            output,
+            symbols,
+            (graph, tree),
+            entity,
+            initializer.initializer,
+            crate::support::source::SourceOffset(0),
+            symbols.budget(),
+        )?;
+    }
+    Ok(())
+}
 #[derive(PartialEq, Eq)]
 enum Initialization {
     Static,
     Dynamic,
 }
-fn define(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+fn define<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     entity: EntityId,
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
 ) -> Result<Initialization, Error> {
     let saved = symbols.replace_temporary_owner(Some((entity, 0)));
-    let result = define_storage(program, symbols, graph, tree, entity, initializer, location);
+    let result = define_storage(output, symbols, graph, tree, entity, initializer, location);
     symbols.replace_temporary_owner(saved);
     result
 }
-fn define_storage(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+fn define_storage<'a>(
+    output: &mut GlobalOutput<'_>,
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     entity: EntityId,
     initializer: Option<ast::Initializer>,
     location: crate::support::source::SourceOffset,
@@ -177,9 +246,10 @@ fn define_storage(
     } else {
         Some(types::storage(graph, facts.ty)?)
     };
-    let symbol = symbols.variable_symbol(program, entity)?;
-    if program
-        .global(program.symbol(symbol))
+    let symbol = symbols.variable_symbol(output.program, entity)?;
+    if output
+        .program
+        .global(output.program.symbol(symbol))
         .is_some_and(|global| !matches!(global.init, GlobalInit::Declaration))
     {
         return Err(Error::Semantic(crate::sema::Error::Diagnostic {
@@ -187,13 +257,13 @@ fn define_storage(
             message: "redefinition of a variable across translation units",
         }));
     }
-    let mut metadata = symbols.variable_metadata(program, entity, symbol)?;
+    let mut metadata = symbols.variable_metadata(output.program, entity, symbol)?;
     let mut dynamic = constructed;
     // A failed attempt can already have referred to tables or addresses.
     // Replay only its recorded symbolic demand, before publishing storage.
     let table_image = graph.lower_static_construction(entity);
     let _ = data::items(
-        program,
+        output.program,
         symbols,
         graph,
         tree,
@@ -202,11 +272,11 @@ fn define_storage(
     let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() && facts.initializer.is_some() {
             GlobalInit::Address(
-                data::reference_temporary(program, symbols, graph, tree, entity, false)?,
+                data::reference_temporary(output.program, symbols, graph, tree, entity, false)?,
                 0,
             )
         } else if let Some(value) = facts.initializer {
-            let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
+            let (symbol, offset) = data::address(output.program, symbols, graph, tree, value)?;
             GlobalInit::Address(symbol, offset)
         } else {
             dynamic = true;
@@ -215,18 +285,18 @@ fn define_storage(
     } else if array {
         GlobalInit::Data(if let Some(image) = table_image {
             dynamic = false;
-            data::items(program, symbols, graph, tree, image)?
+            data::items(output.program, symbols, graph, tree, image)?
         } else if (initializer.is_some() || facts.name.is_none())
             && let Some(image) = graph.lower_array_image(entity)
         {
             dynamic = false;
-            data::items(program, symbols, graph, tree, image)?
+            data::items(output.program, symbols, graph, tree, image)?
         } else {
             dynamic |= initializer.is_some();
             if !constructed && let Some(prefix) = graph.lower_array_image_prefix(entity) {
                 // The C++ constant attempt demands addresses before publishing
                 // the object's zero image, even when a later member is dynamic.
-                let _ = data::items(program, symbols, graph, tree, prefix)?;
+                let _ = data::items(output.program, symbols, graph, tree, prefix)?;
             }
             vec![crate::lowir::model::DataItem::Zero(
                 i64::try_from(types::layout(graph, facts.ty)?.0)
@@ -249,7 +319,7 @@ fn define_storage(
                 bits,
             )),
             Some(value @ (StaticValue::Literal(..) | StaticValue::Address(..))) => {
-                let (symbol, offset) = data::address(program, symbols, graph, tree, value)?;
+                let (symbol, offset) = data::address(output.program, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
             }
             None => {
@@ -265,8 +335,9 @@ fn define_storage(
     if !dynamic && !facts.thread_local && symbols.readonly_object(facts.ty)? {
         metadata.storage = Some(Storage::ReadOnly);
     }
-    let name = program.symbol(symbol).name;
-    program.add_global(
+    let name = output.program.symbol(symbol).name;
+    emit_instance_variables(output, symbols, (graph, tree))?;
+    output.program.add_global(
         symbol,
         Global {
             name,
@@ -280,7 +351,7 @@ fn define_storage(
         && !facts.thread_local
         && graph.lower_empty_initialization_step(entity)?
     {
-        symbols.request_initialization(program)?;
+        symbols.request_initialization(output.program)?;
     }
     if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         symbols.data.define_reference(entity);

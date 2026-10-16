@@ -726,10 +726,11 @@ impl Analyzer<'_> {
             if !member && self.template_depth == 0 {
                 self.record_declared_constant(entity, initializer, &info, location)?;
             }
-        } else if self.semantic() && definition {
+        } else if self.semantic() && self.template_depth == 0 && definition {
             self.default_initialize_declaration(binding, location)?;
         }
-        if self.lowering() && definition && !member {
+        self.record_variable_pattern(binding, init, &info, definition, ty, location);
+        if self.lowering() && self.template_depth == 0 && definition && !member {
             self.request_static_initializer(entity, init.initializer, info.lookup, home)?;
         }
         if self.semantic()
@@ -772,7 +773,7 @@ impl Analyzer<'_> {
         );
         Ok(())
     }
-    fn complete_initializer_array(
+    pub(super) fn complete_initializer_array(
         &mut self,
         ty: TypeId,
         initializer: Option<ast::Initializer>,
@@ -1005,11 +1006,14 @@ impl Analyzer<'_> {
                         specs,
                         location,
                     )?;
-                } else if let Some(completed) = self.graph.types.complete_array(old, ty) {
+                } else if let Some(completed) = self.compatible_variable_type(old, ty)? {
                     self.agree_variable_linkage(binding.entity, specs, home, qualified, location)?;
                     self.graph.entity_mut(binding.entity).ty = Some(completed);
                 } else {
-                    return Err(Error::at(location, "conflicting declaration of a variable"));
+                    return Err(Error::at(
+                        context.declarator_location,
+                        "conflicting declaration of a variable",
+                    ));
                 }
                 entity = Some(binding.entity);
             }

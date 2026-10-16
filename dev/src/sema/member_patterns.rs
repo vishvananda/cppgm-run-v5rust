@@ -362,6 +362,18 @@ impl Analyzer<'_> {
         if let (Some(source), Some(target)) = (source, target) {
             let source = self.graph.binding(source);
             let target = self.graph.binding(target);
+            if source.kind == BindingKind::Variable
+                && target.kind == BindingKind::Variable
+                && self.graph.entity(target.entity).data_member
+                    == Some(super::graph::DataMemberKind::Static)
+            {
+                self.graph
+                    .variable_instances
+                    .link(source.entity, target.entity);
+                self.graph
+                    .instantiation_levels
+                    .record(target.entity, self.instantiation_depth);
+            }
             if source.kind == BindingKind::Function && target.kind == BindingKind::Function {
                 self.graph
                     .function_templates

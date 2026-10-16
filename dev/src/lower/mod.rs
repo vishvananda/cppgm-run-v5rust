@@ -28,6 +28,7 @@ mod copy_arrays;
 mod copy_cleanup;
 mod copy_construction;
 mod data;
+mod definition_demands;
 mod definition_order;
 mod destruction;
 mod dispatch;
@@ -309,6 +310,16 @@ pub(crate) fn lower_unit(
                     .is_empty() => {}
             _ => return Err(Error::Missing("class and template declaration lowering")),
         }
+        globals::emit_instance_variables(
+            &mut globals::GlobalOutput {
+                program: &mut output.program,
+                startup: &mut output.startup,
+                definitions: &mut output.definitions,
+                finalizers: &mut output.finalizers,
+            },
+            &mut symbols,
+            (graph, tree),
+        )?;
     }
     for id in graph.lower_root_delegations() {
         symbols.demand_entry(construction::Entry::Constructor(
@@ -317,10 +328,15 @@ pub(crate) fn lower_unit(
         ));
     }
     emit_pending(
-        (&mut output.program, &mut output.definitions),
+        &mut globals::GlobalOutput {
+            program: &mut output.program,
+            startup: &mut output.startup,
+            definitions: &mut output.definitions,
+            finalizers: &mut output.finalizers,
+        },
         &mut symbols,
         (graph, tree),
-        (emitted, emitted_entries),
+        (&mut emitted, &mut emitted_entries),
         budget,
     )?;
     output.initializer = finish_unit(
@@ -337,25 +353,28 @@ pub(crate) fn lower_unit(
 // The unit's demand worklist owns emission identity; each emitted body is
 // streamed and released before the next one is lowered.
 fn emit_pending<'a>(
-    (program, definitions): (&mut Program, &mut definition_order::Definitions),
+    output: &mut globals::GlobalOutput<'_>,
     symbols: &mut symbols::Symbols<'a, '_>,
     (graph, tree): (&'a Graph, &'a ast::Tree),
-    (mut emitted, mut entries): (
-        std::collections::HashSet<sema::lowering::EntityId>,
-        std::collections::HashSet<construction::Entry>,
+    (emitted, entries): (
+        &mut std::collections::HashSet<sema::lowering::EntityId>,
+        &mut std::collections::HashSet<construction::Entry>,
     ),
     budget: StackBudget,
 ) -> Result<(), Error> {
-    let mut next = 0;
-    exception_helpers::emit_pending(program, symbols, definitions)?;
-    aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
+    exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
+    aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
     let mut explicit = false;
     loop {
-        let Some(&entry) = symbols.pending.get(next) else {
+        globals::emit_instance_variables(output, symbols, (graph, tree))?;
+        let Some(entry) = symbols.pending.next() else {
             if explicit {
                 break;
             }
             explicit = true;
+            for &entity in graph.lower_demanded_variables() {
+                symbols.variable_symbol(output.program, entity)?;
+            }
             for entity in graph.lower_explicit_functions() {
                 if graph.lower_function_defined(entity) {
                     symbols.demand_entry(construction::Entry::Function(entity));
@@ -363,7 +382,6 @@ fn emit_pending<'a>(
             }
             continue;
         };
-        next += 1;
         if !entries.insert(entry) {
             continue;
         }
@@ -376,12 +394,12 @@ fn emit_pending<'a>(
             }
             let facts = graph.lower_function(entity)?;
             if facts.definition.is_none() && !graph.lower_has_synthesized_body(entity) {
-                function::declare(program, symbols, graph, entry)?;
+                function::declare(output.program, symbols, graph, entry)?;
                 continue;
             }
             if facts.emission == crate::sema::lowering::Emission::Demanded {
-                let symbol = symbols.entry_symbol(program, entry)?;
-                if program.function_defined(symbol) {
+                let symbol = symbols.entry_symbol(output.program, entry)?;
+                if output.program.function_defined(symbol) {
                     continue;
                 }
             }
@@ -393,13 +411,13 @@ fn emit_pending<'a>(
             if let Some(entity) = graph.lower_constructor_entity(id)
                 && !graph.lower_function_defined(entity)
             {
-                function::declare(program, symbols, graph, entry)?;
+                function::declare(output.program, symbols, graph, entry)?;
                 continue;
             }
             let facts = entry.facts(graph)?;
-            let symbol = symbols.entry_symbol(program, entry)?;
+            let symbol = symbols.entry_symbol(output.program, entry)?;
             if facts.emission == crate::sema::lowering::Emission::Demanded
-                && program.function_defined(symbol)
+                && output.program.function_defined(symbol)
             {
                 continue;
             }
@@ -407,10 +425,10 @@ fn emit_pending<'a>(
                 .lower_constructor_entity(id)
                 .and_then(|entity| graph.lower_function_body(entity))
         };
-        function::lower(program, symbols, graph, tree, entry, body, budget)?;
-        symbols.stream_definition(program, definitions, entry)?;
-        exception_helpers::emit_pending(program, symbols, definitions)?;
-        aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
+        function::lower(output.program, symbols, graph, tree, entry, body, budget)?;
+        symbols.stream_definition(output.program, output.definitions, entry)?;
+        exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
+        aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
     }
     Ok(())
 }

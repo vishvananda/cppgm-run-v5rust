@@ -17,6 +17,10 @@ use crate::{
     syntax::ast,
 };
 
+pub(super) struct Guard {
+    pub shared: SymbolId,
+    pub constructed: Option<SymbolId>,
+}
 #[derive(Default)]
 pub(super) struct Startup {
     body: Option<SuspendedFunction>,
@@ -48,9 +52,9 @@ impl Startup {
         program: &mut Program,
         symbols: &mut Symbols<'a, '_>,
         source: (&'a Graph, &'a ast::Tree),
-        entity: EntityId,
-        initializer: Option<ast::Initializer>,
+        (entity, initializer): (EntityId, Option<ast::Initializer>),
         budget: StackBudget,
+        guard: Option<Guard>,
     ) -> Result<(), Error> {
         let (graph, tree) = source;
         symbols.request_initialization(program)?;
@@ -68,9 +72,7 @@ impl Startup {
         function.persistent_references = true;
         function.static_initializer = true;
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
-        let result = function
-            .initialize_global(entity, initializer)
-            .and_then(|()| function.destroy_temporaries(0));
+        let result = function.initialize_guarded_global(entity, initializer, guard);
         function.symbols.replace_temporary_owner(saved);
         result?;
         self.next_block = function.next_block;
@@ -93,6 +95,62 @@ impl Startup {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    fn initialize_guarded_global(
+        &mut self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+        guard: Option<Guard>,
+    ) -> Result<(), Error> {
+        let Some(guard) = guard else {
+            self.initialize_global(entity, initializer)?;
+            return self.destroy_temporaries(0);
+        };
+        let ty = self.graph.lower_entity_type(entity)?;
+        let flag = Value::Symbol(guard.shared);
+        let loaded = self.emit(
+            I::Load(
+                crate::lowir::model::Facts::memory(false, true),
+                Type::I64,
+                flag,
+            ),
+            ty,
+        )?;
+        let zero = self.builder.integer(0)?;
+        let test = self.emit(
+            I::Compare(
+                crate::lowir::vocabulary::Compare::Ne,
+                Type::I64,
+                loaded.value,
+                zero,
+            ),
+            ty,
+        )?;
+        let run = self.new_block("local_static_ctor_run")?;
+        let done = self.new_block("local_static_ctor_done")?;
+        self.effect(I::Branch(test.value, done, run))?;
+        self.terminated = true;
+        self.place(run)?;
+        let one = self.builder.integer(1)?;
+        self.effect(I::Store(
+            crate::lowir::model::Facts::memory(false, true),
+            Type::I64,
+            one,
+            flag,
+        ))?;
+        self.initialize_global(entity, initializer)?;
+        self.destroy_temporaries(0)?;
+        if let Some(constructed) = guard.constructed {
+            let one = self.builder.integer(1)?;
+            self.effect(I::Store(
+                crate::lowir::model::Facts::default(),
+                Type::I8,
+                one,
+                Value::Symbol(constructed),
+            ))?;
+        }
+        self.jump(done)?;
+        self.place(done)
+    }
     pub(super) fn initialize_global(
         &mut self,
         entity: EntityId,

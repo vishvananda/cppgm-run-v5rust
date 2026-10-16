@@ -196,7 +196,7 @@ impl<'a> Cloner<'a> {
         node.default = self.optional(node.default, Self::initializer)?;
         Ok(node)
     }
-    fn initializer(&mut self, mut node: Initializer) -> Result<Initializer, ParseError> {
+    pub(crate) fn initializer(&mut self, mut node: Initializer) -> Result<Initializer, ParseError> {
         node.kind = match node.kind {
             InitializerKind::Assign(id) => InitializerKind::Assign(self.expression(id)?),
             InitializerKind::Braced(id) => InitializerKind::Braced(self.expression(id)?),

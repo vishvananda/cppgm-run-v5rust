@@ -257,6 +257,9 @@ impl Analyzer<'_> {
         }
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         let member = self.graph.binding(binding);
+        if member.kind == BindingKind::Variable {
+            self.use_instance_variable(member.entity)?;
+        }
         let entity = self.graph.entity(member.entity);
         let mut facts = match member.kind {
             BindingKind::Variable => {

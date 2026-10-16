@@ -15,6 +15,7 @@ pub(super) struct Finalizer {
     pub array: bool,
     pub guard: Option<SymbolId>,
     pub constructed: Option<SymbolId>,
+    pub reference_temporary: bool,
 }
 pub(super) fn for_type(
     program: &mut Program,
@@ -49,6 +50,7 @@ pub(super) fn for_type(
         element_size: super::types::layout(graph, element)?.0,
         guard,
         constructed: None,
+        reference_temporary: false,
     }))
 }
 pub(super) fn finish(
@@ -91,7 +93,7 @@ pub(super) fn finish(
         if finalizer.count > 8 {
             array_loop(&mut builder, finalizer, &mut next_block)?;
         } else {
-            let base = if finalizer.constructed.is_some() && finalizer.array {
+            let base = if finalizer.reference_temporary && finalizer.array {
                 Some(builder.generated(I::Addr(Value::Symbol(finalizer.global)))?)
             } else {
                 None
