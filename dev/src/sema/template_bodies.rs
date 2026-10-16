@@ -369,11 +369,7 @@ impl Analyzer<'_> {
                 .bodies
                 .states
                 .contains_key(&body.entity)
-            && self
-                .graph
-                .entity(body.entity)
-                .home
-                .is_some_and(|scope| self.graph.within_class_instance(scope))
+            && self.graph.within_class_instance(body.print)
         {
             let limit = self
                 .graph
@@ -525,6 +521,76 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn friends_keep_namespace_identity_and_copy_only_demanded_instance_bodies() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct Owner{\
+                friend int read(Owner){return sizeof(T);}\
+                friend int unused(Owner){return T::missing;}\
+            };int read(Owner<int>);Owner<char> global;\
+            int main(){Owner<int>a;Owner<char>b;return read(a)+read(b)+read(a);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"friend-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let read = cursor.intern_name(b"read").unwrap();
+        let global = cursor.intern_name(b"global").unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let bodies = &graph.function_templates.bodies;
+        assert_eq!(bodies.members.len(), 4);
+        assert_eq!(bodies.member_links.len(), 4);
+        let mut completed = HashSet::new();
+        for (&entity, &(pattern, _)) in &bodies.members {
+            assert_eq!(graph.entity(entity).home, Some(graph.global));
+            assert!(graph.within_class_instance(pattern.print));
+            if let Some(body) = bodies.body(entity) {
+                assert_ne!(body, pattern.body);
+                assert!(completed.insert(body));
+            } else {
+                assert!(graph.entity(entity).scope.is_none());
+            }
+        }
+        assert_eq!(completed.len(), 2);
+        let functions: HashSet<_> = graph
+            .functions_at(graph.global, read.into())
+            .map(|binding| graph.binding(binding).entity)
+            .collect();
+        assert_eq!(functions.len(), 2);
+        // Patterns are source-visible only, with no namespace overload or ADL
+        // publication. Each instance links back to those original entities.
+        for &source in bodies.member_links.values() {
+            assert!(!functions.contains(&source));
+            assert!(graph.entity(source).scope.is_some());
+        }
+        let declarations = &graph.scope(graph.global).bindings;
+        let variable_position = declarations
+            .iter()
+            .position(|&id| graph.binding(id).name == Some(global))
+            .unwrap();
+        let variable_type = graph.binding(declarations[variable_position]).ty.unwrap();
+        let friend_position = declarations
+            .iter()
+            .position(|&id| {
+                let binding = graph.binding(id);
+                binding.name == Some(read)
+                    && binding.ty.is_some_and(|ty| {
+                        graph.types.function_parameter(ty, 0).unwrap() == variable_type
+                    })
+            })
+            .unwrap();
+        assert!(friend_position < variable_position);
+    }
 
     #[test]
     fn outside_members_share_pattern_links_but_own_only_demanded_copies() {

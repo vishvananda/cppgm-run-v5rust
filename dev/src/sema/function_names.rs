@@ -572,6 +572,8 @@ impl Analyzer<'_> {
             info.ty,
             super::declarations::ValueScope {
                 qualified: info.home.is_some(),
+                pattern_friend: befriending.is_some() && self.templated_friend_class(scope),
+                variable_object: None,
                 home,
                 print: if befriending.is_some() {
                     home
@@ -601,7 +603,7 @@ impl Analyzer<'_> {
         if let Some(class) = befriending {
             let entity = self.graph.binding(binding).entity;
             self.graph.friendships.record(class, entity);
-            if self.graph.friendships.hidden(binding) {
+            if !self.templated_friend_class(scope) && self.graph.friendships.hidden(binding) {
                 self.graph.friendships.index(class, key, binding);
             }
             if definition == Definition::Body {

@@ -38,6 +38,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub this_slot: Option<Value>,
     pub persistent_references: bool,
     pub static_initializer: bool,
+    pub initialization_output: Option<super::startup::InitializationOutput<'symbols>>,
     // While a converting constructor consumes its source, its first standard
     // conversion is active; the outer construction use must not recur.
     pub converting_source: Option<ast::ExprId>,
@@ -353,6 +354,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             this_slot: None,
             persistent_references: false,
             static_initializer: false,
+            initialization_output: None,
             converting_source: None,
             initialization_context: super::class_results::InitializationContext::Ordinary,
             empty_value_zeroing: super::construction::EmptyValueZeroing::Emit,

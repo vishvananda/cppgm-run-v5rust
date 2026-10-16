@@ -374,7 +374,21 @@ impl Analyzer<'_> {
                     .instantiation_levels
                     .record(target.entity, self.instantiation_depth);
             }
-            if source.kind == BindingKind::Function && target.kind == BindingKind::Function {
+            if source.kind == BindingKind::Function
+                && target.kind == BindingKind::Function
+                && self
+                    .graph
+                    .function_templates
+                    .primary(target.entity)
+                    .is_none()
+                && self.graph.entity(target.entity).template_head.is_none()
+                && (self
+                    .graph
+                    .entity(target.entity)
+                    .home
+                    .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
+                    || self.graph.function_templates.bodies.member(target.entity))
+            {
                 self.graph
                     .function_templates
                     .bodies

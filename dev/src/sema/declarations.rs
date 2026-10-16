@@ -19,6 +19,8 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(super) struct ValueScope<'info> {
     pub qualified: bool,
+    pub pattern_friend: bool,
+    pub variable_object: Option<(Option<ast::Initializer>, bool)>,
     pub home: ScopeId,
     pub print: ScopeId,
     pub head: Option<super::templates::HeadId>,
@@ -651,11 +653,16 @@ impl Analyzer<'_> {
                 "redeclaration of a name in the same scope",
             ));
         }
+        let definition = (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
+            && (!specs.is_extern || init.initializer.is_some());
+        let member = self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static;
         let binding = self.declare_value(
             name.into(),
             ty,
             ValueScope {
                 qualified: info.home.is_some(),
+                pattern_friend: false,
+                variable_object: (member || definition).then_some((init.initializer, member)),
                 home,
                 print: info.home.unwrap_or(scope),
                 head: self.active_template_head(scope),
@@ -679,8 +686,6 @@ impl Analyzer<'_> {
         }
         self.note_nothrow_target(entity, ty, Some(init.declarator), info.lookup)?;
         self.record_data_member(binding, specs, &info, init, home)?;
-        let definition = (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
-            && (!specs.is_extern || init.initializer.is_some());
         if definition {
             if self.graph.entity(entity).defined {
                 return Err(Error::at(location, "redefinition of a variable"));
@@ -690,16 +695,6 @@ impl Analyzer<'_> {
         }
         let member =
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
-        if member || definition {
-            let object = self
-                .graph
-                .entity(entity)
-                .ty
-                .ok_or(Error::Invariant("object without type"))?;
-            let object = self.initial_object_type(object, init.initializer);
-            self.check_object_type(object, member, location)?;
-            self.check_abstract_object(object, location)?;
-        }
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
         if let Some(initializer) = init.initializer {
@@ -912,6 +907,8 @@ impl Analyzer<'_> {
     ) -> Result<BindingId, Error> {
         let ValueScope {
             qualified,
+            pattern_friend,
+            variable_object,
             home,
             print,
             head,
@@ -946,10 +943,12 @@ impl Analyzer<'_> {
             ));
         }
         let mut entity = None;
-        let mut existing = if qualified && kind == BindingKind::Variable {
+        let mut existing = if pattern_friend {
+            None
+        } else if qualified && kind == BindingKind::Variable {
             self.qualified_key(home, name, Filter::Ordinary)?
         } else {
-            self.graph.value_binding(home, name)
+            self.graph.redeclared_value(home, name)
         };
         if kind == BindingKind::Function
             && existing.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function)
@@ -1098,24 +1097,33 @@ impl Analyzer<'_> {
         } else {
             ty
         };
+        // Complete the declared object before publishing this binding. A
+        // demanded class can introduce friends into the namespace; those
+        // declarations precede this variable and cannot see it yet.
+        if let Some((initializer, member)) = variable_object {
+            let object = self.initial_object_type(ty, initializer);
+            self.check_object_type(object, member, location)?;
+            self.check_abstract_object(object, location)?;
+        }
         let invisible = kind == BindingKind::Function
             && specs.friendship == super::specifiers::Friendship::Friend
             && existing
                 .filter(|&id| self.graph.binding(id).kind == BindingKind::Function)
                 .is_none_or(|id| self.graph.friendships.hidden(id));
-        let binding = self.graph.add_value_binding(
-            home,
-            Some(print),
-            Binding {
-                kind,
-                name: name.identifier(),
-                entity,
-                ty: Some(ty),
-                key: Keyword::Int,
-            },
-            invisible,
-        )?;
-        if let Some(name) = name.special() {
+        let value = Binding {
+            kind,
+            name: name.identifier(),
+            entity,
+            ty: Some(ty),
+            key: Keyword::Int,
+        };
+        let binding = if pattern_friend {
+            self.graph.add_pattern_function(home, print, value)?
+        } else {
+            self.graph
+                .add_value_binding(home, Some(print), value, invisible)?
+        };
+        if !pattern_friend && let Some(name) = name.special() {
             self.graph.record_special_value(home, name, binding)?;
         }
         Ok(binding)

@@ -341,6 +341,23 @@ impl Graph {
                 }),
         }
     }
+    /// Declaration agreement sees every declaration already introduced,
+    /// independently of the namespace lookup limit of an instantiation.
+    pub(super) fn redeclared_value(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+    ) -> Option<BindingId> {
+        match key {
+            super::function_names::ValueKey::Identifier(name) => {
+                let entry = self.scope(scope).index.get(&name)?;
+                entry.value.or(entry.ty)
+            }
+            super::function_names::ValueKey::Special(name) => {
+                self.special_values.get(&(scope, name)).copied()
+            }
+        }
+    }
     pub(super) fn record_special_value(
         &mut self,
         scope: ScopeId,
@@ -655,6 +672,16 @@ impl Graph {
         self.binding_access[id.0 as usize] = self.binding_access(origin);
         Ok(id)
     }
+    // A class template's friend is source-facing syntax, not a namespace
+    // declaration until that class is instantiated (14.5.4p4).
+    pub(super) fn add_pattern_function(
+        &mut self,
+        home: ScopeId,
+        print: ScopeId,
+        binding: Binding,
+    ) -> Result<BindingId, Error> {
+        self.add_binding_inner(home, Some(print), binding, false, true)
+    }
     pub(super) fn add_hidden_binding_in(
         &mut self,
         home: ScopeId,
@@ -816,11 +843,7 @@ impl Graph {
         head: Option<super::templates::HeadId>,
     ) -> Result<Option<BindingId>, Error> {
         let signature = self.function_signature(scope, key, ty, head)?;
-        Ok(self
-            .namespace_signatures
-            .get(&signature)
-            .copied()
-            .filter(|&id| self.binding_visible_at_limit(id)))
+        Ok(self.namespace_signatures.get(&signature).copied())
     }
     fn function_signature(
         &mut self,

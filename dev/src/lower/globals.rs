@@ -78,6 +78,7 @@ pub(super) fn define_variable<'a>(
     location: crate::support::source::SourceOffset,
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
+    symbols.check_stack()?;
     let pending = std::mem::take(&mut symbols.instance_variables);
     let request = symbols.variable_request(entity);
     let owner = symbols.pending.replace_owner(request);
@@ -134,7 +135,7 @@ fn define_variable_contents<'a>(
             None
         };
         output.startup.initialize(
-            output.program,
+            (output.program, output.definitions, output.finalizers),
             symbols,
             (graph, tree),
             (entity, initializer),

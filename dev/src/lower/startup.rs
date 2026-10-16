@@ -21,6 +21,10 @@ pub(super) struct Guard {
     pub shared: SymbolId,
     pub constructed: Option<SymbolId>,
 }
+pub(super) struct InitializationOutput<'a> {
+    pub definitions: &'a mut super::definition_order::Definitions,
+    pub finalizers: &'a mut Vec<super::shutdown::Finalizer>,
+}
 #[derive(Default)]
 pub(super) struct Startup {
     body: Option<SuspendedFunction>,
@@ -49,7 +53,11 @@ impl Startup {
     }
     pub(super) fn initialize<'a>(
         &mut self,
-        program: &mut Program,
+        (program, definitions, finalizers): (
+            &mut Program,
+            &mut super::definition_order::Definitions,
+            &mut Vec<super::shutdown::Finalizer>,
+        ),
         symbols: &mut Symbols<'a, '_>,
         source: (&'a Graph, &'a ast::Tree),
         (entity, initializer): (EntityId, Option<ast::Initializer>),
@@ -71,6 +79,10 @@ impl Startup {
         function.destruction.selector = self.selector;
         function.persistent_references = true;
         function.static_initializer = true;
+        function.initialization_output = Some(InitializationOutput {
+            definitions,
+            finalizers,
+        });
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
         let result = function.initialize_guarded_global(entity, initializer, guard);
         function.symbols.replace_temporary_owner(saved);
@@ -95,6 +107,59 @@ impl Startup {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    /// A first reference made by an initializer defines its dependencies at
+    /// that exact position in the shared startup body. Move the builder while
+    /// nested initializers borrow the program; each retains its own scratch.
+    pub(super) fn emit_referenced_instance_variable(
+        &mut self,
+        entity: EntityId,
+        symbol: SymbolId,
+    ) -> Result<(), Error> {
+        // A static-image attempt can have published this symbol while its
+        // request still belongs to a suspended sibling queue. The evaluated
+        // reference must finish its definition here too; the old queue entry
+        // will then observe the published global and do no work.
+        if self.initialization_output.is_some() {
+            let program = self.builder.program();
+            if program.global(program.symbol(symbol)).is_none()
+                && self.graph.lower_instance_initializer(entity).is_some()
+            {
+                self.symbols.instance_variables.push_front(entity);
+            }
+        }
+        if self.symbols.instance_variables.is_empty() {
+            return Ok(());
+        }
+        let Some(output) = self.initialization_output.take() else {
+            return Ok(());
+        };
+        let mut startup = Startup {
+            body: Some(self.builder.take_construction()),
+            next_block: self.next_block,
+            terminated: self.terminated,
+            selector: self.destruction.selector,
+        };
+        let result = super::globals::emit_instance_variables(
+            &mut super::globals::GlobalOutput {
+                program: self.builder.program(),
+                startup: &mut startup,
+                definitions: output.definitions,
+                finalizers: output.finalizers,
+            },
+            self.symbols,
+            (self.graph, self.tree),
+        );
+        self.initialization_output = Some(output);
+        result?;
+        self.builder
+            .restore_construction(startup.body.ok_or(crate::sema::Error::Invariant(
+                "nested initializer lost startup construction",
+            ))?);
+        self.next_block = startup.next_block;
+        self.terminated = startup.terminated;
+        self.destruction.selector = startup.selector;
+        Ok(())
+    }
     fn initialize_guarded_global(
         &mut self,
         entity: EntityId,

@@ -89,6 +89,7 @@ impl Function<'_, '_, '_, '_> {
         let symbol = self
             .symbols
             .variable_symbol(self.builder.program(), entity)?;
+        self.emit_referenced_instance_variable(entity, symbol)?;
         if !self.graph.lower_variable(entity)?.thread_local {
             return Ok(Value::Symbol(symbol));
         }

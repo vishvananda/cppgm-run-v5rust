@@ -53,6 +53,31 @@ impl<'a> FunctionBuilder<'a> {
             slot_names: self.slot_names,
         }
     }
+    /// Move construction out while a nested initializer borrows the program.
+    /// The caller must restore it before issuing another builder operation.
+    pub(crate) fn take_construction(&mut self) -> SuspendedFunction {
+        let placeholder = Function {
+            name: self.function.name,
+            signature: self.function.signature,
+            metadata: Metadata::default(),
+            body: None,
+            location: None,
+        };
+        SuspendedFunction {
+            symbol: self.symbol,
+            function: std::mem::replace(&mut self.function, placeholder),
+            body: std::mem::replace(&mut self.body, Body::new(None, 0)),
+            block: self.block.take(),
+            slot_names: std::mem::take(&mut self.slot_names),
+        }
+    }
+    pub(crate) fn restore_construction(&mut self, saved: SuspendedFunction) {
+        self.symbol = saved.symbol;
+        self.function = saved.function;
+        self.body = saved.body;
+        self.block = saved.block;
+        self.slot_names = saved.slot_names;
+    }
     pub(crate) fn new(
         program: &'a mut Program,
         name: &str,
