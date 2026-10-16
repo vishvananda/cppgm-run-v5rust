@@ -1,0 +1,26 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type Base struct Base
+    type Derived struct Derived
+    scope class Base
+      variable item int
+      function call function of () returning int
+    scope class Derived
+      type-alias item long int
+      type-alias call char
+      variable item int
+      function call function of () returning int
+    scope namespace Types
+      type-alias item int
+      type-alias call long int
+    scope namespace Values
+      variable item int
+      function call function of () returning int
+    scope namespace Both
+      type-alias item int
+      type-alias call long int
+      variable item int
+      function call function of () returning int
+end translation unit

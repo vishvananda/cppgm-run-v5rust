@@ -137,6 +137,7 @@ impl Analyzer<'_> {
                 .copy_plan_properties(*class, *origin)?
                 .ok_or(Error::Invariant("copy plan work item"))?;
             let record = self.graph.copy_properties.get(properties);
+            let deleted = record.deleted;
             if *next == 0 {
                 if matches!(record.plan, ConstructorState::InProgress) {
                     return Err(Error::Invariant("cyclic copy body demand"));
@@ -151,8 +152,12 @@ impl Analyzer<'_> {
                 .get(*next)
             {
                 *next += 1;
-                let selected =
-                    selected.ok_or(Error::Invariant("deleted subobject in copy body"))?;
+                let Some(selected) = selected else {
+                    if deleted {
+                        continue;
+                    }
+                    return Err(Error::Invariant("deleted subobject in copy body"));
+                };
                 if self
                     .ready_copy_plan(child, selected.origin, location)?
                     .is_none()
@@ -209,8 +214,15 @@ impl Analyzer<'_> {
                 if child != planned_child {
                     return Err(Error::Invariant("copy action child identity"));
                 }
-                let selected = selected.ok_or(Error::Invariant("deleted copy action"))?;
-                self.ready_copy_plan(child, selected.origin, location)?
+                if let Some(selected) = selected {
+                    self.ready_copy_plan(child, selected.origin, location)?
+                } else if self.graph.copy_properties.get(properties).deleted {
+                    // The frozen deleted-property result retains this subobject
+                    // without a callable selection; explicit roots still emit it.
+                    None
+                } else {
+                    return Err(Error::Invariant("deleted copy action"));
+                }
             } else {
                 None
             };

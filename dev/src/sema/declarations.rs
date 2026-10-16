@@ -322,7 +322,7 @@ impl Analyzer<'_> {
             None => return Err(Error::Invariant("qualified using without prefix")),
         };
         if let ast::NameKind::Conversion(ty) = last.kind {
-            return self.using_conversion(target, ty, scope, location);
+            return self.using_conversion(prefix, ty, scope, location);
         }
         let target_key = self.value_name(target)?;
         self.lookup_location = name.location;
@@ -330,14 +330,15 @@ impl Analyzer<'_> {
             return Ok(());
         }
         self.prepare_assignment_lookup(prefix, target_key, false)?;
-        let found = self.qualified_result(prefix, target_key, Filter::Ordinary)?;
+        let found = self.using_lookup(prefix, target_key, location)?;
         let target_id = found
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))?;
         // Access is checked for the entire named set before hiding any import.
         // In particular, an inaccessible base overload cannot be excused by a
         // same-signature declaration already present in the derived class.
-        if self.graph.scope(prefix).kind == ScopeKind::Class {
+        if self.graph.scope(prefix).kind == ScopeKind::Class && !self.using_access_dependent(scope)
+        {
             let naming = self
                 .graph
                 .scope(prefix)
@@ -370,12 +371,13 @@ impl Analyzer<'_> {
                 "a using-declaration cannot name a namespace",
             ));
         }
+        self.check_using_template_conflict(target_id, scope, location)?;
         let existing = if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
             binding
                 .name
                 .and_then(|name| self.graph.own(scope, name, Filter::Prefix))
         } else {
-            self.graph.value_binding(scope, target_key)
+            self.using_value_binding(scope, target_key)
         };
         if let Some(existing) = existing
             && self.graph.binding(existing).entity != binding.entity
@@ -402,6 +404,68 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    pub(super) fn using_lookup(
+        &self,
+        prefix: ScopeId,
+        key: ValueKey,
+        location: SourceOffset,
+    ) -> Result<super::lookup::LookupResult, Error> {
+        let found = self.qualified_declaration_result(prefix, key, Filter::Ordinary)?;
+        if found.ambiguous {
+            return Err(Error::at(location, "ambiguous name in a using-declaration"));
+        }
+        Ok(found)
+    }
+    pub(super) fn using_access_dependent(&self, scope: ScopeId) -> bool {
+        std::iter::successors(Some(scope), |&id| self.graph.scope(id).parent).any(|id| {
+            let scope = self.graph.scope(id);
+            scope.kind == ScopeKind::Class
+                && scope.owner.is_some_and(|class| {
+                    self.graph.entity(class).base_dependency == ast::BaseDependency::Dependent
+                })
+        })
+    }
+    fn using_value_binding(&self, scope: ScopeId, key: ValueKey) -> Option<BindingId> {
+        self.graph.value_binding(scope, key).filter(|&id| {
+            matches!(
+                self.graph.binding(id).kind,
+                BindingKind::Variable
+                    | BindingKind::Function
+                    | BindingKind::Parameter
+                    | BindingKind::Enumerator
+            )
+        })
+    }
+    fn check_using_template_conflict(
+        &self,
+        target: BindingId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let binding = self.graph.binding(target);
+        let Some(name) = binding.name else {
+            return Ok(());
+        };
+        let is_template = |id| {
+            let binding = self.graph.binding(id);
+            binding.kind == BindingKind::Type
+                && self.graph.entity(binding.entity).template_head.is_some()
+        };
+        let conflict = if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
+            is_template(target) && self.using_value_binding(scope, name.into()).is_some()
+        } else {
+            self.graph
+                .own(scope, name, Filter::Prefix)
+                .is_some_and(is_template)
+        };
+        if conflict {
+            return Err(Error::at(
+                location,
+                "using-declaration conflicts with a class template of the same name",
+            ));
+        }
+        Ok(())
+    }
     fn introduce_function_using(
         &mut self,
         target: BindingId,
@@ -413,9 +477,9 @@ impl Analyzer<'_> {
         if let Some(name) = binding.name {
             self.check_template_parameter_name(scope, name, location)?;
         }
+        self.check_using_template_conflict(target, scope, location)?;
         if self
-            .graph
-            .value_binding(scope, key)
+            .using_value_binding(scope, key)
             .is_some_and(|id| self.graph.binding(id).kind != BindingKind::Function)
         {
             return Err(Error::at(

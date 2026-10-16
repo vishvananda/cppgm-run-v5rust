@@ -337,12 +337,29 @@ impl Analyzer<'_> {
         };
         let binding = self.graph.function_origin(entity)?;
         let ty = self.graph.lower_entity_type(entity)?;
+        let first = matches!(
+            self.graph.entity(entity).special_definition,
+            Some(SpecialDefinition::Defaulted { first: true, .. })
+        );
+        if first && member.kind == super::graph::MemberKind::Destructor && !self.lowering() {
+            // The semantic view only records this root. Emission preparation
+            // checks its defaulted definition even if class completion has
+            // already marked the destructor unavailable.
+            return self.prepare_destruction(member.class);
+        }
+        if first
+            && member.kind == super::graph::MemberKind::Constructor
+            && self.graph.types.function_parameter_count(ty)? != 0
+        {
+            // An explicit root emits the synthesized copy, including its
+            // deleted-property result; it is not an odr-use of that function.
+            self.prepare_copy_properties(member.class)?;
+            self.declared_copy_plan(member.class, binding)?;
+            return Ok(());
+        }
         if member.kind == super::graph::MemberKind::Constructor
             && self.graph.types.function_parameter_count(ty)? == 0
-            && matches!(
-                self.graph.entity(entity).special_definition,
-                Some(SpecialDefinition::Defaulted { first: true, .. })
-            )
+            && first
         {
             // The frozen explicit-member root bypasses instantiate_definition
             // for an in-class defaulted default constructor. Only an ordinary

@@ -863,6 +863,7 @@ impl Analyzer<'_> {
                     super::assignment::ExceptionSource::Explicit
                 };
             if first {
+                self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
                 self.graph.entity_mut(entity).definition_emission =
                     super::function_demands::DefinitionEmission::Demanded;
             }

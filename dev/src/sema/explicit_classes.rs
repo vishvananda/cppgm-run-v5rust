@@ -221,6 +221,51 @@ mod tests {
     };
 
     #[test]
+    fn explicit_deleted_copy_keeps_its_property_and_subobject_identity() {
+        let source = SourceBuffer::new(
+            b"struct M{int n;M(const M&)=delete;};\
+              template<class T>struct Box{T value;Box(const Box&)=default;};\
+              template struct Box<M>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"explicit-copy").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let roots: Vec<_> = graph.lower_explicit_functions().collect();
+        assert_eq!(roots.len(), 1);
+        let entity = graph.entity(roots[0]);
+        let properties = entity.copy_properties.unwrap();
+        let properties = graph.copy_properties.get(properties);
+        assert!(properties.deleted);
+        let super::super::construction::ConstructorState::Ready(plan) = properties.plan else {
+            panic!("unpublished copy plan");
+        };
+        assert_eq!(entity.constructor, Some(plan));
+        let plan = graph.constructors.get(plan);
+        assert!(plan.deleted);
+        let actions = plan.copy.as_ref().unwrap();
+        assert_eq!(actions.len(), 1);
+        assert!(actions[0].constructor.is_none());
+        let super::super::copy_construction::CopyTarget::Member(member) = actions[0].target else {
+            panic!("lost member identity");
+        };
+        assert_eq!(Some(member), properties.subobjects[0].0);
+        assert_eq!(properties.subobjects.len(), 1);
+        assert!(properties.subobjects[0].2.is_none());
+        assert!(graph.function_templates.bodies.body(roots[0]).is_none());
+    }
+
+    #[test]
     fn explicit_members_keep_definition_point_and_independent_demands() {
         let source = SourceBuffer::new(
             b"template<class T>struct B{static int n;int f(){return sizeof(T);}int later();\

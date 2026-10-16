@@ -53,21 +53,18 @@ pub(super) struct FunctionConversion {
 impl Analyzer<'_> {
     pub(super) fn using_conversion(
         &mut self,
-        name: ast::Name,
+        prefix: ScopeId,
         target: ast::TypeId,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let prefix = self
-            .expression_prefix(name, scope)?
-            .ok_or(Error::Invariant("conversion using without prefix"))?;
         self.lookup_location = location;
         // Unlike conversion-function-id expressions, a using-declaration
         // first looks up the shared name and only then filters its result.
         let key = super::function_names::ValueKey::Special(
             super::function_names::SpecialName::Conversion,
         );
-        let found = self.qualified_result(prefix, key, super::lookup::Filter::Ordinary)?;
+        let found = self.using_lookup(prefix, key, location)?;
         let target = self.type_syntax(target, scope)?;
         let mut selected = super::lookup::FunctionCandidates::default();
         for &binding in found.functions.as_slice() {
@@ -92,8 +89,10 @@ impl Analyzer<'_> {
             .scope(prefix)
             .owner
             .ok_or(Error::Invariant("conversion using without class"))?;
-        for &binding in selected.as_slice() {
-            self.validate_member_access(binding, naming, None, scope, location)?;
+        if !self.using_access_dependent(scope) {
+            for &binding in selected.as_slice() {
+                self.validate_member_access(binding, naming, None, scope, location)?;
+            }
         }
         for &binding in selected.as_slice().iter().rev() {
             let ty = self
