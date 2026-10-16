@@ -109,7 +109,7 @@ impl Graph {
                 crate::syntax::write_member_label(tree, cursor, name, output)?;
             } else if let Some(name) = scope.written_name {
                 output.write_all(b" ")?;
-                write_syntax_name(tree, cursor, name, output)?;
+                crate::syntax::write_expression_name(tree, cursor, name, output)?;
             } else if let Some(name) = scope.name {
                 output.write_all(b" ")?;
                 write_name(cursor, name, output)?;
@@ -153,7 +153,7 @@ impl Graph {
                 if let Some(&name) = self.special_labels.get(&id) {
                     crate::syntax::write_member_label(tree, cursor, name, output)?;
                 } else if let Some(&name) = self.binding_labels.get(&id) {
-                    write_syntax_name(tree, cursor, name, output)?;
+                    crate::syntax::write_expression_name(tree, cursor, name, output)?;
                 } else if let Some(name) = binding.name.or(self.entity(binding.entity).name) {
                     write_name(cursor, name, output)?;
                 } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
@@ -246,7 +246,7 @@ impl Graph {
             write!(output, "{} ", class_key(binding.key))?;
         }
         if let Some(&name) = self.binding_labels.get(&id) {
-            write_syntax_name(tree, cursor, name, output)?;
+            crate::syntax::write_expression_name(tree, cursor, name, output)?;
         } else if let Some(name) = self.entity(binding.entity).name {
             write_name(cursor, name, output)?;
         } else if let Some(ordinal) = self
@@ -472,28 +472,6 @@ fn write_name(
 fn indent(output: &mut (impl Write + ?Sized), depth: usize) -> io::Result<()> {
     for _ in 0..depth {
         output.write_all(b"  ")?;
-    }
-    Ok(())
-}
-
-pub(super) fn write_syntax_name(
-    tree: &crate::syntax::ast::Tree,
-    cursor: &Cursor<'_>,
-    name: crate::syntax::ast::Name,
-    output: &mut (impl Write + ?Sized),
-) -> io::Result<()> {
-    let name = tree.names.get(name);
-    if name.global {
-        output.write_all(b"::")?;
-    }
-    for (index, component) in tree.name_lists.get(name.components).iter().enumerate() {
-        if index != 0 {
-            output.write_all(b"::")?;
-        }
-        let crate::syntax::ast::NameKind::Identifier(id) = component.kind else {
-            return Err(io::Error::other("unsupported enum display name"));
-        };
-        write_name(cursor, id, output)?;
     }
     Ok(())
 }

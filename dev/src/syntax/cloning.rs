@@ -481,6 +481,12 @@ impl<'a> Cloner<'a> {
         node.value = self.optional(node.value, Self::expression)?;
         Ok(node)
     }
+    pub(crate) fn enum_values(
+        &mut self,
+        values: List<Enumerator>,
+    ) -> Result<List<Enumerator>, ParseError> {
+        self.list(values, |tree| &mut tree.enumerators, Self::enumerator)
+    }
     fn base(&mut self, mut node: Base) -> Result<Base, ParseError> {
         node.name = self.name(node.name)?;
         Ok(node)

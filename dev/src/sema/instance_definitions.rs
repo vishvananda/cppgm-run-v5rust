@@ -249,6 +249,7 @@ impl Analyzer<'_> {
                 analyzer.graph.class_templates.definitions.active.pop();
                 result?;
                 analyzer.link_member_patterns(pattern.syntax, copy);
+                analyzer.finish_member_enums(entity)?;
                 Ok(())
             },
         );

@@ -33,6 +33,7 @@ impl Analyzer<'_> {
             ast::DeclKind::Template { declaration, .. } => {
                 return self.declared_syntax_name(declaration);
             }
+            ast::DeclKind::Enum { name, .. } => return name,
             _ => None,
         };
         let mut current = declarator;
@@ -241,6 +242,16 @@ impl Analyzer<'_> {
         head: Option<HeadId>,
         bridge: ScopeId,
     ) -> Result<ScopeId, Error> {
+        self.outside_lookup_frame(owner, owner, head, bridge)
+    }
+
+    pub(super) fn outside_lookup_frame(
+        &mut self,
+        owner: ScopeId,
+        lookup: ScopeId,
+        head: Option<HeadId>,
+        bridge: ScopeId,
+    ) -> Result<ScopeId, Error> {
         let mut enclosing = Vec::new();
         let mut current = Some(owner);
         while let Some(scope) = current {
@@ -265,7 +276,7 @@ impl Analyzer<'_> {
             headers.push(scope);
             header = node.parent;
         }
-        let mut frame = owner;
+        let mut frame = lookup;
         for index in (0..headers.len().min(enclosing.len())).rev() {
             frame = self.bound_member_frame(headers[index], &enclosing[index].1, frame, bridge)?;
         }

@@ -37,6 +37,7 @@ mod destruction;
 mod destructor_expressions;
 mod dump;
 mod empty_layout;
+mod enum_instances;
 mod enumerations;
 mod exception_operands;
 mod exceptions;

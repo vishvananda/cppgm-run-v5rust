@@ -30,6 +30,7 @@ pub(super) struct Instance {
 #[derive(Default)]
 pub(super) struct ClassTemplates {
     pub(super) definitions: super::instance_definitions::Definitions,
+    pub(super) enumerations: super::enum_instances::Enumerations,
     specializations: HashMap<Key, EntityId>,
     instances: HashMap<EntityId, Instance>,
     defaults: HashMap<Key, BindingId>,

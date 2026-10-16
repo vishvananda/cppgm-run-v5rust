@@ -178,7 +178,7 @@ impl Analyzer<'_> {
                 .entity(entity)
                 .ty
                 .ok_or(Error::Invariant("anonymous enum type"))?;
-            self.enumerators(entity, enumerators, scope, binding)?;
+            self.enumerators(entity, enumerators, scope, binding, None)?;
             return Ok(ty);
         };
         if !has_body && !lone {
@@ -216,7 +216,7 @@ impl Analyzer<'_> {
                     "qualified enumeration name must name a class or namespace member",
                 ));
             }
-            if !self.graph.encloses(scope, home) {
+            if !self.graph.encloses(self.declaration_scope(scope), home) {
                 return Err(Error::at(
                     self.tree.names.get(name).location,
                     "enumeration definition in a scope that does not enclose it",
@@ -338,7 +338,18 @@ impl Analyzer<'_> {
             } else {
                 home
             };
-            self.enumerators(entity, enumerators, print, declaration_binding)?;
+            let values = if prefix.is_some() && self.template_depth != 0 {
+                let values =
+                    self.member_lookup_bridge(scope, if scoped { enum_scope } else { home })?;
+                self.record_member_enum(entity, id, scope);
+                Some(values)
+            } else {
+                None
+            };
+            self.enumerators(entity, enumerators, print, declaration_binding, values)?;
+            self.finish_enum_waiters(entity)?;
+        } else if self.template_depth == 0 && self.graph.within_class_instance(home) {
+            self.declare_member_enum_instance(entity)?;
         }
         Ok(ty)
     }
@@ -376,12 +387,13 @@ impl Analyzer<'_> {
         )?;
         Ok((entity, binding))
     }
-    fn enumerators(
+    pub(super) fn enumerators(
         &mut self,
         entity: EntityId,
         enumerators: crate::syntax::storage::List<ast::Enumerator>,
         print: ScopeId,
         declaration: BindingId,
+        values: Option<ScopeId>,
     ) -> Result<(), Error> {
         let info = self
             .graph
@@ -399,6 +411,7 @@ impl Analyzer<'_> {
             .scope
             .ok_or(Error::Invariant("enum scope"))?;
         let lookup = if info.scoped { enum_scope } else { info.owner };
+        let value_scope = values.unwrap_or(lookup);
         self.graph.entity_mut(entity).defined = true;
         let fixed_kind = info.underlying.and_then(|ty| self.integral_kind(ty));
         let mut previous = None;
@@ -408,7 +421,7 @@ impl Analyzer<'_> {
             let enumerator = &syntax_item;
             let value = if self.template_depth != 0 {
                 if let Some(expr) = enumerator.value {
-                    self.expression(expr, lookup)?;
+                    self.expression(expr, value_scope)?;
                 }
                 if let Some(previous) = previous {
                     self.next_enumerator(previous, info, enumerator.location)?
@@ -422,10 +435,10 @@ impl Analyzer<'_> {
                 }
             } else if let Some(expr) = enumerator.value {
                 if self.semantic() {
-                    self.integral_constant_operand(expr, lookup, info.underlying)?;
+                    self.integral_constant_operand(expr, value_scope, info.underlying)?;
                 }
                 let mut value = self
-                    .constant_value(expr, lookup, true)?
+                    .constant_value(expr, value_scope, true)?
                     .ok_or(Error::Invariant("enumerator constant"))?;
                 self.check_integral(value, self.tree.expressions.get(expr).location)?;
                 if let Some(kind) = fixed_kind {
