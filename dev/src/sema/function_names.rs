@@ -457,6 +457,12 @@ impl Analyzer<'_> {
         definition: Definition,
     ) -> Result<BindingId, Error> {
         self.function_specifier_type(specs, info, scope)?;
+        if specs.friendship == super::specifiers::Friendship::Friend
+            && (self.function_template_id(info).is_some()
+                || info.home.is_some() && self.templated_friend_class(scope))
+        {
+            return self.declare_friend_specialization(info, specs, scope, location);
+        }
         let key = self.declaration_key(info)?;
         let befriending = if specs.friendship == super::specifiers::Friendship::Friend {
             Some(self.friend_owner(scope, location)?)
@@ -776,7 +782,6 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let limit = self.graph.binding_limit();
-        let key = self.declaration_key(&info)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
         let deleted = init
             .initializer
@@ -792,7 +797,25 @@ impl Analyzer<'_> {
             Definition::Declaration
         };
         let binding = self.declare_function_value(&mut info, specs, scope, location, definition)?;
-        if specs.friendship == super::specifiers::Friendship::Friend && info.home.is_some() {
+        if specs.friendship == super::specifiers::Friendship::Friend
+            && (info.home.is_some() || self.function_template_id(&info).is_some())
+        {
+            if self.function_template_id(&info).is_some() {
+                self.pure_specifier(
+                    self.graph.binding(binding).entity,
+                    init.initializer,
+                    &info,
+                    specs,
+                    scope,
+                    location,
+                )?;
+                if defaulted {
+                    return Err(Error::at(
+                        location,
+                        "only special member functions can be defaulted",
+                    ));
+                }
+            }
             super::record(
                 &mut self.graph.declared_bindings,
                 init.declarator.index(),
@@ -800,6 +823,7 @@ impl Analyzer<'_> {
             );
             return Ok(());
         }
+        let key = self.declaration_key(&info)?;
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         if self.graph.entity(entity).template_head.is_none() {

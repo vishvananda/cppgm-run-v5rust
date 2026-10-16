@@ -613,9 +613,16 @@ impl Graph {
         origin: BindingId,
         binding: Binding,
     ) -> Result<BindingId, Error> {
-        let id = self.add_binding_inner(self.binding_scope(origin), None, binding, false, false)?;
+        let id = self.add_hidden_function_in(self.binding_scope(origin), binding)?;
         self.binding_access[id.0 as usize] = self.binding_access(origin);
         Ok(id)
+    }
+    pub(super) fn add_hidden_function_in(
+        &mut self,
+        home: ScopeId,
+        binding: Binding,
+    ) -> Result<BindingId, Error> {
+        self.add_binding_inner(home, None, binding, false, false)
     }
     fn add_binding_inner(
         &mut self,

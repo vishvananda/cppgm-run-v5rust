@@ -767,6 +767,122 @@ impl Analyzer<'_> {
         )
     }
 
+    // template_specializations.cpp::deduce_for_declaration: unlike call
+    // deduction, every part of the declared type (including its result)
+    // participates, and the completed specialization must have that type.
+    fn deduce_function_declaration(
+        &mut self,
+        primary: BindingId,
+        given: &[TypeId],
+        declared: TypeId,
+    ) -> Result<Option<BindingId>, Error> {
+        let Some(head) = self.function_template_head(primary)? else {
+            return Ok(None);
+        };
+        let count = self.graph.templates.parameters(head).len();
+        if given.len() > count {
+            return Ok(None);
+        }
+        let initial = || {
+            let mut arguments = vec![None; count];
+            for (slot, &argument) in arguments.iter_mut().zip(given) {
+                *slot = Some(argument);
+            }
+            arguments
+        };
+        let mut arguments = initial();
+        let depth = self.graph.templates.depth(head);
+        let declared = self.graph.types.canonical_function(declared)?;
+        let source = self
+            .graph
+            .binding(primary)
+            .ty
+            .ok_or(Error::Invariant("template declaration without type"))?;
+        let pattern = self.target_deduction_pattern(source, declared, depth)?;
+        if !self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)? {
+            if given.is_empty() {
+                return Ok(None);
+            }
+            arguments = initial();
+            let mut environment = Substitution::new(depth, &arguments);
+            let Some(pattern) = self.substitute_signature_type(source, &mut environment)? else {
+                return Ok(None);
+            };
+            let pattern = self.target_deduction_pattern(pattern, declared, depth)?;
+            if !self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)? {
+                return Ok(None);
+            }
+        }
+        let Some(binding) = self.complete_signature(primary, &mut arguments)? else {
+            return Ok(None);
+        };
+        Ok((self.graph.binding(binding).ty == Some(declared)).then_some(binding))
+    }
+
+    pub(super) fn declared_function_specialization(
+        &mut self,
+        info: &super::declarators::DeclaratorInfo,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<BindingId>, Error> {
+        let component = self.function_template_id(info).ok_or(Error::Invariant(
+            "specialization declaration without template-id",
+        ))?;
+        let mut given = Vec::new();
+        for argument in self.tree.template_arguments.get(
+            component
+                .arguments
+                .ok_or(Error::Invariant("template-id lost its arguments"))?,
+        ) {
+            let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
+                return Err(Error::Missing("non-type function template arguments"));
+            };
+            if argument.pack {
+                return Err(Error::Missing("function template argument expansion"));
+            }
+            let ty = self.type_syntax(ty, scope)?;
+            given.push(self.graph.types.canonical_function(ty)?);
+        }
+        let key = Self::expression_name(component.kind)?;
+        self.lookup_location = location;
+        let found = if let Some(home) = info.home {
+            self.qualified_result(home, key, super::lookup::Filter::Ordinary)?
+        } else {
+            self.unqualified_result(scope, key, super::lookup::Filter::Ordinary)?
+        };
+        let mut selected = None;
+        for &primary in found.functions.as_slice() {
+            let Some(candidate) = self.deduce_function_declaration(primary, &given, info.ty)?
+            else {
+                continue;
+            };
+            if selected == Some(candidate) {
+                continue;
+            }
+            if let Some(previous) = selected {
+                let previous = self
+                    .graph
+                    .function_templates
+                    .primary(self.graph.binding(previous).entity)
+                    .ok_or(Error::Invariant("declared specialization without primary"))?;
+                let count = Some(self.graph.types.function_parameter_count(info.ty)?);
+                let forward = self.template_at_least_as_specialized(primary, previous, count)?;
+                let backward = self.template_at_least_as_specialized(previous, primary, count)?;
+                if forward == backward {
+                    return Err(Error::at(
+                        location,
+                        "a declaration matches several function templates",
+                    ));
+                }
+                if !forward {
+                    continue;
+                }
+            }
+            selected = Some(candidate);
+        }
+        Ok(selected)
+    }
+
     pub(super) fn check_specialization_body(&mut self, binding: BindingId) -> Result<(), Error> {
         if self.unevaluated == 0
             && self.template_depth == 0

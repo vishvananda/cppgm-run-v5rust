@@ -46,6 +46,113 @@ impl Friendships {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn function_template_id(
+        &self,
+        info: &super::declarators::DeclaratorInfo,
+    ) -> Option<crate::syntax::ast::NameComponent> {
+        let name = self.tree.names.get(info.syntax_name?);
+        self.tree
+            .name_lists
+            .get(name.components)
+            .last()
+            .copied()
+            .filter(|component| component.arguments.is_some())
+    }
+
+    pub(super) fn templated_friend_class(&self, scope: ScopeId) -> bool {
+        std::iter::successors(Some(self.declaration_scope(scope)), |&id| {
+            self.graph.scope(id).parent
+        })
+        .take_while(|&id| self.graph.scope(id).kind == ScopeKind::Class)
+        .any(|id| {
+            self.graph
+                .scope(id)
+                .owner
+                .is_some_and(|owner| self.graph.entity(owner).template_head.is_some())
+        })
+    }
+
+    // analyzer_declarations.cpp::friend_specialization. A friend reference
+    // has no namespace/class lookup or ADL publication and demands no body.
+    pub(super) fn declare_friend_specialization(
+        &mut self,
+        info: &super::declarators::DeclaratorInfo,
+        specs: super::specifiers::Specifiers,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        if self.function_template_id(info).is_some()
+            && (specs.inline == super::specifiers::InlinePreference::Inline
+                || info.parameters.is_some_and(|clause| {
+                    self.tree
+                        .parameters
+                        .get(clause.parameters)
+                        .iter()
+                        .any(|parameter| parameter.default.is_some())
+                }))
+        {
+            return Err(Error::at(
+                location,
+                "a default argument or inline in a friend declaration of a specialization",
+            ));
+        }
+        let class = self.friend_owner(scope, location)?;
+        // A class template retains its friend pattern; each instance resolves
+        // it in its own frame. Do not grant the primary or select a signature.
+        if self.templated_friend_class(scope) {
+            let name = self.tree.names.get(
+                info.syntax_name
+                    .ok_or(Error::Invariant("friend pattern without a name"))?,
+            );
+            let component = self
+                .tree
+                .name_lists
+                .get(name.components)
+                .last()
+                .ok_or(Error::Invariant("empty friend pattern name"))?;
+            let key = Self::expression_name(component.kind)?;
+            let home = info.home.unwrap_or(self.enclosing_namespace(scope));
+            let entity = self.graph.add_entity(
+                Some(info.ty),
+                info.name,
+                crate::lex::vocabulary::Keyword::Int,
+            )?;
+            self.graph.entity_mut(entity).home = Some(home);
+            self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+                no_inline: false,
+                internal_linkage: false,
+                language: super::linkage::Language::Cpp,
+                denotes: None,
+                is_static: false,
+                special: key.special(),
+                allocation: None,
+            });
+            return self.graph.add_hidden_function_in(
+                home,
+                super::graph::Binding {
+                    kind: super::graph::BindingKind::Function,
+                    entity,
+                    ty: Some(info.ty),
+                    name: key.identifier(),
+                    key: crate::lex::vocabulary::Keyword::Int,
+                },
+            );
+        }
+        let binding = self
+            .declared_function_specialization(info, scope, location)?
+            .ok_or_else(|| {
+                Error::at(
+                    location,
+                    "a friend declaration names no function template specialization",
+                )
+            })?;
+        self.graph
+            .friendships
+            .record(class, self.graph.binding(binding).entity);
+        self.graph
+            .add_hidden_function(binding, self.graph.binding(binding))
+    }
+
     pub(super) fn friend_environment(
         &self,
         specs: super::specifiers::Specifiers,
@@ -233,5 +340,226 @@ impl Analyzer<'_> {
                             .chain(self.graph.friendships.granting(entity).iter().copied())
                     }),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{
+            Error,
+            analyzer::Analyzer,
+            graph::{BindingId, Graph},
+            lookup::Filter,
+            types::TypeKind,
+        },
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    fn friend_bindings(
+        tree: &ast::Tree,
+        graph: &Graph,
+        declaration: ast::DeclId,
+    ) -> Vec<BindingId> {
+        let ast::DeclKind::Class(specifier) = tree.declarations.get(declaration).kind else {
+            panic!("expected class declaration");
+        };
+        let ast::SpecifierKind::Class(class) = specifier.kind else {
+            panic!("expected class syntax");
+        };
+        tree.decl_lists
+            .get(tree.classes.get(class).members)
+            .iter()
+            .filter_map(|&member| {
+                let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(member).kind
+                else {
+                    return None;
+                };
+                Some(tree.init_declarators.get(declarators))
+            })
+            .flatten()
+            .map(|init| graph.declared_bindings[init.declarator.index()].unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn specialization_friendship_reuses_identity_without_lookup_or_body_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>int f(T,int=sizeof(T));\
+              class A{friend int f<>(int,int);friend int f<int>(int,int);\
+                      friend int f<char>(char,int);};\
+              class B{friend int f<>(int,int);};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"friend-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let b = cursor.intern_name(b"B").unwrap();
+        let expressions = tree.expressions.mark();
+        let syntax_declarations = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let graph = &analyzer.graph;
+        let primaries: Vec<_> = graph.functions_at(global, f.into()).collect();
+        assert_eq!(primaries.len(), 1);
+        let primary = graph.binding(primaries[0]).entity;
+        let statements = tree.decl_lists.get(declarations);
+        let a_friends = friend_bindings(tree, graph, statements[1]);
+        let b_friends = friend_bindings(tree, graph, statements[2]);
+        assert_ne!(a_friends[0], a_friends[1]);
+        let int_function = graph.binding(a_friends[0]).entity;
+        let char_function = graph.binding(a_friends[2]).entity;
+        assert_eq!(int_function, graph.binding(a_friends[1]).entity);
+        assert_eq!(int_function, graph.binding(b_friends[0]).entity);
+        assert_ne!(int_function, char_function);
+        for (name, char_granted) in [(a, true), (b, false)] {
+            let class = graph
+                .binding(graph.own(global, name, Filter::Elaborated).unwrap())
+                .entity;
+            assert!(graph.friendships.grants(class, int_function));
+            assert_eq!(graph.friendships.grants(class, char_function), char_granted);
+            assert!(!graph.friendships.grants(class, primary));
+            assert!(graph.friendships.functions(class, f.into()).is_empty());
+            let home = graph.entity(class).scope.unwrap();
+            assert!(graph.own(home, f, Filter::Ordinary).is_none());
+            assert!(graph.functions_at(home, f.into()).next().is_none());
+        }
+        for binding in a_friends.into_iter().chain(b_friends) {
+            let function = graph.binding(binding).entity;
+            assert_eq!(
+                graph.function_templates.primary(function),
+                Some(primaries[0])
+            );
+            assert!(!graph.entity(function).defined);
+            assert!(graph.entity(function).scope.is_none());
+            assert!(graph.entity(function).function_definition.is_none());
+            assert!(graph.entity(function).defaults.is_empty());
+            assert!(graph.entity(function).demands.as_slice().is_empty());
+        }
+        let default = graph.entity(primary).defaults[1].unwrap().expression;
+        assert!(graph.expression_facts.get(default).is_err());
+        assert!(!graph.function_templates.body_demanded(primary));
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), syntax_declarations);
+    }
+
+    #[test]
+    fn rejected_specialization_friend_does_not_grant_or_publish_a_function() {
+        for (source, message) in [
+            (
+                "template<class T>long f(T);class A{friend int f<>(int);};",
+                "a friend declaration names no function template specialization",
+            ),
+            (
+                "template<class T>int f(T&);template<class T>int f(const T&);\
+                 class A{friend int f<>(const int&);};",
+                "a declaration matches several function templates",
+            ),
+            (
+                "class A{friend inline int absent<>(int);};",
+                "a default argument or inline in a friend declaration of a specialization",
+            ),
+        ] {
+            let source = SourceBuffer::new(source.as_bytes().to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"friend-failure").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let a = cursor.intern_name(b"A").unwrap();
+            let f = cursor.intern_name(b"f").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            assert!(
+                matches!(analyzer.declarations(declarations, global), Err(Error::Diagnostic { message: actual, .. }) if actual == message)
+            );
+            let class = analyzer
+                .graph
+                .binding(analyzer.graph.own(global, a, Filter::Elaborated).unwrap())
+                .entity;
+            for binding in analyzer.graph.functions_at(global, f.into()) {
+                let entity = analyzer.graph.binding(binding).entity;
+                assert!(analyzer.graph.entity(entity).template_head.is_some());
+                assert!(!analyzer.graph.friendships.grants(class, entity));
+            }
+            assert!(analyzer.graph.friendships.edges.is_empty());
+            assert!(
+                analyzer
+                    .graph
+                    .friendships
+                    .functions(class, f.into())
+                    .is_empty()
+            );
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert_eq!(analyzer.template_depth, 0);
+            assert!(analyzer.template_head.is_none());
+            assert!(analyzer.graph.lookup_limit.is_none());
+        }
+    }
+
+    #[test]
+    fn templated_class_friend_pattern_neither_resolves_nor_grants_a_specialization() {
+        let source = SourceBuffer::new(
+            b"namespace N{int h(int);}\
+              template<class T>struct A{friend int f<>(T);friend int N::h(T);\
+                                       struct B{friend int g<>(T);};};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"friend-pattern").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let g = cursor.intern_name(b"g").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert!(analyzer.graph.own(global, f, Filter::Ordinary).is_none());
+        assert!(analyzer.graph.own(global, g, Filter::Ordinary).is_none());
+        assert!(analyzer.graph.friendships.edges.is_empty());
+        assert!(analyzer.graph.friendships.functions.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        let ast::DeclKind::Template { declaration, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[1])
+            .kind
+        else {
+            panic!("expected template");
+        };
+        let binding = friend_bindings(tree, &analyzer.graph, declaration)[0];
+        let entity = analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity);
+        let TypeKind::Function { .. } = analyzer.graph.types.get(entity.ty.unwrap()).kind else {
+            panic!("expected function type");
+        };
+        assert!(entity.template_head.is_none());
+        assert!(entity.scope.is_none());
+        assert!(entity.function_parameters.is_none());
+        assert!(entity.function_definition.is_none());
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .primary(analyzer.graph.binding(binding).entity)
+                .is_none()
+        );
     }
 }
