@@ -1135,6 +1135,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let binding = facts
             .member
             .ok_or_else(|| io::Error::other("member without designation"))?;
+        if facts.function == Some(binding)
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .member_function
+                .is_some_and(|member| member.kind == super::graph::MemberKind::Conversion)
+        {
+            write!(self.output, " {}:operator <conversion>", op.token.name())?;
+            self.arrow_operand(base, depth + 1);
+            return Ok(());
+        }
         if facts.member_naming.is_none() {
             return Err(io::Error::other("member without naming class"));
         }
@@ -1272,6 +1283,20 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .expression_facts
             .get(id)
             .map_err(|_| io::Error::other("expression without facts"))?;
+        if let Some(converted) = self.graph.expression_facts.function_conversion(id)
+            && converted.usage == super::conversion_functions::ConversionUse::Builtin
+        {
+            // convert_class_operand replaces the C++ occurrence's facts with
+            // its selected call. Rust keeps the receiver facts for lowering;
+            // project that same presentation from the retained typed edge.
+            let conversion = facts.conversion;
+            facts = super::expression_facts::ExprFacts::new(converted.result, converted.category);
+            facts.function = Some(converted.binding);
+            facts.member = Some(converted.binding);
+            facts.call = Some(CallTarget::Direct(converted.binding));
+            facts.conversion = conversion;
+            facts.base_path = converted.after_path;
+        }
         if let Some(outer) = self.graph.expression_facts.user_conversion(id) {
             facts.conversion = Some(outer);
         }
@@ -1537,5 +1562,128 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             op.token.name(),
             crate::syntax::operator_spelling(op)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{conversion_functions::ConversionUse, template_bodies::analyze_unit},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn builtin_conversion_view_preserves_receiver_facts_and_selected_demand() {
+        for (operand, expected) in [
+            (
+                "a + 1",
+                "id-expression prvalue function of (pointer to struct A) returning int a",
+            ),
+            (
+                "((a)) + 1",
+                "id-expression prvalue function of (pointer to struct A) returning int a",
+            ),
+            (
+                "b.value + 1",
+                "member-expression prvalue int OP_DOT:operator <conversion>",
+            ),
+            (
+                "make() + 1",
+                "call-expression prvalue int\n            callee A::operatorint function of (pointer to struct A) returning int",
+            ),
+            (
+                "+a",
+                "id-expression prvalue function of (pointer to struct A) returning int a",
+            ),
+        ] {
+            let source = SourceBuffer::new(
+                format!(
+                    "struct A{{operator int(){{return 1;}}}};struct B{{A value;}};\
+                 A make(){{return A();}}\
+                 template<class T>int operator+(int,T){{return T::missing;}}\
+                 int main(){{A a;B b;return {operand};}}"
+                )
+                .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"converted-view").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let graph = analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                true,
+            )
+            .unwrap();
+            let mut receivers = Vec::new();
+            // Dense expression ordinals belong to the original unit slabs.
+            // Collect the retained edges through syntax, without manufacturing IDs.
+            let declaration = *tree.decl_lists.get(declarations).last().unwrap();
+            let crate::syntax::ast::DeclKind::Function { body, .. } =
+                tree.declarations.get(declaration).kind
+            else {
+                panic!("main definition");
+            };
+            let crate::syntax::ast::Body::Parsed(body) = *tree.bodies.get(body) else {
+                panic!("parsed body");
+            };
+            let crate::syntax::ast::StmtKind::Compound(statements) =
+                tree.statements.get(body.compound).kind
+            else {
+                panic!("compound body");
+            };
+            for &statement in tree.stmt_lists.get(statements) {
+                if let crate::syntax::ast::StmtKind::Return(Some(expression)) =
+                    tree.statements.get(statement).kind
+                {
+                    let operand = match tree.expressions.get(expression).kind {
+                        crate::syntax::ast::ExprKind::Binary { left, .. } => left,
+                        crate::syntax::ast::ExprKind::Unary { operand, .. } => operand,
+                        _ => panic!("operator expression"),
+                    };
+                    let original = graph.expression_facts.get(operand).unwrap();
+                    let selected = graph.expression_facts.function_conversion(operand).unwrap();
+                    assert!(selected.usage == ConversionUse::Builtin);
+                    assert!(graph.class_of(original.ty).is_some());
+                    receivers.push((operand, original.ty, original.category, selected.binding));
+                }
+            }
+            assert_eq!(receivers.len(), 1);
+            let mut output = Vec::new();
+            graph
+                .print_semantics(tree, cursor, declarations, &mut output)
+                .unwrap();
+            let output = String::from_utf8(output).unwrap();
+            assert!(output.contains(expected), "{operand}: {output}");
+            for (operand, ty, category, binding) in receivers {
+                let facts = graph.expression_facts.get(operand).unwrap();
+                assert_eq!(facts.ty, ty);
+                assert_eq!(facts.category, category);
+                assert_eq!(
+                    graph
+                        .expression_facts
+                        .function_conversion(operand)
+                        .unwrap()
+                        .binding,
+                    binding
+                );
+            }
+            for demand in crate::sema::function_demands::trailing(&graph) {
+                if let crate::sema::function_demands::Demand::Function { binding, .. } = demand {
+                    assert!(
+                        graph
+                            .function_templates
+                            .primary(graph.binding(binding).entity)
+                            .is_none()
+                    );
+                }
+            }
+        }
     }
 }
