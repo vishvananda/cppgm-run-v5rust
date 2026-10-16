@@ -1810,6 +1810,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name = program.names.get(program.symbol(symbol).name).to_owned();
         let mut metadata = self.entry_metadata(program, entry, &name)?;
         let facts = entry.facts(self.graph)?;
+        if entry
+            .entity(self.graph)
+            .is_some_and(|entity| self.graph.lower_explicit_function_root(entity))
+        {
+            metadata.flags |= 4;
+        }
         if facts.internal
             && !matches!(entry, super::construction::Entry::DestructorDeleting(_))
             && (matches!(facts.name, FunctionName::Destructor(_))

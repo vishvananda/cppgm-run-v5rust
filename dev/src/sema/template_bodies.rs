@@ -79,10 +79,32 @@ pub(crate) fn analyze_unit(
     let marker = 0u8;
     let base = std::ptr::from_ref(&marker).addr();
     let mut next = 0;
+    let mut named = 0;
     // Instantiating one demanded definition can append more demands. Each
     // canonical entity enters this queue once, in first-use order.
-    while let Some(&entity) = graph.function_templates.bodies.demands.get(next) {
-        next += 1;
+    loop {
+        let definition = graph
+            .function_templates
+            .instantiations
+            .definitions()
+            .get(named)
+            .copied();
+        let entity = if let Some(definition) = definition {
+            named += 1;
+            graph.binding(definition.binding).entity
+        } else if let Some(&entity) = graph.function_templates.bodies.demands.get(next) {
+            next += 1;
+            entity
+        } else {
+            break;
+        };
+        if graph
+            .function_templates
+            .instantiations
+            .suppressed(entity, graph.entity(entity).inline)
+        {
+            continue;
+        }
         let primary = graph
             .function_templates
             .primary(entity)
@@ -95,6 +117,14 @@ pub(crate) fn analyze_unit(
             .get(&primary)
             .copied()
         else {
+            if let Some(definition) = definition
+                && graph.entity(primary).availability != super::graph::FunctionAvailability::Deleted
+            {
+                return Err(Error::at(
+                    definition.location,
+                    "an explicit instantiation definition of a function whose definition is not available",
+                ));
+            }
             // The oracle retains a declaration when the template has no
             // definition in this unit. This demand does not synthesize a body.
             continue;
@@ -292,6 +322,110 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn explicit_definitions_share_signatures_but_not_body_or_emission_demand() {
+        let source = SourceBuffer::new(
+            b"\
+            template<class T>int f(T);\
+            extern template int f(int);template int f(int);\
+            template<class U>int f(U x){return x;}\
+            template<class T>int suppressed(T x){return T::missing;}\
+            int main(){return suppressed(2)+f(1)+f(2);}\
+            extern template int suppressed(int);extern template int suppressed(int);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"explicit-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expression_mark = tree.expressions.mark();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let instantiations = &graph.function_templates.instantiations;
+        assert_eq!(instantiations.definitions().len(), 1);
+        let definition = instantiations.definitions()[0];
+        let entity = graph.binding(definition.binding).entity;
+        assert!(instantiations.defined(entity));
+        assert!(!instantiations.suppressed(entity, graph.entity(entity).inline));
+        assert!(graph.function_templates.bodies.body(entity).is_some());
+        let suppressed: Vec<_> = graph
+            .function_templates
+            .bodies
+            .demands
+            .iter()
+            .copied()
+            .filter(|&id| instantiations.suppressed(id, graph.entity(id).inline))
+            .collect();
+        assert_eq!(suppressed.len(), 1);
+        assert!(
+            graph
+                .function_templates
+                .bodies
+                .body(suppressed[0])
+                .is_none()
+        );
+        assert!(!graph.entity(suppressed[0]).defined);
+        assert_eq!(
+            graph.lower_explicit_functions().collect::<Vec<_>>(),
+            [entity]
+        );
+        assert_eq!(
+            graph.lower_explicit_function_root(entity),
+            graph.entity(entity).defined
+        );
+        assert!(tree.expressions.mark() > expression_mark);
+    }
+
+    #[test]
+    fn explicit_roots_instantiate_once_without_demanding_unused_defaults() {
+        let source = SourceBuffer::new(
+            b"\
+            template<class T>int f(T x,int y=T::missing){return x+y;}\
+            template int f(int,int);template int f(char,int);\
+            template<class T>int unused(T x){return T::missing;}\
+            int main(){return f(1,2);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"explicit-roots").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let definitions = graph.function_templates.instantiations.definitions();
+        assert_eq!(definitions.len(), 2);
+        let first = graph.binding(definitions[0].binding).entity;
+        let second = graph.binding(definitions[1].binding).entity;
+        assert_ne!(first, second);
+        assert_ne!(
+            graph.function_templates.bodies.body(first),
+            graph.function_templates.bodies.body(second)
+        );
+        for entity in [first, second] {
+            assert!(graph.lower_explicit_function_root(entity));
+            let primary = graph.function_templates.primary(entity).unwrap();
+            let default = graph.entity(graph.binding(primary).entity).defaults[1].unwrap();
+            assert!(graph.expression_facts.get(default.expression).is_err());
+        }
+        assert_eq!(graph.function_templates.bodies.states.len(), 2);
+    }
 
     #[test]
     fn operator_candidates_demand_only_the_selected_specialization() {

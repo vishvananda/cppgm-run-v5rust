@@ -488,9 +488,10 @@ impl<'tree> Analyzer<'tree> {
                 parameters,
                 declaration,
             } => self.template_declaration(parameters, declaration, scope, location),
-            ast::DeclKind::ExplicitInstantiation { .. } => {
-                Err(Error::Missing("explicit template instantiation"))
-            }
+            ast::DeclKind::ExplicitInstantiation {
+                is_extern,
+                declaration,
+            } => self.explicit_instantiation(declaration, is_extern, scope, location),
             ast::DeclKind::SpecialMember { .. } => self.special_member(id, scope),
             ast::DeclKind::BitField {
                 specifiers,

@@ -298,6 +298,7 @@ pub(crate) fn lower_unit(
             | ast::DeclKind::Enum { .. }
             | ast::DeclKind::Using { .. }
             | ast::DeclKind::StaticAssert { .. }
+            | ast::DeclKind::ExplicitInstantiation { .. }
             | ast::DeclKind::Class(_) => {}
             // A primary template has no emitted definition. Specializations
             // are ordinary demand entries, separate from this syntax walk.
@@ -348,7 +349,20 @@ fn emit_pending<'a>(
     let mut next = 0;
     exception_helpers::emit_pending(program, symbols, definitions)?;
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
-    while let Some(&entry) = symbols.pending.get(next) {
+    let mut explicit = false;
+    loop {
+        let Some(&entry) = symbols.pending.get(next) else {
+            if explicit {
+                break;
+            }
+            explicit = true;
+            for entity in graph.lower_explicit_functions() {
+                if graph.lower_function_defined(entity) {
+                    symbols.demand_entry(construction::Entry::Function(entity));
+                }
+            }
+            continue;
+        };
         next += 1;
         if !entries.insert(entry) {
             continue;

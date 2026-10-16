@@ -36,6 +36,7 @@ mod empty_layout;
 mod enumerations;
 mod exception_operands;
 mod exceptions;
+mod explicit_instantiations;
 mod expression_facts;
 mod expression_keys;
 mod expressions;

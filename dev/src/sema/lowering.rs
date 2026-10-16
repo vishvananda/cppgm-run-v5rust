@@ -497,6 +497,16 @@ impl Graph {
     pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
         self.entity(entity).defined
     }
+    pub(crate) fn lower_explicit_functions(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.function_templates
+            .instantiations
+            .definitions()
+            .iter()
+            .map(|definition| self.binding(definition.binding).entity)
+    }
+    pub(crate) fn lower_explicit_function_root(&self, entity: EntityId) -> bool {
+        self.function_templates.instantiations.defined(entity) && self.entity(entity).defined
+    }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id) || self.entity(id).assignment.is_some()
     }

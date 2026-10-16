@@ -10,7 +10,13 @@ use crate::{
     syntax::ast::{self, SpecifierKind},
 };
 #[derive(Clone, Copy)]
+pub(super) enum Placement {
+    Declaration,
+    ExplicitInstantiation,
+}
+#[derive(Clone, Copy)]
 pub(super) struct DeclaratorEnvironment {
+    pub placement: Placement,
     pub friendship: super::specifiers::Friendship,
     pub auto_operators: bool,
     pub placeholder_function: Option<ast::DeclaratorId>,
@@ -137,6 +143,7 @@ impl Analyzer<'_> {
             probe = node.nested;
         }
         Ok(DeclaratorEnvironment {
+            placement: Placement::Declaration,
             friendship: super::specifiers::Friendship::Ordinary,
             auto_operators: false,
             placeholder_function: None,
@@ -180,6 +187,7 @@ impl Analyzer<'_> {
         let mut specified = false;
         let mut derivations = 0_u8;
         let DeclaratorEnvironment {
+            placement,
             friendship,
             home,
             lookup: after,
@@ -189,6 +197,7 @@ impl Analyzer<'_> {
             placeholder_function,
         } = environment;
         if friendship != super::specifiers::Friendship::Friend
+            && matches!(placement, Placement::Declaration)
             && home.is_some_and(|home| !self.graph.encloses(declaring, home))
         {
             return Err(Error::at(

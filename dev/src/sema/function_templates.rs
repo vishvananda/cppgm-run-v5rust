@@ -32,6 +32,7 @@ pub(super) struct FunctionTemplates {
     signatures: HashMap<SpecializationKey, SignatureState>,
     primaries: HashMap<EntityId, BindingId>,
     pub(super) bodies: super::template_bodies::Bodies,
+    pub(super) instantiations: super::explicit_instantiations::Instantiations,
     pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
     explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
@@ -902,15 +903,27 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<Option<BindingId>, Error> {
-        let component = self.function_template_id(info).ok_or(Error::Invariant(
-            "specialization declaration without template-id",
-        ))?;
+        let component = self
+            .tree
+            .name_lists
+            .get(
+                self.tree
+                    .names
+                    .get(
+                        info.syntax_name
+                            .ok_or(Error::Invariant("specialization declaration without name"))?,
+                    )
+                    .components,
+            )
+            .last()
+            .copied()
+            .ok_or(Error::Invariant("empty specialization name"))?;
         let mut given = Vec::new();
-        for argument in self.tree.template_arguments.get(
-            component
-                .arguments
-                .ok_or(Error::Invariant("template-id lost its arguments"))?,
-        ) {
+        for argument in self
+            .tree
+            .template_arguments
+            .get(component.arguments.unwrap_or_default())
+        {
             let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
                 return Err(Error::Missing("non-type function template arguments"));
             };
