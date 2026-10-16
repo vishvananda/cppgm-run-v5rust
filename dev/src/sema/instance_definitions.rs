@@ -28,8 +28,13 @@ pub(super) struct Definitions {
     states: HashMap<EntityId, State>,
     members: HashMap<EntityId, Pattern>,
     sources: HashMap<EntityId, EntityId>,
+    active: Vec<EntityId>,
 }
 impl Definitions {
+    pub(super) fn active_depth(&self) -> usize {
+        self.active.len()
+    }
+
     pub(super) fn source(&self, entity: EntityId) -> Option<EntityId> {
         self.sources.get(&entity).copied()
     }
@@ -143,6 +148,21 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn complete_class(&mut self, entity: EntityId) -> Result<bool, Error> {
+        let complete = self.complete_class_definition(entity)?;
+        if !complete {
+            // This observation only prevents the current substitution from
+            // publishing a context-dependent result; it invalidates no cache.
+            self.incomplete_class_observations = self
+                .incomplete_class_observations
+                .checked_add(1)
+                .ok_or(Error::Invariant(
+                    "incomplete class observation count overflow",
+                ))?;
+        }
+        Ok(complete)
+    }
+
+    fn complete_class_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.entity(entity).complete {
             return Ok(true);
         }
@@ -219,7 +239,15 @@ impl Analyzer<'_> {
                     .class_definition(pattern.syntax)
                     .map_err(|error| super::template_bodies::copy_error(&error))?;
                 let node = *analyzer.tree.classes.get(copy);
-                analyzer.class_body(node, entity, frame, None)?;
+                analyzer
+                    .graph
+                    .class_templates
+                    .definitions
+                    .active
+                    .push(entity);
+                let result = analyzer.class_body(node, entity, frame, None);
+                analyzer.graph.class_templates.definitions.active.pop();
+                result?;
                 analyzer.link_member_patterns(pattern.syntax, copy);
                 Ok(())
             },

@@ -14,7 +14,7 @@ use crate::{
     syntax::{ast, cloning::Cloner},
 };
 use std::{
-    collections::{HashMap, hash_map::RandomState},
+    collections::{HashMap, HashSet, hash_map::RandomState},
     hash::BuildHasher,
 };
 
@@ -31,18 +31,13 @@ pub(super) struct Pattern {
     parameters: Option<u64>,
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
     entity: EntityId,
     context: Option<EntityId>,
     query: Query,
     depth: u32,
     arguments: Vec<TypeId>,
-}
-#[derive(Clone, Copy)]
-enum State {
-    InProgress,
-    Complete(Evaluation),
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Query {
@@ -61,7 +56,8 @@ pub(super) struct Operands {
     fingerprints: RandomState,
     patterns: HashMap<EntityId, Pattern>,
     equivalents: HashMap<(ScopeId, Vec<KeyWord>), EntityId>,
-    substitutions: HashMap<Key, State>,
+    substitutions: HashMap<Key, Evaluation>,
+    active: HashSet<(Key, usize)>,
 }
 impl Operands {
     pub(super) fn count(&self) -> usize {
@@ -253,46 +249,35 @@ impl Analyzer<'_> {
             depth: environment.depth,
             arguments,
         };
-        match self.graph.template_operands.substitutions.get(&key) {
-            Some(State::Complete(result)) => return Ok(Some(*result)),
-            Some(State::InProgress) => return Ok(None),
-            None => (),
+        if let Some(&result) = self.graph.template_operands.substitutions.get(&key) {
+            return Ok(Some(result));
         }
-        self.graph
-            .template_operands
-            .substitutions
-            .insert(key, State::InProgress);
+        // A class definition may re-enter the operand with additional member
+        // declarations available, just as it may re-enter a function signature.
+        let active = (key, self.graph.class_templates.definitions.active_depth());
+        if !self.graph.template_operands.active.insert(active.clone()) {
+            return Ok(None);
+        }
+        let incomplete = self.incomplete_class_observations;
         let result = self.evaluate_operand(entity, environment, query);
-        let key = Key {
-            entity,
-            context: environment.context,
-            query,
-            depth: environment.depth,
-            arguments: environment
-                .arguments
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-                .ok_or(Error::Invariant("lost operand arguments"))?,
-        };
+        self.graph.template_operands.active.remove(&active);
+        let key = active.0;
         match result {
             Ok(result) => {
-                self.graph
-                    .template_operands
-                    .substitutions
-                    .insert(key, State::Complete(result));
+                if self.incomplete_class_observations == incomplete {
+                    self.graph
+                        .template_operands
+                        .substitutions
+                        .insert(key, result);
+                }
                 Ok(Some(result))
             }
             Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
                 // Failed lookups may name a class completed later. Keep only
                 // successful facts; a failed trial cannot poison later demand.
-                self.graph.template_operands.substitutions.remove(&key);
                 Ok(None)
             }
-            Err(error) => {
-                self.graph.template_operands.substitutions.remove(&key);
-                Err(error)
-            }
+            Err(error) => Err(error),
         }
     }
 
@@ -645,13 +630,7 @@ mod tests {
         .unwrap();
         assert_eq!(graph.template_operands.patterns.len(), 2);
         assert_eq!(graph.template_operands.substitutions.len(), 2);
-        assert!(
-            graph
-                .template_operands
-                .substitutions
-                .values()
-                .all(|state| { matches!(state, State::Complete(_)) })
-        );
+        assert!(graph.template_operands.active.is_empty());
     }
 
     #[test]
@@ -675,13 +654,7 @@ mod tests {
         // concrete argument lists each own one copy of its three expressions.
         assert_eq!(graph.template_operands.patterns.len(), 1);
         assert_eq!(graph.template_operands.substitutions.len(), 2);
-        assert!(
-            graph
-                .template_operands
-                .substitutions
-                .values()
-                .all(|state| matches!(state, State::Complete(_)))
-        );
+        assert!(graph.template_operands.active.is_empty());
         assert_eq!(tree.expressions.mark(), count + 6);
         let pattern = graph.template_operands.patterns.values().next().unwrap();
         assert!(graph.expression_facts.get(pattern.expression).is_err());

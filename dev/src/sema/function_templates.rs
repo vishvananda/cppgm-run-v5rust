@@ -17,20 +17,16 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct SpecializationKey {
     primary: EntityId,
     arguments: Vec<TypeId>,
 }
 
-#[derive(Clone, Copy)]
-enum SignatureState {
-    InProgress,
-    Complete(BindingId),
-}
 #[derive(Default)]
 pub(super) struct FunctionTemplates {
-    signatures: HashMap<SpecializationKey, SignatureState>,
+    signatures: HashMap<SpecializationKey, BindingId>,
+    active_signatures: HashSet<(SpecializationKey, usize)>,
     primaries: HashMap<EntityId, BindingId>,
     pub(super) bodies: super::template_bodies::Bodies,
     pub(super) argument_defaults: super::template_defaults::Defaults,
@@ -283,6 +279,7 @@ impl Analyzer<'_> {
             environment.memo.insert(ty, result);
             return Ok(result);
         }
+        let incomplete = self.incomplete_class_observations;
         let kind = self.graph.types.get(ty).kind.clone();
         let result = match kind {
             TypeKind::TemplateParameter { entity, .. }
@@ -405,7 +402,9 @@ impl Analyzer<'_> {
             }
             _ => Some(ty),
         };
-        environment.memo.insert(ty, result);
+        if self.incomplete_class_observations == incomplete {
+            environment.memo.insert(ty, result);
+        }
         Ok(result)
     }
 
@@ -524,21 +523,26 @@ impl Analyzer<'_> {
             primary: self.graph.binding(primary).entity,
             arguments: canonical.ok_or(Error::Invariant("incomplete signature arguments"))?,
         };
-        if let Some(&state) = self.graph.function_templates.signatures.get(&key) {
-            return Ok(match state {
-                SignatureState::Complete(binding) => Some(binding),
-                SignatureState::InProgress => None,
-            });
+        if let Some(&binding) = self.graph.function_templates.signatures.get(&key) {
+            return Ok(Some(binding));
         }
         let pattern = self
             .graph
             .binding(primary)
             .ty
             .ok_or(Error::Invariant("template without function type"))?;
-        self.graph
+        // Re-entry from a class definition started by this substitution sees
+        // that class's members so far. Only the same class-definition depth
+        // makes an active signature circular (C++ ActiveSpecialization).
+        let active = (key, self.graph.class_templates.definitions.active_depth());
+        if !self
+            .graph
             .function_templates
-            .signatures
-            .insert(key, SignatureState::InProgress);
+            .active_signatures
+            .insert(active.clone())
+        {
+            return Ok(None);
+        }
         let mut environment = Substitution::new(depth, arguments);
         environment.context = check_access.then_some(self.graph.binding(primary).entity);
         let leading = !self
@@ -547,25 +551,20 @@ impl Analyzer<'_> {
             .trailing_results
             .contains(&self.graph.binding(primary).entity);
         let result = self.substitute_function_signature(pattern, &mut environment, leading);
-        let key = SpecializationKey {
-            primary: self.graph.binding(primary).entity,
-            arguments: arguments
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-                .ok_or(Error::Invariant("lost signature arguments"))?,
+        self.graph
+            .function_templates
+            .active_signatures
+            .remove(&active);
+        let key = active.0;
+        let Some(ty) = result? else {
+            return Ok(None);
         };
-        let ty = match result {
-            Ok(Some(ty)) => self.graph.types.canonical_function(ty)?,
-            Ok(None) => {
-                self.graph.function_templates.signatures.remove(&key);
-                return Ok(None);
-            }
-            Err(error) => {
-                self.graph.function_templates.signatures.remove(&key);
-                return Err(error);
-            }
-        };
+        let ty = self.graph.types.canonical_function(ty)?;
+        // A nested formation may already have published this specialization.
+        // Keep its identity, parameters and declaration-time facts.
+        if let Some(&binding) = self.graph.function_templates.signatures.get(&key) {
+            return Ok(Some(binding));
+        }
         let origin = self.graph.binding(primary);
         let entity = self.graph.add_entity(Some(ty), origin.name, origin.key)?;
         self.graph
@@ -616,7 +615,7 @@ impl Analyzer<'_> {
         self.graph
             .function_templates
             .signatures
-            .insert(key, SignatureState::Complete(binding));
+            .insert(key, binding);
         Ok(Some(binding))
     }
 
@@ -1462,6 +1461,62 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn class_reentry_publishes_one_signature_without_demanding_its_body() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct C;\
+              template<class T>typename C<T>::type select(T); char select(...);\
+              template<class T>struct C{\
+                typedef decltype(select(T())) before; typedef long type;\
+                typedef decltype(select(T())) after; };\
+              template<class T>typename C<T>::type select(T value){return value;}\
+              enum { width=sizeof(select(1)), again=sizeof(select(2)) };\
+              typedef C<int> instance;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"reentry").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert!(graph.function_templates.active_signatures.is_empty());
+        assert_eq!(graph.class_templates.definitions.active_depth(), 0);
+        assert_eq!(graph.function_templates.signatures.len(), 1);
+        assert_eq!(graph.function_templates.primaries.len(), 1);
+        assert!(graph.function_templates.demanded_bodies.is_empty());
+        let (&entity, _) = graph.function_templates.primaries.iter().next().unwrap();
+        let signature = graph.entity(entity).ty.unwrap();
+        let TypeKind::Function { result, .. } = graph.types.get(signature).kind else {
+            panic!("specialization without function type");
+        };
+        assert!(matches!(
+            graph.types.get(result).kind,
+            TypeKind::Scalar(Scalar::Basic(FundamentalType::LongInt))
+        ));
+        let name = cursor.intern_name(b"instance").unwrap();
+        let binding = graph
+            .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let TypeKind::Class(class) = graph.types.get(graph.binding(binding).ty.unwrap()).kind
+        else {
+            panic!("alias without class type");
+        };
+        let scope = graph.entity(class).scope.unwrap();
+        for (spelling, expected) in [
+            (b"before".as_slice(), Scalar::Basic(FundamentalType::Char)),
+            (b"after", Scalar::Basic(FundamentalType::LongInt)),
+        ] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let binding = graph
+                .own(scope, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let ty = graph.binding(binding).ty.unwrap();
+            assert_eq!(graph.types.get(ty).kind, TypeKind::Scalar(expected));
+        }
+    }
 
     #[test]
     fn operand_search_handles_shared_function_type_dags() {
