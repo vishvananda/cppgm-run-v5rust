@@ -108,6 +108,11 @@ impl Function<'_, '_, '_, '_> {
         if throws && self.lifetime.region_depth != self.lifetime.cleanups.len() {
             self.close_lifetime_region()?;
         }
+        if throws {
+            // aggregate_item opens this member's region after its address,
+            // rather than at the enclosing initializer segment's start.
+            self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
+        }
         Ok(())
     }
     pub(super) fn aggregate_member_made(

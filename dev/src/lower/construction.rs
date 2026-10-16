@@ -188,7 +188,17 @@ impl Function<'_, '_, '_, '_> {
         {
             return Ok(());
         }
-        if !declared {
+        // C++ call_conversion uses begin_call directly. Its selected
+        // conversion constructs this destination; it is not another argument
+        // temporary for call_special's note_call_arguments query.
+        let converting = written.first().is_some_and(|&source| {
+            self.converting_source == Some(self.without_parentheses(source))
+                && self
+                    .graph
+                    .lower_class_conversion(source)
+                    .is_some_and(|(selected, _)| selected == id)
+        });
+        if !declared && !converting {
             self.note_constructor_temporaries(id, written)?;
         }
         self.begin_lifetime_call(!facts.nothrow)?;

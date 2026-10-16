@@ -108,6 +108,9 @@ impl Function<'_, '_, '_, '_> {
             rows: false,
             row_slot: None,
         });
+        // The counted prefix now owns construction cleanup. Its first call
+        // opens after the array address and zero prefix have been established.
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         if self.lifetime.region {
             self.close_lifetime_region()?;
             self.before_lifetime_call(true)?;

@@ -125,6 +125,9 @@ impl Analyzer<'_> {
                 plans.push((member, None));
                 continue;
             }
+            if !(written.contains_key(&member) || variant && designated) {
+                self.request_member_initializer(member)?;
+            }
             let source = written
                 .get(&member)
                 .map(|written| written.initializer)

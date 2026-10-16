@@ -317,9 +317,10 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn default_member_dependency(
-        &self,
+        &mut self,
         member: EntityId,
     ) -> Result<Option<EntityId>, Error> {
+        self.request_member_initializer(member)?;
         let member = self.graph.entity(member);
         if member.member_initializer.is_some() {
             return Ok(None);
@@ -490,6 +491,7 @@ impl Analyzer<'_> {
         let mut const_members = 0;
         for index in 0..self.graph.entity(class).members.len() {
             let member_id = self.graph.entity(class).members[index];
+            self.request_member_initializer(member_id)?;
             let member = self.graph.entity(member_id);
             let mut ty = member
                 .ty

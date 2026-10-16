@@ -823,7 +823,9 @@ impl Analyzer<'_> {
                     self.note_local_initializer(home)?;
                 }
 
-                if self.template_depth == 0 {
+                if member {
+                    self.defer_member_initializer(binding, info.lookup);
+                } else if self.template_depth == 0 {
                     ty = self.initialize_variable(binding, initializer, info.lookup, location)?;
                     if member || definition {
                         self.check_object_type(ty, member, location)?;
@@ -955,7 +957,7 @@ impl Analyzer<'_> {
             _ => false,
         }
     }
-    fn check_object_type(
+    pub(super) fn check_object_type(
         &mut self,
         mut ty: TypeId,
         member: bool,
@@ -1767,8 +1769,14 @@ impl Analyzer<'_> {
         if self.class_depth == 0 {
             self.finish_class_exceptions()?;
             let bodies = std::mem::take(&mut self.deferred);
+            for body in &bodies {
+                if let super::analyzer::DeferredMember::Initializer(member) = *body {
+                    self.finish_member_initializer(member)?;
+                }
+            }
             for body in bodies {
                 match body {
+                    super::analyzer::DeferredMember::Initializer(_) => (),
                     super::analyzer::DeferredMember::Body(body) => self.function_body(body)?,
                     super::analyzer::DeferredMember::Defaults(defaults) => {
                         self.type_function_defaults(defaults)?;

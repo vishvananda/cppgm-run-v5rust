@@ -95,6 +95,7 @@ pub(super) struct DeferredBody {
 }
 #[derive(Clone, Copy)]
 pub(super) enum DeferredMember {
+    Initializer(super::graph::EntityId),
     Body(DeferredBody),
     Defaults(super::default_arguments::PendingDefaults),
 }

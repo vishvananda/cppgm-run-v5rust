@@ -272,6 +272,7 @@ pub(crate) struct Graph {
     pub(super) copy_properties: super::copy_properties::CopyPropertiesStore,
     pub(super) constructors: super::construction::Constructors,
     pub(super) inherited_constructors: super::inherited_constructors::InheritedConstructors,
+    pub(super) member_initializers: super::member_initializers::Initializers,
     pub(super) variable_instances: super::variable_instances::Variables,
     pub(super) root_demands: super::function_demands::DemandList,
     pub(super) declaration_storage: Vec<Option<BindingId>>,
@@ -401,6 +402,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             virtuals: super::virtual_members::Virtuals::default(),
+            member_initializers: super::member_initializers::Initializers::default(),
             variable_instances: super::variable_instances::Variables::default(),
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
