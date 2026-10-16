@@ -881,8 +881,9 @@ impl Function<'_, '_, '_, '_> {
         {
             let root = self.named_address(path, ty)?;
             let scope = self.begin_counted_elements(ty, root)?;
-            if matches!(path.root, Root::ArrayStorage(_))
-                && matches!(self.graph.lower_type(ty)?, TypeView::Array { element, .. } if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }))
+            // A member array and a standalone array both give each row its
+            // own prefix when initializer conversions create temporaries.
+            if matches!(self.graph.lower_type(ty)?, TypeView::Array { element, .. } if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }))
             {
                 let mut rows = false;
                 for &id in &input.values[input.next..] {
