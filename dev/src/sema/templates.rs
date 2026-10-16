@@ -35,6 +35,9 @@ pub(super) struct ParameterInfo {
     inner: Option<HeadId>,
 }
 impl ParameterInfo {
+    pub(super) fn is_pack(self) -> bool {
+        self.position.shape.pack
+    }
     pub(super) fn abi_index(self) -> u32 {
         // Ordinary signature mangling uses T_, T0_, ... at every lexical
         // depth. Only bound pack patterns encode a template parameter level.

@@ -77,6 +77,8 @@ mod member_patterns;
 mod name_keys;
 mod operator_candidates;
 mod operator_resolution;
+mod pack_formation;
+mod pack_names;
 mod placeholders;
 mod procedural_calls;
 mod procedural_statements;

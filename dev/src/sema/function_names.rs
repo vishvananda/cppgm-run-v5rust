@@ -521,8 +521,15 @@ impl Analyzer<'_> {
                 "static on a member function's declaration outside its class",
             ));
         }
+        if info.home.is_none()
+            && befriending.is_none()
+            && let Some(name) = key.identifier()
+        {
+            self.check_template_parameter_name(scope, name, location)?;
+        }
         let head = self.member_template_head(scope, Some(home));
-        if head.is_some() {
+        if let Some(head) = head {
+            self.check_function_packs(info.ty, head, location)?;
             if self.graph.scope(home).kind == ScopeKind::Class
                 && specs.virtuality == Virtuality::Virtual
             {

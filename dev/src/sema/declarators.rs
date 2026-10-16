@@ -216,9 +216,6 @@ impl Analyzer<'_> {
         while let Some(current) = id {
             self.check_stack()?;
             let node = *self.tree.declarators.get(current);
-            if node.pack {
-                return Err(Error::Missing("semantic parameter packs"));
-            }
             if node.name.is_some() {
                 name = self.declarator_name(Some(current))?;
                 syntax_name = node.name;
@@ -352,6 +349,15 @@ impl Analyzer<'_> {
                 derivations = 0;
             }
             id = node.nested;
+        }
+        // C++ forms the complete pattern before checking the root ellipsis.
+        // In particular, invalid pointer/suffix types precede pack diagnostics.
+        if let Some(root) = root {
+            let node = self.tree.declarators.get(root);
+            if node.pack {
+                self.check_pack_pattern(ty, node.location)?;
+                return Err(Error::Missing("semantic parameter pack expansion"));
+            }
         }
         if let Some((clause, prototype)) = prototype
             && parameters.is_some_and(|parameters| parameters.location == clause)

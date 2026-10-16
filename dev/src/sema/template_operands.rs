@@ -23,6 +23,7 @@ pub(super) struct Pattern {
     pub expression: ast::ExprId,
     pub scope: ScopeId,
     pub key_dependent: bool,
+    pub pack_names: super::pack_names::PackNames,
     home: ScopeId,
     next: Option<EntityId>,
     limit: usize,
@@ -145,6 +146,9 @@ impl Analyzer<'_> {
             }
             current = pattern.next;
         }
+        // C++ records expression_packs at placeholder formation. Later pack
+        // checks consume this definition-owned fact, never a new name lookup.
+        let pack_names = self.expression_pack_names(expression, scope)?;
         let name = self.decltype_name;
         let entity = self.graph.add_entity(None, Some(name), Keyword::Typename)?;
         let ty = self.graph.types.intern(
@@ -161,6 +165,7 @@ impl Analyzer<'_> {
                 expression,
                 scope,
                 key_dependent,
+                pack_names,
                 home,
                 next: head,
                 limit: self.graph.binding_limit(),
